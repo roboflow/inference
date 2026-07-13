@@ -64,6 +64,11 @@ def _ensure_chw_layout(image: torch.Tensor) -> torch.Tensor:
     permute HWC -> CHW. CHW input (front axis is the channels axis) is returned
     untouched. Non-3D tensors are left alone.
     """
+    if image.ndim == 2:
+        # Single-channel (H, W) tensors are normalised to the (1, H, W) CHW
+        # contract WorkflowImageData.tensor_image documents - grayscale carries
+        # no channel semantics, so no reversal is involved.
+        return image.unsqueeze(0).contiguous()
     if image.ndim != 3:
         return image
     channels_first = image.shape[0] in _CHANNEL_AXIS_SIZES

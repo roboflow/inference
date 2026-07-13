@@ -1367,3 +1367,81 @@ def test_workflow_image_copy_and_replace_swaps_tensor_for_numpy() -> None:
     # whatever was passed (None by default). Tensor should be gone.
     assert result._tensor_image is None
     assert result.numpy_image is replacement
+
+
+def test_workflow_image_data_single_channel_numpy_to_tensor() -> None:
+    # given - Convert Grayscale / Threshold blocks produce 2-D (H, W) arrays
+    gray = np.arange(24, dtype=np.uint8).reshape(4, 6)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=gray,
+    )
+
+    # when
+    tensor = image.tensor_image
+
+    # then - (1, H, W), values untouched (no channel reversal for single-channel)
+    assert tuple(tensor.shape) == (1, 4, 6)
+    assert tensor.dtype == torch.uint8
+    assert tensor.is_contiguous()
+    assert np.array_equal(tensor.squeeze(0).cpu().numpy(), gray)
+
+
+def test_workflow_image_data_single_channel_tensor_to_numpy_round_trip() -> None:
+    # given
+    gray = np.arange(24, dtype=np.uint8).reshape(4, 6)
+    tensor_born = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.from_numpy(gray.copy()).unsqueeze(0),
+    )
+
+    # when
+    round_tripped = tensor_born.numpy_image
+
+    # then - back to the 2-D (H, W) shape numpy-land blocks produce
+    assert round_tripped.shape == (4, 6)
+    assert np.array_equal(round_tripped, gray)
+    assert tensor_born._read_shape_without_materialization() == (4, 6)
+
+
+def test_workflow_image_data_declared_numpy_mutation_refreshes_tensor() -> None:
+    # given - numpy-born image with the tensor sibling already derived; both
+    # representations stay cached for readers (fan-out reads are free)
+    numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=numpy_image,
+    )
+    first_tensor = image.tensor_image
+    assert image.tensor_image is first_tensor, "readers keep the cached tensor"
+
+    # when - the copy_image=False visualization pattern: mutate numpy in place,
+    # then DECLARE the mutation per the class contract
+    image.numpy_image[0, 0] = (1, 2, 3)  # BGR
+    undeclared_tensor = image.tensor_image
+    image.declare_numpy_image_mutated()
+    refreshed_tensor = image.tensor_image
+
+    # then - before the declaration the sibling cache is stale (the documented
+    # limitation of undeclared in-place mutation); after it, the tensor is
+    # re-derived from the mutated pixels (RGB order at [:, 0, 0])
+    assert undeclared_tensor is first_tensor and torch.all(undeclared_tensor == 0)
+    assert tuple(int(c) for c in refreshed_tensor[:, 0, 0]) == (3, 2, 1)
+
+
+def test_workflow_image_data_declared_tensor_mutation_refreshes_numpy() -> None:
+    # given - tensor-born image (the tensor-mode video/crop case) with the numpy
+    # sibling already derived; tensor residency survives numpy reads
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.zeros((3, 4, 6), dtype=torch.uint8),
+    )
+    _ = image.numpy_image
+    assert image.is_tensor_materialised(), "numpy reads must not evict the tensor"
+
+    # when - mutate the tensor in place and declare it
+    image.tensor_image[:, 0, 0] = torch.tensor([3, 2, 1], dtype=torch.uint8)  # RGB
+    image.declare_tensor_image_mutated()
+
+    # then - numpy is re-derived from the mutated tensor (BGR order at [0, 0])
+    assert np.array_equal(image.numpy_image[0, 0], np.array([1, 2, 3], dtype=np.uint8))

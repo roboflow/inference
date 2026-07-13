@@ -269,6 +269,27 @@ class ImageParentMetadata:
 
 
 class WorkflowImageData:
+    """Container hosting the image in one of several representations, materialised
+    lazily on access.
+
+    Layout contract:
+      * ``numpy_image``: HWC uint8 BGR (cv2 native); 2-D ``(H, W)`` for
+        single-channel images (grayscale / threshold outputs).
+      * ``tensor_image``: CHW uint8 RGB on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``;
+        ``(1, H, W)`` for single-channel images. Single-channel data carries no
+        BGR/RGB semantics, so it is never channel-reversed in either direction.
+
+    Mutation contract: representations may be cached simultaneously (fan-out
+    readers alternate between them for free) and are exposed as the raw mutable
+    buffers - legacy blocks mutate ``numpy_image`` in place by design (e.g.
+    visualizations with ``copy_image=False``), and the class does not police
+    that: blind in-place mutation has never been safe here and clients know the
+    limitation. A client that mutates a representation in place MUST declare it
+    via ``declare_numpy_image_mutated()`` / ``declare_tensor_image_mutated()``,
+    which marks the derived sibling caches (tensor/base64 or numpy/base64) as
+    stale and removes them, so later readers re-derive from the mutated pixels.
+    Undeclared in-place mutation leaves sibling caches stale - the same caveat
+    the numpy + base64 pair has always had."""
 
     def __init__(
         self,
@@ -501,15 +522,20 @@ class WorkflowImageData:
 
     @property
     def numpy_image(self) -> np.ndarray:
-        # Layout contract:
-        #   numpy_image: HWC uint8 BGR  (cv2 native)
-        #   tensor_image: CHW uint8 RGB  (inference-models / torch convention)
+        # Layout + mutation contract: see the class docstring. In-place mutators
+        # of the returned buffer must call declare_numpy_image_mutated().
         if self._numpy_image is not None:
             return self._numpy_image
         if self._tensor_image is not None:
-            # CHW RGB -> HWC (permute on-device before host transfer) -> BGR
-            hwc_rgb = self._tensor_image.detach().permute(1, 2, 0).to("cpu").numpy()
-            self._numpy_image = hwc_rgb[:, :, ::-1].copy()
+            if int(self._tensor_image.shape[0]) == 1:
+                # Single-channel: (1, H, W) -> (H, W), no channel reversal.
+                self._numpy_image = (
+                    self._tensor_image.detach().squeeze(0).to("cpu").numpy().copy()
+                )
+            else:
+                # CHW RGB -> HWC (permute on-device before host transfer) -> BGR
+                hwc_rgb = self._tensor_image.detach().permute(1, 2, 0).to("cpu").numpy()
+                self._numpy_image = hwc_rgb[:, :, ::-1].copy()
             return self._numpy_image
         if self._base64_image:
             self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
@@ -524,19 +550,38 @@ class WorkflowImageData:
 
     @property
     def tensor_image(self) -> torch.Tensor:
+        # Layout + mutation contract: see the class docstring. In-place mutators
+        # of the returned tensor must call declare_tensor_image_mutated().
         if self._tensor_image is not None:
             return self._tensor_image
         bgr_np = self.numpy_image
-        rgb_np = bgr_np[:, :, ::-1].copy()
-        # HWC RGB -> CHW RGB; contiguous so model ingestion gets a dense buffer;
-        # allocated on the globally configured WORKFLOWS_IMAGE_TENSOR_DEVICE.
-        self._tensor_image = (
-            torch.from_numpy(rgb_np)
-            .permute(2, 0, 1)
-            .contiguous()
-            .to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
-        )
+        if bgr_np.ndim == 2:
+            # Single-channel (grayscale / threshold outputs): (H, W) -> (1, H, W),
+            # no channel reversal - there is no BGR/RGB semantics to convert.
+            chw = torch.from_numpy(np.ascontiguousarray(bgr_np)).unsqueeze(0)
+        else:
+            # HWC BGR -> HWC RGB -> CHW RGB; contiguous so model ingestion gets a
+            # dense buffer.
+            chw = torch.from_numpy(bgr_np[:, :, ::-1].copy()).permute(2, 0, 1)
+        # Allocated on the globally configured WORKFLOWS_IMAGE_TENSOR_DEVICE.
+        self._tensor_image = chw.contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
         return self._tensor_image
+
+    def declare_numpy_image_mutated(self) -> None:
+        """A client that mutated the ``numpy_image`` buffer in place declares it
+        here: the derived sibling caches (tensor / base64) are stale and get
+        removed, so later readers re-derive from the mutated pixels. See the
+        class-level mutation contract."""
+        self._tensor_image = None
+        self._base64_image = None
+
+    def declare_tensor_image_mutated(self) -> None:
+        """A client that mutated the ``tensor_image`` in place declares it here:
+        the derived sibling caches (numpy / base64) are stale and get removed,
+        so later readers re-derive from the mutated pixels. See the class-level
+        mutation contract."""
+        self._numpy_image = None
+        self._base64_image = None
 
     def is_tensor_materialised(self) -> bool:
         """Whether the CHW RGB tensor image already exists on device.

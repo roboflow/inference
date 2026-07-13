@@ -11,6 +11,7 @@ import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     take_prediction_by_indices,
@@ -342,11 +343,17 @@ def _native_areas(detections: TensorNativeDetections) -> np.ndarray:
     return (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
 
 
-def _empty_native_detections() -> Detections:
+def _empty_native_detections(device: Optional[torch.device] = None) -> Detections:
+    # Empties must live on the same device as the predictions they may later be
+    # concatenated with (torch.cat rejects mixed devices even for 0-row inputs);
+    # callers pass the surrounding predictions' device when one is in scope and
+    # the documented native default is used otherwise.
+    if device is None:
+        device = WORKFLOWS_IMAGE_TENSOR_DEVICE
     return Detections(
-        xyxy=torch.zeros((0, 4), dtype=torch.float32),
-        class_id=torch.zeros((0,), dtype=torch.long),
-        confidence=torch.zeros((0,), dtype=torch.float32),
+        xyxy=torch.zeros((0, 4), dtype=torch.float32, device=device),
+        class_id=torch.zeros((0,), dtype=torch.long, device=device),
+        confidence=torch.zeros((0,), dtype=torch.float32, device=device),
         image_metadata=None,
         bboxes_metadata=None,
     )
@@ -562,7 +569,18 @@ def agree_on_consensus_for_all_detections_sources(
     if does_not_detect_objects_in_any_source(
         detections_from_sources=detections_from_sources
     ):
-        return "undefined", False, {}, _empty_native_detections()
+        return (
+            "undefined",
+            False,
+            {},
+            _empty_native_detections(
+                device=(
+                    detections_from_sources[0].xyxy.device
+                    if detections_from_sources
+                    else None
+                )
+            ),
+        )
     parent_id = get_parent_id_of_detections_from_sources(
         detections_from_sources=detections_from_sources,
     )
@@ -787,7 +805,12 @@ def merge_detections(
             [AGGREGATION_MODE2MASKS_AGGREGATOR[mask_aggregation_mode](mask_stack)]
         )
         x1, y1, x2, y2 = sv.mask_to_xyxy(aggregated_mask)[0]
-        output_mask = torch.from_numpy(aggregated_mask.astype(bool))
+        # Keep the merged output on the native inputs' device (the documented
+        # native-output contract); CPU allocations here would later fail to
+        # concatenate with CUDA/MPS model predictions.
+        output_mask = torch.from_numpy(aggregated_mask.astype(bool)).to(
+            group.xyxy.device
+        )
     else:
         output_mask = None
         x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
@@ -821,8 +844,9 @@ def merge_detections(
         ]
     else:
         image_metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 1.0
-    xyxy = torch.tensor([[x1, y1, x2, y2]], dtype=torch.float32)
-    class_id_tensor = torch.tensor([class_id], dtype=torch.long)
+    device = group.xyxy.device
+    xyxy = torch.tensor([[x1, y1, x2, y2]], dtype=torch.float32, device=device)
+    class_id_tensor = torch.tensor([class_id], dtype=torch.long, device=device)
     confidence_tensor = torch.tensor(
         [
             aggregate_field_values(
@@ -832,6 +856,7 @@ def merge_detections(
             )
         ],
         dtype=torch.float32,
+        device=device,
     )
     bboxes_metadata = [{DETECTION_ID_KEY: str(uuid4())}]
     if output_mask is not None:

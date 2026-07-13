@@ -149,6 +149,14 @@ def take_key_points_by_indices(
     key_points_metadata = None
     if key_points.key_points_metadata is not None:
         key_points_metadata = [dict(key_points.key_points_metadata[i]) for i in indices]
+    # Auxiliary per-instance tensors (populated by RF-DETR) are sliced in
+    # lockstep so lossless selections stay lossless.
+    covariance = key_points.covariance
+    if covariance is not None and not is_identity:
+        covariance = covariance[index_tensor]
+    detection_confidence = key_points.detection_confidence
+    if detection_confidence is not None and not is_identity:
+        detection_confidence = detection_confidence[index_tensor]
     return KeyPoints(
         xy=key_points.xy if is_identity else key_points.xy[index_tensor],
         class_id=(
@@ -161,6 +169,8 @@ def take_key_points_by_indices(
         ),
         image_metadata=key_points.image_metadata,
         key_points_metadata=key_points_metadata,
+        covariance=covariance,
+        detection_confidence=detection_confidence,
     )
 
 
@@ -225,8 +235,14 @@ def _read_root_coordinates_shift(
 
     The offset is the crop origin recorded at
     ``image_metadata[ROOT_PARENT_COORDINATES_KEY] = [left_top_x, left_top_y]`` by
-    ``build_native_image_metadata``. ``None`` is returned (a no-op) when the key is
-    absent or the shift is ``[0, 0]`` (the prediction is already root-anchored).
+    ``build_native_image_metadata``. ``None`` is returned (a no-op) only when the
+    key is absent or the prediction is provably root-anchored already. A zero
+    offset alone is NOT that proof: a crop taken at ``(0, 0)`` still has
+    crop-sized dimensions and its own lineage, and its masks still need
+    re-embedding onto the root canvas - so identity additionally requires the
+    image dimensions to match the root dimensions and the parent to BE the root.
+    A ``(0.0, 0.0)`` return means "no coordinate shift, but the conversion
+    (mask re-embedding + metadata rewrite) must still run".
     """
     if not image_metadata:
         return None
@@ -234,7 +250,19 @@ def _read_root_coordinates_shift(
     if not root_coordinates:
         return None
     shift_x, shift_y = float(root_coordinates[0]), float(root_coordinates[1])
-    if shift_x == 0.0 and shift_y == 0.0:
+    if shift_x != 0.0 or shift_y != 0.0:
+        return shift_x, shift_y
+    image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
+    root_dimensions = image_metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
+    dimensions_confirm_root = (
+        image_dimensions is None
+        or root_dimensions is None
+        or list(image_dimensions) == list(root_dimensions)
+    )
+    parent_is_root = image_metadata.get(PARENT_ID_KEY) == image_metadata.get(
+        ROOT_PARENT_ID_KEY
+    )
+    if dimensions_confirm_root and parent_is_root:
         return None
     return shift_x, shift_y
 
@@ -441,6 +469,10 @@ def _shift_native_key_points_to_root_coordinates(
         confidence=key_points.confidence,
         image_metadata=image_metadata,
         key_points_metadata=key_points_metadata,
+        # Auxiliary RF-DETR tensors ride along unchanged - a pure translation
+        # affects neither positional covariance nor detection confidence.
+        covariance=key_points.covariance,
+        detection_confidence=key_points.detection_confidence,
     )
 
 

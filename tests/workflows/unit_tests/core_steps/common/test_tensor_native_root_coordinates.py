@@ -223,9 +223,14 @@ def test_root_conversion_shifts_geometry_payloads_including_obb() -> None:
     )
 
 
-def test_root_conversion_is_noop_without_shift() -> None:
-    # given
+def test_root_conversion_with_zero_offset_still_reanchors_crop_predictions() -> None:
+    # given - a crop taken at (0, 0): the offset is zero, but the dimensions are
+    # crop-sized and the parent is NOT the root. A zero offset alone must not be
+    # treated as proof of root anchoring (PR review): masks still need
+    # re-embedding onto the root canvas and the metadata still needs the root
+    # rewrite.
     metadata = _native_image_metadata()
+    metadata[PARENT_COORDINATES_KEY] = [0, 0]
     metadata[ROOT_PARENT_COORDINATES_KEY] = [0, 0]
     detections = _native_instance_detections(
         mask=torch.from_numpy(_crop_local_dense_masks())
@@ -235,7 +240,32 @@ def test_root_conversion_is_noop_without_shift() -> None:
     # when
     result = native_detections_to_root_coordinates(prediction=detections)
 
-    # then
+    # then - boxes keep their values (the shift IS zero) but the masks are
+    # re-anchored onto the root canvas and the lineage collapses to the root
+    assert result is not detections
+    assert torch.equal(result.xyxy, detections.xyxy)
+    assert tuple(result.mask.shape[-2:]) == (ROOT_H, ROOT_W)
+    assert list(result.image_metadata[IMAGE_DIMENSIONS_KEY]) == [ROOT_H, ROOT_W]
+    assert result.image_metadata[PARENT_ID_KEY] == "root-image"
+
+
+def test_root_conversion_is_noop_when_already_root_anchored() -> None:
+    # given - genuinely root-anchored: zero offset AND root-sized dimensions AND
+    # the parent IS the root
+    metadata = _native_image_metadata()
+    metadata[IMAGE_DIMENSIONS_KEY] = [ROOT_H, ROOT_W]
+    metadata[PARENT_ID_KEY] = "root-image"
+    metadata[PARENT_COORDINATES_KEY] = [0, 0]
+    metadata[ROOT_PARENT_COORDINATES_KEY] = [0, 0]
+    detections = _native_instance_detections(
+        mask=torch.from_numpy(_crop_local_dense_masks())
+    )
+    detections.image_metadata = metadata
+
+    # when
+    result = native_detections_to_root_coordinates(prediction=detections)
+
+    # then - identity: the input object is returned untouched
     assert result is detections
 
 

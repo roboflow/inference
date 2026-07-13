@@ -94,7 +94,7 @@ class InferenceModelsSAMAdapter(Model):
     ) -> List[Union[SAMImageEmbeddings, SAMPrediction]]:
         kwargs = self.map_inference_kwargs(kwargs)
         if action == "embed":
-            self._model.embed_images(**kwargs)
+            return self._model.embed_images(**kwargs)
         return self._model.segment_images(**kwargs)
 
     def infer_from_request(self, request: SamInferenceRequest):

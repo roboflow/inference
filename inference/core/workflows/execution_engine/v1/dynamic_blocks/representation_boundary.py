@@ -294,7 +294,13 @@ def _walk_value_to_legacy(
             )
             for element in value
         ]
-        return type(value)(converted) if isinstance(value, tuple) else converted
+        if isinstance(value, tuple):
+            # Namedtuples take one positional argument PER FIELD - splat the
+            # converted elements; a plain tuple takes the iterable whole.
+            if hasattr(value, "_fields"):
+                return type(value)(*converted)
+            return type(value)(converted)
+        return converted
     return _convert_leaf_to_legacy(
         value=value,
         declared_kinds=declared_kinds,
@@ -869,7 +875,13 @@ def _walk_output_value_to_native(
             )
             for element in value
         ]
-        return type(value)(converted) if isinstance(value, tuple) else converted
+        if isinstance(value, tuple):
+            # Namedtuples take one positional argument PER FIELD - splat the
+            # converted elements; a plain tuple takes the iterable whole.
+            if hasattr(value, "_fields"):
+                return type(value)(*converted)
+            return type(value)(converted)
+        return converted
     return _convert_output_leaf_to_native(
         value=value,
         declared_kinds=declared_kinds,

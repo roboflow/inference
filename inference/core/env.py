@@ -669,7 +669,9 @@ PREDICTIONS_QUEUE_SIZE = int(
     os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512)
 )
 RESTART_ATTEMPT_DELAY = int(os.getenv("INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", 1))
-DEFAULT_BUFFER_SIZE = int(os.getenv("VIDEO_SOURCE_BUFFER_SIZE", "64"))
+# DEFAULT_BUFFER_SIZE (VIDEO_SOURCE_BUFFER_SIZE) is defined further down - its
+# default depends on ENABLE_TENSOR_DATA_REPRESENTATION, which is not parsed yet
+# at this point of the module.
 DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE = float(
     os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE", "0.1")
 )
@@ -1180,6 +1182,20 @@ WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
 if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
     WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = "cuda" if torch.cuda.is_available() else "cpu"
 WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)
+
+# VideoSource decode-buffer depth. 64 buffered frames is a sane host-RAM
+# default, but under ENABLE_TENSOR_DATA_REPRESENTATION the hardware decoders
+# emit CLONED GPU tensors (dgpu/jetson producers), so every buffered 1080p RGB
+# frame holds ~6 MB of VRAM (~25 MB at 4K): a 64-deep queue costs ~0.4 GB per
+# 1080p stream (~1.6 GB at 4K) before any model allocates, multiplied across
+# sources. Default to a shallow queue when the flag is on; an explicit
+# VIDEO_SOURCE_BUFFER_SIZE always wins.
+DEFAULT_BUFFER_SIZE = int(
+    os.getenv(
+        "VIDEO_SOURCE_BUFFER_SIZE",
+        "8" if ENABLE_TENSOR_DATA_REPRESENTATION else "64",
+    )
+)
 
 # Instance-mask carrier for the tensor-native SAM video-tracker blocks
 # ("rle" = compact COCO RLE, "dense" = boolean torch tensors). This is an

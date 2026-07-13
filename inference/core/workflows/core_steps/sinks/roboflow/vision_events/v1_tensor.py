@@ -8,7 +8,7 @@ from uuid import uuid4
 import numpy as np
 import requests
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
 
 from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
@@ -38,6 +38,7 @@ from inference.core.workflows.execution_engine.entities.tensor_native_types impo
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    FLOAT_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
     ROBOFLOW_SOLUTION_KIND,
@@ -45,7 +46,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -397,6 +400,20 @@ class BlockManifest(WorkflowBlockManifest):
         description="If True, the block is disabled and no events are sent.",
         examples=[False, "$inputs.disable_vision_events"],
     )
+    cooldown_seconds: Union[
+        NonNegativeInt, NonNegativeFloat, Selector(kind=[INTEGER_KIND, FLOAT_KIND])
+    ] = Field(
+        default=1,
+        title="Cooldown",
+        description="Minimum number of seconds between consecutive events sent by "
+        "this block. Events triggered during the cooldown period are dropped and "
+        "the `throttling_status` output is set to True. Defaults to 1 second (at "
+        "most 1 event per second) so high-frequency video workflows do not flood "
+        "the Vision Events API with an event per frame. Set to 0 to disable rate "
+        "limiting for intentionally bursty use cases.",
+        examples=[1, 0.5, "$inputs.cooldown_seconds"],
+        json_schema_extra={"always_visible": True},
+    )
     write_to_event_store: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         title="Write to Local Event Store",
@@ -426,6 +443,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
+            OutputDefinition(name="throttling_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="event_id", kind=[STRING_KIND]),
             OutputDefinition(name="message", kind=[STRING_KIND]),
         ]
@@ -433,6 +451,10 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [COOLDOWN_HTTP_SOFT_RESTRICTION]
 
 
 class RoboflowVisionEventsBlockV1(WorkflowBlock):
@@ -446,6 +468,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._last_event_fired: Optional[datetime] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -465,6 +488,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         custom_metadata: Dict[str, Any],
         fire_and_forget: bool,
         disable_sink: bool,
+        cooldown_seconds: Union[int, float] = 1,
         write_to_event_store: bool = False,
         event_store_url: str = "http://localhost:8001",
         external_id: Optional[str] = None,
@@ -482,8 +506,26 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         if disable_sink:
             return {
                 "error_status": False,
+                "throttling_status": False,
                 "event_id": "",
                 "message": "Sink was disabled by parameter `disable_sink`",
+            }
+
+        # Selector-resolved values bypass manifest validation; a negative
+        # cooldown behaves as 0 (rate limiting disabled).
+        cooldown_seconds = max(cooldown_seconds, 0)
+        seconds_since_last_event = cooldown_seconds
+        if self._last_event_fired is not None:
+            seconds_since_last_event = (
+                datetime.now() - self._last_event_fired
+            ).total_seconds()
+        if seconds_since_last_event < cooldown_seconds:
+            logger.info("Activated `roboflow_core/roboflow_vision_events@v1` cooldown.")
+            return {
+                "error_status": False,
+                "throttling_status": True,
+                "event_id": "",
+                "message": "Sink cooldown applies",
             }
 
         event_data = _build_event_data(
@@ -534,10 +576,13 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 custom_metadata=custom_metadata,
             )
 
+        self._last_event_fired = datetime.now()
+
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(task)
             return {
                 "error_status": False,
+                "throttling_status": False,
                 "event_id": "",
                 "message": "Vision event sent in background task",
             }
@@ -545,6 +590,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             self._thread_pool_executor.submit(task)
             return {
                 "error_status": False,
+                "throttling_status": False,
                 "event_id": "",
                 "message": "Vision event sent in background task",
             }
@@ -552,6 +598,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             error_status, message, event_id = task()
             return {
                 "error_status": error_status,
+                "throttling_status": False,
                 "event_id": event_id,
                 "message": message,
             }
