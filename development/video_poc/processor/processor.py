@@ -26,8 +26,10 @@ Design notes (mirrors the video strategy deck):
 
 import argparse
 import base64
+import collections
 import copy
 import json
+import logging
 import os
 import re
 import signal
@@ -37,6 +39,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -162,6 +165,31 @@ class Stats:
             if self.job_received_at and self.first_result_at:
                 out["timeToFirstResultS"] = round(self.first_result_at - self.job_received_at, 2)
             return out
+
+
+class LogRing(logging.Handler):
+    """Last-N log lines (root logger: libav, inference, our own notes) so a
+    failure report can carry the context that actually explains it — the log
+    dies with the pod otherwise."""
+
+    def __init__(self, capacity=150):
+        super().__init__()
+        self.buf = collections.deque(maxlen=capacity)
+        self.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+
+    def emit(self, record):
+        try:
+            self.buf.append(self.format(record))
+        except Exception:
+            pass
+
+    def note(self, line):
+        for part in str(line).splitlines():
+            if part.strip():
+                self.buf.append(part)
+
+    def tail(self, n=40):
+        return list(self.buf)[-n:]
 
 
 class EventBus:
@@ -785,6 +813,8 @@ class Worker:
         self.image_output = None
         self._stop_requested = False
         self.lock = threading.Lock()
+        self.log_ring = LogRing()
+        logging.getLogger().addHandler(self.log_ring)
 
     # ---------- sink ----------
 
@@ -845,6 +875,28 @@ class Worker:
 
     # ---------- job lifecycle ----------
 
+    def report_job_failure(self, job, message):
+        """Best-effort: persist why this attempt died (message + recent log
+        tail) on the job doc BEFORE the pod retires. state="failing" records
+        the error without terminally failing the job — the platform's
+        attempts cap decides when to stop requeueing."""
+        self.log_ring.note(f"[processor] {message}")
+        if not self.args.api_url or not job or not job.get("id"):
+            return
+        try:
+            self.api(
+                "POST",
+                f"/video-jobs/{job['id']}/status",
+                json={
+                    "state": "failing",
+                    "error": str(message)[:2000],
+                    "logTail": self.log_ring.tail(),
+                    "processorId": self.processor_id,
+                },
+            )
+        except Exception as exc:
+            print(f"[processor] failure report failed: {exc}", file=sys.stderr)
+
     def run_job(self, job: dict):
         with self.lifecycle_lock:
             self._run_job_locked(job)
@@ -895,6 +947,7 @@ class Worker:
                     video_reference = self._download_source(source_url, job.get("id", "local"))
                 except Exception as exc:
                     print(f"[processor] source download failed: {exc}", file=sys.stderr)
+                    self.report_job_failure(job, f"source download failed: {exc}")
                     self._finalize_recorder()
                     self._cleanup_download()
                     with self.lock:
@@ -931,6 +984,7 @@ class Worker:
                 time.sleep(2.0)  # let the publisher register with the relay
             except OSError as exc:
                 print(f"[processor] could not start ffmpeg replay: {exc}", file=sys.stderr)
+                self.report_job_failure(job, f"ffmpeg replay failed: {exc}")
                 with self.lock:
                     self.state = "error"
                     self.job = {**job, "error": f"ffmpeg replay failed: {exc}"}
@@ -987,6 +1041,8 @@ class Worker:
             ).start()
         except Exception as exc:
             print(f"[processor] job failed to start: {exc}", file=sys.stderr)
+            self.log_ring.note(traceback.format_exc())
+            self.report_job_failure(job, f"workflow failed to start: {exc}")
             pipeline, self.pipeline = self.pipeline, None
             if pipeline is not None:
                 try:
@@ -1036,6 +1092,13 @@ class Worker:
             print(
                 f"[processor] stream pipeline for job {job_id} ended unexpectedly; releasing job",
                 file=sys.stderr,
+            )
+            with self.lock:
+                job = self.job
+            self.report_job_failure(
+                job,
+                "stream pipeline ended unexpectedly (source stream lost or workflow crashed"
+                " — see logTail)",
             )
             self.stop_job()
             self.retire_if_pool_mode()
