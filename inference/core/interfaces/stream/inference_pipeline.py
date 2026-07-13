@@ -1,11 +1,14 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime
 from enum import Enum
 from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
+
+import numpy as np
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
@@ -19,6 +22,7 @@ from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
     DISABLE_PREPROC_AUTO_ORIENT,
     ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     ENABLE_WORKFLOWS_PROFILING,
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
@@ -698,6 +702,7 @@ class InferencePipeline:
             batch_collection_timeout=batch_collection_timeout,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
+            allow_tensor_frames=ENABLE_TENSOR_DATA_REPRESENTATION,
         )
 
     @classmethod
@@ -718,6 +723,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
+        allow_tensor_frames: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -814,6 +820,7 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             desired_source_fps=desired_source_fps,
             decoding_buffer_size=decoding_buffer_size,
+            allow_tensor_frames=allow_tensor_frames,
         )
         watchdog.register_video_sources(video_sources=video_sources)
         try:
@@ -1117,7 +1124,10 @@ class InferencePipeline:
         video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
     ) -> None:
         try:
-            self._on_prediction(predictions, video_frames)
+            self._on_prediction(
+                predictions,
+                _materialise_video_frames_for_sink(video_frames),
+            )
         except Exception as error:
             payload = {
                 "error_type": error.__class__.__name__,
@@ -1146,6 +1156,39 @@ class InferencePipeline:
             batch_collection_timeout=self._batch_collection_timeout,
             should_stop=lambda: self._stop,
         )
+
+
+def _materialise_video_frames_for_sink(
+    video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
+) -> Union[VideoFrame, List[Optional[VideoFrame]]]:
+    if isinstance(video_frames, list):
+        return [
+            _materialise_video_frame_for_sink(video_frame)
+            for video_frame in video_frames
+        ]
+    return _materialise_video_frame_for_sink(video_frames)
+
+
+def _materialise_video_frame_for_sink(
+    video_frame: Optional[VideoFrame],
+) -> Optional[VideoFrame]:
+    if video_frame is None or isinstance(video_frame.image, np.ndarray):
+        return video_frame
+
+    tensor_image = video_frame.image.detach().cpu()
+    if tensor_image.ndim == 2:
+        numpy_image = tensor_image.contiguous().numpy()
+    elif tensor_image.ndim == 3 and tensor_image.shape[0] == 1:
+        numpy_image = tensor_image[0].contiguous().numpy()
+    elif tensor_image.ndim == 3 and tensor_image.shape[0] in {3, 4}:
+        numpy_image = tensor_image.permute(1, 2, 0).contiguous().numpy()
+        channel_order = [2, 1, 0]
+        if tensor_image.shape[0] == 4:
+            channel_order.append(3)
+        numpy_image = np.ascontiguousarray(numpy_image[..., channel_order])
+    else:
+        raise ValueError("Tensor video frames must use HW, 1CHW, 3CHW, or 4CHW layout")
+    return replace(video_frame, image=numpy_image)
 
 
 def send_inference_pipeline_status_update(

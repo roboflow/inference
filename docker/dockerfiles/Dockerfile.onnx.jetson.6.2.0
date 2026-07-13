@@ -1,35 +1,256 @@
 # syntax=docker/dockerfile:1.7
-# Jetson 6.2.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
-# Stage 1: Builder - Compile everything from source
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
+ARG FFMPEG_VERSION=7.1.3
+ARG FFMPEG_SHA256=f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe
+ARG GSTREAMER_VERSION=1.24.12
+ARG GSTREAMER_COMMIT=88e31216479a3f0c25096ca406369f3983efec14
+ARG GLIB_NETWORKING_SHA256=cd2a084c7bb91d78e849fb55d40e472f6d8f6862cddc9f12c39149359ba18268
+ARG OPENCV_VERSION=4.13.0
+ARG OPENCV_SHA256=1d40ca017ea51c533cf9fd5cbde5b5fe7ae248291ddf2af99d4c17cf8e13017d
+ARG OPENCV_CONTRIB_SHA256=1e0077a4fd2960a7d2f4c9e49d6ba7bb891cac2d1be36d7e8e47aa97a9d1039b
+ARG OPENCV_CUDA_ARCH_BIN=8.7
+ARG OPENCV_CUDA_ARCH_PTX=
+
+FROM ubuntu:22.04 AS ffmpeg-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_SHA256
+ARG FFMPEG_VERSION
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-ffmpeg-jp62-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-ffmpeg-jp62-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        libbz2-dev \
+        liblzma-dev \
+        libssl-dev \
+        nasm \
+        pkg-config \
+        xz-utils \
+        zlib1g-dev
+
+COPY docker/scripts/build_ffmpeg.sh /usr/local/bin/build_ffmpeg
+
+ENV PATH=/opt/ffmpeg/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
+
+RUN chmod +x /usr/local/bin/build_ffmpeg && \
+    FFMPEG_VERSION="${FFMPEG_VERSION}" \
+    FFMPEG_SHA256="${FFMPEG_SHA256}" \
+    build_ffmpeg && \
+    du -sh /opt/ffmpeg /opt/ffmpeg-runtime
+
+COPY docker/scripts/verify_ffmpeg.sh /usr/local/bin/verify_ffmpeg
+
+RUN chmod +x /usr/local/bin/verify_ffmpeg && verify_ffmpeg
+
+FROM ffmpeg-builder AS gstreamer-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GLIB_NETWORKING_SHA256
+ARG GSTREAMER_COMMIT
+ARG GSTREAMER_VERSION
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-gstreamer-jp62-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-gstreamer-jp62-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        cmake \
+        flex \
+        gobject-introspection \
+        git \
+        libcurl4-openssl-dev \
+        libglib2.0-dev \
+        libgnutls28-dev \
+        libgirepository1.0-dev \
+        libjpeg-dev \
+        libopus-dev \
+        libpng-dev \
+        libsrtp2-dev \
+        libssl-dev \
+        libv4l-dev \
+        libvpx-dev \
+        ninja-build \
+        pkg-config \
+        python3 \
+        python3-pip \
+        python3-venv
+
+RUN python3 -m venv /opt/gstreamer-build-tools && \
+    /opt/gstreamer-build-tools/bin/pip install --no-cache-dir \
+        "meson>=1.4,<2" \
+        "ninja>=1.11,<2"
+
+ENV PATH=/opt/gstreamer-build-tools/bin:$PATH
+
+COPY docker/scripts/build_gstreamer.sh /usr/local/bin/build_gstreamer
+
+RUN chmod +x /usr/local/bin/build_gstreamer && \
+    GSTREAMER_VERSION="${GSTREAMER_VERSION}" \
+    GSTREAMER_COMMIT="${GSTREAMER_COMMIT}" \
+    GLIB_NETWORKING_SHA256="${GLIB_NETWORKING_SHA256}" \
+    GSTREAMER_NVCODEC=disabled \
+    build_gstreamer
+
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    LD_LIBRARY_PATH=/opt/gstreamer/lib:/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/gstreamer/lib/pkgconfig:/opt/ffmpeg/lib/pkgconfig \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0
+
+COPY docker/scripts/verify_gstreamer.sh /usr/local/bin/verify_gstreamer
+
+RUN chmod +x /usr/local/bin/verify_gstreamer && \
+    verify_gstreamer && \
+    du -sh /opt/gstreamer /opt/gstreamer-runtime
+
+FROM ubuntu:22.04 AS gstreamer-runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-gstreamer-runtime-jp62-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-gstreamer-runtime-jp62-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libbz2-1.0 \
+        libcurl4 \
+        libglib2.0-0 \
+        libgnutls30 \
+        libjpeg-turbo8 \
+        liblzma5 \
+        libopus0 \
+        libsrtp2-1 \
+        libssl3 \
+        libv4l-0 \
+        libvpx7 \
+        zlib1g
+
+COPY --from=ffmpeg-builder /opt/ffmpeg-runtime /opt/ffmpeg
+COPY --from=gstreamer-builder /opt/gstreamer-runtime /opt/gstreamer
+
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    LD_LIBRARY_PATH=/opt/gstreamer/lib:/opt/ffmpeg/lib \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0
+
+RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
+    --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
+    --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
+    sh /tmp/verify_ffmpeg && \
+    sh /tmp/verify_gstreamer && \
+    sh /tmp/verify_media_runtime && \
+    rm -rf /root/.cache/gstreamer-1.0
+
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS jetson-build-base
+
+COPY --from=ffmpeg-builder /opt/ffmpeg /opt/ffmpeg
+COPY --from=gstreamer-builder /opt/gstreamer /opt/gstreamer
+
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/gstreamer/lib:/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/gstreamer/lib/pkgconfig:/opt/ffmpeg/lib/pkgconfig \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0
+
+FROM jetson-build-base AS jetson-tensor-bridge-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jetson-tensor-bridge-jp62-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jetson-tensor-bridge-jp62-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        libglib2.0-dev \
+        pkg-config
+
+COPY docker/native/jetson_tensor_bridge /src/jetson_tensor_bridge
+COPY docker/scripts/build_jetson_tensor_bridge.sh /usr/local/bin/build_jetson_tensor_bridge
+COPY docker/scripts/verify_jetson_tensor_bridge.sh /usr/local/bin/verify_jetson_tensor_bridge
+
+RUN chmod +x \
+        /usr/local/bin/build_jetson_tensor_bridge \
+        /usr/local/bin/verify_jetson_tensor_bridge && \
+    build_jetson_tensor_bridge && \
+    verify_jetson_tensor_bridge && \
+    du -sh /opt/roboflow/lib
+
+FROM jetson-build-base AS opencv-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OPENCV_VERSION
+ARG OPENCV_SHA256
+ARG OPENCV_CONTRIB_SHA256
+ARG OPENCV_CUDA_ARCH_BIN
+ARG OPENCV_CUDA_ARCH_PTX
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-opencv-jp62-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-opencv-jp62-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        libjpeg-dev \
+        libopenblas-dev \
+        libpng-dev \
+        libtiff-dev \
+        libv4l-dev \
+        ninja-build \
+        pkg-config \
+        python3-dev \
+        python3-pip \
+        python3-venv
+
+RUN python3 -m venv /opt/opencv-build-tools && \
+    /opt/opencv-build-tools/bin/pip install --no-cache-dir \
+        "numpy>=2.0.0,<2.4.0"
+
+COPY docker/scripts/build_opencv.sh /usr/local/bin/build_opencv
+COPY docker/scripts/verify_opencv.sh /usr/local/bin/verify_opencv
+
+RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
+    OPENCV_VERSION="${OPENCV_VERSION}" \
+    OPENCV_SHA256="${OPENCV_SHA256}" \
+    OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
+    OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
+    OPENCV_WITH_CUDA=ON \
+    OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+    OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
+    build_opencv && \
+    du -sh /opt/opencv /opt/opencv-runtime
+
+RUN PATH=/opt/opencv-build-tools/bin:$PATH \
+    PYTHONPATH=/opt/opencv/python \
+    OPENCV_EXPECTED_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+    OPENCV_REQUIRE_CUDA_BUILD=true \
+    verify_opencv
+
+FROM jetson-build-base AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
 ARG TRITON_VERSION=3.2.0
-ARG OPENCV_VERSION=4.13.0
-# Per-Jetson-platform OpenCV build parameters. To replicate this from-source
-# OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
-# block below verbatim and update these four ARGs to match the target base.
-# Cross-reference the values already used by the same dockerfile's PyTorch /
-# torchvision / onnxruntime build steps so all components target the same SoC:
-#   OPENCV_CUDA_ARCH:           jp51 (Orin on L4T r35): 8.7
-#                               jp62 (Orin on L4T r36): 8.7
-#                               jp71 (Thor on L4T r38): 11.0
-#   OPENCV_PYTHON_INSTALL_PATH: dist-packages dir of the base's Python
-#                               (jp51: python3.12, jp62: python3.10, jp71: python3.12)
-#   OPENCV_PYTHON_INCLUDE_DIR:  matches the base's Python C headers
-#   OPENCV_PYTHON_VERSION:      cmake's PYTHON_VERSION flag (major+minor, no dot)
-ARG OPENCV_CUDA_ARCH=8.7
-ARG OPENCV_PYTHON_INSTALL_PATH=/usr/local/lib/python3.10/dist-packages
-ARG OPENCV_PYTHON_INCLUDE_DIR=/usr/include/python3.10
-ARG OPENCV_PYTHON_VERSION=310
 ARG ONNXRUNTIME_VERSION=1.20.0
-# jetson-utils (NVDEC GPU-tensor decode for the v2 video pipeline). Upstream
-# tags no releases - pinned to master (2026-07-08); master's python bindings
-# select by Ubuntu codename (jammy -> 3.10, this image's Python).
-ARG JETSON_UTILS_COMMIT=fae4b4250f985ab92180b6ec955b79995b7a34ff
+ARG TARGETARCH
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
@@ -62,26 +283,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     pkg-config \
     libjpeg-dev \
     libpng-dev \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
     libv4l-dev \
-    libavutil-dev \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev \
-    libgstreamer-plugins-bad1.0-dev \
-    libgstrtspserver-1.0-dev \
-    libjson-glib-dev \
-    libsoup2.4-dev \
-    libglew-dev \
-    libglu1-mesa-dev \
-    freeglut3-dev \
-    lsb-release \
-    unzip \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
-    ffmpeg \
     libhdf5-dev \
     libgflags-dev \
     libgoogle-glog-dev \
@@ -264,68 +469,6 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     rm -rf /tmp/triton-wheels; \
     python3 -c "import triton; print('triton', triton.__version__)"
 
-# Build jetson-utils (dusty-nv) - hardware NVDEC decode for the v2 video
-# pipeline: inference/core/interfaces/camera/jetson_producer.py wraps
-# jetson_utils.videoSource and hands frames to torch as CUDA tensors via
-# cudaImage's __cuda_array_interface__. Pure cmake + make install (no pip),
-# so it cannot clobber the from-source cv2 built later in this stage. Placed
-# before the `COPY . .` layers so source edits never force a rebuild (the
-# build is ~2 min; no cache mount needed).
-# - Arch list: upstream hardcodes gencodes for SM 53/62/72/87; patched down to
-#   SM 87 only (Orin) - the pre-Orin gencodes are deprecated on CUDA 12.6 and
-#   dead weight in this image.
-# - Upstream still uses legacy find_package(CUDA), removed-by-policy in CMake
-#   3.27 (CMP0146). The Kitware cmake 4.2 installed above still ships the
-#   module when the policy is forced OLD - same CMAKE_POLICY_VERSION_MINIMUM
-#   family of workarounds the onnxruntime build in this file already uses.
-# - ENABLE_NVMM=off (explicit): upstream autodetects the legacy nvbuf_utils
-#   library, which r36 no longer ships, so it would land OFF anyway - pinning
-#   it keeps the choice visible. Non-NVMM decode stages frames through
-#   cudaAllocMapped (zero-copy CPU/GPU on the iGPU): one extra copy vs NVMM,
-#   acceptable baseline; NVMM via jetson-multimedia-api headers is a follow-up.
-# - The NVIDIA GStreamer elements it drives (nvv4l2decoder & co.) are NOT in
-#   this image - they arrive from the host BSP at container start via the same
-#   nvidia-container-runtime CSV mounts documented above the runtime stage.
-WORKDIR /build/jetson-utils
-RUN git clone https://github.com/dusty-nv/jetson-utils.git src && \
-    git -C src checkout ${JETSON_UTILS_COMMIT} && \
-    # Delete the standalone SM 72 / SM 87 gencode lines FIRST, then retarget
-    # the SM 53/62 line to SM 87 (substituting first would create a line the
-    # deletes also match). The greps assert the patch took: exactly one
-    # gencode line, targeting Orin.
-    sed -i '/-gencode arch=compute_72,code=sm_72)/d;/-gencode arch=compute_87,code=sm_87)/d' src/CMakeLists.txt && \
-    sed -i 's/-gencode arch=compute_53,code=sm_53 -gencode arch=compute_62,code=sm_62/-gencode arch=compute_87,code=sm_87/' src/CMakeLists.txt && \
-    test "$(grep -c -- '-gencode' src/CMakeLists.txt)" = "1" && \
-    grep -q 'compute_87' src/CMakeLists.txt
-RUN mkdir -p src/build && cd src/build && \
-    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-          -DCMAKE_POLICY_DEFAULT_CMP0146=OLD \
-          -DENABLE_NVMM=off \
-          ../ && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    # jetson_utils' __init__ eagerly imports every submodule (os/types/
-    # network/cuda), whose module-level deps are termcolor/tabulate/docker/
-    # numpy (upstream pyproject) + requests (imported by network/requests.py
-    # but missing from the pyproject). The cmake install path, unlike pip,
-    # installs no dependencies - and the runtime import in jetson_producer.py
-    # needs them too (they ride into the runtime stage via the dist-packages
-    # COPY; numpy/requests/docker are in the image anyway via requirements).
-    python3 -m pip install --break-system-packages --no-cache-dir \
-        termcolor tabulate docker requests && \
-    # Import smoke test (loads the C++ lib + GStreamer/GL deps; no GPU or
-    # driver needed at import time), then stage the python bindings into ONE
-    # known dir - `make install` picks the dist-packages dir itself and the
-    # runtime stage needs a stable COPY source. Handles both layouts (package
-    # dir vs single extension module).
-    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH python3 -c "import jetson_utils; assert hasattr(jetson_utils, 'videoSource'), 'jetson_utils imported without the C extension'; print('jetson_utils import OK:', jetson_utils.__file__)" && \
-    BINDINGS_DIR=$(LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH python3 -c "import jetson_utils, pathlib; p = pathlib.Path(jetson_utils.__file__).resolve(); print(p.parent.parent if p.parent.name == 'jetson_utils' else p.parent)") && \
-    mkdir -p /build/out/jetson-utils-py && \
-    cp -a "${BINDINGS_DIR}"/jetson_utils* /build/out/jetson-utils-py/ && \
-    (cp -a "${BINDINGS_DIR}"/jetson "${BINDINGS_DIR}"/Jetson* /build/out/jetson-utils-py/ 2>/dev/null || true) && \
-    ls -la /build/out/jetson-utils-py/
-
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
@@ -390,73 +533,6 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_sdk*.whl \
         "setuptools<=75.5.0"
 
-# Compile OpenCV from source with GStreamer / FFmpeg / CUDA support.
-# The pip opencv-python wheel ships without GStreamer, which blocks
-# cv2.VideoCapture from dispatching to NVIDIA's nv* GStreamer elements
-# (nvv4l2decoder, nvvidconv, nvjpegenc/dec). Built LAST in the builder so
-# nothing reinstalls the wheel-version cv2 over our from-source one.
-WORKDIR /build/opencv
-RUN wget -q https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv.zip && \
-    wget -q https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv_contrib.zip && \
-    unzip -q opencv.zip && unzip -q opencv_contrib.zip && \
-    rm opencv.zip opencv_contrib.zip && \
-    python3 -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless || true && \
-    mkdir -p /build/opencv/opencv-${OPENCV_VERSION}/release
-WORKDIR /build/opencv/opencv-${OPENCV_VERSION}/release
-# release/ is cache-mounted, so the rebuild forced by `COPY . .` invalidation
-# above completes as a fast ninja no-op (CMakeCache + objects survive) instead
-# of a 30-60 min recompile. Cache id includes OPENCV_VERSION and CUDA_ARCH so
-# version/SoC bumps start clean.
-RUN --mount=type=cache,target=/build/opencv/opencv-${OPENCV_VERSION}/release,sharing=locked,id=opencv-build-${OPENCV_VERSION}-${TARGETARCH}-sm${OPENCV_CUDA_ARCH} \
-    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
-    cmake -GNinja \
-        -D CMAKE_BUILD_TYPE=RELEASE \
-        -D CMAKE_INSTALL_PREFIX=/usr/local \
-        -D WITH_CUDA=ON \
-        -D WITH_CUDNN=ON \
-        -D CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH}" \
-        -D CUDA_ARCH_PTX="" \
-        -D OPENCV_GENERATE_PKGCONFIG=ON \
-        -D OPENCV_EXTRA_MODULES_PATH=/build/opencv/opencv_contrib-${OPENCV_VERSION}/modules \
-        -D WITH_FFMPEG=ON \
-        -D WITH_GSTREAMER=ON \
-        -D WITH_LIBV4L=ON \
-        -D BUILD_opencv_python3=ON \
-        -D BUILD_TESTS=OFF \
-        -D BUILD_PERF_TESTS=OFF \
-        -D BUILD_EXAMPLES=OFF \
-        -D BUILD_DOCS=OFF \
-        -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
-        -D PYTHON3_INCLUDE_DIR=${OPENCV_PYTHON_INCLUDE_DIR} \
-        -D PYTHON_VERSION=${OPENCV_PYTHON_VERSION} \
-        -D OPENCV_PYTHON3_INSTALL_PATH=${OPENCV_PYTHON_INSTALL_PATH} \
-        -D BUILD_SHARED_LIBS=OFF \
-        -D WITH_OPENCLAMDFFT=OFF \
-        -D WITH_OPENCLAMDBLAS=OFF \
-        -D WITH_VA_INTEL=OFF \
-        .. && \
-    ninja && \
-    ninja install && \
-    ldconfig && \
-    # Rescue install-tree config files before pip install clobbers them.
-    # `ninja install` writes ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py with
-    # install paths (correct). The `pip install` below installs a wheel built
-    # from the BUILD-TREE python_loader directory, whose config files reference
-    # /build/... paths that don't survive into the runtime stage. Save the
-    # install-tree versions now, restore them after pip install registers
-    # opencv with pip's metadata. Without this, cv2 import in the runtime image
-    # fails with "recursion is detected during loading of cv2 binary extensions".
-    mkdir -p /tmp/cv2-install-tree && \
-    cp ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py /tmp/cv2-install-tree/ && \
-    python3 -m pip wheel /build/opencv/opencv-${OPENCV_VERSION}/release/python_loader --wheel-dir /build/out/wheels && \
-    python3 -m pip install --break-system-packages /build/out/wheels/opencv-*.whl && \
-    cp /tmp/cv2-install-tree/config*.py ${OPENCV_PYTHON_INSTALL_PATH}/cv2/ && \
-    rm -rf /tmp/cv2-install-tree && \
-    # Sanity check: simulate the runtime stage by removing /build/ from sys.path.
-    # If config files still leak build-tree paths, the loader bootstrap fails here
-    # with a recursion error rather than at runtime on the device.
-    env -u PYTHONPATH python3 -c "import sys; sys.path = [p for p in sys.path if '/build' not in p]; import cv2; info = cv2.getBuildInformation(); assert 'YES' in info.split('GStreamer:')[1].split(chr(10))[0], 'GStreamer not enabled'; assert 'YES' in info.split('FFMPEG:')[1].split(chr(10))[0], 'FFMPEG not enabled'; print('cv2 ' + cv2.__version__ + ' OK from install path; GStreamer + FFmpeg + CUDA enabled')"
-
 # Pin boto3/botocore last so the final versions win regardless of what the
 # requirement sets resolved to (previously done as an extra layer in the
 # runtime stage, which shipped both copies).
@@ -470,6 +546,9 @@ RUN python3 -m pip uninstall -y boto3 botocore && \
 # with a warning (exit 0), so this block is idempotent across image variants.
 # ---- image-slim cleanup (re-executed verbatim by the local donor harness) ----
 RUN cd /usr/local/lib/python3.10/dist-packages && \
+    find . -maxdepth 1 -type d \
+        \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
+        -prune -exec rm -rf {} + && \
     # Build-time tooling leaked in via pytorch/onnxruntime build requirements;
     # none has a runtime reverse-dependency (cmake pip pkg alone is 82MB)
     python3 -m pip uninstall -y cmake lintrunner hypothesis expecttest types-dataclasses astunparse optree \
@@ -526,22 +605,24 @@ FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime AS cuda_rt
 # in the image). Net ~300MB smaller. GPU/BSP access is unchanged: on JetPack 6
 # the nvidia-container-runtime injects libcuda/tegra libs from the host at
 # container start, driven by the NVIDIA_* envs replicated below.
-FROM ubuntu:22.04
+FROM gstreamer-runtime AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 ENV LANG=en_US.UTF-8
 
 # Replicated verbatim from the l4t-cuda:12.6.11-runtime base / published image.
 ENV NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
     NVIDIA_REQUIRE_CUDA="cuda>=12.6" \
     NVIDIA_REQUIRE_JETPACK_HOST_MOUNTS=base-only \
     NVIDIA_PRODUCT_NAME=CUDA \
-    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Library search paths the l4t-cuda base provided via ld.so.conf.d (tegra/nvidia
 # dirs are populated by the host mounts injected at container start).
-RUN printf '/usr/local/cuda/lib64\n/usr/lib/aarch64-linux-gnu/tegra\n/usr/lib/aarch64-linux-gnu/tegra-egl\n/usr/lib/aarch64-linux-gnu/nvidia\n/usr/lib/aarch64-linux-gnu/gstreamer-1.0\n' > /etc/ld.so.conf.d/nvidia-tegra.conf
+RUN mkdir -p /usr/lib/aarch64-linux-gnu/gstreamer-1.0 && \
+    printf '/usr/local/cuda/lib64\n/usr/lib/aarch64-linux-gnu/tegra\n/usr/lib/aarch64-linux-gnu/tegra-egl\n/usr/lib/aarch64-linux-gnu/nvidia\n/usr/lib/aarch64-linux-gnu/gstreamer-1.0\n' > /etc/ld.so.conf.d/nvidia-tegra.conf
 
 WORKDIR /app
 
@@ -552,17 +633,9 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 #   file (libmagic; nothing executes it), libproj22 (+proj-data; only served the
 #   removed system GDAL - rasterio bundles its own proj), python3-pip (pip already
 #   ships in dist-packages and the runtime stage no longer runs pip),
-#   gstreamer1.0-tools (debug CLIs), python3-gi + gir1.2-* (no `import gi`
-#   anywhere; cv2 links the GStreamer C libs directly), libatlas3-base (zero .so
-#   NEEDs ATLAS; BLAS is libopenblas0).
 # libegl1/libgles2 (glvnd loaders, ~1.8MB) are required by the host-injected NV
 # GStreamer plugins (nvarguscamerasrc/nvivafilter/nveglglessink/...); the actual
 # EGL/GLES drivers come from the host's tegra-egl mount at container start.
-# libgstreamer-plugins-bad1.0-0 (gstwebrtc/gstsdp), libgstrtspserver-1.0-0,
-# libjson-glib-1.0-0, libsoup2.4-1, libglew2.2/libglu1-mesa/libgl1: the link
-# closure of libjetson-utils.so (built in the builder stage); jetson-utils
-# links its WebRTC/RTSP output stack unconditionally even though this image
-# only uses videoSource decode.
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
@@ -575,38 +648,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libopenblas0 \
     libsqlite3-0 \
     libtiff5 \
-    libcurl4 \
-    libssl3 \
-    zlib1g \
     libgomp1 \
     python3 \
     libxext6 \
     libvips42 \
-    libglib2.0-0 \
     libsm6 \
-    libjpeg-turbo8 \
     libpng16-16 \
     libexpat1 \
-    ca-certificates \
     curl \
-    libv4l-0 \
-    libavcodec58 \
-    libavformat58 \
-    libswscale5 \
-    ffmpeg \
-    libgstreamer1.0-0 \
-    libgstreamer-plugins-base1.0-0 \
-    gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good \
-    libgstreamer-plugins-bad1.0-0 \
-    libgstrtspserver-1.0-0 \
-    libjson-glib-1.0-0 \
-    libsoup2.4-1 \
-    libglew2.2 \
-    libglu1-mesa \
-    libgl1 \
+    libasound2 \
+    libdrm2 \
     libegl1 \
     libgles2 \
+    libpcre3 \
+    libwayland-client0 \
+    libwayland-egl1 \
+    libwebp7 \
+    libwebpdemux2 \
+    libwebpmux3 \
+    libx11-6 \
     build-essential \
     python3-dev \
     zlib1g-dev \
@@ -617,7 +677,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
 # zero .so in the image links the from-source libgdal (verified via ldd scan +
 # live deletion test). GDAL_DATA must stay unset or it would override
 # rasterio's bundled data directory and break CRS handling.
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:/opt/opencv/lib:/opt/gstreamer/lib:/opt/ffmpeg/lib
 
 # CUDA runtime libraries, exact files (not globs: the source dir mixes real
 # files and symlinks, and COPY dereferences symlinks, which would triple-copy
@@ -680,14 +740,6 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer.so.*.*.* \
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
-# NOTE: NVIDIA's gstreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec) and
-# their tegra runtime deps (libnvbufsurface, libnvjpeg, libnvargus, ...) are NOT
-# baked into the image -- they are tied to the host's JetPack BSP and are injected
-# at container start by `nvidia-container-runtime` via the CSVs under
-# /etc/nvidia-container-runtime/host-files-for-container.d/. The host system must
-# be configured to mount them; without that, cv2 here can dispatch a GStreamer
-# pipeline but `nvv4l2decoder` / `nvvidconv` / `nvjpegenc` won't resolve.
-
 # Create symlinks for CUDA/cuDNN/TensorRT (saves ~2GB by not duplicating files).
 # libnvrtc-builtins needs its two-level soname on top of the .so/.so.MAJ links
 # the loop creates: libnvrtc dlopens it as libnvrtc-builtins.so.12.6.
@@ -700,12 +752,11 @@ RUN cd /usr/local/cuda/lib64 && \
     done && \
     ln -sf libnvrtc-builtins.so.12.6.68 libnvrtc-builtins.so.12.6
 
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
 
 # GStreamer plugin discovery: point at the standard arch dir (where libgstnv*.so live).
 # Clear stale plugin registry so it's rebuilt on first use against the copied plugins.
-ENV GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+ENV GST_PLUGIN_PATH_1_0=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
 RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null || true
 
 # build-essential/python3-dev/zlib1g-dev/libxml2-dev: required for Triton JIT kernel
@@ -714,6 +765,8 @@ RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null |
 # JIT toolchains are copied separately (llvm cache excluded at build time).
 
 # Copy Python packages
+COPY --from=opencv-builder /opt/opencv-runtime /opt/opencv
+COPY --from=jetson-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
 COPY --from=builder /root/.triton/nvidia /root/.triton/nvidia
 COPY --from=builder /root/.triton/json /root/.triton/json
@@ -723,16 +776,9 @@ COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt /usr/local/lib/py
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/lib/python3.10/dist-packages/tensorrt_lean
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
-# jetson-utils: NVDEC decode library + python bindings (staged by the builder
-# into one dir regardless of which dist-packages `make install` picked).
-# Resolved via LD_LIBRARY_PATH=/usr/local/lib (set above); the nvv4l2decoder
-# GStreamer elements it drives come from the host CSV mounts per the NOTE
-# above.
-COPY --from=builder /usr/local/lib/libjetson-utils.so /usr/local/lib/
-COPY --from=builder /build/out/jetson-utils-py/ /usr/local/lib/python3.10/dist-packages/
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
-ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH
+ENV PYTHONPATH=/opt/opencv/python:/usr/local/lib/python3.10/dist-packages
 
 # Copy application code
 COPY inference inference
@@ -741,6 +787,14 @@ COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
+
+RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
+    --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
+    --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
+    sh /tmp/verify_ffmpeg && \
+    sh /tmp/verify_gstreamer && \
+    OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
+    rm -rf /root/.cache/gstreamer-1.0
 
 # Environment variables
 ENV VERSION_CHECK_MODE=once \
