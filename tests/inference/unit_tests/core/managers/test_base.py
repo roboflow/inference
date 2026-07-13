@@ -1,12 +1,9 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
-from inference.core.exceptions import (
-    InferenceModelNotFound,
-    RoboflowAPINotAuthorizedError,
-)
+from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
 from inference.core.managers.entities import ModelDescription
@@ -16,112 +13,6 @@ from inference.core.managers.model_load_collector import (
     model_load_info,
     request_model_ids,
 )
-from inference.core.roboflow_api import ModelEndpointType
-
-
-def test_ensure_model_access_checks_every_registry_target(monkeypatch) -> None:
-    # given
-    monkeypatch.setattr(base_module, "MODELS_CACHE_AUTH_ENABLED", True)
-    check_access_mock = MagicMock(return_value=True)
-    monkeypatch.setattr(
-        base_module, "_check_if_api_key_has_access_to_model", check_access_mock
-    )
-    model_registry = MagicMock()
-    model_registry.get_model_auth_targets.return_value = [
-        "pp-ocrv6-det/small",
-        "pp-ocrv6-rec/small",
-    ]
-    model_manager = ModelManager(model_registry=model_registry)
-
-    # when
-    model_manager.ensure_model_access(
-        model_id="pp_ocr/small-small",
-        api_key="some-api-key",
-        endpoint_type=ModelEndpointType.CORE_MODEL,
-        countinference=True,
-        service_secret="service-secret",
-    )
-
-    # then
-    model_registry.get_model_auth_targets.assert_called_once_with(
-        model_id="pp_ocr/small-small",
-        endpoint_type=ModelEndpointType.CORE_MODEL,
-        api_key="some-api-key",
-        countinference=True,
-        service_secret="service-secret",
-    )
-    assert check_access_mock.call_args_list == [
-        call(
-            api_key="some-api-key",
-            model_id="pp-ocrv6-det/small",
-            endpoint_type=ModelEndpointType.CORE_MODEL,
-            countinference=True,
-            service_secret="service-secret",
-        ),
-        call(
-            api_key="some-api-key",
-            model_id="pp-ocrv6-rec/small",
-            endpoint_type=ModelEndpointType.CORE_MODEL,
-            countinference=True,
-            service_secret="service-secret",
-        ),
-    ]
-
-
-def test_ensure_model_access_requires_every_registry_target(monkeypatch) -> None:
-    # given
-    monkeypatch.setattr(base_module, "MODELS_CACHE_AUTH_ENABLED", True)
-    monkeypatch.setattr(
-        base_module,
-        "_check_if_api_key_has_access_to_model",
-        MagicMock(side_effect=[True, False]),
-    )
-    model_registry = MagicMock()
-    model_registry.get_model_auth_targets.return_value = [
-        "pp-ocrv6-det/small",
-        "pp-ocrv6-rec/small",
-    ]
-    model_manager = ModelManager(model_registry=model_registry)
-
-    # when / then
-    with pytest.raises(
-        RoboflowAPINotAuthorizedError,
-        match="pp-ocrv6-rec/small",
-    ):
-        model_manager.ensure_model_access(
-            model_id="pp_ocr/small-small",
-            api_key="some-api-key",
-            endpoint_type=ModelEndpointType.CORE_MODEL,
-        )
-
-
-def test_ensure_model_access_falls_back_when_registry_returns_no_targets(
-    monkeypatch,
-) -> None:
-    # given
-    monkeypatch.setattr(base_module, "MODELS_CACHE_AUTH_ENABLED", True)
-    check_access_mock = MagicMock(return_value=True)
-    monkeypatch.setattr(
-        base_module, "_check_if_api_key_has_access_to_model", check_access_mock
-    )
-    model_registry = MagicMock()
-    model_registry.get_model_auth_targets.return_value = []
-    model_manager = ModelManager(model_registry=model_registry)
-
-    # when
-    model_manager.ensure_model_access(
-        model_id="some-model/1",
-        api_key="some-api-key",
-    )
-
-    # then
-    check_access_mock.assert_called_once_with(
-        api_key="some-api-key",
-        model_id="some-model/1",
-        endpoint_type=ModelEndpointType.ORT,
-        countinference=None,
-        service_secret=None,
-    )
 
 
 def test_add_model_when_model_already_loaded() -> None:

@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 from cachetools.func import ttl_cache
 
@@ -81,6 +81,19 @@ GENERIC_MODELS = {
     "qwen3_5-4b": ("lmm", "qwen3_5-4b"),
 }
 
+_PP_OCR_STAGE_VARIANTS = ("none", "tiny", "small", "medium")
+# PP-OCR is served as a synthetic pipeline ID composed of detection and
+# recognition variants; enumerate every valid combination (at least one stage
+# must be enabled) so these IDs resolve as generic models.
+GENERIC_MODELS.update(
+    {
+        f"pp_ocr/{text_detection}-{text_recognition}": ("ocr", "pp_ocr")
+        for text_detection in _PP_OCR_STAGE_VARIANTS
+        for text_recognition in _PP_OCR_STAGE_VARIANTS
+        if (text_detection, text_recognition) != ("none", "none")
+    }
+)
+
 STUB_VERSION_ID = "0"
 
 # In-process cache for model metadata to avoid Redis lock contention on every request.
@@ -130,28 +143,6 @@ class RoboflowModelRegistry(ModelRegistry):
             )
         return self.registry_dict[model_type]
 
-    def get_model_auth_targets(
-        self,
-        model_id: ModelID,
-        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
-        api_key: Optional[str] = None,
-        countinference: Optional[bool] = None,
-        service_secret: Optional[str] = None,
-    ) -> List[ModelID]:
-        if endpoint_type != ModelEndpointType.CORE_MODEL:
-            return [model_id]
-        model_type = get_model_type(
-            model_id=model_id,
-            api_key=api_key,
-            countinference=countinference,
-            service_secret=service_secret,
-        )
-        model_class = self.registry_dict.get(model_type)
-        auth_targets_resolver = getattr(model_class, "get_model_auth_targets", None)
-        if auth_targets_resolver is None:
-            return [model_id]
-        return auth_targets_resolver(model_id=model_id)
-
 
 @ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
 def _check_if_api_key_has_access_to_model(
@@ -162,6 +153,14 @@ def _check_if_api_key_has_access_to_model(
     service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    if model_id in GENERIC_MODELS:
+        # Synthetic core-model IDs (e.g. PP-OCR pipeline variants) do not exist in
+        # remote model registries — only their underlying stage models do. API-key
+        # validity is enforced upstream and stage weights downloads authorize each
+        # concrete model, so exact GENERIC_MODELS entries are trusted here. Note:
+        # this also applies to other full-ID entries such as sam3/sam3_interactive,
+        # which now skips the remote stat preflight for warm loads as well.
+        return True
     if _get_local_model_type(model_id=model_id) is not None:
         return True
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)

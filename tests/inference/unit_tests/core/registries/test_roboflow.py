@@ -13,6 +13,7 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     ModelDeploymentNotSupportedError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
@@ -348,51 +349,89 @@ def test_get_model_type_when_generic_model_is_utilised(
     assert result == expected_result
 
 
-@mock.patch.object(roboflow, "get_model_type", return_value=("ocr", "pp_ocr"))
-def test_core_model_auth_targets_are_resolved_by_model_adapter(
-    get_model_type_mock: MagicMock,
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "pp_ocr/small-small",
+        "pp_ocr/tiny-medium",
+        "pp_ocr/none-small",
+        "pp_ocr/medium-none",
+    ],
+)
+@mock.patch.object(roboflow, "get_roboflow_instant_model_data")
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_check_api_key_for_pp_ocr_pipeline_does_not_call_remote_api(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    get_roboflow_instant_model_data_mock: MagicMock,
+    model_id: str,
 ) -> None:
     # given
-    model_adapter = MagicMock()
-    model_adapter.get_model_auth_targets.return_value = [
-        "pp-ocrv6-det/small",
-        "pp-ocrv6-rec/small",
-    ]
-    registry = RoboflowModelRegistry({("ocr", "pp_ocr"): model_adapter})
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
 
     # when
-    result = registry.get_model_auth_targets(
-        model_id="pp_ocr/small-small",
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key=f"my_api_key-{model_id}",
+        model_id=model_id,
         endpoint_type=ModelEndpointType.CORE_MODEL,
-        api_key="my-api-key",
     )
 
     # then
-    assert result == ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"]
-    get_model_type_mock.assert_called_once_with(
-        model_id="pp_ocr/small-small",
-        api_key="my-api-key",
+    assert result is True
+    get_model_metadata_from_inference_models_registry_mock.assert_not_called()
+    get_roboflow_model_data_mock.assert_not_called()
+    get_roboflow_instant_model_data_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("model_id", ["pp_ocr/none-none", "pp_ocr/huge-small"])
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(
+    roboflow,
+    "get_model_metadata_from_inference_models_registry",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+def test_check_api_key_for_invalid_pp_ocr_pipeline_fails_closed(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    model_id: str,
+) -> None:
+    # given
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
+
+    # when
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key=f"my_api_key-{model_id}",
+        model_id=model_id,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
+    get_model_metadata_from_inference_models_registry_mock.assert_called_once_with(
+        api_key=f"my_api_key-{model_id}",
+        model_id=model_id,
         countinference=None,
         service_secret=None,
     )
-    model_adapter.get_model_auth_targets.assert_called_once_with(
-        model_id="pp_ocr/small-small"
-    )
 
 
-@mock.patch.object(roboflow, "get_model_type")
-def test_non_core_model_auth_target_preserves_requested_model(
-    get_model_type_mock: MagicMock,
-) -> None:
-    registry = RoboflowModelRegistry({})
+def test_generic_models_enumerate_all_valid_pp_ocr_pipelines() -> None:
+    # given
+    stage_variants = ("none", "tiny", "small", "medium")
 
-    result = registry.get_model_auth_targets(
-        model_id="some-model/1",
-        endpoint_type=ModelEndpointType.ORT,
-    )
+    # when
+    pp_ocr_pipeline_models = {
+        f"pp_ocr/{text_detection}-{text_recognition}": ("ocr", "pp_ocr")
+        for text_detection in stage_variants
+        for text_recognition in stage_variants
+        if (text_detection, text_recognition) != ("none", "none")
+    }
 
-    assert result == ["some-model/1"]
-    get_model_type_mock.assert_not_called()
+    # then
+    assert len(pp_ocr_pipeline_models) == 15
+    for model_id, expected_model_type in pp_ocr_pipeline_models.items():
+        assert roboflow.GENERIC_MODELS[model_id] == expected_model_type
+    assert "pp_ocr/none-none" not in roboflow.GENERIC_MODELS
 
 
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)

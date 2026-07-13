@@ -1,8 +1,7 @@
-from typing import List, Optional
+from typing import Optional
 
 from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.models.base import Model
-from inference.core.roboflow_api import ModelEndpointType
 
 
 class ModelRegistry:
@@ -43,14 +42,3 @@ class ModelRegistry:
                 f"Could not find model of type: {model_type} in configured registry."
             )
         return self.registry_dict[model_type]
-
-    def get_model_auth_targets(
-        self,
-        model_id: str,
-        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
-        api_key: Optional[str] = None,
-        countinference: Optional[bool] = None,
-        service_secret: Optional[str] = None,
-    ) -> List[str]:
-        """Return concrete model IDs that must be authorized for a load."""
-        return [model_id]

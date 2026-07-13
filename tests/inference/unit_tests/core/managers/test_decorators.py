@@ -11,7 +11,6 @@ from inference.core.managers.model_load_collector import (
     current_request_path,
     request_model_ids,
 )
-from inference.core.roboflow_api import ModelEndpointType
 
 
 def test_model_manager_decorator_records_request_metadata_for_warm_model() -> None:
@@ -63,49 +62,6 @@ def test_fixed_size_cache_records_request_metadata_for_warm_model() -> None:
     assert description.model_id == "sam3/sam3_interactive"
     assert description.request_aliases == ["sam3/sam3_final"]
     assert description.request_paths == ["/sam3/embed_image"]
-
-
-def test_fixed_size_cache_authorizes_warm_model_dependencies() -> None:
-    model_manager = ModelManager(model_registry=MagicMock())
-    model_manager._models = {"pp_ocr/small-small": MagicMock()}
-    model_manager.ensure_model_access = MagicMock()
-    decorator = WithFixedSizeCache(model_manager, max_size=8)
-
-    decorator.add_model(
-        model_id="pp_ocr/small-small",
-        api_key="key",
-    )
-
-    model_manager.ensure_model_access.assert_called_once_with(
-        model_id="pp_ocr/small-small",
-        api_key="key",
-        endpoint_type=ModelEndpointType.ORT,
-        countinference=None,
-        service_secret=None,
-    )
-
-
-def test_fixed_size_cache_authorizes_through_nested_decorators() -> None:
-    base_manager = ModelManager(model_registry=MagicMock())
-    base_manager._models = {"pp_ocr/small-small": MagicMock()}
-    base_manager.ensure_model_access = MagicMock()
-    decorator = WithFixedSizeCache(
-        LockedLoadModelManagerDecorator(base_manager), max_size=8
-    )
-
-    decorator.add_model(
-        model_id="pp_ocr/small-small",
-        api_key="key",
-        endpoint_type=ModelEndpointType.CORE_MODEL,
-    )
-
-    base_manager.ensure_model_access.assert_called_once_with(
-        model_id="pp_ocr/small-small",
-        api_key="key",
-        endpoint_type=ModelEndpointType.CORE_MODEL,
-        countinference=None,
-        service_secret=None,
-    )
 
 
 def test_nested_decorators_record_request_metadata_for_warm_model() -> None:

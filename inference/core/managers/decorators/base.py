@@ -47,22 +47,6 @@ class ModelManagerDecorator(ModelManager):
     def init_pingback(self):
         self.model_manager.init_pingback()
 
-    def ensure_model_access(
-        self,
-        model_id: str,
-        api_key: str,
-        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
-        countinference: Optional[bool] = None,
-        service_secret: Optional[str] = None,
-    ) -> None:
-        self.model_manager.ensure_model_access(
-            model_id=model_id,
-            api_key=api_key,
-            endpoint_type=endpoint_type,
-            countinference=countinference,
-            service_secret=service_secret,
-        )
-
     @property
     def pingback(self):
         return self.model_manager.pingback
