@@ -12,9 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import supervision as sv
-import torch
-
-HOST_TRACKER_IDS_KEY = "__tracktors_host_tracker_ids__"
 
 
 @dataclass(slots=True)
@@ -39,7 +36,9 @@ class _TrackerRequest:
 class TrackerBatchScheduler:
     """Collect compatible tracker calls and execute one Tracktors batch."""
 
-    def __init__(self, *, batch_window_ms: float = 0.0, max_batch_size: int = 32) -> None:
+    def __init__(
+        self, *, batch_window_ms: float = 0.0, max_batch_size: int = 32
+    ) -> None:
         if not 0.0 <= batch_window_ms <= 2.0:
             raise ValueError("batch_window_ms must be between 0 and 2")
         if max_batch_size < 1:
@@ -50,6 +49,7 @@ class TrackerBatchScheduler:
         self._pending: deque[_TrackerRequest] = deque()
         self._closed = False
         self._executor: Any | None = None
+        self._execution_lock = threading.Lock()
         self._worker = threading.Thread(
             target=self._run,
             name="tracktors-batch-scheduler",
@@ -81,6 +81,32 @@ class TrackerBatchScheduler:
             self._condition.notify()
         return future.result()
 
+    def execute_batch(
+        self,
+        trackers: list[Any],
+        detections: list[sv.Detections],
+        *,
+        frames: list[Any | None],
+        timestamps: list[float | None],
+    ) -> list[sv.Detections]:
+        """Execute one explicit SIMD batch with the persistent CUDA executor."""
+        import tracktors
+
+        with self._execution_lock:
+            if self._executor is None:
+                executor_type = getattr(tracktors, "CUDABatchExecutor", None)
+                if executor_type is not None:
+                    self._executor = executor_type(
+                        max_workers=self.max_batch_size,
+                    )
+            return tracktors.update_batch(
+                trackers,
+                detections,
+                frames=frames,
+                timestamps=timestamps,
+                executor=self._executor,
+            )
+
     def close(self) -> None:
         """Stop accepting work and fail requests that have not started."""
         with self._condition:
@@ -94,9 +120,10 @@ class TrackerBatchScheduler:
             request.future.set_exception(RuntimeError("tracker batch scheduler closed"))
         if threading.current_thread() is not self._worker:
             self._worker.join()
-        if self._executor is not None:
-            self._executor.close()
-            self._executor = None
+        with self._execution_lock:
+            if self._executor is not None:
+                self._executor.close()
+                self._executor = None
 
     def _take_batch(self) -> list[_TrackerRequest]:
         with self._condition:
@@ -137,57 +164,22 @@ class TrackerBatchScheduler:
                     return
                 continue
             try:
-                import tracktors
-
-                if self._executor is None:
-                    executor_type = getattr(tracktors, "CUDABatchExecutor", None)
-                    if executor_type is not None:
-                        self._executor = executor_type(
-                            max_workers=self.max_batch_size,
-                        )
-
-                outputs = tracktors.update_batch(
+                outputs = self.execute_batch(
                     [request.tracker for request in batch],
                     [request.detections for request in batch],
                     frames=[request.frame for request in batch],
                     timestamps=[request.timestamp for request in batch],
-                    executor=self._executor,
                 )
                 if len(outputs) != len(batch):
                     raise RuntimeError(
                         "tracktors.update_batch returned the wrong number of results"
                     )
-                self._materialize_tracker_ids(outputs)
             except BaseException as error:
                 for request in batch:
                     request.future.set_exception(error)
             else:
                 for request, output in zip(batch, outputs):
                     request.future.set_result(output)
-
-    @staticmethod
-    def _materialize_tracker_ids(outputs: list[sv.Detections]) -> None:
-        """Transfer tracker IDs once for the whole batch's object metadata."""
-        tensors: list[torch.Tensor] = []
-        lengths: list[int] = []
-        for output in outputs:
-            tracker_ids = getattr(output, "tracker_id", None)
-            if not isinstance(tracker_ids, torch.Tensor):
-                return
-            tensors.append(tracker_ids.reshape(-1))
-            lengths.append(tracker_ids.numel())
-        if not tensors:
-            return
-        packed = torch.cat(tensors) if len(tensors) > 1 else tensors[0]
-        host_values = packed.detach().to("cpu").tolist()
-        offset = 0
-        for output, length in zip(outputs, lengths):
-            data = getattr(output, "data", None)
-            if data is None:
-                data = {}
-                output.data = data
-            data[HOST_TRACKER_IDS_KEY] = host_values[offset : offset + length]
-            offset += length
 
 
 _GLOBAL_SCHEDULER: TrackerBatchScheduler | None = None

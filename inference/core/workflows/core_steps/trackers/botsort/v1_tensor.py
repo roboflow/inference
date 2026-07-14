@@ -12,6 +12,7 @@ from inference.core.workflows.core_steps.trackers._base_tensor import (
     tracker_describe_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -234,6 +235,10 @@ class BoTSORTManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["image", "detections"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return tracker_describe_outputs()
 
@@ -300,8 +305,11 @@ class BoTSORTBlockV1(TrackerBlockBase):
 
     def run(
         self,
-        image: WorkflowImageData,
-        detections: TensorNativeTrackerPrediction,
+        image: Union[WorkflowImageData, Batch[WorkflowImageData]],
+        detections: Union[
+            TensorNativeTrackerPrediction,
+            Batch[TensorNativeTrackerPrediction],
+        ],
         lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
         minimum_iou_threshold_first_assoc: float = DEFAULT_MINIMUM_IOU_THRESHOLD_FIRST_ASSOC,
         minimum_iou_threshold_second_assoc: float = DEFAULT_MINIMUM_IOU_THRESHOLD_SECOND_ASSOC,
@@ -317,7 +325,7 @@ class BoTSORTBlockV1(TrackerBlockBase):
         cmc_downscale: int = DEFAULT_CMC_DOWNSCALE,
         instant_first_frame_activation: bool = DEFAULT_INSTANT_FIRST_FRAME_ACTIVATION,
     ) -> BlockResult:
-        return self._run_tracker(
+        return self._run_tracker_auto(
             image=image,
             detections=detections,
             instances_cache_size=instances_cache_size,

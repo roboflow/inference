@@ -10,6 +10,7 @@ from inference.core.workflows.core_steps.trackers._base_tensor import (
     tracker_describe_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -169,6 +170,10 @@ class OCSORTManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["image", "detections"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return tracker_describe_outputs()
 
@@ -202,8 +207,11 @@ class OCSORTBlockV1(TrackerBlockBase):
 
     def run(
         self,
-        image: WorkflowImageData,
-        detections: TensorNativeTrackerPrediction,
+        image: Union[WorkflowImageData, Batch[WorkflowImageData]],
+        detections: Union[
+            TensorNativeTrackerPrediction,
+            Batch[TensorNativeTrackerPrediction],
+        ],
         lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
         minimum_iou_threshold: float = DEFAULT_MINIMUM_IOU_THRESHOLD,
         minimum_consecutive_frames: int = DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
@@ -212,7 +220,7 @@ class OCSORTBlockV1(TrackerBlockBase):
         direction_consistency_weight: float = DEFAULT_DIRECTION_CONSISTENCY_WEIGHT,
         delta_t: int = DEFAULT_DELTA_T,
     ) -> BlockResult:
-        return self._run_tracker(
+        return self._run_tracker_auto(
             image=image,
             detections=detections,
             instances_cache_size=instances_cache_size,
