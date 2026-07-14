@@ -649,7 +649,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libtiff5 \
     libgomp1 \
     python3 \
-    python3-pip \
     libxext6 \
     libvips42 \
     libsm6 \
@@ -672,11 +671,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     zlib1g-dev \
     libxml2-dev && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip && \
     python --version && \
-    python3 --version && \
-    pip --version && \
-    pip3 --version
+    python3 --version
 
 # No system GDAL: rasterio (the only GDAL consumer, via requirements.sam.txt)
 # installs as a manylinux wheel with its own bundled libgdal/libproj/gdal-data;
@@ -783,6 +779,9 @@ COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info 
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/lib/python3.10/dist-packages/tensorrt_lean
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
+COPY --from=builder /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.10 /usr/local/bin/
+
+RUN pip --version && pip3 --version && python3 -m pip --version
 
 ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages
 
