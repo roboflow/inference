@@ -177,17 +177,10 @@ class DetectionOffsetBlockV1(WorkflowBlock):
 
 
 def _read_image_dimensions(detections: TensorNativeDetections) -> tuple:
-    """Return ``(height, width)`` from the prediction's ``image_metadata``.
-
-    The numpy block read a per-detection ``data["image_dimensions"]`` table, but
-    natively a single ``[height, width]`` pair lives on ``image_metadata`` and is
-    shared across every box of the prediction (all boxes belong to one image).
-
-    Raises when ``IMAGE_DIMENSIONS_KEY`` is absent — the numpy sibling indexed
-    ``detections.data["image_dimensions"]`` and would ``KeyError`` in that case,
-    so this raises for strict numpy parity (rather than degrading to an
-    un-clamped offset).
-    """
+    """Return ``(height, width)`` from the prediction's ``image_metadata`` (one
+    ``[height, width]`` pair shared by every box of the prediction). Raises when
+    ``IMAGE_DIMENSIONS_KEY`` is absent rather than degrading to an un-clamped
+    offset."""
     image_metadata = detections.image_metadata or {}
     image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
     if image_dimensions is None:
@@ -207,9 +200,9 @@ def _offset_xyxy(
     image_width: Optional[int],
     use_percentage: bool,
 ) -> torch.Tensor:
-    """Expand each box outward, clamped to image bounds - the torch equivalent of
-    the numpy list-comprehension in v1. Percentage mode pads by a fraction of each
-    box's own width/height; pixel mode pads by a fixed (offset // 2) on each side."""
+    """Expand each box outward, clamped to image bounds. Percentage mode pads by
+    a fraction of each box's own width/height; pixel mode pads by a fixed
+    (offset // 2) on each side."""
     x1 = xyxy[:, 0]
     y1 = xyxy[:, 1]
     x2 = xyxy[:, 2]
@@ -238,10 +231,8 @@ def _rebuild_detections(
     new_xyxy: torch.Tensor,
     new_bboxes_metadata: Optional[List[dict]],
 ) -> TensorNativeDetections:
-    """Rebuild a native ``Detections`` / ``InstanceDetections`` with offset boxes,
-    carrying class_id / confidence / mask / image_metadata unchanged (offset only
-    touches coordinates - classes, confidences and masks are preserved, exactly
-    like the numpy block)."""
+    """Rebuild a native ``Detections`` / ``InstanceDetections`` with offset boxes;
+    class_id / confidence / mask / image_metadata are carried unchanged."""
     if isinstance(detections, InstanceDetections):
         return InstanceDetections(
             xyxy=new_xyxy,
@@ -267,9 +258,7 @@ def _offset_bboxes_metadata(
     detection_id_key: str,
 ) -> List[dict]:
     """Set each box's parent_id to its prior detection_id and mint a fresh
-    detection_id - the native equivalent of the numpy block's
-    ``_detections[parent_id_key] = detections[detection_id_key].copy()`` plus
-    ``_detections[detection_id_key] = [uuid4() ...]``."""
+    detection_id."""
     existing = detections.bboxes_metadata or [{} for _ in range(number_of_detections)]
     new_metadata = []
     for index in range(number_of_detections):
@@ -290,12 +279,9 @@ def offset_detections(
 ) -> TensorNativePrediction:
     if prediction is None:
         return prediction
-    # The keypoint-detection kind arrives as (KeyPoints, Optional[Detections]); the
-    # boxes live on the Detections component. Standalone Detections /
-    # InstanceDetections carry boxes directly. The keypoints themselves are left
-    # untouched (offset only changes boxes) and re-wrapped onto the output. A
-    # tuple with a missing/empty bbox component is returned unchanged (mirrors the
-    # numpy block's `len == 0` early-out).
+    # Only boxes are offset — keypoints are left untouched and re-wrapped onto
+    # the output. A prediction with a missing/empty bbox component is returned
+    # unchanged.
     if isinstance(prediction, tuple):
         key_points, detections = prediction
     else:

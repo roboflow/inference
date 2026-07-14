@@ -150,10 +150,6 @@ class ClipComparisonBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         texts: List[str],
     ) -> BlockResult:
-        # Tensor-native local path: embed image (tensor_image) and texts through
-        # the CLIP adapter's run_tensor_native_inference (torch, on-device), then
-        # compute the cosine similarities in torch. The text embedding is shared
-        # across the image batch.
         clip_model_id = f"clip/{CLIP_VERSION_ID}"
         self._model_manager.add_model(
             clip_model_id,

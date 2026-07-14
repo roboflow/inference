@@ -209,9 +209,8 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
             self._object_paths[video_id] = {}
 
         # sv anchor resolution is numpy-based: materialise a minimal sv.Detections
-        # (only box coordinates are needed) and reuse get_anchors_coordinates so the
-        # anchor points match numpy exactly. The returned points are aligned to the
-        # input order.
+        # (only box coordinates are needed) and reuse get_anchors_coordinates.
+        # The returned points are aligned to the input order.
         sv_input = sv.Detections(
             xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
         )
@@ -231,10 +230,8 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
             box_metadata[PATH_DEVIATION_KEY_IN_SV_DETECTIONS] = float(frechet_distance)
             new_bboxes_metadata.append(box_metadata)
 
-        # Copy-on-write: do not mutate the caller's native object (numpy sibling
-        # built a fresh object via sv.Detections.merge). dataclasses.replace keeps
-        # the tensors/masks shared by reference and only swaps the bboxes_metadata
-        # list.
+        # Do not mutate the caller's native object: dataclasses.replace keeps the
+        # tensors/masks shared by reference and only swaps the bboxes_metadata list.
         result_detections = dataclass_replace(
             detections, bboxes_metadata=new_bboxes_metadata
         )

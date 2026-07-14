@@ -187,11 +187,9 @@ class _VideoVelocityState:
     """Device-resident velocity state for one video.
 
     Positions and smoothed velocities stay torch tensors on the prediction's
-    device across frames - the state never round-trips through host memory.
-    Only the row bookkeeping (tracker_id -> row) and the absolute timestamps
-    live on host: timestamps are per-frame python floats by origin, and unix
-    epochs do not fit float32 (~100 s resolution at 1.7e9) while MPS offers no
-    float64 tensor to hold them.
+    device across frames. Row bookkeeping (tracker_id -> row) and absolute
+    timestamps stay on host: unix epochs do not fit float32 (~100 s resolution
+    at 1.7e9) and MPS has no float64 tensors.
     """
 
     def __init__(self) -> None:
@@ -208,7 +206,6 @@ class _VideoVelocityState:
 
 class VelocityBlockV1(WorkflowBlock):
     def __init__(self):
-        # Per-video device-tensor state (see _VideoVelocityState).
         self._states: Dict[str, _VideoVelocityState] = {}
 
     @classmethod
@@ -224,9 +221,8 @@ class VelocityBlockV1(WorkflowBlock):
         smoothing_alpha: float,
         pixels_per_meter: float,
     ) -> BlockResult:
-        # Keypoint predictions arrive as a (KeyPoints, Detections) tuple; velocity
-        # only needs the bbox component. Keep the keypoints to re-wrap the output
-        # (velocity preserves detection order, so the components stay aligned).
+        # The keypoint kind is a (KeyPoints, Detections) tuple; velocity uses the
+        # bbox component and preserves row order, so the components stay aligned.
         key_points, detections = split_key_point_prediction(detections)
         num_detections = int(detections.xyxy.shape[0])
         bboxes_metadata = detections.bboxes_metadata
@@ -287,12 +283,10 @@ class VelocityBlockV1(WorkflowBlock):
     ) -> None:
         """Vectorised on-device velocity update.
 
-        All geometry (centers, displacement, EMA smoothing, unit conversion)
-        runs as torch ops on the prediction's device; the per-row previous
-        state is gathered from the device-resident tensors. The ONLY
-        device->host transfer is the single batched `.cpu()` of the (N, 6)
-        result block at the end - required because the block's output contract
-        stores velocities as python floats in ``bboxes_metadata``.
+        Geometry (centers, displacement, EMA smoothing, unit conversion) runs
+        as torch ops on the prediction's device. The only device->host transfer
+        is the single batched ``.cpu()`` of the (N, 6) result block: the output
+        contract stores velocities as python floats in ``bboxes_metadata``.
         """
         xyxy = detections.xyxy.detach()
         device = xyxy.device
@@ -301,8 +295,7 @@ class VelocityBlockV1(WorkflowBlock):
             xyxy[:, :2].to(torch.float32) + xyxy[:, 2:].to(torch.float32)
         ) * 0.5  # (N, 2)
 
-        # Host-side bookkeeping: tracker ids and timestamps are host data by
-        # origin, so none of this touches the device.
+        # Host-side bookkeeping: tracker ids and timestamps are host data.
         known_flags = [
             tracker_id in state.rows_by_tracker for tracker_id in tracker_ids
         ]
@@ -333,9 +326,8 @@ class VelocityBlockV1(WorkflowBlock):
         )  # pixels per second, (N, 2)
         speed = torch.linalg.vector_norm(velocity, dim=1)  # (N,)
         # EMA smoothing: known trackers blend with their previous smoothed
-        # velocity; new trackers initialise with the current velocity. The
-        # state keeps UNCONVERTED (pixels/s) values, exactly like the numpy
-        # sibling - unit conversion applies to outputs only.
+        # velocity; new trackers initialise with the current velocity. State
+        # keeps unconverted pixels/s values; unit conversion applies to outputs only.
         smoothed_velocity = torch.where(
             known.unsqueeze(1),
             smoothing_alpha * velocity + (1 - smoothing_alpha) * previous_smoothed,
@@ -343,8 +335,7 @@ class VelocityBlockV1(WorkflowBlock):
         )
         smoothed_speed = torch.linalg.vector_norm(smoothed_velocity, dim=1)
 
-        # The single batched device->host hop: the output contract stores per-box
-        # python floats in bboxes_metadata.
+        # The single batched device->host hop.
         results = (
             torch.cat(
                 [
@@ -364,9 +355,8 @@ class VelocityBlockV1(WorkflowBlock):
             box_metadata[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS] = [row[3], row[4]]
             box_metadata[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS] = row[5]
 
-        # State update - stays on device. Trackers absent from this frame keep
-        # their previous position/timestamp/smoothing (they may reappear), same
-        # as the numpy sibling's dict semantics.
+        # State update stays on device. Trackers absent from this frame keep
+        # their previous position/timestamp/smoothing (they may reappear).
         current_set = set(tracker_ids)
         survivors = [
             (tracker_id, row)

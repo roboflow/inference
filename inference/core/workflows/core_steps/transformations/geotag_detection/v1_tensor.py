@@ -1,21 +1,11 @@
-"""Tensor-native sibling of ``geotag_detection/v1.py``, loaded when
-``ENABLE_TENSOR_DATA_REPRESENTATION`` is on.
+"""Tensor-native sibling of ``geotag_detection/v1.py``.
 
-Differences vs the numpy source:
-
-- ``predictions`` arrive as native ``inference_models`` ``Detections`` /
-  ``InstanceDetections`` (torch tensors + metadata side-channels), not
-  ``sv.Detections``. Boxes / confidences / class ids are pulled to host in one
-  DtoH copy per tensor; the per-box class name is resolved from
-  ``bboxes_metadata[i][CLASS_NAME_KEY]`` when a producer attached an explicit
-  per-box label (C1 convention), otherwise from the per-image
-  ``image_metadata[CLASS_NAMES_KEY]`` class_id -> name map. When neither is
-  available the record degrades to ``"unknown"`` - mirroring the numpy block
-  when ``class_name`` is absent from ``sv.Detections.data``.
-- Image dimensions are read via ``_read_shape_without_materialization()`` so a
-  tensor-only input image is not copied to host just to obtain its shape.
-- Outputs are plain dicts / GeoJSON (no prediction kinds), so the serialized
-  workflow output is identical to the numpy sibling.
+Boxes / confidences / class ids are pulled to host in one DtoH copy per tensor.
+The per-box class name resolves from ``bboxes_metadata[i][CLASS_NAME_KEY]`` when
+present, else from the per-image ``image_metadata[CLASS_NAMES_KEY]``
+class_id -> name map, else degrades to ``"unknown"``. Image dimensions are read
+via ``_read_shape_without_materialization()`` so a tensor-only image is not
+copied to host just for its shape.
 """
 
 import math
@@ -239,9 +229,8 @@ def project_detections(
     bboxes_metadata = predictions.bboxes_metadata or [
         {} for _ in range(detections_number)
     ]
-    # Materialise to float32 numpy (the dtype sv.Detections carries) so the
-    # projection arithmetic promotes EXACTLY like the numpy sibling - unpacking
-    # through Python floats instead changes the lat/lon low-order decimals.
+    # Keep the boxes as float32 numpy for the projection arithmetic — unpacking
+    # through Python floats changes the lat/lon low-order decimals.
     boxes = predictions.xyxy.detach().to("cpu").numpy()
     confidences = (
         predictions.confidence.detach().to("cpu").numpy()

@@ -1,10 +1,8 @@
 """
-Tensor-native sibling of ``stitch_detections_non_batch.py``.
-
-Same native logic as the batch sibling: read the crop origin from each prediction's
-``image_metadata[PARENT_COORDINATES_KEY]``, shift ``xyxy`` with torch arithmetic,
-concatenate the per-crop native ``Detections`` into one. The ``BlockManifest`` is
-reused verbatim from the numpy module.
+Tensor-native sibling of ``stitch_detections_non_batch.py``: shifts each crop's
+``xyxy`` by the origin stored per-image in
+``image_metadata[PARENT_COORDINATES_KEY]``, then concatenates the per-crop
+``Detections``.
 
 This is just example, test implementation, please do not assume it being fully functional.
 """

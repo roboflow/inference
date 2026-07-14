@@ -151,8 +151,8 @@ def take_static_crop(
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
-    # Clamp to image bounds before slicing (mirrors the numpy block) - negative
-    # indices would otherwise wrap on BOTH the torch and numpy slicing paths.
+    # Clamp to image bounds before slicing — negative indices would otherwise
+    # wrap on both the torch and numpy slicing paths.
     image_height, image_width = image._read_shape_without_materialization()
     x_min = max(0, x_min)
     y_min = max(0, y_min)
@@ -172,8 +172,8 @@ def take_static_crop(
             offset_y=y_min,
             preserve_video_metadata=True,
         )
-    # Only numpy is materialised — slice on the host and emit a numpy-backed crop
-    # (mirrors the numpy block) instead of forcing a full-image numpy->device conversion.
+    # Only numpy is materialised — slice on the host and emit a numpy-backed
+    # crop; no full-image numpy->device conversion is forced.
     cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
     if cropped_image.size == 0:
         return None

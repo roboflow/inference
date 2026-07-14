@@ -282,11 +282,10 @@ class WorkflowImageData:
 
     Mutation contract: representations may be cached simultaneously (fan-out
     readers alternate between them for free) and are exposed as the raw mutable
-    buffers - legacy blocks mutate ``numpy_image`` in place by design (e.g.
-    visualizations with ``copy_image=False``), and the class does not police
-    that: blind in-place mutation has never been safe here and clients know the
-    limitation. A client that mutates a representation in place MUST fetch the
-    buffer via the property, mutate it, and then declare the mutation via
+    buffers - legacy blocks mutate ``numpy_image`` in place (e.g. visualizations
+    with ``copy_image=False``) and the class does not police that. A client
+    that mutates a representation in place MUST fetch the buffer via the
+    property, mutate it, and then declare the mutation via
     ``declare_numpy_image_mutated()`` / ``declare_tensor_image_mutated()``.
     Declaring makes the mutated representation the SOLE source of truth: the
     derived sibling caches are removed so later readers re-derive from the
@@ -295,7 +294,7 @@ class WorkflowImageData:
     serialization must never hand it out. A ``base64_image`` access AFTER the
     declare re-encodes from the mutated pixels - that re-derived value is
     valid and cached again. Undeclared in-place mutation leaves sibling caches
-    stale - the same caveat the numpy + base64 pair has always had."""
+    stale."""
 
     def __init__(
         self,
@@ -595,7 +594,6 @@ class WorkflowImageData:
             # source decodes DIRECTLY into a CHW RGB tensor - no numpy hop and
             # nothing cached besides the tensor itself.
             chw = self._decode_source_to_tensor()
-        # Allocated on the globally configured WORKFLOWS_IMAGE_TENSOR_DEVICE.
         self._tensor_image = chw.contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
         return self._tensor_image
 

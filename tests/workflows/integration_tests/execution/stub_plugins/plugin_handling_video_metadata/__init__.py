@@ -92,8 +92,7 @@ class TrackerBlock(WorkflowBlock):
             tracker_input = deepcopy(predictions)
         else:
             # Under ENABLE_TENSOR_DATA_REPRESENTATION predictions is a native
-            # (torch-backed) inference_models.Detections, which sv.ByteTrack cannot
-            # subscript. Materialise it to sv.Detections at the boundary.
+            # inference_models.Detections; materialise it for sv.ByteTrack.
             tracker_input = sv.Detections(
                 xyxy=predictions.xyxy.detach().cpu().numpy(),
                 class_id=predictions.class_id.detach().cpu().numpy(),

@@ -313,8 +313,7 @@ def _repackage_masks(
     original_mask: Union[torch.Tensor, InstancesRLEMasks],
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
     """Match the output mask representation to the input — dense in, dense out;
-    RLE in, RLE out — so the rest of the tensor pipeline keeps the same storage
-    shape it had upstream (mirrors the bounding_rect tensor sibling)."""
+    RLE in, RLE out — so downstream keeps the upstream storage shape."""
     if isinstance(original_mask, torch.Tensor):
         return torch.from_numpy(new_dense_masks).to(
             device=original_mask.device, dtype=original_mask.dtype
@@ -363,12 +362,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 continue
             number_of_detections = int(detections.xyxy.shape[0])
             if number_of_detections == 0:
-                # Empty-but-typed instance-segmentation input (0 rows, mask
-                # present as an empty (0, H, W) dense tensor or empty-RLE carrier)
-                # is a legitimate upstream output. The per-instance loop would
-                # never run and ``np.stack([])`` would raise; return an empty
-                # InstanceDetections that preserves image_metadata + the original
-                # mask carrier, with convergence reported as True.
+                # Empty-but-typed input (0 rows, empty mask carrier) is a
+                # legitimate upstream output: return an empty InstanceDetections
+                # preserving image_metadata + the original mask carrier, with
+                # convergence reported as True.
                 result.append(
                     {
                         OUTPUT_KEY: [],
@@ -392,8 +389,6 @@ class DynamicZonesBlockV1(WorkflowBlock):
             new_bboxes_metadata: List[dict] = []
             all_converged = True
             for i in range(number_of_detections):
-                # materialise this instance's mask as a dense (H, W) bool numpy
-                # array (handles dense torch + InstancesRLEMasks)
                 mask = instance_mask_to_numpy(detections, i)
 
                 contours = sv.mask_to_polygons(mask)
@@ -426,13 +421,9 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     scale=scale_ratio,
                 )
                 # The stored per-box polygon carries the SCALED (original image
-                # resolution) coordinates - mirrors the numpy block, which since
-                # PR #2614 assigns POLYGON_KEY after scale_polygon. The value is
-                # the (V, 2) polygon itself: numpy's `np.array([polygon])` is an
-                # sv COLUMN assignment whose per-ROW value is (V, 2), and the
-                # tensor serializer reads bboxes_metadata per box, so wrapping
-                # in an extra batch dim here would nest the serialized field
-                # and bypass the declared-polygon fast path.
+                # resolution) coordinates, as the bare (V, 2) polygon — an extra
+                # batch dim would nest the serialized field and bypass the
+                # declared-polygon fast path.
                 per_box_meta = {
                     **(existing_meta[i] or {}),
                     POLYGON_KEY_IN_SV_DETECTIONS: np.array(simplified_polygon),

@@ -133,8 +133,7 @@ def test_torch_mask_selection_on_keypoint_tuple_preserves_auxiliary_tensors() ->
 
 
 def test_mismatched_length_torch_mask_keeps_legacy_index_semantics() -> None:
-    # given - a shorter mask, which the legacy implementation treated as "the
-    # nonzero positions become indices"
+    # given - a shorter mask: its nonzero positions are treated as indices
     detections = _detections()
 
     # when
@@ -149,7 +148,7 @@ def test_index_selection_can_reorder_rows() -> None:
     # given
     detections = _detections()
 
-    # when - masks cannot reorder, index lists can (and always could)
+    # when - masks cannot reorder, index lists can
     result = take_prediction_by_indices(detections, [2, 0])
 
     # then
@@ -177,7 +176,7 @@ def test_torch_mask_selection_stays_on_device() -> None:
         on_device, torch.tensor([True, False, True], device=device)
     )
 
-    # then - selection happened on the device; results never left it
+    # then - results stay on the device
     assert result.xyxy.device.type == "mps"
     assert result.class_id.device.type == "mps"
     assert [m["detection_id"] for m in result.bboxes_metadata] == ["d0", "d2"]

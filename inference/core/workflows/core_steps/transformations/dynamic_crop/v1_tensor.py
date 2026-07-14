@@ -1,36 +1,12 @@
 """Tensor-native sibling of ``roboflow_core/dynamic_crop@v1``.
 
-Under ENABLE_TENSOR_DATA_REPRESENTATION this block CONSUMES a native detection
-prediction (``inference_models.Detections`` / ``InstanceDetections`` / the
-keypoint-detection tuple ``Tuple[KeyPoints, Optional[Detections]]``) and PRODUCES
-a batch of image crops (one per detection) plus, per crop, the SAME-shaped native
-prediction translated into the crop's coordinate frame.
-
-The numpy sibling (``.../dynamic_crop/v1.py``) does sv-shaped work that breaks on
-native inputs:
-- ``detections.data`` (detection-id contract check, keypoints/polygon/obb keys),
-- ``detections.xyxy.round().astype`` (numpy on a torch tensor),
-- ``detections.mask[idx]`` indexing / ``detections[idx]`` row slicing,
-- ``dataclasses.replace`` + ``sv.move_boxes`` to translate the slice.
-
-Here every one of those is reimplemented natively:
-- ``xyxy`` is read off the torch tensor (rounded to int via torch);
-- the image is cropped from ``image.tensor_image`` (CHW) like the
-  ``absolute_static_crop`` tensor sibling;
-- each per-detection prediction is sliced via ``take_prediction_by_indices``
-  (preserves masks / per-box metadata / keypoints metadata) and then translated
-  by ``(-x_min, -y_min)`` across every geometry field: ``xyxy`` (torch), dense /
-  RLE masks (cropped to the box), the ``KeyPoints.xy`` tensor, and the flattened
-  ``keypoints_xy`` / ``polygon`` / ``xyxyxyxy`` (OBB) entries in
-  ``bboxes_metadata``.
-
-The detection-id contract is enforced against ``bboxes_metadata[i][detection_id]``
-(there is no ``.data``); the crop child is built with
-``WorkflowImageData.create_crop_from_tensor`` so it stays on-device.
-
-Only this file is created. The manifest is identical to the numpy sibling except
-the input/output detection kinds are the ``TENSOR_NATIVE_*`` equivalents; the
-tensor serialiser already handles native ``Detections`` / ``InstanceDetections``.
+Consumes a native detection prediction (``Detections`` / ``InstanceDetections`` /
+``Tuple[KeyPoints, Optional[Detections]]``) and produces one crop per detection
+plus the same-shaped prediction translated into the crop's coordinate frame:
+``xyxy``, masks (cropped to the box), ``KeyPoints.xy`` and the flattened
+``keypoints_xy`` / ``polygon`` / OBB metadata entries are all offset by
+``(-x_min, -y_min)``. Tensor-backed crops stay on-device via
+``WorkflowImageData.create_crop_from_tensor``.
 """
 
 from copy import deepcopy
@@ -80,9 +56,6 @@ from inference_models.models.common.rle_utils import (
     torch_mask_to_coco_rle,
 )
 
-# Native tensor-data input/output shapes. The keypoint-detection kind arrives as a
-# Tuple[KeyPoints, Optional[Detections]]; both the KeyPoints and the bbox Detections
-# components are sliced/translated consistently per crop.
 TensorNativeDetections = Union[Detections, InstanceDetections]
 KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
 TensorNativePrediction = Union[Detections, InstanceDetections, KeyPointPrediction]
@@ -267,15 +240,13 @@ def crop_image(
             f"Detections object passed to crop step do not fulfill contract - lack of "
             f"{detection_id_key} key in per-detection metadata."
         )
-    # Round to int with torch, then materialise the (n, 4) corner ints to host once.
+    # Materialise all (n, 4) corner ints to host in one transfer.
     xyxy_int = bbox_detections.xyxy.round().to(torch.int64).detach().to("cpu").numpy()
-    # tensor_image is CHW; clamp box corners to the image bounds so a box that
-    # extends past an edge does not slice with a negative index (torch, like numpy,
-    # would treat a negative start as "from the end") and so the (-x_min, -y_min)
-    # translation offset stays consistent with the actually-cropped region.
-    # Use the representation already materialised on the image to avoid forcing a
-    # numpy->device conversion just to crop: slice the tensor (CHW) when present, else
-    # the numpy frame (HWC). Dimensions come from whichever rep is materialised.
+    # Clamp corners to image bounds: a negative start index would slice from the
+    # end, and clamping keeps the (-x_min, -y_min) translation consistent with the
+    # actually-cropped region. Crop whichever representation is already
+    # materialised (CHW tensor or HWC numpy) to avoid forcing a numpy->device
+    # conversion.
     use_tensor = image.is_tensor_materialised()
     if use_tensor:
         image_height = int(image.tensor_image.shape[1])
@@ -340,13 +311,9 @@ def _crop_region(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
 ) -> Optional[WorkflowImageData]:
-    """Crop one detection's region from whichever image representation is materialised.
-
-    Tensor path: slice CHW on-device, optional on-device mask overlay, emit a
-    tensor-backed crop. Numpy path (no materialised tensor): slice HWC on the host,
-    optional numpy mask overlay, emit a numpy-backed crop — so no full-image
-    numpy->device conversion is forced. Returns None for an empty (out-of-bounds) box.
-    """
+    """Crop one detection's region from whichever image representation is
+    materialised (CHW tensor on-device, else HWC numpy on host — no forced
+    numpy->device conversion). Returns None for an empty (out-of-bounds) box."""
     x_min, y_min, x_max, y_max = box
     if use_tensor:
         cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
@@ -413,15 +380,11 @@ def _translate_single_prediction(
     x_max: int,
     y_max: int,
 ) -> TensorNativePrediction:
-    """Slice the prediction down to a single detection ``index`` and translate every
-    geometry field into the crop's coordinate frame (offset ``(-x_min, -y_min)``).
-
-    Returns the SAME shape as the input (``Detections`` / ``InstanceDetections`` /
-    keypoint tuple), mirroring the numpy block's ``replace(...)`` behaviour: xyxy is
-    shifted, dense / RLE masks are cropped to the box, and the flattened
-    ``keypoints_xy`` / ``polygon`` / OBB metadata plus the ``KeyPoints.xy`` tensor are
-    offset.
-    """
+    """Slice the prediction down to a single detection ``index`` and translate
+    every geometry field into the crop's coordinate frame (offset
+    ``(-x_min, -y_min)``): xyxy is shifted, dense / RLE masks are cropped to the
+    box, and the flattened ``keypoints_xy`` / ``polygon`` / OBB metadata plus the
+    ``KeyPoints.xy`` tensor are offset. Returns the same shape as the input."""
     single = take_prediction_by_indices(prediction=prediction, indices=[index])
     is_tuple = isinstance(single, tuple)
     key_points = None
@@ -459,11 +422,10 @@ def _offset_metadata_geometry(
     x_min: int,
     y_min: int,
 ) -> None:
-    """Translate the flattened geometry entries that ride in per-box metadata:
-    ``keypoints_xy`` (list of [x, y]), ``polygon`` (list of [x, y]), and the OBB
-    ``xyxyxyxy`` corners. Numpy is used purely for the elementwise subtraction; values
-    are written back in their original list/array container so the serialiser keeps
-    working. Mirrors the numpy block's ``data``-key offsets (lines 251-267)."""
+    """Translate the flattened geometry entries in per-box metadata —
+    ``keypoints_xy``, ``polygon``, and the OBB ``xyxyxyxy`` corners — writing
+    values back in their original list/array container so the serialiser keeps
+    working."""
     if not bboxes_metadata:
         return
     offset_xy = np.array([x_min, y_min])
@@ -487,18 +449,15 @@ def _offset_metadata_geometry(
 def _subtract_offset(
     value: Union[List, np.ndarray], offset_xy: np.ndarray
 ) -> Union[List, np.ndarray]:
-    """Subtract ``offset_xy`` ([x, y]) from a coordinate container, preserving whether
-    the caller stored a python list (keypoints flattened by the keypoint producer) or a
-    numpy array (sv-origin OBB / polygon). Integer coordinates stay integers after the
-    shift (the flattened ``keypoints_xy`` entries should not silently become floats)."""
+    """Subtract ``offset_xy`` ([x, y]) from a coordinate container, preserving the
+    container type (python list vs numpy array) and integer dtypes (integer
+    coordinates must not silently become floats)."""
     if value is None:
         return value
     was_list = isinstance(value, list)
     array = np.asarray(value)
     if array.size == 0:
         return value
-    # Preserve integer coordinates (e.g. keypoints stored as ints) so the shift
-    # does not coerce them to float; non-integer inputs keep float precision.
     is_integer = np.issubdtype(array.dtype, np.integer)
     if is_integer:
         shifted = array.astype(np.int64) - offset_xy.astype(np.int64)
@@ -514,11 +473,9 @@ def _crop_native_mask(
     x_max: int,
     y_max: int,
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
-    """Crop a single-instance native mask to the detection box, keeping the same carrier
-    (dense torch -> dense torch; RLE -> RLE). Mirrors the numpy block's
-    ``selected_detection.mask[:, y_min:y_max, x_min:x_max]`` slice."""
+    """Crop a single-instance native mask to the detection box, keeping the same
+    carrier (dense torch -> dense torch; RLE -> RLE)."""
     if isinstance(mask, InstancesRLEMasks):
-        # Decode the single instance, crop, re-encode as RLE for the cropped size.
         numpy_masks = coco_rle_masks_to_numpy_mask(mask)  # (1, H, W)
         cropped = numpy_masks[:, y_min:y_max, x_min:x_max]
         target_height = cropped.shape[1]
@@ -573,16 +530,12 @@ def _overlay_tensor_crop_with_mask(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
 ) -> torch.Tensor:
-    """Background-removal overlay for tensor crops, computed entirely on the crop's
-    device. Equivalent to the numpy block's ``cv2.addWeighted`` blend, but expressed
-    as a ``torch.where`` + lerp so a GPU pipeline never pays a per-crop host round trip.
-
-    Inside the instance mask the crop is kept verbatim; outside it the pixel is faded
-    toward ``background_color`` by ``mask_opacity`` (``mask_opacity * bg +
-    (1 - mask_opacity) * crop``), matching the numpy result for both regions.
-
-    ``crop`` is CHW RGB uint8; ``detection_mask_2d`` is a (H, W) bool tensor already
-    sliced to the crop box, both on the same device."""
+    """Background-removal overlay computed entirely on the crop's device (no
+    per-crop host round trip). Inside the instance mask the crop is kept verbatim;
+    outside it the pixel is faded toward ``background_color``
+    (``mask_opacity * bg + (1 - mask_opacity) * crop``). ``crop`` is CHW RGB
+    uint8; ``detection_mask_2d`` is a (H, W) bool tensor already sliced to the
+    crop box, both on the same device."""
     device = crop.device
     # convert_color_to_bgr_tuple yields BGR; the crop tensor is RGB, so reverse it.
     bgr_color = convert_color_to_bgr_tuple(color=background_color)
@@ -601,13 +554,11 @@ def _overlay_numpy_crop_with_mask(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
 ) -> np.ndarray:
-    """Numpy counterpart of ``_overlay_tensor_crop_with_mask`` for host crops.
-
-    Same blend: inside the instance mask the crop is kept verbatim; outside it the pixel
-    is faded toward ``background_color`` by ``mask_opacity``. ``crop`` is HWC BGR uint8
-    and ``convert_color_to_bgr_tuple`` already yields BGR, so the colour is used directly
-    (no channel reversal, unlike the RGB tensor path). ``detection_mask_2d`` is a (H, W)
-    bool array already sliced to the crop box."""
+    """Numpy counterpart of ``_overlay_tensor_crop_with_mask``: same blend for
+    host crops. ``crop`` is HWC BGR uint8 and ``convert_color_to_bgr_tuple``
+    already yields BGR, so the colour is used directly (no channel reversal).
+    ``detection_mask_2d`` is a (H, W) bool array already sliced to the crop
+    box."""
     bgr_color = np.asarray(
         convert_color_to_bgr_tuple(color=background_color), dtype=np.float32
     )

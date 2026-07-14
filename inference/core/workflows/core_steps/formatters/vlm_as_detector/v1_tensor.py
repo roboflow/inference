@@ -340,9 +340,8 @@ def build_image_metadata(
     inference_id: str,
     class_names: Dict[int, str],
 ) -> dict:
-    # Tensor-native predictions keep per-image state (class_names map, lineage,
-    # inference_id) on `image_metadata` instead of duplicating it across every
-    # detection row the way the numpy sv.Detections did.
+    # Per-image state (class_names map, lineage, inference_id) lives on
+    # `image_metadata`.
     parent = image.parent_metadata
     root = image.workflow_root_ancestor_metadata
     parent_coordinates = parent.origin_coordinates
@@ -384,9 +383,8 @@ def native_detections_from_parsed(
     confidence: np.ndarray,
 ) -> Detections:
     # `class_names` maps each resolved class_id -> the class name string the VLM
-    # produced (mirroring numpy's per-detection data["class_name"]); built from
-    # the (class_id, class_name) pairs actually present so the serialiser can
-    # resolve every id, including unmapped ids (class_id == -1).
+    # produced; built from the (class_id, class_name) pairs actually present so
+    # the serialiser can resolve every id, including unmapped ids (class_id == -1).
     number_of_detections = len(xyxy)
     class_names = {
         int(detection_class_id): str(detection_class_name)
@@ -399,10 +397,9 @@ def native_detections_from_parsed(
         inference_id=inference_id,
         class_names=class_names,
     )
-    # Carry the per-box VLM label string directly on bboxes_metadata[i]["class"]
-    # so distinct unmapped labels (all sharing class_id == -1) survive: the
-    # serialiser prefers this per-box label over the class_id -> name map,
-    # matching numpy's per-detection class_name parity.
+    # The per-box VLM label string is carried on bboxes_metadata[i]["class"] so
+    # distinct unmapped labels (all sharing class_id == -1) survive: the
+    # serialiser prefers this per-box label over the class_id -> name map.
     bboxes_metadata = (
         [
             {
@@ -519,9 +516,8 @@ def parse_florence2_object_detection_response(
     florence_task_type: str,
 ):
     image_height, image_width = image._read_shape_without_materialization()
-    # sv.Detections.from_lmm is used purely as the Florence-2 parsing algorithm
-    # (mirroring the numpy block); the numpy arrays it returns are read back and
-    # the output is built natively below - no sv.Detections is returned.
+    # sv.Detections.from_lmm is used purely as the Florence-2 parsing algorithm;
+    # the output is built natively from the arrays it returns.
     detections = sv.Detections.from_lmm(
         "florence_2",
         result={florence_task_type: parsed_data},
