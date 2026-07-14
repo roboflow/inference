@@ -8,7 +8,6 @@ from inference.core.workflows.core_steps.visualizations.common.base_tensor impor
     to_supervision_for_annotation,
 )
 from inference.core.workflows.core_steps.visualizations.mask.v1_tensor import (
-    _dense_crops_and_offsets,
     _gpu_composite_eligible,
     gpu_mask_composite,
 )
@@ -126,9 +125,9 @@ def test_gpu_mask_composite_pixel_parity_on_cpu_tensors() -> None:
     _assert_pixel_parity_with_sv_annotator(masks, scene, device="cpu")
 
 
-def test_gpu_composite_eligible_when_rle_carrier_lacks_gpu_side_channel() -> None:
-    # given: today's InstancesRLEMasks carries no crop_masks_gpu/crop_offsets,
-    # so the RLE branch must stay inert
+def test_gpu_composite_eligible_when_mask_carrier_is_rle() -> None:
+    # given: RLE-carrier predictions take the sv fallback — the compositor
+    # handles the dense (N, H, W) bool tensor carrier only
     masks, boxes, class_id = _single_mask_inputs()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     predictions = InstanceDetections(
@@ -173,52 +172,6 @@ def test_gpu_composite_eligible_when_dense_cuda_mask_has_wrong_dtype() -> None:
 
     # then
     assert result is False
-
-
-def test_dense_crops_and_offsets_returns_matching_crop_views() -> None:
-    # given: helper is device-agnostic, exercised on CPU tensors
-    mask = torch.zeros((2, 40, 60), dtype=torch.bool)
-    mask[0, 5:15, 10:25] = True
-    mask[1, 20:35, 30:50] = True
-    xyxy = torch.tensor(
-        [[10, 5, 24, 14], [30, 20, 49, 34]], dtype=torch.int32
-    )  # inclusive xyxy
-
-    # when
-    crops, offsets = _dense_crops_and_offsets(mask, xyxy, 40, 60)
-
-    # then
-    assert offsets == [(10, 5), (30, 20)]
-    assert crops[0].shape == (10, 15)
-    assert crops[1].shape == (15, 20)
-    assert bool(crops[0].all())
-    assert bool(crops[1].all())
-
-
-def test_dense_crops_and_offsets_clips_boxes_to_image_bounds() -> None:
-    # given: box exceeding the image on all sides
-    mask = torch.ones((1, 20, 30), dtype=torch.bool)
-    xyxy = torch.tensor([[-5, -3, 100, 100]], dtype=torch.int32)
-
-    # when
-    crops, offsets = _dense_crops_and_offsets(mask, xyxy, 20, 30)
-
-    # then: clipped to [0, W-1] x [0, H-1], inclusive
-    assert offsets == [(0, 0)]
-    assert crops[0].shape == (20, 30)
-
-
-def test_dense_crops_and_offsets_skips_degenerate_boxes() -> None:
-    # given: x2 < x1 after clipping
-    mask = torch.ones((1, 20, 30), dtype=torch.bool)
-    xyxy = torch.tensor([[15, 10, 14, 12]], dtype=torch.int32)
-
-    # when
-    crops, offsets = _dense_crops_and_offsets(mask, xyxy, 20, 30)
-
-    # then
-    assert crops == [None]
-    assert offsets == [(15, 10)]
 
 
 def _make_scene(seed: int, h: int = SCENE_H, w: int = SCENE_W) -> np.ndarray:

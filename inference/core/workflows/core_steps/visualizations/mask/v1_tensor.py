@@ -31,7 +31,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.types import InstancesRLEMasks
 
 TYPE: str = "roboflow_core/mask_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over detected objects in an image."
@@ -72,37 +71,6 @@ The annotated image from this block can be connected to:
 """
 
 
-def _dense_crops_and_offsets(mask, xyxy, img_h: int, img_w: int):
-    """Build per-instance crop views from a dense ``(N, H, W)`` bool mask.
-
-    Mirrors ``CompactMask.from_dense`` bit-for-bit: each box is clipped in the
-    supervision ``xyxy`` convention (inclusive max coords) with
-    ``x1c = clip(int(x1), 0, W-1)`` etc., and the crop is the zero-copy device
-    view ``mask[i, y1c:y2c+1, x1c:x2c+1]``. A degenerate box (``x2c < x1c`` or
-    ``y2c < y1c``) yields a ``None`` crop (painted as nothing — exactly what
-    ``from_dense``'s 1x1 all-False crop does).
-
-    Returns ``(crops, offsets)``: ``crops`` a list of bool tensor views
-    (``None`` for degenerate boxes) and ``offsets`` a list of ``(x1c, y1c)``.
-    """
-    n = int(xyxy.shape[0])
-    xyxy_cpu = xyxy.detach().cpu().numpy()
-    crops: list = []
-    offsets: list = []
-    for i in range(n):
-        x1, y1, x2, y2 = xyxy_cpu[i][0], xyxy_cpu[i][1], xyxy_cpu[i][2], xyxy_cpu[i][3]
-        x1c = int(max(0, min(int(x1), img_w - 1)))
-        y1c = int(max(0, min(int(y1), img_h - 1)))
-        x2c = int(max(0, min(int(x2), img_w - 1)))
-        y2c = int(max(0, min(int(y2), img_h - 1)))
-        offsets.append((x1c, y1c))
-        if x2c < x1c or y2c < y1c:
-            crops.append(None)  # degenerate -> skip paint (from_dense parity)
-            continue
-        crops.append(mask[i, y1c : y2c + 1, x1c : x2c + 1])
-    return crops, offsets
-
-
 def gpu_mask_composite(
     scene,
     predictions: "InstanceDetections",
@@ -113,15 +81,23 @@ def gpu_mask_composite(
 ):
     """GPU-native torch replacement for ``sv.MaskAnnotator.annotate``.
 
-    Paints per-instance mask crops into an ownership index map in EXACTLY
-    supervision's paint order (``np.flip(np.argsort(area))`` — largest first, so
-    the smallest overlapping mask wins), then alpha-blends the per-pixel winning
-    color with the scene in a single vectorised pass over the union ROI of all
-    crops. This is the painter's-algorithm equivalence: because later paints
-    overwrite earlier ones in both implementations and the paint order is
-    identical (including stable-sort tie handling — equal areas painted
-    higher-index-first so the LOWER index wins), the per-pixel winning color is
-    identical, and so is the blend.
+    Supervision's painter's algorithm (``_paint_masks_by_area``) paints masks
+    in ``np.flip(np.argsort(area))`` order — largest first — so the SMALLEST
+    overlapping mask owns each pixel. Rather than replaying that paint loop,
+    ownership is resolved in one vectorised kernel pair over the union ROI of
+    all boxes:
+
+        cost = where(mask, area_of_mask, +inf)   # (N, h, w)
+        owner = cost.argmin(dim=0)               # smallest area wins
+
+    Tie handling matches too: for equal areas ``argmin`` returns the FIRST
+    (lowest) index, and in supervision's stable flip-sort equal areas are
+    painted higher-index-first so the lower index is painted last and wins.
+    The winning color per pixel is therefore identical to the sv annotator's,
+    and so is the blend. (A loop-free "blend-all" variant — averaging every
+    overlapping mask's color instead of resolving an owner — measures ~1.5 ms
+    faster on Jetson Orin Nano but changes overlap colors and breaks sv
+    parity; rejected.)
 
     Blend rounding: ``cv2.addWeighted`` saturate-casts with ``cvRound``
     (round-half-to-even); ``torch.round_`` matches it bit-for-bit for the exact
@@ -130,20 +106,11 @@ def gpu_mask_composite(
     would diverge by 1 on ~half the odd sums. No clamp is needed: a convex
     combination of uint8 values stays in [0, 255].
 
-    Two ``predictions.mask`` carriers feed the same paint/blend core:
-
-    * ``InstancesRLEMasks`` GPU-crop side-channel — ``crop_masks_gpu`` (device
-      bool tensors) at their ``crop_offsets``, with areas read from
-      ``crop_rles`` when present. These fields do not exist on today's
-      ``InstancesRLEMasks`` and are read via ``getattr``; the branch stays
-      inert until a model-side change populates them.
-    * dense ``torch.Tensor`` ``(N, H, W)`` bool on the pipeline device — per-instance crop
-      views are built on device from ``predictions.xyxy``
-      (``CompactMask.from_dense`` inclusive-clip convention) and areas are
-      counted over those crop views (``crop.sum()``, batched into one D2H).
-      The dense mask's True pixels are contained in its box, so this equals
-      the full-mask pixel count — exactly ``sv.Detections.area`` for a dense
-      mask — without a full-stack reduce.
+    ``predictions.mask`` must be a dense ``torch.Tensor`` ``(N, H, W)`` bool on
+    the pipeline device. Its True pixels are assumed to lie inside the
+    detection's box (the tensor pipeline decodes masks per-box), so areas
+    summed over the union ROI equal the full-mask pixel counts — exactly
+    ``sv.Detections.area``.
 
     Args:
         scene: uint8 frame. With ``scene_layout="hwc_bgr"`` (default): an HWC
@@ -153,9 +120,8 @@ def gpu_mask_composite(
             any layout conversion or host round-trip. A numpy scene is never
             mutated; a TENSOR scene IS mutated in place (callers that need the
             original must pass a clone).
-        predictions: ``InstanceDetections`` whose ``mask`` is either an
-            ``InstancesRLEMasks`` (``crop_masks_gpu`` + ``crop_offsets``) or a
-            dense bool ``torch.Tensor`` ``(N, H, W)``.
+        predictions: ``InstanceDetections`` whose ``mask`` is a dense bool
+            ``torch.Tensor`` ``(N, H, W)``.
         colors_bgr: ``(N, 3)`` uint8 per-detection colors (BGR), resolved with
             the same palette logic the sv annotator would use.
         opacity: overlay opacity, matches ``sv.MaskAnnotator(opacity=...)``.
@@ -168,14 +134,7 @@ def gpu_mask_composite(
         or the device tensor when ``return_tensor=True``.
     """
     mask_carrier = predictions.mask
-    dense = isinstance(mask_carrier, torch.Tensor)
-    if dense:
-        device = mask_carrier.device
-    else:
-        crop_masks_gpu = getattr(mask_carrier, "crop_masks_gpu", None)
-        crop_offsets = getattr(mask_carrier, "crop_offsets", None)
-        crop_rles = getattr(mask_carrier, "crop_rles", None)
-        device = crop_masks_gpu[0].device
+    device = mask_carrier.device
 
     chw = scene_layout == "chw_rgb"
     if isinstance(scene, torch.Tensor):
@@ -191,69 +150,26 @@ def gpu_mask_composite(
     scene_hwc = scene_t.permute(1, 2, 0) if chw else scene_t
 
     H, W = int(scene_hwc.shape[0]), int(scene_hwc.shape[1])
-    # Areas == mask pixel counts, which is what `sv.Detections.area` returns
-    # for masked detections (dense or compact).
-    if dense:
-        # Dense carrier: crop views from xyxy (from_dense convention). Areas are
-        # counted over the CROP views only — the True pixels of a dense mask are
-        # contained in its box, so `crop.sum() == mask.sum()` exactly (same
-        # ordering as `sv.Detections.area`), while touching only the box region
-        # instead of one full pass over the (N, H, W) stack. The tiny per-crop
-        # sums are batched into ONE (N,) D2H sync; a None (degenerate) crop
-        # contributes area 0.
-        mh, mw = int(mask_carrier.shape[1]), int(mask_carrier.shape[2])
-        crops, offsets = _dense_crops_and_offsets(
-            mask_carrier, predictions.xyxy, mh, mw
-        )
-        zero = torch.zeros((), dtype=torch.int64, device=device)
-        areas = (
-            torch.stack(
-                [c.sum(dtype=torch.int64) if c is not None else zero for c in crops]
-            )
-            .cpu()
-            .numpy()
-        )
-    else:
-        crops = crop_masks_gpu
-        offsets = crop_offsets
-        n = len(crops)
-        # Prefer the CPU-side crop RLE runs (odd-index runs are the True runs —
-        # supervision CompactMask convention) to avoid per-crop GPU sum kernels
-        # + a device sync.
-        if crop_rles is not None and len(crop_rles) == n:
-            areas = np.asarray(
-                [int(np.asarray(runs)[1::2].sum()) for runs in crop_rles],
-                dtype=np.int64,
-            )
-        else:
-            areas = torch.stack([c.sum() for c in crops]).to(torch.int64).cpu().numpy()
-    # Replicate supervision's `_paint_masks_by_area` order EXACTLY:
-    # np.argsort is stable ascending; np.flip reverses -> descending area,
-    # ties painted higher-index-first so the LOWER index wins (painted last).
-    order = np.flip(np.argsort(areas))
-    idx_map = torch.full((H, W), -1, dtype=torch.int16, device=device)
-    ux1, uy1, ux2, uy2 = W, H, 0, 0
-    for raw_i in order:
-        i = int(raw_i)
-        crop = crops[i]
-        if crop is None:  # degenerate dense box -> paints nothing
-            continue
-        ch, cw = int(crop.shape[0]), int(crop.shape[1])
-        x1, y1 = int(offsets[i][0]), int(offsets[i][1])
-        x2, y2 = min(x1 + cw, W), min(y1 + ch, H)
-        if x2 <= x1 or y2 <= y1 or x1 < 0 or y1 < 0:
-            continue
-        crop_mask = crop[: y2 - y1, : x2 - x1]
-        if dense:
-            # Dense crops are strided views into the (N, H, W) stack; a small
-            # contiguous copy makes the masked_fill_ writes coalesce (the RLE
-            # crops are already contiguous, so leave that path untouched).
-            crop_mask = crop_mask.contiguous()
-        # masked_fill_ = single fused kernel (no nonzero pass like `roi[m]=i`)
-        idx_map[y1:y2, x1:x2].masked_fill_(crop_mask, i)
-        ux1, uy1 = min(ux1, x1), min(uy1, y1)
-        ux2, uy2 = max(ux2, x2), max(uy2, y2)
+    # Union ROI of all boxes — one tiny D2H of xyxy (the only host sync).
+    # supervision xyxy has inclusive max coords, hence the +1.
+    xy = predictions.xyxy.detach().cpu().numpy()
+    ux1 = max(0, int(np.floor(xy[:, 0].min())))
+    uy1 = max(0, int(np.floor(xy[:, 1].min())))
+    ux2 = min(W, int(np.floor(xy[:, 2].max())) + 1)
+    uy2 = min(H, int(np.floor(xy[:, 3].max())) + 1)
     if ux2 > ux1 and uy2 > uy1:
+        m = mask_carrier[:, uy1:uy2, ux1:ux2]
+        # Areas over the ROI == full-mask pixel counts (True pixels live inside
+        # the boxes) == sv.Detections.area. fp32: counts can exceed fp16 max.
+        areas = m.sum(dim=(1, 2)).to(torch.float32)
+        # Ownership resolved in one kernel pair (see docstring): smallest-area
+        # mask wins each pixel; argmin's first-index tie rule matches sv's
+        # stable flip-sort ties.
+        cost = torch.where(
+            m, areas.view(-1, 1, 1), torch.tensor(float("inf"), device=device)
+        )
+        owner = cost.argmin(dim=0)  # (h, w)
+        hit = m.any(dim=0).unsqueeze(-1)
         # Pre-multiplied LUT: gather directly yields the color contribution
         # `color * opacity`, saving two full-ROI passes. The LUT channel order
         # must match the scene layout. fp16 on CUDA (all blend intermediates
@@ -266,10 +182,8 @@ def gpu_mask_composite(
             .to(device=device, dtype=blend_dtype)
             .mul_(opacity)
         )  # (N, 3)
-        sub = idx_map[uy1:uy2, ux1:ux2]
-        hit = (sub >= 0).unsqueeze(-1)
         scene_roi = scene_hwc[uy1:uy2, ux1:ux2]
-        blended = lut_premul[sub.clamp(min=0).long()]
+        blended = lut_premul[owner]
         # fused axpy: blended += (1 - opacity) * scene  (single kernel)
         blended.add_(scene_roi.to(blend_dtype), alpha=1.0 - opacity)
         # torch.round_ = round-half-to-even, matching cv2.addWeighted's
@@ -297,28 +211,17 @@ def _gpu_composite_eligible(predictions, color_axis: str) -> bool:
         # Nothing to paint; the sv path is a trivial no-op and avoids an
         # empty-crop edge case in the compositor.
         return False
-    # Dense carrier: torch.Tensor (N, H, W) bool — the tensor pipeline's
-    # default. Crop views are built from xyxy on whatever device the mask
-    # lives on (the loader only registers this block for the tensor pipeline,
-    # so device gating is not this block's job).
-    if isinstance(mask_carrier, torch.Tensor):
-        return (
-            mask_carrier.ndim == 3
-            and mask_carrier.dtype == torch.bool
-            and int(mask_carrier.shape[0]) == n
-        )
-    # RLE carrier: needs the device-crop side-channel. Those fields do not
-    # exist on today's InstancesRLEMasks (read via getattr), so this branch
-    # stays inert until a model-side change populates them.
-    if not isinstance(mask_carrier, InstancesRLEMasks):
-        return False
-    crops = getattr(mask_carrier, "crop_masks_gpu", None)
-    offsets = getattr(mask_carrier, "crop_offsets", None)
-    if not crops or not offsets:
-        return False
-    if len(crops) != n or len(offsets) != n:
-        return False
-    return all(isinstance(c, torch.Tensor) and c.dtype == torch.bool for c in crops)
+    # Dense carrier only: torch.Tensor (N, H, W) bool — the tensor pipeline's
+    # default. RLE-carrier predictions take the sv fallback. Crop views are
+    # built from xyxy on whatever device the mask lives on (the loader only
+    # registers this block for the tensor pipeline, so device gating is not
+    # this block's job).
+    return (
+        isinstance(mask_carrier, torch.Tensor)
+        and mask_carrier.ndim == 3
+        and mask_carrier.dtype == torch.bool
+        and int(mask_carrier.shape[0]) == n
+    )
 
 
 class MaskManifest(ColorableVisualizationManifest):
@@ -436,56 +339,30 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
                     [palette.by_idx(int(idx)).as_bgr() for idx in ids],
                     dtype=np.uint8,
                 )
-                # Composite in whichever representation the image already
-                # carries — never force a cross-layout conversion (numpy->CHW
-                # runs strided copies on the CPU; tensor->numpy is a device
-                # round-trip).
-                if image.is_tensor_materialised():
-                    # Video path: CHW RGB tensor already on device — zero-copy
-                    # in, tensor out (downstream materialises numpy lazily
-                    # only if something asks for it).
-                    scene_t = image.tensor_image
-                    if int(scene_t.shape[0]) != 3:
-                        raise ValueError(
-                            "GPU mask compositor requires a 3-channel image"
-                        )
-                    if copy_image:
-                        scene_t = scene_t.clone()
-                    annotated_tensor = gpu_mask_composite(
-                        scene_t,
-                        predictions,
-                        colors_bgr,
-                        float(opacity),
-                        return_tensor=True,
-                        scene_layout="chw_rgb",
-                    )
-                    if not copy_image:
-                        # The compositor mutated `image.tensor_image` storage
-                        # in place (the sv-path contract for copy_image=False);
-                        # invalidate the derived numpy/base64 caches.
-                        image.declare_tensor_image_mutated()
-                    return {
-                        OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                            origin_image_data=image, tensor_image=annotated_tensor
-                        )
-                    }
-                # Numpy-resident image (HTTP path): upload the HWC BGR buffer
-                # as-is and return numpy.
-                annotated_image = gpu_mask_composite(
-                    image.numpy_image,
+                # Tensor pipeline contract: the image is a CHW RGB device
+                # tensor — zero-copy in, tensor out (downstream materialises
+                # numpy lazily only if something asks for it).
+                scene_t = image.tensor_image
+                if int(scene_t.shape[0]) != 3:
+                    raise ValueError("GPU mask compositor requires a 3-channel image")
+                if copy_image:
+                    scene_t = scene_t.clone()
+                annotated_tensor = gpu_mask_composite(
+                    scene_t,
                     predictions,
                     colors_bgr,
                     float(opacity),
+                    return_tensor=True,
+                    scene_layout="chw_rgb",
                 )
                 if not copy_image:
-                    # sv path mutates the input scene in place when
-                    # copy_image=False; mirror that contract.
-                    np.copyto(image.numpy_image, annotated_image)
-                    annotated_image = image.numpy_image
-                    image.declare_numpy_image_mutated()
+                    # The compositor mutated `image.tensor_image` storage
+                    # in place (the sv-path contract for copy_image=False);
+                    # invalidate the derived numpy/base64 caches.
+                    image.declare_tensor_image_mutated()
                 return {
                     OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                        origin_image_data=image, numpy_image=annotated_image
+                        origin_image_data=image, tensor_image=annotated_tensor
                     )
                 }
             except Exception as gpu_error:
