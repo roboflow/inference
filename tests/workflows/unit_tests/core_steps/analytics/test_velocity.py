@@ -6,6 +6,7 @@ import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -881,3 +882,240 @@ def test_velocity_block_large_movement() -> None:
         frame2_result["velocity_detections"].data["smoothed_speed"],
         expected_data_frame2["smoothed_speed"],
     )
+
+
+# --- tensor-native sibling ---------------------------------------------------
+# The tensor block computes on-device (torch) with a single batched
+# device->host hop for the metadata contract; these tests pin numerical parity
+# with the numpy block above plus the device-resident state semantics.
+
+
+def _tensor_velocity_imports():
+    torch = pytest.importorskip("torch")
+    from inference.core.workflows.core_steps.analytics.velocity.v1_tensor import (
+        VelocityBlockV1 as TensorVelocityBlockV1,
+    )
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    return torch, TensorVelocityBlockV1, NativeDetections
+
+
+def _tensor_image(video_id: str, frame_number: int, fps: float = 10.0):
+    metadata = VideoMetadata(
+        video_identifier=video_id,
+        frame_number=frame_number,
+        frame_timestamp=datetime.datetime.fromtimestamp(1690000000 + frame_number),
+        fps=fps,
+        comes_from_video_file=True,
+    )
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        video_metadata=metadata,
+    )
+
+
+def _native_detections(torch, NativeDetections, xyxy_rows, tracker_ids):
+    return NativeDetections(
+        xyxy=torch.tensor(xyxy_rows, dtype=torch.float32),
+        class_id=torch.zeros(len(xyxy_rows), dtype=torch.long),
+        confidence=torch.full((len(xyxy_rows),), 0.9),
+        image_metadata={"class_names": {0: "object"}},
+        bboxes_metadata=[
+            {"detection_id": f"d{i}", "tracker_id": tid}
+            for i, tid in enumerate(tracker_ids)
+        ],
+    )
+
+
+def test_tensor_velocity_two_frame_calculation_matches_numpy_math() -> None:
+    # given - one object moving +10px in x over 1 frame @ 10fps (0.1 s)
+    torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
+    block = TensorVelocityBlockV1()
+
+    # when
+    block.run(
+        image=_tensor_image("vid", 1),
+        detections=_native_detections(
+            torch, NativeDetections, [[0.0, 0.0, 10.0, 10.0]], [1]
+        ),
+        smoothing_alpha=0.5,
+        pixels_per_meter=1.0,
+    )
+    result = block.run(
+        image=_tensor_image("vid", 2),
+        detections=_native_detections(
+            torch, NativeDetections, [[10.0, 0.0, 20.0, 10.0]], [1]
+        ),
+        smoothing_alpha=0.5,
+        pixels_per_meter=1.0,
+    )
+
+    # then - dx=10px / 0.1s = 100 px/s; EMA(0.5) of [0,0] -> [100,0] = [50,0]
+    metadata = result["velocity_detections"].bboxes_metadata[0]
+    assert np.allclose(metadata["velocity"], [100.0, 0.0], atol=1e-3)
+    assert np.allclose(metadata["speed"], 100.0, atol=1e-3)
+    assert np.allclose(metadata["smoothed_velocity"], [50.0, 0.0], atol=1e-3)
+    assert np.allclose(metadata["smoothed_speed"], 50.0, atol=1e-3)
+
+
+def test_tensor_velocity_new_tracker_and_units() -> None:
+    # given
+    torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
+    block = TensorVelocityBlockV1()
+
+    # when - first sighting, with a pixels_per_meter conversion in play
+    result = block.run(
+        image=_tensor_image("vid", 1),
+        detections=_native_detections(
+            torch, NativeDetections, [[0.0, 0.0, 10.0, 10.0]], [7]
+        ),
+        smoothing_alpha=0.5,
+        pixels_per_meter=100.0,
+    )
+
+    # then - no previous position: everything is zero
+    metadata = result["velocity_detections"].bboxes_metadata[0]
+    assert metadata["velocity"] == [0.0, 0.0]
+    assert metadata["speed"] == 0.0
+    assert metadata["smoothed_velocity"] == [0.0, 0.0]
+    assert metadata["smoothed_speed"] == 0.0
+
+
+def test_tensor_velocity_absent_tracker_reappears_with_preserved_state() -> None:
+    # given - tracker 1 seen at frame 1, absent at frame 2, back at frame 3;
+    # velocity on reappearance must use the FRAME-1 position and timestamp
+    torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
+    block = TensorVelocityBlockV1()
+    block.run(
+        image=_tensor_image("vid", 1),
+        detections=_native_detections(
+            torch, NativeDetections, [[0.0, 0.0, 10.0, 10.0]], [1]
+        ),
+        smoothing_alpha=1.0,
+        pixels_per_meter=1.0,
+    )
+    block.run(
+        image=_tensor_image("vid", 2),
+        detections=_native_detections(
+            torch, NativeDetections, [[100.0, 100.0, 110.0, 110.0]], [2]
+        ),
+        smoothing_alpha=1.0,
+        pixels_per_meter=1.0,
+    )
+
+    # when - tracker 1 reappears at frame 3, +20px in x since frame 1 (0.2 s)
+    result = block.run(
+        image=_tensor_image("vid", 3),
+        detections=_native_detections(
+            torch, NativeDetections, [[20.0, 0.0, 30.0, 10.0]], [1]
+        ),
+        smoothing_alpha=1.0,
+        pixels_per_meter=1.0,
+    )
+
+    # then - 20px / 0.2s = 100 px/s
+    metadata = result["velocity_detections"].bboxes_metadata[0]
+    assert np.allclose(metadata["velocity"], [100.0, 0.0], atol=1e-3)
+
+
+def test_tensor_velocity_zero_delta_time_yields_zero_velocity() -> None:
+    # given - the same frame timestamp twice
+    torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
+    block = TensorVelocityBlockV1()
+    detections = _native_detections(
+        torch, NativeDetections, [[0.0, 0.0, 10.0, 10.0]], [1]
+    )
+    block.run(
+        image=_tensor_image("vid", 5),
+        detections=detections,
+        smoothing_alpha=0.5,
+        pixels_per_meter=1.0,
+    )
+
+    # when
+    result = block.run(
+        image=_tensor_image("vid", 5),
+        detections=_native_detections(
+            torch, NativeDetections, [[50.0, 0.0, 60.0, 10.0]], [1]
+        ),
+        smoothing_alpha=0.5,
+        pixels_per_meter=1.0,
+    )
+
+    # then
+    metadata = result["velocity_detections"].bboxes_metadata[0]
+    assert metadata["velocity"] == [0.0, 0.0]
+    assert metadata["speed"] == 0.0
+
+
+def test_tensor_velocity_validations() -> None:
+    # given
+    torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
+    block = TensorVelocityBlockV1()
+    untracked = _native_detections(
+        torch, NativeDetections, [[0.0, 0.0, 10.0, 10.0]], [None]
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="tracker_id"):
+        block.run(
+            image=_tensor_image("vid", 1),
+            detections=untracked,
+            smoothing_alpha=0.5,
+            pixels_per_meter=1.0,
+        )
+    tracked = _native_detections(torch, NativeDetections, [[0.0, 0.0, 10.0, 10.0]], [1])
+    with pytest.raises(ValueError, match="smoothing_alpha"):
+        block.run(
+            image=_tensor_image("vid", 1),
+            detections=tracked,
+            smoothing_alpha=0.0,
+            pixels_per_meter=1.0,
+        )
+    with pytest.raises(ValueError, match="pixels_per_meter"):
+        block.run(
+            image=_tensor_image("vid", 1),
+            detections=tracked,
+            smoothing_alpha=0.5,
+            pixels_per_meter=0.0,
+        )
+
+
+def test_tensor_velocity_state_stays_on_device_when_mps_available() -> None:
+    # given
+    torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
+    if not torch.backends.mps.is_available():
+        pytest.skip("device-residency check needs MPS")
+    device = torch.device("mps")
+    block = TensorVelocityBlockV1()
+
+    def on_device(xyxy_rows, tracker_ids):
+        detections = _native_detections(torch, NativeDetections, xyxy_rows, tracker_ids)
+        detections.xyxy = detections.xyxy.to(device)
+        detections.class_id = detections.class_id.to(device)
+        detections.confidence = detections.confidence.to(device)
+        return detections
+
+    # when
+    block.run(
+        image=_tensor_image("vid", 1),
+        detections=on_device([[0.0, 0.0, 10.0, 10.0]], [1]),
+        smoothing_alpha=0.5,
+        pixels_per_meter=1.0,
+    )
+    result = block.run(
+        image=_tensor_image("vid", 2),
+        detections=on_device([[10.0, 0.0, 20.0, 10.0]], [1]),
+        smoothing_alpha=0.5,
+        pixels_per_meter=1.0,
+    )
+
+    # then - the tracking state lives on the device and results are correct
+    state = block._states["vid"]
+    assert state.positions.device.type == "mps"
+    assert state.smoothed_velocities.device.type == "mps"
+    metadata = result["velocity_detections"].bboxes_metadata[0]
+    assert np.allclose(metadata["velocity"], [100.0, 0.0], atol=1e-2)
