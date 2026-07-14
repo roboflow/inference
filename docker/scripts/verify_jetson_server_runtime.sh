@@ -10,6 +10,7 @@ test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptx
 test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas-blackwell
 test -x /usr/local/bin/inference
 test -x /usr/local/bin/run_uvicorn.sh
+test -x /usr/local/bin/verify_tensor_tracking_runtime
 test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1
 test -f /usr/include/python3.12/Python.h
 command -v gcc >/dev/null
