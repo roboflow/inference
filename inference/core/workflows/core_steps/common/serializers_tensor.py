@@ -103,12 +103,16 @@ def serialise_sv_detections(
 
 def _serialise_sv_detections(
     detections: TensorNativeDetections,
+    *,
+    include_polygons: bool = True,
 ) -> Tuple[dict, List[dict], List[int]]:
     """Shared core for the detection serialisers.
 
     Returns the serialised image metadata, the per-box prediction dicts (after the
-    polygon-None skip) and the ORIGINAL row index of each surviving prediction so
-    downstream serialisers (e.g. RLE) can re-align masks despite skipped instances.
+    polygon-None skip when ``include_polygons`` is enabled) and the ORIGINAL row
+    index of each surviving prediction so downstream serialisers can re-align masks.
+    RLE callers disable polygon generation because their final representation is
+    already encoded and must not be decoded merely to discard a contour.
     """
     if not isinstance(detections, (Detections, InstanceDetections)):
         raise ValueError(
@@ -145,7 +149,7 @@ def _serialise_sv_detections(
         detection_dict[Y_KEY] = y1 + detection_dict[HEIGHT_KEY] / 2
         detection_dict[CONFIDENCE_KEY] = float(confidences[index])
         detection_dict[CLASS_ID_KEY] = class_ids[index]
-        if isinstance(detections, InstanceDetections):
+        if include_polygons and isinstance(detections, InstanceDetections):
             polygon = _resolve_instance_polygon(
                 mask=detections.mask, index=index, data=data
             )
@@ -322,11 +326,10 @@ def serialise_native_rle_detections(detections: InstanceDetections) -> dict:
             f"carried as `InstancesRLEMasks`, got {type(detections.mask)}."
         )
     serialized_image_metadata, serialized_detections, kept_indices = (
-        _serialise_sv_detections(detections=detections)
+        _serialise_sv_detections(detections=detections, include_polygons=False)
     )
     rle_masks = detections.mask.to_coco_rle_masks()
     for detection_dict, original_index in zip(serialized_detections, kept_indices):
-        detection_dict.pop(POLYGON_KEY, None)
         rle = rle_masks[original_index]
         counts = rle.get("counts")
         if isinstance(counts, bytes):
