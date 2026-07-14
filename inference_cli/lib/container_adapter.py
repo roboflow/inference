@@ -98,8 +98,12 @@ class _JetsonImage(NamedTuple):
 # Ordered by (l4t_major DESC, l4t_minor_min DESC).  First match wins.
 # See https://developer.nvidia.com/embedded/jetpack-archive for the full mapping.
 _JETSON_IMAGES: List[_JetsonImage] = [
-    _JetsonImage(39, 0, "7", "roboflow/roboflow-inference-server-jetson-7.2.0:latest"),
-    _JetsonImage(38, 0, "7", "roboflow/roboflow-inference-server-jetson-7.2.0:latest"),
+    _JetsonImage(
+        39, 2, "7.2", "roboflow/roboflow-inference-server-jetson-7.2.0:latest"
+    ),
+    _JetsonImage(
+        38, 4, "7.1", "roboflow/roboflow-inference-server-jetson-7.1.0:latest"
+    ),
     _JetsonImage(
         36, 4, "6.2", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
     ),

@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 import torch
 from pydantic import BaseModel, Field
-from torchvision.io import ImageReadMode, decode_image, read_file
+from torchvision.io import ImageReadMode, decode_image, decode_jpeg, read_file
 from typing_extensions import Annotated, Literal
 
 from inference.core.env import (
@@ -595,9 +595,14 @@ class WorkflowImageData:
         bytes-level guarded fetcher exists."""
 
         if self._base64_image:
-            payload = torch.frombuffer(
-                bytearray(base64.b64decode(self._base64_image)), dtype=torch.uint8
-            )
+            decoded_bytes = base64.b64decode(self._base64_image)
+            payload = torch.frombuffer(bytearray(decoded_bytes), dtype=torch.uint8)
+            if decoded_bytes.startswith(b"\xff\xd8\xff"):
+                return decode_jpeg(
+                    payload,
+                    mode=ImageReadMode.RGB,
+                    device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+                )
             return decode_image(payload, mode=ImageReadMode.RGB)
         if self._image_reference.startswith(
             "http://"
