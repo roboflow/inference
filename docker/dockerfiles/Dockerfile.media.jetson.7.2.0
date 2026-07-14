@@ -252,6 +252,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-media-r
         libgles2 \
         libgnutls30t64 \
         libjpeg-turbo8 \
+        kmod \
         liblzma5 \
         libopus0 \
         libpng16-16t64 \

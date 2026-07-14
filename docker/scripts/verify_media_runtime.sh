@@ -77,6 +77,7 @@ done
 
 if [ -s /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvjpeg.so ]; then
     test -s /opt/cuda-runtime/lib/libnvjpeg.so.13
+    command -v lsmod >/dev/null
 fi
 
 find "$@" -type f -name '*.so*' -print0 |
