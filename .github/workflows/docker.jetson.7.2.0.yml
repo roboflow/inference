@@ -1,41 +1,32 @@
-name: Build and Push Jetson 7.2.0 Media Container
-
+name: Build and Push Jetson 7.2.0 Container
 permissions:
   contents: read
-
 on:
   release:
     types: [created]
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/docker.jetson.7.2.0.yml"
-      - "docker/dockerfiles/Dockerfile.media.jetson.7.2.0"
-      - "docker/native/jetson_tensor_bridge/**"
-      - "docker/scripts/**"
-      - "LICENSE"
-      - "LICENSE.core"
   workflow_dispatch:
     inputs:
       force_push:
         type: boolean
-        description: "Do you want to push the image after building?"
+        description: "Do you want to push image after build?"
         default: false
       custom_tag:
         type: string
-        description: "Custom tag to use for the image"
+        description: "Custom tag to use for the image (overrides VERSION)"
         default: ""
 
 env:
   VERSION: "0.0.0"
-  BASE_IMAGE: "roboflow/roboflow-inference-media-jetson-7.2.0"
+  BASE_IMAGE: "roboflow/roboflow-inference-server-jetson-7.2.0"
 
 jobs:
   docker:
     runs-on:
       labels: depot-ubuntu-24.04-4
       group: public-depot
-    timeout-minutes: 180
+    timeout-minutes: 360
     permissions:
       id-token: write
       contents: read
@@ -62,13 +53,13 @@ jobs:
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build image
-        uses: depot/build-push-action@v1
+        uses: depot/bake-action@v1
+        env:
+          JETSON_SERVER_TAGS: ${{ steps.tags.outputs.image_tags }}
         with:
+          files: ./docker/docker-bake.jetson.7.2.0.hcl
+          targets: jetson-server-jp72
           project: v1xzfwkc4b
-          context: .
-          file: ./docker/dockerfiles/Dockerfile.media.jetson.7.2.0
-          platforms: linux/arm64
           push: ${{ github.event_name == 'release' || inputs.force_push }}
           save: ${{ github.event_name != 'release' && !inputs.force_push }}
-          save-tag: ${{ github.event_name != 'release' && !inputs.force_push && format('media-jp72-{0}', github.sha) || '' }}
-          tags: ${{ steps.tags.outputs.image_tags }}
+          save-tag: ${{ github.event_name != 'release' && !inputs.force_push && format('server-jp72-{0}', github.sha) || '' }}
