@@ -25,9 +25,8 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
-import numpy as np
-import supervision as sv
 import torch
+import torch.nn.functional as F
 from fastapi import BackgroundTasks
 from pydantic import AliasChoices, ConfigDict, Field
 
@@ -719,10 +718,9 @@ def scale_tensor_native_prediction(
 
     Mirrors ``scale_sv_detections``: scales ``xyxy``, per-image
     ``image_dimensions``, per-detection ``keypoints_xy`` / ``polygon`` /
-    ``scaling_relative_to_*`` metadata, and re-rasterises instance masks at the
-    scaled resolution (``sv.mask_to_polygons`` / ``sv.polygon_to_mask`` used as a
-    pure numpy algorithm). For the keypoint tuple, both the ``KeyPoints`` and the
-    bbox ``Detections`` components are scaled consistently.
+    ``scaling_relative_to_*`` metadata, and resizes instance masks with nearest
+    tensor interpolation. For the keypoint tuple, both the ``KeyPoints`` and the bbox
+    ``Detections`` components are scaled consistently.
     """
     key_points, detections = split_key_point_prediction(prediction)
     scaled_detections = _scale_tensor_native_detections(
@@ -735,7 +733,9 @@ def scale_tensor_native_prediction(
         class_id=key_points.class_id,
         confidence=key_points.confidence,
         image_metadata=_scale_image_metadata(
-            image_metadata=key_points.image_metadata, scale=scale
+            image_metadata=key_points.image_metadata,
+            scale=scale,
+            device=key_points.xy.device,
         ),
         key_points_metadata=key_points.key_points_metadata,
     )
@@ -750,12 +750,15 @@ def _scale_tensor_native_detections(
         return detections
     scaled_xyxy = (detections.xyxy * scale).round()
     scaled_image_metadata = _scale_image_metadata(
-        image_metadata=detections.image_metadata, scale=scale
+        image_metadata=detections.image_metadata,
+        scale=scale,
+        device=detections.xyxy.device,
     )
     scaled_bboxes_metadata = _scale_bboxes_metadata(
         bboxes_metadata=detections.bboxes_metadata,
         detections_number=len(detections),
         scale=scale,
+        device=detections.xyxy.device,
     )
     if isinstance(detections, InstanceDetections):
         scaled_mask = _scale_instance_masks(detections=detections, scale=scale)
@@ -779,15 +782,18 @@ def _scale_tensor_native_detections(
 def _scale_image_metadata(
     image_metadata: Optional[dict],
     scale: float,
+    device: torch.device,
 ) -> Optional[dict]:
     if image_metadata is None:
         return None
     scaled = dict(image_metadata)
     image_dimensions = scaled.get(IMAGE_DIMENSIONS_KEY)
     if image_dimensions is not None:
-        scaled[IMAGE_DIMENSIONS_KEY] = (
-            np.asarray(image_dimensions).astype(float) * scale
-        ).round()
+        scaled[IMAGE_DIMENSIONS_KEY] = _scale_numeric_metadata(
+            value=image_dimensions,
+            scale=scale,
+            device=device,
+        )
     return scaled
 
 
@@ -795,6 +801,7 @@ def _scale_bboxes_metadata(
     bboxes_metadata: Optional[List[dict]],
     detections_number: int,
     scale: float,
+    device: torch.device,
 ) -> List[dict]:
     if bboxes_metadata is None:
         bboxes_metadata = [{} for _ in range(detections_number)]
@@ -802,18 +809,22 @@ def _scale_bboxes_metadata(
     for data in bboxes_metadata:
         scaled_data = dict(data)
         if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in scaled_data:
-            scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = (
-                np.asarray(scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]).astype(
-                    np.float32
-                )
-                * scale
-            ).round()
-        if POLYGON_KEY_IN_SV_DETECTIONS in scaled_data:
-            scaled_data[POLYGON_KEY_IN_SV_DETECTIONS] = (
-                (np.asarray(scaled_data[POLYGON_KEY_IN_SV_DETECTIONS]) * scale)
-                .round()
-                .astype(np.int32)
+            scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = _scale_numeric_metadata(
+                value=scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS],
+                scale=scale,
+                device=device,
+                dtype=torch.float32,
             )
+        if POLYGON_KEY_IN_SV_DETECTIONS in scaled_data:
+            scaled_polygon = _scale_numeric_metadata(
+                value=scaled_data[POLYGON_KEY_IN_SV_DETECTIONS],
+                scale=scale,
+                device=device,
+                dtype=torch.float32,
+            )
+            if isinstance(scaled_polygon, torch.Tensor):
+                scaled_polygon = scaled_polygon.to(dtype=torch.int32)
+            scaled_data[POLYGON_KEY_IN_SV_DETECTIONS] = scaled_polygon
         if SCALING_RELATIVE_TO_PARENT_KEY in scaled_data:
             scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] = (
                 scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] * scale
@@ -830,29 +841,52 @@ def _scale_bboxes_metadata(
     return scaled_bboxes_metadata
 
 
+def _scale_numeric_metadata(
+    value: Any,
+    scale: float,
+    device: torch.device,
+    dtype: Optional[torch.dtype] = None,
+) -> Any:
+    """Scale known numeric metadata without sending tensors through NumPy.
+
+    Wire/object metadata can share the same dictionaries as numeric coordinates.
+    Values that cannot be represented by Torch are therefore returned unchanged.
+    """
+    try:
+        value = torch.as_tensor(value, device=device)
+    except (TypeError, ValueError, RuntimeError):
+        return value
+    if dtype is not None:
+        value = value.to(dtype=dtype)
+    elif not value.is_floating_point():
+        value = value.to(dtype=torch.float32)
+    return (value * scale).round()
+
+
 def _scale_instance_masks(
     detections: InstanceDetections,
     scale: float,
-) -> Union[torch.Tensor, InstancesRLEMasks]:
-    detections_number = len(detections)
-    sample_mask = instance_mask_to_numpy(detections, 0)
-    original_h, original_w = sample_mask.shape[:2]
-    scaled_mask_size_wh = (
-        round(original_w * scale),
+) -> torch.Tensor:
+    masks = detections.mask
+    if isinstance(masks, InstancesRLEMasks):
+        masks = torch.stack(
+            [
+                torch.from_numpy(instance_mask_to_numpy(detections, index))
+                for index in range(len(detections))
+            ]
+        ).to(device=detections.xyxy.device)
+
+    original_h, original_w = masks.shape[-2:]
+    scaled_size_hw = (
         round(original_h * scale),
+        round(original_w * scale),
     )
-    scaled_masks = []
-    for index in range(detections_number):
-        detection_mask = instance_mask_to_numpy(detections, index).astype(np.uint8)
-        polygons = sv.mask_to_polygons(mask=detection_mask)
-        polygon_masks = []
-        for polygon in polygons:
-            scaled_polygon = (polygon * scale).round().astype(np.int32)
-            polygon_masks.append(
-                sv.polygon_to_mask(
-                    polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
-                )
-            )
-        scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
-        scaled_masks.append(scaled_detection_mask)
-    return torch.from_numpy(np.array(scaled_masks)).to(torch.bool)
+    return (
+        F.interpolate(
+            masks.unsqueeze(1).to(dtype=torch.float32),
+            size=scaled_size_hw,
+            mode="nearest",
+        )
+        .squeeze(1)
+        .to(dtype=torch.bool)
+    )
