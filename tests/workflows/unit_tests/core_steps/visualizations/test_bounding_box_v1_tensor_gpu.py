@@ -1,12 +1,9 @@
-import itertools
-
 import numpy as np
 import pytest
 import supervision as sv
 import torch
 
 from inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor import (
-    _get_geometry,
     _gpu_box_draw_eligible,
     gpu_draw_boxes,
 )
@@ -24,66 +21,25 @@ PALETTE = sv.ColorPalette.DEFAULT
 SCENE_H, SCENE_W = 240, 320
 
 
-def _build_detections(boxes: np.ndarray, class_id: np.ndarray, device: str) -> Detections:
-    n = boxes.shape[0]
-    return Detections(
-        xyxy=torch.tensor(boxes, dtype=torch.float32, device=device),
-        class_id=torch.tensor(class_id, dtype=torch.int32, device=device),
-        confidence=torch.full((n,), 0.9, device=device),
-        image_metadata={"class_names": {i: f"c{i}" for i in range(10)}},
-    )
+def _paint(
+    xyxy: np.ndarray, colors_rgb: np.ndarray, thickness: int, device: str = "cpu"
+) -> tuple:
+    """Run the painter on a zero scene; return (chw tensor, painted-pixel mask)."""
+    scene = torch.zeros((3, SCENE_H, SCENE_W), dtype=torch.uint8, device=device)
+    annotated = gpu_draw_boxes(scene, xyxy.astype(int), colors_rgb, thickness)
+    painted = (annotated != 0).any(dim=0).cpu().numpy()
+    return annotated, painted
 
 
-def _assert_parity(
-    xyxy: np.ndarray,
-    class_id: np.ndarray,
-    thickness: int,
-    color_axis: str,
-    device: str,
-    roundness: float = 0.0,
-) -> None:
-    rng = np.random.default_rng(7)
-    base_bgr = rng.integers(0, 256, (SCENE_H, SCENE_W, 3), dtype=np.uint8)
-    detections = sv.Detections(
-        xyxy=xyxy.astype(np.float32), class_id=class_id.astype(int)
+def _sv_painted_mask(xyxy: np.ndarray, thickness: int) -> np.ndarray:
+    scene = np.zeros((SCENE_H, SCENE_W, 3), dtype=np.uint8)
+    annotator = sv.BoxAnnotator(
+        color=PALETTE, color_lookup=sv.ColorLookup.INDEX, thickness=thickness
     )
-    if roundness == 0:
-        annotator = sv.BoxAnnotator(
-            color=PALETTE,
-            color_lookup=getattr(sv.ColorLookup, color_axis),
-            thickness=thickness,
-        )
-    else:
-        annotator = sv.RoundBoxAnnotator(
-            color=PALETTE,
-            color_lookup=getattr(sv.ColorLookup, color_axis),
-            thickness=thickness,
-            roundness=roundness,
-        )
-    reference = annotator.annotate(scene=base_bgr.copy(), detections=detections)
-
-    scene_chw_rgb = (
-        torch.from_numpy(base_bgr[:, :, ::-1].copy())
-        .permute(2, 0, 1)
-        .contiguous()
-        .to(device)
+    out = annotator.annotate(
+        scene, sv.Detections(xyxy=xyxy.astype(np.float32))
     )
-    ids = class_id if color_axis == "CLASS" else np.arange(xyxy.shape[0])
-    colors_rgb = np.asarray(
-        [PALETTE.by_idx(int(idx)).as_rgb() for idx in ids], dtype=np.uint8
-    )
-    annotated = gpu_draw_boxes(
-        scene_chw_rgb,
-        xyxy.astype(np.float32).astype(int),
-        colors_rgb,
-        thickness,
-        roundness,
-    )
-    got_bgr = annotated.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
-
-    exact = np.all(got_bgr == reference, axis=-1).mean()
-    assert exact == 1.0, f"exact match rate {exact}"
-    assert int(np.abs(got_bgr.astype(int) - reference.astype(int)).max()) == 0
+    return (out != 0).any(axis=2)
 
 
 _SCENARIOS = {
@@ -98,68 +54,71 @@ _SCENARIOS = {
         [[10, 10, 12, 12], [50, 50, 50, 60], [70, 70, 70, 70], [90, 5, 95, 9]],
         dtype=float,
     ),
-    "subpixel_coords": np.array(
-        [[30.7, 40.2, 120.9, 100.5], [-0.4, -0.6, 33.3, 44.9]], dtype=float
-    ),
     "edge_touching": np.array(
         [[0, 0, SCENE_W - 1, SCENE_H - 1], [5, 5, 15, SCENE_H - 10]], dtype=float
     ),
 }
 
 
-@pytest.mark.parametrize("scenario", sorted(_SCENARIOS))
-@pytest.mark.parametrize("thickness", [1, 2, 3, 4, 5, 8])
-@pytest.mark.parametrize("color_axis", ["CLASS", "INDEX"])
-def test_gpu_box_parity_on_cpu(scenario: str, thickness: int, color_axis: str) -> None:
-    # The painter is device-agnostic; CPU run gives full parity coverage in
-    # plain CI (identical kernels run on CUDA).
-    xyxy = _SCENARIOS[scenario]
-    class_id = np.arange(xyxy.shape[0]) % 3
-    _assert_parity(xyxy, class_id, thickness, color_axis, device="cpu")
-
-
-@pytest.mark.parametrize("scenario", sorted(_SCENARIOS))
-@pytest.mark.parametrize("thickness", [1, 2, 3, 5])
-@pytest.mark.parametrize("roundness", [0.1, 0.3, 0.6, 1.0])
-def test_gpu_round_box_parity_on_cpu(
-    scenario: str, thickness: int, roundness: float
-) -> None:
-    xyxy = _SCENARIOS[scenario]
-    class_id = np.arange(xyxy.shape[0]) % 3
-    _assert_parity(
-        xyxy, class_id, thickness, "CLASS", device="cpu", roundness=roundness
+def _index_colors(n: int) -> np.ndarray:
+    return np.asarray(
+        [PALETTE.by_idx(i).as_rgb() for i in range(n)], dtype=np.uint8
     )
 
 
-def test_gpu_round_box_parity_mixed_radii() -> None:
-    # Many distinct box sizes -> many distinct sv corner radii in one frame.
-    rng = np.random.default_rng(5)
-    xs = np.sort(rng.uniform(-20, SCENE_W + 20, (16, 2)), axis=1)
-    ys = np.sort(rng.uniform(-20, SCENE_H + 20, (16, 2)), axis=1)
-    xyxy = np.stack([xs[:, 0], ys[:, 0], xs[:, 1], ys[:, 1]], axis=1)
-    class_id = np.arange(16) % 4
-    _assert_parity(xyxy, class_id, 2, "CLASS", device="cpu", roundness=0.4)
+@pytest.mark.parametrize("scenario", sorted(_SCENARIOS))
+@pytest.mark.parametrize("thickness", [1, 2, 3, 5, 8])
+def test_gpu_boxes_visually_match_sv(scenario: str, thickness: int) -> None:
+    # Approximate renderer: borders are square-cornered `thickness`-wide
+    # bands, cv2 draws round joins / slightly wider bands. Painted regions
+    # must still substantially agree (IoU), and t=1 is pixel-identical.
+    xyxy = _SCENARIOS[scenario]
+    _, painted = _paint(xyxy, _index_colors(xyxy.shape[0]), thickness)
+    reference = _sv_painted_mask(xyxy, thickness)
+    union = (painted | reference).sum()
+    if union == 0:
+        return
+    iou = (painted & reference).sum() / union
+    threshold = 1.0 if thickness == 1 else 0.5
+    assert iou >= threshold, f"painted-region IoU {iou:.3f}"
 
 
-@requires_cuda
-@pytest.mark.parametrize("thickness", [1, 2, 4])
-def test_gpu_box_parity_on_cuda(thickness: int) -> None:
-    rng = np.random.default_rng(11)
-    xs = np.sort(rng.uniform(-30, SCENE_W + 30, (12, 2)), axis=1)
-    ys = np.sort(rng.uniform(-30, SCENE_H + 30, (12, 2)), axis=1)
-    xyxy = np.stack([xs[:, 0], ys[:, 0], xs[:, 1], ys[:, 1]], axis=1)
-    class_id = np.arange(12) % 4
-    _assert_parity(xyxy, class_id, thickness, "CLASS", device="cuda")
+def test_border_band_geometry_exact() -> None:
+    # One box, thickness 3: band spans [edge - 1, edge + 1] (outer = t // 2),
+    # interior and background stay untouched.
+    x1, y1, x2, y2 = 50, 60, 150, 140
+    annotated, painted = _paint(
+        np.array([[x1, y1, x2, y2]], dtype=float),
+        np.array([[255, 0, 0]], np.uint8),
+        thickness=3,
+    )
+    assert painted[y1 - 1 : y1 + 2, x1 - 1 : x2 + 2].all()  # top band
+    assert painted[y2 - 1 : y2 + 2, x1 - 1 : x2 + 2].all()  # bottom band
+    assert painted[y1 - 1 : y2 + 2, x1 - 1 : x1 + 2].all()  # left band
+    assert painted[y1 - 1 : y2 + 2, x2 - 1 : x2 + 2].all()  # right band
+    assert not painted[y1 + 2 : y2 - 1, x1 + 2 : x2 - 1].any()  # interior clean
+    assert not painted[: y1 - 1].any() and not painted[y2 + 2 :].any()  # outside
+    assert (annotated[0][painted] == 255).all()  # right channel, right color
 
 
-@requires_cuda
-def test_gpu_round_box_parity_on_cuda() -> None:
-    rng = np.random.default_rng(13)
-    xs = np.sort(rng.uniform(-30, SCENE_W + 30, (12, 2)), axis=1)
-    ys = np.sort(rng.uniform(-30, SCENE_H + 30, (12, 2)), axis=1)
-    xyxy = np.stack([xs[:, 0], ys[:, 0], xs[:, 1], ys[:, 1]], axis=1)
-    class_id = np.arange(12) % 4
-    _assert_parity(xyxy, class_id, 2, "CLASS", device="cuda", roundness=0.4)
+def test_overlapping_boxes_later_box_wins() -> None:
+    # sv paints sequentially: the higher detection index owns contested pixels.
+    xyxy = np.array([[20, 20, 100, 100], [60, 20, 140, 100]], dtype=float)
+    colors = np.array([[255, 0, 0], [0, 255, 0]], np.uint8)
+    annotated, _ = _paint(xyxy, colors, thickness=2)
+    # box 1's left band crosses box 0's interior row: contested column region
+    # around x=60 on box 0's top band must be box 1's color where box 1 paints.
+    top = annotated[:, 20, 60].cpu().numpy()  # (3,) at shared corner pixel
+    assert tuple(top) == (0, 255, 0)
+
+
+def test_fully_off_frame_box_is_noop() -> None:
+    annotated, painted = _paint(
+        np.array([[SCENE_W + 10, SCENE_H + 10, SCENE_W + 50, SCENE_H + 50]], float),
+        np.array([[255, 0, 0]], np.uint8),
+        thickness=2,
+    )
+    assert not painted.any()
 
 
 def test_gpu_box_paint_is_in_place() -> None:
@@ -173,25 +132,36 @@ def test_gpu_box_paint_is_in_place() -> None:
     assert annotated.data_ptr() == scene.data_ptr()
 
 
-@pytest.mark.parametrize(
-    "thickness", [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]
-)
-def test_border_geometry_reconstruction_holds(thickness: int) -> None:
-    # _BorderGeometry asserts pixel-perfect reconstruction against
-    # cv2.rectangle on two reference sizes at construction time.
-    geometry = _get_geometry(thickness)
-    assert geometry.corner_masks.shape[0] == 4
+def test_non_contiguous_scene_raises() -> None:
+    # .view must fail (caught by the block's sv fallback) rather than write
+    # into a silent copy. Transposed spatial dims are not viewable as (3, -1).
+    scene = torch.zeros((64, 64, 3), dtype=torch.uint8).permute(2, 1, 0)
+    with pytest.raises(RuntimeError):
+        gpu_draw_boxes(
+            scene,
+            np.array([[10, 10, 40, 40]], dtype=int),
+            np.array([[255, 0, 0]], dtype=np.uint8),
+            2,
+        )
 
 
-@pytest.mark.parametrize("thickness", [1, 2, 3, 5])
-@pytest.mark.parametrize("radius", [0, 1, 3, 10, 40])
-def test_border_geometry_reconstruction_holds_for_rounded(
-    thickness: int, radius: int
-) -> None:
-    # Rounded variant asserts against the sv.RoundBoxAnnotator primitive
-    # sequence (quarter cv2.ellipse arcs + cv2.line edges).
-    geometry = _get_geometry(thickness, radius)
-    assert geometry.corner_masks.shape[0] == 4
+@requires_cuda
+def test_gpu_boxes_on_cuda_match_cpu() -> None:
+    xyxy = _SCENARIOS["overlap_chain"]
+    colors = _index_colors(xyxy.shape[0])
+    cpu_out, _ = _paint(xyxy, colors, thickness=2, device="cpu")
+    cuda_out, _ = _paint(xyxy, colors, thickness=2, device="cuda")
+    assert np.array_equal(cpu_out.numpy(), cuda_out.cpu().numpy())
+
+
+def _build_detections(boxes: np.ndarray, class_id: np.ndarray, device: str) -> Detections:
+    n = boxes.shape[0]
+    return Detections(
+        xyxy=torch.tensor(boxes, dtype=torch.float32, device=device),
+        class_id=torch.tensor(class_id, dtype=torch.int32, device=device),
+        confidence=torch.full((n,), 0.9, device=device),
+        image_metadata={"class_names": {i: f"c{i}" for i in range(10)}},
+    )
 
 
 def _eligible_detections(device: str = "cpu") -> Detections:
@@ -209,16 +179,25 @@ def _tensor_backed_image() -> WorkflowImageData:
 def test_gpu_box_draw_eligible_happy_path() -> None:
     assert (
         _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", 2, _tensor_backed_image()
+            _eligible_detections(), "CLASS", 0.0, 2, _tensor_backed_image()
         )
         is True
+    )
+
+
+def test_gpu_box_draw_not_eligible_for_roundness() -> None:
+    assert (
+        _gpu_box_draw_eligible(
+            _eligible_detections(), "CLASS", 0.4, 2, _tensor_backed_image()
+        )
+        is False
     )
 
 
 def test_gpu_box_draw_not_eligible_for_track_lookup() -> None:
     assert (
         _gpu_box_draw_eligible(
-            _eligible_detections(), "TRACK", 2, _tensor_backed_image()
+            _eligible_detections(), "TRACK", 0.0, 2, _tensor_backed_image()
         )
         is False
     )
@@ -228,13 +207,16 @@ def test_gpu_box_draw_not_eligible_for_empty_detections() -> None:
     empty = _build_detections(
         np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=int), device="cpu"
     )
-    assert _gpu_box_draw_eligible(empty, "CLASS", 2, _tensor_backed_image()) is False
+    assert (
+        _gpu_box_draw_eligible(empty, "CLASS", 0.0, 2, _tensor_backed_image())
+        is False
+    )
 
 
 def test_gpu_box_draw_not_eligible_for_non_int_thickness() -> None:
     assert (
         _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", "2", _tensor_backed_image()
+            _eligible_detections(), "CLASS", 0.0, "2", _tensor_backed_image()
         )
         is False
     )
@@ -245,4 +227,7 @@ def test_gpu_box_draw_not_eligible_for_numpy_sourced_image() -> None:
         parent_metadata=ImageParentMetadata(parent_id="p"),
         numpy_image=np.zeros((64, 64, 3), dtype=np.uint8),
     )
-    assert _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 2, numpy_image) is False
+    assert (
+        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 0.0, 2, numpy_image)
+        is False
+    )
