@@ -3,7 +3,18 @@ import statistics
 from collections import Counter
 from enum import Enum
 from functools import lru_cache
-from typing import Dict, Generator, List, Literal, Optional, Set, Tuple, Type, Union
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 from uuid import uuid4
 
 import numpy as np
@@ -504,40 +515,120 @@ def get_detections_from_different_sources_with_max_overlap(
     iou_threshold: float,
     class_aware: bool,
     detections_already_considered: Set[str],
+    detection_global_index: int,
+    iou_matrix: np.ndarray,
+    class_names: List[str],
+    detection_ids: List[Any],
 ) -> Dict[int, Tuple[TensorNativeDetections, float]]:
-    current_max_overlap = {}
-    for other_source, other_detection in enumerate_detections(
-        detections_from_sources=detections_from_sources,
-        excluded_source_id=source,
-    ):
-        if _resolve_detection_id(other_detection) in detections_already_considered:
-            continue
-        if class_aware and _resolve_class_name(detection) != _resolve_class_name(
-            other_detection
-        ):
-            continue
-        iou_value = calculate_iou(
-            detection_a=detection,
-            detection_b=other_detection,
+    # IoU and class name are read from the once-computed host structures (see
+    # `_precompute_pair_data`) keyed by the detections' global index, rather than
+    # calling `calculate_iou` / `_resolve_class_name` per pair (each of which used
+    # to trigger device syncs). The greedy per-source max-overlap bookkeeping,
+    # iteration order, and tie behaviour are preserved exactly; single-row
+    # predictions are materialised only for the surviving winners, not per pair.
+    current_max_overlap: Dict[int, Tuple[int, float]] = {}
+    detection_class_name = class_names[detection_global_index]
+    for other_source, other_global_index, other_local_index in (
+        enumerate_detection_indices(
+            detections_from_sources=detections_from_sources,
+            excluded_source_id=source,
         )
+    ):
+        if detection_ids[other_global_index] in detections_already_considered:
+            continue
+        if class_aware and detection_class_name != class_names[other_global_index]:
+            continue
+        iou_value = float(iou_matrix[detection_global_index, other_global_index])
         if iou_value <= iou_threshold:
             continue
         if current_max_overlap.get(other_source) is None:
-            current_max_overlap[other_source] = (other_detection, iou_value)
+            current_max_overlap[other_source] = (other_local_index, iou_value)
         if current_max_overlap[other_source][1] < iou_value:
-            current_max_overlap[other_source] = (other_detection, iou_value)
-    return current_max_overlap
+            current_max_overlap[other_source] = (other_local_index, iou_value)
+    return {
+        other_source: (
+            take_prediction_by_indices(
+                detections_from_sources[other_source], [local_index]
+            ),
+            iou_value,
+        )
+        for other_source, (local_index, iou_value) in current_max_overlap.items()
+    }
+
+
+def enumerate_detection_indices(
+    detections_from_sources: List[TensorNativeDetections],
+    excluded_source_id: Optional[int] = None,
+) -> Generator[Tuple[int, int, int], None, None]:
+    # Yields (source_id, global_index, local_index) WITHOUT materialising a
+    # single-row prediction per detection - the O(N^2) matching loop only needs
+    # indices into the precomputed host structures. `global_index` is the
+    # absolute position in the source-ordered concatenation (excluded sources
+    # still advance the offset) so it indexes `iou_matrix` / `class_names` /
+    # `detection_ids` consistently regardless of `excluded_source_id`.
+    global_offset = 0
+    for source_id, detections in enumerate(detections_from_sources):
+        n = len(detections)
+        if excluded_source_id == source_id:
+            global_offset += n
+            continue
+        for i in range(n):
+            yield source_id, global_offset + i, i
+        global_offset += n
 
 
 def enumerate_detections(
     detections_from_sources: List[TensorNativeDetections],
     excluded_source_id: Optional[int] = None,
-) -> Generator[Tuple[int, TensorNativeDetections], None, None]:
-    for source_id, detections in enumerate(detections_from_sources):
-        if excluded_source_id == source_id:
+) -> Generator[Tuple[int, int, TensorNativeDetections], None, None]:
+    for source_id, global_index, local_index in enumerate_detection_indices(
+        detections_from_sources=detections_from_sources,
+        excluded_source_id=excluded_source_id,
+    ):
+        yield source_id, global_index, take_prediction_by_indices(
+            detections_from_sources[source_id], [local_index]
+        )
+
+
+def _precompute_pair_data(
+    detections_from_sources: List[TensorNativeDetections],
+) -> Tuple[np.ndarray, List[str], List[Any]]:
+    """One host download per tensor field per source, then a single vectorised
+    IoU matrix over every detection. `global index` = position in the
+    source-ordered concatenation of all detections.
+
+    - `iou_matrix[a, b]` is bit-identical to `calculate_iou(row_a, row_b)`: the
+      same `sv.box_iou_batch` arithmetic (float32 internally), computed per cell
+      independently, and the `nan_to_num` mirrors calculate_iou's
+      `if math.isnan(iou): iou = 0` guard.
+    - `class_names[g]` mirrors `_resolve_class_name` (each source's own
+      `image_metadata` class-names map, `f"class_{id}"` fallback).
+    - `detection_ids[g]` mirrors `_resolve_detection_id` (reads
+      `bboxes_metadata`; KeyError-compatible when a reached row lacks metadata).
+    """
+    xyxy_arrays: List[np.ndarray] = []
+    class_names: List[str] = []
+    detection_ids: List[Any] = []
+    for detections in detections_from_sources:
+        n = len(detections)
+        if n == 0:
             continue
-        for i in range(len(detections)):
-            yield source_id, take_prediction_by_indices(detections, [i])
+        xyxy_arrays.append(_xyxy_as_numpy(detections))
+        class_id = detections.class_id.detach().to("cpu").numpy()
+        class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+        class_names.extend(
+            class_names_map.get(int(c), f"class_{int(c)}") for c in class_id
+        )
+        bboxes_metadata = detections.bboxes_metadata
+        for i in range(n):
+            row_metadata = bboxes_metadata[i] if bboxes_metadata is not None else {}
+            detection_ids.append(row_metadata[DETECTION_ID_KEY])
+    if xyxy_arrays:
+        all_xyxy = np.concatenate(xyxy_arrays, axis=0)
+        iou_matrix = np.nan_to_num(sv.box_iou_batch(all_xyxy, all_xyxy))
+    else:
+        iou_matrix = np.zeros((0, 0), dtype=np.float32)
+    return iou_matrix, class_names, detection_ids
 
 
 def calculate_iou(
@@ -588,9 +679,14 @@ def agree_on_consensus_for_all_detections_sources(
         predictions=detections_from_sources,
         classes_to_consider=classes_to_consider,
     )
+    # One host download per tensor field per source + one vectorised IoU matrix,
+    # replacing the per-pair `calculate_iou` / `_resolve_class_name` device syncs.
+    iou_matrix, class_names, detection_ids = _precompute_pair_data(
+        detections_from_sources
+    )
     detections_already_considered = set()
     consensus_detections = []
-    for source_id, detection in enumerate_detections(
+    for source_id, detection_global_index, detection in enumerate_detections(
         detections_from_sources=detections_from_sources
     ):
         (
@@ -608,6 +704,10 @@ def agree_on_consensus_for_all_detections_sources(
             detections_merge_coordinates_aggregation=detections_merge_coordinates_aggregation,
             detections_merge_mask_aggregation=detections_merge_mask_aggregation,
             detections_already_considered=detections_already_considered,
+            detection_global_index=detection_global_index,
+            iou_matrix=iou_matrix,
+            class_names=class_names,
+            detection_ids=detection_ids,
         )
         consensus_detections += consensus_detections_update
     consensus_detections = _merge_native_detections(consensus_detections)
@@ -640,6 +740,10 @@ def get_consensus_for_single_detection(
     detections_merge_coordinates_aggregation: AggregationMode,
     detections_merge_mask_aggregation: MaskAggregationMode,
     detections_already_considered: Set[str],
+    detection_global_index: int,
+    iou_matrix: np.ndarray,
+    class_names: List[str],
+    detection_ids: List[Any],
 ) -> Tuple[List[TensorNativeDetections], Set[str]]:
     if (
         len(detection)
@@ -655,6 +759,10 @@ def get_consensus_for_single_detection(
             iou_threshold=iou_threshold,
             class_aware=class_aware,
             detections_already_considered=detections_already_considered,
+            detection_global_index=detection_global_index,
+            iou_matrix=iou_matrix,
+            class_names=class_names,
+            detection_ids=detection_ids,
         )
     )
 
