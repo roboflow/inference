@@ -492,7 +492,7 @@ def parse_gemini_object_detection_response(
     inference_id: str,
 ) -> Detections:
     class_name2id = create_classes_index(classes=classes)
-    image_height, image_width = image.numpy_image.shape[:2]
+    image_height, image_width = image._read_shape_without_materialization()
     detections = extract_gemini_detection_entries(parsed_data=parsed_data)
     if len(detections) == 0:
         return empty_native_detections(
@@ -539,7 +539,7 @@ def parse_llm_object_detection_response(
     inference_id: str,
 ) -> Detections:
     class_name2id = create_classes_index(classes=classes)
-    image_height, image_width = image.numpy_image.shape[:2]
+    image_height, image_width = image._read_shape_without_materialization()
     # Mirror the gemini path's tolerance: accept a bare list root or a dict with
     # a `detections` key, and raise a clear ValueError on any other shape instead
     # of a KeyError on a missing key. Keeps openai/claude robust to real-world
@@ -596,7 +596,7 @@ def parse_florence2_object_detection_response(
     inference_id: str,
     florence_task_type: str,
 ):
-    image_height, image_width = image.numpy_image.shape[:2]
+    image_height, image_width = image._read_shape_without_materialization()
     # sv.Detections.from_lmm is used purely as the Florence-2 parsing algorithm
     # (mirroring the numpy block); the numpy arrays it returns are read back and
     # the output is built natively below - no sv.Detections is returned.

@@ -263,7 +263,7 @@ def parse_multi_class_classification_results(
 ) -> dict:
     try:
         class2id_mapping = create_classes_index(classes=classes)
-        height, width = image.numpy_image.shape[:2]
+        height, width = image._read_shape_without_materialization()
         top_class = results["class_name"]
         confidences = {top_class: scale_confidence(results["confidence"])}
         # The native ClassificationPrediction carries a dense confidence vector
@@ -323,7 +323,7 @@ def parse_multi_label_classification_results(
 ) -> dict:
     try:
         class2id_mapping = create_classes_index(classes=classes)
-        height, width = image.numpy_image.shape[:2]
+        height, width = image._read_shape_without_materialization()
         predicted_classes_confidences = {}
         for prediction in results["predicted_classes"]:
             if prediction["class"] not in class2id_mapping:
