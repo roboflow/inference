@@ -2,6 +2,12 @@ import math
 
 import torch
 
+import inference_models.models.rfdetr.common as rfdetr_common
+from inference_models.entities import ImageDimensions
+from inference_models.models.common.roboflow.model_packages import (
+    PreProcessingMetadata,
+    StaticCropOffset,
+)
 from inference_models.models.rfdetr.common import (
     keypoint_precision_cholesky_to_pixel_covariance,
 )
@@ -65,9 +71,7 @@ def test_covariance_is_symmetric() -> None:
     )
 
     # then
-    assert torch.allclose(
-        covariance[..., 0, 1], covariance[..., 1, 0], equal_nan=True
-    )
+    assert torch.allclose(covariance[..., 0, 1], covariance[..., 1, 0], equal_nan=True)
 
 
 def test_covariance_non_finite_input_yields_nan() -> None:
@@ -99,3 +103,57 @@ def test_covariance_degenerate_precision_yields_nan() -> None:
 
     # then
     assert torch.isnan(covariance[0, 0]).all()
+
+
+def test_object_detection_post_process_preserves_topk_order_without_resort(
+    monkeypatch,
+) -> None:
+    # given: torch.topk() returns the selected scores in descending order and the
+    # post-processing masks retain their relative order.
+    bboxes = torch.tensor(
+        [
+            [
+                [0.5, 0.5, 0.2, 0.2],
+                [0.2, 0.2, 0.2, 0.2],
+                [0.8, 0.8, 0.2, 0.2],
+            ]
+        ]
+    )
+    logits = torch.tensor([[[0.0, 5.0], [4.0, 0.0], [3.0, 0.0]]])
+    dimensions = ImageDimensions(width=10, height=10)
+    metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=dimensions,
+        size_after_pre_processing=dimensions,
+        inference_size=dimensions,
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=StaticCropOffset(0, 0, 10, 10),
+    )
+
+    def unexpected_sort(*args, **kwargs):
+        raise AssertionError("post-processing must not re-sort topk predictions")
+
+    monkeypatch.setattr(rfdetr_common.torch, "sort", unexpected_sort)
+
+    # when
+    result = rfdetr_common.post_process_object_detection_results(
+        bboxes=bboxes,
+        logits=logits,
+        pre_processing_meta=[metadata],
+        threshold=0.5,
+        num_classes=2,
+        classes_re_mapping=None,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert torch.equal(
+        result[0].xyxy,
+        torch.tensor([[4, 4, 6, 6], [1, 1, 3, 3], [7, 7, 9, 9]]),
+    )
+    assert torch.equal(result[0].class_id, torch.tensor([1, 0, 0]))
+    assert torch.all(result[0].confidence[:-1] >= result[0].confidence[1:])

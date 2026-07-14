@@ -3,7 +3,12 @@ from typing import List, Optional, Tuple, Union
 import torch
 from torchvision.transforms import functional
 
-from inference_models import Detections, InstanceDetections, InstancesRLEMasks, KeyPoints
+from inference_models import (
+    Detections,
+    InstanceDetections,
+    InstancesRLEMasks,
+    KeyPoints,
+)
 from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
 )
@@ -99,11 +104,9 @@ def post_process_object_detection_results(
         predicted_confidence = predicted_confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
         selected_boxes = image_bboxes[confidence_mask]
-        predicted_confidence, sorted_indices = torch.sort(
-            predicted_confidence, descending=True
-        )
-        top_classes = top_classes[sorted_indices]
-        selected_boxes = selected_boxes[sorted_indices]
+        # select_topk_predictions() uses torch.topk(), which returns scores in
+        # descending order. The remapping and boolean masks above preserve their
+        # relative order, so a second sort and the accompanying gathers are redundant.
         cxcy = selected_boxes[:, :2]
         wh = selected_boxes[:, 2:]
         xy_min = cxcy - 0.5 * wh
@@ -503,8 +506,8 @@ def keypoint_precision_cholesky_to_pixel_covariance(
 
 
 def post_process_keypoint_detection_results(
-    bboxes: torch.Tensor,     # [B, N_q, 4] cxcywh, normalized [0, 1]
-    out_logits: torch.Tensor,     # [B, N_q, C]
+    bboxes: torch.Tensor,  # [B, N_q, 4] cxcywh, normalized [0, 1]
+    out_logits: torch.Tensor,  # [B, N_q, C]
     out_keypoints: torch.Tensor,  # [B, N_q, K_padded, D]
     pre_processing_meta: List[PreProcessingMetadata],
     threshold: Union[float, torch.Tensor],
@@ -531,7 +534,7 @@ def post_process_keypoint_detection_results(
     topk_values, topk_indexes = torch.topk(flat_scores, num_select, dim=1)
     scores = topk_values
     topk_boxes = topk_indexes // C  # [B, num_select] query indices
-    labels = topk_indexes % C       # [B, num_select] class indices
+    labels = topk_indexes % C  # [B, num_select] class indices
 
     bboxes = torch.gather(bboxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
     bboxes = cxcywh_to_xyxy(bboxes)
@@ -540,13 +543,21 @@ def post_process_keypoint_detection_results(
     # Keep all D=8 dims: [x, y, findable_logit, visible_logit, log_l11, l21, log_l22, class_logit]
     # The model trains a 2D Gaussian per keypoint with precision matrix P = L L^T;
     # log(sqrt(det P)) = log_l11 + log_l22 — the model's own predicted localization sharpness.
-    kp_gather_idx = topk_boxes.unsqueeze(-1).unsqueeze(-1).expand(B, num_select, K_padded, D)
-    keypoints_g = torch.gather(out_keypoints, 1, kp_gather_idx)  # [B, num_select, K_padded, D]
+    kp_gather_idx = (
+        topk_boxes.unsqueeze(-1).unsqueeze(-1).expand(B, num_select, K_padded, D)
+    )
+    keypoints_g = torch.gather(
+        out_keypoints, 1, kp_gather_idx
+    )  # [B, num_select, K_padded, D]
     keypoints_g = keypoints_g.view(B, num_select, C, K_per_class, D)
 
     batch_idx = torch.arange(B, device=labels.device).unsqueeze(-1).expand_as(labels)
-    query_idx = torch.arange(num_select, device=labels.device).unsqueeze(0).expand_as(labels)
-    keypoints_sel = keypoints_g[batch_idx, query_idx, labels]  # [B, num_select, K_per_class, D=8]
+    query_idx = (
+        torch.arange(num_select, device=labels.device).unsqueeze(0).expand_as(labels)
+    )
+    keypoints_sel = keypoints_g[
+        batch_idx, query_idx, labels
+    ]  # [B, num_select, K_per_class, D=8]
 
     keypoints_xy = keypoints_sel[..., :2]
     keypoints_conf = keypoints_sel[..., 2:3].sigmoid()  # findable [0,1] per kp
@@ -558,17 +569,21 @@ def post_process_keypoint_detection_results(
     # Note: σ_k (COCO bandwidths) NOT used — model's L already encodes per-kp difficulty
     # implicitly. Sigma-free form transfers to any keypoint domain. α=0.20 seems to work well.
     log_l11 = keypoints_sel[..., 4]
-    l21     = keypoints_sel[..., 5]
+    l21 = keypoints_sel[..., 5]
     log_l22 = keypoints_sel[..., 6]
     # log(trace) per kp via logsumexp over the three log-terms (numerical stability)
-    log_t1 = -2.0 * log_l11                                                   # log(1/l11²)
-    log_t2 = -2.0 * log_l22                                                   # log(1/l22²)
-    log_t3 = 2.0 * torch.log(l21.abs().clamp(min=1e-12)) + log_t1 + log_t2    # log(l21²/(l11·l22)²)
+    log_t1 = -2.0 * log_l11  # log(1/l11²)
+    log_t2 = -2.0 * log_l22  # log(1/l22²)
+    log_t3 = (
+        2.0 * torch.log(l21.abs().clamp(min=1e-12)) + log_t1 + log_t2
+    )  # log(l21²/(l11·l22)²)
     log_trace = torch.logsumexp(torch.stack([log_t1, log_t2, log_t3], dim=-1), dim=-1)
     # Findable-weighted arithmetic mean of trace, in log space
     w_find = keypoints_conf.squeeze(-1)
     log_w = torch.log(w_find.clamp(min=1e-12))
-    log_mean_trace = torch.logsumexp(log_trace + log_w, dim=-1) - torch.logsumexp(log_w, dim=-1)
+    log_mean_trace = torch.logsumexp(log_trace + log_w, dim=-1) - torch.logsumexp(
+        log_w, dim=-1
+    )
     scores = scores * torch.exp(-0.20 * log_mean_trace)
 
     # normalize
@@ -616,7 +631,7 @@ def post_process_keypoint_detection_results(
         predicted_confidence = predicted_confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
         selected_boxes = image_bboxes[confidence_mask]
-        selected_keypoints = image_keypoints[confidence_mask] 
+        selected_keypoints = image_keypoints[confidence_mask]
         predicted_confidence, sorted_indices = torch.sort(
             predicted_confidence, descending=True
         )
@@ -654,13 +669,15 @@ def post_process_keypoint_detection_results(
             )
         )
 
-        # Similar to rescale_image_detections function, for keypoints. 
-        offsets = torch.as_tensor([image_meta.pad_left, image_meta.pad_top],
+        # Similar to rescale_image_detections function, for keypoints.
+        offsets = torch.as_tensor(
+            [image_meta.pad_left, image_meta.pad_top],
             dtype=selected_keypoints_xy.dtype,
             device=selected_keypoints_xy.device,
         )
         selected_keypoints_xy.sub_(offsets)
-        scale = torch.as_tensor([image_meta.scale_width, image_meta.scale_height],
+        scale = torch.as_tensor(
+            [image_meta.scale_width, image_meta.scale_height],
             dtype=selected_keypoints_xy.dtype,
             device=selected_keypoints_xy.device,
         )
@@ -694,7 +711,9 @@ def post_process_keypoint_detection_results(
             .to(device=selected_keypoints_xy.device)
         )
         invalid_slot_keypoints = (
-            torch.arange(key_points_slots_in_prediction, device=selected_keypoints_xy.device)
+            torch.arange(
+                key_points_slots_in_prediction, device=selected_keypoints_xy.device
+            )
             .unsqueeze(0)
             .repeat(selected_keypoints_xy.shape[0], 1)
             >= key_points_classes_for_instance_class
