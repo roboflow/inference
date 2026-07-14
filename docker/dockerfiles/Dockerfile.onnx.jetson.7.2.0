@@ -70,6 +70,8 @@ ARG PYTORCH_VERSION=2.10.0
 ARG TORCHVISION_VERSION=0.25.0
 ARG TRITON_VERSION=3.6.0
 ARG TRITON_WHEEL_SHA256=374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4
+ARG SUPERIORVISION_VERSION=0.30.0.dev2
+ARG TRACKTORS_VERSION=2.6.0.dev1
 ARG ONNXRUNTIME_VERSION=1.24.2
 ARG PYTORCH_MAX_JOBS=12
 ARG ORT_BUILD_PARALLEL=8
@@ -298,6 +300,8 @@ RUN python3 -m pip wheel --no-deps --wheel-dir /opt/wheels \
 
 RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
+    echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/overrides.txt && \
+    echo "tracktors==${TRACKTORS_VERSION}" >> /tmp/overrides.txt && \
     uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --find-links /opt/wheels \
     --override /tmp/overrides.txt \
@@ -349,6 +353,8 @@ RUN cd /usr/local/lib/python3.12/dist-packages && \
 
 RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
     echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
+    echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
+    echo "tracktors==${TRACKTORS_VERSION}" >> /tmp/runtime-overrides.txt && \
     uv pip install --target /opt/python-runtime \
         --index-strategy unsafe-best-match \
         --find-links /opt/wheels \

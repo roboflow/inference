@@ -77,10 +77,12 @@ import flash_attn
 import importlib.metadata
 import importlib.util
 import onnxruntime
+import supervision
 import tensorrt
 import torch
 import torchvision
 import triton
+import trackers
 from torchvision import io as torchvision_io
 
 arch_flags = set(torch._C._cuda_getArchFlags().split())
@@ -97,6 +99,18 @@ assert torchvision.__version__
 assert triton.__version__
 assert torchvision_io
 assert hasattr(torch.ops.image, "decode_jpegs_cuda")
+assert importlib.metadata.version("superiorvision") == "0.30.0.dev2"
+assert importlib.metadata.version("tracktors") == "2.6.0.dev1"
+assert supervision.__file__
+assert trackers.__file__
+assert cv2.__file__.startswith("/opt/opencv/python/"), cv2.__file__
+
+for replaced_distribution in ("supervision", "trackers"):
+    try:
+        installed_version = importlib.metadata.version(replaced_distribution)
+    except importlib.metadata.PackageNotFoundError:
+        continue
+    raise AssertionError((replaced_distribution, installed_version))
 
 torch_requirements = importlib.metadata.requires("torch") or []
 assert not any(
@@ -108,7 +122,10 @@ pip_cuda_distributions = sorted(
     name
     for distribution in importlib.metadata.distributions()
     if (name := distribution.metadata.get("Name"))
-    and name.lower().startswith("nvidia-")
+    and (
+        name.lower().startswith("nvidia-")
+        or name.lower() in {"cuda-bindings", "cuda-toolkit"}
+    )
 )
 assert not pip_cuda_distributions, pip_cuda_distributions
 
