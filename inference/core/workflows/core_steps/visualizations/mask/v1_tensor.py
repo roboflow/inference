@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.types import InstancesRLEMasks
 
 TYPE: str = "roboflow_core/mask_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over detected objects in an image."
@@ -71,6 +72,91 @@ The annotated image from this block can be connected to:
 """
 
 
+def _coco_rle_counts_to_runs(counts) -> np.ndarray:
+    """Decode a COCO compressed-RLE ``counts`` payload into run lengths.
+
+    Vectorised numpy port of pycocotools' ``rleFrString``: each value is a
+    varint of base-48 chars carrying 5 data bits + a continuation bit (0x20),
+    with sign bit 0x10 in the final char, and from the 4th value on each count
+    stored as a delta against the value two back. Uncompressed payloads (a
+    list of ints) pass through. Returns int64 run lengths alternating
+    background/foreground over the column-major (Fortran) pixel order,
+    background first.
+    """
+    if isinstance(counts, (list, tuple, np.ndarray)):
+        return np.asarray(counts, dtype=np.int64)
+    if isinstance(counts, str):
+        counts = counts.encode("ascii")
+    chars = np.frombuffer(counts, dtype=np.uint8).astype(np.int64) - 48
+    if chars.size == 0:
+        return np.zeros(0, dtype=np.int64)
+    ends = (chars & 0x20) == 0  # final char of each varint
+    ends_idx = np.flatnonzero(ends)
+    starts_idx = np.concatenate(([0], ends_idx[:-1] + 1))
+    value_id = np.cumsum(np.concatenate(([False], ends[:-1])))
+    bit_shift = 5 * (np.arange(chars.size) - starts_idx[value_id])
+    values = np.zeros(ends_idx.size, dtype=np.int64)
+    np.add.at(values, value_id, (chars & 0x1F) << bit_shift)
+    negative = (chars[ends_idx] & 0x10) != 0
+    values[negative] -= np.int64(1) << (5 * (ends_idx - starts_idx + 1)[negative])
+    # Undo the delta coding: values 3+ each add the decoded value two back,
+    # which is a running sum over the odd and even positions independently.
+    if values.size > 3:
+        values[3::2] = values[1] + np.cumsum(values[3::2])
+    if values.size > 4:
+        values[4::2] = values[2] + np.cumsum(values[4::2])
+    return values
+
+
+def _rle_foreground_pixels_in_roi(
+    masks: "InstancesRLEMasks",
+    roi: tuple,
+    device: torch.device,
+):
+    """Turn COCO-RLE masks into ``(flat ROI pixel index, detection id)`` device
+    tensors without materialising any dense mask.
+
+    Host work is proportional to the encoded byte size (the varint decode is
+    vectorised numpy); only the per-run tables cross the bus — one packed H2D
+    upload — and the run→pixel expansion happens on the device with a
+    host-known ``output_size`` (no device→host sync).
+    """
+    uy1, ux1, uy2, ux2 = roi
+    height = int(masks.image_size[0])  # runs are column-major over (h, w)
+    starts_l, lens_l, dets_l = [], [], []
+    for det_idx, payload in enumerate(masks.masks):
+        runs = _coco_rle_counts_to_runs(payload)
+        bounds = np.concatenate(([0], np.cumsum(runs)))
+        fg_starts, fg_lens = bounds[1::2], runs[1::2]
+        keep = fg_lens > 0
+        starts_l.append(fg_starts[: fg_lens.size][keep])
+        lens_l.append(fg_lens[keep])
+        dets_l.append(np.full(int(keep.sum()), det_idx, dtype=np.int64))
+    starts = np.concatenate(starts_l) if starts_l else np.zeros(0, dtype=np.int64)
+    lens = np.concatenate(lens_l) if lens_l else np.zeros(0, dtype=np.int64)
+    total = int(lens.sum())
+    empty = torch.zeros(0, dtype=torch.int64, device=device)
+    if total == 0:
+        return empty, empty
+    offsets = np.concatenate(([0], np.cumsum(lens)[:-1]))
+    packed = torch.from_numpy(
+        np.stack([starts, lens, np.concatenate(dets_l), offsets])
+    ).to(device)
+    run_starts, run_lens, run_dets, run_offsets = packed
+    run_ids = torch.repeat_interleave(
+        torch.arange(run_lens.shape[0], device=device),
+        run_lens,
+        output_size=total,
+    )
+    pix_f = run_starts[run_ids] + (
+        torch.arange(total, device=device, dtype=torch.int64) - run_offsets[run_ids]
+    )
+    rows, cols = pix_f % height, pix_f // height
+    inside = (rows >= uy1) & (rows < uy2) & (cols >= ux1) & (cols < ux2)
+    rows, cols = rows[inside], cols[inside]
+    return (rows - uy1) * (ux2 - ux1) + (cols - ux1), run_dets[run_ids][inside]
+
+
 def gpu_mask_composite(
     scene,
     predictions: "InstanceDetections",
@@ -81,36 +167,36 @@ def gpu_mask_composite(
 ):
     """GPU-native torch replacement for ``sv.MaskAnnotator.annotate``.
 
-    Supervision's painter's algorithm (``_paint_masks_by_area``) paints masks
-    in ``np.flip(np.argsort(area))`` order — largest first — so the SMALLEST
-    overlapping mask owns each pixel. Rather than replaying that paint loop,
-    ownership is resolved in one vectorised kernel pair over the union ROI of
-    all boxes:
+    Accepts both tensor-pipeline mask carriers:
 
-        cost = where(mask, area_of_mask, +inf)   # (N, h, w)
-        owner = cost.argmin(dim=0)               # smallest area wins
+    * a dense bool ``torch.Tensor`` ``(N, H, W)`` on the pipeline device, and
+    * ``InstancesRLEMasks`` (COCO compressed RLE, column-major) — decoded
+      straight into the per-pixel accumulators on the device. The dense
+      ``(N, H, W)`` stack is never materialised: the RLE path is
+      ``O(total foreground pixels)`` in memory, not ``O(N·H·W)``.
 
-    Tie handling matches too: for equal areas ``argmin`` returns the FIRST
-    (lowest) index, and in supervision's stable flip-sort equal areas are
-    painted higher-index-first so the lower index is painted last and wins.
-    The winning color per pixel is therefore identical to the sv annotator's,
-    and so is the blend. (A loop-free "blend-all" variant — averaging every
-    overlapping mask's color instead of resolving an owner — measures ~1.5 ms
-    faster on Jetson Orin Nano but changes overlap colors and breaks sv
-    parity; rejected.)
+    Overlap semantics — intentionally simpler than supervision's: every mask
+    covering a pixel contributes equally, i.e. the overlay color is the MEAN
+    of the covering masks' colors, alpha-composited once with the scene:
 
-    Blend rounding: ``cv2.addWeighted`` saturate-casts with ``cvRound``
-    (round-half-to-even); ``torch.round_`` matches it bit-for-bit for the exact
-    half values produced by uint8 blends — all intermediates (<= 255.5) are
-    exactly representable in fp16. Round-half-away (``(x + 0.5).floor()``)
-    would diverge by 1 on ~half the odd sums. No clamp is needed: a convex
-    combination of uint8 values stays in [0, 255].
+        count      = Σ_i mask_i                       # (h, w)
+        color_sum  = Σ_i mask_i · color_i · opacity   # (h, w, 3)
+        out        = color_sum / count + (1-opacity) · scene   where count > 0
 
-    ``predictions.mask`` must be a dense ``torch.Tensor`` ``(N, H, W)`` bool on
-    the pipeline device. Its True pixels are assumed to lie inside the
-    detection's box (the tensor pipeline decodes masks per-box), so areas
-    summed over the union ROI equal the full-mask pixel counts — exactly
-    ``sv.Detections.area``.
+    This is order-independent and diverges from supervision's
+    smallest-area-owns-the-pixel painter's algorithm on OVERLAPPING pixels
+    only; pixels covered by exactly one mask still match ``sv.MaskAnnotator``
+    bit-for-bit (same premultiplied blend; ``torch.round_`` is
+    round-half-to-even, matching ``cv2.addWeighted``'s ``cvRound``; a convex
+    combination of uint8 values needs no clamp). Both carriers share the same
+    accumulate-and-blend core (dense masks via one ``nonzero``, RLE via the
+    run scatter), and fp32 accumulation keeps counts and color sums exact for
+    any realistic N.
+
+    Masks' True pixels are assumed to lie inside their detection boxes (the
+    tensor pipeline decodes masks per-box), so all work is restricted to the
+    union ROI of the boxes; one tiny ``xyxy`` D2H is the only mandatory host
+    sync (the dense path's ``nonzero`` adds one more).
 
     Args:
         scene: uint8 frame. With ``scene_layout="hwc_bgr"`` (default): an HWC
@@ -121,7 +207,8 @@ def gpu_mask_composite(
             mutated; a TENSOR scene IS mutated in place (callers that need the
             original must pass a clone).
         predictions: ``InstanceDetections`` whose ``mask`` is a dense bool
-            ``torch.Tensor`` ``(N, H, W)``.
+            ``torch.Tensor`` ``(N, H, W)`` or an ``InstancesRLEMasks`` whose
+            ``image_size`` matches the scene.
         colors_bgr: ``(N, 3)`` uint8 per-detection colors (BGR), resolved with
             the same palette logic the sv annotator would use.
         opacity: overlay opacity, matches ``sv.MaskAnnotator(opacity=...)``.
@@ -134,7 +221,8 @@ def gpu_mask_composite(
         or the device tensor when ``return_tensor=True``.
     """
     mask_carrier = predictions.mask
-    device = mask_carrier.device
+    is_rle = isinstance(mask_carrier, InstancesRLEMasks)
+    device = predictions.xyxy.device if is_rle else mask_carrier.device
 
     chw = scene_layout == "chw_rgb"
     if isinstance(scene, torch.Tensor):
@@ -150,6 +238,15 @@ def gpu_mask_composite(
     scene_hwc = scene_t.permute(1, 2, 0) if chw else scene_t
 
     H, W = int(scene_hwc.shape[0]), int(scene_hwc.shape[1])
+    mask_hw = (
+        tuple(int(s) for s in mask_carrier.image_size)
+        if is_rle
+        else (int(mask_carrier.shape[1]), int(mask_carrier.shape[2]))
+    )
+    if mask_hw != (H, W):
+        # Silent slicing on a mismatched canvas would paint misaligned masks;
+        # raising sends the block to the sv fallback instead.
+        raise ValueError(f"mask canvas {mask_hw} does not match scene {(H, W)}")
     # Union ROI of all boxes — one tiny D2H of xyxy (the only host sync).
     # supervision xyxy has inclusive max coords, hence the +1.
     xy = predictions.xyxy.detach().cpu().numpy()
@@ -158,36 +255,37 @@ def gpu_mask_composite(
     ux2 = min(W, int(np.floor(xy[:, 2].max())) + 1)
     uy2 = min(H, int(np.floor(xy[:, 3].max())) + 1)
     if ux2 > ux1 and uy2 > uy1:
-        m = mask_carrier[:, uy1:uy2, ux1:ux2]
-        # Areas over the ROI == full-mask pixel counts (True pixels live inside
-        # the boxes) == sv.Detections.area. fp32: counts can exceed fp16 max.
-        areas = m.sum(dim=(1, 2)).to(torch.float32)
-        # Ownership resolved in one kernel pair (see docstring): smallest-area
-        # mask wins each pixel; argmin's first-index tie rule matches sv's
-        # stable flip-sort ties.
-        cost = torch.where(
-            m, areas.view(-1, 1, 1), torch.tensor(float("inf"), device=device)
-        )
-        owner = cost.argmin(dim=0)  # (h, w)
-        hit = m.any(dim=0).unsqueeze(-1)
-        # Pre-multiplied LUT: gather directly yields the color contribution
-        # `color * opacity`, saving two full-ROI passes. The LUT channel order
-        # must match the scene layout. fp16 on CUDA (all blend intermediates
-        # <= 255.5 are exactly representable); fp32 on CPU, where half ops are
-        # slow — identical results either way.
-        blend_dtype = torch.float16 if device.type == "cuda" else torch.float32
+        roi_h, roi_w = uy2 - uy1, ux2 - ux1
+        # fp32 accumulation: counts and premultiplied color sums are integers
+        # and halves well below 2^24, so sums stay exact regardless of the
+        # (nondeterministic) atomic add order.
+        acc_dtype = torch.float32
         lut_colors = colors_bgr[:, ::-1] if chw else colors_bgr
         lut_premul = (
             torch.from_numpy(np.ascontiguousarray(lut_colors))
-            .to(device=device, dtype=blend_dtype)
+            .to(device=device, dtype=acc_dtype)
             .mul_(opacity)
         )  # (N, 3)
+        if is_rle:
+            flat_idx, det_ids = _rle_foreground_pixels_in_roi(
+                mask_carrier, (uy1, ux1, uy2, ux2), device
+            )
+        else:
+            det_ids, rows, cols = mask_carrier[:, uy1:uy2, ux1:ux2].nonzero(
+                as_tuple=True
+            )
+            flat_idx = rows * roi_w + cols
+        count = torch.zeros(roi_h * roi_w, dtype=acc_dtype, device=device)
+        count.index_add_(0, flat_idx, torch.ones_like(flat_idx, dtype=acc_dtype))
+        color_sum = torch.zeros(roi_h * roi_w, 3, dtype=acc_dtype, device=device)
+        color_sum.index_add_(0, flat_idx, lut_premul[det_ids])
+        hit = (count > 0).view(roi_h, roi_w, 1)
         scene_roi = scene_hwc[uy1:uy2, ux1:ux2]
-        blended = lut_premul[owner]
-        # fused axpy: blended += (1 - opacity) * scene  (single kernel)
-        blended.add_(scene_roi.to(blend_dtype), alpha=1.0 - opacity)
-        # torch.round_ = round-half-to-even, matching cv2.addWeighted's
-        # cvRound (see docstring).
+        # mean premultiplied mask color, then fused axpy with the scene
+        blended = color_sum.div_(count.clamp_(min=1.0).unsqueeze(1)).view(
+            roi_h, roi_w, 3
+        )
+        blended.add_(scene_roi.to(acc_dtype), alpha=1.0 - opacity)
         blended_u8 = blended.round_().to(torch.uint8)
         # where() = one full-ROI write; boolean indexing would need 2 nonzero
         # passes + gather/scatter.
@@ -199,23 +297,27 @@ def gpu_mask_composite(
 
 
 def _gpu_composite_eligible(predictions, color_axis: str) -> bool:
-    """True when the torch compositor can replicate the sv path exactly."""
+    """True when the torch compositor supports the inputs."""
     if color_axis not in ("CLASS", "INDEX"):
         # TRACK / custom lookups keep the battle-tested sv path.
         return False
     if not isinstance(predictions, InstanceDetections):
         return False
-    mask_carrier = getattr(predictions, "mask", None)
+    if color_axis == "CLASS" and predictions.class_id is None:
+        return False
     n = int(predictions.xyxy.shape[0])
     if n == 0:
         # Nothing to paint; the sv path is a trivial no-op and avoids an
         # empty-crop edge case in the compositor.
         return False
-    # Dense carrier only: torch.Tensor (N, H, W) bool — the tensor pipeline's
-    # default. RLE-carrier predictions take the sv fallback. Crop views are
-    # built from xyxy on whatever device the mask lives on (the loader only
-    # registers this block for the tensor pipeline, so device gating is not
-    # this block's job).
+    # Both tensor-pipeline carriers are supported: a dense (N, H, W) bool
+    # torch.Tensor and COCO-RLE (InstancesRLEMasks). Crop views are built from
+    # xyxy on whatever device the mask lives on (the loader only registers
+    # this block for the tensor pipeline, so device gating is not this
+    # block's job).
+    mask_carrier = getattr(predictions, "mask", None)
+    if isinstance(mask_carrier, InstancesRLEMasks):
+        return len(mask_carrier.masks) == n
     return (
         isinstance(mask_carrier, torch.Tensor)
         and mask_carrier.ndim == 3
@@ -324,7 +426,12 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
         color_axis: Optional[str],
         opacity: Optional[float],
     ) -> BlockResult:
-        if _gpu_composite_eligible(predictions, color_axis):
+        # is_tensor_materialised(): never force a CHW tensor out of a
+        # numpy-sourced image — that conversion is pure CPU overhead and the
+        # sv path is faster on such frames.
+        if _gpu_composite_eligible(predictions, color_axis) and (
+            image.is_tensor_materialised()
+        ):
             try:
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
                 if not isinstance(palette, sv.ColorPalette):
