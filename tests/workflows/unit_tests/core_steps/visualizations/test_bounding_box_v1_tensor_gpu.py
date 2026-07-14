@@ -22,11 +22,15 @@ SCENE_H, SCENE_W = 240, 320
 
 
 def _paint(
-    xyxy: np.ndarray, colors_rgb: np.ndarray, thickness: int, device: str = "cpu"
+    xyxy: np.ndarray,
+    colors_rgb: np.ndarray,
+    thickness: int,
+    device: str = "cpu",
+    roundness: float = 0.0,
 ) -> tuple:
     """Run the painter on a zero scene; return (chw tensor, painted-pixel mask)."""
     scene = torch.zeros((3, SCENE_H, SCENE_W), dtype=torch.uint8, device=device)
-    annotated = gpu_draw_boxes(scene, xyxy.astype(int), colors_rgb, thickness)
+    annotated = gpu_draw_boxes(scene, xyxy.astype(int), colors_rgb, thickness, roundness)
     painted = (annotated != 0).any(dim=0).cpu().numpy()
     return annotated, painted
 
@@ -99,6 +103,49 @@ def test_border_band_geometry_exact() -> None:
     assert not painted[y1 + 2 : y2 - 1, x1 + 2 : x2 - 1].any()  # interior clean
     assert not painted[: y1 - 1].any() and not painted[y2 + 2 :].any()  # outside
     assert (annotated[0][painted] == 255).all()  # right channel, right color
+
+
+def _sv_round_painted_mask(xyxy: np.ndarray, thickness: int, roundness: float) -> np.ndarray:
+    scene = np.zeros((SCENE_H, SCENE_W, 3), dtype=np.uint8)
+    annotator = sv.RoundBoxAnnotator(
+        color=PALETTE,
+        color_lookup=sv.ColorLookup.INDEX,
+        thickness=thickness,
+        roundness=roundness,
+    )
+    out = annotator.annotate(scene, sv.Detections(xyxy=xyxy.astype(np.float32)))
+    return (out != 0).any(axis=2)
+
+
+@pytest.mark.parametrize("scenario", sorted(_SCENARIOS))
+@pytest.mark.parametrize("roundness", [0.2, 0.5, 1.0])
+def test_gpu_rounded_boxes_visually_match_sv(scenario: str, roundness: float) -> None:
+    xyxy = _SCENARIOS[scenario]
+    _, painted = _paint(xyxy, _index_colors(xyxy.shape[0]), 3, roundness=roundness)
+    reference = _sv_round_painted_mask(xyxy, 3, roundness)
+    union = (painted | reference).sum()
+    if union == 0:
+        return
+    iou = (painted & reference).sum() / union
+    assert iou >= 0.45, f"painted-region IoU {iou:.3f}"
+
+
+def test_rounded_corners_are_actually_rounded() -> None:
+    # Large box, high roundness: the square corner pixel must stay unpainted,
+    # the edge midpoints and arc diagonals must be painted.
+    x1, y1, x2, y2 = 40, 40, 200, 200
+    radius = (200 - 40) // 2  # roundness=1.0
+    _, painted = _paint(
+        np.array([[x1, y1, x2, y2]], dtype=float),
+        np.array([[255, 0, 0]], np.uint8),
+        thickness=3,
+        roundness=1.0,
+    )
+    assert not painted[y1, x1]  # square corner cut away
+    assert painted[y1, (x1 + x2) // 2]  # top edge midpoint
+    assert painted[(y1 + y2) // 2, x1]  # left edge midpoint
+    diag = int(radius - radius / np.sqrt(2))
+    assert painted[y1 + diag, x1 + diag]  # 45-degree point on the TL arc
 
 
 def test_overlapping_boxes_later_box_wins() -> None:
@@ -178,27 +225,14 @@ def _tensor_backed_image() -> WorkflowImageData:
 
 def test_gpu_box_draw_eligible_happy_path() -> None:
     assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", 0.0, 2, _tensor_backed_image()
-        )
+        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 2, _tensor_backed_image())
         is True
-    )
-
-
-def test_gpu_box_draw_not_eligible_for_roundness() -> None:
-    assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", 0.4, 2, _tensor_backed_image()
-        )
-        is False
     )
 
 
 def test_gpu_box_draw_not_eligible_for_track_lookup() -> None:
     assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "TRACK", 0.0, 2, _tensor_backed_image()
-        )
+        _gpu_box_draw_eligible(_eligible_detections(), "TRACK", 2, _tensor_backed_image())
         is False
     )
 
@@ -207,17 +241,12 @@ def test_gpu_box_draw_not_eligible_for_empty_detections() -> None:
     empty = _build_detections(
         np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=int), device="cpu"
     )
-    assert (
-        _gpu_box_draw_eligible(empty, "CLASS", 0.0, 2, _tensor_backed_image())
-        is False
-    )
+    assert _gpu_box_draw_eligible(empty, "CLASS", 2, _tensor_backed_image()) is False
 
 
 def test_gpu_box_draw_not_eligible_for_non_int_thickness() -> None:
     assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", 0.0, "2", _tensor_backed_image()
-        )
+        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", "2", _tensor_backed_image())
         is False
     )
 
@@ -228,6 +257,5 @@ def test_gpu_box_draw_not_eligible_for_numpy_sourced_image() -> None:
         numpy_image=np.zeros((64, 64, 3), dtype=np.uint8),
     )
     assert (
-        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 0.0, 2, numpy_image)
-        is False
+        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 2, numpy_image) is False
     )

@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -27,6 +28,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+_EMPTY_I64 = np.zeros(0, dtype=np.int64)
 
 TYPE: str = "roboflow_core/bounding_box_visualization@v1"
 SHORT_DESCRIPTION = "Draw a box around detected objects in an image."
@@ -66,18 +69,36 @@ The annotated image from this block can be connected to:
 """
 
 
+@lru_cache(maxsize=256)
+def _quarter_arc_offsets(radius: int, thickness: int) -> Tuple[np.ndarray, np.ndarray]:
+    """(dy, dx) pixel offsets of a top-left quarter ring around an arc
+    center — a `thickness`-wide annulus at `radius`. Mirrored by sign for
+    the other three corners. Cached per (radius, thickness) across frames."""
+    outer = thickness // 2
+    span = radius + outer
+    yy, xx = np.mgrid[-span : 1, -span : 1]
+    dist = np.sqrt(yy**2 + xx**2)
+    ring = (dist >= radius - (thickness - 1 - outer) - 0.5) & (
+        dist <= radius + outer + 0.5
+    )
+    return yy[ring].astype(np.int64), xx[ring].astype(np.int64)
+
+
 def gpu_draw_boxes(
     scene_chw: torch.Tensor,
     xyxy: np.ndarray,
     colors_rgb: np.ndarray,
     thickness: int,
+    roundness: float = 0.0,
 ) -> torch.Tensor:
-    """Draw square box borders on a CHW RGB uint8 device tensor, in place.
+    """Draw box borders on a CHW RGB uint8 device tensor, in place.
 
     Approximate rendering: each border is a plain ``thickness``-wide band
-    centered on the box edge with square corners. cv2 (the sv path) draws
-    round joins and slightly different band widths, so output is visually
-    equivalent but not bit-identical.
+    centered on the box edge. ``roundness > 0`` rounds the corners with
+    analytic quarter-ring arcs at sv's corner radius
+    (``int(min_side // 2 * roundness)``). cv2 (the sv path) rasterises
+    joins/caps/arcs slightly differently, so output is visually equivalent,
+    not bit-identical.
 
     Painted with a fixed number of torch ops regardless of box count — a
     per-box loop is dispatch-bound on Jetson (measured 43 ms @ 50 boxes):
@@ -99,19 +120,27 @@ def gpu_draw_boxes(
     outer = thickness // 2  # band extends `outer` outward, rest inward
 
     xy = np.asarray(xyxy, dtype=np.int64)
-    x1 = np.minimum(xy[:, 0], xy[:, 2]) - outer
-    x2 = np.maximum(xy[:, 0], xy[:, 2]) + outer
-    y1 = np.minimum(xy[:, 1], xy[:, 3]) - outer
-    y2 = np.maximum(xy[:, 1], xy[:, 3]) + outer
+    bx1 = np.minimum(xy[:, 0], xy[:, 2])
+    bx2 = np.maximum(xy[:, 0], xy[:, 2])
+    by1 = np.minimum(xy[:, 1], xy[:, 3])
+    by2 = np.maximum(xy[:, 1], xy[:, 3])
+    if roundness > 0:
+        # sv.RoundBoxAnnotator's corner radius, from the smaller box side.
+        radii = (np.minimum(bx2 - bx1, by2 - by1) // 2 * roundness).astype(np.int64)
+    else:
+        radii = np.zeros(n, dtype=np.int64)
+    x1, x2, y1, y2 = bx1 - outer, bx2 + outer, by1 - outer, by2 + outer
 
-    # 4 bands per box (inclusive coords): top/bottom span the full width,
-    # left/right fill between them. Degenerate boxes just overlap bands of
-    # the same color — harmless.
+    # 4 bands per box (inclusive coords). Square corners: top/bottom span
+    # the full width, left/right fill between them. Rounded: every band is
+    # inset by the corner radius; quarter-ring arcs (below) fill the joins.
+    # Degenerate boxes just overlap bands of the same color — harmless.
     t = thickness
-    rect_r1 = np.concatenate([y1, y2 - t + 1, y1 + t, y1 + t])
-    rect_r2 = np.concatenate([y1 + t - 1, y2, y2 - t, y2 - t])
-    rect_c1 = np.concatenate([x1, x1, x1, x2 - t + 1])
-    rect_c2 = np.concatenate([x2, x2, x1 + t - 1, x2])
+    inset = radii - outer  # 0 boxes: -outer == square full-width bands
+    rect_r1 = np.concatenate([y1, y2 - t + 1, by1 + radii, by1 + radii])
+    rect_r2 = np.concatenate([y1 + t - 1, y2, by2 - radii, by2 - radii])
+    rect_c1 = np.concatenate([x1 + inset + outer, x1 + inset + outer, x1, x2 - t + 1])
+    rect_c2 = np.concatenate([x2 - inset - outer, x2 - inset - outer, x1 + t - 1, x2])
     rect_box = np.tile(np.arange(n), 4)
     np.clip(rect_r1, 0, None, out=rect_r1)
     np.clip(rect_c1, 0, None, out=rect_c1)
@@ -134,6 +163,29 @@ def gpu_draw_boxes(
     )
     boxes_overlap = int((inter_x & inter_y).sum()) > n  # diagonal always True
 
+    # Rounded corners: quarter-ring arc pixels per box, grouped by radius so
+    # the ring offsets are computed (and lru-cached) once per radius. Coords
+    # are pre-resolved to flat indices on host and ride the packed upload.
+    arc_flat = arc_box = _EMPTY_I64
+    if roundness > 0:
+        flat_parts, box_parts = [], []
+        for radius in np.unique(radii):
+            idx = np.nonzero(radii == radius)[0]
+            dy, dx = _quarter_arc_offsets(int(radius), thickness)
+            centers_y = (by1[idx] + radius, by1[idx] + radius,
+                         by2[idx] - radius, by2[idx] - radius)
+            centers_x = (bx1[idx] + radius, bx2[idx] - radius,
+                         bx1[idx] + radius, bx2[idx] - radius)
+            signs = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+            for cy, cx, (sy, sx) in zip(centers_y, centers_x, signs):
+                rows = (cy[:, None] + sy * dy[None, :]).ravel()
+                cols = (cx[:, None] + sx * dx[None, :]).ravel()
+                keep = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+                flat_parts.append(rows[keep] * width + cols[keep])
+                box_parts.append(np.repeat(idx, len(dy))[keep])
+        arc_flat = np.concatenate(flat_parts)
+        arc_box = np.concatenate(box_parts)
+
     # Single packed upload; int32 halves the transfer and every device-side
     # memory pass (torch index ops demand int64 — `flat` is cast once).
     segments = [
@@ -142,6 +194,8 @@ def gpu_draw_boxes(
         rect_c1,
         widths,
         rect_box,
+        arc_flat,
+        arc_box,
         colors_rgb.astype(np.int64).ravel(),
     ]
     packed = torch.from_numpy(np.concatenate(segments).astype(np.int32)).to(device)
@@ -150,7 +204,7 @@ def gpu_draw_boxes(
     for segment in segments:
         views.append(packed[offset : offset + len(segment)])
         offset += len(segment)
-    r1_t, heights_t, c1_t, widths_t, box_t, colors_flat_t = views
+    r1_t, heights_t, c1_t, widths_t, box_t, arc_flat_t, arc_box_t, colors_flat_t = views
 
     # Two-level ragged expansion: rect -> row -> pixel.
     rect_of_row = torch.repeat_interleave(
@@ -172,8 +226,12 @@ def gpu_draw_boxes(
         torch.arange(total_px, device=device, dtype=torch.int32)
         - col_starts[px_of_row]
     )
-    flat = (row_base[px_of_row] + px_intra).long()
+    flat = row_base[px_of_row] + px_intra
     pixel_box = row_box[px_of_row]
+    if len(arc_flat):
+        flat = torch.cat([flat, arc_flat_t])
+        pixel_box = torch.cat([pixel_box, arc_box_t])
+    flat = flat.long()
 
     colors_dev = colors_flat_t.view(n, 3).to(torch.uint8)
     if boxes_overlap:
@@ -191,12 +249,9 @@ def gpu_draw_boxes(
 
 
 def _gpu_box_draw_eligible(
-    detections, color_axis: str, roundness: float, thickness, image: WorkflowImageData
+    detections, color_axis: str, thickness, image: WorkflowImageData
 ) -> bool:
     """True when the torch painter can replace the sv path."""
-    if roundness != 0:
-        # Rounded corners keep the sv.RoundBoxAnnotator path.
-        return False
     if color_axis not in ("CLASS", "INDEX"):
         # TRACK / custom lookups keep the sv path.
         return False
@@ -315,7 +370,7 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
             if isinstance(predictions, tuple)
             else predictions
         )
-        if _gpu_box_draw_eligible(detections, color_axis, roundness, thickness, image):
+        if _gpu_box_draw_eligible(detections, color_axis, thickness, image):
             try:
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
                 if not isinstance(palette, sv.ColorPalette):
@@ -342,7 +397,7 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                 if copy_image:
                     scene_t = scene_t.clone()
                 annotated_tensor = gpu_draw_boxes(
-                    scene_t, xyxy, colors_rgb, int(thickness)
+                    scene_t, xyxy, colors_rgb, int(thickness), float(roundness)
                 )
                 if not copy_image:
                     # The painter mutated `image.tensor_image` storage in
