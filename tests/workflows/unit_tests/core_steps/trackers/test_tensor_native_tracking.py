@@ -245,6 +245,43 @@ def test_recover_tracker_output_filters_control_tensors_without_sv_row_copy(
     assert torch.equal(tracked.tracker_id, tracker_ids)
 
 
+def test_batch_recovery_stably_filters_ragged_unconfirmed_rows() -> None:
+    """SIMD recovery preserves per-stream row order with one packed partition."""
+    predictions = [
+        Detections(
+            xyxy=torch.arange(count * 4, dtype=torch.float32).reshape(count, 4),
+            class_id=torch.arange(count),
+            confidence=torch.ones(count),
+        )
+        for count in (3, 2, 1)
+    ]
+    output_rows = [torch.tensor([2, 0, 1]), torch.tensor([1, 0]), torch.tensor([0])]
+    output_ids = [
+        torch.tensor([-1, 40, 41]),
+        torch.tensor([50, -1]),
+        torch.tensor([-1]),
+    ]
+    tracked_outputs = [
+        sv.Detections(
+            xyxy=prediction.xyxy,
+            class_id=prediction.class_id,
+            confidence=prediction.confidence,
+            tracker_id=ids,
+            data={_TRACKER_ROW_INDEX_KEY: rows},
+        )
+        for prediction, rows, ids in zip(predictions, output_rows, output_ids)
+    ]
+
+    recovered = ByteTrackBlockV1._recover_tracker_outputs_batch(
+        detections=predictions,
+        bboxes=predictions,
+        tracked_outputs=tracked_outputs,
+    )
+
+    assert [item[1].tolist() for item in recovered] == [[40, 41], [50], []]
+    assert [item[0].class_id.tolist() for item in recovered] == [[0, 1], [1], []]
+
+
 class _ExecutionDataManager:
     """Minimal batch-mode manager used to exercise the real SIMD dispatcher."""
 

@@ -550,18 +550,11 @@ class TrackerBlockBase(WorkflowBlock):
         if len(tracked_outputs) != len(prepared):
             raise RuntimeError("tracktors.update_batch returned the wrong batch size")
 
-        recovered = [
-            self._recover_tracker_output(
-                detections=prediction,
-                bbox=prepared_item[2],
-                tracked_sv=tracked_sv,
-            )
-            for prediction, prepared_item, tracked_sv in zip(
-                detections,
-                prepared,
-                tracked_outputs,
-            )
-        ]
+        recovered = self._recover_tracker_outputs_batch(
+            detections=list(detections),
+            bboxes=[item[2] for item in prepared],
+            tracked_outputs=tracked_outputs,
+        )
         return self._build_tracker_results_batch(
             video_ids=[item[0] for item in prepared],
             tracked_detections=[item[0] for item in recovered],
@@ -640,6 +633,103 @@ class TrackerBlockBase(WorkflowBlock):
         tracked_detections = take_prediction_by_indices(detections, surviving)
         _bbox_component(tracked_detections).tracker_id = tracker_ids
         return tracked_detections, tracker_ids
+
+    @staticmethod
+    def _recover_tracker_outputs_batch(
+        detections: List[TensorNativeTrackerPrediction],
+        bboxes: List[Union[Detections, InstanceDetections]],
+        tracked_outputs: List[sv.Detections],
+    ) -> List[Tuple[TensorNativeTrackerPrediction, torch.Tensor]]:
+        """Recover a SIMD cohort with one dynamic-cardinality boundary.
+
+        Tracker rows and IDs remain device tensors. Rows with ``tracker_id ==
+        -1`` are stably partitioned for the whole cohort, then one small vector
+        of confirmed counts supplies the exact public prediction slice bounds.
+        """
+        if not (len(detections) == len(bboxes) == len(tracked_outputs)):
+            raise ValueError("tracker recovery batches must be aligned")
+        if not detections:
+            return []
+        device = bboxes[0].xyxy.device
+        row_batches: List[torch.Tensor] = []
+        id_batches: List[torch.Tensor] = []
+        for bbox, tracked_sv in zip(bboxes, tracked_outputs):
+            if bbox.xyxy.device != device:
+                raise ValueError("tracker recovery batch must use one tensor device")
+            has_rows = (
+                tracked_sv.data
+                and _TRACKER_ROW_INDEX_KEY in tracked_sv.data
+                and tracked_sv.tracker_id is not None
+                and len(tracked_sv) > 0
+            )
+            if has_rows:
+                rows = torch.as_tensor(
+                    tracked_sv.data[_TRACKER_ROW_INDEX_KEY],
+                    dtype=torch.long,
+                    device=device,
+                ).reshape(-1)
+                ids = torch.as_tensor(
+                    tracked_sv.tracker_id,
+                    dtype=torch.long,
+                    device=device,
+                ).reshape(-1)
+                if rows.shape[0] != ids.shape[0]:
+                    raise ValueError("tracker output rows and IDs must be aligned")
+            else:
+                rows = torch.empty(0, dtype=torch.long, device=device)
+                ids = torch.empty(0, dtype=torch.long, device=device)
+            row_batches.append(rows)
+            id_batches.append(ids)
+
+        counts = [int(ids.numel()) for ids in id_batches]
+        max_count = max(counts, default=0)
+        if max_count == 0:
+            return [
+                TrackerBlockBase._recover_tracker_output(
+                    detections=prediction,
+                    bbox=bbox,
+                    tracked_sv=tracked_sv,
+                )
+                for prediction, bbox, tracked_sv in zip(
+                    detections,
+                    bboxes,
+                    tracked_outputs,
+                )
+            ]
+        count_tensor = torch.tensor(counts, dtype=torch.long, device=device)
+        batch_size = len(detections)
+        batch_rows = torch.repeat_interleave(
+            torch.arange(batch_size, device=device), count_tensor
+        )
+        offsets = torch.cumsum(count_tensor, dim=0) - count_tensor
+        positions = torch.arange(sum(counts), device=device) - torch.repeat_interleave(
+            offsets, count_tensor
+        )
+        padded_rows = torch.zeros(
+            (batch_size, max_count), dtype=torch.long, device=device
+        )
+        padded_ids = torch.zeros_like(padded_rows)
+        padded_rows[batch_rows, positions] = torch.cat(row_batches)
+        padded_ids[batch_rows, positions] = torch.cat(id_batches)
+        valid = torch.arange(max_count, device=device)[None, :] < count_tensor[:, None]
+        confirmed = valid & padded_ids.ne(-1)
+        partition_key = torch.where(
+            valid,
+            (~confirmed).to(dtype=torch.long),
+            torch.full_like(confirmed, 2, dtype=torch.long),
+        )
+        stable_order = torch.argsort(partition_key, dim=1, stable=True)
+        confirmed_counts = confirmed.sum(dim=1).detach().cpu().tolist()
+        recovered: List[Tuple[TensorNativeTrackerPrediction, torch.Tensor]] = []
+        for stream_index, prediction in enumerate(detections):
+            confirmed_count = int(confirmed_counts[stream_index])
+            selected = stable_order[stream_index, :confirmed_count]
+            surviving = padded_rows[stream_index].index_select(0, selected)
+            tracker_ids = padded_ids[stream_index].index_select(0, selected)
+            tracked_detections = take_prediction_by_indices(prediction, surviving)
+            _bbox_component(tracked_detections).tracker_id = tracker_ids
+            recovered.append((tracked_detections, tracker_ids))
+        return recovered
 
     def _build_tracker_result(
         self,
