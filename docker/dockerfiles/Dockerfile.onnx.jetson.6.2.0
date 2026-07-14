@@ -331,6 +331,10 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install -r requirements.txt && \
+    # The v2.6 source archive omits generated AOTInductor C shims.  A cached
+    # CMake tree can therefore try to compile c_shim_cpu.cpp before setup.py
+    # has materialized it.  Generate sources explicitly before configuration.
+    python3 torchgen/gen.py --source-path aten/src/ATen && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
     export CUDNN_LIB_DIR=/usr/lib/aarch64-linux-gnu CUDNN_INCLUDE_DIR=/usr/include && \
     export TORCH_CUDA_ARCH_LIST="8.7" && \
