@@ -1,7 +1,7 @@
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
-from trackers import ByteTrackTracker
+from tracktors import ByteTrackTracker
 
 from inference.core.workflows.core_steps.trackers._base_tensor import (
     TRACKER_PREDICTION_KINDS,

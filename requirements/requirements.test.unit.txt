@@ -10,5 +10,5 @@ pytest-timeout>=2.2.0
 httpx~=0.28.1
 uvicorn<=0.22.0
 aioresponses>=0.7.6
-supervision>=0.26
+superiorvision>=0.30.0.dev0
 pycocotools>=2.0.10

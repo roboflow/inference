@@ -1,7 +1,7 @@
 from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
-from trackers import OCSORTTracker
+from tracktors import OCSORTTracker
 
 from inference.core.workflows.core_steps.trackers._base_tensor import (
     TRACKER_PREDICTION_KINDS,

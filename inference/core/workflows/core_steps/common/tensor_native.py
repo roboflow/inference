@@ -57,6 +57,36 @@ KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
 TensorNativePrediction = Union[
     Detections, InstanceDetections, KeyPoints, KeyPointPrediction
 ]
+TensorNativeIndices = Union[Sequence[int], torch.Tensor]
+
+
+def _prepare_index_selection(
+    indices: TensorNativeIndices,
+    source: torch.Tensor,
+) -> Tuple[torch.Tensor, Optional[List[int]], bool]:
+    """Build an index tensor on the source device without a host round trip."""
+    if isinstance(indices, torch.Tensor):
+        index_tensor = indices.to(device=source.device, dtype=torch.long).reshape(-1)
+        return index_tensor, None, False
+
+    python_indices = list(indices)
+    index_tensor = torch.as_tensor(
+        python_indices,
+        dtype=torch.long,
+        device=source.device,
+    )
+    is_identity = python_indices == list(range(int(source.shape[0])))
+    return index_tensor, python_indices, is_identity
+
+
+def _materialize_python_indices(
+    index_tensor: torch.Tensor,
+    python_indices: Optional[List[int]],
+) -> List[int]:
+    """Materialize indices only when indexing ragged Python-owned fields."""
+    if python_indices is not None:
+        return python_indices
+    return index_tensor.detach().to("cpu").tolist()
 
 
 def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
@@ -69,9 +99,9 @@ def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
 
 def take_detections_by_indices(
     detections: TensorNativeDetections,
-    indices: Sequence[int],
+    indices: TensorNativeIndices,
 ) -> TensorNativeDetections:
-    """Select rows of a ``Detections`` / ``InstanceDetections`` by index list.
+    """Select detection rows with Python or device-native tensor indices.
 
     Per-detection state (``bboxes_metadata``) and masks (dense torch or RLE) are
     carried over for the surviving rows; ``image_metadata`` is shared as-is.
@@ -79,22 +109,31 @@ def take_detections_by_indices(
     The surviving ``bboxes_metadata`` dicts are COPIED (not shared by reference)
     so a downstream block that mutates a selected box's metadata (e.g. assigns a
     ``tracker_id``) cannot leak the mutation back into the source prediction. The
-    index tensor is built on CPU and left to advanced indexing to move (avoiding a
-    per-call host->device sync of a small Python list); an identity selection
-    skips the gather entirely.
+    Tensor indices remain on the source device. They are materialized as Python
+    integers only when ragged metadata or RLE masks require object indexing. An
+    identity selection expressed as a Python sequence skips the gather entirely.
     """
-    indices = list(indices)
-    is_identity = indices == list(range(int(detections.xyxy.shape[0])))
-    index_tensor = torch.as_tensor(indices, dtype=torch.long)
+    index_tensor, python_indices, is_identity = _prepare_index_selection(
+        indices=indices,
+        source=detections.xyxy,
+    )
     bboxes_metadata = None
     if detections.bboxes_metadata is not None:
-        bboxes_metadata = [dict(detections.bboxes_metadata[i]) for i in indices]
+        python_indices = _materialize_python_indices(
+            index_tensor=index_tensor,
+            python_indices=python_indices,
+        )
+        bboxes_metadata = [dict(detections.bboxes_metadata[i]) for i in python_indices]
     if isinstance(detections, InstanceDetections):
         mask_field = detections.mask
         if isinstance(mask_field, InstancesRLEMasks):
+            python_indices = _materialize_python_indices(
+                index_tensor=index_tensor,
+                python_indices=python_indices,
+            )
             new_mask: Union[torch.Tensor, InstancesRLEMasks] = InstancesRLEMasks(
                 image_size=mask_field.image_size,
-                masks=[mask_field.masks[i] for i in indices],
+                masks=[mask_field.masks[i] for i in python_indices],
             )
         elif is_identity:
             new_mask = mask_field
@@ -133,22 +172,28 @@ def take_detections_by_indices(
 
 def take_key_points_by_indices(
     key_points: KeyPoints,
-    indices: Sequence[int],
+    indices: TensorNativeIndices,
 ) -> KeyPoints:
-    """Select instances of a ``KeyPoints`` by index list (slices along the
-    instance dimension; per-instance ``key_points_metadata`` carried over).
+    """Select key-point instances with Python or device-native tensor indices.
 
     The surviving ``key_points_metadata`` dicts are COPIED (not shared by
-    reference) so downstream mutation cannot leak back into the source. The index
-    tensor is built on CPU and left to advanced indexing to move (avoiding a
-    per-call host->device sync); an identity selection skips the gather entirely.
+    reference) so downstream mutation cannot leak back into the source. Tensor
+    indices remain on the source device unless ragged metadata requires Python
+    object indexing. Python identity selections skip the gather entirely.
     """
-    indices = list(indices)
-    is_identity = indices == list(range(int(key_points.xy.shape[0])))
-    index_tensor = torch.as_tensor(indices, dtype=torch.long)
+    index_tensor, python_indices, is_identity = _prepare_index_selection(
+        indices=indices,
+        source=key_points.xy,
+    )
     key_points_metadata = None
     if key_points.key_points_metadata is not None:
-        key_points_metadata = [dict(key_points.key_points_metadata[i]) for i in indices]
+        python_indices = _materialize_python_indices(
+            index_tensor=index_tensor,
+            python_indices=python_indices,
+        )
+        key_points_metadata = [
+            dict(key_points.key_points_metadata[i]) for i in python_indices
+        ]
     # Auxiliary per-instance tensors (populated by RF-DETR) are sliced in
     # lockstep so lossless selections stay lossless.
     covariance = key_points.covariance
@@ -176,11 +221,13 @@ def take_key_points_by_indices(
 
 def take_prediction_by_indices(
     prediction: TensorNativePrediction,
-    indices: Sequence[int],
+    indices: TensorNativeIndices,
 ) -> TensorNativePrediction:
-    """Select a subset of any tensor-native prediction by index list, returning
-    the same shape. For the keypoint-detection tuple, both the ``KeyPoints`` and
-    the bbox ``Detections`` components are sliced consistently."""
+    """Select prediction rows with Python or device-native tensor indices.
+
+    For the keypoint-detection tuple, both the ``KeyPoints`` and bbox
+    ``Detections`` components are sliced consistently.
+    """
     if isinstance(prediction, tuple):
         key_points, detections = prediction
         sliced_key_points = take_key_points_by_indices(key_points, indices)

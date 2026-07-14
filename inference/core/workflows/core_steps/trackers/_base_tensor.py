@@ -32,8 +32,8 @@ from abc import abstractmethod
 from collections import deque
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
-import numpy as np
 import supervision as sv
+import torch
 
 from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -172,12 +172,9 @@ class TrackerBlockBase(WorkflowBlock):
         the tracker instance is cached for the lifetime of the video stream.
 
         Tensor-native note: ``detections`` is a native ``inference_models``
-        prediction. The bounding-box-bearing component is materialised to a
-        minimal ``sv.Detections`` (with a stashed row index) as transport to the
-        ``sv``-based tracker library; the surviving rows are then mapped back
-        onto the ORIGINAL native input so masks / keypoints / native metadata are
-        preserved, and the assigned ``tracker_id`` is written into
-        ``bboxes_metadata``. All three outputs are native objects.
+        prediction. Its bounding-box tensors are wrapped by ``sv.Detections``
+        without moving them off-device. Surviving rows are mapped back onto the
+        original native input so masks, keypoints, and metadata are preserved.
         """
         metadata = image.video_metadata
         fps = metadata.fps
@@ -194,16 +191,19 @@ class TrackerBlockBase(WorkflowBlock):
 
         tracker = self._trackers[video_id]
 
-        # Materialise the bbox component to a minimal sv.Detections used purely as
-        # transport to/from the third-party (sv-based) tracker. For the keypoint
-        # tuple the bbox Detections (second element) drives association.
         _, bbox = split_key_point_prediction(detections)
         n = int(bbox.xyxy.shape[0])
         sv_input = sv.Detections(
-            xyxy=bbox.xyxy.detach().to("cpu").numpy().astype(float),
-            confidence=bbox.confidence.detach().to("cpu").numpy().astype(float),
-            class_id=bbox.class_id.detach().to("cpu").numpy().astype(int),
-            data={_TRACKER_ROW_INDEX_KEY: np.arange(n, dtype=np.int64)},
+            xyxy=bbox.xyxy,
+            confidence=bbox.confidence,
+            class_id=bbox.class_id,
+            data={
+                _TRACKER_ROW_INDEX_KEY: torch.arange(
+                    n,
+                    dtype=torch.long,
+                    device=bbox.xyxy.device,
+                )
+            },
         )
 
         tracked_sv = self._tracker_update(tracker, sv_input, image)
@@ -224,21 +224,35 @@ class TrackerBlockBase(WorkflowBlock):
             and tracked_sv.tracker_id is not None
             and len(tracked_sv) > 0
         ):
-            surviving = (
-                np.asarray(tracked_sv.data[_TRACKER_ROW_INDEX_KEY]).astype(int).tolist()
+            surviving = torch.as_tensor(
+                tracked_sv.data[_TRACKER_ROW_INDEX_KEY],
+                dtype=torch.long,
+                device=bbox.xyxy.device,
             )
-            tracker_ids = [int(t) for t in tracked_sv.tracker_id.tolist()]
+            tracker_ids_tensor = torch.as_tensor(
+                tracked_sv.tracker_id,
+                dtype=torch.long,
+                device=bbox.xyxy.device,
+            )
         else:
-            surviving = []
-            tracker_ids = []
+            surviving = torch.empty(
+                0,
+                dtype=torch.long,
+                device=bbox.xyxy.device,
+            )
+            tracker_ids_tensor = torch.empty(
+                0,
+                dtype=torch.long,
+                device=bbox.xyxy.device,
+            )
 
         # Slice the ORIGINAL native input by the surviving rows (handles
         # Detections / InstanceDetections / the keypoint tuple, dense + RLE
         # masks). This preserves every native field for the surviving rows.
         tracked_detections = take_prediction_by_indices(detections, surviving)
 
-        # Write the assigned tracker_id into the bbox component's
-        # bboxes_metadata (copy dicts so the caller's state is not mutated).
+        # Tracker IDs cross to Python only for the object metadata and cache.
+        tracker_ids = tracker_ids_tensor.detach().to("cpu").tolist()
         _patch_tracker_ids(tracked_detections, tracker_ids)
 
         if video_id not in self._per_video_cache:

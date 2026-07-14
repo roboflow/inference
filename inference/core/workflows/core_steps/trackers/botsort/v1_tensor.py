@@ -2,7 +2,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
-from trackers import BoTSORTTracker
+from tracktors import BoTSORTTracker
 
 from inference.core import logger
 from inference.core.workflows.core_steps.trackers._base_tensor import (
