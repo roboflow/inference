@@ -42,7 +42,6 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
 )
 from inference.core.workflows.core_steps.trackers.batch_scheduler import (
-    HOST_TRACKER_IDS_KEY,
     get_tracker_batch_scheduler,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -237,8 +236,9 @@ class TrackerBlockBase(WorkflowBlock):
             },
         )
 
+        host_tracker_ids: Optional[List[int]] = None
         if self._can_batch_tracker_update(sv_input):
-            tracked_sv = get_tracker_batch_scheduler().update(
+            tracked_sv, host_tracker_ids = get_tracker_batch_scheduler().update(
                 tracker,
                 sv_input,
                 frame=self._tracker_batch_frame(tracker, image),
@@ -246,10 +246,17 @@ class TrackerBlockBase(WorkflowBlock):
         else:
             tracked_sv = self._tracker_update(tracker, sv_input, image)
 
+        if host_tracker_ids is not None and len(host_tracker_ids) != len(tracked_sv):
+            raise RuntimeError("batched tracker IDs do not align with tracker output")
+
         # Filter out immature / unmatched tracks (tracker_id == -1). Mirror the
         # numpy guard exactly: only filter when tracker_id is present and there
         # is at least one tracked detection.
         if tracked_sv.tracker_id is not None and len(tracked_sv) > 0:
+            if host_tracker_ids is not None:
+                host_tracker_ids = [
+                    tracker_id for tracker_id in host_tracker_ids if tracker_id != -1
+                ]
             valid_mask = tracked_sv.tracker_id != -1
             tracked_sv = tracked_sv[valid_mask]
 
@@ -284,16 +291,19 @@ class TrackerBlockBase(WorkflowBlock):
                 device=bbox.xyxy.device,
             )
 
+        if host_tracker_ids is not None and len(host_tracker_ids) != len(surviving):
+            raise RuntimeError(
+                "batched tracker IDs do not align with surviving input rows"
+            )
+
         # Slice the ORIGINAL native input by the surviving rows (handles
         # Detections / InstanceDetections / the keypoint tuple, dense + RLE
         # masks). This preserves every native field for the surviving rows.
         tracked_detections = take_prediction_by_indices(detections, surviving)
 
-        # Batched CUDA updates transfer all streams' IDs together in the scheduler.
-        # Exact scalar fallbacks retain the historical per-call materialization.
         tracker_ids = (
-            tracked_sv.data.pop(HOST_TRACKER_IDS_KEY)
-            if tracked_sv.data and HOST_TRACKER_IDS_KEY in tracked_sv.data
+            host_tracker_ids
+            if host_tracker_ids is not None
             else tracker_ids_tensor.detach().to("cpu").tolist()
         )
         _patch_tracker_ids(tracked_detections, tracker_ids)

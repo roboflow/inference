@@ -7,10 +7,10 @@ import threading
 import types
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 import torch
 
 from inference.core.workflows.core_steps.trackers.batch_scheduler import (
-    HOST_TRACKER_IDS_KEY,
     TrackerBatchScheduler,
 )
 
@@ -48,13 +48,15 @@ def test_scheduler_batches_compatible_independent_trackers(monkeypatch) -> None:
                 executor.submit(scheduler.update, tracker, detection)
                 for tracker, detection in zip(trackers, detections)
             ]
-            outputs = [future.result() for future in futures]
+            results = [future.result() for future in futures]
     finally:
         scheduler.close()
 
+    outputs = [output for output, _ in results]
+    host_tracker_ids = [tracker_ids for _, tracker_ids in results]
     assert all(output is detection for output, detection in zip(outputs, detections))
     assert [len(call) for call in calls] == [4]
-    assert [output.data[HOST_TRACKER_IDS_KEY] for output in outputs] == [
+    assert host_tracker_ids == [
         [0],
         [1],
         [2],
@@ -85,3 +87,43 @@ def test_scheduler_never_batches_two_frames_for_the_same_tracker(monkeypatch) ->
         scheduler.close()
 
     assert batch_sizes == [1, 1]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_scheduler_orders_cuda_work_across_submitter_and_worker_streams(
+    monkeypatch,
+) -> None:
+    module = types.ModuleType("tracktors")
+
+    def update_batch(trackers, detections, **kwargs):
+        torch.cuda._sleep(20_000_000)
+        return [
+            types.SimpleNamespace(
+                xyxy=detection.xyxy.clone(),
+                tracker_id=None,
+                data={},
+            )
+            for detection in detections
+        ]
+
+    module.update_batch = update_batch
+    monkeypatch.setitem(sys.modules, "tracktors", module)
+    scheduler = TrackerBatchScheduler()
+    producer_stream = torch.cuda.Stream()
+    detections = types.SimpleNamespace(
+        xyxy=torch.zeros((1, 4), device="cuda"),
+        tracker_id=None,
+        data={},
+    )
+    try:
+        with torch.cuda.stream(producer_stream):
+            torch.cuda._sleep(20_000_000)
+            detections.xyxy.fill_(7)
+            output, host_tracker_ids = scheduler.update(_Tracker(), detections)
+            observed = output.xyxy.clone()
+        producer_stream.synchronize()
+    finally:
+        scheduler.close()
+
+    assert host_tracker_ids is None
+    assert torch.equal(observed.cpu(), torch.full((1, 4), 7.0))
