@@ -290,6 +290,8 @@ def gpu_draw_boxes(
     geometry_square = _get_geometry(thickness) if roundness == 0 else None
     device = scene_chw.device
     height, width = int(scene_chw.shape[1]), int(scene_chw.shape[2])
+    if height * width >= 2**31:
+        raise ValueError("frame too large for int32 pixel indexing")
     n = int(xyxy.shape[0])
 
     xy = np.asarray(xyxy, dtype=np.int64)
@@ -333,9 +335,17 @@ def gpu_draw_boxes(
         coord_flat.append(rows[keep] * width + cols[keep])
         coord_box.append(np.full(int(keep.sum()), box_index, dtype=np.int64))
 
+    # Expanded per-box paint bounds, for the host-side overlap test below.
+    exp_x1 = np.empty(n, dtype=np.int64)
+    exp_x2 = np.empty(n, dtype=np.int64)
+    exp_y1 = np.empty(n, dtype=np.int64)
+    exp_y2 = np.empty(n, dtype=np.int64)
+
     for geometry, indices in groups:
         o, inner, c = geometry.outer, geometry.inner, geometry.corner
         gx1, gx2, gy1, gy2 = x1[indices], x2[indices], y1[indices], y2[indices]
+        exp_x1[indices], exp_x2[indices] = gx1 - o, gx2 + o
+        exp_y1[indices], exp_y2[indices] = gy1 - o, gy2 + o
         big = ((gx2 - gx1 + 1) >= geometry.min_side) & (
             (gy2 - gy1 + 1) >= geometry.min_side
         )
@@ -406,27 +416,106 @@ def gpu_draw_boxes(
         np.clip(rect_c2, None, width - 1, out=rect_c2)
         heights = np.maximum(rect_r2 - rect_r1 + 1, 0)
         widths = np.maximum(rect_c2 - rect_c1 + 1, 0)
-        # Row-level expansion on host: total row count is small (~band height
-        # x 4 x boxes), so numpy is cheap and gives exact output sizes for the
-        # device-side column expansion — no GPU->CPU sync anywhere.
-        rect_of_row = np.repeat(np.arange(len(heights)), heights)
-        row_starts = np.cumsum(heights) - heights
-        rows = rect_r1[rect_of_row] + (
-            np.arange(len(rect_of_row)) - row_starts[rect_of_row]
-        )
-        row_width = widths[rect_of_row]
-        keep = row_width > 0
-        rows, row_width = rows[keep], row_width[keep]
-        row_c1 = rect_c1[rect_of_row][keep]
-        row_box = rect_box[rect_of_row][keep]
     else:
-        rows = row_width = row_c1 = row_box = _EMPTY_I64
+        rect_r1 = rect_c1 = heights = widths = rect_box = _EMPTY_I64
 
     pre_flat = np.concatenate(coord_flat) if coord_flat else _EMPTY_I64
     pre_box = np.concatenate(coord_box) if coord_box else _EMPTY_I64
-    total_px = int(row_width.sum())
+    # Exact expansion sizes, computed host-side so the device-side ragged
+    # expansion never needs a GPU->CPU sync. Zero-area rects (fully clamped
+    # away) simply repeat 0 times.
+    total_rows = int(heights.sum())
+    total_px = int((heights * widths).sum())
     if total_px == 0 and len(pre_flat) == 0:
         return scene_chw
+
+    # Host-side pairwise overlap test on the expanded paint bounds (O(n^2) on
+    # tiny arrays). Disjoint borders make every pixel's winner its own box, so
+    # the owner-resolution kernels can be skipped entirely — the common case.
+    inter = (
+        (np.maximum(exp_x1[:, None], exp_x1[None, :])
+         <= np.minimum(exp_x2[:, None], exp_x2[None, :]))
+        & (np.maximum(exp_y1[:, None], exp_y1[None, :])
+           <= np.minimum(exp_y2[:, None], exp_y2[None, :]))
+    )
+    boxes_overlap = int(inter.sum()) > n  # diagonal is always True
+
+    # ---- single packed H2D transfer --------------------------------------
+    # int32 throughout: pixel indices fit (frame size is guarded in run());
+    # halving the element width halves the transfer and every device-side
+    # memory pass. torch's index ops demand int64, so `flat` is cast once.
+    segments = [
+        rect_r1,
+        heights,
+        rect_c1,
+        widths,
+        rect_box,
+        pre_flat,
+        pre_box,
+        colors_rgb.astype(np.int64).ravel(),
+    ]
+    packed = torch.from_numpy(np.concatenate(segments).astype(np.int32)).to(device)
+    views = []
+    offset = 0
+    for segment in segments:
+        views.append(packed[offset : offset + len(segment)])
+        offset += len(segment)
+    r1_t, heights_t, c1_t, widths_t, box_t, pre_flat_t, pre_box_t, colors_flat_t = views
+
+    # ---- device-side two-level ragged expansion (rect -> row -> pixel) ----
+    flat_parts: List[torch.Tensor] = []
+    box_parts: List[torch.Tensor] = []
+    if total_px:
+        rect_count = int(heights.shape[0])
+        rect_of_row = torch.repeat_interleave(
+            torch.arange(rect_count, device=device),
+            heights_t.long(),
+            output_size=total_rows,
+        )
+        row_starts = heights_t.cumsum(0) - heights_t
+        row_intra = (
+            torch.arange(total_rows, device=device, dtype=torch.int32)
+            - row_starts[rect_of_row]
+        )
+        row_base = (r1_t[rect_of_row] + row_intra) * width + c1_t[rect_of_row]
+        row_width = widths_t[rect_of_row]
+        row_box = box_t[rect_of_row]
+        px_of_row = torch.repeat_interleave(
+            torch.arange(total_rows, device=device),
+            row_width.long(),
+            output_size=total_px,
+        )
+        col_starts = row_width.cumsum(0) - row_width
+        px_intra = (
+            torch.arange(total_px, device=device, dtype=torch.int32)
+            - col_starts[px_of_row]
+        )
+        flat_parts.append(row_base[px_of_row] + px_intra)
+        box_parts.append(row_box[px_of_row])
+    if len(pre_flat):
+        flat_parts.append(pre_flat_t)
+        box_parts.append(pre_box_t)
+
+    flat = torch.cat(flat_parts) if len(flat_parts) > 1 else flat_parts[0]
+    pixel_box = torch.cat(box_parts) if len(box_parts) > 1 else box_parts[0]
+    flat_long = flat.long()  # index ops require int64
+    colors_dev = colors_flat_t.view(n, 3).to(torch.uint8)
+    if boxes_overlap:
+        # sv paints boxes sequentially, so the HIGHEST detection index wins
+        # every contested pixel: one deterministic amax scatter of box ids.
+        # include_self=False: uninitialized cells never participate, and every
+        # gathered position below was scattered to — no fill kernel needed.
+        owner = torch.empty(height * width, dtype=torch.int32, device=device)
+        owner.scatter_reduce_(
+            0, flat_long, pixel_box, reduce="amax", include_self=False
+        )
+        winner_colors = colors_dev[owner[flat_long].long()]  # (P, 3) uint8
+    else:
+        winner_colors = colors_dev[pixel_box.long()]
+    # .view (not .reshape): guarantees the write lands in the caller's storage
+    # (raises on a non-contiguous scene -> caught by the block's sv fallback).
+    scene_chw.view(3, -1)[:, flat_long] = winner_colors.t()
+    return scene_chw
 
     # ---- single packed H2D transfer --------------------------------------
     segments = [
