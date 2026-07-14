@@ -226,37 +226,20 @@ def _tensor_backed_image() -> WorkflowImageData:
 
 
 def test_gpu_box_draw_eligible_happy_path() -> None:
-    assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", 2, _tensor_backed_image()
+    for axis in ("CLASS", "INDEX", "TRACK"):
+        assert (
+            _gpu_box_draw_eligible(
+                _eligible_detections(), axis, _tensor_backed_image()
+            )
+            is True
         )
-        is True
-    )
-
-
-def test_gpu_box_draw_not_eligible_for_track_lookup() -> None:
-    assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "TRACK", 2, _tensor_backed_image()
-        )
-        is False
-    )
 
 
 def test_gpu_box_draw_not_eligible_for_empty_detections() -> None:
     empty = _build_detections(
         np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=int), device="cpu"
     )
-    assert _gpu_box_draw_eligible(empty, "CLASS", 2, _tensor_backed_image()) is False
-
-
-def test_gpu_box_draw_not_eligible_for_non_int_thickness() -> None:
-    assert (
-        _gpu_box_draw_eligible(
-            _eligible_detections(), "CLASS", "2", _tensor_backed_image()
-        )
-        is False
-    )
+    assert _gpu_box_draw_eligible(empty, "CLASS", _tensor_backed_image()) is False
 
 
 def test_gpu_box_draw_not_eligible_for_numpy_sourced_image() -> None:
@@ -265,5 +248,47 @@ def test_gpu_box_draw_not_eligible_for_numpy_sourced_image() -> None:
         numpy_image=np.zeros((64, 64, 3), dtype=np.uint8),
     )
     assert (
-        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 2, numpy_image) is False
+        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", numpy_image) is False
+    )
+
+def test_track_color_axis_matches_sv_colors() -> None:
+    from inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor import (
+        BoundingBoxVisualizationBlockV1,
+    )
+
+    boxes = np.array([[20, 20, 90, 90], [150, 30, 260, 140], [40, 150, 120, 220]])
+    tracker_ids = [7, -1, 3]  # -1 = sv pending track (gray)
+    detections = Detections(
+        xyxy=torch.tensor(boxes, dtype=torch.float32),
+        class_id=torch.tensor([0, 1, 2]),
+        confidence=torch.full((3,), 0.9),
+        bboxes_metadata=[{"tracker_id": tid} for tid in tracker_ids],
+    )
+    image = _tensor_backed_image_sized(240, 320)
+    block = BoundingBoxVisualizationBlockV1()
+    out = block.run(
+        image=image,
+        predictions=detections,
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="TRACK",
+        thickness=2,
+        roundness=0.0,
+    )["image"]
+    assert out._tensor_image is not None and out._numpy_image is None  # GPU path
+    annotated = out._tensor_image
+    for (x1, y1, _, _), tid in zip(boxes, tracker_ids):
+        expected = (
+            (128, 128, 128) if tid == -1 else PALETTE.by_idx(tid).as_rgb()
+        )
+        got = tuple(int(v) for v in annotated[:, y1, x1 + 10])  # top band pixel
+        assert got == expected, f"track {tid}: {got} != {expected}"
+
+
+def _tensor_backed_image_sized(h: int, w: int) -> WorkflowImageData:
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        tensor_image=torch.zeros((3, h, w), dtype=torch.uint8),
     )

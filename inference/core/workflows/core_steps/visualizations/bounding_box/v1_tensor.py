@@ -256,13 +256,10 @@ def gpu_draw_boxes(
 
 
 def _gpu_box_draw_eligible(
-    detections, color_axis: str, thickness, image: WorkflowImageData
+    detections, color_axis: str, image: WorkflowImageData
 ) -> bool:
     """True when the torch painter can replace the sv path."""
-    if color_axis not in ("CLASS", "INDEX"):
-        # TRACK / custom lookups keep the sv path.
-        return False
-    if not isinstance(thickness, int) or thickness < 1:
+    if color_axis not in ("CLASS", "INDEX", "TRACK"):
         return False
     if not image.is_tensor_materialised():
         # Forcing tensor_image on a numpy-sourced image is a costly host-side
@@ -377,19 +374,35 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
             if isinstance(predictions, tuple)
             else predictions
         )
-        if _gpu_box_draw_eligible(detections, color_axis, thickness, image):
+        if _gpu_box_draw_eligible(detections, color_axis, image):
             try:
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
                 if not isinstance(palette, sv.ColorPalette):
                     raise TypeError("expected sv.ColorPalette")
                 # Same colors sv's resolve_color would pick: CLASS ->
-                # palette.by_idx(class_id), INDEX -> palette.by_idx(det index).
+                # by_idx(class_id), INDEX -> by_idx(det index), TRACK ->
+                # by_idx(tracker_id) with sv's gray for pending tracks (-1).
+                # Missing tracker ids raise here -> the sv path raises the
+                # same ValueError sv.resolve_color would.
                 if color_axis == "CLASS":
                     ids = detections.class_id.detach().cpu().numpy().astype(int)
+                elif color_axis == "TRACK":
+                    ids = np.asarray(
+                        [
+                            int(per_box["tracker_id"])
+                            for per_box in detections.bboxes_metadata
+                        ]
+                    )
                 else:
                     ids = np.arange(int(detections.xyxy.shape[0]))
+                pending_gray = (128, 128, 128)  # sv PENDING_TRACK_COLOR
                 colors_rgb = np.asarray(
-                    [palette.by_idx(int(idx)).as_rgb() for idx in ids],
+                    [
+                        pending_gray
+                        if color_axis == "TRACK" and idx == -1
+                        else palette.by_idx(int(idx)).as_rgb()
+                        for idx in ids
+                    ],
                     dtype=np.uint8,
                 )
                 # Same int conversion as the sv annotator loop (truncation
