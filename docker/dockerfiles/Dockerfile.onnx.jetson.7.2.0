@@ -71,7 +71,9 @@ ARG TORCHVISION_VERSION=0.25.0
 ARG TRITON_VERSION=3.6.0
 ARG TRITON_WHEEL_SHA256=374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4
 ARG SUPERIORVISION_VERSION=0.30.0.dev2
+ARG SUPERIORVISION_WHEEL_SHA256=fa21b52e06fed2d7a17c5587e135424a67a57e4f1dc2d6f220697fcbc7bd62c8
 ARG TRACKTORS_VERSION=2.6.0.dev1
+ARG TRACKTORS_WHEEL_SHA256=7170f1ed7de844674b66b507cf00456d42404ca152c511e07539ae5a2d545402
 ARG ONNXRUNTIME_VERSION=1.24.2
 ARG PYTORCH_MAX_JOBS=12
 ARG ORT_BUILD_PARALLEL=8
@@ -298,6 +300,20 @@ COPY requirements/_requirements.txt \
 RUN python3 -m pip wheel --no-deps --wheel-dir /opt/wheels \
     "pycuda>=2025.0.0,<2026.0.0"
 
+RUN set -eux; \
+    python3 -m pip download --no-cache-dir \
+        --no-deps \
+        --only-binary=:all: \
+        --dest /opt/wheels \
+        "superiorvision==${SUPERIORVISION_VERSION}" \
+        "tracktors==${TRACKTORS_VERSION}"; \
+    set -- /opt/wheels/superiorvision-${SUPERIORVISION_VERSION}-*.whl; \
+    test -e "$1"; \
+    printf '%s  %s\n' "${SUPERIORVISION_WHEEL_SHA256}" "$1" | sha256sum -c -; \
+    set -- /opt/wheels/tracktors-${TRACKTORS_VERSION}-*.whl; \
+    test -e "$1"; \
+    printf '%s  %s\n' "${TRACKTORS_WHEEL_SHA256}" "$1" | sha256sum -c -
+
 RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
     echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/overrides.txt && \
@@ -318,6 +334,8 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     -r requirements.easyocr.txt \
     -r requirements.jetson.txt \
     /opt/wheels/pycuda-*.whl \
+    /opt/wheels/superiorvision-*.whl \
+    /opt/wheels/tracktors-*.whl \
     "setuptools<=75.5.0" \
     "transformers>=4.57.3,<5.9.0" \
     packaging \
@@ -374,6 +392,8 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         /opt/wheels/flash_attn-*.whl \
         /opt/wheels/onnxruntime_gpu-*.whl \
         /opt/wheels/pycuda-*.whl \
+        /opt/wheels/superiorvision-*.whl \
+        /opt/wheels/tracktors-*.whl \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl \
         /opt/wheels/triton-*.whl \
