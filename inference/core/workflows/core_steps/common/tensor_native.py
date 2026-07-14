@@ -184,9 +184,9 @@ def _take_detections(
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
             tracker_id=(
-                detections.tracker_id
-                if is_identity or detections.tracker_id is None
-                else detections.tracker_id[index_tensor]
+                None
+                if detections.tracker_id is None
+                else selection.select_tensor(detections.tracker_id)
             ),
         )
     return Detections(
@@ -196,9 +196,9 @@ def _take_detections(
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
         tracker_id=(
-            detections.tracker_id
-            if is_identity or detections.tracker_id is None
-            else detections.tracker_id[index_tensor]
+            None
+            if detections.tracker_id is None
+            else selection.select_tensor(detections.tracker_id)
         ),
     )
 

@@ -41,7 +41,7 @@ class _PackedIdScheduler:
         tracker: object,
         detections: sv.Detections,
         **kwargs: Any,
-    ) -> tuple[sv.Detections, list[int]]:
+    ) -> sv.Detections:
         self.calls.append((tracker, detections))
         output = sv.Detections(
             xyxy=detections.xyxy,
@@ -50,7 +50,7 @@ class _PackedIdScheduler:
             tracker_id=torch.tensor([-1, 41], dtype=torch.long),
             data={_TRACKER_ROW_INDEX_KEY: detections.data[_TRACKER_ROW_INDEX_KEY]},
         )
-        return output, [-1, 41]
+        return output
 
 
 class _MissingRowScheduler(_PackedIdScheduler):
@@ -59,7 +59,7 @@ class _MissingRowScheduler(_PackedIdScheduler):
         tracker: object,
         detections: sv.Detections,
         **kwargs: Any,
-    ) -> tuple[sv.Detections, list[int]]:
+    ) -> sv.Detections:
         self.calls.append((tracker, detections))
         output = sv.Detections(
             xyxy=detections.xyxy,
@@ -67,7 +67,7 @@ class _MissingRowScheduler(_PackedIdScheduler):
             class_id=detections.class_id,
             tracker_id=torch.tensor([-1, 41], dtype=torch.long),
         )
-        return output, [-1, 41]
+        return output
 
 
 def _native_detections() -> Detections:
@@ -82,7 +82,7 @@ def _native_detections() -> Detections:
     )
 
 
-def test_packed_host_tracker_ids_follow_unmatched_track_filter(
+def test_packed_tensor_tracker_ids_follow_unmatched_track_filter(
     monkeypatch,
 ) -> None:
     scheduler = _PackedIdScheduler()
@@ -116,9 +116,8 @@ def test_packed_host_tracker_ids_follow_unmatched_track_filter(
         first["tracked_detections"].xyxy,
         source.xyxy[[1]],
     )
-    assert first["tracked_detections"].bboxes_metadata == [
-        {"source": "second", "tracker_id": 41}
-    ]
+    assert first["tracked_detections"].bboxes_metadata == [{"source": "second"}]
+    assert first["tracked_detections"].tracker_id.tolist() == [41]
     assert len(first["new_instances"].xyxy) == 1
     assert len(first["already_seen_instances"].xyxy) == 0
     assert len(second["new_instances"].xyxy) == 0

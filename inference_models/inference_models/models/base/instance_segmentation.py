@@ -255,7 +255,6 @@ class InstanceDetections:
 class InstanceSegmentationModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
     @classmethod
     @abstractmethod
     def from_pretrained(

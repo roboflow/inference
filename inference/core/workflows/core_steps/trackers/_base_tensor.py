@@ -735,11 +735,17 @@ class TrackerBlockBase(WorkflowBlock):
         tracked_sv: sv.Detections,
     ) -> Tuple[TensorNativeTrackerPrediction, torch.Tensor]:
         """Map tracker rows back to native tensors and attach device-resident IDs."""
+        has_tracker_ids = tracked_sv.tracker_id is not None and len(tracked_sv) > 0
+        if has_tracker_ids and (
+            not tracked_sv.data or _TRACKER_ROW_INDEX_KEY not in tracked_sv.data
+        ):
+            raise RuntimeError(
+                "batched tracker IDs do not align with surviving input rows"
+            )
         has_rows = (
             tracked_sv.data
             and _TRACKER_ROW_INDEX_KEY in tracked_sv.data
-            and tracked_sv.tracker_id is not None
-            and len(tracked_sv) > 0
+            and has_tracker_ids
         )
         if has_rows:
             tracker_rows = torch.as_tensor(
@@ -784,11 +790,17 @@ class TrackerBlockBase(WorkflowBlock):
         for bbox, tracked_sv in zip(bboxes, tracked_outputs):
             if bbox.xyxy.device != device:
                 raise ValueError("tracker recovery batch must use one tensor device")
+            has_tracker_ids = tracked_sv.tracker_id is not None and len(tracked_sv) > 0
+            if has_tracker_ids and (
+                not tracked_sv.data or _TRACKER_ROW_INDEX_KEY not in tracked_sv.data
+            ):
+                raise RuntimeError(
+                    "batched tracker IDs do not align with surviving input rows"
+                )
             has_rows = (
                 tracked_sv.data
                 and _TRACKER_ROW_INDEX_KEY in tracked_sv.data
-                and tracked_sv.tracker_id is not None
-                and len(tracked_sv) > 0
+                and has_tracker_ids
             )
             if has_rows:
                 rows = torch.as_tensor(

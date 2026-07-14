@@ -115,7 +115,6 @@ class Detections:
 class ObjectDetectionModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
     @classmethod
     @abstractmethod
     def from_pretrained(
@@ -171,7 +170,6 @@ class ObjectDetectionModel(
 class OpenVocabularyObjectDetectionModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
     @classmethod
     @abstractmethod
     def from_pretrained(
