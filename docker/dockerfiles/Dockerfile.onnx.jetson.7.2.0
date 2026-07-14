@@ -169,6 +169,7 @@ RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
     OPENCV_SHA256="${OPENCV_SHA256}" \
     OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
     OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
+    OPENCV_NUMPY_TARGET_VERSION=NPY_2_0_API_VERSION \
     OPENCV_WITH_CUDA=ON \
     OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
     OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
