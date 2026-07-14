@@ -158,14 +158,17 @@ def _rle_foreground_pixels_in_roi(
 
 
 def gpu_mask_composite(
-    scene,
+    scene: torch.Tensor,
     predictions: "InstanceDetections",
-    colors_bgr: "np.ndarray",
+    colors_rgb: "np.ndarray",
     opacity: float,
-    return_tensor: bool = False,
-    scene_layout: str = "hwc_bgr",
-):
-    """GPU-native torch replacement for ``sv.MaskAnnotator.annotate``.
+) -> torch.Tensor:
+    """GPU-native, tensor-only replacement for ``sv.MaskAnnotator.annotate``.
+
+    Tensor pipeline contract on both ends: ``scene`` is a CHW RGB uint8 torch
+    tensor (``WorkflowImageData.tensor_image``), mutated IN PLACE and returned
+    — no numpy, no layout conversion, no host round-trip. Callers that need
+    the original must pass a clone.
 
     Accepts both tensor-pipeline mask carriers:
 
@@ -199,43 +202,26 @@ def gpu_mask_composite(
     sync (the dense path's ``nonzero`` adds one more).
 
     Args:
-        scene: uint8 frame. With ``scene_layout="hwc_bgr"`` (default): an HWC
-            BGR numpy array (uploaded to the mask device once) or an HWC BGR torch tensor.
-            With ``scene_layout="chw_rgb"``: a CHW RGB torch tensor — the
-            ``WorkflowImageData.tensor_image`` contract — composited without
-            any layout conversion or host round-trip. A numpy scene is never
-            mutated; a TENSOR scene IS mutated in place (callers that need the
-            original must pass a clone).
+        scene: CHW RGB uint8 torch tensor on the pipeline device. Mutated in
+            place. (No ``.contiguous()`` is taken: it could silently copy and
+            break the in-place contract — ``copy_image=False`` operates on the
+            caller's storage.)
         predictions: ``InstanceDetections`` whose ``mask`` is a dense bool
             ``torch.Tensor`` ``(N, H, W)`` or an ``InstancesRLEMasks`` whose
             ``image_size`` matches the scene.
-        colors_bgr: ``(N, 3)`` uint8 per-detection colors (BGR), resolved with
+        colors_rgb: ``(N, 3)`` uint8 per-detection colors (RGB), resolved with
             the same palette logic the sv annotator would use.
         opacity: overlay opacity, matches ``sv.MaskAnnotator(opacity=...)``.
-        return_tensor: when True, return the device uint8 tensor (no download).
-        scene_layout: ``"hwc_bgr"`` (default) or ``"chw_rgb"``. ``colors_bgr``
-            stays BGR either way; the CHW path flips the LUT internally.
 
     Returns:
-        uint8 numpy array in the input layout (same contract as ``annotate``),
-        or the device tensor when ``return_tensor=True``.
+        ``scene`` (same tensor, annotated in place).
     """
     mask_carrier = predictions.mask
     is_rle = isinstance(mask_carrier, InstancesRLEMasks)
-    device = predictions.xyxy.device if is_rle else mask_carrier.device
-
-    chw = scene_layout == "chw_rgb"
-    if isinstance(scene, torch.Tensor):
-        # No .contiguous() here: it could silently copy and break the in-place
-        # mutation contract (copy_image=False operates on the caller's storage).
-        scene_t = scene if scene.device == device else scene.to(device)
-    else:
-        if chw:
-            raise ValueError("scene_layout='chw_rgb' requires a torch tensor scene")
-        scene_t = torch.from_numpy(np.ascontiguousarray(scene)).to(device)
-    # All painting/blending below works on an HWC view; for a CHW scene the
-    # permute is a zero-copy view, so in-place writes land in the CHW storage.
-    scene_hwc = scene_t.permute(1, 2, 0) if chw else scene_t
+    device = scene.device
+    # All painting/blending below works on an HWC view; the permute is a
+    # zero-copy view, so in-place writes land in the CHW storage.
+    scene_hwc = scene.permute(1, 2, 0)
 
     H, W = int(scene_hwc.shape[0]), int(scene_hwc.shape[1])
     mask_hw = (
@@ -260,9 +246,8 @@ def gpu_mask_composite(
         # and halves well below 2^24, so sums stay exact regardless of the
         # (nondeterministic) atomic add order.
         acc_dtype = torch.float32
-        lut_colors = colors_bgr[:, ::-1] if chw else colors_bgr
         lut_premul = (
-            torch.from_numpy(np.ascontiguousarray(lut_colors))
+            torch.from_numpy(np.ascontiguousarray(colors_rgb))
             .to(device=device, dtype=acc_dtype)
             .mul_(opacity)
         )  # (N, 3)
@@ -291,9 +276,7 @@ def gpu_mask_composite(
         # passes + gather/scatter.
         scene_roi.copy_(torch.where(hit, blended_u8, scene_roi))
 
-    if return_tensor:
-        return scene_t
-    return scene_t.cpu().numpy()
+    return scene
 
 
 def _gpu_composite_eligible(predictions, color_axis: str) -> bool:
@@ -442,8 +425,8 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
                     ids = predictions.class_id.detach().cpu().numpy().astype(int)
                 else:
                     ids = np.arange(int(predictions.xyxy.shape[0]))
-                colors_bgr = np.asarray(
-                    [palette.by_idx(int(idx)).as_bgr() for idx in ids],
+                colors_rgb = np.asarray(
+                    [palette.by_idx(int(idx)).as_rgb() for idx in ids],
                     dtype=np.uint8,
                 )
                 # Tensor pipeline contract: the image is a CHW RGB device
@@ -457,10 +440,8 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
                 annotated_tensor = gpu_mask_composite(
                     scene_t,
                     predictions,
-                    colors_bgr,
+                    colors_rgb,
                     float(opacity),
-                    return_tensor=True,
-                    scene_layout="chw_rgb",
                 )
                 if not copy_image:
                     # The compositor mutated `image.tensor_image` storage

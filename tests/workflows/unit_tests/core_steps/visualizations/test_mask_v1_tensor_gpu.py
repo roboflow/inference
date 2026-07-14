@@ -385,6 +385,28 @@ def _detections_and_colors(masks: list, device: str, rle: bool = False):
     return detections, colors_bgr
 
 
+def _composite_bgr(
+    scene_bgr: np.ndarray,
+    detections: InstanceDetections,
+    colors_bgr: np.ndarray,
+    opacity: float,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Test adapter: the production compositor is tensor-only (CHW RGB uint8
+    in, the same tensor out, mutated in place) — wrap numpy HWC BGR scenes and
+    colors so parity checks against sv / the numpy reference stay convenient."""
+    scene_t = (
+        torch.from_numpy(scene_bgr[:, :, ::-1].copy())
+        .permute(2, 0, 1)
+        .contiguous()
+        .to(device)
+    )
+    out = gpu_mask_composite(
+        scene_t, detections, np.ascontiguousarray(colors_bgr[:, ::-1]), opacity
+    )
+    return out.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
+
+
 def _runs_to_dense(runs: np.ndarray, h: int, w: int) -> np.ndarray:
     flat = np.zeros(h * w, dtype=bool)
     position, value = 0, False
@@ -435,7 +457,7 @@ def test_gpu_mask_composite_matches_sv_annotator_on_disjoint_masks(
     )
 
     # when
-    actual = gpu_mask_composite(scene, detections, colors_bgr, OPACITY)
+    actual = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
 
     # then
     assert float((expected == actual).all(axis=2).mean()) == 1.0
@@ -455,7 +477,7 @@ def test_gpu_mask_composite_matches_blend_all_reference(
     expected = _reference_blend_all(scene, masks, colors_bgr, OPACITY)
 
     # when
-    actual = gpu_mask_composite(scene, detections, colors_bgr, OPACITY)
+    actual = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
 
     # then
     assert float((expected == actual).all(axis=2).mean()) == 1.0
@@ -471,8 +493,10 @@ def test_gpu_mask_composite_rle_carrier_matches_dense_carrier(device: str) -> No
     rle_detections, _ = _detections_and_colors(masks, device=device, rle=True)
 
     # when
-    from_dense = gpu_mask_composite(scene, dense_detections, colors_bgr, OPACITY)
-    from_rle = gpu_mask_composite(scene, rle_detections, colors_bgr, OPACITY)
+    from_dense = _composite_bgr(
+        scene, dense_detections, colors_bgr, OPACITY, device=device
+    )
+    from_rle = _composite_bgr(scene, rle_detections, colors_bgr, OPACITY, device=device)
 
     # then
     assert np.array_equal(from_dense, from_rle)
@@ -493,8 +517,8 @@ def test_gpu_mask_composite_is_order_independent(device: str) -> None:
     permuted_colors = colors_bgr[permutation]
 
     # when
-    original = gpu_mask_composite(scene, detections, colors_bgr, OPACITY)
-    shuffled = gpu_mask_composite(scene, permuted, permuted_colors, OPACITY)
+    original = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
+    shuffled = _composite_bgr(scene, permuted, permuted_colors, OPACITY, device=device)
 
     # then
     assert np.array_equal(original, shuffled)
@@ -510,7 +534,7 @@ def test_gpu_mask_composite_rejects_mismatched_mask_canvas() -> None:
 
     # when / then
     with pytest.raises(ValueError, match="does not match scene"):
-        gpu_mask_composite(scene, detections, colors_bgr, OPACITY)
+        _composite_bgr(scene, detections, colors_bgr, OPACITY)
 
 
 def test_gpu_mask_composite_with_fully_off_frame_boxes_leaves_scene_unchanged() -> None:
@@ -524,7 +548,7 @@ def test_gpu_mask_composite_with_fully_off_frame_boxes_leaves_scene_unchanged() 
     colors_bgr = np.asarray([[255, 0, 0]], dtype=np.uint8)
 
     # when
-    actual = gpu_mask_composite(scene, detections, colors_bgr, OPACITY)
+    actual = _composite_bgr(scene, detections, colors_bgr, OPACITY)
 
     # then
     assert np.array_equal(actual, scene)
@@ -548,10 +572,8 @@ def test_gpu_mask_composite_chw_rgb_tensor_scene_matches_reference(
     annotated_tensor = gpu_mask_composite(
         scene_chw_rgb,
         detections,
-        colors_bgr,
+        np.ascontiguousarray(colors_bgr[:, ::-1]),
         OPACITY,
-        return_tensor=True,
-        scene_layout="chw_rgb",
     )
 
     # then: result stays on device; converting back to HWC BGR matches the
