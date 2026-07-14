@@ -111,3 +111,12 @@ jobs:
         run: |
           source .venv/bin/activate
           ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=${{ matrix.extras.enable_auto_cuda_graphs_for_trt }} python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+      - name: 🧠 CUDA memory probe results
+        if: ${{ always() && (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+        working-directory: inference_models
+        run: |
+          for f in cuda_memory_probe_*.log; do
+            [ -e "$f" ] || { echo "no probe logs"; break; }
+            echo "===== $f (peak torch_reserved: $(grep -o 'torch_reserved=[0-9]*' "$f" | cut -d= -f2 | sort -n | tail -1)MiB) ====="
+            cat "$f"
+          done
