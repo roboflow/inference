@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Jetson 7.2.0 with PyTorch/OpenCV compiled from source
+# Jetson 7.2.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
 ARG GSTREAMER_VERSION=1.24.12
 ARG GSTREAMER_COMMIT=88e31216479a3f0c25096ca406369f3983efec14
 ARG GLIB_NETWORKING_SHA256=cd2a084c7bb91d78e849fb55d40e472f6d8f6862cddc9f12c39149359ba18268
@@ -159,7 +159,7 @@ ENV CUDA_HOME=/usr/local/cuda \
 
 RUN python3 -m venv /opt/opencv-build-tools && \
     /opt/opencv-build-tools/bin/pip install --no-cache-dir \
-        "numpy==1.26.4"
+        "numpy>=2.0.0,<2.4.0"
 
 COPY docker/scripts/build_opencv.sh /usr/local/bin/build_opencv
 COPY docker/scripts/verify_opencv.sh /usr/local/bin/verify_opencv
@@ -169,6 +169,7 @@ RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
     OPENCV_SHA256="${OPENCV_SHA256}" \
     OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
     OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
+    OPENCV_NUMPY_TARGET_VERSION=NPY_2_0_API_VERSION \
     OPENCV_WITH_CUDA=ON \
     OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
     OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
@@ -392,9 +393,9 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
     ./cmake-${CMAKE_VERSION}-linux-aarch64.sh --prefix=/usr/local --skip-license && \
     rm cmake-${CMAKE_VERSION}-linux-aarch64.sh
 
-# Install pip and the OpenCV-compatible NumPy ABI before compiling extensions.
+# Install pip and numpy 2.x FIRST (use --ignore-installed to avoid conflicts with system packages)
 RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
-    python3 -m pip install --break-system-packages "numpy==1.26.4"
+    python3 -m pip install --break-system-packages "numpy>=2.0.0,<2.4.0"
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
@@ -564,7 +565,6 @@ COPY requirements/_requirements.txt \
 # IMPORTANT: Use --override to protect our source-compiled torch/torchvision from being replaced
 RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
-    echo "numpy==1.26.4" >> /tmp/overrides.txt && \
     uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --override /tmp/overrides.txt \
     -r _requirements.txt \
@@ -722,7 +722,7 @@ ENV CUDA_HOME=/usr/local/cuda \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=39.2.0
 
-LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (PyTorch from source, NumPy 1.26)"
+LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (PyTorch from source, numpy 2.x)"
 
 EXPOSE 9001
 
