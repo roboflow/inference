@@ -69,13 +69,14 @@ ARG NINJA_VERSION=1.11.1.4
 ARG PYTORCH_VERSION=2.10.0
 ARG TORCHVISION_VERSION=0.25.0
 ARG TRITON_VERSION=3.6.0
+ARG TRITON_WHEEL_SHA256=374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4
 ARG ONNXRUNTIME_VERSION=1.24.2
 ARG PYTORCH_MAX_JOBS=12
 ARG ORT_BUILD_PARALLEL=8
 ARG FLASH_ATTN_MAX_JOBS=2
 ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
 ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
-ARG FLASH_ATTN_CUDA_ARCHS=80;110
+ARG FLASH_ATTN_CUDA_ARCHS=87;110
 ARG TARGETARCH
 ENV LANG=en_US.UTF-8
 
@@ -201,7 +202,9 @@ RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=
     python3 setup.py bdist_wheel && \
     cp dist/torchvision-*.whl /opt/wheels/ && \
     python3 -m pip install --break-system-packages dist/torchvision-*.whl && \
-    torchvision_image="$(python3 -c 'from torchvision._internally_replaced_utils import _get_extension_path; print(_get_extension_path("image"))')" && \
+    torchvision_image="$(find /usr/local/lib/python3.12/dist-packages/torchvision \
+        -type f -name 'image.so' -print -quit)" && \
+    test -n "${torchvision_image}" && \
     readelf -d "${torchvision_image}" | grep -q 'Shared library: \[libnvjpeg.so.13\]'
 
 WORKDIR /build/onnxruntime
@@ -235,12 +238,14 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing
     cuobjdump --list-elf "${ort_cuda_provider}" | grep -q 'sm_110'
 
 ARG FLASH_ATTN_REF=d16e381f6f8041422bd36f27adaf61fbf8ca872a
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+RUN --mount=type=bind,source=docker/patches/flash-attention-sm87.patch,target=/tmp/flash-attention-sm87.patch,ro \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     export FLASH_ATTENTION_FORCE_BUILD=TRUE && \
     export FLASH_ATTN_CUDA_ARCHS="${FLASH_ATTN_CUDA_ARCHS}" && \
     export MAX_JOBS=${FLASH_ATTN_MAX_JOBS} NVCC_THREADS=1 && \
     git clone https://github.com/Dao-AILab/flash-attention.git /tmp/flash-attention && \
     cd /tmp/flash-attention && git checkout ${FLASH_ATTN_REF} && \
+    git apply /tmp/flash-attention-sm87.patch && \
     git submodule update --init --recursive && \
     python3 -m pip wheel --no-build-isolation --no-deps \
         --wheel-dir /opt/wheels . && \
@@ -249,37 +254,25 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-
     flash_extension="$(find /usr/local/lib/python3.12/dist-packages -type f \
         -name 'flash_attn_2_cuda*.so' -print -quit)" && \
     test -n "${flash_extension}" && \
-    cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_80' && \
+    cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_87' && \
     cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_110' && \
     cd / && rm -rf /tmp/flash-attention
 
 WORKDIR /build/triton
-RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
-    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
-    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     set -eux; \
-    if [ ! -d src/.git ]; then \
-        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git src; \
-    else \
-        git -C src fetch --depth 1 origin tag v${TRITON_VERSION} && \
-        git -C src checkout v${TRITON_VERSION}; \
-    fi; \
-    git -C src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
-    python3 -m pip install --break-system-packages --no-cache-dir \
-        -r /build/triton/src/python/requirements.txt; \
-    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}"; \
-    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}"; \
-    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
-        --no-build-isolation \
+    python3 -m pip download --no-cache-dir \
         --no-deps \
-        /build/triton/src \
-        --wheel-dir /tmp/triton-wheels; \
+        --only-binary=:all: \
+        --dest /tmp/triton-wheels \
+        "triton==${TRITON_VERSION}"; \
     set -- /tmp/triton-wheels/triton-${TRITON_VERSION}*.whl; \
     if [ ! -e "$1" ]; then \
-        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        echo "Expected Triton wheel for ${TRITON_VERSION} was not found" >&2; \
         exit 1; \
     fi; \
+    printf '%s  %s\n' "${TRITON_WHEEL_SHA256}" "$1" | sha256sum -c -; \
     cp "$1" /opt/wheels/; \
     python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
     rm -rf /tmp/triton-wheels; \
@@ -402,6 +395,8 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         /opt/python-runtime/scipy/*/tests \
         /opt/python-runtime/skimage/data \
         /opt/python-runtime/bin/ninja \
+        /opt/python-runtime/triton/backends/nvidia/bin/ptxas \
+        /opt/python-runtime/triton/backends/nvidia/bin/ptxas-blackwell \
         /tmp/runtime-overrides.txt \
         /root/.cache/uv && \
     test -x /opt/python-runtime/bin/inference && \
@@ -432,6 +427,7 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 ENV CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:$PATH \
+    TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas \
     TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
