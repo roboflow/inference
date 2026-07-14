@@ -98,6 +98,7 @@ class InstanceCache:
         self._ids: Optional[torch.Tensor] = None
         self._valid: Optional[torch.Tensor] = None
         self._write_index: Optional[torch.Tensor] = None
+        self._batch_arena: Optional["_InstanceCacheBatchArena"] = None
 
     def record_instances(self, tracker_ids: torch.Tensor) -> torch.Tensor:
         """Record an ID tensor and return an exact same-device seen mask.
@@ -127,21 +128,26 @@ class InstanceCache:
 
         # Multiple complete wraps can target one slot. Select the greatest
         # insertion rank so the final ring contains the newest ID for that slot.
-        last_rank = torch.full(
+        last_position = torch.full(
             (self._size + 1,),
             -1,
             dtype=torch.long,
             device=tracker_ids.device,
         )
-        last_rank.scatter_reduce_(
+        input_position = torch.arange(
+            tracker_ids.shape[0],
+            dtype=torch.long,
+            device=tracker_ids.device,
+        )
+        last_position.scatter_reduce_(
             0,
             scatter_slot,
-            torch.where(new, insertion_rank, torch.full_like(insertion_rank, -1)),
+            torch.where(new, input_position, torch.full_like(input_position, -1)),
             reduce="amax",
             include_self=True,
         )
-        selected_ids = tracker_ids.index_select(0, last_rank.clamp_min(0))
-        updated = last_rank >= 0
+        selected_ids = tracker_ids.index_select(0, last_position.clamp_min(0))
+        updated = last_position >= 0
         self._ids.copy_(torch.where(updated, selected_ids, self._ids))
         self._valid.logical_or_(updated)
         self._write_index.copy_(
@@ -170,6 +176,191 @@ class InstanceCache:
         return bool(seen[0].item())
 
 
+class _InstanceCacheBatchArena:
+    """Persistent row-major cache state for a cohort of video streams.
+
+    Each ``InstanceCache`` remains the source of truth and is rebound to a row
+    view when it first joins the arena. Stable SIMD batches then classify every
+    stream with one broadcast membership operation and one vectorized FIFO
+    update instead of launching the scalar cache transaction once per stream.
+    """
+
+    def __init__(self, size: int, device: torch.device) -> None:
+        self._size = size
+        self._device = device
+        self._capacity = 0
+        self._ids = torch.empty((0, size + 1), dtype=torch.long, device=device)
+        self._valid = torch.empty((0, size + 1), dtype=torch.bool, device=device)
+        self._write_index = torch.empty(0, dtype=torch.long, device=device)
+        self._cache_rows: Dict[int, int] = {}
+        self._caches: List[InstanceCache] = []
+
+    def _grow(self, minimum_capacity: int) -> None:
+        if minimum_capacity <= self._capacity:
+            return
+        new_capacity = max(minimum_capacity, max(4, self._capacity * 2))
+        new_ids = torch.zeros(
+            (new_capacity, self._size + 1),
+            dtype=torch.long,
+            device=self._device,
+        )
+        new_valid = torch.zeros(
+            (new_capacity, self._size + 1),
+            dtype=torch.bool,
+            device=self._device,
+        )
+        new_write_index = torch.zeros(
+            new_capacity,
+            dtype=torch.long,
+            device=self._device,
+        )
+        if self._capacity:
+            new_ids[: self._capacity].copy_(self._ids)
+            new_valid[: self._capacity].copy_(self._valid)
+            new_write_index[: self._capacity].copy_(self._write_index)
+        self._ids = new_ids
+        self._valid = new_valid
+        self._write_index = new_write_index
+        self._capacity = new_capacity
+        for row, cache in enumerate(self._caches):
+            self._bind_views(cache, row)
+
+    def _bind_views(self, cache: InstanceCache, row: int) -> None:
+        cache._ids = self._ids[row]
+        cache._valid = self._valid[row]
+        cache._write_index = self._write_index[row]
+        cache._batch_arena = self
+
+    def _ensure_caches(self, caches: List[InstanceCache]) -> List[int]:
+        rows: List[int] = []
+        for cache in caches:
+            if cache._size != self._size:
+                raise ValueError("tracker cache size changed for an active video")
+            if cache._batch_arena not in (None, self):
+                raise ValueError("tracker cache arena changed for an active video")
+            cache_key = id(cache)
+            row = self._cache_rows.get(cache_key)
+            if row is None:
+                row = len(self._caches)
+                old_ids = cache._ids
+                old_valid = cache._valid
+                old_write_index = cache._write_index
+                if old_ids is not None and old_ids.device != self._device:
+                    raise ValueError("tracker cache device changed for an active video")
+                self._grow(row + 1)
+                if old_ids is not None:
+                    self._ids[row].copy_(old_ids)
+                    assert old_valid is not None
+                    assert old_write_index is not None
+                    self._valid[row].copy_(old_valid)
+                    self._write_index[row].copy_(old_write_index)
+                self._cache_rows[cache_key] = row
+                self._caches.append(cache)
+                self._bind_views(cache, row)
+            rows.append(row)
+        return rows
+
+    def record_instances(
+        self,
+        caches: List[InstanceCache],
+        tracker_ids: List[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Classify and record a ragged SIMD cohort entirely on-device.
+
+        Returns padded ``(seen, valid)`` tensors shaped ``[streams, max_rows]``.
+        The caller owns the single public-result cardinality boundary.
+        """
+        if len(caches) != len(tracker_ids):
+            raise ValueError("cache and tracker ID batches must be aligned")
+        rows = self._ensure_caches(caches)
+        batch_size = len(caches)
+        counts = [int(ids.numel()) for ids in tracker_ids]
+        max_count = max(counts, default=0)
+        if max_count == 0:
+            empty = torch.empty((batch_size, 0), dtype=torch.bool, device=self._device)
+            return empty, empty
+        normalized_ids = [
+            ids.to(device=self._device, dtype=torch.long).reshape(-1)
+            for ids in tracker_ids
+        ]
+        flat_ids = torch.cat(normalized_ids)
+        count_tensor = torch.tensor(counts, dtype=torch.long, device=self._device)
+        batch_rows = torch.repeat_interleave(
+            torch.arange(batch_size, device=self._device), count_tensor
+        )
+        offsets = torch.cumsum(count_tensor, dim=0) - count_tensor
+        positions = torch.arange(flat_ids.numel(), device=self._device) - (
+            torch.repeat_interleave(offsets, count_tensor)
+        )
+        padded_ids = torch.zeros(
+            (batch_size, max_count), dtype=torch.long, device=self._device
+        )
+        padded_ids[batch_rows, positions] = flat_ids
+        valid_rows = (
+            torch.arange(max_count, device=self._device)[None, :]
+            < count_tensor[:, None]
+        )
+
+        contiguous_start = rows[0] if rows else 0
+        contiguous = rows == list(range(contiguous_start, contiguous_start + len(rows)))
+        if contiguous:
+            state_ids = self._ids[contiguous_start : contiguous_start + batch_size]
+            state_valid = self._valid[contiguous_start : contiguous_start + batch_size]
+            state_write_index = self._write_index[
+                contiguous_start : contiguous_start + batch_size
+            ]
+            row_tensor = None
+        else:
+            row_tensor = torch.tensor(rows, dtype=torch.long, device=self._device)
+            state_ids = self._ids.index_select(0, row_tensor)
+            state_valid = self._valid.index_select(0, row_tensor)
+            state_write_index = self._write_index.index_select(0, row_tensor)
+
+        seen = (
+            padded_ids[:, :, None].eq(state_ids[:, None, : self._size])
+            & state_valid[:, None, : self._size]
+        ).any(dim=2) & valid_rows
+        new = valid_rows & ~seen
+        insertion_rank = torch.cumsum(new.to(dtype=torch.long), dim=1) - 1
+        insertion_slot = torch.remainder(
+            state_write_index[:, None] + insertion_rank,
+            self._size,
+        )
+        sentinel = torch.full_like(insertion_slot, self._size)
+        scatter_slot = torch.where(new, insertion_slot, sentinel)
+        input_position = torch.arange(max_count, device=self._device)[None, :].expand(
+            batch_size, -1
+        )
+        last_position = torch.full(
+            (batch_size, self._size + 1),
+            -1,
+            dtype=torch.long,
+            device=self._device,
+        )
+        last_position.scatter_reduce_(
+            1,
+            scatter_slot,
+            torch.where(new, input_position, torch.full_like(input_position, -1)),
+            reduce="amax",
+            include_self=True,
+        )
+        selected_ids = torch.gather(padded_ids, 1, last_position.clamp_min(0))
+        updated = last_position >= 0
+        state_ids.copy_(torch.where(updated, selected_ids, state_ids))
+        state_valid.logical_or_(updated)
+        state_write_index.copy_(
+            torch.remainder(
+                state_write_index + new.sum(dim=1, dtype=torch.long),
+                self._size,
+            )
+        )
+        if row_tensor is not None:
+            self._ids.index_copy_(0, row_tensor, state_ids)
+            self._valid.index_copy_(0, row_tensor, state_valid)
+            self._write_index.index_copy_(0, row_tensor, state_write_index)
+        return seen, valid_rows
+
+
 # Native prediction shapes accepted by tracker blocks (object detection,
 # instance segmentation, RLE instance segmentation, or the keypoint-detection
 # tuple). Mirrors TRACKER_PREDICTION_KINDS.
@@ -191,6 +382,9 @@ class TrackerBlockBase(WorkflowBlock):
     def __init__(self) -> None:
         self._trackers: Dict[str, Any] = {}
         self._per_video_cache: Dict[str, InstanceCache] = {}
+        self._instance_cache_batch_arenas: Dict[
+            Tuple[int, torch.device], _InstanceCacheBatchArena
+        ] = {}
 
     @classmethod
     @abstractmethod
@@ -368,18 +562,12 @@ class TrackerBlockBase(WorkflowBlock):
                 tracked_outputs,
             )
         ]
-        return [
-            self._build_tracker_result(
-                video_id=prepared_item[0],
-                tracked_detections=tracked_detections,
-                tracker_ids=tracker_ids,
-                instances_cache_size=instances_cache_size,
-            )
-            for prepared_item, (tracked_detections, tracker_ids) in zip(
-                prepared,
-                recovered,
-            )
-        ]
+        return self._build_tracker_results_batch(
+            video_ids=[item[0] for item in prepared],
+            tracked_detections=[item[0] for item in recovered],
+            tracker_ids=[item[1] for item in recovered],
+            instances_cache_size=instances_cache_size,
+        )
 
     def _prepare_tracker_input(
         self,
@@ -477,6 +665,71 @@ class TrackerBlockBase(WorkflowBlock):
                 seen_indices,
             ),
         }
+
+    def _build_tracker_results_batch(
+        self,
+        video_ids: List[str],
+        tracked_detections: List[TensorNativeTrackerPrediction],
+        tracker_ids: List[torch.Tensor],
+        instances_cache_size: int,
+    ) -> List[BlockResult]:
+        """Classify and split one SIMD cohort with a single cache transaction.
+
+        Exact public prediction lengths require Python slice bounds. We export
+        one ``new_counts`` vector after the batched stable partition; numeric
+        detections and tracker IDs themselves remain on their original device.
+        """
+        if not (len(video_ids) == len(tracked_detections) == len(tracker_ids)):
+            raise ValueError("tracker result batches must be aligned")
+        if not tracker_ids:
+            return []
+        device = tracker_ids[0].device
+        if any(ids.device != device for ids in tracker_ids):
+            raise ValueError("tracker result batch must use one tensor device")
+        caches: List[InstanceCache] = []
+        for video_id in video_ids:
+            if video_id not in self._per_video_cache:
+                self._per_video_cache[video_id] = InstanceCache(
+                    size=instances_cache_size
+                )
+            caches.append(self._per_video_cache[video_id])
+        arena_key = (max(1, instances_cache_size), device)
+        arena = self._instance_cache_batch_arenas.get(arena_key)
+        if arena is None:
+            arena = _InstanceCacheBatchArena(
+                size=arena_key[0],
+                device=device,
+            )
+            self._instance_cache_batch_arenas[arena_key] = arena
+        seen, valid = arena.record_instances(caches=caches, tracker_ids=tracker_ids)
+        partition_key = torch.where(
+            valid,
+            seen.to(dtype=torch.long),
+            torch.full_like(seen, 2, dtype=torch.long),
+        )
+        stable_order = torch.argsort(partition_key, dim=1, stable=True)
+        new_counts = ((~seen) & valid).sum(dim=1).detach().cpu().tolist()
+        total_counts = [int(ids.numel()) for ids in tracker_ids]
+        results: List[BlockResult] = []
+        for stream_index, prediction in enumerate(tracked_detections):
+            new_count = int(new_counts[stream_index])
+            total_count = total_counts[stream_index]
+            new_indices = stable_order[stream_index, :new_count]
+            seen_indices = stable_order[stream_index, new_count:total_count]
+            results.append(
+                {
+                    OUTPUT_KEY: prediction,
+                    "new_instances": take_prediction_by_indices(
+                        prediction,
+                        new_indices,
+                    ),
+                    "already_seen_instances": take_prediction_by_indices(
+                        prediction,
+                        seen_indices,
+                    ),
+                }
+            )
+        return results
 
 
 def _bbox_component(

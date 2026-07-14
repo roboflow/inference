@@ -98,6 +98,66 @@ def test_instance_cache_does_not_call_cpu_or_tolist(
     assert torch.equal(seen, torch.tensor([False, False, False]))
 
 
+def test_instance_cache_records_interleaved_new_ids_in_fifo_order() -> None:
+    """Vector insertion stores the actual new rows, not their compacted ranks."""
+    cache = InstanceCache(size=3)
+
+    assert cache.record_instances(torch.tensor([10, 11, 12])).tolist() == [
+        False,
+        False,
+        False,
+    ]
+    assert cache.record_instances(torch.tensor([11, 13])).tolist() == [True, False]
+    assert cache._ids[:3].tolist() == [13, 11, 12]
+    assert cache.record_instances(torch.tensor([13, 14])).tolist() == [True, False]
+    assert cache._ids[:3].tolist() == [13, 14, 12]
+
+
+def test_batch_instance_cache_matches_independent_scalar_caches() -> None:
+    """Ragged SIMD cache classification preserves each video's FIFO history."""
+    block = ByteTrackBlockV1()
+    video_ids = ["video-0", "video-1", "video-2"]
+
+    def prediction(ids: list[int]) -> Detections:
+        count = len(ids)
+        return Detections(
+            xyxy=torch.arange(count * 4, dtype=torch.float32).reshape(count, 4),
+            class_id=torch.zeros(count, dtype=torch.long),
+            confidence=torch.ones(count),
+            tracker_id=torch.tensor(ids, dtype=torch.long),
+        )
+
+    first_ids = [[10, 11], [20], [30, 31, 32]]
+    first_predictions = [prediction(ids) for ids in first_ids]
+    first = block._build_tracker_results_batch(
+        video_ids=video_ids,
+        tracked_detections=first_predictions,
+        tracker_ids=[item.tracker_id for item in first_predictions],
+        instances_cache_size=3,
+    )
+    assert [item["new_instances"].tracker_id.tolist() for item in first] == first_ids
+    assert [len(item["already_seen_instances"]) for item in first] == [0, 0, 0]
+
+    second_ids = [[11, 12], [21, 20], [32, 33]]
+    second_predictions = [prediction(ids) for ids in second_ids]
+    second = block._build_tracker_results_batch(
+        video_ids=video_ids,
+        tracked_detections=second_predictions,
+        tracker_ids=[item.tracker_id for item in second_predictions],
+        instances_cache_size=3,
+    )
+    assert [item["new_instances"].tracker_id.tolist() for item in second] == [
+        [12],
+        [21],
+        [33],
+    ]
+    assert [item["already_seen_instances"].tracker_id.tolist() for item in second] == [
+        [11],
+        [20],
+        [32],
+    ]
+
+
 @pytest.mark.parametrize("prediction_kind", ["object", "instance", "keypoint"])
 def test_recover_tracker_output_keeps_ids_on_native_bbox_component(
     prediction_kind: str,
