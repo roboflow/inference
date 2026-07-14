@@ -114,9 +114,14 @@ else:
     from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1_tensor import (
         ContrastEqualizationBlockV1,
     )
-from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
-    ConvertGrayscaleBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
+        ConvertGrayscaleBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
+        ConvertGrayscaleBlockV1,
+    )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
@@ -127,15 +132,32 @@ else:
         DistanceMeasurementBlockV1,
     )
 
-from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
-    DominantColorBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
-    ImageBlurBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
-    ImagePreprocessingBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
+        DominantColorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.dominant_color.v1_tensor import (
+        DominantColorBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
+        ImageBlurBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.image_blur.v1_tensor import (
+        ImageBlurBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
+        ImagePreprocessingBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1_tensor import (
+        ImagePreprocessingBlockV1,
+    )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
@@ -168,9 +190,14 @@ else:
         MotionDetectionBlockV1,
     )
 
-from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
-    PixelationCountBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
+        PixelationCountBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1_tensor import (
+        PixelationCountBlockV1,
+    )
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
@@ -194,9 +221,14 @@ else:
         TemplateMatchingBlockV1,
     )
 
-from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
-    ImageThresholdBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
+        ImageThresholdBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.threshold.v1_tensor import (
+        ImageThresholdBlockV1,
+    )
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,

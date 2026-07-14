@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
@@ -155,41 +155,53 @@ class DominantColorBlockV1(WorkflowBlock):
         scale_factor = max(1, min(width, height) // target_size)
         np_image = np_image[::scale_factor, ::scale_factor]
 
-        pixels = np_image.reshape(-1, 3).astype(np.float32)
-
-        centroids = pixels[
-            np.random.choice(pixels.shape[0], color_clusters, replace=False)
-        ]
-
-        for _ in range(max_iterations):
-            # Assign pixels to nearest centroid
-            distances = np.sqrt(((pixels[:, np.newaxis] - centroids) ** 2).sum(axis=2))
-            labels = np.argmin(distances, axis=1)
-
-            # Update centroids
-            new_centroids = np.zeros_like(centroids)
-            for i in range(color_clusters):
-                cluster_points = pixels[labels == i]
-                if len(cluster_points) > 0:
-                    new_centroids[i] = cluster_points.mean(axis=0)
-                else:
-                    # If cluster is empty, reinitialize to a random point
-                    new_centroids[i] = pixels[np.random.choice(pixels.shape[0])]
-
-            # Check for convergence
-            if np.allclose(centroids, new_centroids):
-                break
-
-            centroids = new_centroids
-
-        # Get the colors and their counts
-        colors = centroids
-        uniq, counts = np.unique(labels, return_counts=True)
-
-        # Find the most dominant color
-        dominant_color = colors[uniq[np.argmax(counts)]]
-        rgb_color = tuple(
-            int(np.clip(round(x), 0, 255)) for x in reversed(dominant_color)
+        rgb_color = find_dominant_color(
+            pixels_image=np_image,
+            color_clusters=color_clusters,
+            max_iterations=max_iterations,
         )
 
         return {"rgb_color": rgb_color}
+
+
+def find_dominant_color(
+    pixels_image: np.ndarray, color_clusters: int, max_iterations: int
+) -> Tuple[int, int, int]:
+    """K-means dominant color of an ALREADY-DOWNSAMPLED HWC BGR uint8 image,
+    returned as an ``(r, g, b)`` tuple.
+
+    Extracted verbatim from ``DominantColorBlockV1.run()`` (pure code motion:
+    the same unseeded global ``np.random`` draws in the same order) so the
+    tensor-native sibling can share the exact clustering trajectory."""
+    pixels = pixels_image.reshape(-1, 3).astype(np.float32)
+
+    centroids = pixels[np.random.choice(pixels.shape[0], color_clusters, replace=False)]
+
+    for _ in range(max_iterations):
+        # Assign pixels to nearest centroid
+        distances = np.sqrt(((pixels[:, np.newaxis] - centroids) ** 2).sum(axis=2))
+        labels = np.argmin(distances, axis=1)
+
+        # Update centroids
+        new_centroids = np.zeros_like(centroids)
+        for i in range(color_clusters):
+            cluster_points = pixels[labels == i]
+            if len(cluster_points) > 0:
+                new_centroids[i] = cluster_points.mean(axis=0)
+            else:
+                # If cluster is empty, reinitialize to a random point
+                new_centroids[i] = pixels[np.random.choice(pixels.shape[0])]
+
+        # Check for convergence
+        if np.allclose(centroids, new_centroids):
+            break
+
+        centroids = new_centroids
+
+    # Get the colors and their counts
+    colors = centroids
+    uniq, counts = np.unique(labels, return_counts=True)
+
+    # Find the most dominant color
+    dominant_color = colors[uniq[np.argmax(counts)]]
+    return tuple(int(np.clip(round(x), 0, 255)) for x in reversed(dominant_color))
