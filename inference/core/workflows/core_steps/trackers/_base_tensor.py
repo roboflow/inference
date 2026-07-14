@@ -783,7 +783,23 @@ class TrackerBlockBase(WorkflowBlock):
                     size=instances_cache_size
                 )
             caches.append(self._per_video_cache[video_id])
-        arena_key = (max(1, instances_cache_size), device)
+        cache_sizes = {cache._size for cache in caches}
+        unique_caches = len({id(cache) for cache in caches}) == len(caches)
+        if len(cache_sizes) != 1 or not unique_caches:
+            return [
+                self._build_tracker_result(
+                    video_id=video_id,
+                    tracked_detections=prediction,
+                    tracker_ids=ids,
+                    instances_cache_size=instances_cache_size,
+                )
+                for video_id, prediction, ids in zip(
+                    video_ids,
+                    tracked_detections,
+                    tracker_ids,
+                )
+            ]
+        arena_key = (next(iter(cache_sizes)), device)
         arena = self._instance_cache_batch_arenas.get(arena_key)
         if arena is None:
             arena = _InstanceCacheBatchArena(
