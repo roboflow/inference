@@ -220,7 +220,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-opencv-
 
 RUN python3 -m venv /opt/opencv-build-tools && \
     /opt/opencv-build-tools/bin/pip install --no-cache-dir \
-        "numpy>=2.0.0,<2.4.0"
+        "numpy==1.26.4"
 
 COPY docker/scripts/build_opencv.sh /usr/local/bin/build_opencv
 COPY docker/scripts/verify_opencv.sh /usr/local/bin/verify_opencv
@@ -230,7 +230,6 @@ RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
     OPENCV_SHA256="${OPENCV_SHA256}" \
     OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
     OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
-    OPENCV_NUMPY_TARGET_VERSION=NPY_2_0_API_VERSION \
     OPENCV_WITH_CUDA=ON \
     OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
     OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
@@ -304,9 +303,9 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
     ./cmake-${CMAKE_VERSION}-linux-aarch64.sh --prefix=/usr/local --skip-license && \
     rm cmake-${CMAKE_VERSION}-linux-aarch64.sh
 
-# Install pip and numpy 2.x FIRST
+# Install pip and the OpenCV-compatible NumPy ABI before compiling extensions.
 RUN python3 -m pip install --upgrade pip setuptools wheel && \
-    python3 -m pip install "numpy>=2.0.0,<2.4.0"
+    python3 -m pip install "numpy==1.26.4"
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
@@ -490,8 +489,11 @@ COPY requirements/_requirements.txt \
      requirements/requirements.jetson.txt \
      ./
 
-# Install Python dependencies (torch/torchvision/numpy/onnxruntime already installed from source)
-RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
+# OpenCV's Jetson Python bindings are not NumPy 2-compatible. Keep the
+# container resolver on NumPy 1.26 instead of accepting the global default.
+RUN echo "numpy==1.26.4" > /tmp/jetson-numpy-overrides.txt && \
+    uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
+    --override /tmp/jetson-numpy-overrides.txt \
     -r _requirements.txt \
     -r requirements.http.txt \
     -r requirements.clip.txt \
@@ -825,7 +827,7 @@ ENV VERSION_CHECK_MODE=once \
     L4T_VERSION=36.4.0 \
     ENABLE_STREAM_API=True
 
-LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyTorch from source, numpy 2.x)"
+LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyTorch from source, NumPy 1.26)"
 
 EXPOSE 9001
 
