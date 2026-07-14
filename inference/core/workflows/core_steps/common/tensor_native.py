@@ -39,6 +39,7 @@ from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
+    TRACKER_ID_KEY,
     WIDTH_KEY,
     X_KEY,
     Y_KEY,
@@ -182,6 +183,11 @@ def _take_detections(
             mask=new_mask,
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=(
+                detections.tracker_id
+                if is_identity or detections.tracker_id is None
+                else detections.tracker_id[index_tensor]
+            ),
         )
     return Detections(
         xyxy=selection.select_tensor(detections.xyxy),
@@ -189,6 +195,11 @@ def _take_detections(
         confidence=selection.select_tensor(detections.confidence),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=(
+            detections.tracker_id
+            if is_identity or detections.tracker_id is None
+            else detections.tracker_id[index_tensor]
+        ),
     )
 
 
@@ -525,6 +536,7 @@ def _shift_native_detections_to_root_coordinates(
             ),
             image_metadata=image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=detections.tracker_id,
         )
     return Detections(
         xyxy=shifted_xyxy,
@@ -532,6 +544,7 @@ def _shift_native_detections_to_root_coordinates(
         confidence=detections.confidence,
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=detections.tracker_id,
     )
 
 
@@ -757,6 +770,8 @@ def native_detections_from_inference_predictions(
     xyxy: List[List[float]] = []
     class_id: List[int] = []
     confidence: List[float] = []
+    tracker_ids: List[int] = []
+    all_tracker_ids_present = True
     bboxes_metadata: List[dict] = []
     derived_class_names: Dict[int, str] = {}
     for prediction in predictions:
@@ -775,6 +790,10 @@ def native_detections_from_inference_predictions(
         prediction_class_id = int(prediction.get(CLASS_ID_KEY, 0))
         class_id.append(prediction_class_id)
         confidence.append(float(prediction.get(CONFIDENCE_KEY, 1.0)))
+        tracker_id = prediction.get(TRACKER_ID_KEY)
+        all_tracker_ids_present &= tracker_id is not None
+        if tracker_id is not None:
+            tracker_ids.append(int(tracker_id))
         if CLASS_NAME_KEY in prediction:
             derived_class_names[prediction_class_id] = str(prediction[CLASS_NAME_KEY])
         bboxes_metadata.append(
@@ -798,6 +817,11 @@ def native_detections_from_inference_predictions(
         ).reshape(-1),
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata if number_of_detections > 0 else None,
+        tracker_id=(
+            torch.as_tensor(tracker_ids, dtype=torch.long, device=device).reshape(-1)
+            if all_tracker_ids_present and number_of_detections > 0
+            else None
+        ),
     )
 
 

@@ -43,3 +43,24 @@ def test_len_counts_boxes_regardless_of_mask_representation() -> None:
 
     # when / then
     assert len(detections) == 3
+
+
+def test_instance_tracker_ids_remain_tensor_native_until_iteration() -> None:
+    """Instance iteration materializes IDs without mutating bbox metadata."""
+    metadata = [{"label": "first"}, {"label": "second"}]
+    tracker_ids = torch.tensor([11, 12], dtype=torch.long)
+    detections = InstanceDetections(
+        xyxy=torch.zeros((2, 4)),
+        class_id=torch.zeros(2, dtype=torch.long),
+        confidence=torch.ones(2),
+        mask=torch.zeros((2, 4, 4), dtype=torch.bool),
+        bboxes_metadata=metadata,
+        tracker_id=tracker_ids,
+    )
+
+    rows = list(detections)
+
+    assert detections.tracker_id is tracker_ids
+    assert [row[4] for row in rows] == [11, 12]
+    assert rows[0][5]["tracker_id"] == 11
+    assert metadata == [{"label": "first"}, {"label": "second"}]

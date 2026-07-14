@@ -39,3 +39,37 @@ def test_len_when_multiple_detections() -> None:
 
     # when / then
     assert len(detections) == 3
+
+
+def test_tracker_ids_remain_tensor_native_until_iteration() -> None:
+    """Tracker IDs stay as tensors while legacy iteration exposes metadata."""
+    tracker_ids = torch.tensor([7, 9], dtype=torch.long)
+    metadata = [{"source": "a"}, {"source": "b"}]
+    detections = Detections(
+        xyxy=torch.zeros((2, 4)),
+        class_id=torch.zeros(2, dtype=torch.long),
+        confidence=torch.ones(2),
+        bboxes_metadata=metadata,
+        tracker_id=tracker_ids,
+    )
+
+    rows = list(detections)
+
+    assert detections.tracker_id is tracker_ids
+    assert rows[0][4] == 7
+    assert rows[1][5]["tracker_id"] == 9
+    assert metadata == [{"source": "a"}, {"source": "b"}]
+
+
+def test_to_supervision_materializes_first_class_tracker_ids() -> None:
+    """The explicit Supervision boundary carries native tracker IDs."""
+    detections = Detections(
+        xyxy=torch.zeros((2, 4)),
+        class_id=torch.zeros(2, dtype=torch.long),
+        confidence=torch.ones(2),
+        tracker_id=torch.tensor([4, 5]),
+    )
+
+    result = detections.to_supervision()
+
+    assert result.tracker_id.tolist() == [4, 5]
