@@ -4,6 +4,10 @@ set -eu
 /usr/local/cuda/bin/ptxas --version >/dev/null
 test -f /usr/local/cuda/nvvm/libdevice/libdevice.10.bc
 test -f /usr/local/share/licenses/cuda-ptxas
+test "${TRITON_PTXAS_PATH}" = /usr/local/cuda/bin/ptxas
+test "${TRITON_PTXAS_BLACKWELL_PATH}" = /usr/local/cuda/bin/ptxas
+test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas
+test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas-blackwell
 test -x /usr/local/bin/inference
 test -x /usr/local/bin/run_uvicorn.sh
 test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1
