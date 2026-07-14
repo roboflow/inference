@@ -8,6 +8,7 @@ OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256:?OPENCV_CONTRIB_SHA256 is require
 OPENCV_PREFIX="${OPENCV_PREFIX:-/opt/opencv}"
 OPENCV_PYTHON_EXECUTABLE="${OPENCV_PYTHON_EXECUTABLE:-python3}"
 OPENCV_PYTHON3_LIMITED_API="${OPENCV_PYTHON3_LIMITED_API:-OFF}"
+OPENCV_BUILD_PYTHON3="${OPENCV_BUILD_PYTHON3:-ON}"
 OPENCV_WITH_CUDA="${OPENCV_WITH_CUDA:-OFF}"
 OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN:-}"
 OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX:-}"
@@ -146,7 +147,7 @@ cmake \
     -D BUILD_SHARED_LIBS=OFF \
     -D BUILD_JAVA=OFF \
     -D BUILD_opencv_apps=OFF \
-    -D BUILD_opencv_python3=ON \
+    -D BUILD_opencv_python3="${OPENCV_BUILD_PYTHON3}" \
     -D BUILD_opencv_videoio=ON \
     -D BUILD_TESTS=OFF \
     -D BUILD_PERF_TESTS=OFF \
@@ -162,9 +163,11 @@ cp "${OPENCV_SOURCE_DIR}/LICENSE" "${license_dir}/LICENSE.opencv"
 cp "${OPENCV_CONTRIB_SOURCE_DIR}/LICENSE" \
     "${license_dir}/LICENSE.opencv_contrib"
 
-PYTHONPATH="${OPENCV_PREFIX}/python" \
-    "${OPENCV_PYTHON_EXECUTABLE}" -c \
-    "import cv2; info = cv2.getBuildInformation(); assert cv2.videoio_registry.hasBackend(cv2.CAP_GSTREAMER); assert 'YES' in info.split('GStreamer:')[1].split(chr(10))[0]; assert 'YES' in info.split('FFMPEG:')[1].split(chr(10))[0]; print(info)"
+if [ "${OPENCV_BUILD_PYTHON3}" = "ON" ]; then
+    PYTHONPATH="${OPENCV_PREFIX}/python" \
+        "${OPENCV_PYTHON_EXECUTABLE}" -c \
+        "import cv2; info = cv2.getBuildInformation(); assert cv2.videoio_registry.hasBackend(cv2.CAP_GSTREAMER); assert 'YES' in info.split('GStreamer:')[1].split(chr(10))[0]; assert 'YES' in info.split('FFMPEG:')[1].split(chr(10))[0]; print(info)"
+fi
 
 runtime_prefix="${OPENCV_PREFIX}-runtime"
 cp -a "${OPENCV_PREFIX}" "${runtime_prefix}"
