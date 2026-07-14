@@ -231,18 +231,13 @@ RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
     OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
     OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
     OPENCV_PYTHON3_LIMITED_API=ON \
+    OPENCV_BUILD_PYTHON3=OFF \
     OPENCV_NUMPY_TARGET_VERSION=NPY_2_0_API_VERSION \
     OPENCV_WITH_CUDA=ON \
     OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
     OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
     build_opencv && \
     du -sh /opt/opencv /opt/opencv-runtime
-
-RUN PATH=/opt/opencv-build-tools/bin:$PATH \
-    PYTHONPATH=/opt/opencv/python \
-    OPENCV_EXPECTED_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
-    OPENCV_REQUIRE_CUDA_BUILD=true \
-    verify_opencv
 
 FROM jetson-build-base AS builder
 
@@ -492,7 +487,10 @@ COPY requirements/_requirements.txt \
      ./
 
 # Install Python dependencies (torch/torchvision/numpy/onnxruntime already installed from source)
-RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
+RUN echo "opencv-python==4.12.0.88" > /tmp/jetson-opencv-overrides.txt && \
+    echo "opencv-contrib-python==4.12.0.88" >> /tmp/jetson-opencv-overrides.txt && \
+    uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
+    --override /tmp/jetson-opencv-overrides.txt \
     -r _requirements.txt \
     -r requirements.http.txt \
     -r requirements.clip.txt \
@@ -508,7 +506,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     "setuptools<=75.5.0" \
     "transformers>=4.57.3,<5.9.0" \
     packaging \
-    && rm -rf ~/.cache/uv
+    && rm -rf ~/.cache/uv /tmp/jetson-opencv-overrides.txt
 
 # Rebuild the bitsandbytes CUDA backend for Orin (sm87). The PyPI aarch64
 # wheel ships sm90-only kernels, so every GPU quantization op (the VLM
@@ -553,9 +551,6 @@ RUN python3 -m pip uninstall -y boto3 botocore && \
 # with a warning (exit 0), so this block is idempotent across image variants.
 # ---- image-slim cleanup (re-executed verbatim by the local donor harness) ----
 RUN cd /usr/local/lib/python3.10/dist-packages && \
-    find . -maxdepth 1 -type d \
-        \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
-        -prune -exec rm -rf {} + && \
     # Build-time tooling leaked in via pytorch/onnxruntime build requirements;
     # none has a runtime reverse-dependency (cmake pip pkg alone is 82MB)
     python3 -m pip uninstall -y cmake lintrunner hypothesis expecttest types-dataclasses astunparse optree \
@@ -785,7 +780,7 @@ COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/l
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
-ENV PYTHONPATH=/opt/opencv/python:/usr/local/lib/python3.10/dist-packages
+ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages
 
 # Copy application code
 COPY inference inference
@@ -797,10 +792,9 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
-    --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
     sh /tmp/verify_ffmpeg && \
     sh /tmp/verify_gstreamer && \
-    OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
+    python3 -c "import cv2, numpy; assert cv2.__version__.startswith('4.12.'); assert numpy.__version__.startswith('2.')" && \
     rm -rf /root/.cache/gstreamer-1.0
 
 # Environment variables
