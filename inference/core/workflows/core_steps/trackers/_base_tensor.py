@@ -28,6 +28,7 @@ library-based and identical to ``_base.py`` (the third-party trackers are
 ``sv``-based) — only ``_run_tracker`` does the native↔sv conversion.
 """
 
+import os
 from abc import abstractmethod
 from collections import deque
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
@@ -39,6 +40,10 @@ from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
     take_prediction_by_indices,
+)
+from inference.core.workflows.core_steps.trackers.batch_scheduler import (
+    HOST_TRACKER_IDS_KEY,
+    get_tracker_batch_scheduler,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -157,6 +162,32 @@ class TrackerBlockBase(WorkflowBlock):
         """
         return tracker.update(detections)
 
+    def _tracker_batch_frame(
+        self,
+        tracker: Any,
+        image: WorkflowImageData,
+    ) -> Any | None:
+        """Return optional per-frame context passed to batched Tracktors."""
+        return None
+
+    @staticmethod
+    def _can_batch_tracker_update(detections: sv.Detections) -> bool:
+        """Return whether this call can enter the CUDA micro-batch scheduler."""
+        if os.getenv("TRACKTORS_DISABLE_BATCHING", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            return False
+        boxes = detections.xyxy
+        if not isinstance(boxes, torch.Tensor) or boxes.device.type != "cuda":
+            return False
+        try:
+            import tracktors
+        except ImportError:
+            return False
+        return callable(getattr(tracktors, "update_batch", None))
+
     def _run_tracker(
         self,
         image: WorkflowImageData,
@@ -206,7 +237,14 @@ class TrackerBlockBase(WorkflowBlock):
             },
         )
 
-        tracked_sv = self._tracker_update(tracker, sv_input, image)
+        if self._can_batch_tracker_update(sv_input):
+            tracked_sv = get_tracker_batch_scheduler().update(
+                tracker,
+                sv_input,
+                frame=self._tracker_batch_frame(tracker, image),
+            )
+        else:
+            tracked_sv = self._tracker_update(tracker, sv_input, image)
 
         # Filter out immature / unmatched tracks (tracker_id == -1). Mirror the
         # numpy guard exactly: only filter when tracker_id is present and there
@@ -251,8 +289,13 @@ class TrackerBlockBase(WorkflowBlock):
         # masks). This preserves every native field for the surviving rows.
         tracked_detections = take_prediction_by_indices(detections, surviving)
 
-        # Tracker IDs cross to Python only for the object metadata and cache.
-        tracker_ids = tracker_ids_tensor.detach().to("cpu").tolist()
+        # Batched CUDA updates transfer all streams' IDs together in the scheduler.
+        # Exact scalar fallbacks retain the historical per-call materialization.
+        tracker_ids = (
+            tracked_sv.data.pop(HOST_TRACKER_IDS_KEY)
+            if tracked_sv.data and HOST_TRACKER_IDS_KEY in tracked_sv.data
+            else tracker_ids_tensor.detach().to("cpu").tolist()
+        )
         _patch_tracker_ids(tracked_detections, tracker_ids)
 
         if video_id not in self._per_video_cache:
