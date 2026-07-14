@@ -236,26 +236,32 @@ def test_tensor_contrast_enhancement_parity_with_numpy_block(
     numpy_born, tensor_born = _paired_images(torch, bgr)
 
     # when
-    numpy_result = ContrastEnhancementBlock().run(
-        image=numpy_born,
-        clip_limit=clip_limit,
-        contrast_multiplier=contrast_multiplier,
-        normalize_brightness=normalize_brightness,
-    )["image"].numpy_image
-    tensor_result = TensorContrastEnhancementBlock().run(
-        image=tensor_born,
-        clip_limit=clip_limit,
-        contrast_multiplier=contrast_multiplier,
-        normalize_brightness=normalize_brightness,
-    )["image"].numpy_image
+    numpy_result = (
+        ContrastEnhancementBlock()
+        .run(
+            image=numpy_born,
+            clip_limit=clip_limit,
+            contrast_multiplier=contrast_multiplier,
+            normalize_brightness=normalize_brightness,
+        )["image"]
+        .numpy_image
+    )
+    tensor_result = (
+        TensorContrastEnhancementBlock()
+        .run(
+            image=tensor_born,
+            clip_limit=clip_limit,
+            contrast_multiplier=contrast_multiplier,
+            normalize_brightness=normalize_brightness,
+        )["image"]
+        .numpy_image
+    )
 
     # then
     if exact:
         assert np.array_equal(tensor_result, numpy_result)
     else:
-        diff = np.abs(
-            tensor_result.astype(np.int16) - numpy_result.astype(np.int16)
-        )
+        diff = np.abs(tensor_result.astype(np.int16) - numpy_result.astype(np.int16))
         assert diff.max() <= 1, f"max deviation {diff.max()} exceeds float tolerance"
 
 
@@ -266,18 +272,26 @@ def test_tensor_contrast_enhancement_grayscale_parity() -> None:
     numpy_born, tensor_born = _paired_images(torch, gray)
 
     # when
-    numpy_result = ContrastEnhancementBlock().run(
-        image=numpy_born,
-        clip_limit=0,
-        contrast_multiplier=1.0,
-        normalize_brightness=False,
-    )["image"].numpy_image
-    tensor_result = TensorContrastEnhancementBlock().run(
-        image=tensor_born,
-        clip_limit=0,
-        contrast_multiplier=1.0,
-        normalize_brightness=False,
-    )["image"].numpy_image
+    numpy_result = (
+        ContrastEnhancementBlock()
+        .run(
+            image=numpy_born,
+            clip_limit=0,
+            contrast_multiplier=1.0,
+            normalize_brightness=False,
+        )["image"]
+        .numpy_image
+    )
+    tensor_result = (
+        TensorContrastEnhancementBlock()
+        .run(
+            image=tensor_born,
+            clip_limit=0,
+            contrast_multiplier=1.0,
+            normalize_brightness=False,
+        )["image"]
+        .numpy_image
+    )
 
     # then - tensor path emits (1, H, W) whose numpy view is the (H, W) shape
     assert tensor_result.shape == numpy_result.shape == (24, 32)
@@ -310,15 +324,19 @@ def test_tensor_contrast_enhancement_delegates_for_numpy_born_images() -> None:
     rng = np.random.default_rng(7)
     bgr = rng.integers(40, 180, size=(16, 16, 3), dtype=np.uint8)
     numpy_born, _ = _paired_images(torch, bgr)
-    reference = ContrastEnhancementBlock().run(
-        image=WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id="parent"),
-            numpy_image=bgr,
-        ),
-        clip_limit=2,
-        contrast_multiplier=1.2,
-        normalize_brightness=True,
-    )["image"].numpy_image
+    reference = (
+        ContrastEnhancementBlock()
+        .run(
+            image=WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="parent"),
+                numpy_image=bgr,
+            ),
+            clip_limit=2,
+            contrast_multiplier=1.2,
+            normalize_brightness=True,
+        )["image"]
+        .numpy_image
+    )
 
     # when
     result = TensorContrastEnhancementBlock().run(
