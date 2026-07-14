@@ -8,34 +8,36 @@ set -eu
 # a hard requirement (only the Jetson media image bakes them: JetPack 6
 # injects the BSP plugins at container start, and dGPU images have none).
 
-for command_name in \
-    cc \
-    c++ \
-    gcc \
-    g++ \
-    make \
-    cmake \
-    meson \
-    ninja \
-    git \
-    curl \
-    pip \
-    pip3
-do
-    if command -v "${command_name}" >/dev/null 2>&1; then
-        echo "Unexpected build command in media runtime: ${command_name}" >&2
+if [ "${VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS:-true}" = true ]; then
+    for command_name in \
+        cc \
+        c++ \
+        gcc \
+        g++ \
+        make \
+        cmake \
+        meson \
+        ninja \
+        git \
+        curl \
+        pip \
+        pip3
+    do
+        if command -v "${command_name}" >/dev/null 2>&1; then
+            echo "Unexpected build command in media runtime: ${command_name}" >&2
+            exit 1
+        fi
+    done
+
+    development_packages="$(
+        dpkg-query -W -f='${binary:Package}\n' |
+            grep -E -- '-dev(:[^[:space:]]+)?$' || true
+    )"
+    if [ -n "${development_packages}" ]; then
+        printf 'Unexpected development packages in media runtime:\n%s\n' \
+            "${development_packages}" >&2
         exit 1
     fi
-done
-
-development_packages="$(
-    dpkg-query -W -f='${binary:Package}\n' |
-        grep -E -- '-dev(:[^[:space:]]+)?$' || true
-)"
-if [ -n "${development_packages}" ]; then
-    printf 'Unexpected development packages in media runtime:\n%s\n' \
-        "${development_packages}" >&2
-    exit 1
 fi
 
 set -- /opt/ffmpeg /opt/gstreamer
