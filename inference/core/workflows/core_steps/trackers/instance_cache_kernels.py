@@ -175,8 +175,11 @@ if triton is not None and tl is not None:
                     )
                     new_count += 1
                     write_index += 1
-                    if write_index == CACHE_SIZE:
-                        write_index = 0
+                    write_index = tl.where(
+                        write_index == CACHE_SIZE,
+                        write_index - CACHE_SIZE,
+                        write_index,
+                    )
 
         tl.store(write_indices + cache_row, write_index)
         tl.store(cache_counts + cache_row, cache_count)

@@ -49,11 +49,12 @@ def _frame_ids(
     frame: int,
     object_count: int,
     working_set: int,
+    frame_step: int,
     device: torch.device,
 ) -> torch.Tensor:
     """Build deterministic churn with duplicates and periodic FIFO evictions."""
     positions = torch.arange(object_count, dtype=torch.long, device=device)
-    tracker_ids = torch.remainder(positions + frame * 3, working_set)
+    tracker_ids = torch.remainder(positions + frame * frame_step, working_set)
     return tracker_ids + stream * (working_set + 1)
 
 
@@ -74,6 +75,7 @@ def _validate(
     object_count: int,
     cache_size: int,
     working_set: int,
+    frame_step: int,
     frames: int,
     device: torch.device,
 ) -> None:
@@ -83,7 +85,14 @@ def _validate(
     references = [deque(maxlen=cache_size) for _ in range(stream_count)]
     for frame in range(frames):
         tracker_ids = [
-            _frame_ids(stream, frame, object_count, working_set, device)
+            _frame_ids(
+                stream,
+                frame,
+                object_count,
+                working_set,
+                frame_step,
+                device,
+            )
             for stream in range(stream_count)
         ]
         result = arena.record_instances(caches=caches, tracker_ids=tracker_ids)
@@ -101,6 +110,7 @@ def _measure(
     object_count: int,
     cache_size: int,
     working_set: int,
+    frame_step: int,
     warmup: int,
     iterations: int,
     device: torch.device,
@@ -111,7 +121,14 @@ def _measure(
     samples = []
     for frame in range(warmup + iterations):
         tracker_ids = [
-            _frame_ids(stream, frame, object_count, working_set, device)
+            _frame_ids(
+                stream,
+                frame,
+                object_count,
+                working_set,
+                frame_step,
+                device,
+            )
             for stream in range(stream_count)
         ]
         torch.cuda.synchronize(device)
@@ -132,6 +149,7 @@ def main() -> None:
     parser.add_argument("--objects", type=int, nargs="+", default=[16, 64, 128])
     parser.add_argument("--cache-size", type=int, default=16384)
     parser.add_argument("--working-set", type=int, default=32768)
+    parser.add_argument("--frame-step", type=int, default=3)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iterations", type=int, default=500)
     parser.add_argument("--validation-frames", type=int, default=64)
@@ -151,6 +169,7 @@ def main() -> None:
                 object_count=object_count,
                 cache_size=args.cache_size,
                 working_set=args.working_set,
+                frame_step=args.frame_step,
                 frames=args.validation_frames,
                 device=device,
             )
@@ -159,6 +178,7 @@ def main() -> None:
                 object_count=object_count,
                 cache_size=args.cache_size,
                 working_set=args.working_set,
+                frame_step=args.frame_step,
                 warmup=args.warmup,
                 iterations=args.iterations,
                 device=device,

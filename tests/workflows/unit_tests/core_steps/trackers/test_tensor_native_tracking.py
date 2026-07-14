@@ -251,7 +251,8 @@ def test_cuda_instance_cache_matches_long_deque_churn() -> None:
             generator=generator,
             dtype=torch.long,
         ).tolist()
-        frame[1::7] = frame[::7]
+        duplicate_positions = frame[1::7]
+        frame[1::7] = frame[::7][: len(duplicate_positions)]
         expected = _deque_record(reference, frame)
         actual = cache.record_instances(
             torch.tensor(frame, dtype=torch.long, device="cuda")
