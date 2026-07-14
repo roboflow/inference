@@ -46,6 +46,7 @@ class TrackerBatchScheduler:
         self._condition = threading.Condition()
         self._pending: deque[_TrackerRequest] = deque()
         self._closed = False
+        self._executor: Any | None = None
         self._worker = threading.Thread(
             target=self._run,
             name="tracktors-batch-scheduler",
@@ -89,7 +90,10 @@ class TrackerBatchScheduler:
         for request in pending:
             request.future.set_exception(RuntimeError("tracker batch scheduler closed"))
         if threading.current_thread() is not self._worker:
-            self._worker.join(timeout=1.0)
+            self._worker.join()
+        if self._executor is not None:
+            self._executor.close()
+            self._executor = None
 
     def _take_batch(self) -> list[_TrackerRequest]:
         with self._condition:
@@ -130,13 +134,21 @@ class TrackerBatchScheduler:
                     return
                 continue
             try:
-                from tracktors import update_batch
+                import tracktors
 
-                outputs = update_batch(
+                if self._executor is None:
+                    executor_type = getattr(tracktors, "CUDABatchExecutor", None)
+                    if executor_type is not None:
+                        self._executor = executor_type(
+                            max_workers=self.max_batch_size,
+                        )
+
+                outputs = tracktors.update_batch(
                     [request.tracker for request in batch],
                     [request.detections for request in batch],
                     frames=[request.frame for request in batch],
                     timestamps=[request.timestamp for request in batch],
+                    executor=self._executor,
                 )
                 if len(outputs) != len(batch):
                     raise RuntimeError(
