@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 from unittest import mock
 from unittest.mock import MagicMock, call, patch
 
@@ -29,11 +29,129 @@ from inference.core.interfaces.camera.video_source import (
     StreamState,
     VideoConsumer,
     VideoSource,
+    _build_default_producer,
     decode_video_frame_to_buffer,
     drop_single_frame_from_buffer,
     get_fps_if_tick_happens_now,
     get_from_queue,
 )
+
+
+@patch("inference.core.interfaces.camera.discoverability.build_hw_producer")
+@patch.object(video_source, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+def test_default_producer_requests_numpy_frames_for_standard_consumers(
+    build_hw_producer: MagicMock,
+) -> None:
+    producer = MagicMock()
+    build_hw_producer.return_value = producer
+
+    result = _build_default_producer("rtsps://camera.example.test/live")
+
+    assert result is producer
+    build_hw_producer.assert_called_once_with(
+        "rtsps://camera.example.test/live",
+        output_tensor=False,
+    )
+
+
+def test_async_hardware_initialisation_failure_releases_and_uses_cv2() -> None:
+    properties = SourceProperties(
+        width=320,
+        height=180,
+        total_frames=0,
+        is_file=False,
+        fps=30.0,
+    )
+    hardware_producer = MagicMock()
+    hardware_producer.isOpened.return_value = True
+    hardware_producer.discover_source_properties.side_effect = RuntimeError(
+        "decoder negotiation failed"
+    )
+
+    class FallbackProducer:
+        def __init__(self, video) -> None:
+            self.opened = True
+
+        def isOpened(self) -> bool:
+            return self.opened
+
+        def initialize_source_properties(self, properties) -> None:
+            return None
+
+        def discover_source_properties(self) -> SourceProperties:
+            return properties
+
+        def grab(self) -> bool:
+            self.opened = False
+            return False
+
+        def release(self) -> None:
+            self.opened = False
+
+    with patch.object(
+        video_source, "_build_default_producer", return_value=hardware_producer
+    ), patch.object(video_source, "CV2VideoFrameProducer", FallbackProducer):
+        source = VideoSource.init(video_reference="rtsp://camera.example.test/live")
+        source.start()
+        source._stream_consumption_thread.join(timeout=1.0)
+
+    hardware_producer.release.assert_called_once_with()
+    assert isinstance(source._video, FallbackProducer)
+    assert not source._stream_consumption_thread.is_alive()
+
+
+def test_termination_interrupts_a_producer_blocked_waiting_for_a_frame() -> None:
+    entered_grab = Event()
+    interrupted = Event()
+    properties = SourceProperties(
+        width=320,
+        height=180,
+        total_frames=0,
+        is_file=False,
+        fps=30.0,
+    )
+
+    class BlockingProducer:
+        def __init__(self) -> None:
+            self.opened = True
+            self.interrupt_calls = 0
+
+        def isOpened(self) -> bool:
+            return self.opened
+
+        def initialize_source_properties(self, properties) -> None:
+            return None
+
+        def discover_source_properties(self) -> SourceProperties:
+            return properties
+
+        def grab(self) -> bool:
+            entered_grab.set()
+            interrupted.wait()
+            return False
+
+        def retrieve(self):
+            raise AssertionError("retrieve must not run after interruption")
+
+        def interrupt(self) -> None:
+            self.interrupt_calls += 1
+            interrupted.set()
+
+        def release(self) -> None:
+            self.opened = False
+
+    producer = BlockingProducer()
+    source = VideoSource.init(video_reference=lambda: producer)
+    source.start()
+    assert entered_grab.wait(timeout=1.0)
+
+    started = time.monotonic()
+    source.terminate(wait_on_frames_consumption=False)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1.0
+    assert producer.interrupt_calls == 1
+    assert not source._stream_consumption_thread.is_alive()
 
 
 def tear_down_source(source: VideoSource) -> None:

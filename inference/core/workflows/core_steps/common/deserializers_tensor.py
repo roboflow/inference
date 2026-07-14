@@ -1,10 +1,7 @@
 """
-Tensor-native sibling of `common/deserializers.py`. Same public function
-names; loader swaps the import based on `ENABLE_TENSOR_DATA_REPRESENTATION`.
-
-Per the plan's locked decision [ITERATE 4.A], the numpy file is left
-untouched. Functions here add tensor-aware code paths and delegate to
-the numpy implementations for everything else.
+Tensor-native sibling of `common/deserializers.py`. The loader selects this module
+when `ENABLE_TENSOR_DATA_REPRESENTATION` is enabled. Functions here add tensor-aware
+code paths and delegate other inputs to the NumPy implementations.
 """
 
 from typing import Any, List, Optional, Tuple
@@ -52,12 +49,9 @@ _CHANNEL_AXIS_SIZES = (1, 3, 4)
 def _ensure_chw_layout(image: torch.Tensor) -> torch.Tensor:
     """Normalise a single-image tensor to the `WorkflowImageData` CHW contract.
 
-    `WorkflowImageData.tensor_image` is defined as CHW (RGB), but some producers
-    hand us a channels-last HWC tensor — e.g. the Jetson NVDEC producer wraps the
-    `jetson_utils` cudaImage (HWC `rgb8`) zero-copy. Stored as-is, the model
-    survives (its preprocessing auto-permutes channels-last input), but
-    `numpy_image` blindly does `permute(1, 2, 0)` and produces a `(W, C, H)`
-    canvas, which breaks every CHW-assuming consumer (annotators, shape reads).
+    `WorkflowImageData.tensor_image` uses CHW RGB. Producers may provide a
+    channels-last HWC tensor, which is normalised before constructing the workflow
+    image container.
 
     Detect channels-last with the same heuristic the model preprocessing uses
     (`pre_processing.py`: channels not at the front but present at the back) and

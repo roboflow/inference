@@ -34,19 +34,9 @@ Examples:
         --model-id yolov8n-640
 """
 
-# jetson_utils must be imported before anything that initialises CUDA or GStreamer
-# state (cv2/torch, pulled in below via `inference`), so it comes first. It only
-# exists on the Jetson images — on dGPU builds the import fails and the hardware
-# decoder probes in VideoSource handle the absence at runtime.
-try:
-    import jetson_utils  # noqa: F401
-except Exception:  # noqa: BLE001 - any failure means "not a Jetson build"
-    jetson_utils = None
-
 import argparse
 import json
 import os
-import sys
 import time
 from collections import deque
 from typing import Any, Dict, List, Optional

@@ -1,4 +1,225 @@
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as builder
+# syntax=docker/dockerfile:1.7
+ARG FFMPEG_VERSION=7.1.3
+ARG FFMPEG_SHA256=f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe
+ARG GSTREAMER_VERSION=1.24.12
+ARG GSTREAMER_COMMIT=88e31216479a3f0c25096ca406369f3983efec14
+ARG GLIB_NETWORKING_SHA256=cd2a084c7bb91d78e849fb55d40e472f6d8f6862cddc9f12c39149359ba18268
+ARG OPENCV_VERSION=4.13.0
+ARG OPENCV_SHA256=1d40ca017ea51c533cf9fd5cbde5b5fe7ae248291ddf2af99d4c17cf8e13017d
+ARG OPENCV_CONTRIB_SHA256=1e0077a4fd2960a7d2f4c9e49d6ba7bb891cac2d1be36d7e8e47aa97a9d1039b
+ARG OPENCV_CUDA_ARCH_BIN=7.5;8.9
+ARG OPENCV_CUDA_ARCH_PTX=7.5
+
+FROM ubuntu:22.04 AS ffmpeg-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_SHA256
+ARG FFMPEG_VERSION
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-ffmpeg-gpu-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-ffmpeg-gpu-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        libbz2-dev \
+        liblzma-dev \
+        libssl-dev \
+        nasm \
+        pkg-config \
+        xz-utils \
+        zlib1g-dev
+
+COPY docker/scripts/build_ffmpeg.sh /usr/local/bin/build_ffmpeg
+
+ENV PATH=/opt/ffmpeg/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
+
+RUN chmod +x /usr/local/bin/build_ffmpeg && \
+    FFMPEG_VERSION="${FFMPEG_VERSION}" \
+    FFMPEG_SHA256="${FFMPEG_SHA256}" \
+    build_ffmpeg && \
+    du -sh /opt/ffmpeg /opt/ffmpeg-runtime
+
+COPY docker/scripts/verify_ffmpeg.sh /usr/local/bin/verify_ffmpeg
+
+RUN chmod +x /usr/local/bin/verify_ffmpeg && verify_ffmpeg
+
+FROM nvcr.io/nvidia/cuda:12.4.1-devel-ubuntu22.04 AS gstreamer-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GLIB_NETWORKING_SHA256
+ARG GSTREAMER_COMMIT
+ARG GSTREAMER_VERSION
+ARG TARGETARCH
+
+COPY --from=ffmpeg-builder /opt/ffmpeg /opt/ffmpeg
+
+ENV PATH=/opt/ffmpeg/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-gstreamer-gpu-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-gstreamer-gpu-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        flex \
+        gobject-introspection \
+        git \
+        libbz2-dev \
+        libcurl4-openssl-dev \
+        libglib2.0-dev \
+        libgnutls28-dev \
+        libgirepository1.0-dev \
+        libgl-dev \
+        libjpeg-dev \
+        libopus-dev \
+        libpng-dev \
+        libsrtp2-dev \
+        libssl-dev \
+        libv4l-dev \
+        libvpx-dev \
+        liblzma-dev \
+        ninja-build \
+        pkg-config \
+        python3 \
+        python3-pip \
+        python3-venv \
+        zlib1g-dev
+
+RUN python3 -m venv /opt/gstreamer-build-tools && \
+    /opt/gstreamer-build-tools/bin/pip install --no-cache-dir \
+        "meson>=1.4,<2" \
+        "ninja>=1.11,<2"
+
+ENV PATH=/opt/gstreamer-build-tools/bin:$PATH
+
+COPY docker/scripts/build_gstreamer.sh /usr/local/bin/build_gstreamer
+
+RUN chmod +x /usr/local/bin/build_gstreamer && \
+    GSTREAMER_VERSION="${GSTREAMER_VERSION}" \
+    GSTREAMER_COMMIT="${GSTREAMER_COMMIT}" \
+    GLIB_NETWORKING_SHA256="${GLIB_NETWORKING_SHA256}" \
+    GSTREAMER_NVCODEC=enabled \
+    build_gstreamer
+
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    LD_LIBRARY_PATH=/opt/gstreamer/lib:/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/gstreamer/lib/pkgconfig:/opt/ffmpeg/lib/pkgconfig \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0
+
+COPY docker/scripts/verify_gstreamer.sh /usr/local/bin/verify_gstreamer
+
+RUN chmod +x /usr/local/bin/verify_gstreamer && \
+    GSTREAMER_REQUIRE_NVCODEC=true verify_gstreamer && \
+    du -sh /opt/gstreamer /opt/gstreamer-runtime
+
+FROM gstreamer-builder AS gstreamer-cuda-tensor-bridge-builder
+
+COPY docker/native/gstreamer_cuda_tensor_bridge /src/gstreamer_cuda_tensor_bridge
+COPY docker/scripts/build_gstreamer_cuda_tensor_bridge.sh /usr/local/bin/build_gstreamer_cuda_tensor_bridge
+COPY docker/scripts/verify_gstreamer_cuda_tensor_bridge.sh /usr/local/bin/verify_gstreamer_cuda_tensor_bridge
+
+RUN chmod +x \
+        /usr/local/bin/build_gstreamer_cuda_tensor_bridge \
+        /usr/local/bin/verify_gstreamer_cuda_tensor_bridge && \
+    build_gstreamer_cuda_tensor_bridge && \
+    verify_gstreamer_cuda_tensor_bridge && \
+    du -sh /opt/roboflow/lib
+
+FROM gstreamer-builder AS opencv-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OPENCV_VERSION
+ARG OPENCV_SHA256
+ARG OPENCV_CONTRIB_SHA256
+ARG OPENCV_CUDA_ARCH_BIN
+ARG OPENCV_CUDA_ARCH_PTX
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-opencv-gpu-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-opencv-gpu-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        libopenblas-dev \
+        libtiff-dev \
+        python3-dev
+
+RUN python3 -m venv /opt/opencv-build-tools && \
+    /opt/opencv-build-tools/bin/pip install --no-cache-dir \
+        "numpy>=2.0.0,<2.4.0"
+
+COPY docker/scripts/build_opencv.sh /usr/local/bin/build_opencv
+COPY docker/scripts/verify_opencv.sh /usr/local/bin/verify_opencv
+
+RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
+    OPENCV_VERSION="${OPENCV_VERSION}" \
+    OPENCV_SHA256="${OPENCV_SHA256}" \
+    OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
+    OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
+    OPENCV_WITH_CUDA=ON \
+    OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+    OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
+    build_opencv && \
+    du -sh /opt/opencv /opt/opencv-runtime
+
+RUN PATH=/opt/opencv-build-tools/bin:$PATH \
+    PYTHONPATH=/opt/opencv/python \
+    OPENCV_EXPECTED_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+    OPENCV_REQUIRE_CUDA_BUILD=true \
+    verify_opencv
+
+FROM ubuntu:22.04 AS gstreamer-runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-gstreamer-runtime-gpu-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-gstreamer-runtime-gpu-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libbz2-1.0 \
+        libcurl4 \
+        libglib2.0-0 \
+        libgnutls30 \
+        libjpeg-turbo8 \
+        libopus0 \
+        libsrtp2-1 \
+        libssl3 \
+        libv4l-0 \
+        libvpx7 \
+        liblzma5 \
+        zlib1g
+
+COPY --from=ffmpeg-builder /opt/ffmpeg-runtime /opt/ffmpeg
+COPY --from=gstreamer-builder /opt/gstreamer-runtime /opt/gstreamer
+
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    LD_LIBRARY_PATH=/opt/gstreamer/lib:/opt/ffmpeg/lib \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0
+
+RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
+    --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
+    --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
+    sh /tmp/verify_ffmpeg && \
+    GSTREAMER_REQUIRE_NVCODEC=true sh /tmp/verify_gstreamer && \
+    sh /tmp/verify_media_runtime && \
+    rm -rf /root/.cache/gstreamer-1.0
+
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS builder
 
 WORKDIR /app
 
@@ -33,12 +254,6 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install -U pip uv
 
-# Well - this is good and bad, dependent on how we see this - on one end, we resolve exactly what
-# is in inference-models lock, but also install that prior other requirements and w/o the `inference-models`
-# package content, which lands in the `runtime` part - here we just install all dependencies and it works
-# so far. Given that there is more to come regading new inference, I would assume that the moment we fix
-# the main inference dependencies management is when we should structure build differently - but, given how
-# world works, sooner or later I will regret that.
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
 RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra trt10
@@ -62,75 +277,113 @@ RUN uv pip install --system \
     "setuptools<=75.5.0" \
     && rm -rf ~/.cache/pip
 
-# Install setup.py requirements for flash_attn
 RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 
-# Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
-# Start runtime stage
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
+COPY . .
+
+RUN /bin/make create_wheels_for_gpu_notebook && \
+    python3 -m pip install --no-cache-dir \
+        dist/inference_cli*.whl \
+        dist/inference_core*.whl \
+        dist/inference_gpu*.whl \
+        dist/inference_sdk*.whl \
+        "setuptools<=75.5.0"
+
+RUN find /usr/local/lib/python3.10 -type d \
+        \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
+        -prune -exec rm -rf {} + && \
+    python3 -m pip uninstall -y uv && \
+    rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
+    python3 -m pip uninstall -y pip
+
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
 WORKDIR /app
 
-# Copy Python and installed packages from builder
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-runtime-gpu-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-runtime-gpu-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libbz2-1.0 \
+        libcurl4 \
+        libegl1 \
+        libexpat1 \
+        libgdal30 \
+        libgl1 \
+        libglib2.0-0 \
+        libgnutls30 \
+        libgomp1 \
+        libjpeg-turbo8 \
+        liblzma5 \
+        libopenblas0 \
+        libopus0 \
+        libpng16-16 \
+        libsm6 \
+        libsrtp2-1 \
+        libssl3 \
+        libtiff5 \
+        libv4l-0 \
+        libvips42 \
+        libvpx7 \
+        libxext6 \
+        zlib1g
+
+COPY --from=gstreamer-runtime /opt/ffmpeg /opt/ffmpeg
+COPY --from=gstreamer-runtime /opt/gstreamer /opt/gstreamer
+COPY --from=opencv-builder /opt/opencv-runtime /opt/opencv
+COPY --from=gstreamer-cuda-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
 COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Install runtime dependencies
-ADD https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb /tmp/cuda-keyring.deb
-RUN set -eux; \
-    rm -rf /var/lib/apt/lists/*; apt-get clean; \
-    dpkg -i /tmp/cuda-keyring.deb || true; \
-    rm -f /tmp/cuda-keyring.deb; \
-    apt-get update -y; \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        libxext6 \
-        libopencv-dev \
-        uvicorn \
-        python3-pip \
-        git \
-        libgdal-dev \
-        libvips-dev \
-        wget \
-        rustc \
-        cargo; \
-    rm -rf /var/lib/apt/lists/*; \
-# apt's uvicorn drags in python3-h11 0.13.0 (CVE-2025-43859); the served process uses
-# pip's h11 from /usr/local, but scanners flag the apt copy - upgrade it in place in the
-# same layer so the vulnerable version never lands in any image layer
-    pip3 install --no-cache-dir --upgrade --target=/usr/lib/python3/dist-packages "h11>=0.16.0"; \
-    rm -rf /usr/lib/python3/dist-packages/h11-*.egg-info
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    LD_LIBRARY_PATH=/opt/opencv/lib:/opt/gstreamer/lib:/opt/ffmpeg/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    PYTHONPATH=/opt/opencv/python \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
-WORKDIR /build
-COPY . .
-RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
+    --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
+    --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
+    --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
+    sh /tmp/verify_ffmpeg && \
+    GSTREAMER_REQUIRE_NVCODEC=true sh /tmp/verify_gstreamer && \
+    sh /tmp/verify_media_runtime && \
+    OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
+    rm -rf /root/.cache/gstreamer-1.0
 
 WORKDIR /notebooks
 COPY examples/notebooks .
 
-WORKDIR /app/
+WORKDIR /app
 COPY inference inference
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV NUM_WORKERS=1
-ENV HOST=0.0.0.0
-ENV PORT=9001
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
-ENV API_LOGGING_ENABLED=True
-ENV LMM_ENABLED=True
-ENV CORE_MODEL_SAM2_ENABLED=True
-ENV CORE_MODEL_SAM3_ENABLED=True
-ENV CORE_MODEL_OWLV2_ENABLED=True
-ENV ENABLE_STREAM_API=True
-ENV ENABLE_PROMETHEUS=True
-ENV STREAM_API_PRELOADED_PROCESSES=2
+ENV VERSION_CHECK_MODE=continuous \
+    PROJECT=roboflow-platform \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    LMM_ENABLED=True \
+    CORE_MODEL_SAM2_ENABLED=True \
+    CORE_MODEL_SAM3_ENABLED=True \
+    CORE_MODEL_OWLV2_ENABLED=True \
+    ENABLE_STREAM_API=True \
+    ENABLE_PROMETHEUS=True \
+    STREAM_API_PRELOADED_PROCESSES=2
 
 ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

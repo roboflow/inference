@@ -1,0 +1,335 @@
+# syntax=docker/dockerfile:1.7
+ARG CUDA_IMAGE_VERSION=13.2.0
+ARG FFMPEG_VERSION=7.1.3
+ARG FFMPEG_SHA256=f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe
+ARG GSTREAMER_VERSION=1.24.12
+ARG GSTREAMER_COMMIT=88e31216479a3f0c25096ca406369f3983efec14
+ARG GLIB_NETWORKING_SHA256=cd2a084c7bb91d78e849fb55d40e472f6d8f6862cddc9f12c39149359ba18268
+ARG OPENCV_VERSION=4.13.0
+ARG OPENCV_SHA256=1d40ca017ea51c533cf9fd5cbde5b5fe7ae248291ddf2af99d4c17cf8e13017d
+ARG OPENCV_CONTRIB_SHA256=1e0077a4fd2960a7d2f4c9e49d6ba7bb891cac2d1be36d7e8e47aa97a9d1039b
+ARG OPENCV_CUDA_ARCH_BIN=8.7;11.0
+ARG OPENCV_CUDA_ARCH_PTX=
+ARG JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES=87;110
+ARG L4T_REPOSITORY=r39.2
+
+FROM ubuntu:24.04 AS ffmpeg-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_SHA256
+ARG FFMPEG_VERSION
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-ffmpeg-jp72-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-ffmpeg-jp72-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        libbz2-dev \
+        liblzma-dev \
+        libssl-dev \
+        nasm \
+        pkg-config \
+        xz-utils \
+        zlib1g-dev
+
+COPY docker/scripts/build_ffmpeg.sh /usr/local/bin/build_ffmpeg
+COPY docker/scripts/verify_ffmpeg.sh /usr/local/bin/verify_ffmpeg
+
+ENV PATH=/opt/ffmpeg/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
+
+RUN chmod +x /usr/local/bin/build_ffmpeg /usr/local/bin/verify_ffmpeg && \
+    FFMPEG_VERSION="${FFMPEG_VERSION}" \
+    FFMPEG_SHA256="${FFMPEG_SHA256}" \
+    build_ffmpeg && \
+    verify_ffmpeg && \
+    du -sh /opt/ffmpeg /opt/ffmpeg-runtime
+
+FROM nvcr.io/nvidia/cuda:${CUDA_IMAGE_VERSION}-devel-ubuntu24.04 AS gstreamer-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GLIB_NETWORKING_SHA256
+ARG GSTREAMER_COMMIT
+ARG GSTREAMER_VERSION
+ARG TARGETARCH
+
+COPY --from=ffmpeg-builder /opt/ffmpeg /opt/ffmpeg
+
+ENV PATH=/opt/ffmpeg/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-gstreamer-jp72-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-gstreamer-jp72-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        flex \
+        git \
+        gobject-introspection \
+        libcurl4-openssl-dev \
+        libgl-dev \
+        libglib2.0-dev \
+        libgnutls28-dev \
+        libgirepository1.0-dev \
+        libjpeg-dev \
+        libopus-dev \
+        libpng-dev \
+        libsrtp2-dev \
+        libssl-dev \
+        libv4l-dev \
+        libvpx-dev \
+        ninja-build \
+        pkg-config \
+        python3 \
+        python3-pip \
+        python3-venv
+
+RUN python3 -m venv /opt/gstreamer-build-tools && \
+    /opt/gstreamer-build-tools/bin/pip install --no-cache-dir \
+        "meson>=1.4,<2" \
+        "ninja>=1.11,<2"
+
+ENV PATH=/opt/gstreamer/bin:/opt/gstreamer-build-tools/bin:/opt/ffmpeg/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
+    LD_LIBRARY_PATH=/opt/gstreamer/lib:/opt/ffmpeg/lib \
+    PKG_CONFIG_PATH=/opt/gstreamer/lib/pkgconfig:/opt/ffmpeg/lib/pkgconfig
+
+COPY docker/scripts/build_gstreamer.sh /usr/local/bin/build_gstreamer
+COPY docker/scripts/verify_gstreamer.sh /usr/local/bin/verify_gstreamer
+
+RUN chmod +x /usr/local/bin/build_gstreamer /usr/local/bin/verify_gstreamer && \
+    GSTREAMER_VERSION="${GSTREAMER_VERSION}" \
+    GSTREAMER_COMMIT="${GSTREAMER_COMMIT}" \
+    GLIB_NETWORKING_SHA256="${GLIB_NETWORKING_SHA256}" \
+    GSTREAMER_NVCODEC=disabled \
+    build_gstreamer && \
+    verify_gstreamer && \
+    test ! -e /opt/gstreamer/lib/gstreamer-1.0/libgstnvcodec.so && \
+    du -sh /opt/gstreamer /opt/gstreamer-runtime
+
+FROM gstreamer-builder AS opencv-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OPENCV_VERSION
+ARG OPENCV_SHA256
+ARG OPENCV_CONTRIB_SHA256
+ARG OPENCV_CUDA_ARCH_BIN
+ARG OPENCV_CUDA_ARCH_PTX
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-opencv-jp72-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-opencv-jp72-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        libtiff-dev \
+        python3-dev
+
+RUN python3 -m venv /opt/opencv-build-tools && \
+    /opt/opencv-build-tools/bin/pip install --no-cache-dir \
+        "numpy>=2.0.0,<2.4.0"
+
+COPY docker/scripts/build_opencv.sh /usr/local/bin/build_opencv
+COPY docker/scripts/verify_opencv.sh /usr/local/bin/verify_opencv
+
+RUN chmod +x /usr/local/bin/build_opencv /usr/local/bin/verify_opencv && \
+    OPENCV_VERSION="${OPENCV_VERSION}" \
+    OPENCV_SHA256="${OPENCV_SHA256}" \
+    OPENCV_CONTRIB_SHA256="${OPENCV_CONTRIB_SHA256}" \
+    OPENCV_PYTHON_EXECUTABLE=/opt/opencv-build-tools/bin/python3 \
+    OPENCV_WITH_CUDA=ON \
+    OPENCV_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+    OPENCV_CUDA_ARCH_PTX="${OPENCV_CUDA_ARCH_PTX}" \
+    build_opencv && \
+    PATH=/opt/opencv-build-tools/bin:$PATH \
+    PYTHONPATH=/opt/opencv/python \
+    OPENCV_EXPECTED_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+    OPENCV_REQUIRE_CUDA_BUILD=true \
+    verify_opencv && \
+    du -sh /opt/opencv /opt/opencv-runtime
+
+FROM ubuntu:24.04 AS nvidia-repository-key
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
+    curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+        -o /nvidia-jetson.asc
+
+FROM gstreamer-builder AS jetson-tensor-bridge-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES
+ARG L4T_REPOSITORY
+ARG TARGETARCH
+
+COPY --from=nvidia-repository-key /nvidia-jetson.asc /usr/share/keyrings/nvidia-jetson.asc
+COPY --from=nvidia-repository-key /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jetson-tensor-bridge-jp72-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jetson-tensor-bridge-jp72-${TARGETARCH} \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/common ${L4T_REPOSITORY} main" > /etc/apt/sources.list.d/nvidia-jetson.list && \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/som ${L4T_REPOSITORY} main" >> /etc/apt/sources.list.d/nvidia-jetson.list && \
+    apt-get update -y && \
+    mkdir -p /tmp/l4t-api && \
+    cd /tmp/l4t-api && \
+    apt-get download nvidia-l4t-jetson-multimedia-api && \
+    dpkg-deb -x ./*.deb / && \
+    cd / && \
+    rm -rf /tmp/l4t-api
+
+COPY docker/native/jetson_tensor_bridge /src/jetson_tensor_bridge
+COPY docker/scripts/build_jetson_tensor_bridge.sh /usr/local/bin/build_jetson_tensor_bridge
+COPY docker/scripts/verify_jetson_tensor_bridge.sh /usr/local/bin/verify_jetson_tensor_bridge
+
+RUN chmod +x \
+        /usr/local/bin/build_jetson_tensor_bridge \
+        /usr/local/bin/verify_jetson_tensor_bridge && \
+    JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES="${JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES}" \
+    build_jetson_tensor_bridge && \
+    verify_jetson_tensor_bridge
+
+FROM gstreamer-builder AS cuda-runtime-export
+
+RUN mkdir -p /opt/cuda-runtime/lib /opt/cuda-runtime/share/licenses && \
+    for library in \
+        libcudart.so.13 \
+        libnvjpeg.so.13 \
+        libnppc.so.13 \
+        libnppial.so.13 \
+        libnppicc.so.13 \
+        libnppidei.so.13 \
+        libnppif.so.13 \
+        libnppig.so.13 \
+        libnppim.so.13 \
+        libnppist.so.13 \
+        libnppitc.so.13; do \
+        cp -L "/usr/local/cuda/lib64/${library}" \
+            "/opt/cuda-runtime/lib/${library}"; \
+    done && \
+    cp /usr/share/doc/cuda-cudart-13-2/copyright \
+        /opt/cuda-runtime/share/licenses/cuda-cudart && \
+    cp /usr/share/doc/libnvjpeg-13-2/copyright \
+        /opt/cuda-runtime/share/licenses/libnvjpeg && \
+    cp /usr/share/doc/libnpp-13-2/copyright \
+        /opt/cuda-runtime/share/licenses/libnpp && \
+    test "$(du -sm /opt/cuda-runtime | cut -f1)" -lt 165
+
+FROM ubuntu:24.04 AS runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG L4T_REPOSITORY
+ARG OPENCV_CUDA_ARCH_BIN
+ARG TARGETARCH
+
+COPY --from=nvidia-repository-key /nvidia-jetson.asc /usr/share/keyrings/nvidia-jetson.asc
+COPY --from=nvidia-repository-key /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-media-runtime-jp72-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-media-runtime-jp72-${TARGETARCH} \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/common ${L4T_REPOSITORY} main" > /etc/apt/sources.list.d/nvidia-jetson.list && \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/som ${L4T_REPOSITORY} main" >> /etc/apt/sources.list.d/nvidia-jetson.list && \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/ffmpeg ${L4T_REPOSITORY} main" >> /etc/apt/sources.list.d/nvidia-jetson.list && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libasound2t64 \
+        libbz2-1.0 \
+        libcurl4t64 \
+        libdrm2 \
+        libglib2.0-0t64 \
+        libgles2 \
+        libgnutls30t64 \
+        libjpeg-turbo8 \
+        liblzma5 \
+        libopus0 \
+        libpng16-16t64 \
+        libsrtp2-1 \
+        libssl3t64 \
+        libtiff6 \
+        libv4l-0t64 \
+        libwebp7 \
+        libwebpdemux2 \
+        libwebpmux3 \
+        libvpx9 \
+        libwayland-client0 \
+        libwayland-egl1 \
+        libx11-6 \
+        libxext6 \
+        python3 \
+        zlib1g && \
+    mkdir -p /tmp/l4t-runtime && \
+    cd /tmp/l4t-runtime && \
+    apt-get download \
+        libegl1 \
+        nvidia-l4t-adaruntime \
+        nvidia-l4t-camera \
+        nvidia-l4t-core \
+        nvidia-l4t-gstreamer \
+        nvidia-l4t-multimedia \
+        nvidia-l4t-multimedia-utils \
+        nvidia-l4t-nvsci \
+        nvidia-l4t-openwfd && \
+    for package in ./*.deb; do dpkg-deb -x "${package}" /; done && \
+    cd / && \
+    rm -rf \
+        /etc/apt/sources.list.d/nvidia-jetson.list \
+        /tmp/l4t-runtime \
+        /usr/share/keyrings/nvidia-jetson.asc
+
+COPY --from=ffmpeg-builder /opt/ffmpeg-runtime /opt/ffmpeg
+COPY --from=gstreamer-builder /opt/gstreamer-runtime /opt/gstreamer
+COPY --from=opencv-builder /opt/opencv-runtime /opt/opencv
+COPY --from=cuda-runtime-export /opt/cuda-runtime /opt/cuda-runtime
+COPY --from=jetson-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
+COPY LICENSE LICENSE.core /opt/roboflow/share/licenses/roboflow-media-bridges/
+
+ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:$PATH \
+    GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
+    GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
+    GST_PLUGIN_PATH_1_0=/usr/lib/aarch64-linux-gnu/gstreamer-1.0 \
+    GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
+    LD_LIBRARY_PATH=/opt/opencv/lib:/opt/gstreamer/lib:/opt/ffmpeg/lib:/opt/cuda-runtime/lib:/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/nvidia \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+    NVIDIA_VISIBLE_DEVICES=all \
+    PYTHONPATH=/opt/opencv/python
+
+RUN printf '/opt/opencv/lib\n/opt/gstreamer/lib\n/opt/ffmpeg/lib\n/opt/cuda-runtime/lib\n/usr/lib/aarch64-linux-gnu/tegra\n/usr/lib/aarch64-linux-gnu/nvidia\n' \
+        > /etc/ld.so.conf.d/roboflow-media.conf && \
+    ldconfig && \
+    rm -rf /root/.cache/gstreamer-1.0
+
+RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
+    --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
+    --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
+    --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
+    --mount=from=opencv-builder,source=/opt/opencv-build-tools/lib/python3.12/site-packages,target=/tmp/opencv-python-deps,ro \
+    export GST_REGISTRY=/tmp/roboflow-gstreamer-registry.bin && \
+    sh /tmp/verify_ffmpeg && \
+    sh /tmp/verify_gstreamer && \
+    test ! -e /opt/gstreamer/lib/gstreamer-1.0/libgstnvcodec.so && \
+    PYTHONPATH=/tmp/opencv-python-deps:/opt/opencv/python \
+        OPENCV_EXPECTED_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
+        OPENCV_REQUIRE_CUDA_BUILD=true \
+        sh /tmp/verify_opencv && \
+    sh /tmp/verify_media_runtime && \
+    test -s /usr/lib/aarch64-linux-gnu/libEGL.so.1 && \
+    test -s /usr/lib/aarch64-linux-gnu/libGLESv2.so.2 && \
+    test -z "$(find /usr/lib/aarch64-linux-gnu -maxdepth 1 -type f \
+        \( -name 'libEGL_mesa.so*' -o -name 'libgbm.so*' \
+        -o -name 'libgallium-*.so' -o -name 'libLLVM.so*' \) -print -quit)" && \
+    test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 && \
+    rm -f "${GST_REGISTRY}"
+
+LABEL org.opencontainers.image.description="Roboflow Jetson 7.2 media runtime"

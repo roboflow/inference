@@ -1,5 +1,3 @@
-"""Jetson video capture with NVIDIA GStreamer and CUDA tensor output."""
-
 import ctypes
 import ctypes.util
 import os
@@ -16,33 +14,13 @@ from inference.core.interfaces.camera.entities import (
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
-
-_COMMON_ELEMENTS = (
-    "appsink",
-    "nvvidconv",
-    "queue",
-)
-_URI_DECODE_ELEMENTS = (
-    "decodebin",
+_BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
+_RTSP_ELEMENTS = (
     "h264parse",
     "h265parse",
-    "jpegparse",
-    "nvjpegdec",
-    "nvv4l2decoder",
-    "uridecodebin",
-)
-_RTSP_ELEMENTS = (
     "rtph264depay",
     "rtph265depay",
     "rtspsrc",
-)
-_SOFTWARE_DECODER_ELEMENTS = (
-    "avdec_h264",
-    "avdec_h265",
-    "avdec_mjpeg",
-    "jpegdec",
-    "libde265dec",
-    "openh264dec",
 )
 _FILE_DEMUXERS = {
     ".avi": "avidemux",
@@ -52,11 +30,47 @@ _FILE_DEMUXERS = {
     ".mp4": "qtdemux",
     ".webm": "matroskademux",
 }
+_DECODER_FACTORY_NAMES = tuple(
+    dict.fromkeys(
+        [
+            "nvh264dec",
+            "nvh264sldec",
+            "nvh265dec",
+            "nvh265sldec",
+            "nvjpegdec",
+            "nvvp8dec",
+            "nvvp9dec",
+            "nvav1dec",
+        ]
+        + [
+            f"{decoder}device{device_id}dec"
+            for decoder in (
+                "nvh264",
+                "nvh265",
+                "nvjpeg",
+                "nvvp8",
+                "nvvp9",
+                "nvav1",
+            )
+            for device_id in range(16)
+        ]
+    )
+)
+_FORBIDDEN_FACTORY_NAMES = (
+    "avdec_h264",
+    "avdec_h265",
+    "avdec_mjpeg",
+    "avdec_av1",
+    "avdec_vp8",
+    "avdec_vp9",
+    "cudadownload",
+    "cudaupload",
+    "jpegdec",
+    "videoconvert",
+)
 
 
-def probe_gstreamer_elements(elements: Iterable[str]) -> Tuple[bool, str]:
-    """Find required element factories and rank NVIDIA decoders first."""
-
+def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
     library_name = ctypes.util.find_library("gstreamer-1.0")
     if not library_name:
         library_name = "libgstreamer-1.0.so.0"
@@ -94,42 +108,29 @@ def probe_gstreamer_elements(elements: Iterable[str]) -> Tuple[bool, str]:
         if missing:
             return False, f"missing GStreamer elements: {', '.join(missing)}"
 
-        for decoder_name in ("nvv4l2decoder", "nvjpegdec"):
-            decoder = factories.get(decoder_name)
+        decoder_found = False
+        for decoder_name in _DECODER_FACTORY_NAMES:
+            decoder = gst.gst_element_factory_find(decoder_name.encode("utf-8"))
             if decoder:
+                decoder_found = True
                 gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
+                gst.gst_object_unref(decoder)
+        if not decoder_found:
+            return False, "no NVIDIA GStreamer decoder factory is available"
         return True, "ok"
     finally:
         for factory in factories.values():
             gst.gst_object_unref(factory)
 
 
-def required_gstreamer_elements(
+def required_gstreamer_cuda_elements(
     video: Optional[Union[str, int]] = None,
-    *,
-    output_tensor: bool = False,
 ) -> Sequence[str]:
-    """Return the element set needed by a source, or the common baseline."""
-
-    elements = list(_COMMON_ELEMENTS)
+    elements = list(_BASE_ELEMENTS)
     if video is None:
-        return tuple(elements + list(_URI_DECODE_ELEMENTS))
-    if _is_csi_source(video):
-        return tuple(elements + ["nvarguscamerasrc"])
-    if _is_v4l2_source(video):
-        return tuple(
-            elements
-            + [
-                "decodebin",
-                "h264parse",
-                "h265parse",
-                "jpegparse",
-                "nvjpegdec",
-                "nvv4l2decoder",
-                "v4l2src",
-            ]
-        )
-    elements.extend(_URI_DECODE_ELEMENTS)
+        return tuple(elements)
+    if not isinstance(video, str):
+        return tuple(elements)
     if _is_rtsp_source(video):
         elements.extend(_RTSP_ELEMENTS)
     local_file_path = _local_file_path(video)
@@ -140,38 +141,8 @@ def required_gstreamer_elements(
     return tuple(elements)
 
 
-def build_gstreamer_pipeline(
-    video: Union[str, int],
-    *,
-    output_tensor: bool = False,
-) -> str:
-    """Build a Jetson GStreamer pipeline ending in an NVMM appsink."""
-
-    is_live = _is_live_source(video)
-    sink = _build_sink(is_live=is_live)
-    if _is_csi_source(video):
-        sensor_id = _csi_sensor_id(video)
-        return (
-            f"nvarguscamerasrc sensor-id={sensor_id} ! "
-            "video/x-raw(memory:NVMM),format=NV12 ! "
-            f"{sink}"
-        )
-    if _is_v4l2_source(video):
-        device = _v4l2_device(video)
-        return (
-            f'v4l2src device="{_quote_gstreamer_value(device)}" ! '
-            f"decodebin ! {sink}"
-        )
-
-    uri = _source_uri(video)
-    return (
-        f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
-        'caps="video/x-raw(memory:NVMM)" ! '
-        f"{sink}"
-    )
-
-
-def _build_sink(is_live: bool) -> str:
+def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
+    is_live = _local_file_path(video) is None
     queue_options = (
         "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
         if is_live
@@ -182,65 +153,69 @@ def _build_sink(is_live: bool) -> str:
         if is_live
         else "max-buffers=4 drop=false sync=false"
     )
+    uri = _source_uri(video)
     return (
+        f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
+        'caps="video/x-raw(memory:CUDAMemory)" ! '
         f"queue {queue_options} ! "
-        "nvvidconv ! video/x-raw(memory:NVMM),format=RGBA ! "
+        f"cudaconvertscale cuda-device-id={device_id} ! "
+        "video/x-raw(memory:CUDAMemory),format=RGBP ! "
         f"appsink name=rf_tensor_sink {appsink_options} wait-on-eos=false"
     )
 
 
-class JetsonVideoFrameProducer(VideoFrameProducer):
-    """Decode Jetson file/camera/RTSP sources with NVIDIA GStreamer elements."""
-
+class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     def __init__(
         self,
-        video: Union[str, int],
+        video: str,
         *,
+        gpu_id: int = 0,
         output_tensor: bool = True,
-        tensor_device: str = "cuda",
-        pin_host_memory: bool = True,
-    ):
-        gst_ok, gst_reason = probe_gstreamer_elements(
-            required_gstreamer_elements(video, output_tensor=True)
+    ) -> None:
+        if not _supports_uri_source(video):
+            raise TypeError("GStreamer CUDA producer requires a URI or file path")
+
+        gst_ok, gst_reason = probe_gstreamer_cuda_elements(
+            required_gstreamer_cuda_elements(video)
         )
         if not gst_ok:
             raise RuntimeError(gst_reason)
 
-        self._source_ref = video
-        self._output_tensor = output_tensor
-        self._pipeline = build_gstreamer_pipeline(video, output_tensor=True)
-        self._decoder_validated = not _source_requires_decoder(video)
-        self._prerolled_frame_pending = False
-        self._cached_source_properties: Optional[SourceProperties] = None
-        del pin_host_memory
+        try:
+            import torch
+        except Exception as error:  # noqa: BLE001 - optional runtime capability
+            raise ImportError("GStreamer CUDA decoding requires torch") from error
+        if not torch.cuda.is_available():
+            raise RuntimeError("GStreamer CUDA decoding requires CUDA")
+        if gpu_id < 0 or gpu_id >= torch.cuda.device_count():
+            raise ValueError(f"CUDA device {gpu_id} is unavailable")
 
-        import torch
-
-        from inference.core.interfaces.camera.jetson_tensor_bridge import (
-            NativeJetsonTensorPipeline,
-            jetson_tensor_bridge_available,
+        from inference.core.interfaces.camera.gstreamer_cuda_tensor_bridge import (
+            NativeGstreamerCudaTensorPipeline,
+            gstreamer_cuda_tensor_bridge_available,
         )
 
-        device = torch.device(tensor_device)
-        if device.type != "cuda" or not torch.cuda.is_available():
-            raise RuntimeError("Jetson decoding requires an available CUDA device")
-        device_id = (
-            torch.cuda.current_device() if device.index is None else device.index
-        )
-        bridge_ok, bridge_reason = jetson_tensor_bridge_available()
+        bridge_ok, bridge_reason = gstreamer_cuda_tensor_bridge_available()
         if not bridge_ok:
             raise RuntimeError(bridge_reason)
-        self._native_pipeline = NativeJetsonTensorPipeline(
-            self._pipeline, device_id=device_id
+
+        self._source_ref = video
+        self._output_tensor = output_tensor
+        self._pipeline_description = build_gstreamer_cuda_pipeline(
+            video, device_id=gpu_id
         )
+        self._native_pipeline = NativeGstreamerCudaTensorPipeline(
+            self._pipeline_description, device_id=gpu_id
+        )
+        self._decoder_validated = False
+        self._prerolled_frame_pending = False
+        self._cached_source_properties: Optional[SourceProperties] = None
         self._closed = False
         self._eos = False
 
     @property
     def pipeline(self) -> str:
-        """Pipeline string exposed for diagnostics and on-device tests."""
-
-        return self._pipeline
+        return self._pipeline_description
 
     def isOpened(self) -> bool:
         return not self._closed and not self._eos
@@ -253,7 +228,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             return True
         grabbed = self._native_pipeline.grab()
         if grabbed and not self._decoder_validated:
-            self._validate_hardware_decoder()
+            self._validate_pipeline()
         if not grabbed:
             self._eos = True
         return grabbed
@@ -274,11 +249,11 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         if self._cached_source_properties is not None:
             return self._cached_source_properties
         if not self.grab():
-            raise RuntimeError("Jetson pipeline did not produce source metadata")
+            raise RuntimeError(
+                "GStreamer CUDA pipeline did not produce source metadata"
+            )
         self._prerolled_frame_pending = True
         frame_info = self._native_pipeline.frame_info()
-        width = frame_info.width
-        height = frame_info.height
         fps = (
             frame_info.fps_numerator / frame_info.fps_denominator
             if frame_info.fps_denominator > 0
@@ -297,8 +272,8 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             last_modified = datetime.fromtimestamp(os.path.getmtime(local_path))
             timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
         properties = SourceProperties(
-            width=width,
-            height=height,
+            width=frame_info.width,
+            height=frame_info.height,
             total_frames=total_frames,
             is_file=is_file,
             fps=fps,
@@ -325,39 +300,39 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
     def tensor_bridge_stats(self) -> Dict[str, int]:
         return self._native_pipeline.stats()
 
-    def _validate_hardware_decoder(self) -> None:
-        if any(
-            self._native_pipeline.has_factory(factory)
-            for factory in ("nvv4l2decoder", "nvjpegdec")
-        ):
-            self._decoder_validated = True
-            return
-        software_decoders = [
+    def _validate_pipeline(self) -> None:
+        if not self._native_pipeline.has_factory("cudaconvertscale"):
+            raise RuntimeError(
+                "GStreamer pipeline did not instantiate cudaconvertscale"
+            )
+        forbidden = [
             factory
-            for factory in _SOFTWARE_DECODER_ELEMENTS
+            for factory in _FORBIDDEN_FACTORY_NAMES
             if self._native_pipeline.has_factory(factory)
         ]
-        if software_decoders:
+        if forbidden:
             raise RuntimeError(
-                "Jetson pipeline instantiated software decoders: "
-                + ", ".join(software_decoders)
+                "GStreamer CUDA pipeline instantiated forbidden elements: "
+                + ", ".join(forbidden)
             )
-        if _is_v4l2_source(self._source_ref):
-            self._decoder_validated = True
-            return
-        raise RuntimeError("Jetson pipeline did not instantiate an NVIDIA decoder")
+        if not any(
+            self._native_pipeline.has_factory(factory)
+            for factory in _DECODER_FACTORY_NAMES
+        ):
+            raise RuntimeError(
+                "GStreamer CUDA pipeline did not instantiate an NVIDIA decoder"
+            )
+        self._decoder_validated = True
 
 
-def _source_uri(video: Union[str, int]) -> str:
+def _source_uri(video: str) -> str:
     local_path = _local_file_path(video)
     if local_path is not None:
         return Path(local_path).resolve().as_uri()
-    return str(video)
+    return video
 
 
-def _local_file_path(video: Union[str, int]) -> Optional[str]:
-    if not isinstance(video, str):
-        return None
+def _local_file_path(video: str) -> Optional[str]:
     if video.startswith("file://"):
         parsed = urlparse(video)
         return unquote(parsed.path)
@@ -366,41 +341,16 @@ def _local_file_path(video: Union[str, int]) -> Optional[str]:
     return video
 
 
-def _is_rtsp_source(video: Union[str, int]) -> bool:
-    return isinstance(video, str) and video.lower().startswith(("rtsp://", "rtsps://"))
+def _is_rtsp_source(video: str) -> bool:
+    return video.lower().startswith(("rtsp://", "rtsps://"))
 
 
-def _is_csi_source(video: Union[str, int]) -> bool:
-    return isinstance(video, str) and video.lower().startswith("csi://")
-
-
-def _csi_sensor_id(video: Union[str, int]) -> int:
-    try:
-        return int(str(video).split("://", 1)[1] or 0)
-    except ValueError as error:
-        raise ValueError(f"Invalid CSI source reference: {video!r}") from error
-
-
-def _is_v4l2_source(video: Union[str, int]) -> bool:
-    return isinstance(video, int) or (
-        isinstance(video, str) and video.startswith("/dev/video")
-    )
-
-
-def _v4l2_device(video: Union[str, int]) -> str:
-    return f"/dev/video{video}" if isinstance(video, int) else video
-
-
-def _is_live_source(video: Union[str, int]) -> bool:
+def _supports_uri_source(video: object) -> bool:
     return (
-        _is_csi_source(video)
-        or _is_v4l2_source(video)
-        or _local_file_path(video) is None
+        isinstance(video, str)
+        and not video.startswith("/dev/video")
+        and not video.lower().startswith("csi://")
     )
-
-
-def _source_requires_decoder(video: Union[str, int]) -> bool:
-    return not _is_csi_source(video)
 
 
 def _rgb_tensor_to_bgr_numpy(rgb_tensor):
