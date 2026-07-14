@@ -158,6 +158,32 @@ def test_batch_instance_cache_matches_independent_scalar_caches() -> None:
     ]
 
 
+def test_batch_instance_cache_preserves_duplicate_video_order() -> None:
+    """Repeated video rows use sequential cache semantics instead of aliasing."""
+    block = ByteTrackBlockV1()
+
+    def prediction(tracker_id: int) -> Detections:
+        return Detections(
+            xyxy=torch.zeros((1, 4)),
+            class_id=torch.zeros(1, dtype=torch.long),
+            confidence=torch.ones(1),
+            tracker_id=torch.tensor([tracker_id]),
+        )
+
+    predictions = [prediction(10), prediction(10)]
+    results = block._build_tracker_results_batch(
+        video_ids=["same-video", "same-video"],
+        tracked_detections=predictions,
+        tracker_ids=[item.tracker_id for item in predictions],
+        instances_cache_size=8,
+    )
+
+    assert results[0]["new_instances"].tracker_id.tolist() == [10]
+    assert len(results[0]["already_seen_instances"]) == 0
+    assert len(results[1]["new_instances"]) == 0
+    assert results[1]["already_seen_instances"].tracker_id.tolist() == [10]
+
+
 @pytest.mark.parametrize("prediction_kind", ["object", "instance", "keypoint"])
 def test_recover_tracker_output_keeps_ids_on_native_bbox_component(
     prediction_kind: str,
