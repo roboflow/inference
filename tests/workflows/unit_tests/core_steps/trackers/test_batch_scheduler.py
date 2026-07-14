@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import torch
 
 from inference.core.workflows.core_steps.trackers.batch_scheduler import (
+    HOST_TRACKER_IDS_KEY,
     TrackerBatchScheduler,
 )
 
@@ -20,7 +21,9 @@ class _Tracker:
 
 def _detections(value: float):
     return types.SimpleNamespace(
-        xyxy=torch.tensor([[value, 0.0, value + 1.0, 1.0]])
+        xyxy=torch.tensor([[value, 0.0, value + 1.0, 1.0]]),
+        tracker_id=torch.tensor([int(value)]),
+        data={},
     )
 
 
@@ -51,6 +54,12 @@ def test_scheduler_batches_compatible_independent_trackers(monkeypatch) -> None:
 
     assert all(output is detection for output, detection in zip(outputs, detections))
     assert [len(call) for call in calls] == [4]
+    assert [output.data[HOST_TRACKER_IDS_KEY] for output in outputs] == [
+        [0],
+        [1],
+        [2],
+        [3],
+    ]
 
 
 def test_scheduler_never_batches_two_frames_for_the_same_tracker(monkeypatch) -> None:

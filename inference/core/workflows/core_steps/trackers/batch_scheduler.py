@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import supervision as sv
+import torch
+
+HOST_TRACKER_IDS_KEY = "__tracktors_host_tracker_ids__"
 
 
 @dataclass(slots=True)
@@ -154,12 +157,37 @@ class TrackerBatchScheduler:
                     raise RuntimeError(
                         "tracktors.update_batch returned the wrong number of results"
                     )
+                self._materialize_tracker_ids(outputs)
             except BaseException as error:
                 for request in batch:
                     request.future.set_exception(error)
             else:
                 for request, output in zip(batch, outputs):
                     request.future.set_result(output)
+
+    @staticmethod
+    def _materialize_tracker_ids(outputs: list[sv.Detections]) -> None:
+        """Transfer tracker IDs once for the whole batch's object metadata."""
+        tensors: list[torch.Tensor] = []
+        lengths: list[int] = []
+        for output in outputs:
+            tracker_ids = getattr(output, "tracker_id", None)
+            if not isinstance(tracker_ids, torch.Tensor):
+                return
+            tensors.append(tracker_ids.reshape(-1))
+            lengths.append(tracker_ids.numel())
+        if not tensors:
+            return
+        packed = torch.cat(tensors) if len(tensors) > 1 else tensors[0]
+        host_values = packed.detach().to("cpu").tolist()
+        offset = 0
+        for output, length in zip(outputs, lengths):
+            data = getattr(output, "data", None)
+            if data is None:
+                data = {}
+                output.data = data
+            data[HOST_TRACKER_IDS_KEY] = host_values[offset : offset + length]
+            offset += length
 
 
 _GLOBAL_SCHEDULER: TrackerBatchScheduler | None = None

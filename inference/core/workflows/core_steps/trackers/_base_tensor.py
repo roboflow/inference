@@ -42,6 +42,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
 )
 from inference.core.workflows.core_steps.trackers.batch_scheduler import (
+    HOST_TRACKER_IDS_KEY,
     get_tracker_batch_scheduler,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -288,8 +289,13 @@ class TrackerBlockBase(WorkflowBlock):
         # masks). This preserves every native field for the surviving rows.
         tracked_detections = take_prediction_by_indices(detections, surviving)
 
-        # Tracker IDs cross to Python only for the object metadata and cache.
-        tracker_ids = tracker_ids_tensor.detach().to("cpu").tolist()
+        # Batched CUDA updates transfer all streams' IDs together in the scheduler.
+        # Exact scalar fallbacks retain the historical per-call materialization.
+        tracker_ids = (
+            tracked_sv.data.pop(HOST_TRACKER_IDS_KEY)
+            if tracked_sv.data and HOST_TRACKER_IDS_KEY in tracked_sv.data
+            else tracker_ids_tensor.detach().to("cpu").tolist()
+        )
         _patch_tracker_ids(tracked_detections, tracker_ids)
 
         if video_id not in self._per_video_cache:
