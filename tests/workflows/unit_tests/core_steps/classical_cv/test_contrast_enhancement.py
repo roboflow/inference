@@ -183,3 +183,151 @@ class TestContrastEnhancementManifest:
 
         assert len(outputs) == 1
         assert outputs[0].name == "image"
+
+
+# --- tensor-native sibling ---------------------------------------------------
+# Parity contract: a tensor-born image through the v1_tensor block must produce
+# the same pixels as the numpy block on the equivalent BGR image; numpy-born
+# images delegate to the numpy implementation without forcing materialization.
+
+
+def _tensor_contrast_imports():
+    torch = pytest.importorskip("torch")
+    from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor import (
+        ContrastEnhancementBlock as TensorContrastEnhancementBlock,
+    )
+
+    return torch, TensorContrastEnhancementBlock
+
+
+def _paired_images(torch, bgr: np.ndarray):
+    numpy_born = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=bgr,
+    )
+    if bgr.ndim == 2:
+        chw = torch.from_numpy(bgr.copy()).unsqueeze(0)
+    else:
+        chw = torch.from_numpy(bgr[:, :, ::-1].copy()).permute(2, 0, 1).contiguous()
+    tensor_born = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=chw,
+    )
+    return numpy_born, tensor_born
+
+
+@pytest.mark.parametrize(
+    "clip_limit, contrast_multiplier, normalize_brightness, exact",
+    [
+        (0, 1.0, False, True),
+        (0, 1.5, False, True),
+        (0, 1.0, True, True),
+        (3, 1.0, False, False),  # np.percentile computes in float64 -> +-1
+        (3, 1.8, True, False),
+    ],
+)
+def test_tensor_contrast_enhancement_parity_with_numpy_block(
+    clip_limit, contrast_multiplier, normalize_brightness, exact
+) -> None:
+    # given - the same pixels as numpy-born BGR and tensor-born RGB CHW
+    torch, TensorContrastEnhancementBlock = _tensor_contrast_imports()
+    rng = np.random.default_rng(42)
+    bgr = rng.integers(20, 200, size=(24, 32, 3), dtype=np.uint8)
+    numpy_born, tensor_born = _paired_images(torch, bgr)
+
+    # when
+    numpy_result = ContrastEnhancementBlock().run(
+        image=numpy_born,
+        clip_limit=clip_limit,
+        contrast_multiplier=contrast_multiplier,
+        normalize_brightness=normalize_brightness,
+    )["image"].numpy_image
+    tensor_result = TensorContrastEnhancementBlock().run(
+        image=tensor_born,
+        clip_limit=clip_limit,
+        contrast_multiplier=contrast_multiplier,
+        normalize_brightness=normalize_brightness,
+    )["image"].numpy_image
+
+    # then
+    if exact:
+        assert np.array_equal(tensor_result, numpy_result)
+    else:
+        diff = np.abs(
+            tensor_result.astype(np.int16) - numpy_result.astype(np.int16)
+        )
+        assert diff.max() <= 1, f"max deviation {diff.max()} exceeds float tolerance"
+
+
+def test_tensor_contrast_enhancement_grayscale_parity() -> None:
+    # given - a low-contrast grayscale ramp
+    torch, TensorContrastEnhancementBlock = _tensor_contrast_imports()
+    gray = np.tile(np.linspace(90, 160, 32, dtype=np.uint8), (24, 1))
+    numpy_born, tensor_born = _paired_images(torch, gray)
+
+    # when
+    numpy_result = ContrastEnhancementBlock().run(
+        image=numpy_born,
+        clip_limit=0,
+        contrast_multiplier=1.0,
+        normalize_brightness=False,
+    )["image"].numpy_image
+    tensor_result = TensorContrastEnhancementBlock().run(
+        image=tensor_born,
+        clip_limit=0,
+        contrast_multiplier=1.0,
+        normalize_brightness=False,
+    )["image"].numpy_image
+
+    # then - tensor path emits (1, H, W) whose numpy view is the (H, W) shape
+    assert tensor_result.shape == numpy_result.shape == (24, 32)
+    assert np.array_equal(tensor_result, numpy_result)
+
+
+def test_tensor_contrast_enhancement_flat_grayscale_returns_input() -> None:
+    # given - a flat histogram: nothing to stretch (numpy grayscale parity)
+    torch, TensorContrastEnhancementBlock = _tensor_contrast_imports()
+    tensor_born = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.full((1, 8, 8), 127, dtype=torch.uint8),
+    )
+
+    # when
+    result = TensorContrastEnhancementBlock().run(
+        image=tensor_born,
+        clip_limit=0,
+        contrast_multiplier=1.0,
+        normalize_brightness=False,
+    )["image"]
+
+    # then
+    assert result is tensor_born
+
+
+def test_tensor_contrast_enhancement_delegates_for_numpy_born_images() -> None:
+    # given
+    torch, TensorContrastEnhancementBlock = _tensor_contrast_imports()
+    rng = np.random.default_rng(7)
+    bgr = rng.integers(40, 180, size=(16, 16, 3), dtype=np.uint8)
+    numpy_born, _ = _paired_images(torch, bgr)
+    reference = ContrastEnhancementBlock().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="parent"),
+            numpy_image=bgr,
+        ),
+        clip_limit=2,
+        contrast_multiplier=1.2,
+        normalize_brightness=True,
+    )["image"].numpy_image
+
+    # when
+    result = TensorContrastEnhancementBlock().run(
+        image=numpy_born,
+        clip_limit=2,
+        contrast_multiplier=1.2,
+        normalize_brightness=True,
+    )["image"]
+
+    # then - identical output via the numpy delegate, and no forced H2D
+    assert np.array_equal(result.numpy_image, reference)
+    assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"

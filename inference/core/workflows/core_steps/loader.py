@@ -97,9 +97,14 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
-    ContrastEnhancementBlock,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
+        ContrastEnhancementBlock,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor import (
+        ContrastEnhancementBlock,
+    )
 from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
     ContrastEqualizationBlockV1,
 )
