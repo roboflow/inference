@@ -2,11 +2,12 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import supervision as sv
+import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.core_steps.common.tensor_native import (
-    take_prediction_by_mask,
+    take_prediction_by_indices,
 )
 from inference.core.workflows.execution_engine.constants import (
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
@@ -261,23 +262,21 @@ class TimeInZoneBlockV2(WorkflowBlock):
         else:
             ts_end = metadata.frame_timestamp.timestamp()
 
-        # sv.PolygonZone is numpy-based: materialise a minimal sv.Detections (the
-        # zone-membership test only needs box anchors + tracker_id) and run
-        # trigger. The returned mask is aligned to the input order, so the
-        # original tensor-native detections can be sliced directly.
-        # It's not optimal and next versions should run this fully tensor-native.
+        # PolygonZone only needs box anchors and tracker IDs. Keep both tensors on
+        # the source device while adapting the inference-model container to the
+        # public supervision API.
         sv_input = sv.Detections(
-            xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
-            tracker_id=np.array(
-                [int(tracker_id) for tracker_id in tracker_ids], dtype=int
+            xyxy=detections.xyxy,
+            tracker_id=torch.as_tensor(
+                tracker_ids, dtype=torch.long, device=detections.xyxy.device
             ),
         )
         is_in_zone_mask = polygon_zone.trigger(sv_input)
-        surviving_mask = np.zeros(n, dtype=bool)
+        surviving_mask = torch.zeros_like(is_in_zone_mask, dtype=torch.bool)
         surviving_times: Dict[int, float] = {}
         for i, is_in_zone, tracker_id in zip(
             range(n),
-            is_in_zone_mask,
+            is_in_zone_mask.tolist(),
             tracker_ids,
         ):
             if (
@@ -297,11 +296,14 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 del tracked_ids_in_zone[tracker_id]
             surviving_mask[i] = True
             surviving_times[i] = time_in_zone
-        result_detections = take_prediction_by_mask(detections, surviving_mask)
+        surviving_indices = (
+            torch.nonzero(surviving_mask, as_tuple=False).flatten().tolist()
+        )
+        result_detections = take_prediction_by_indices(detections, surviving_indices)
         result_bboxes_metadata = result_detections.bboxes_metadata or [
             {} for _ in range(int(result_detections.xyxy.shape[0]))
         ]
-        for position, source_index in enumerate(np.nonzero(surviving_mask)[0].tolist()):
+        for position, source_index in enumerate(surviving_indices):
             box_metadata = dict(result_bboxes_metadata[position])
             box_metadata[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = surviving_times[
                 source_index
