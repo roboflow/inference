@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import cv2
@@ -68,32 +69,41 @@ The annotated image from this block can be connected to:
 
 
 class _BorderGeometry:
-    """cv2-derived rasterisation template for one box thickness.
+    """cv2-derived rasterisation template for one (thickness, corner radius).
 
-    ``cv2.rectangle`` with ``thickness >= 2`` is NOT an outer-rect-minus-
-    inner-rect frame: the four edges are thick lines with round joins, so the
-    outermost corner pixels stay unpainted (and even thicknesses paint
-    ``thickness + 1`` wide bands). Instead of re-deriving OpenCV's thick-line
-    rasteriser, one reference rectangle is drawn with cv2 itself and decomposed
-    into four uniform straight bands plus four corner patches. Reconstruction
-    is asserted pixel-perfect against cv2 on two reference sizes, so the GPU
-    painter is bit-exact by construction for every box large enough to use the
-    template (smaller boxes take the per-box cv2 raster path).
+    ``radius is None`` reproduces ``sv.BoxAnnotator`` (one ``cv2.rectangle``
+    per box); an integer radius reproduces ``sv.RoundBoxAnnotator`` (four
+    quarter ``cv2.ellipse`` arcs + four ``cv2.line`` edges per box). Neither
+    is a simple outer-minus-inner frame: thick rectangles get round joins,
+    thick lines get round caps, and even thicknesses paint ``thickness + 1``
+    wide bands. Instead of re-deriving OpenCV's thick-line rasteriser, one
+    reference box is drawn with the exact same cv2 primitive sequence and
+    decomposed into four uniform straight bands plus four corner patches.
+    Reconstruction is asserted pixel-perfect against cv2 on two reference
+    sizes, so the GPU painter is bit-exact by construction for every box
+    large enough to use the template (smaller boxes take the per-box cv2
+    raster path).
     """
 
-    def __init__(self, thickness: int):
+    def __init__(self, thickness: int, radius: Optional[int] = None):
         self.thickness = thickness
-        reference_side = 8 * thickness + 32
-        second_side = reference_side + 9  # catches any size-dependence
+        self.radius = radius
         margin = 4 * thickness + 8
-        ref = self._rasterise(margin, reference_side, thickness)
-        ys, xs = np.nonzero(ref)
+        # Upper-bound the corner span before o/i are measured so the first
+        # raster is already big enough to host two corner patches + a body.
+        span_bound = (0 if radius is None else radius) + 2 * (2 * thickness + 4) + 2
+        reference_side = max(8 * thickness + 32, 2 * span_bound + 16)
+        second_side = reference_side + 9  # catches any size-dependence
+        ref = self._rasterise(margin, reference_side)
+        ys, _ = np.nonzero(ref)
         self.outer = margin - int(ys.min())
         mid_column = np.nonzero(ref[:, margin + reference_side // 2])[0]
         self.inner = (
             int(mid_column[mid_column < margin + reference_side // 2].max()) - margin
         )
-        self.corner = 2 * (self.outer + self.inner) + 2
+        self.corner = (0 if radius is None else radius) + 2 * (
+            self.outer + self.inner
+        ) + 2
         # Smallest box side (x2 - x1 + 1) the band+corner decomposition tiles.
         self.min_side = 2 * self.corner - 2 * self.outer
         c, o = self.corner, self.outer
@@ -106,17 +116,83 @@ class _BorderGeometry:
                 ref[far - c + 1 : far + 1, far - c + 1 : far + 1],
             ]
         )  # (4, C, C) bool: TL, TR, BL, BR
+        # Local True coords per corner patch, for host-side anchor+offset
+        # expansion (numpy) straight into the packed upload.
+        self.corner_offsets = [
+            (rows.astype(np.int64), cols.astype(np.int64))
+            for rows, cols in (np.nonzero(mask) for mask in self.corner_masks)
+        ]
         for side in (reference_side, second_side):
-            self._assert_reconstruction(margin, side, thickness)
+            self._assert_reconstruction(margin, side)
 
-    @staticmethod
-    def _rasterise(margin: int, side: int, thickness: int) -> np.ndarray:
+    def _draw(self, canvas: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> None:
+        """The exact cv2 primitive sequence the sv annotator issues per box."""
+        if self.radius is None:
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), 255, self.thickness)
+            return
+        radius = self.radius
+        circle_centers = [
+            (x1 + radius, y1 + radius),
+            (x2 - radius, y1 + radius),
+            (x2 - radius, y2 - radius),
+            (x1 + radius, y2 - radius),
+        ]
+        lines = [
+            ((x1 + radius, y1), (x2 - radius, y1)),
+            ((x2, y1 + radius), (x2, y2 - radius)),
+            ((x1 + radius, y2), (x2 - radius, y2)),
+            ((x1, y1 + radius), (x1, y2 - radius)),
+        ]
+        start_angles = (180, 270, 0, 90)
+        end_angles = (270, 360, 90, 180)
+        for center, line, start_angle, end_angle in zip(
+            circle_centers, lines, start_angles, end_angles
+        ):
+            cv2.ellipse(
+                img=canvas,
+                center=center,
+                axes=(radius, radius),
+                angle=0,
+                startAngle=start_angle,
+                endAngle=end_angle,
+                color=255,
+                thickness=self.thickness,
+            )
+            cv2.line(
+                img=canvas,
+                pt1=line[0],
+                pt2=line[1],
+                color=255,
+                thickness=self.thickness,
+            )
+
+    def _rasterise(self, margin: int, side: int) -> np.ndarray:
         size = side + 2 * margin + 1
         canvas = np.zeros((size, size), np.uint8)
-        cv2.rectangle(
-            canvas, (margin, margin), (margin + side, margin + side), 255, thickness
-        )
+        self._draw(canvas, margin, margin, margin + side, margin + side)
         return canvas > 0
+
+    def rasterise_box_border(
+        self, x1: int, y1: int, x2: int, y2: int, height: int, width: int
+    ) -> Optional[Tuple[np.ndarray, int, int]]:
+        """Exact border mask for one box that skips the template path, as
+        ``(mask, row0, col0)`` anchored in frame coords (``None`` when the box
+        cannot touch the frame).
+
+        The canvas is the frame-intersected border region, NOT a padded
+        crop: cv2 rasterises CLIPPED thick primitives differently from a
+        cropped unclipped draw (a round line cap relocated by ``clipLine``
+        shifts boundary pixels), so the canvas edges must coincide with the
+        frame edges on every side the box crosses. On non-crossing sides the
+        canvas keeps ``outer`` slack, beyond any painted pixel."""
+        o = self.outer
+        row0, col0 = max(y1 - o, 0), max(x1 - o, 0)
+        row1, col1 = min(y2 + o, height - 1), min(x2 + o, width - 1)
+        if row1 < row0 or col1 < col0:
+            return None
+        canvas = np.zeros((row1 - row0 + 1, col1 - col0 + 1), np.uint8)
+        self._draw(canvas, x1 - col0, y1 - row0, x2 - col0, y2 - row0)
+        return canvas > 0, row0, col0
 
     def box_regions(
         self, x1: int, y1: int, x2: int, y2: int
@@ -139,8 +215,8 @@ class _BorderGeometry:
         ]
         return bands, corners
 
-    def _assert_reconstruction(self, margin: int, side: int, thickness: int) -> None:
-        ref = self._rasterise(margin, side, thickness)
+    def _assert_reconstruction(self, margin: int, side: int) -> None:
+        ref = self._rasterise(margin, side)
         rebuilt = np.zeros_like(ref)
         bands, corners = self.box_regions(
             margin, margin, margin + side, margin + side
@@ -151,45 +227,30 @@ class _BorderGeometry:
             rebuilt[r : r + self.corner, c : c + self.corner] |= self.corner_masks[idx]
         if not np.array_equal(rebuilt, ref):
             raise ValueError(
-                f"cv2.rectangle band+corner decomposition failed for "
-                f"thickness={thickness} (unexpected OpenCV rasteriser geometry)"
+                f"cv2 band+corner decomposition failed for thickness="
+                f"{self.thickness}, radius={self.radius} (unexpected OpenCV "
+                f"rasteriser geometry)"
             )
 
 
-_GEOMETRY_CACHE: Dict[int, _BorderGeometry] = {}
+_GEOMETRY_CACHE: "OrderedDict[Tuple[int, Optional[int]], _BorderGeometry]" = (
+    OrderedDict()
+)
+_GEOMETRY_CACHE_LIMIT = 128  # rounded radii are data-dependent; bound the cache
 _EMPTY_I64 = np.zeros(0, dtype=np.int64)
-_DEVICE_CORNER_CACHE: Dict[Tuple[int, str], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
 
-def _get_geometry(thickness: int) -> _BorderGeometry:
-    if thickness not in _GEOMETRY_CACHE:
-        _GEOMETRY_CACHE[thickness] = _BorderGeometry(thickness)
-    return _GEOMETRY_CACHE[thickness]
-
-
-def _get_device_corner_offsets(
-    geometry: _BorderGeometry, device: torch.device
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Per-corner-slot local True offsets of the corner templates, padded to a
-    common length: ``(off_r, off_c, valid)`` each ``(4, K_max)`` on ``device``.
-    Uploaded once per (thickness, device) and reused for every frame."""
-    key = (geometry.thickness, str(device))
-    if key not in _DEVICE_CORNER_CACHE:
-        per_slot = [np.nonzero(mask) for mask in geometry.corner_masks]
-        k_max = max(len(rows) for rows, _ in per_slot)
-        off_r = np.zeros((4, k_max), dtype=np.int64)
-        off_c = np.zeros((4, k_max), dtype=np.int64)
-        valid = np.zeros((4, k_max), dtype=bool)
-        for slot, (rows, cols) in enumerate(per_slot):
-            off_r[slot, : len(rows)] = rows
-            off_c[slot, : len(cols)] = cols
-            valid[slot, : len(rows)] = True
-        _DEVICE_CORNER_CACHE[key] = (
-            torch.from_numpy(off_r).to(device),
-            torch.from_numpy(off_c).to(device),
-            torch.from_numpy(valid).to(device),
-        )
-    return _DEVICE_CORNER_CACHE[key]
+def _get_geometry(thickness: int, radius: Optional[int] = None) -> _BorderGeometry:
+    key = (thickness, radius)
+    geometry = _GEOMETRY_CACHE.get(key)
+    if geometry is None:
+        geometry = _BorderGeometry(thickness, radius)
+        _GEOMETRY_CACHE[key] = geometry
+        if len(_GEOMETRY_CACHE) > _GEOMETRY_CACHE_LIMIT:
+            _GEOMETRY_CACHE.popitem(last=False)
+    else:
+        _GEOMETRY_CACHE.move_to_end(key)
+    return geometry
 
 
 def gpu_draw_boxes(
@@ -197,58 +258,148 @@ def gpu_draw_boxes(
     xyxy: np.ndarray,
     colors_rgb: np.ndarray,
     thickness: int,
+    roundness: float = 0.0,
 ) -> torch.Tensor:
-    """GPU-native torch replacement for ``sv.BoxAnnotator.annotate`` on a CHW
-    RGB uint8 device tensor (the ``WorkflowImageData.tensor_image`` contract).
-    The scene tensor is mutated in place.
+    """GPU-native torch replacement for ``sv.BoxAnnotator.annotate``
+    (``roundness == 0``) and ``sv.RoundBoxAnnotator.annotate``
+    (``roundness > 0``) on a CHW RGB uint8 device tensor (the
+    ``WorkflowImageData.tensor_image`` contract). The scene tensor is mutated
+    in place.
 
-    A per-box paint loop is hopeless on Jetson — python-op/kernel-launch
-    overhead (~12 ops per box) dominates the tiny border writes. Instead the
-    whole frame is painted with a FIXED number of torch ops regardless of box
-    count:
+    A per-box torch paint loop is hopeless on Jetson — python-op/kernel-launch
+    overhead dominates the tiny border writes — so the whole frame is painted
+    with a FIXED number of torch ops regardless of box count:
 
-    1. Host (numpy, all boxes at once): band rectangles + corner-patch anchors
-       from the cv2-derived geometry templates (see ``_BorderGeometry``),
-       clamped to the frame. Boxes too small for the template decomposition
-       are rasterised exactly by cv2.rectangle on tiny canvases and contribute
-       their pixel coords directly.
-    2. Device: ragged expansion of band rects to flat pixel indices
-       (``repeat_interleave`` with host-computed ``output_size`` — no device
-       sync), plus broadcast expansion of the padded corner offsets.
+    1. Host (numpy, all boxes at once): straight-band rectangles + corner
+       patch pixel coords from the cv2-derived geometry templates (see
+       ``_BorderGeometry``; rounded boxes group by their sv corner radius
+       ``int(min_side // 2 * roundness)``). Boxes too small for the template
+       decomposition are rasterised exactly by the same cv2 primitives on
+       tiny canvases and contribute their pixel coords directly.
+    2. One packed H2D upload of every host-built array (per-transfer fixed
+       cost is brutal on some Jetsons: ~0.36 ms on AGX Orin vs ~0.06 ms on
+       Orin Nano), then device-side ragged expansion of band rects to flat
+       pixel indices (``repeat_interleave`` with host-computed
+       ``output_size`` — no device sync anywhere).
     3. Overlap resolution: sv paints boxes sequentially so the HIGHEST
        detection index wins every contested pixel — reproduced exactly by one
-       deterministic ``scatter_reduce_(amax)`` of box indices over the
-       frame, then a single indexed color write. Duplicate indices all write
-       the resolved winner's color, so the write is deterministic too.
+       deterministic ``scatter_reduce_(amax)`` of box indices over the frame,
+       then a single indexed color write. Duplicate indices all write the
+       resolved winner's color, so the write is deterministic too.
     """
-    geometry = _get_geometry(thickness)
+    geometry_square = _get_geometry(thickness) if roundness == 0 else None
     device = scene_chw.device
     height, width = int(scene_chw.shape[1]), int(scene_chw.shape[2])
-    o, c = geometry.outer, geometry.corner
-    inner = geometry.inner
     n = int(xyxy.shape[0])
 
     xy = np.asarray(xyxy, dtype=np.int64)
-    # cv2.rectangle normalizes swapped corners.
+    # cv2.rectangle normalizes swapped corners; detections are normalized
+    # upstream, so this is only defensive for the rounded path.
     x1 = np.minimum(xy[:, 0], xy[:, 2])
     x2 = np.maximum(xy[:, 0], xy[:, 2])
     y1 = np.minimum(xy[:, 1], xy[:, 3])
     y2 = np.maximum(xy[:, 1], xy[:, 3])
-    big = ((x2 - x1 + 1) >= geometry.min_side) & ((y2 - y1 + 1) >= geometry.min_side)
 
-    # ---- host-side prep (numpy) ----------------------------------------
-    rows = row_width = row_c1 = row_box = _EMPTY_I64
-    big_idx = np.nonzero(big)[0]
-    if len(big_idx):
-        bx1, bx2 = x1[big_idx], x2[big_idx]
-        by1, by2 = y1[big_idx], y2[big_idx]
-        ox1, oy1, ox2, oy2 = bx1 - o, by1 - o, bx2 + o, by2 + o
-        # Band rects (inclusive r1, r2, c1, c2) + owning detection index.
-        rect_r1 = np.concatenate([oy1, by2 - inner, oy1 + c, oy1 + c])
-        rect_r2 = np.concatenate([by1 + inner, oy2, oy2 - c, oy2 - c])
-        rect_c1 = np.concatenate([ox1 + c, ox1 + c, ox1, bx2 - inner])
-        rect_c2 = np.concatenate([ox2 - c, ox2 - c, bx1 + inner, ox2])
-        rect_box = np.tile(big_idx, 4)
+    if roundness == 0:
+        box_geometry = np.zeros(n, dtype=np.int64)  # one group, square
+        groups: List[Tuple[_BorderGeometry, np.ndarray]] = [
+            (geometry_square, np.arange(n))
+        ]
+    else:
+        # sv.RoundBoxAnnotator: radius = int(min_side // 2 * roundness), the
+        # smaller side chosen by strict width < height comparison.
+        box_w, box_h = x2 - x1, y2 - y1
+        radii = np.trunc(
+            np.where(box_w < box_h, box_w // 2, box_h // 2) * roundness
+        ).astype(np.int64)
+        groups = [
+            (_get_geometry(thickness, int(radius)), np.nonzero(radii == radius)[0])
+            for radius in np.unique(radii)
+        ]
+
+    # ---- host-side prep (numpy): bands + corner coords + small boxes -----
+    band_r1: List[np.ndarray] = []
+    band_r2: List[np.ndarray] = []
+    band_c1: List[np.ndarray] = []
+    band_c2: List[np.ndarray] = []
+    band_box: List[np.ndarray] = []
+    coord_flat: List[np.ndarray] = []  # pre-resolved pixel coords (corners, small)
+    coord_box: List[np.ndarray] = []
+
+    def _append_patch_coords(
+        rows: np.ndarray, cols: np.ndarray, box_index: int
+    ) -> None:
+        keep = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+        coord_flat.append(rows[keep] * width + cols[keep])
+        coord_box.append(np.full(int(keep.sum()), box_index, dtype=np.int64))
+
+    for geometry, indices in groups:
+        o, inner, c = geometry.outer, geometry.inner, geometry.corner
+        gx1, gx2, gy1, gy2 = x1[indices], x2[indices], y1[indices], y2[indices]
+        big = ((gx2 - gx1 + 1) >= geometry.min_side) & (
+            (gy2 - gy1 + 1) >= geometry.min_side
+        )
+        if geometry.radius is not None:
+            # cv2 rasterises CLIPPED thick lines/arcs differently from a
+            # cropped unclipped draw (round caps relocate), so rounded boxes
+            # whose border region crosses the frame edge take the exact
+            # frame-clipped raster path. cv2.rectangle is crop/clip-identical
+            # (fuzz-verified), so square boxes keep the template everywhere.
+            big &= (
+                (gx1 - o >= 0)
+                & (gy1 - o >= 0)
+                & (gx2 + o <= width - 1)
+                & (gy2 + o <= height - 1)
+            )
+        big_pos = np.nonzero(big)[0]
+        if len(big_pos):
+            bx1, bx2 = gx1[big_pos], gx2[big_pos]
+            by1, by2 = gy1[big_pos], gy2[big_pos]
+            big_idx = indices[big_pos]
+            ox1, oy1, ox2, oy2 = bx1 - o, by1 - o, bx2 + o, by2 + o
+            # Band rects (inclusive r1, r2, c1, c2) + owning detection index.
+            band_r1.append(np.concatenate([oy1, by2 - inner, oy1 + c, oy1 + c]))
+            band_r2.append(np.concatenate([by1 + inner, oy2, oy2 - c, oy2 - c]))
+            band_c1.append(np.concatenate([ox1 + c, ox1 + c, ox1, bx2 - inner]))
+            band_c2.append(np.concatenate([ox2 - c, ox2 - c, bx1 + inner, ox2]))
+            band_box.append(np.tile(big_idx, 4))
+            # Corner patches: anchor + cached local offsets, vectorized over
+            # the group's boxes (host-side; ships in the packed upload).
+            anchors = (
+                (oy1, ox1),
+                (oy1, ox2 - c + 1),
+                (oy2 - c + 1, ox1),
+                (oy2 - c + 1, ox2 - c + 1),
+            )
+            for slot, (anchor_r, anchor_c) in enumerate(anchors):
+                off_r, off_c = geometry.corner_offsets[slot]
+                rows = (anchor_r[:, None] + off_r[None, :]).ravel()
+                cols = (anchor_c[:, None] + off_c[None, :]).ravel()
+                keep = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+                coord_flat.append(rows[keep] * width + cols[keep])
+                coord_box.append(np.repeat(big_idx, len(off_r))[keep])
+        for pos in np.nonzero(~big)[0]:
+            # Corner geometry overlaps below min_side (joins/caps/arcs
+            # collide), or a rounded box crosses the frame edge: rasterise
+            # the exact border with the same cv2 primitives on a small
+            # frame-clipped host canvas.
+            idx = int(indices[pos])
+            rastered = geometry.rasterise_box_border(
+                int(x1[idx]), int(y1[idx]), int(x2[idx]), int(y2[idx]),
+                height, width,
+            )
+            if rastered is None:
+                continue
+            border, row0, col0 = rastered
+            rows, cols = np.nonzero(border)
+            _append_patch_coords(rows + row0, cols + col0, idx)
+
+    if band_r1:
+        rect_r1 = np.concatenate(band_r1)
+        rect_r2 = np.concatenate(band_r2)
+        rect_c1 = np.concatenate(band_c1)
+        rect_c2 = np.concatenate(band_c2)
+        rect_box = np.concatenate(band_box)
         np.clip(rect_r1, 0, None, out=rect_r1)
         np.clip(rect_c1, 0, None, out=rect_c1)
         np.clip(rect_r2, None, height - 1, out=rect_r2)
@@ -258,65 +409,33 @@ def gpu_draw_boxes(
         # Row-level expansion on host: total row count is small (~band height
         # x 4 x boxes), so numpy is cheap and gives exact output sizes for the
         # device-side column expansion — no GPU->CPU sync anywhere.
-        total_rows = int(heights.sum())
-        if total_rows:
-            rect_of_row = np.repeat(np.arange(len(heights)), heights)
-            row_starts = np.cumsum(heights) - heights
-            rows = rect_r1[rect_of_row] + (
-                np.arange(total_rows) - row_starts[rect_of_row]
-            )
-            row_width = widths[rect_of_row]
-            keep = row_width > 0
-            rows, row_width = rows[keep], row_width[keep]
-            row_c1 = rect_c1[rect_of_row][keep]
-            row_box = rect_box[rect_of_row][keep]
-        # Corner-patch anchors (r, c) per corner slot (TL, TR, BL, BR).
-        anchor_r = np.concatenate([oy1, oy1, oy2 - c + 1, oy2 - c + 1])
-        anchor_c = np.concatenate([ox1, ox2 - c + 1, ox1, ox2 - c + 1])
-        anchor_slot = np.repeat(np.arange(4), len(big_idx))
-        anchor_box = np.tile(big_idx, 4)
+        rect_of_row = np.repeat(np.arange(len(heights)), heights)
+        row_starts = np.cumsum(heights) - heights
+        rows = rect_r1[rect_of_row] + (
+            np.arange(len(rect_of_row)) - row_starts[rect_of_row]
+        )
+        row_width = widths[rect_of_row]
+        keep = row_width > 0
+        rows, row_width = rows[keep], row_width[keep]
+        row_c1 = rect_c1[rect_of_row][keep]
+        row_box = rect_box[rect_of_row][keep]
     else:
-        anchor_r = anchor_c = anchor_slot = anchor_box = _EMPTY_I64
+        rows = row_width = row_c1 = row_box = _EMPTY_I64
 
-    small_flat = small_box = _EMPTY_I64
-    small_idx = np.nonzero(~big)[0]
-    if len(small_idx):
-        small_flat_parts: List[np.ndarray] = []
-        small_box_parts: List[np.ndarray] = []
-        for idx in small_idx:
-            # Joins overlap below min_side: rasterise the exact border with
-            # cv2 on a tiny host canvas (bounded by min_side + 2*outer).
-            bw, bh = int(x2[idx] - x1[idx]), int(y2[idx] - y1[idx])
-            canvas = np.zeros((bh + 1 + 2 * o, bw + 1 + 2 * o), np.uint8)
-            cv2.rectangle(canvas, (o, o), (o + bw, o + bh), 255, thickness)
-            rr, cc = np.nonzero(canvas)
-            rr = rr + int(y1[idx]) - o
-            cc = cc + int(x1[idx]) - o
-            keep = (rr >= 0) & (rr < height) & (cc >= 0) & (cc < width)
-            small_flat_parts.append(rr[keep] * width + cc[keep])
-            small_box_parts.append(np.full(int(keep.sum()), idx, dtype=np.int64))
-        small_flat = np.concatenate(small_flat_parts)
-        small_box = np.concatenate(small_box_parts)
-
+    pre_flat = np.concatenate(coord_flat) if coord_flat else _EMPTY_I64
+    pre_box = np.concatenate(coord_box) if coord_box else _EMPTY_I64
     total_px = int(row_width.sum())
-    if total_px == 0 and len(anchor_r) == 0 and len(small_flat) == 0:
+    if total_px == 0 and len(pre_flat) == 0:
         return scene_chw
 
-    # ---- single packed H2D transfer -------------------------------------
-    # Per-transfer fixed cost is brutal on some Jetsons (~0.36 ms on AGX Orin
-    # vs ~0.06 ms on Orin Nano), so every host-built array ships in ONE
-    # upload and is sliced back into views on-device.
+    # ---- single packed H2D transfer --------------------------------------
     segments = [
         rows,
         row_width,
         row_c1,
         row_box,
-        anchor_r,
-        anchor_c,
-        anchor_slot,
-        anchor_box,
-        small_flat,
-        small_box,
+        pre_flat,
+        pre_box,
         colors_rgb.astype(np.int64).ravel(),
     ]
     packed = torch.from_numpy(np.concatenate(segments)).to(device)
@@ -325,21 +444,9 @@ def gpu_draw_boxes(
     for segment in segments:
         views.append(packed[offset : offset + len(segment)])
         offset += len(segment)
-    (
-        rows_t,
-        width_t,
-        c1_t,
-        box_t,
-        a_r,
-        a_c,
-        slot_t,
-        corner_box_t,
-        small_flat_t,
-        small_box_t,
-        colors_flat_t,
-    ) = views
+    rows_t, width_t, c1_t, box_t, pre_flat_t, pre_box_t, colors_flat_t = views
 
-    # ---- device-side expansion ------------------------------------------
+    # ---- device-side expansion --------------------------------------------
     flat_parts: List[torch.Tensor] = []
     box_parts: List[torch.Tensor] = []
     if total_px:
@@ -354,24 +461,9 @@ def gpu_draw_boxes(
         )
         flat_parts.append(rows_t[row_of_px] * width + cols)
         box_parts.append(box_t[row_of_px])
-    if len(anchor_r):
-        off_r, off_c, off_valid = _get_device_corner_offsets(geometry, device)
-        rr = a_r.unsqueeze(1) + off_r[slot_t]  # (A, K_max)
-        cc = a_c.unsqueeze(1) + off_c[slot_t]
-        keep = (
-            off_valid[slot_t]
-            & (rr >= 0)
-            & (rr < height)
-            & (cc >= 0)
-            & (cc < width)
-        )
-        flat_parts.append((rr * width + cc)[keep])
-        box_parts.append(
-            corner_box_t.unsqueeze(1).expand(-1, int(off_r.shape[1]))[keep]
-        )
-    if len(small_flat):
-        flat_parts.append(small_flat_t)
-        box_parts.append(small_box_t)
+    if len(pre_flat):
+        flat_parts.append(pre_flat_t)
+        box_parts.append(pre_box_t)
 
     flat = torch.cat(flat_parts) if len(flat_parts) > 1 else flat_parts[0]
     pixel_box = torch.cat(box_parts) if len(box_parts) > 1 else box_parts[0]
@@ -388,16 +480,17 @@ def gpu_draw_boxes(
 
 
 def _gpu_box_draw_eligible(
-    detections, color_axis: str, roundness: float, thickness
+    detections, color_axis: str, thickness, image: WorkflowImageData
 ) -> bool:
     """True when the torch painter can replicate the sv path exactly."""
-    if roundness != 0:
-        # sv.RoundBoxAnnotator (elliptic arcs) keeps the battle-tested sv path.
-        return False
     if color_axis not in ("CLASS", "INDEX"):
         # TRACK / custom lookups keep the sv path.
         return False
     if not isinstance(thickness, int) or thickness < 1:
+        return False
+    if not image.is_tensor_materialised():
+        # Forcing tensor_image on a numpy-sourced image is a costly host-side
+        # conversion — the sv path is faster there.
         return False
     xyxy = getattr(detections, "xyxy", None)
     if not isinstance(xyxy, torch.Tensor) or int(xyxy.shape[0]) == 0:
@@ -508,7 +601,7 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
             if isinstance(predictions, tuple)
             else predictions
         )
-        if _gpu_box_draw_eligible(detections, color_axis, roundness, thickness):
+        if _gpu_box_draw_eligible(detections, color_axis, thickness, image):
             try:
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
                 if not isinstance(palette, sv.ColorPalette):
@@ -535,7 +628,7 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                 if copy_image:
                     scene_t = scene_t.clone()
                 annotated_tensor = gpu_draw_boxes(
-                    scene_t, xyxy, colors_rgb, int(thickness)
+                    scene_t, xyxy, colors_rgb, int(thickness), float(roundness)
                 )
                 if not copy_image:
                     # The painter mutated `image.tensor_image` storage in
