@@ -5,6 +5,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
+from inference.core.workflows.core_steps.analytics._zone_geometry import LeanLineZone
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
@@ -161,7 +162,7 @@ class LineCounterManifest(WorkflowBlockManifest):
 
 class LineCounterBlockV1(WorkflowBlock):
     def __init__(self):
-        self._batch_of_line_zones: Dict[str, sv.LineZone] = {}
+        self._batch_of_line_zones: Dict[str, LeanLineZone] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -199,22 +200,20 @@ class LineCounterBlockV1(WorkflowBlock):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of line zone to be a number"
                 )
-            self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
-                start=sv.Point(*line_segment[0]),
-                end=sv.Point(*line_segment[1]),
+            self._batch_of_line_zones[metadata.video_identifier] = LeanLineZone(
+                start=tuple(line_segment[0]),
+                end=tuple(line_segment[1]),
                 triggering_anchors=[sv.Position(triggering_anchor)],
             )
         line_zone = self._batch_of_line_zones[metadata.video_identifier]
 
-        # sv.LineZone is numpy-based: materialise a minimal sv.Detections (the
-        # crossing logic only needs box anchors + tracker_id) and run trigger.
-        sv_input = sv.Detections(
-            xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
-            tracker_id=np.array(
-                [int(tracker_id) for tracker_id in tracker_ids], dtype=int
-            ),
+        # The crossing state is host-based, so transfer box geometry once and
+        # run the lean vectorized anchor computation directly on numpy arrays.
+        xyxy_host = detections.xyxy.detach().to("cpu").numpy().astype(float)
+        tracker_np = np.array(
+            [int(tracker_id) for tracker_id in tracker_ids], dtype=int
         )
-        line_zone.trigger(detections=sv_input)
+        line_zone.trigger(xyxy_host, tracker_np)
 
         return {
             OUTPUT_KEY_COUNT_IN: line_zone.in_count,
