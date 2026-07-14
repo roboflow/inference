@@ -7,6 +7,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -203,7 +204,13 @@ def _assert_detections_equal(
     assert actual.data.keys() == expected.data.keys()
     for key, expected_value in expected.data.items():
         actual_value = actual.data[key]
-        if isinstance(expected_value, np.ndarray):
+        if isinstance(actual_value, torch.Tensor):
+            actual_value = actual_value.detach().cpu().numpy()
+        if isinstance(expected_value, torch.Tensor):
+            expected_value = expected_value.detach().cpu().numpy()
+        if isinstance(actual_value, np.ndarray) or isinstance(
+            expected_value, np.ndarray
+        ):
             np.testing.assert_array_equal(actual_value, expected_value)
         else:
             assert actual_value == expected_value

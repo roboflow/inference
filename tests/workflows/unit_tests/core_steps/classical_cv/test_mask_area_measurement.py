@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
     OUTPUT_KEY,
@@ -332,8 +333,10 @@ def test_run_result_areas_are_floats():
     result = block.run(predictions=detections)
 
     # then
-    for area in result[OUTPUT_KEY].data[AREA_KEY_IN_SV_DETECTIONS]:
-        assert isinstance(area, (float, np.floating))
+    areas = result[OUTPUT_KEY].data[AREA_KEY_IN_SV_DETECTIONS]
+    assert isinstance(areas, torch.Tensor)
+    assert areas.dtype == torch.float64
+    assert torch.equal(areas, torch.tensor([100.0], dtype=torch.float64))
 
 
 def test_run_with_pixels_per_unit_converts_area():

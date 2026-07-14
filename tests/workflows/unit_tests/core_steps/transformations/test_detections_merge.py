@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
     DetectionsMergeBlockV1,
@@ -113,5 +114,6 @@ def test_detections_merge_block_empty_input() -> None:
     assert isinstance(output, dict)
     assert "predictions" in output
     assert len(output["predictions"]) == 0
-    assert isinstance(output["predictions"].xyxy, np.ndarray)
+    assert isinstance(output["predictions"].xyxy, torch.Tensor)
+    assert output["predictions"].xyxy.dtype == torch.float32
     assert output["predictions"].xyxy.shape == (0, 4)
