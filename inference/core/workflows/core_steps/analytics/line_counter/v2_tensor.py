@@ -5,7 +5,10 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference.core.workflows.core_steps.analytics._zone_geometry import LeanLineZone
+from inference.core.workflows.core_steps.analytics._zone_geometry import (
+    LeanLineZone,
+    empty_detections_like,
+)
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
@@ -260,8 +263,16 @@ class LineCounterBlockV2(WorkflowBlock):
             [int(tracker_id) for tracker_id in tracker_ids], dtype=int
         )
         mask_in, mask_out = line_zone.trigger(xyxy_host, tracker_np)
-        detections_in = take_prediction_by_mask(detections, mask_in)
-        detections_out = take_prediction_by_mask(detections, mask_out)
+        detections_in = (
+            empty_detections_like(detections)
+            if n and not mask_in.any()
+            else take_prediction_by_mask(detections, mask_in)
+        )
+        detections_out = (
+            empty_detections_like(detections)
+            if n and not mask_out.any()
+            else take_prediction_by_mask(detections, mask_out)
+        )
 
         return {
             OUTPUT_KEY_COUNT_IN: line_zone.in_count,

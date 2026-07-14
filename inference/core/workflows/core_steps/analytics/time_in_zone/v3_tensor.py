@@ -7,7 +7,10 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference.core.workflows.core_steps.analytics._zone_geometry import LeanPolygonZone
+from inference.core.workflows.core_steps.analytics._zone_geometry import (
+    LeanPolygonZone,
+    empty_detections_like,
+)
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
@@ -334,7 +337,11 @@ class TimeInZoneBlockV3(WorkflowBlock):
                 del tracked_ids_in_zone[tracker_id]
             surviving_mask[i] = True
             surviving_times[i] = time_in_zone
-        result_detections = take_prediction_by_mask(detections, surviving_mask)
+        result_detections = (
+            empty_detections_like(detections)
+            if n and not surviving_mask.any()
+            else take_prediction_by_mask(detections, surviving_mask)
+        )
         result_bboxes_metadata = result_detections.bboxes_metadata or [
             {} for _ in range(int(result_detections.xyxy.shape[0]))
         ]

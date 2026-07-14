@@ -1,9 +1,40 @@
 from collections import Counter, defaultdict, deque
 from math import sqrt
-from typing import DefaultDict, Deque, Optional, Sequence, Tuple
+from typing import DefaultDict, Deque, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import supervision as sv
+
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+
+
+def empty_detections_like(
+    detections: Union[Detections, InstanceDetections],
+) -> Union[Detections, InstanceDetections]:
+    bboxes_metadata = [] if isinstance(detections.bboxes_metadata, list) else None
+    if isinstance(detections, InstanceDetections):
+        mask = detections.mask
+        if isinstance(mask, InstancesRLEMasks):
+            mask = InstancesRLEMasks(image_size=mask.image_size, masks=[])
+        else:
+            mask = mask[0:0]
+        return InstanceDetections(
+            xyxy=detections.xyxy[0:0],
+            class_id=detections.class_id[0:0],
+            confidence=detections.confidence[0:0],
+            mask=mask,
+            image_metadata=detections.image_metadata,
+            bboxes_metadata=bboxes_metadata,
+        )
+    return Detections(
+        xyxy=detections.xyxy[0:0],
+        class_id=detections.class_id[0:0],
+        confidence=detections.confidence[0:0],
+        image_metadata=detections.image_metadata,
+        bboxes_metadata=bboxes_metadata,
+    )
 
 
 _DEFAULT_LINE_ANCHORS = (
