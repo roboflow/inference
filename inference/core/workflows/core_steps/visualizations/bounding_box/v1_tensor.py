@@ -76,7 +76,7 @@ def _quarter_arc_offsets(radius: int, thickness: int) -> Tuple[np.ndarray, np.nd
     the other three corners. Cached per (radius, thickness) across frames."""
     outer = thickness // 2
     span = radius + outer
-    yy, xx = np.mgrid[-span : 1, -span : 1]
+    yy, xx = np.mgrid[-span:1, -span:1]
     dist = np.sqrt(yy**2 + xx**2)
     ring = (dist >= radius - (thickness - 1 - outer) - 0.5) & (
         dist <= radius + outer + 0.5
@@ -172,10 +172,18 @@ def gpu_draw_boxes(
         for radius in np.unique(radii):
             idx = np.nonzero(radii == radius)[0]
             dy, dx = _quarter_arc_offsets(int(radius), thickness)
-            centers_y = (by1[idx] + radius, by1[idx] + radius,
-                         by2[idx] - radius, by2[idx] - radius)
-            centers_x = (bx1[idx] + radius, bx2[idx] - radius,
-                         bx1[idx] + radius, bx2[idx] - radius)
+            centers_y = (
+                by1[idx] + radius,
+                by1[idx] + radius,
+                by2[idx] - radius,
+                by2[idx] - radius,
+            )
+            centers_x = (
+                bx1[idx] + radius,
+                bx2[idx] - radius,
+                bx1[idx] + radius,
+                bx2[idx] - radius,
+            )
             signs = ((1, 1), (1, -1), (-1, 1), (-1, -1))
             for cy, cx, (sy, sx) in zip(centers_y, centers_x, signs):
                 rows = (cy[:, None] + sy * dy[None, :]).ravel()
@@ -223,8 +231,7 @@ def gpu_draw_boxes(
     )
     col_starts = row_width.cumsum(0) - row_width
     px_intra = (
-        torch.arange(total_px, device=device, dtype=torch.int32)
-        - col_starts[px_of_row]
+        torch.arange(total_px, device=device, dtype=torch.int32) - col_starts[px_of_row]
     )
     flat = row_base[px_of_row] + px_intra
     pixel_box = row_box[px_of_row]

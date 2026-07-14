@@ -30,7 +30,9 @@ def _paint(
 ) -> tuple:
     """Run the painter on a zero scene; return (chw tensor, painted-pixel mask)."""
     scene = torch.zeros((3, SCENE_H, SCENE_W), dtype=torch.uint8, device=device)
-    annotated = gpu_draw_boxes(scene, xyxy.astype(int), colors_rgb, thickness, roundness)
+    annotated = gpu_draw_boxes(
+        scene, xyxy.astype(int), colors_rgb, thickness, roundness
+    )
     painted = (annotated != 0).any(dim=0).cpu().numpy()
     return annotated, painted
 
@@ -40,9 +42,7 @@ def _sv_painted_mask(xyxy: np.ndarray, thickness: int) -> np.ndarray:
     annotator = sv.BoxAnnotator(
         color=PALETTE, color_lookup=sv.ColorLookup.INDEX, thickness=thickness
     )
-    out = annotator.annotate(
-        scene, sv.Detections(xyxy=xyxy.astype(np.float32))
-    )
+    out = annotator.annotate(scene, sv.Detections(xyxy=xyxy.astype(np.float32)))
     return (out != 0).any(axis=2)
 
 
@@ -65,9 +65,7 @@ _SCENARIOS = {
 
 
 def _index_colors(n: int) -> np.ndarray:
-    return np.asarray(
-        [PALETTE.by_idx(i).as_rgb() for i in range(n)], dtype=np.uint8
-    )
+    return np.asarray([PALETTE.by_idx(i).as_rgb() for i in range(n)], dtype=np.uint8)
 
 
 @pytest.mark.parametrize("scenario", sorted(_SCENARIOS))
@@ -105,7 +103,9 @@ def test_border_band_geometry_exact() -> None:
     assert (annotated[0][painted] == 255).all()  # right channel, right color
 
 
-def _sv_round_painted_mask(xyxy: np.ndarray, thickness: int, roundness: float) -> np.ndarray:
+def _sv_round_painted_mask(
+    xyxy: np.ndarray, thickness: int, roundness: float
+) -> np.ndarray:
     scene = np.zeros((SCENE_H, SCENE_W, 3), dtype=np.uint8)
     annotator = sv.RoundBoxAnnotator(
         color=PALETTE,
@@ -201,7 +201,9 @@ def test_gpu_boxes_on_cuda_match_cpu() -> None:
     assert np.array_equal(cpu_out.numpy(), cuda_out.cpu().numpy())
 
 
-def _build_detections(boxes: np.ndarray, class_id: np.ndarray, device: str) -> Detections:
+def _build_detections(
+    boxes: np.ndarray, class_id: np.ndarray, device: str
+) -> Detections:
     n = boxes.shape[0]
     return Detections(
         xyxy=torch.tensor(boxes, dtype=torch.float32, device=device),
@@ -225,14 +227,18 @@ def _tensor_backed_image() -> WorkflowImageData:
 
 def test_gpu_box_draw_eligible_happy_path() -> None:
     assert (
-        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", 2, _tensor_backed_image())
+        _gpu_box_draw_eligible(
+            _eligible_detections(), "CLASS", 2, _tensor_backed_image()
+        )
         is True
     )
 
 
 def test_gpu_box_draw_not_eligible_for_track_lookup() -> None:
     assert (
-        _gpu_box_draw_eligible(_eligible_detections(), "TRACK", 2, _tensor_backed_image())
+        _gpu_box_draw_eligible(
+            _eligible_detections(), "TRACK", 2, _tensor_backed_image()
+        )
         is False
     )
 
@@ -246,7 +252,9 @@ def test_gpu_box_draw_not_eligible_for_empty_detections() -> None:
 
 def test_gpu_box_draw_not_eligible_for_non_int_thickness() -> None:
     assert (
-        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", "2", _tensor_backed_image())
+        _gpu_box_draw_eligible(
+            _eligible_detections(), "CLASS", "2", _tensor_backed_image()
+        )
         is False
     )
 
