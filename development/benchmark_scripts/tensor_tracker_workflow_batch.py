@@ -460,18 +460,11 @@ def _run_phase_samples(
 
             def recover() -> list[tuple[Any, torch.Tensor]]:
                 """Recover native rows and same-device IDs for every stream."""
-                return [
-                    block._recover_tracker_output(
-                        detections=prediction,
-                        bbox=prepared_item[2],
-                        tracked_sv=tracked_output,
-                    )
-                    for prediction, prepared_item, tracked_output in zip(
-                        detections,
-                        prepared,
-                        tracked_outputs,
-                    )
-                ]
+                return block._recover_tracker_outputs_batch(
+                    detections=list(detections),
+                    bboxes=[item[2] for item in prepared],
+                    tracked_outputs=tracked_outputs,
+                )
 
             recovered, recovery_ms = _synchronized_call(recover)
 
