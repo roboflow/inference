@@ -45,6 +45,11 @@ from inference.core.workflows.core_steps.common.tensor_native import (
 from inference.core.workflows.core_steps.trackers.batch_scheduler import (
     get_tracker_batch_scheduler,
 )
+from inference.core.workflows.core_steps.trackers.instance_cache_kernels import (
+    InstanceCacheKernelResult,
+    instance_cache_hash_capacity,
+    run_triton_instance_cache,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -98,61 +103,91 @@ class InstanceCache:
         self._ids: Optional[torch.Tensor] = None
         self._valid: Optional[torch.Tensor] = None
         self._write_index: Optional[torch.Tensor] = None
+        self._count: Optional[torch.Tensor] = None
+        self._ring_hash_slots: Optional[torch.Tensor] = None
+        self._hash_keys: Optional[torch.Tensor] = None
+        self._hash_values: Optional[torch.Tensor] = None
         self._batch_arena: Optional["_InstanceCacheBatchArena"] = None
 
     def record_instances(self, tracker_ids: torch.Tensor) -> torch.Tensor:
         """Record an ID tensor and return an exact same-device seen mask.
 
-        Tracktor outputs guarantee unique IDs within a frame. That contract lets
-        membership, insertion ranks, wraparound positions, and final ring writes
-        run as vector operations rather than one launch sequence per object.
+        CUDA uses one exact sequential FIFO/hash program. The fallback preserves
+        the same ordering for duplicate IDs and interleaved eviction.
         """
         tracker_ids = tracker_ids.to(dtype=torch.long).reshape(-1)
         self._ensure_device(tracker_ids.device)
         if tracker_ids.numel() == 0:
             return torch.empty(0, dtype=torch.bool, device=tracker_ids.device)
+        fused = self._record_instances_triton(tracker_ids)
+        if fused is not None:
+            return fused.seen
+        return self._record_instances_fallback(tracker_ids)
+
+    def _record_instances_triton(
+        self,
+        tracker_ids: torch.Tensor,
+    ) -> Optional[InstanceCacheKernelResult]:
+        """Run the single-stream exact kernel when CUDA Triton is available."""
         assert self._ids is not None
         assert self._valid is not None
         assert self._write_index is not None
-        cache_ids = self._ids[: self._size]
-        valid = self._valid[: self._size]
-        seen = (tracker_ids[:, None].eq(cache_ids[None, :]) & valid[None, :]).any(dim=1)
-        new = ~seen
-        insertion_rank = torch.cumsum(new.to(dtype=torch.long), dim=0) - 1
-        insertion_slot = torch.remainder(
-            self._write_index + insertion_rank,
-            self._size,
+        assert self._count is not None
+        assert self._ring_hash_slots is not None
+        assert self._hash_keys is not None
+        assert self._hash_values is not None
+        metadata = torch.tensor(
+            [[0, tracker_ids.numel()]],
+            dtype=torch.long,
+            device=tracker_ids.device,
         )
-        sentinel = torch.full_like(insertion_slot, self._size)
-        scatter_slot = torch.where(new, insertion_slot, sentinel)
+        cache_rows = torch.zeros(
+            1,
+            dtype=torch.long,
+            device=tracker_ids.device,
+        )
+        return run_triton_instance_cache(
+            tracker_ids,
+            metadata,
+            cache_rows,
+            self._ids.reshape(1, -1),
+            self._valid.reshape(1, -1),
+            self._ring_hash_slots.reshape(1, -1),
+            self._write_index.reshape(1),
+            self._count.reshape(1),
+            self._hash_keys.reshape(1, -1),
+            self._hash_values.reshape(1, -1),
+            cache_size=self._size,
+            max_inputs=tracker_ids.numel(),
+        )
 
-        # Multiple complete wraps can target one slot. Select the greatest
-        # insertion rank so the final ring contains the newest ID for that slot.
-        last_position = torch.full(
-            (self._size + 1,),
-            -1,
-            dtype=torch.long,
+    def _record_instances_fallback(
+        self,
+        tracker_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply exact sequential FIFO semantics with ordinary Torch operators."""
+        assert self._ids is not None
+        assert self._valid is not None
+        assert self._write_index is not None
+        assert self._count is not None
+        seen = torch.empty(
+            tracker_ids.numel(),
+            dtype=torch.bool,
             device=tracker_ids.device,
         )
-        input_position = torch.arange(
-            tracker_ids.shape[0],
-            dtype=torch.long,
-            device=tracker_ids.device,
-        )
-        last_position.scatter_reduce_(
-            0,
-            scatter_slot,
-            torch.where(new, input_position, torch.full_like(input_position, -1)),
-            reduce="amax",
-            include_self=True,
-        )
-        selected_ids = tracker_ids.index_select(0, last_position.clamp_min(0))
-        updated = last_position >= 0
-        self._ids.copy_(torch.where(updated, selected_ids, self._ids))
-        self._valid.logical_or_(updated)
-        self._write_index.copy_(
-            torch.remainder(self._write_index + new.sum(dtype=torch.long), self._size)
-        )
+        for position in range(tracker_ids.numel()):
+            tracker_id = tracker_ids[position]
+            was_seen = (
+                self._ids[: self._size].eq(tracker_id) & self._valid[: self._size]
+            ).any()
+            seen[position] = was_seen
+            if bool(was_seen.item()):
+                continue
+            write_index = int(self._write_index.item())
+            self._ids[write_index] = tracker_id
+            self._valid[write_index] = True
+            self._write_index.fill_((write_index + 1) % self._size)
+            self._count.add_(1).clamp_max_(self._size)
         return seen
 
     def _ensure_device(self, device: torch.device) -> None:
@@ -164,6 +199,25 @@ class InstanceCache:
         self._ids = torch.zeros(self._size + 1, dtype=torch.long, device=device)
         self._valid = torch.zeros(self._size + 1, dtype=torch.bool, device=device)
         self._write_index = torch.zeros((), dtype=torch.long, device=device)
+        self._count = torch.zeros((), dtype=torch.int32, device=device)
+        self._ring_hash_slots = torch.full(
+            (self._size + 1,),
+            -1,
+            dtype=torch.int32,
+            device=device,
+        )
+        hash_capacity = instance_cache_hash_capacity(self._size)
+        self._hash_keys = torch.empty(
+            hash_capacity,
+            dtype=torch.long,
+            device=device,
+        )
+        self._hash_values = torch.full(
+            (hash_capacity,),
+            -1,
+            dtype=torch.int32,
+            device=device,
+        )
 
     def record_instance(self, tracker_id: int) -> bool:
         """Retain the legacy scalar API as an explicit host-facing adapter.
@@ -180,18 +234,36 @@ class _InstanceCacheBatchArena:
     """Persistent row-major cache state for a cohort of video streams.
 
     Each ``InstanceCache`` remains the source of truth and is rebound to a row
-    view when it first joins the arena. Stable SIMD batches then classify every
-    stream with one broadcast membership operation and one vectorized FIFO
-    update instead of launching the scalar cache transaction once per stream.
+    view when it first joins the arena. On CUDA, one Triton program per stream
+    performs exact sequential FIFO lookup, eviction, hashing, and stable output
+    partitioning without scanning the full cache or launching per-stream work.
     """
 
     def __init__(self, size: int, device: torch.device) -> None:
         self._size = size
         self._device = device
+        self._hash_capacity = instance_cache_hash_capacity(size)
         self._capacity = 0
         self._ids = torch.empty((0, size + 1), dtype=torch.long, device=device)
         self._valid = torch.empty((0, size + 1), dtype=torch.bool, device=device)
         self._write_index = torch.empty(0, dtype=torch.long, device=device)
+        self._count = torch.empty(0, dtype=torch.int32, device=device)
+        self._ring_hash_slots = torch.empty(
+            (0, size + 1),
+            dtype=torch.int32,
+            device=device,
+        )
+        self._hash_keys = torch.empty(
+            (0, self._hash_capacity),
+            dtype=torch.long,
+            device=device,
+        )
+        self._hash_values = torch.empty(
+            (0, self._hash_capacity),
+            dtype=torch.int32,
+            device=device,
+        )
+        self._row_indices = torch.empty(0, dtype=torch.long, device=device)
         self._cache_rows: Dict[int, int] = {}
         self._caches: List[InstanceCache] = []
 
@@ -214,13 +286,48 @@ class _InstanceCacheBatchArena:
             dtype=torch.long,
             device=self._device,
         )
+        new_count = torch.zeros(
+            new_capacity,
+            dtype=torch.int32,
+            device=self._device,
+        )
+        new_ring_hash_slots = torch.full(
+            (new_capacity, self._size + 1),
+            -1,
+            dtype=torch.int32,
+            device=self._device,
+        )
+        new_hash_keys = torch.empty(
+            (new_capacity, self._hash_capacity),
+            dtype=torch.long,
+            device=self._device,
+        )
+        new_hash_values = torch.full(
+            (new_capacity, self._hash_capacity),
+            -1,
+            dtype=torch.int32,
+            device=self._device,
+        )
         if self._capacity:
             new_ids[: self._capacity].copy_(self._ids)
             new_valid[: self._capacity].copy_(self._valid)
             new_write_index[: self._capacity].copy_(self._write_index)
+            new_count[: self._capacity].copy_(self._count)
+            new_ring_hash_slots[: self._capacity].copy_(self._ring_hash_slots)
+            new_hash_keys[: self._capacity].copy_(self._hash_keys)
+            new_hash_values[: self._capacity].copy_(self._hash_values)
         self._ids = new_ids
         self._valid = new_valid
         self._write_index = new_write_index
+        self._count = new_count
+        self._ring_hash_slots = new_ring_hash_slots
+        self._hash_keys = new_hash_keys
+        self._hash_values = new_hash_values
+        self._row_indices = torch.arange(
+            new_capacity,
+            dtype=torch.long,
+            device=self._device,
+        )
         self._capacity = new_capacity
         for row, cache in enumerate(self._caches):
             self._bind_views(cache, row)
@@ -229,6 +336,10 @@ class _InstanceCacheBatchArena:
         cache._ids = self._ids[row]
         cache._valid = self._valid[row]
         cache._write_index = self._write_index[row]
+        cache._count = self._count[row]
+        cache._ring_hash_slots = self._ring_hash_slots[row]
+        cache._hash_keys = self._hash_keys[row]
+        cache._hash_values = self._hash_values[row]
         cache._batch_arena = self
 
     def _ensure_caches(self, caches: List[InstanceCache]) -> List[int]:
@@ -245,6 +356,10 @@ class _InstanceCacheBatchArena:
                 old_ids = cache._ids
                 old_valid = cache._valid
                 old_write_index = cache._write_index
+                old_count = cache._count
+                old_ring_hash_slots = cache._ring_hash_slots
+                old_hash_keys = cache._hash_keys
+                old_hash_values = cache._hash_values
                 if old_ids is not None and old_ids.device != self._device:
                     raise ValueError("tracker cache device changed for an active video")
                 self._grow(row + 1)
@@ -252,8 +367,16 @@ class _InstanceCacheBatchArena:
                     self._ids[row].copy_(old_ids)
                     assert old_valid is not None
                     assert old_write_index is not None
+                    assert old_count is not None
+                    assert old_ring_hash_slots is not None
+                    assert old_hash_keys is not None
+                    assert old_hash_values is not None
                     self._valid[row].copy_(old_valid)
                     self._write_index[row].copy_(old_write_index)
+                    self._count[row].copy_(old_count)
+                    self._ring_hash_slots[row].copy_(old_ring_hash_slots)
+                    self._hash_keys[row].copy_(old_hash_keys)
+                    self._hash_values[row].copy_(old_hash_values)
                 self._cache_rows[cache_key] = row
                 self._caches.append(cache)
                 self._bind_views(cache, row)
@@ -264,12 +387,8 @@ class _InstanceCacheBatchArena:
         self,
         caches: List[InstanceCache],
         tracker_ids: List[torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Classify and record a ragged SIMD cohort entirely on-device.
-
-        Returns padded ``(seen, valid)`` tensors shaped ``[streams, max_rows]``.
-        The caller owns the single public-result cardinality boundary.
-        """
+    ) -> InstanceCacheKernelResult:
+        """Classify a ragged cohort with stable device new/seen positions."""
         if len(caches) != len(tracker_ids):
             raise ValueError("cache and tracker ID batches must be aligned")
         rows = self._ensure_caches(caches)
@@ -277,88 +396,97 @@ class _InstanceCacheBatchArena:
         counts = [int(ids.numel()) for ids in tracker_ids]
         max_count = max(counts, default=0)
         if max_count == 0:
-            empty = torch.empty((batch_size, 0), dtype=torch.bool, device=self._device)
-            return empty, empty
+            empty_bool = torch.empty(0, dtype=torch.bool, device=self._device)
+            empty_indices = torch.empty(
+                (batch_size, 0),
+                dtype=torch.long,
+                device=self._device,
+            )
+            empty_counts = torch.zeros(
+                (batch_size, 2),
+                dtype=torch.int32,
+                device=self._device,
+            )
+            return InstanceCacheKernelResult(
+                seen=empty_bool,
+                new_indices=empty_indices,
+                seen_indices=empty_indices,
+                partition_counts=empty_counts,
+            )
         normalized_ids = [
             ids.to(device=self._device, dtype=torch.long).reshape(-1)
             for ids in tracker_ids
         ]
         flat_ids = torch.cat(normalized_ids)
-        count_tensor = torch.tensor(counts, dtype=torch.long, device=self._device)
-        batch_rows = torch.repeat_interleave(
-            torch.arange(batch_size, device=self._device), count_tensor
-        )
-        offsets = torch.cumsum(count_tensor, dim=0) - count_tensor
-        positions = torch.arange(flat_ids.numel(), device=self._device) - (
-            torch.repeat_interleave(offsets, count_tensor)
-        )
-        padded_ids = torch.zeros(
-            (batch_size, max_count), dtype=torch.long, device=self._device
-        )
-        padded_ids[batch_rows, positions] = flat_ids
-        valid_rows = (
-            torch.arange(max_count, device=self._device)[None, :]
-            < count_tensor[:, None]
-        )
-
-        contiguous_start = rows[0] if rows else 0
-        contiguous = rows == list(range(contiguous_start, contiguous_start + len(rows)))
-        if contiguous:
-            state_ids = self._ids[contiguous_start : contiguous_start + batch_size]
-            state_valid = self._valid[contiguous_start : contiguous_start + batch_size]
-            state_write_index = self._write_index[
-                contiguous_start : contiguous_start + batch_size
-            ]
-            row_tensor = None
-        else:
-            row_tensor = torch.tensor(rows, dtype=torch.long, device=self._device)
-            state_ids = self._ids.index_select(0, row_tensor)
-            state_valid = self._valid.index_select(0, row_tensor)
-            state_write_index = self._write_index.index_select(0, row_tensor)
-
-        seen = (
-            padded_ids[:, :, None].eq(state_ids[:, None, : self._size])
-            & state_valid[:, None, : self._size]
-        ).any(dim=2) & valid_rows
-        new = valid_rows & ~seen
-        insertion_rank = torch.cumsum(new.to(dtype=torch.long), dim=1) - 1
-        insertion_slot = torch.remainder(
-            state_write_index[:, None] + insertion_rank,
-            self._size,
-        )
-        sentinel = torch.full_like(insertion_slot, self._size)
-        scatter_slot = torch.where(new, insertion_slot, sentinel)
-        input_position = torch.arange(max_count, device=self._device)[None, :].expand(
-            batch_size, -1
-        )
-        last_position = torch.full(
-            (batch_size, self._size + 1),
-            -1,
+        offsets = []
+        next_offset = 0
+        for count in counts:
+            offsets.append(next_offset)
+            next_offset += count
+        stream_metadata = torch.tensor(
+            list(zip(offsets, counts)),
             dtype=torch.long,
             device=self._device,
         )
-        last_position.scatter_reduce_(
-            1,
-            scatter_slot,
-            torch.where(new, input_position, torch.full_like(input_position, -1)),
-            reduce="amax",
-            include_self=True,
+        contiguous_start = rows[0] if rows else 0
+        contiguous = rows == list(range(contiguous_start, contiguous_start + len(rows)))
+        if contiguous:
+            row_tensor = self._row_indices[
+                contiguous_start : contiguous_start + batch_size
+            ]
+        else:
+            row_tensor = torch.tensor(rows, dtype=torch.long, device=self._device)
+        fused = run_triton_instance_cache(
+            flat_ids,
+            stream_metadata,
+            row_tensor,
+            self._ids,
+            self._valid,
+            self._ring_hash_slots,
+            self._write_index,
+            self._count,
+            self._hash_keys,
+            self._hash_values,
+            cache_size=self._size,
+            max_inputs=max_count,
         )
-        selected_ids = torch.gather(padded_ids, 1, last_position.clamp_min(0))
-        updated = last_position >= 0
-        state_ids.copy_(torch.where(updated, selected_ids, state_ids))
-        state_valid.logical_or_(updated)
-        state_write_index.copy_(
-            torch.remainder(
-                state_write_index + new.sum(dim=1, dtype=torch.long),
-                self._size,
-            )
+        if fused is not None:
+            return fused
+        seen_parts = [
+            cache._record_instances_fallback(ids)
+            for cache, ids in zip(caches, normalized_ids)
+        ]
+        seen = torch.cat(seen_parts)
+        new_indices = torch.empty(
+            (batch_size, max_count),
+            dtype=torch.long,
+            device=self._device,
         )
-        if row_tensor is not None:
-            self._ids.index_copy_(0, row_tensor, state_ids)
-            self._valid.index_copy_(0, row_tensor, state_valid)
-            self._write_index.index_copy_(0, row_tensor, state_write_index)
-        return seen, valid_rows
+        seen_indices = torch.empty_like(new_indices)
+        partition_counts = torch.empty(
+            (batch_size, 2),
+            dtype=torch.int32,
+            device=self._device,
+        )
+        for stream, stream_seen in enumerate(seen_parts):
+            stream_new_indices = torch.nonzero(
+                ~stream_seen,
+                as_tuple=False,
+            ).reshape(-1)
+            stream_seen_indices = torch.nonzero(
+                stream_seen,
+                as_tuple=False,
+            ).reshape(-1)
+            new_indices[stream, : len(stream_new_indices)].copy_(stream_new_indices)
+            seen_indices[stream, : len(stream_seen_indices)].copy_(stream_seen_indices)
+            partition_counts[stream, 0] = len(stream_new_indices)
+            partition_counts[stream, 1] = len(stream_seen_indices)
+        return InstanceCacheKernelResult(
+            seen=seen,
+            new_indices=new_indices,
+            seen_indices=seen_indices,
+            partition_counts=partition_counts,
+        )
 
 
 # Native prediction shapes accepted by tracker blocks (object detection,
@@ -766,8 +894,8 @@ class TrackerBlockBase(WorkflowBlock):
         """Classify and split one SIMD cohort with a single cache transaction.
 
         Exact public prediction lengths require Python slice bounds. We export
-        one ``new_counts`` vector after the batched stable partition; numeric
-        detections and tracker IDs themselves remain on their original device.
+        one two-column partition-count tensor after the batched stable partition;
+        numeric detections and tracker IDs remain on their original device.
         """
         if not (len(video_ids) == len(tracked_detections) == len(tracker_ids)):
             raise ValueError("tracker result batches must be aligned")
@@ -807,21 +935,22 @@ class TrackerBlockBase(WorkflowBlock):
                 device=device,
             )
             self._instance_cache_batch_arenas[arena_key] = arena
-        seen, valid = arena.record_instances(caches=caches, tracker_ids=tracker_ids)
-        partition_key = torch.where(
-            valid,
-            seen.to(dtype=torch.long),
-            torch.full_like(seen, 2, dtype=torch.long),
+        cache_result = arena.record_instances(
+            caches=caches,
+            tracker_ids=tracker_ids,
         )
-        stable_order = torch.argsort(partition_key, dim=1, stable=True)
-        new_counts = ((~seen) & valid).sum(dim=1).detach().cpu().tolist()
-        total_counts = [int(ids.numel()) for ids in tracker_ids]
+        partition_counts = cache_result.partition_counts.detach().cpu().tolist()
         results: List[BlockResult] = []
         for stream_index, prediction in enumerate(tracked_detections):
-            new_count = int(new_counts[stream_index])
-            total_count = total_counts[stream_index]
-            new_indices = stable_order[stream_index, :new_count]
-            seen_indices = stable_order[stream_index, new_count:total_count]
+            new_count, seen_count = partition_counts[stream_index]
+            new_indices = cache_result.new_indices[
+                stream_index,
+                : int(new_count),
+            ]
+            seen_indices = cache_result.seen_indices[
+                stream_index,
+                : int(seen_count),
+            ]
             results.append(
                 {
                     OUTPUT_KEY: prediction,

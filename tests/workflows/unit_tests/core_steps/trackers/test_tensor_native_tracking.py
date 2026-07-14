@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections import deque
 from types import SimpleNamespace
 
 import numpy as np
@@ -15,6 +16,9 @@ from inference.core.workflows.core_steps.trackers._base_tensor import (
     _TRACKER_ROW_INDEX_KEY,
     InstanceCache,
     _bbox_component,
+)
+from inference.core.workflows.core_steps.trackers.instance_cache_kernels import (
+    has_triton_instance_cache,
 )
 from inference.core.workflows.core_steps.trackers.bytetrack.v1_tensor import (
     ByteTrackBlockV1,
@@ -64,6 +68,20 @@ def _objects(value: float) -> Detections:
     )
 
 
+def _deque_record(
+    history: deque[int],
+    tracker_ids: list[int],
+) -> list[bool]:
+    """Apply the legacy sequential FIFO contract to a deque reference."""
+    seen = []
+    for tracker_id in tracker_ids:
+        was_seen = tracker_id in history
+        seen.append(was_seen)
+        if not was_seen:
+            history.append(tracker_id)
+    return seen
+
+
 def test_instance_cache_vectorizes_unique_tracker_contract_and_wraparound() -> None:
     """Unique per-frame IDs preserve seen decisions and newest FIFO ring rows."""
     cache = InstanceCache(size=3)
@@ -111,6 +129,136 @@ def test_instance_cache_records_interleaved_new_ids_in_fifo_order() -> None:
     assert cache._ids[:3].tolist() == [13, 11, 12]
     assert cache.record_instances(torch.tensor([13, 14])).tolist() == [True, False]
     assert cache._ids[:3].tolist() == [13, 14, 12]
+
+
+@pytest.mark.parametrize(
+    "frames",
+    [
+        pytest.param(
+            [[10, 11, 12], [10, 13, 10], [12, 14, 13]],
+            id="interleaved-eviction",
+        ),
+        pytest.param(
+            [[1, 1, 2, 2], [3, 1, 3, 4], [2, 4, 2]],
+            id="duplicates",
+        ),
+        pytest.param(
+            [[-1, 0, 1], [-1, 2, 0], [-(2**63), 2**63 - 1, -1]],
+            id="signed-extremes",
+        ),
+        pytest.param(
+            [list(range(20)), [19, 0, 20, 1, 21], list(range(21, -1, -1))],
+            id="multiple-wraps",
+        ),
+    ],
+)
+def test_instance_cache_matches_adversarial_deque_reference(
+    frames: list[list[int]],
+) -> None:
+    """Scalar cache matches exact deque decisions under adversarial ordering."""
+    size = 3
+    cache = InstanceCache(size=size)
+    reference: deque[int] = deque(maxlen=size)
+
+    for frame in frames:
+        actual = cache.record_instances(torch.tensor(frame, dtype=torch.long))
+        expected = _deque_record(reference, frame)
+
+        assert actual.tolist() == expected
+        assert set(cache._ids[cache._valid].tolist()) == set(reference)
+
+
+def test_batch_instance_cache_preserves_interleaved_eviction_order() -> None:
+    """Batch result indices reflect mutations made by earlier rows in a frame."""
+    block = ByteTrackBlockV1()
+
+    def prediction(ids: list[int]) -> Detections:
+        """Build one native prediction carrying the requested tracker IDs."""
+        count = len(ids)
+        return Detections(
+            xyxy=torch.arange(count * 4, dtype=torch.float32).reshape(count, 4),
+            class_id=torch.zeros(count, dtype=torch.long),
+            confidence=torch.ones(count),
+            tracker_id=torch.tensor(ids, dtype=torch.long),
+        )
+
+    initial = prediction([10, 11, 12])
+    block._build_tracker_results_batch(
+        video_ids=["video"],
+        tracked_detections=[initial],
+        tracker_ids=[initial.tracker_id],
+        instances_cache_size=3,
+    )
+    interleaved = prediction([10, 13, 10])
+
+    result = block._build_tracker_results_batch(
+        video_ids=["video"],
+        tracked_detections=[interleaved],
+        tracker_ids=[interleaved.tracker_id],
+        instances_cache_size=3,
+    )[0]
+
+    assert result["new_instances"].tracker_id.tolist() == [13, 10]
+    assert result["already_seen_instances"].tracker_id.tolist() == [10]
+
+
+def test_instance_cache_scalar_batch_scalar_interop() -> None:
+    """Scalar and batch entry points share one persistent FIFO/hash state."""
+    block = ByteTrackBlockV1()
+    cache = InstanceCache(size=3)
+    block._per_video_cache["video"] = cache
+    assert cache.record_instances(torch.tensor([1, 2, 3])).tolist() == [
+        False,
+        False,
+        False,
+    ]
+    prediction = Detections(
+        xyxy=torch.zeros((3, 4)),
+        class_id=torch.zeros(3, dtype=torch.long),
+        confidence=torch.ones(3),
+        tracker_id=torch.tensor([1, 4, 1]),
+    )
+
+    result = block._build_tracker_results_batch(
+        video_ids=["video"],
+        tracked_detections=[prediction],
+        tracker_ids=[prediction.tracker_id],
+        instances_cache_size=3,
+    )[0]
+    final_seen = cache.record_instances(torch.tensor([4, 5]))
+
+    assert result["new_instances"].tracker_id.tolist() == [4, 1]
+    assert result["already_seen_instances"].tracker_id.tolist() == [1]
+    assert final_seen.tolist() == [True, False]
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not has_triton_instance_cache(),
+    reason="CUDA Triton instance cache is unavailable",
+)
+def test_cuda_instance_cache_matches_long_deque_churn() -> None:
+    """Fused CUDA hashing preserves exact deque decisions across long churn."""
+    size = 17
+    cache = InstanceCache(size=size)
+    reference: deque[int] = deque(maxlen=size)
+    generator = torch.Generator().manual_seed(9137)
+
+    for _ in range(100):
+        frame = torch.randint(
+            -(2**20),
+            2**20,
+            (64,),
+            generator=generator,
+            dtype=torch.long,
+        ).tolist()
+        frame[1::7] = frame[::7]
+        expected = _deque_record(reference, frame)
+        actual = cache.record_instances(
+            torch.tensor(frame, dtype=torch.long, device="cuda")
+        )
+
+        assert actual.cpu().tolist() == expected
+        assert set(cache._ids[cache._valid].cpu().tolist()) == set(reference)
 
 
 def test_batch_instance_cache_matches_independent_scalar_caches() -> None:
