@@ -1548,3 +1548,125 @@ def test_workflow_image_data_tensor_from_file_reference_does_not_cache_numpy(
     assert torch.all(tensor[1] == 20)  # G
     assert torch.all(tensor[2] == 30)  # B
     assert np.array_equal(image.numpy_image, numpy_image)
+
+
+def test_workflow_image_data_declare_mutated_requires_materialised_representation() -> (
+    None
+):
+    # given - tensor-born image: numpy never materialised, and vice versa
+    tensor_born = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.zeros((3, 4, 6), dtype=torch.uint8),
+    )
+    numpy_born = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((4, 6, 3), dtype=np.uint8),
+    )
+
+    # when / then - declaring a mutation of a representation that was never
+    # materialised is a caller bug and must raise
+    with pytest.raises(ValueError):
+        tensor_born.declare_numpy_image_mutated()
+    with pytest.raises(ValueError):
+        numpy_born.declare_tensor_image_mutated()
+
+
+def test_workflow_image_data_declare_mutated_cuts_off_original_source(
+    tmp_path,
+) -> None:
+    # given - a file-born image whose numpy got materialised and mutated
+    numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
+    path = str(tmp_path / "source.png")
+    assert cv2.imwrite(path, numpy_image)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        image_reference=path,
+    )
+    buffer = image.numpy_image
+    buffer[0, 0] = (1, 2, 3)
+
+    # when
+    image.declare_numpy_image_mutated()
+
+    # then - the original reference no longer describes the pixels and must be
+    # cut off: serialization falls back to the (mutated) numpy content
+    assert image._image_reference is None
+    serialized = image.to_inference_format()
+    assert serialized["type"] == "numpy_object"
+    assert np.array_equal(serialized["value"][0, 0], np.array([1, 2, 3], np.uint8))
+
+
+def test_workflow_image_data_fetch_then_declare_pattern() -> None:
+    # given - the caller pattern the visualization blocks use: fetch the buffer,
+    # copy or mutate-and-declare depending on copy_image
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.zeros((3, 4, 6), dtype=torch.uint8),
+    )
+
+    # when - copy_image=True leg: mutate a private copy
+    scene = image.numpy_image.copy()
+    scene[0, 0] = (9, 9, 9)
+
+    # then - the image is untouched
+    assert np.array_equal(image.numpy_image[0, 0], np.zeros(3, dtype=np.uint8))
+
+    # when - copy_image=False leg: mutate the live buffer, then declare
+    scene = image.numpy_image
+    scene[0, 0] = (1, 2, 3)  # BGR
+    image.declare_numpy_image_mutated()
+
+    # then - numpy is the sole source of truth; the tensor re-derives mutated
+    assert not image.is_tensor_materialised(), "declare must drop the tensor"
+    assert tuple(int(c) for c in image.tensor_image[:, 0, 0]) == (3, 2, 1)  # RGB
+
+
+def test_workflow_image_data_guards_source_fallback_after_declared_mutation() -> None:
+    # given - a base64-born image whose numpy got materialised, mutated and
+    # declared (original source invalidated), and then - simulating an
+    # internal-consistency bug - the sole-source-of-truth representation is
+    # dropped, so the property fallback chain would reach the source decoders
+    encoded = base64.b64encode(
+        cv2.imencode(".png", np.zeros((4, 6, 3), dtype=np.uint8))[1]
+    ).decode("ascii")
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        base64_image=encoded,
+    )
+    image.numpy_image[0, 0] = (1, 2, 3)
+    image.declare_numpy_image_mutated()
+    image._numpy_image = None  # the invariant-breaking drop
+
+    # when / then - both properties must refuse to decode the stale source and
+    # name the mutation as the cause instead of resurrecting pre-mutation pixels
+    with pytest.raises(ValueError, match="mutation"):
+        _ = image.numpy_image
+    with pytest.raises(ValueError, match="mutation"):
+        _ = image.tensor_image
+
+
+def test_workflow_image_data_base64_rederived_after_mutation_is_valid_source() -> None:
+    # given - a base64-born image, mutated brightly and declared; base64
+    # accessed AFTERWARDS re-encodes from the mutated pixels (a valid value)
+    encoded = base64.b64encode(
+        cv2.imencode(".png", np.zeros((32, 32, 3), dtype=np.uint8))[1]
+    ).decode("ascii")
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        base64_image=encoded,
+    )
+    image.numpy_image[:, :] = (200, 200, 200)
+    image.declare_numpy_image_mutated()
+    rederived = image.base64_image
+    assert rederived != encoded, "base64 must be re-encoded from mutated pixels"
+
+    # when - simulating the degenerate drop of the pixel caches: the re-derived
+    # base64 is now the only channel left
+    image._numpy_image = None
+    image._tensor_image = None
+    recovered = image.numpy_image
+
+    # then - the re-derived base64 decodes (no staleness guard trip) and holds
+    # the POST-mutation content (JPEG re-encode is lossy, hence approximate)
+    assert recovered.mean() > 150, "decoded pixels must reflect the mutation"
+    assert tuple(recovered.shape) == (32, 32, 3)

@@ -8,6 +8,7 @@ module constant (the same technique block_assembler tests use for the env flag)
 so both CI flag directions exercise every case deterministically.
 """
 
+from collections import namedtuple
 from typing import Optional
 from unittest import mock
 from uuid import UUID
@@ -214,9 +215,7 @@ def test_native_detections_to_sv_carries_full_lineage_key_set() -> None:
     assert isinstance(converted.mask, torch.Tensor)
     assert converted.mask.dtype == torch.bool
     assert converted.mask.shape == (2, CROP_H, CROP_W)
-    assert torch.equal(
-        converted.mask, torch.from_numpy(_crop_local_dense_masks())
-    )
+    assert torch.equal(converted.mask, torch.from_numpy(_crop_local_dense_masks()))
 
 
 def test_native_detections_to_sv_output_survives_numpy_root_coordinates_shift() -> None:
@@ -767,6 +766,28 @@ def test_convert_kwargs_empty_batch_passes_through_preserving_type() -> None:
     assert isinstance(converted, Batch)
     assert len(converted) == 0
     assert list(converted.indices) == []
+
+
+def test_namedtuple_is_preserved_across_both_boundary_walkers() -> None:
+    boundary_value_type = namedtuple("BoundaryValue", ["label", "score"])
+    boundary_value = boundary_value_type(label="ok", score=0.75)
+
+    with _boundary_on:
+        legacy_kwargs = convert_kwargs_to_legacy(
+            kwargs={"value": boundary_value},
+            manifest_description=_manifest(inputs={}),
+            block_name="my_block",
+        )
+        native_result = convert_block_result_to_native(
+            result={"value": boundary_value},
+            manifest_description=_manifest_with_outputs(outputs={}),
+            block_name="my_block",
+        )
+
+    assert type(legacy_kwargs["value"]) is boundary_value_type
+    assert legacy_kwargs["value"] == boundary_value
+    assert type(native_result["value"]) is boundary_value_type
+    assert native_result["value"] == boundary_value
 
 
 # --------------------------------------------------------------------------- #

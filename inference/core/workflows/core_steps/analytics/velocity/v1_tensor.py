@@ -1,11 +1,11 @@
 from typing import Dict, List, Optional, Tuple, Union
 
-import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    TensorNativeDetections,
     split_key_point_prediction,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -183,14 +183,30 @@ class VelocityManifest(WorkflowBlockManifest):
         ]
 
 
+class _VideoVelocityState:
+    """Device-resident velocity state for one video.
+
+    Positions and smoothed velocities stay torch tensors on the prediction's
+    device across frames. Row bookkeeping (tracker_id -> row) and absolute
+    timestamps stay on host: unix epochs do not fit float32 (~100 s resolution
+    at 1.7e9) and MPS has no float64 tensors.
+    """
+
+    def __init__(self) -> None:
+        self.rows_by_tracker: Dict[int, int] = {}
+        self.timestamps_by_tracker: Dict[int, float] = {}
+        self.positions: Optional[torch.Tensor] = None  # (K, 2)
+        self.smoothed_velocities: Optional[torch.Tensor] = None  # (K, 2)
+
+    def to_device(self, device: torch.device) -> None:
+        if self.positions is not None and self.positions.device != device:
+            self.positions = self.positions.to(device)
+            self.smoothed_velocities = self.smoothed_velocities.to(device)
+
+
 class VelocityBlockV1(WorkflowBlock):
     def __init__(self):
-        # Store previous positions and timestamps for each tracker_id
-        self._previous_positions: Dict[
-            str, Dict[Union[int, str], Tuple[np.ndarray, float]]
-        ] = {}
-        # Store smoothed velocities for each tracker_id
-        self._smoothed_velocities: Dict[str, Dict[Union[int, str], np.ndarray]] = {}
+        self._states: Dict[str, _VideoVelocityState] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -205,9 +221,8 @@ class VelocityBlockV1(WorkflowBlock):
         smoothing_alpha: float,
         pixels_per_meter: float,
     ) -> BlockResult:
-        # Keypoint predictions arrive as a (KeyPoints, Detections) tuple; velocity
-        # only needs the bbox component. Keep the keypoints to re-wrap the output
-        # (velocity preserves detection order, so the components stay aligned).
+        # The keypoint kind is a (KeyPoints, Detections) tuple; velocity uses the
+        # bbox component and preserves row order, so the components stay aligned.
         key_points, detections = split_key_point_prediction(detections)
         num_detections = int(detections.xyxy.shape[0])
         bboxes_metadata = detections.bboxes_metadata
@@ -238,87 +253,140 @@ class VelocityBlockV1(WorkflowBlock):
             ts_current = image.video_metadata.frame_timestamp.timestamp()
 
         video_id = image.video_metadata.video_identifier
-        previous_positions = self._previous_positions.setdefault(video_id, {})
-        smoothed_velocities = self._smoothed_velocities.setdefault(video_id, {})
+        state = self._states.setdefault(video_id, _VideoVelocityState())
 
-        # Compute current positions (center of bounding boxes)
-        bbox_xyxy = (
-            detections.xyxy.detach().to("cpu").numpy().astype(float)
-        )  # Shape (num_detections, 4)
-        x_centers = (bbox_xyxy[:, 0] + bbox_xyxy[:, 2]) / 2
-        y_centers = (bbox_xyxy[:, 1] + bbox_xyxy[:, 3]) / 2
-        current_positions = np.stack(
-            [x_centers, y_centers], axis=1
-        )  # Shape (num_detections, 2)
-
-        velocities = np.zeros_like(current_positions)  # Shape (num_detections, 2)
-        speeds = np.zeros(num_detections)  # Shape (num_detections,)
-        smoothed_velocities_arr = np.zeros_like(current_positions)
-        smoothed_speeds = np.zeros(num_detections)
-
-        for i, tracker_id in enumerate(tracker_ids):
-            current_position = current_positions[i]
-
-            # Ensure tracker_id is of type int or str
-            tracker_id = int(tracker_id)
-
-            if tracker_id in previous_positions:
-                prev_position, prev_timestamp = previous_positions[tracker_id]
-                delta_time = ts_current - prev_timestamp
-
-                if delta_time > 0:
-                    displacement = current_position - prev_position
-                    velocity = displacement / delta_time  # Pixels per second
-                    speed = np.linalg.norm(
-                        velocity
-                    )  # Speed is the magnitude of velocity vector
-                else:
-                    velocity = np.array([0, 0])
-                    speed = 0.0
-            else:
-                velocity = np.array([0, 0])  # No previous position
-                speed = 0.0
-
-            # Apply exponential moving average for smoothing
-            if tracker_id in smoothed_velocities:
-                prev_smoothed_velocity = smoothed_velocities[tracker_id]
-                smoothed_velocity = (
-                    smoothing_alpha * velocity
-                    + (1 - smoothing_alpha) * prev_smoothed_velocity
-                )
-            else:
-                smoothed_velocity = velocity  # Initialize with current velocity
-
-            smoothed_speed = np.linalg.norm(smoothed_velocity)
-
-            # Store current position and timestamp for the next frame
-            previous_positions[tracker_id] = (current_position, ts_current)
-            smoothed_velocities[tracker_id] = smoothed_velocity
-
-            # Convert velocities and speeds to meters per second if required
-            velocity_m_s = velocity / pixels_per_meter
-            smoothed_velocity_m_s = smoothed_velocity / pixels_per_meter
-            speed_m_s = speed / pixels_per_meter
-            smoothed_speed_m_s = smoothed_speed / pixels_per_meter
-
-            velocities[i] = velocity_m_s
-            speeds[i] = speed_m_s
-            smoothed_velocities_arr[i] = smoothed_velocity_m_s
-            smoothed_speeds[i] = smoothed_speed_m_s
-
-        for i in range(num_detections):
-            bboxes_metadata[i][VELOCITY_KEY_IN_SV_DETECTIONS] = [
-                float(value) for value in velocities[i]
-            ]
-            bboxes_metadata[i][SPEED_KEY_IN_SV_DETECTIONS] = float(speeds[i])
-            bboxes_metadata[i][SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS] = [
-                float(value) for value in smoothed_velocities_arr[i]
-            ]
-            bboxes_metadata[i][SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS] = float(
-                smoothed_speeds[i]
+        if num_detections > 0:
+            self._compute_and_attach_velocities(
+                detections=detections,
+                bboxes_metadata=bboxes_metadata,
+                tracker_ids=[int(tracker_id) for tracker_id in tracker_ids],
+                state=state,
+                ts_current=float(ts_current),
+                smoothing_alpha=float(smoothing_alpha),
+                pixels_per_meter=float(pixels_per_meter),
             )
         detections.bboxes_metadata = bboxes_metadata
 
         if key_points is not None:
             return {OUTPUT_KEY: (key_points, detections)}
         return {OUTPUT_KEY: detections}
+
+    @staticmethod
+    def _compute_and_attach_velocities(
+        detections: TensorNativeDetections,
+        bboxes_metadata: List[dict],
+        tracker_ids: List[int],
+        state: _VideoVelocityState,
+        ts_current: float,
+        smoothing_alpha: float,
+        pixels_per_meter: float,
+    ) -> None:
+        """Vectorised on-device velocity update.
+
+        Geometry (centers, displacement, EMA smoothing, unit conversion) runs
+        as torch ops on the prediction's device. The only device->host transfer
+        is the single batched ``.cpu()`` of the (N, 6) result block: the output
+        contract stores velocities as python floats in ``bboxes_metadata``.
+        """
+        xyxy = detections.xyxy.detach()
+        device = xyxy.device
+        state.to_device(device)
+        centers = (
+            xyxy[:, :2].to(torch.float32) + xyxy[:, 2:].to(torch.float32)
+        ) * 0.5  # (N, 2)
+
+        # Host-side bookkeeping: tracker ids and timestamps are host data.
+        known_flags = [
+            tracker_id in state.rows_by_tracker for tracker_id in tracker_ids
+        ]
+        previous_rows = [
+            state.rows_by_tracker.get(tracker_id, 0) for tracker_id in tracker_ids
+        ]
+        time_deltas = [
+            (ts_current - state.timestamps_by_tracker[tracker_id] if known else 0.0)
+            for tracker_id, known in zip(tracker_ids, known_flags)
+        ]
+
+        if state.positions is not None and any(known_flags):
+            row_index = torch.as_tensor(previous_rows, dtype=torch.long, device=device)
+            previous_positions = state.positions[row_index]  # (N, 2)
+            previous_smoothed = state.smoothed_velocities[row_index]  # (N, 2)
+        else:
+            previous_positions = centers
+            previous_smoothed = torch.zeros_like(centers)
+
+        known = torch.as_tensor(known_flags, dtype=torch.bool, device=device)
+        deltas = torch.as_tensor(time_deltas, dtype=torch.float32, device=device)
+        has_movement_window = known & (deltas > 0)
+        safe_deltas = torch.where(deltas > 0, deltas, torch.ones_like(deltas))
+        velocity = torch.where(
+            has_movement_window.unsqueeze(1),
+            (centers - previous_positions) / safe_deltas.unsqueeze(1),
+            torch.zeros_like(centers),
+        )  # pixels per second, (N, 2)
+        speed = torch.linalg.vector_norm(velocity, dim=1)  # (N,)
+        # EMA smoothing: known trackers blend with their previous smoothed
+        # velocity; new trackers initialise with the current velocity. State
+        # keeps unconverted pixels/s values; unit conversion applies to outputs only.
+        smoothed_velocity = torch.where(
+            known.unsqueeze(1),
+            smoothing_alpha * velocity + (1 - smoothing_alpha) * previous_smoothed,
+            velocity,
+        )
+        smoothed_speed = torch.linalg.vector_norm(smoothed_velocity, dim=1)
+
+        # The single batched device->host hop.
+        results = (
+            torch.cat(
+                [
+                    velocity,
+                    speed.unsqueeze(1),
+                    smoothed_velocity,
+                    smoothed_speed.unsqueeze(1),
+                ],
+                dim=1,
+            )
+            / pixels_per_meter
+        )
+        results_host = results.cpu().tolist()  # (N, 6)
+        for box_metadata, row in zip(bboxes_metadata, results_host):
+            box_metadata[VELOCITY_KEY_IN_SV_DETECTIONS] = [row[0], row[1]]
+            box_metadata[SPEED_KEY_IN_SV_DETECTIONS] = row[2]
+            box_metadata[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS] = [row[3], row[4]]
+            box_metadata[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS] = row[5]
+
+        # State update stays on device. Trackers absent from this frame keep
+        # their previous position/timestamp/smoothing (they may reappear).
+        current_set = set(tracker_ids)
+        survivors = [
+            (tracker_id, row)
+            for tracker_id, row in state.rows_by_tracker.items()
+            if tracker_id not in current_set
+        ]
+        if survivors and state.positions is not None:
+            survivor_index = torch.as_tensor(
+                [row for _, row in survivors], dtype=torch.long, device=device
+            )
+            new_positions = torch.cat([state.positions[survivor_index], centers], dim=0)
+            new_smoothed = torch.cat(
+                [state.smoothed_velocities[survivor_index], smoothed_velocity], dim=0
+            )
+        else:
+            survivors = []
+            new_positions = centers
+            new_smoothed = smoothed_velocity
+        state.positions = new_positions
+        state.smoothed_velocities = new_smoothed
+        rows_by_tracker = {
+            tracker_id: row for row, (tracker_id, _) in enumerate(survivors)
+        }
+        timestamps_by_tracker = {
+            tracker_id: state.timestamps_by_tracker[tracker_id]
+            for tracker_id, _ in survivors
+        }
+        base = len(survivors)
+        for offset, tracker_id in enumerate(tracker_ids):
+            rows_by_tracker[tracker_id] = base + offset
+            timestamps_by_tracker[tracker_id] = ts_current
+        state.rows_by_tracker = rows_by_tracker
+        state.timestamps_by_tracker = timestamps_by_tracker

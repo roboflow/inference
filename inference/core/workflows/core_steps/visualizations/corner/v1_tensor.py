@@ -170,8 +170,13 @@ class CornerVisualizationBlockV1(ColorableVisualizationBlock):
             thickness,
             corner_length,
         )
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             detections=predictions,
         )
         return {

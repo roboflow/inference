@@ -2,9 +2,9 @@ import datetime
 
 import numpy as np
 import pytest
-import supervision as sv
 import torch
 
+from inference.core.workflows.core_steps.analytics._zone_geometry import LeanPolygonZone
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1_tensor import (
     TimeInZoneBlockV1,
 )
@@ -59,26 +59,21 @@ def _detections() -> Detections:
     "block_type",
     [TimeInZoneBlockV1, TimeInZoneBlockV2, TimeInZoneBlockV3],
 )
-def test_tensor_time_in_zone_passes_tensors_to_polygon_trigger(
+def test_tensor_time_in_zone_uses_float32_host_geometry(
     monkeypatch, block_type
 ) -> None:
     detections = _detections()
     metadata = _video_metadata()
     calls = []
 
-    def trigger(_zone, zone_detections):
-        assert isinstance(zone_detections.xyxy, torch.Tensor)
-        assert isinstance(zone_detections.tracker_id, torch.Tensor)
-        assert zone_detections.xyxy.data_ptr() == detections.xyxy.data_ptr()
-        assert zone_detections.xyxy.device == detections.xyxy.device
-        assert zone_detections.tracker_id.device == detections.xyxy.device
-        assert torch.equal(zone_detections.tracker_id, torch.tensor([11, 22]))
-        calls.append(zone_detections)
-        return torch.tensor(
-            [True, False], dtype=torch.bool, device=zone_detections.xyxy.device
-        )
+    def trigger(_zone, xyxy_host):
+        assert isinstance(xyxy_host, np.ndarray)
+        assert xyxy_host.dtype == np.float32
+        np.testing.assert_array_equal(xyxy_host, detections.xyxy.numpy())
+        calls.append(xyxy_host)
+        return np.array([True, False], dtype=bool)
 
-    monkeypatch.setattr(sv.PolygonZone, "trigger", trigger)
+    monkeypatch.setattr(LeanPolygonZone, "trigger", trigger)
     kwargs = {
         "image": _workflow_image(metadata),
         "detections": detections,
@@ -94,27 +89,28 @@ def test_tensor_time_in_zone_passes_tensors_to_polygon_trigger(
 
     assert len(calls) == 1
     assert isinstance(result.xyxy, torch.Tensor)
+    assert result.xyxy.device == detections.xyxy.device
     assert result.xyxy.tolist() == [[1.0, 1.0, 5.0, 5.0]]
     assert result.bboxes_metadata[0]["time_in_zone"] == 0.0
 
 
-def test_tensor_time_in_zone_v3_reduces_multiple_zone_triggers_with_torch(
+def test_tensor_time_in_zone_v3_reduces_multiple_zone_triggers(
     monkeypatch,
 ) -> None:
     detections = _detections()
     metadata = _video_metadata()
     trigger_results = iter(
         [
-            torch.tensor([True, False], dtype=torch.bool),
-            torch.tensor([False, True], dtype=torch.bool),
+            np.array([True, False], dtype=bool),
+            np.array([False, True], dtype=bool),
         ]
     )
 
-    def trigger(_zone, zone_detections):
-        result = next(trigger_results)
-        return result.to(zone_detections.xyxy.device)
+    def trigger(_zone, xyxy_host):
+        assert isinstance(xyxy_host, np.ndarray)
+        return next(trigger_results)
 
-    monkeypatch.setattr(sv.PolygonZone, "trigger", trigger)
+    monkeypatch.setattr(LeanPolygonZone, "trigger", trigger)
     result = TimeInZoneBlockV3().run(
         image=_workflow_image(metadata),
         detections=detections,

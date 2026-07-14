@@ -209,9 +209,7 @@ def test_stabilize_detections():
 
 
 def test_stabilize_detections_tensor_native_accepts_empty_untracked_detections():
-    # Mirrors the numpy behavior change from PR #2614: empty detections without
-    # tracker ids must not raise - they flow through (gap-fill may still emit
-    # cached trackers; a fresh block has none, so the output is empty).
+    # fresh block has no cached trackers to gap-fill - empty input yields empty output
     pytest.importorskip("torch")
     pytest.importorskip("inference_models")
     import torch

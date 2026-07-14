@@ -3,9 +3,7 @@ used under ENABLE_TENSOR_DATA_REPRESENTATION).
 
 These consolidate logic that otherwise gets copy-pasted into every tensor-native
 block sibling: selecting a subset of detections by boolean mask or index list,
-and normalising the keypoint-detection input shape. Kept here (rather than on the
-inference_models dataclasses) to avoid bloating those types with workflow-specific
-concerns.
+and normalising the keypoint-detection input shape.
 
 Supported prediction shapes:
 - ``inference_models.Detections``                (object detection)
@@ -60,36 +58,9 @@ TensorNativePrediction = Union[
 TensorNativeIndices = Union[Sequence[int], torch.Tensor]
 
 
-def _prepare_index_selection(
-    indices: TensorNativeIndices,
-    source: torch.Tensor,
-) -> Tuple[torch.Tensor, Optional[List[int]], bool]:
-    """Build an index tensor on the source device without a host round trip."""
-    if isinstance(indices, torch.Tensor):
-        index_tensor = indices.to(device=source.device, dtype=torch.long).reshape(-1)
-        return index_tensor, None, False
-
-    python_indices = list(indices)
-    index_tensor = torch.as_tensor(
-        python_indices,
-        dtype=torch.long,
-        device=source.device,
-    )
-    is_identity = python_indices == list(range(int(source.shape[0])))
-    return index_tensor, python_indices, is_identity
-
-
-def _materialize_python_indices(
-    index_tensor: torch.Tensor,
-    python_indices: Optional[List[int]],
+def mask_to_indices(
+    mask: Union[np.ndarray, Sequence[bool], torch.Tensor],
 ) -> List[int]:
-    """Materialize indices only when indexing ragged Python-owned fields."""
-    if python_indices is not None:
-        return python_indices
-    return index_tensor.detach().to("cpu").tolist()
-
-
-def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
     """Convert a boolean mask (numpy array, list, or torch tensor) into the list
     of surviving row indices, in ascending order."""
     if isinstance(mask, torch.Tensor):
@@ -97,121 +68,155 @@ def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
     return np.nonzero(np.asarray(mask))[0].tolist()
 
 
-def take_detections_by_indices(
+class _RowSelection:
+    """Normalised row selection shared by the ``take_*`` helpers.
+
+    Tensor fields are selected with a torch selector (a boolean mask stays a
+    boolean mask - it is moved to the field's device ONCE and reused, so a
+    device-resident mask never round-trips through a python list). Python-list
+    fields (``bboxes_metadata`` / RLE masks / ``key_points_metadata``) need
+    concrete row positions, which are pulled to host lazily and cached - a
+    selection that only touches tensor fields never pays the transfer.
+    """
+
+    def __init__(
+        self,
+        selector: Optional[torch.Tensor],
+        host_indices: Optional[List[int]],
+        is_identity: bool,
+        total_rows: int,
+    ) -> None:
+        self._selector = selector
+        self._host_indices = host_indices
+        self.is_identity = is_identity
+        self._total_rows = total_rows
+
+    @classmethod
+    def from_indices(
+        cls, indices: TensorNativeIndices, total_rows: int
+    ) -> "_RowSelection":
+        if isinstance(indices, torch.Tensor):
+            selector = indices.detach().to(dtype=torch.long).reshape(-1)
+            return cls(selector, None, False, total_rows)
+        host_indices = [int(index) for index in indices]
+        is_identity = host_indices == list(range(total_rows))
+        selector = (
+            None if is_identity else torch.as_tensor(host_indices, dtype=torch.long)
+        )
+        return cls(selector, host_indices, is_identity, total_rows)
+
+    @classmethod
+    def from_mask(
+        cls,
+        mask: Union[np.ndarray, Sequence[bool], torch.Tensor],
+        total_rows: int,
+    ) -> "_RowSelection":
+        if not isinstance(mask, torch.Tensor) or mask.numel() != total_rows:
+            # Host-born masks (and the legacy mismatched-length edge) keep the
+            # exact index-list semantics of the old implementation.
+            return cls.from_indices(mask_to_indices(mask), total_rows)
+        mask = mask.detach().to(dtype=torch.bool).reshape(-1)
+        if bool(mask.all()):
+            return cls(None, None, True, total_rows)
+        return cls(mask, None, False, total_rows)
+
+    def select_tensor(self, field: torch.Tensor) -> torch.Tensor:
+        if self.is_identity:
+            return field
+        assert self._selector is not None
+        if self._selector.device != field.device:
+            # Move once, reuse for every subsequent field of this prediction.
+            self._selector = self._selector.to(field.device)
+        return field[self._selector]
+
+    def host_indices(self) -> List[int]:
+        if self._host_indices is None:
+            if self.is_identity:
+                self._host_indices = list(range(self._total_rows))
+            else:
+                assert self._selector is not None
+                # The single (lazy) device->host transfer of this selection.
+                if self._selector.dtype == torch.bool:
+                    self._host_indices = (
+                        torch.nonzero(self._selector, as_tuple=False)
+                        .reshape(-1)
+                        .cpu()
+                        .tolist()
+                    )
+                else:
+                    self._host_indices = self._selector.cpu().tolist()
+        return self._host_indices
+
+
+def _take_detections(
     detections: TensorNativeDetections,
-    indices: TensorNativeIndices,
+    selection: _RowSelection,
 ) -> TensorNativeDetections:
-    """Select detection rows with Python or device-native tensor indices.
+    """Shared gather body for ``Detections`` / ``InstanceDetections``.
 
     Per-detection state (``bboxes_metadata``) and masks (dense torch or RLE) are
     carried over for the surviving rows; ``image_metadata`` is shared as-is.
-
     The surviving ``bboxes_metadata`` dicts are COPIED (not shared by reference)
     so a downstream block that mutates a selected box's metadata (e.g. assigns a
-    ``tracker_id``) cannot leak the mutation back into the source prediction. The
-    Tensor indices remain on the source device. They are materialized as Python
-    integers only when ragged metadata or RLE masks require object indexing. An
-    identity selection expressed as a Python sequence skips the gather entirely.
+    ``tracker_id``) cannot leak the mutation back into the source prediction.
+    An identity selection skips the tensor gathers entirely.
     """
-    index_tensor, python_indices, is_identity = _prepare_index_selection(
-        indices=indices,
-        source=detections.xyxy,
-    )
     bboxes_metadata = None
     if detections.bboxes_metadata is not None:
-        python_indices = _materialize_python_indices(
-            index_tensor=index_tensor,
-            python_indices=python_indices,
-        )
-        bboxes_metadata = [dict(detections.bboxes_metadata[i]) for i in python_indices]
+        bboxes_metadata = [
+            dict(detections.bboxes_metadata[i]) for i in selection.host_indices()
+        ]
     if isinstance(detections, InstanceDetections):
         mask_field = detections.mask
         if isinstance(mask_field, InstancesRLEMasks):
-            python_indices = _materialize_python_indices(
-                index_tensor=index_tensor,
-                python_indices=python_indices,
-            )
             new_mask: Union[torch.Tensor, InstancesRLEMasks] = InstancesRLEMasks(
                 image_size=mask_field.image_size,
-                masks=[mask_field.masks[i] for i in python_indices],
+                masks=[mask_field.masks[i] for i in selection.host_indices()],
             )
-        elif is_identity:
-            new_mask = mask_field
         else:
-            new_mask = mask_field[index_tensor]
+            new_mask = selection.select_tensor(mask_field)
         return InstanceDetections(
-            xyxy=detections.xyxy if is_identity else detections.xyxy[index_tensor],
-            class_id=(
-                detections.class_id
-                if is_identity
-                else detections.class_id[index_tensor]
-            ),
-            confidence=(
-                detections.confidence
-                if is_identity
-                else detections.confidence[index_tensor]
-            ),
+            xyxy=selection.select_tensor(detections.xyxy),
+            class_id=selection.select_tensor(detections.class_id),
+            confidence=selection.select_tensor(detections.confidence),
             mask=new_mask,
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
     return Detections(
-        xyxy=detections.xyxy if is_identity else detections.xyxy[index_tensor],
-        class_id=(
-            detections.class_id if is_identity else detections.class_id[index_tensor]
-        ),
-        confidence=(
-            detections.confidence
-            if is_identity
-            else detections.confidence[index_tensor]
-        ),
+        xyxy=selection.select_tensor(detections.xyxy),
+        class_id=selection.select_tensor(detections.class_id),
+        confidence=selection.select_tensor(detections.confidence),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
     )
 
 
-def take_key_points_by_indices(
+def _take_key_points(
     key_points: KeyPoints,
-    indices: TensorNativeIndices,
+    selection: _RowSelection,
 ) -> KeyPoints:
-    """Select key-point instances with Python or device-native tensor indices.
+    """Shared gather body for ``KeyPoints`` (instance dimension).
 
     The surviving ``key_points_metadata`` dicts are COPIED (not shared by
-    reference) so downstream mutation cannot leak back into the source. Tensor
-    indices remain on the source device unless ragged metadata requires Python
-    object indexing. Python identity selections skip the gather entirely.
-    """
-    index_tensor, python_indices, is_identity = _prepare_index_selection(
-        indices=indices,
-        source=key_points.xy,
-    )
+    reference) so downstream mutation cannot leak back into the source; the
+    auxiliary per-instance tensors (populated by RF-DETR) are sliced in
+    lockstep so lossless selections stay lossless."""
     key_points_metadata = None
     if key_points.key_points_metadata is not None:
-        python_indices = _materialize_python_indices(
-            index_tensor=index_tensor,
-            python_indices=python_indices,
-        )
         key_points_metadata = [
-            dict(key_points.key_points_metadata[i]) for i in python_indices
+            dict(key_points.key_points_metadata[i]) for i in selection.host_indices()
         ]
-    # Auxiliary per-instance tensors (populated by RF-DETR) are sliced in
-    # lockstep so lossless selections stay lossless.
     covariance = key_points.covariance
-    if covariance is not None and not is_identity:
-        covariance = covariance[index_tensor]
+    if covariance is not None:
+        covariance = selection.select_tensor(covariance)
     detection_confidence = key_points.detection_confidence
-    if detection_confidence is not None and not is_identity:
-        detection_confidence = detection_confidence[index_tensor]
+    if detection_confidence is not None:
+        detection_confidence = selection.select_tensor(detection_confidence)
     return KeyPoints(
-        xy=key_points.xy if is_identity else key_points.xy[index_tensor],
-        class_id=(
-            key_points.class_id if is_identity else key_points.class_id[index_tensor]
-        ),
-        confidence=(
-            key_points.confidence
-            if is_identity
-            else key_points.confidence[index_tensor]
-        ),
+        xy=selection.select_tensor(key_points.xy),
+        class_id=selection.select_tensor(key_points.class_id),
+        confidence=selection.select_tensor(key_points.confidence),
         image_metadata=key_points.image_metadata,
         key_points_metadata=key_points_metadata,
         covariance=covariance,
@@ -219,35 +224,75 @@ def take_key_points_by_indices(
     )
 
 
+def take_detections_by_indices(
+    detections: TensorNativeDetections,
+    indices: TensorNativeIndices,
+) -> TensorNativeDetections:
+    """Select detection rows with Python or device-resident tensor indices."""
+    selection = _RowSelection.from_indices(indices, int(detections.xyxy.shape[0]))
+    return _take_detections(detections, selection)
+
+
+def take_key_points_by_indices(
+    key_points: KeyPoints,
+    indices: TensorNativeIndices,
+) -> KeyPoints:
+    """Select key-point instances with Python or device-resident tensor indices."""
+    selection = _RowSelection.from_indices(indices, int(key_points.xy.shape[0]))
+    return _take_key_points(key_points, selection)
+
+
+def _prediction_row_count(prediction: TensorNativePrediction) -> int:
+    if isinstance(prediction, tuple):
+        key_points, _ = prediction
+        return int(key_points.xy.shape[0])
+    if isinstance(prediction, KeyPoints):
+        return int(prediction.xy.shape[0])
+    return int(prediction.xyxy.shape[0])
+
+
+def _take_prediction(
+    prediction: TensorNativePrediction,
+    selection: _RowSelection,
+) -> TensorNativePrediction:
+    if isinstance(prediction, tuple):
+        key_points, detections = prediction
+        sliced_key_points = _take_key_points(key_points, selection)
+        sliced_detections = (
+            _take_detections(detections, selection) if detections is not None else None
+        )
+        return sliced_key_points, sliced_detections
+    if isinstance(prediction, KeyPoints):
+        return _take_key_points(prediction, selection)
+    return _take_detections(prediction, selection)
+
+
 def take_prediction_by_indices(
     prediction: TensorNativePrediction,
     indices: TensorNativeIndices,
 ) -> TensorNativePrediction:
-    """Select prediction rows with Python or device-native tensor indices.
+    """Select prediction rows with Python or device-resident tensor indices.
 
-    For the keypoint-detection tuple, both the ``KeyPoints`` and bbox
-    ``Detections`` components are sliced consistently.
+    The prediction shape is preserved, and tuple keypoints and detections are
+    sliced by one shared selection.
     """
-    if isinstance(prediction, tuple):
-        key_points, detections = prediction
-        sliced_key_points = take_key_points_by_indices(key_points, indices)
-        sliced_detections = (
-            take_detections_by_indices(detections, indices)
-            if detections is not None
-            else None
-        )
-        return sliced_key_points, sliced_detections
-    if isinstance(prediction, KeyPoints):
-        return take_key_points_by_indices(prediction, indices)
-    return take_detections_by_indices(prediction, indices)
+    selection = _RowSelection.from_indices(indices, _prediction_row_count(prediction))
+    return _take_prediction(prediction, selection)
 
 
 def take_prediction_by_mask(
     prediction: TensorNativePrediction,
-    mask: Union[np.ndarray, Sequence[bool]],
+    mask: Union[np.ndarray, Sequence[bool], torch.Tensor],
 ) -> TensorNativePrediction:
-    """Select a subset of any tensor-native prediction by boolean mask."""
-    return take_prediction_by_indices(prediction, mask_to_indices(mask))
+    """Select a subset of any tensor-native prediction by boolean mask.
+
+    A torch mask is used AS the selector: tensor fields are boolean-indexed on
+    their own device with no host round trip; the row positions only reach the
+    host (once, lazily) when a python-list field of the prediction needs them.
+    Non-torch masks (and torch masks whose length does not match the
+    prediction) keep the legacy index-list semantics."""
+    selection = _RowSelection.from_mask(mask, _prediction_row_count(prediction))
+    return _take_prediction(prediction, selection)
 
 
 def split_key_point_prediction(
@@ -610,10 +655,8 @@ def build_native_image_metadata(
 
     Holds the ``class_id -> name`` map (required by the tensor-native serialiser),
     the image dimensions, and the parent/root lineage needed for crop-aware
-    coordinate recovery downstream. Mirrors the convention in
-    ``formatters/vlm_as_detector/v1_tensor.py``, but with a parametrised
-    ``prediction_type``. The image shape is read without forcing a device->host
-    materialization (so tensor-only inputs stay on device).
+    coordinate recovery downstream. The image shape is read without forcing a
+    device->host materialization (so tensor-only inputs stay on device).
     """
     height, width = image._read_shape_without_materialization()
     parent = image.parent_metadata
@@ -829,9 +872,6 @@ def embed_rle_masks_in_larger_canvas(
     everything outside the slice is zero. COCO RLE here is column-major (fortran), matching
     ``torch_mask_to_coco_rle``. The big canvas is never densified -- only the small slice is
     decoded to dense and run lengths are emitted directly onto the canvas.
-
-    Lives on the workflows side (rather than ``inference_models``) so the SAHI stitch block
-    introduces no new dependency on ``inference_models`` internals.
     """
     h, w = masks.image_size
     x0, y0 = offset_xy
@@ -884,10 +924,8 @@ def build_native_key_points(
     ragged per-instance keypoint counts are zero-padded to a uniform ``K`` with
     confidence ``0.0`` in the padding rows. ``class_id`` is the per-instance
     *object* class id (one per skeleton), matching the bbox ``Detections.class_id``.
-
-    Extracted (verbatim) from ``fusion/detections_list_rollup/v1_tensor.py`` so the
-    dynamic-block representation boundary can rebuild the ``(KeyPoints, Detections)``
-    tuple the visualizer siblings require.
+    Used by the rollup block and the dynamic-block representation boundary to
+    rebuild the ``(KeyPoints, Detections)`` tuple the visualizer siblings require.
     """
     number_of_instances = len(object_class_ids)
     normalised_xy = [list(xy) if xy else [] for xy in per_instance_xy]

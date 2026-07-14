@@ -1,21 +1,8 @@
-"""Tensor-native sibling of `roboflow_core/florence_2@v1`.
+"""Tensor-native `roboflow_core/florence_2@v1` block.
 
-SCRATCH — first pass for review. Florence-2's *outputs* are text/dict/list
-(raw_output / parsed_output / classes), NOT prediction kinds, so this block does
-not PRODUCE tensor-native predictions. The only tensor-native surface is the
-`grounding_detection` INPUT, which under ENABLE_TENSOR_DATA_REPRESENTATION arrives
-as inference_models native predictions instead of `sv.Detections`:
-
-    - object detection            -> inference_models.Detections
-    - instance segmentation       -> inference_models.InstanceDetections
-    - keypoint detection          -> Tuple[KeyPoints, Optional[Detections]]   (dual rep)
-    - static box (unchanged)      -> List[int] | List[float]
-
-Manifest, task tables and the loc-encoding maths are identical to v1 and imported
-verbatim. Local inference now routes through the inference_models adapter
-(`run_tensor_native_inference`) instead of LMMInferenceRequest; remote inference is
-unchanged from v1 (the model output is text either way) save for tensor-native
-grounding-prompt preparation.
+Florence-2 outputs (`raw_output` / `parsed_output` / `classes`) are text/dict/list,
+not prediction kinds; the only tensor-native surface is the `grounding_detection`
+input, which arrives in the `TensorNativeGrounding` shapes.
 """
 
 import json
@@ -33,8 +20,6 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
 )
-
-# Unchanged from v1 — verbatim manifest, literals and pure loc-encoding maths.
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     TASK_TYPE_TO_FLORENCE_TASK,
     TASKS_REQUIRING_DETECTION_GROUNDING,
@@ -154,9 +139,7 @@ class Florence2BlockV1(WorkflowBlock):
             else:
                 final_prompt = florence_task + (single_prompt or "")
 
-            # Local exec goes through the inference_models adapter (HWC RGB tensor).
-            # Adapter derives the Florence task from the prompt string and returns
-            # the post-processed generation, one entry per image.
+            # The adapter derives the Florence task from the prompt string.
             if image.is_tensor_materialised():
                 model_image, image_color_format = image.tensor_image, "rgb"
             else:
@@ -332,7 +315,7 @@ def _select_box(detections, mode: GroundingSelectionMode) -> List[float]:
     if mode == "first":
         index = 0
     elif mode == "last":
-        index = len(detections) - 1  # FIX vs v1: 'last' returned xyxy[0] there
+        index = len(detections) - 1
     elif mode in ("biggest", "smallest"):
         area = (xyxy[:, 2] - xyxy[:, 0]) * (
             xyxy[:, 3] - xyxy[:, 1]

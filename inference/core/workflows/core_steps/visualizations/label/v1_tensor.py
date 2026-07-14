@@ -250,8 +250,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         text_padding: Optional[int],
         border_radius: Optional[int],
     ) -> BlockResult:
-        # The label annotator never reads `.mask`, so skip mask materialisation
-        # (avoids the device->host mask transfer/decode for label-only viz).
+        # The label annotator never reads `.mask`.
         predictions = to_supervision_for_annotation(
             predictions, materialise_masks=False
         )
@@ -336,8 +335,13 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                 labels = [str(d) if d else "" for d in predictions[text]]
             except Exception:
                 raise ValueError(f"Invalid text type: {text}")
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             detections=predictions,
             labels=labels,
         )

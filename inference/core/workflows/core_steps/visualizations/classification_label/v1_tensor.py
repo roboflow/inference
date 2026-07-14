@@ -340,8 +340,13 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
                 tracker_id=np.array([0 for _ in predictions_to_use]),
             )
 
+            scene = image.numpy_image
+            if copy_image:
+                scene = scene.copy()
+            else:
+                image.declare_numpy_image_mutated()
             annotated_image = annotator.annotate(
-                scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+                scene=scene,
                 detections=pseudo_detections,
                 labels=labels,
             )
@@ -364,14 +369,7 @@ def to_legacy_classification_prediction(
     """Materialise a tensor-native classification prediction into the legacy
     ``dict`` shape the visualisation layout helpers consume.
 
-    This is the single, sanctioned native -> dict conversion for this block: the
-    visualiser output is an annotated image (never a native prediction), the
-    ``sv.LabelAnnotator`` is fed a ``pseudo_detections`` built from per-class
-    ``class_id`` / ``confidence`` / ``class`` fields (not from the prediction
-    object), and every layout helper below reads the dict keys the numpy block
-    produced. So the rest of ``run`` (and all module helpers) stay verbatim.
-
-    Reconstructed shapes mirror the numpy classification blocks:
+    Reconstructed shapes:
 
     * single-label (``ClassificationPrediction``) ->
       ``{"image": {"width", "height"}, "predictions": [{"class", "class_id",

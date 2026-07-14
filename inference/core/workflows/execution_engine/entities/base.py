@@ -282,15 +282,19 @@ class WorkflowImageData:
 
     Mutation contract: representations may be cached simultaneously (fan-out
     readers alternate between them for free) and are exposed as the raw mutable
-    buffers - legacy blocks mutate ``numpy_image`` in place by design (e.g.
-    visualizations with ``copy_image=False``), and the class does not police
-    that: blind in-place mutation has never been safe here and clients know the
-    limitation. A client that mutates a representation in place MUST declare it
-    via ``declare_numpy_image_mutated()`` / ``declare_tensor_image_mutated()``,
-    which marks the derived sibling caches (tensor/base64 or numpy/base64) as
-    stale and removes them, so later readers re-derive from the mutated pixels.
-    Undeclared in-place mutation leaves sibling caches stale - the same caveat
-    the numpy + base64 pair has always had."""
+    buffers - legacy blocks mutate ``numpy_image`` in place (e.g. visualizations
+    with ``copy_image=False``) and the class does not police that. A client
+    that mutates a representation in place MUST fetch the buffer via the
+    property, mutate it, and then declare the mutation via
+    ``declare_numpy_image_mutated()`` / ``declare_tensor_image_mutated()``.
+    Declaring makes the mutated representation the SOLE source of truth: the
+    derived sibling caches are removed so later readers re-derive from the
+    mutated pixels, and the original source (base64 string / file / URL
+    reference) is cut off as well - it no longer describes the pixels, so
+    serialization must never hand it out. A ``base64_image`` access AFTER the
+    declare re-encodes from the mutated pixels - that re-derived value is
+    valid and cached again. Undeclared in-place mutation leaves sibling caches
+    stale."""
 
     def __init__(
         self,
@@ -324,6 +328,11 @@ class WorkflowImageData:
             else None
         )
         self._video_metadata = video_metadata
+        # Flipped by declare_*_image_mutated(): once an in-place mutation is
+        # declared, the original base64/reference sources no longer describe
+        # the pixels and must never be decoded again (see the guard in the
+        # image properties).
+        self._sources_invalidated_by_mutation = False
 
     @classmethod
     def copy_and_replace(
@@ -548,8 +557,13 @@ class WorkflowImageData:
                 self._numpy_image = hwc_rgb[:, :, ::-1].copy()
             return self._numpy_image
         if self._base64_image:
+            # Post-mutation this can only be a RE-DERIVED base64 (the declare
+            # nulls the original and base64_image re-encodes from the mutated
+            # pixels), so decoding it is always valid - the staleness guard
+            # only covers the reference branch below.
             self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
             return self._numpy_image
+        self._ensure_original_sources_usable()
         if self._image_reference.startswith(
             "http://"
         ) or self._image_reference.startswith("https://"):
@@ -580,7 +594,6 @@ class WorkflowImageData:
             # source decodes DIRECTLY into a CHW RGB tensor - no numpy hop and
             # nothing cached besides the tensor itself.
             chw = self._decode_source_to_tensor()
-        # Allocated on the globally configured WORKFLOWS_IMAGE_TENSOR_DEVICE.
         self._tensor_image = chw.contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
         return self._tensor_image
 
@@ -593,7 +606,6 @@ class WorkflowImageData:
         files) does. URLs are the one exception: their bytes come through the
         SSRF-guarded numpy loader today, so they keep a single numpy hop until a
         bytes-level guarded fetcher exists."""
-
         if self._base64_image:
             decoded_bytes = base64.b64decode(self._base64_image)
             payload = torch.frombuffer(bytearray(decoded_bytes), dtype=torch.uint8)
@@ -604,6 +616,7 @@ class WorkflowImageData:
                     device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
                 )
             return decode_image(payload, mode=ImageReadMode.RGB)
+        self._ensure_original_sources_usable()
         if self._image_reference.startswith(
             "http://"
         ) or self._image_reference.startswith("https://"):
@@ -615,21 +628,67 @@ class WorkflowImageData:
             apply_exif_orientation=True,
         )
 
+    def _ensure_original_sources_usable(self) -> None:
+        """Guard for the properties' reference-decoding fallback: once an
+        in-place mutation was declared, the original file/URL reference no
+        longer describes the pixels, so loading from it would silently
+        resurrect the pre-mutation image. A cached base64 is deliberately NOT
+        covered: the declare nulls the original one, so any base64 present
+        afterwards was re-derived from the mutated pixels by ``base64_image``
+        and is valid. Reaching this with the flag set means every valid
+        channel (mutated representation, re-derived base64) is gone - an
+        internal-consistency bug worth failing loudly on, with the cause
+        named."""
+        if self._sources_invalidated_by_mutation:
+            raise ValueError(
+                "Cannot load this WorkflowImageData from its original source "
+                "reference: an in-place mutation was declared "
+                "(declare_numpy_image_mutated / declare_tensor_image_mutated), "
+                "which invalidated the original source, and neither the mutated "
+                "representation nor a re-derived base64 is materialised any "
+                "more. This state is induced by the image mutation - the "
+                "pre-mutation source must not be decoded as it no longer "
+                "describes the image."
+            )
+
     def declare_numpy_image_mutated(self) -> None:
         """A client that mutated the ``numpy_image`` buffer in place declares it
-        here: the derived sibling caches (tensor / base64) are stale and get
-        removed, so later readers re-derive from the mutated pixels. See the
-        class-level mutation contract."""
+        here: the mutated numpy becomes the SOLE source of truth. Every other
+        channel is cut off - the derived siblings (tensor / base64) are removed
+        so later readers re-derive from the mutated pixels, and the original
+        source reference is removed too, because it no longer describes these
+        pixels (serialization such as ``to_inference_format`` must never hand
+        out the pre-mutation source). Declaring a mutation of a representation
+        that was never materialised is a caller bug and raises."""
+        if self._numpy_image is None:
+            raise ValueError(
+                "declare_numpy_image_mutated() called, but no numpy representation "
+                "is materialised - nothing could have been mutated. Access "
+                "`numpy_image` before declaring."
+            )
         self._tensor_image = None
         self._base64_image = None
+        self._image_reference = None
+        self._sources_invalidated_by_mutation = True
 
     def declare_tensor_image_mutated(self) -> None:
         """A client that mutated the ``tensor_image`` in place declares it here:
-        the derived sibling caches (numpy / base64) are stale and get removed,
-        so later readers re-derive from the mutated pixels. See the class-level
-        mutation contract."""
+        the mutated tensor becomes the SOLE source of truth. Every other channel
+        is cut off - the derived siblings (numpy / base64) are removed so later
+        readers re-derive from the mutated pixels, and the original source
+        reference is removed too, because it no longer describes these pixels.
+        Declaring a mutation of a representation that was never materialised is
+        a caller bug and raises."""
+        if self._tensor_image is None:
+            raise ValueError(
+                "declare_tensor_image_mutated() called, but no tensor representation "
+                "is materialised - nothing could have been mutated. Access "
+                "`tensor_image` before declaring."
+            )
         self._numpy_image = None
         self._base64_image = None
+        self._image_reference = None
+        self._sources_invalidated_by_mutation = True
 
     def is_tensor_materialised(self) -> bool:
         """Whether the CHW RGB tensor image already exists on device.

@@ -2,12 +2,15 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import supervision as sv
-import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
+from inference.core.workflows.core_steps.analytics._zone_geometry import (
+    LeanPolygonZone,
+    empty_detections_like,
+)
 from inference.core.workflows.core_steps.common.tensor_native import (
-    take_prediction_by_indices,
+    take_prediction_by_mask,
 )
 from inference.core.workflows.execution_engine.constants import (
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
@@ -205,7 +208,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 class TimeInZoneBlockV2(WorkflowBlock):
     def __init__(self):
         self._batch_of_tracked_ids_in_zone: Dict[str, Dict[Union[int, str], float]] = {}
-        self._batch_of_polygon_zones: Dict[str, sv.PolygonZone] = {}
+        self._batch_of_polygon_zones: Dict[str, LeanPolygonZone] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -249,7 +252,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of zone to be a number"
                 )
-            self._batch_of_polygon_zones[metadata.video_identifier] = sv.PolygonZone(
+            self._batch_of_polygon_zones[metadata.video_identifier] = LeanPolygonZone(
                 polygon=np.array(zone),
                 triggering_anchors=(sv.Position(triggering_anchor),),
             )
@@ -262,17 +265,11 @@ class TimeInZoneBlockV2(WorkflowBlock):
         else:
             ts_end = metadata.frame_timestamp.timestamp()
 
-        # PolygonZone only needs box anchors and tracker IDs. Keep both tensors on
-        # the source device while adapting the inference-model container to the
-        # public supervision API.
-        sv_input = sv.Detections(
-            xyxy=detections.xyxy,
-            tracker_id=torch.as_tensor(
-                tracker_ids, dtype=torch.long, device=detections.xyxy.device
-            ),
-        )
-        is_in_zone_mask = polygon_zone.trigger(sv_input)
-        surviving_mask = torch.zeros_like(is_in_zone_mask, dtype=torch.bool)
+        # Transfer box geometry once and evaluate zone membership with the lean
+        # vectorized host implementation.
+        xyxy_host = detections.xyxy.detach().to("cpu").numpy()
+        is_in_zone_mask = polygon_zone.trigger(xyxy_host)
+        surviving_mask = np.zeros(n, dtype=bool)
         surviving_times: Dict[int, float] = {}
         for i, is_in_zone, tracker_id in zip(
             range(n),
@@ -296,18 +293,17 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 del tracked_ids_in_zone[tracker_id]
             surviving_mask[i] = True
             surviving_times[i] = time_in_zone
-        surviving_indices = (
-            torch.nonzero(surviving_mask, as_tuple=False).flatten().tolist()
+        result_detections = (
+            empty_detections_like(detections)
+            if n and not surviving_mask.any()
+            else take_prediction_by_mask(detections, surviving_mask)
         )
-        result_detections = take_prediction_by_indices(detections, surviving_indices)
         result_bboxes_metadata = result_detections.bboxes_metadata or [
             {} for _ in range(int(result_detections.xyxy.shape[0]))
         ]
-        for position, source_index in enumerate(surviving_indices):
-            box_metadata = dict(result_bboxes_metadata[position])
-            box_metadata[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = surviving_times[
-                source_index
-            ]
-            result_bboxes_metadata[position] = box_metadata
+        for position, source_index in enumerate(np.nonzero(surviving_mask)[0].tolist()):
+            result_bboxes_metadata[position][TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = (
+                surviving_times[source_index]
+            )
         result_detections.bboxes_metadata = result_bboxes_metadata
         return {OUTPUT_KEY: result_detections}

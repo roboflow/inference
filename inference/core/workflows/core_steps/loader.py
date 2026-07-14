@@ -97,15 +97,31 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
-    ContrastEnhancementBlock,
-)
-from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
-    ContrastEqualizationBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
-    ConvertGrayscaleBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
+        ContrastEnhancementBlock,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor import (
+        ContrastEnhancementBlock,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
+        ContrastEqualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1_tensor import (
+        ContrastEqualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
+        ConvertGrayscaleBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
+        ConvertGrayscaleBlockV1,
+    )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
@@ -116,15 +132,32 @@ else:
         DistanceMeasurementBlockV1,
     )
 
-from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
-    DominantColorBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
-    ImageBlurBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
-    ImagePreprocessingBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
+        DominantColorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.dominant_color.v1_tensor import (
+        DominantColorBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
+        ImageBlurBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.image_blur.v1_tensor import (
+        ImageBlurBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
+        ImagePreprocessingBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1_tensor import (
+        ImagePreprocessingBlockV1,
+    )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
@@ -157,9 +190,14 @@ else:
         MotionDetectionBlockV1,
     )
 
-from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
-    PixelationCountBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
+        PixelationCountBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1_tensor import (
+        PixelationCountBlockV1,
+    )
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
@@ -183,9 +221,14 @@ else:
         TemplateMatchingBlockV1,
     )
 
-from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
-    ImageThresholdBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
+        ImageThresholdBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.threshold.v1_tensor import (
+        ImageThresholdBlockV1,
+    )
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,
@@ -373,8 +416,7 @@ else:
         CosineSimilarityBlockV1,
     )
 
-# visual_search consumes the image through the WorkflowImageData wrapper and emits
-# only dict/scalar/image outputs, so both representations share the numpy source.
+# visual_search emits only dict/scalar/image outputs, so it needs no _tensor sibling.
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
     RoboflowVisualSearchBlockV1,
 )
@@ -1438,32 +1480,28 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     # Tensor-native producers emit native dataclasses for these kinds, which the
     # numpy serialisers cannot handle. Classification has no numpy serialiser at all;
     # keypoint produces a (KeyPoints, Detections) tuple; semantic-seg uses the
-    # per-class RLE InstanceDetections carrier (Option B).
+    # per-class RLE InstanceDetections carrier.
     KINDS_SERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
         serialise_native_classification
     )
     KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name] = (
         serialise_native_keypoint_detection
     )
-    # semantic-seg uses the per-class RLE InstanceDetections carrier (Option B); emit
-    # the native COCO RLE per box (no polygon collapse) via the native RLE serialiser.
+    # Emit the native COCO RLE per box (no polygon collapse).
     KINDS_SERIALIZERS[SEMANTIC_SEGMENTATION_PREDICTION_KIND.name] = (
         serialise_native_rle_detections
     )
     # instance-seg blocks declare the RLE kind too; the numpy `serialise_rle_sv_detections`
-    # cannot handle a native InstanceDetections, so route it to the native RLE serialiser
-    # (which emits the COCO RLE from InstancesRLEMasks, original-index aligned).
+    # cannot handle a native InstanceDetections.
     KINDS_SERIALIZERS[RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name] = (
         serialise_native_rle_detections
     )
     # Tensor-native embedding/tensor kinds serialise to plain Python lists.
     KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
     KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
-    # NOTE: the wildcard (`*`) serialiser needs no override here — it is handled
-    # by the same-name symbol swap above (serializers_tensor.serialize_wildcard_kind
-    # adds native arms so wildcard outputs of legacy-mode dynamic blocks and any
-    # native value routed to a `*` output serialise to the standard dicts instead
-    # of crashing HTTP JSON encoding — the custom-python knob plan, Step 6).
+    # The wildcard (`*`) serialiser needs no override here: the same-name symbol
+    # swap above already selects serializers_tensor.serialize_wildcard_kind, whose
+    # native arms serialise native values routed to `*` outputs to the standard dicts.
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,

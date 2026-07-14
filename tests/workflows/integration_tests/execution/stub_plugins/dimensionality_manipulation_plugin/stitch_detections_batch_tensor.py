@@ -1,19 +1,8 @@
 """
-Tensor-native sibling of ``stitch_detections_batch.py``.
-
-The numpy block reads the per-box ``parent_coordinates`` the model producer wrote
-into sv ``.data`` (``p["parent_coordinates"][0]`` == the crop origin in the parent
-image), shifts ``xyxy`` by ``concat(coords, coords)``, and ``sv.Detections.merge``s
-the per-crop detections into one.
-
-Natively, the OD model block attaches that crop origin via
-``build_native_image_metadata`` into ``image_metadata[PARENT_COORDINATES_KEY] =
-[left_top_x, left_top_y]`` (per-IMAGE, not per-box — the same value the sv path
-broadcasts across every box of a crop). So this sibling reads the offset from
-``detections.image_metadata[PARENT_COORDINATES_KEY]``, shifts ``xyxy`` with torch
-tensor arithmetic on the detections' own device/dtype, then concatenates the
-per-crop native ``Detections`` into one via the UQL ``_concatenate_detections``
-helper. The ``BlockManifest`` is reused verbatim from the numpy module.
+Tensor-native sibling of ``stitch_detections_batch.py``: shifts each crop's ``xyxy``
+by the origin the native OD producer stored per-image in
+``image_metadata[PARENT_COORDINATES_KEY]``, then concatenates the per-crop
+``Detections``.
 
 This is just example, test implementation, please do not assume it being fully functional.
 """
@@ -44,8 +33,8 @@ from inference_models.models.base.object_detection import Detections
 
 
 def _shift_native_to_parent(prediction: Detections) -> Detections:
-    """Return a COPY of the native prediction with ``xyxy`` shifted by the crop
-    origin recorded in ``image_metadata[PARENT_COORDINATES_KEY] = [x, y]``."""
+    """Return a copy of the prediction with ``xyxy`` shifted by the crop origin
+    stored in ``image_metadata[PARENT_COORDINATES_KEY]`` as ``[x, y]``."""
     prediction_copy = _copy_detections(prediction)
     image_metadata = prediction_copy.image_metadata or {}
     coords = image_metadata.get(PARENT_COORDINATES_KEY, [0, 0])
@@ -60,8 +49,7 @@ def _shift_native_to_parent(prediction: Detections) -> Detections:
 
 
 def _empty_like(prediction: Detections) -> Detections:
-    """Build an empty native ``Detections`` on the same device/dtype as ``prediction``
-    (the native analogue of ``sv.Detections.merge([])`` -> empty)."""
+    """Build an empty native ``Detections`` on the same device/dtype as ``prediction``."""
     xyxy = prediction.xyxy
     class_id = prediction.class_id
     confidence = prediction.confidence
@@ -77,7 +65,6 @@ def _empty_like(prediction: Detections) -> Detections:
 def merge_native_predictions(image_predictions: List[Detections]) -> Detections:
     non_empty = [_shift_native_to_parent(p) for p in image_predictions if len(p)]
     if not non_empty:
-        # No boxes across any crop: mirror sv.Detections.merge collapsing to empty.
         return _empty_like(image_predictions[0])
     merged = non_empty[0]
     for prediction in non_empty[1:]:

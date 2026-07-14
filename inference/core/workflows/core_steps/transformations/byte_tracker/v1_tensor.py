@@ -2,9 +2,12 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
-import torch
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.tensor_native import (
+    split_key_point_prediction,
+    take_prediction_by_indices,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
@@ -32,6 +35,61 @@ from inference_models.models.base.object_detection import Detections
 
 OUTPUT_KEY: str = "tracked_detections"
 _INPUT_INDEX_KEY: str = "__byte_tracker_input_index__"
+
+
+def _track_and_recover_indices(
+    tracker: sv.ByteTrack,
+    detections: Union[Detections, InstanceDetections],
+) -> "tuple[List[int], np.ndarray]":
+    """Run one frame through the (numpy) ByteTrack tracker and recover, in sv
+    output order, the surviving input-row indices and their assigned tracker ids.
+
+    Only ``xyxy`` / ``class_id`` / ``confidence`` are moved to the host (the
+    single, irreducible D2H) and tagged with a positional index; ByteTrack filters
+    and reorders detections, so the index is how the caller maps back onto the
+    original device tensors.
+    """
+    n = int(detections.xyxy.shape[0])
+    sv_input = sv.Detections(
+        xyxy=detections.xyxy.detach().to("cpu").numpy(),
+        class_id=detections.class_id.detach().to("cpu").numpy(),
+        confidence=detections.confidence.detach().to("cpu").numpy(),
+        data={_INPUT_INDEX_KEY: np.arange(n, dtype=np.int64)},
+    )
+    sv_tracked = tracker.update_with_detections(sv_input)
+    kept_indices = (
+        sv_tracked.data.get(_INPUT_INDEX_KEY, np.empty((0,), dtype=np.int64))
+        if sv_tracked.data
+        else np.empty((0,), dtype=np.int64)
+    )
+    tracker_ids = (
+        sv_tracked.tracker_id
+        if sv_tracked.tracker_id is not None
+        else np.full(len(sv_tracked), -1, dtype=np.int64)
+    )
+    return [int(i) for i in np.asarray(kept_indices).tolist()], tracker_ids
+
+
+def _write_tracker_ids(
+    detections: Union[Detections, InstanceDetections],
+    tracker_ids: np.ndarray,
+) -> None:
+    """Write the assigned ``tracker_id`` into each surviving detection's
+    ``bboxes_metadata`` in place.
+
+    ``tracker_ids`` is aligned with the sliced ``detections`` rows (both are in sv
+    output order). Existing per-detection dicts are copied so caller-owned state is
+    never mutated; when the input carried no metadata a fresh dict is created.
+    """
+    n = int(detections.xyxy.shape[0])
+    existing = detections.bboxes_metadata
+    new_meta: List[dict] = []
+    for i in range(n):
+        base = dict(existing[i]) if existing is not None and existing[i] else {}
+        base["tracker_id"] = int(tracker_ids[i])
+        new_meta.append(base)
+    detections.bboxes_metadata = new_meta if new_meta else None
+
 
 SHORT_DESCRIPTION = (
     "Track and update object positions across video frames using ByteTrack."
@@ -96,7 +154,7 @@ This block receives detection predictions and video metadata, and produces track
 
 This block requires detection predictions (object detection or instance segmentation) and video metadata with frame rate (fps) information. The video metadata must include a valid fps value for ByteTrack initialization. The block maintains tracking state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For optimal tracking performance, detections should be provided consistently across frames. The algorithm works best with stable detection performance and handles temporary detection gaps through the lost_track_buffer mechanism.
 
-Tensor-native note: the underlying `sv.ByteTrack` is numpy-based, so this block materialises the input tensors to numpy at the boundary, runs the tracker, and re-packages the surviving detections as `inference_models.Detections`. Masks from instance segmentation inputs are dropped (matching the numpy block's behaviour — the output kind is plain object detection).
+Tensor-native note: the underlying `sv.ByteTrack` is numpy-based, so this block materialises only the bounding boxes / class ids / confidences to numpy at the boundary (tagged with a positional index) and runs the tracker. ByteTrack only filters and reorders detections — it never mutates coordinates — so the surviving rows are recovered by index and the ORIGINAL device tensors are sliced with `take_prediction_by_indices` (no GPU re-upload). Instance-segmentation masks follow the same index selection and are preserved (matching the numpy block, which keeps masks via `sv.Detections`). The assigned `tracker_id` is written into `bboxes_metadata` per surviving detection.
 """
 
 
@@ -206,53 +264,19 @@ class ByteTrackerBlockV1(WorkflowBlock):
             )
         tracker = self._trackers[metadata.video_identifier]
 
-        n = int(detections.xyxy.shape[0])
-        # Stash a positional index in sv.Detections.data so we can map
-        # surviving rows back to their `bboxes_metadata` entries. ByteTrack
-        # drops untracked detections and reorders, so we cannot rely on
-        # input order alone.
-        sv_input = sv.Detections(
-            xyxy=detections.xyxy.detach().to("cpu").numpy(),
-            class_id=detections.class_id.detach().to("cpu").numpy(),
-            confidence=detections.confidence.detach().to("cpu").numpy(),
-            data={_INPUT_INDEX_KEY: np.arange(n, dtype=np.int64)},
-        )
-        sv_tracked = tracker.update_with_detections(sv_input)
-
-        kept_indices = (
-            sv_tracked.data.get(_INPUT_INDEX_KEY, np.empty((0,), dtype=np.int64))
-            if sv_tracked.data
-            else np.empty((0,), dtype=np.int64)
-        )
-        tracker_ids = (
-            sv_tracked.tracker_id
-            if sv_tracked.tracker_id is not None
-            else np.full(len(sv_tracked), -1, dtype=np.int64)
-        )
-        original_meta = detections.bboxes_metadata or [{} for _ in range(n)]
-        new_bboxes_meta: List[dict] = []
-        for new_i, orig_i in enumerate(kept_indices):
-            base = dict(original_meta[int(orig_i)] or {})
-            base["tracker_id"] = int(tracker_ids[new_i])
-            new_bboxes_meta.append(base)
-
-        device = detections.xyxy.device
-        new_xyxy = torch.from_numpy(sv_tracked.xyxy).to(
-            device=device, dtype=detections.xyxy.dtype
-        )
-        new_class_id = torch.from_numpy(sv_tracked.class_id).to(
-            device=device, dtype=detections.class_id.dtype
-        )
-        new_confidence = torch.from_numpy(sv_tracked.confidence).to(
-            device=device, dtype=detections.confidence.dtype
+        # Materialise ONLY the bbox component to a minimal sv.Detections (the sole
+        # D2H) tagged with a positional index. ByteTrack drops untracked detections
+        # and reorders, so the index lets us recover the surviving input rows.
+        _, bbox = split_key_point_prediction(detections)
+        kept_indices, tracker_ids = _track_and_recover_indices(
+            tracker=tracker, detections=bbox
         )
 
-        return {
-            OUTPUT_KEY: Detections(
-                xyxy=new_xyxy,
-                class_id=new_class_id,
-                confidence=new_confidence,
-                image_metadata=detections.image_metadata,
-                bboxes_metadata=new_bboxes_meta if new_bboxes_meta else None,
-            )
-        }
+        # ByteTrack only filters/reorders - coordinates are unchanged - so slice the
+        # ORIGINAL device tensors (masks included) by the surviving rows instead of
+        # re-uploading the numpy boxes. `take_prediction_by_indices` copies the
+        # surviving bboxes_metadata dicts, so the tracker_id write is leak-safe.
+        tracked_detections = take_prediction_by_indices(bbox, kept_indices)
+        _write_tracker_ids(tracked_detections, tracker_ids)
+
+        return {OUTPUT_KEY: tracked_detections}

@@ -5,6 +5,10 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
+from inference.core.workflows.core_steps.analytics._zone_geometry import (
+    LeanLineZone,
+    empty_detections_like,
+)
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
@@ -200,7 +204,7 @@ class LineCounterManifest(WorkflowBlockManifest):
 
 class LineCounterBlockV2(WorkflowBlock):
     def __init__(self):
-        self._batch_of_line_zones: Dict[str, sv.LineZone] = {}
+        self._batch_of_line_zones: Dict[str, LeanLineZone] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -240,32 +244,35 @@ class LineCounterBlockV2(WorkflowBlock):
                     f"{self.__class__.__name__} requires each coordinate of line zone to be a number"
                 )
             if triggering_anchor is not None:
-                self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
-                    start=sv.Point(*line_segment[0]),
-                    end=sv.Point(*line_segment[1]),
+                self._batch_of_line_zones[metadata.video_identifier] = LeanLineZone(
+                    start=tuple(line_segment[0]),
+                    end=tuple(line_segment[1]),
                     triggering_anchors=[sv.Position(triggering_anchor)],
                 )
             else:
-                self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
-                    start=sv.Point(*line_segment[0]),
-                    end=sv.Point(*line_segment[1]),
+                self._batch_of_line_zones[metadata.video_identifier] = LeanLineZone(
+                    start=tuple(line_segment[0]),
+                    end=tuple(line_segment[1]),
                 )
         line_zone = self._batch_of_line_zones[metadata.video_identifier]
 
-        # sv.LineZone is numpy-based: materialise a minimal sv.Detections (the
-        # crossing logic only needs box anchors + tracker_id) and run trigger.
-        # The returned masks are aligned to the input order, so the original
-        # tensor-native detections can be sliced directly.
-        # It's not optimal and next versions should run this fully tensor-native.
-        sv_input = sv.Detections(
-            xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
-            tracker_id=np.array(
-                [int(tracker_id) for tracker_id in tracker_ids], dtype=int
-            ),
+        # Transfer box geometry once; the returned host masks remain aligned to
+        # the tensor-native detections and can slice them directly.
+        xyxy_host = detections.xyxy.detach().to("cpu").numpy().astype(float)
+        tracker_np = np.array(
+            [int(tracker_id) for tracker_id in tracker_ids], dtype=int
         )
-        mask_in, mask_out = line_zone.trigger(detections=sv_input)
-        detections_in = take_prediction_by_mask(detections, mask_in)
-        detections_out = take_prediction_by_mask(detections, mask_out)
+        mask_in, mask_out = line_zone.trigger(xyxy_host, tracker_np)
+        detections_in = (
+            empty_detections_like(detections)
+            if n and not mask_in.any()
+            else take_prediction_by_mask(detections, mask_in)
+        )
+        detections_out = (
+            empty_detections_like(detections)
+            if n and not mask_out.any()
+            else take_prediction_by_mask(detections, mask_out)
+        )
 
         return {
             OUTPUT_KEY_COUNT_IN: line_zone.in_count,
