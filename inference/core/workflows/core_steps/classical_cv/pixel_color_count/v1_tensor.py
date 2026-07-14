@@ -1,35 +1,30 @@
 """Tensor-native sibling of ``pixel_color_count/v1``.
 
-Counting pixels inside a per-channel colour range is pure integer comparison
-work - no floats, no neighbourhoods - so on a tensor-materialised ``(3, H, W)``
-image the block collapses to one broadcasted ``(px >= lower) & (px <= upper)``
-on the device; only the final count crosses device->host, never the frame.
+On a tensor-materialised ``(3, H, W)`` image the count is one broadcasted
+``(px >= lower) & (px <= upper)`` on the device; only the final count crosses
+device->host.
 
-Parity contract, pinned by prototype against cv2 (v1 feeds ``cv2.inRange``
-UNCLIPPED int64 ``target +- tolerance`` bound arrays):
+Parity with v1, which feeds ``cv2.inRange`` unclipped int64
+``target +- tolerance`` bound arrays:
 
 * ``cv2.inRange`` treats 3-element bounds as a per-channel Scalar: each bound
-  is ``cvRound``-ed (half-to-even) to an integer and tested as the INCLUSIVE
-  range ``lower <= px <= upper``, ANDed across channels, WITHOUT uint8
-  saturation - a bound of -10 means "no lower limit", 310 means "no upper
-  limit", 256 matches nothing, and inverted ranges (negative tolerance) match
-  nothing. The sibling reproduces exactly that with int16 device comparisons;
-  bounds are pre-clamped to ``[-1, 256]`` host-side, which cannot change any
-  comparison outcome against uint8 pixels but keeps them int16-safe at any
-  magnitude. (Sole divergence: bounds beyond int32 wrap around inside cv2;
-  the sibling keeps the unwrapped semantics. Unreachable with the manifest's
-  0-255 tolerance.)
-* Colour parsing is delegated to v1's ``convert_color_to_bgr_tuple``, so
-  malformed colours raise the identical ``ValueError`` before any image work,
-  matching v1's error ordering. The tensor is CHW RGB where v1's numpy image
-  is HWC BGR: the per-channel AND is layout-independent, so the BGR bounds
-  tuple is simply reversed to pair with the RGB channel axis.
-* Single-channel ``(1, H, W)`` tensors delegate to the numpy path: v1 raises
-  ``cv2.error`` for 3-element bounds against a 1-channel image, and the
-  sibling must fail identically rather than invent behaviour.
+  is ``cvRound``-ed (half-to-even) and tested as the inclusive range
+  ``lower <= px <= upper``, ANDed across channels, without uint8 saturation -
+  a bound of -10 means "no lower limit", 310 "no upper limit", 256 matches
+  nothing, inverted ranges (negative tolerance) match nothing. Reproduced
+  with int16 device comparisons; bounds are pre-clamped to ``[-1, 256]``,
+  which cannot change any comparison outcome against uint8 pixels but keeps
+  them int16-safe at any magnitude. (Bounds beyond int32 wrap inside cv2 but
+  not here; unreachable with the manifest's 0-255 tolerance.)
+* Colour parsing uses v1's ``convert_color_to_bgr_tuple``, so malformed
+  colours raise the identical ``ValueError`` before any image work. The
+  per-channel AND is layout-independent, so the BGR bounds tuple is reversed
+  to pair with the CHW RGB channel axis.
+* Single-channel ``(1, H, W)`` tensors delegate: v1 raises ``cv2.error`` for
+  3-element bounds against a 1-channel image, and delegation fails
+  identically.
 * Numpy/base64-born images delegate to v1's ``count_specific_color_pixels``
-  unchanged instead of forcing an eager host->device conversion - the same
-  materialization-aware rule the other siblings follow.
+  (no materialised tensor).
 """
 
 from typing import Tuple, Type, Union
@@ -76,8 +71,8 @@ def _count_specific_color_pixels_tensor(
     """Counts pixels of a CHW RGB uint8 tensor that match the target colour
     within tolerance, replicating ``cv2.inRange`` + ``cv2.countNonZero``
     exactly; only the final count leaves the device."""
-    # colour conversion first, before any image work - mirrors v1's error
-    # ordering (and its ValueError messages, via the shared converter)
+    # Colour conversion first, before any image work - mirrors v1's error
+    # ordering.
     target_color_bgr = convert_color_to_bgr_tuple(color=target_color)
     target_color_rgb = target_color_bgr[::-1]
     lower_bound = [
@@ -95,9 +90,8 @@ def _count_specific_color_pixels_tensor(
 
 
 def _mirror_cv2_scalar_bound(value: Union[int, float]) -> int:
-    """cv2 converts each Scalar bound with ``cvRound`` - half-to-even, exactly
-    Python's ``round``, a no-op for the ints every sanctioned input produces -
-    and compares in integer space without clamping. Clamping to ``[-1, 256]``
-    cannot change any comparison outcome against uint8 pixels while keeping
-    the bounds int16-safe regardless of input magnitude."""
+    """cv2 converts each Scalar bound with ``cvRound`` (half-to-even, matching
+    Python's ``round``) and compares in integer space without clamping.
+    Clamping to ``[-1, 256]`` cannot change any comparison outcome against
+    uint8 pixels while keeping the bound int16-safe at any magnitude."""
     return min(256, max(-1, round(value)))

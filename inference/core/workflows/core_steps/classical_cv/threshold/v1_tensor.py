@@ -1,53 +1,41 @@
 """Tensor-native sibling of ``threshold/v1``.
 
-Every path replicates the EXACT uint8 semantics of the cv2 calls in v1's
-``apply_thresholding`` (OpenCV modules/imgproc/src/thresh.cpp) or delegates to
-them - parity versus the numpy block is bit-exact, never approximate:
+Every path replicates the exact uint8 semantics of the cv2 calls in v1's
+``apply_thresholding`` (OpenCV modules/imgproc/src/thresh.cpp) or delegates
+to them - parity versus the numpy block is bit-exact:
 
 * Fixed types (``binary`` / ``binary_inv`` / ``trunc`` / ``tozero`` /
-  ``tozero_inv``) are pure per-pixel integer comparisons once cv2's parameter
-  handling is replicated: ``ithresh = cvFloor(thresh)`` with a STRICT ``>``
-  compare, ``imaxval = saturate_cast<uchar>(cvRound(maxval))`` (round half to
-  even, then clamp to [0, 255]), ``trunc`` ignoring ``maxval`` and filling with
-  the saturated ``ithresh``, and the degenerate ``ithresh < 0 / >= 255``
-  branches that fill or copy without touching pixels. cv2 applies these
-  per-channel, so any channel count runs tensor-native (channel-independent
-  math makes RGB-vs-BGR layout irrelevant).
+  ``tozero_inv``): per-pixel integer comparisons with cv2's parameter
+  handling - ``ithresh = cvFloor(thresh)`` with a strict ``>`` compare,
+  ``imaxval = saturate_cast<uchar>(cvRound(maxval))`` (round half to even,
+  then clamp to [0, 255]), ``trunc`` ignoring ``maxval`` and filling with the
+  saturated ``ithresh``, and the degenerate ``ithresh < 0 / >= 255`` branches
+  that fill or copy without touching pixels. cv2 applies these per-channel,
+  so any channel count runs tensor-native.
 
-* ``otsu``: cv2 requires single-channel 8-bit input. The histogram is layout
-  independent, so ``torch.bincount`` runs on the device, ONE tiny D2H sync
-  moves the 256 counts to the host, and ``getThreshVal_Otsu_8u``'s
-  double-precision between-class-variance scan is replicated in python floats
-  operation-for-operation (FLT_EPSILON guards, strict ``>`` tie-breaking, the
-  ``mu1 *= q1`` pre-multiplication ordering). The found integer threshold is
-  then applied on the device with the same binary semantics as above.
-  Three-channel tensor input delegates to the numpy implementation so cv2
-  raises exactly the error v1 would raise.
+* ``otsu`` (cv2 requires single-channel 8-bit input): ``torch.bincount`` runs
+  on the device, one D2H sync moves the 256 counts to the host, and
+  ``getThreshVal_Otsu_8u``'s double-precision scan is replicated in python
+  floats operation-for-operation (FLT_EPSILON guards, strict ``>``
+  tie-breaking, the ``mu1 *= q1`` pre-multiplication ordering); the found
+  threshold is applied on the device with the binary semantics above.
+  Three-channel tensor input delegates so cv2 raises exactly v1's error.
 
 * ``adaptive_mean``: cv2 computes ``boxFilter(src, CV_8U, 11x11,
   normalize=True, BORDER_REPLICATE|BORDER_ISOLATED)`` - the window mean
-  ROUNDED to uint8 - then ``dst = src > mean - 2 ? imaxval : 0`` (delta 2 is
-  ``cvCeil``-ed to the exact integer 2 for THRESH_BINARY). Window sums of 121
-  uint8 pixels stay below 2**24, so a float32 convolution over a
-  replicate-padded image (clamped-index gather, which unlike ``F.pad`` also
-  covers images smaller than the padding) produces EXACT integer sums on any
-  device and in any summation order. ``sum/121`` can never land on an exact
-  .5 tie (2*sum is even, 121*(2k+1) is odd; the nearest tie is 1/242 away,
-  orders of magnitude beyond float error), so rounding matches cv2's
-  ``cvRound`` bit-exactly. The final comparison is pure integer math.
+  rounded to uint8 - then ``dst = src > mean - 2 ? imaxval : 0`` (delta 2 is
+  ``cvCeil``-ed to the exact integer 2 for THRESH_BINARY). Sums of 121 uint8
+  pixels stay below 2**24, so a float32 convolution over a replicate-padded
+  image yields exact integer sums on any device in any summation order, and
+  ``sum/121`` can never land on a .5 tie (2*sum is even, 121*(2k+1) is odd),
+  so rounding matches ``cvRound`` bit-exactly.
 
-* ``adaptive_gaussian`` DELEGATES to the numpy implementation. OpenCV 4.x
-  computes its local mean as ``convertTo(GaussianBlur(float32(src), 11x11,
-  sigma 2.0), CV_8U)`` and the float32 separable filter's bit pattern depends
-  on the host's SIMD dispatch (NEON/AVX2 fused-multiply-add chains versus
-  SSE mul+add, plus non-uniform vector-tail handling measured on
-  non-multiple-of-16 widths). A torch replication cannot guarantee the same
-  bits across deployment hardware, so the path that guarantees byte-identical
-  serialization is running the identical cv2 code.
+* ``adaptive_gaussian``: delegates. cv2 computes the local mean as
+  ``convertTo(GaussianBlur(float32(src), 11x11, sigma 2.0), CV_8U)``, and the
+  float32 filter's bit pattern differs across SIMD backends, so no torch
+  replication is bit-stable across deployment hardware.
 
-Numpy/base64-born images also delegate instead of forcing an eager
-host->device conversion - the same materialization-aware rule the other
-tensor siblings follow.
+Numpy/base64-born images delegate (no materialised tensor).
 """
 
 import math
@@ -187,8 +175,8 @@ def _otsu_threshold_tensor(
     counts = torch.bincount(chw.detach().reshape(-1).long(), minlength=256)
     ithresh = _otsu_threshold_from_counts(counts=counts.cpu().tolist())
     # cv2 feeds the found threshold through the standard binary path; the scan
-    # only ever returns values in [0, 254], so the strict-`>` in-range branch
-    # always applies - exactly as in cv2.
+    # only returns values in [0, 254], so the strict-`>` in-range branch
+    # always applies.
     return _fixed_threshold_tensor(
         chw=chw,
         threshold_type="binary",
@@ -256,7 +244,7 @@ def _adaptive_mean_threshold_tensor(
 def _replicate_pad(x: torch.Tensor, pad: int) -> torch.Tensor:
     """BORDER_REPLICATE as a clamped-index gather: unlike ``F.pad`` with
     ``mode='replicate'`` it also handles images smaller than the padding,
-    which cv2 supports (an 11x11 window on e.g. a 3x5 image)."""
+    which cv2 supports."""
     height, width = x.shape[-2], x.shape[-1]
     rows = torch.arange(-pad, height + pad, device=x.device).clamp_(0, height - 1)
     cols = torch.arange(-pad, width + pad, device=x.device).clamp_(0, width - 1)

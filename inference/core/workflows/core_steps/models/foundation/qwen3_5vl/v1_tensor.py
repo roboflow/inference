@@ -1,28 +1,4 @@
-"""Tensor-native sibling of `roboflow_core/qwen3_5vl@v1`.
-
-SCRATCH — first pass for review. Qwen3.5-VL's *outputs* are TEXT/dict
-(parsed_output / thinking), NOT prediction kinds, so this block does not PRODUCE
-tensor-native predictions. The only thing that changes under
-ENABLE_TENSOR_DATA_REPRESENTATION is the LOCAL image path: instead of
-`to_inference_format` + `LMMInferenceRequest` + `infer_from_request_sync`, local
-inference routes through the inference_models adapter
-(`run_tensor_native_inference`) with the block's CHW RGB `tensor_image`.
-
-Manifest, class name and type literal are imported verbatim from v1. Remote
-inference is IDENTICAL to v1 (`infer_lmm`; text output) — there is nothing
-tensor-native to convert on the output side. `describe_outputs` is inherited
-unchanged via the imported manifest.
-
-Adapter contract (inference/models/qwen3_5vl/qwen3_5vl_inference_models.py ->
-Qwen35HF.prompt): `run_tensor_native_inference(model_id, images=[...],
-input_color_format="rgb", prompt=..., enable_thinking=..., max_new_tokens=...)`
-returns one entry per image —
-    - enable_thinking=False -> List[str]
-    - enable_thinking=True  -> List[Dict[str, str]] with {"thinking", "answer"}
-The prompt/system_prompt are combined into a single string with the
-`<system_prompt>` separator, exactly as the numpy local path did; the HF model
-splits them back apart in `pre_process_generation`.
-"""
+"""Tensor-native `roboflow_core/qwen3_5vl@v1` block."""
 
 from typing import List, Optional, Type
 
@@ -34,7 +10,6 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
-# Unchanged from v1 — verbatim manifest, class name and type literal.
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
     BlockManifest,
 )
@@ -153,13 +128,9 @@ class Qwen35VLBlockV1(WorkflowBlock):
         enable_thinking: bool = False,
         max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
-        # Local exec goes through the inference_models adapter with the CHW RGB
-        # tensor_image. prompt/system_prompt are combined exactly as the numpy
-        # local path did; the HF model splits them on "<system_prompt>" inside
-        # pre_process_generation. The adapter returns one entry per image:
-        # str (thinking off) or {"thinking","answer"} dict (thinking on).
         prompt = prompt or "Describe what's in this image."
         system_prompt = system_prompt or "You are a helpful assistant."
+        # The model splits the combined prompt back apart on "<system_prompt>".
         combined_prompt = prompt + "<system_prompt>" + system_prompt
 
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
@@ -182,9 +153,9 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 input_color_format=image_color_format,
                 **kwargs,
             )
+            # One entry per image: str, or a {"thinking", "answer"} dict when
+            # thinking is enabled.
             response_text = result[0]
-            # When enable_thinking is used the adapter yields a dict with
-            # 'thinking' and 'answer' keys; split them out as the numpy block did.
             if enable_thinking and isinstance(response_text, dict):
                 thinking = response_text.get("thinking", "")
                 answer = response_text.get("answer", "")

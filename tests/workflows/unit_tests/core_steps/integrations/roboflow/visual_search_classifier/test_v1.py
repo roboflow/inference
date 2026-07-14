@@ -523,9 +523,7 @@ def test_run_returns_error_when_project_search_fails() -> None:
 def test_run_batch_returns_one_classification_per_image() -> None:
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
 
-    # batch searches run on a thread pool, so the mock cannot be a positional
-    # side_effect list (threads may reach it out of submission order) - key the
-    # response on the image instead
+    # thread-pooled searches reach the mock out of submission order - key by image
     responses_by_image = {
         "image-1": {
             "results": [make_candidate(image_id="img-1", class_name="a", class_id=0)]

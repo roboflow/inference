@@ -262,9 +262,8 @@ class IdentifyChangesBlockV1(WorkflowBlock):
         z_score = 0
         warming_up = False
 
-        # Tensor-native embeddings stay on-device: the running average/std are
-        # tracked as torch tensors; only the scalar cosine-similarity statistics
-        # use plain python/numpy scalars (no tensor leaves the device).
+        # Embeddings stay on-device: the running average/std are torch tensors;
+        # only the scalar cosine-similarity statistics use python/numpy scalars.
         embedding = embedding.detach()
         norm = torch.linalg.norm(embedding)
         if norm != 0:
@@ -272,9 +271,8 @@ class IdentifyChangesBlockV1(WorkflowBlock):
 
         # determine if embedding is an outlier
         if self.average is not None:
-            # cosine similarity is a scalar; keep it as np.float64 so the
-            # downstream scalar statistics keep the numpy divide-by-zero -> nan
-            # semantics of the original `cosine_similarity` util (no exception).
+            # np.float64 keeps the numpy divide-by-zero -> nan semantics in the
+            # downstream scalar statistics (no exception).
             cs = np.float64(
                 (
                     torch.dot(embedding, self.average)
@@ -400,8 +398,8 @@ class IdentifyChangesBlockV1(WorkflowBlock):
             "is_outlier": is_outlier,
             "percentile": percentile,
             "z_score": z_score,
-            # `average`/`std` are embedding-kind outputs -> torch.Tensor (on the
-            # embedding's device), matching TENSOR_NATIVE_EMBEDDING_KIND.
+            # `average`/`std` are embedding-kind outputs: torch.Tensor on the
+            # embedding's device.
             "average": self.average,
             "std": self.std,
             "warming_up": warming_up,

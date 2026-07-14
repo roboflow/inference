@@ -194,8 +194,6 @@ class Moondream2BlockV1(WorkflowBlock):
             client.select_api_v0()
 
         prompt = prompt or ""
-        # The Moondream2 detection endpoint is prompted with a single object, so
-        # every returned box carries class_id == 0 / class == <prompt>.
         class_names = _build_class_names(prompt)
         predictions = []
         for image in images:
@@ -205,10 +203,8 @@ class Moondream2BlockV1(WorkflowBlock):
                 prompt=prompt,
                 model_id_in_path=True,
             )
-            # `result` is the standard inference object-detection response; its
-            # `predictions` list holds detection dicts already in inference
-            # center x/y/width/height format with `class` / `class_id` set. Build
-            # a native Detections from those dicts (no sv.Detections round-trip).
+            # `result["predictions"]` holds inference detection dicts in center
+            # x/y/width/height format with `class` / `class_id` set.
             detections = native_detections_from_inference_predictions(
                 image=image,
                 predictions=result.get("predictions", []),
@@ -227,7 +223,6 @@ class Moondream2BlockV1(WorkflowBlock):
     ) -> BlockResult:
         # Use the provided prompt (or an empty string if None) for every image.
         prompt = prompt or ""
-        # The model assigns class_id == 0 to the single prompted object class.
         class_names = _build_class_names(prompt)
 
         # Register Moondream2 with the model manager.
@@ -235,10 +230,6 @@ class Moondream2BlockV1(WorkflowBlock):
 
         predictions = []
         for image in images:
-            # The inference_models adapter returns native Detections (one per
-            # image) straight from MoonDream2HF.detect; it tolerates the
-            # `input_color_format` kwarg (forwarded to images_to_pillow) and
-            # requires `classes` (the prompted object list).
             if image.is_tensor_materialised():
                 model_image, image_color_format = image.tensor_image, "rgb"
             else:

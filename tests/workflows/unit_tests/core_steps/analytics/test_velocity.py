@@ -885,9 +885,8 @@ def test_velocity_block_large_movement() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# The tensor block computes on-device (torch) with a single batched
-# device->host hop for the metadata contract; these tests pin numerical parity
-# with the numpy block above plus the device-resident state semantics.
+# These tests pin numerical parity with the numpy block above plus the tensor
+# block's device-resident state semantics.
 
 
 def _tensor_velocity_imports():
@@ -986,7 +985,7 @@ def test_tensor_velocity_new_tracker_and_units() -> None:
 
 def test_tensor_velocity_absent_tracker_reappears_with_preserved_state() -> None:
     # given - tracker 1 seen at frame 1, absent at frame 2, back at frame 3;
-    # velocity on reappearance must use the FRAME-1 position and timestamp
+    # velocity on reappearance must use the frame-1 position and timestamp
     torch, TensorVelocityBlockV1, NativeDetections = _tensor_velocity_imports()
     block = TensorVelocityBlockV1()
     block.run(
@@ -1113,7 +1112,7 @@ def test_tensor_velocity_state_stays_on_device_when_mps_available() -> None:
         pixels_per_meter=1.0,
     )
 
-    # then - the tracking state lives on the device and results are correct
+    # then - the tracking state lives on the device
     state = block._states["vid"]
     assert state.positions.device.type == "mps"
     assert state.smoothed_velocities.device.type == "mps"

@@ -1,57 +1,38 @@
 """Tensor-native sibling of ``image_blur/v1``.
 
-All tensor paths are channel-independent, so the math is identical for RGB
-(tensor layout) and BGR (numpy layout), and grayscale ``(1, H, W)`` tensors
-are just a one-channel batch. Bit parity with the numpy block is achieved
-per blur type as follows:
+All tensor paths are channel-independent, so RGB (tensor layout) vs BGR
+(numpy layout) is irrelevant and grayscale ``(1, H, W)`` tensors run as a
+one-channel batch. Bit parity with cv2 per blur type:
 
 - ``average`` (odd kernel <= 15): ``cv2.blur`` window sums over REFLECT_101
-  borders are plain integers - computed exactly by a float32 convolution
-  (sums <= 255 * 15^2 < 2^24, every partial sum an exactly-representable
-  integer). For ODD kernels k^2 is odd, so ``sum / k^2`` can never land on a
-  representable .5 tie, and the closest achievable fraction is 1/(2k^2) away
-  from a rounding boundary - orders of magnitude above the float32 product
-  error - making nearest-integer rounding unambiguous. Verified exhaustively
-  against cv2 over EVERY achievable window sum for each supported kernel.
-  EVEN kernels delegate: exact .5 ties do occur there and cv2's tie rounding
-  is build-specific (the ARM carotene HAL rounds ties up - and for power-of-2
-  kernels even fractions of 0.5 - 1/k^2 up; generic x86 builds mix an f32
-  SIMD body with an f64 scalar tail), so bit parity is only guaranteed by
-  running the very same cv2 code.
+  borders are exact in a float32 convolution (255 * 15^2 < 2^24); k odd ->
+  k^2 odd -> ``sum / k^2`` has no .5 ties, so nearest-integer rounding is
+  unambiguous. Even kernels delegate: their exact .5 ties are rounded
+  differently across cv2 SIMD backends/builds.
 
-- ``gaussian`` (coerced-odd kernel in {1, 3, 5, 7}): OpenCV's uint8
-  GaussianBlur is bit-exact by design since 4.1.2 - a separable Q8.8
-  fixed-point pipeline. For sigma=0 and kernel <= 7 the kernels come from the
-  hardcoded ``small_gaussian_tab`` and are exactly representable dyadic
-  rationals in Q8.8 ([64,128,64]/256 etc.), so the whole pipeline is integer
-  math: a horizontal pass exact in uint16, a vertical pass with sums
-  < 2^24, and a single final half-up rounding ``(acc + 2^15) >> 16`` -
-  replicated here with float32 convolutions (all intermediates are exactly
-  representable integers). Kernels >= 9 delegate: OpenCV derives their
-  fixed-point coefficients with softdouble arithmetic that a naive float64
-  re-derivation provably diverges from (at kernel 15 the naively rounded
-  Q8.8 kernel sums to 255, not 256).
+- ``gaussian`` (coerced-odd kernel in {1, 3, 5, 7}): cv2's uint8 GaussianBlur
+  with sigma=0 and kernel <= 7 uses the hardcoded ``small_gaussian_tab``
+  Q8.8 kernels - exact dyadic rationals - so the separable fixed-point
+  pipeline (horizontal pass exact in uint16, vertical sums < 2^24, final
+  rounding ``(acc + 2^15) >> 16``) is replicated with float32 convolutions.
+  Kernels >= 9 delegate: cv2 derives their Q8.8 coefficients with softdouble
+  arithmetic that a float64 re-derivation diverges from.
 
 - ``median`` (coerced-odd kernel <= 15): ``cv2.medianBlur`` uses replicate
   borders, and the median of an odd-count uint8 window is a pure integer
   order statistic - replicate-pad + unfold + sort + middle element matches
-  bit-for-bit (verified including images smaller than the kernel). Windows
-  are materialised in row chunks to bound the k^2-fold unfold blow-up to
-  ~2^24 float32 elements (~64 MB) per chunk. Kernels > 15 delegate (unverified
-  against cv2's constant-time histogram algorithm, and the unfold cost grows
-  quadratically).
+  bit-for-bit. Windows are materialised in row chunks to bound the k^2-fold
+  unfold blow-up to ~2^24 float32 elements (~64 MB) per chunk. Kernels > 15
+  delegate (cv2 switches algorithms; unfold cost grows quadratically).
 
-- ``bilateral``: always delegates - the weights are data-dependent floats
-  built from exp lookup tables, which cannot realistically be replicated
-  bit-exactly.
+- ``bilateral``: always delegates - data-dependent float weights built from
+  exp lookup tables cannot be replicated bit-exactly.
 
-Numpy/base64-born images delegate to the v1 implementation instead of forcing
-an eager host->device conversion - the same materialization-aware rule the
-model blocks follow. Unknown blur types also delegate, so the exact v1
-``ValueError`` is raised from the single source of truth. All tensor paths
-additionally require the border pad (k // 2) to be smaller than both spatial
-dims - beyond that cv2 multi-reflects while ``F.pad(mode="reflect")`` refuses,
-so that size regime delegates too.
+Numpy/base64-born images delegate to v1 (no materialised tensor). Unknown
+blur types delegate so the exact v1 ``ValueError`` is raised. Tensor paths
+also require the border pad (k // 2) to be smaller than both spatial dims:
+beyond that cv2 multi-reflects while ``F.pad(mode="reflect")`` refuses, so
+that regime delegates.
 """
 
 from typing import Type
@@ -80,8 +61,7 @@ _SMALL_GAUSSIAN_KERNELS_Q8_8 = {
 }
 _MAX_TENSOR_AVERAGE_KSIZE = 15
 _MAX_TENSOR_MEDIAN_KSIZE = 15
-# Unfolded window elements (float32) materialised per median chunk; one output
-# row is the floor, so pathologically wide images may exceed it by design.
+# Max unfolded float32 window elements per median chunk (floor: one output row).
 _MEDIAN_UNFOLD_ELEMENT_BUDGET = 2**24
 
 
@@ -137,8 +117,8 @@ def _requires_numpy_delegation(
         if ksize > _MAX_TENSOR_MEDIAN_KSIZE:
             return True
     else:
-        # bilateral (data-dependent float weights) and unknown blur types -
-        # the latter re-raise v1's exact ValueError inside apply_blur().
+        # bilateral and unknown blur types; the latter raise v1's exact
+        # ValueError inside apply_blur().
         return True
     pad = ksize // 2
     return pad >= min(tensor_image.shape[-2], tensor_image.shape[-1])

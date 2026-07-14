@@ -71,13 +71,7 @@ def test_convert_grayscale_block() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: a tensor-born image through the v1_tensor block must produce
-# BIT-IDENTICAL pixels to the numpy block on the equivalent BGR image. OpenCV's
-# uint8 BGR2GRAY is the per-pixel fixed-point map
-# (9798*R + 19235*G + 3735*B + 2^14) >> 15 (verified exhaustively over all 2^24
-# RGB triples against the installed cv2), so the tensor path mirrors it
-# device-side; numpy-born images and tensor-born single-channel images delegate
-# to the numpy implementation.
+# Parity contract: outputs match the numpy block bit-exactly on every path.
 
 
 def _tensor_grayscale_imports():
@@ -121,8 +115,7 @@ def test_tensor_convert_grayscale_bit_exact_parity(height, width) -> None:
         "image"
     ]
 
-    # then - the fixed-point map is a pure function of (R, G, B): bit-exact
-    # parity, tensor-born output of shape (1, H, W) whose numpy view is (H, W)
+    # then
     assert tensor_result_image.is_tensor_materialised()
     assert tuple(tensor_result_image.tensor_image.shape) == (1, height, width)
     assert tensor_result_image.numpy_image.shape == (height, width)
@@ -130,10 +123,7 @@ def test_tensor_convert_grayscale_bit_exact_parity(height, width) -> None:
 
 
 def test_tensor_convert_grayscale_rounding_boundary_pixels() -> None:
-    # given - (B, G, R) triples whose weighted sum lands EXACTLY on the .5
-    # luminance boundary (exhaustive sweep: 9798*R + 19235*G + 3735*B == 2^14
-    # mod 2^15), where round-half-up and truncation diverge, plus channel
-    # extremes; expected grays come straight from cv2 on this exact data
+    # given - triples whose luminance lands exactly on a .5 rounding tie, plus extremes
     torch, TensorConvertGrayscaleBlockV1 = _tensor_grayscale_imports()
     boundary_bgr_triples = [
         (4, 12, 0),
@@ -160,7 +150,7 @@ def test_tensor_convert_grayscale_rounding_boundary_pixels() -> None:
         TensorConvertGrayscaleBlockV1().run(image=tensor_born)["image"].numpy_image
     )
 
-    # then - both paths agree with cv2's round-half-up on the exact boundary
+    # then - cv2 rounds half up on these ties
     assert np.array_equal(tensor_result, numpy_result)
     assert np.array_equal(tensor_result, np.array([expected_gray], dtype=np.uint8))
 
@@ -185,14 +175,13 @@ def test_tensor_convert_grayscale_delegates_for_numpy_born_images() -> None:
     # when
     result = TensorConvertGrayscaleBlockV1().run(image=numpy_born)["image"]
 
-    # then - identical output via the numpy delegate, and no forced H2D
+    # then
     assert np.array_equal(result.numpy_image, reference)
     assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"
 
 
 def test_tensor_convert_grayscale_raises_on_single_channel_input_like_v1() -> None:
-    # given - grayscale input: v1 feeds a 2-D numpy image to cv2.cvtColor, which
-    # rejects it; the tensor sibling must fail with the same exception type
+    # given - cv2.cvtColor rejects 2-D input
     import cv2
 
     torch, TensorConvertGrayscaleBlockV1 = _tensor_grayscale_imports()
@@ -207,8 +196,7 @@ def test_tensor_convert_grayscale_raises_on_single_channel_input_like_v1() -> No
 
 
 def test_tensor_convert_grayscale_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check math runs on-device
+    # given - patch the global device so tensor-born images materialise on MPS
     torch, TensorConvertGrayscaleBlockV1 = _tensor_grayscale_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
@@ -225,6 +213,6 @@ def test_tensor_convert_grayscale_on_mps_device(monkeypatch) -> None:
     # when
     result = TensorConvertGrayscaleBlockV1().run(image=tensor_born)["image"]
 
-    # then - stays on device, and matches the numpy block bit-exactly
+    # then
     assert result.tensor_image.device.type == "mps"
     assert np.array_equal(result.numpy_image, reference)

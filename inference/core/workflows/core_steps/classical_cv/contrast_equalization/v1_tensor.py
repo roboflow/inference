@@ -1,27 +1,15 @@
 """Tensor-native sibling of ``contrast_equalization/v1``.
 
-'Contrast Stretching' and 'Histogram Equalization' are global, value-dependent
-maps: every output pixel depends only on its own value plus the image-wide
-256-bin histogram (which is layout-independent - the same multiset of values
-whether CHW/RGB or HWC/BGR). So on a tensor-materialised image the whole method
-collapses to:
+'Contrast Stretching' and 'Histogram Equalization' are global value maps driven
+by the image-wide 256-bin histogram (layout-independent: the same multiset of
+values whether CHW/RGB or HWC/BGR). The tensor path runs ``torch.bincount`` on
+the device, syncs the 256 counts to host to build a 256-entry LUT with the
+identical numpy/skimage arithmetic of v1 (bit-exact result versus the numpy
+block), and applies one device gather (``lut[image]``).
 
-1. ``torch.bincount`` on the device,
-2. one tiny D2H sync (256 counts) to build a 256-entry LUT on the host with the
-   EXACT numpy/skimage arithmetic of the v1 implementation (including its dtype
-   dance: float64 percentiles, float32 histogram bin edges, the
-   ``cumulative_distribution``/``equalize_hist`` float32 casts, uint8
-   truncation),
-3. one device gather (``lut[image]``).
-
-Because every floating-point step runs in the identical numpy code path, the
-result is BIT-EXACT versus the numpy block - not merely close.
-
-'Adaptive Equalization' (CLAHE) is position-dependent (tile-local mappings
-blended bilinearly), so it cannot be expressed as a value LUT - it delegates to
-the v1 implementation for bit parity. Numpy/base64-born images also delegate
-instead of forcing an eager host->device conversion - the same
-materialization-aware rule the model blocks follow.
+'Adaptive Equalization' (CLAHE) is position-dependent (tile-local mappings), so
+it cannot be expressed as a value LUT and delegates to v1; numpy/base64-born
+images delegate as well.
 """
 
 import math
@@ -96,7 +84,7 @@ def _contrast_stretching_lut(counts: np.ndarray) -> np.ndarray:
     p2 = _percentile_of_uint8_counts(counts, 2.0)
     p98 = _percentile_of_uint8_counts(counts, 98.0)
     values = np.arange(256, dtype=np.uint8)
-    clipped = np.clip(values, p2, p98)  # promotes to float64, like skimage
+    clipped = np.clip(values, p2, p98)  # float64, matching skimage
     if p2 != p98:
         scaled = (clipped - p2) / (p98 - p2)
         return (scaled * 255.0).astype(np.uint8)
@@ -108,10 +96,9 @@ def _histogram_equalization_lut(counts: np.ndarray) -> np.ndarray:
     -> uint8 chain, replicating skimage's dtype handling exactly."""
     values = np.arange(256, dtype=np.float32) / 255  # v1's float32 division
     present = counts > 0
-    # skimage histograms the float image via np.histogram(..., range=None),
-    # deriving min/max from the data. Min/max of the distinct present values
-    # are the SAME float32 scalars as of the full image, so the (float32) bin
-    # edges - and therefore each value's bin - come out identical.
+    # np.histogram derives bin edges from data min/max; min/max of the present
+    # distinct values equal those of the full image, so the float32 bin edges
+    # (and each value's bin) match skimage's histogram of all pixels.
     hist, bin_edges = np.histogram(values[present], bins=256, weights=counts[present])
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
     img_cdf = hist.cumsum()

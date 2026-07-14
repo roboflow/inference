@@ -3,9 +3,7 @@ used under ENABLE_TENSOR_DATA_REPRESENTATION).
 
 These consolidate logic that otherwise gets copy-pasted into every tensor-native
 block sibling: selecting a subset of detections by boolean mask or index list,
-and normalising the keypoint-detection input shape. Kept here (rather than on the
-inference_models dataclasses) to avoid bloating those types with workflow-specific
-concerns.
+and normalising the keypoint-detection input shape.
 
 Supported prediction shapes:
 - ``inference_models.Detections``                (object detection)
@@ -640,10 +638,8 @@ def build_native_image_metadata(
 
     Holds the ``class_id -> name`` map (required by the tensor-native serialiser),
     the image dimensions, and the parent/root lineage needed for crop-aware
-    coordinate recovery downstream. Mirrors the convention in
-    ``formatters/vlm_as_detector/v1_tensor.py``, but with a parametrised
-    ``prediction_type``. The image shape is read without forcing a device->host
-    materialization (so tensor-only inputs stay on device).
+    coordinate recovery downstream. The image shape is read without forcing a
+    device->host materialization (so tensor-only inputs stay on device).
     """
     height, width = image._read_shape_without_materialization()
     parent = image.parent_metadata
@@ -859,9 +855,6 @@ def embed_rle_masks_in_larger_canvas(
     everything outside the slice is zero. COCO RLE here is column-major (fortran), matching
     ``torch_mask_to_coco_rle``. The big canvas is never densified -- only the small slice is
     decoded to dense and run lengths are emitted directly onto the canvas.
-
-    Lives on the workflows side (rather than ``inference_models``) so the SAHI stitch block
-    introduces no new dependency on ``inference_models`` internals.
     """
     h, w = masks.image_size
     x0, y0 = offset_xy
@@ -914,10 +907,8 @@ def build_native_key_points(
     ragged per-instance keypoint counts are zero-padded to a uniform ``K`` with
     confidence ``0.0`` in the padding rows. ``class_id`` is the per-instance
     *object* class id (one per skeleton), matching the bbox ``Detections.class_id``.
-
-    Extracted (verbatim) from ``fusion/detections_list_rollup/v1_tensor.py`` so the
-    dynamic-block representation boundary can rebuild the ``(KeyPoints, Detections)``
-    tuple the visualizer siblings require.
+    Used by the rollup block and the dynamic-block representation boundary to
+    rebuild the ``(KeyPoints, Detections)`` tuple the visualizer siblings require.
     """
     number_of_instances = len(object_class_ids)
     normalised_xy = [list(xy) if xy else [] for xy in per_instance_xy]

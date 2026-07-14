@@ -416,8 +416,7 @@ else:
         CosineSimilarityBlockV1,
     )
 
-# visual_search consumes the image through the WorkflowImageData wrapper and emits
-# only dict/scalar/image outputs, so both representations share the numpy source.
+# visual_search emits only dict/scalar/image outputs, so it needs no _tensor sibling.
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
     RoboflowVisualSearchBlockV1,
 )
@@ -1481,32 +1480,28 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     # Tensor-native producers emit native dataclasses for these kinds, which the
     # numpy serialisers cannot handle. Classification has no numpy serialiser at all;
     # keypoint produces a (KeyPoints, Detections) tuple; semantic-seg uses the
-    # per-class RLE InstanceDetections carrier (Option B).
+    # per-class RLE InstanceDetections carrier.
     KINDS_SERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
         serialise_native_classification
     )
     KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name] = (
         serialise_native_keypoint_detection
     )
-    # semantic-seg uses the per-class RLE InstanceDetections carrier (Option B); emit
-    # the native COCO RLE per box (no polygon collapse) via the native RLE serialiser.
+    # Emit the native COCO RLE per box (no polygon collapse).
     KINDS_SERIALIZERS[SEMANTIC_SEGMENTATION_PREDICTION_KIND.name] = (
         serialise_native_rle_detections
     )
     # instance-seg blocks declare the RLE kind too; the numpy `serialise_rle_sv_detections`
-    # cannot handle a native InstanceDetections, so route it to the native RLE serialiser
-    # (which emits the COCO RLE from InstancesRLEMasks, original-index aligned).
+    # cannot handle a native InstanceDetections.
     KINDS_SERIALIZERS[RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name] = (
         serialise_native_rle_detections
     )
     # Tensor-native embedding/tensor kinds serialise to plain Python lists.
     KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
     KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
-    # NOTE: the wildcard (`*`) serialiser needs no override here — it is handled
-    # by the same-name symbol swap above (serializers_tensor.serialize_wildcard_kind
-    # adds native arms so wildcard outputs of legacy-mode dynamic blocks and any
-    # native value routed to a `*` output serialise to the standard dicts instead
-    # of crashing HTTP JSON encoding — the custom-python knob plan, Step 6).
+    # The wildcard (`*`) serialiser needs no override here: the same-name symbol
+    # swap above already selects serializers_tensor.serialize_wildcard_kind, whose
+    # native arms serialise native values routed to `*` outputs to the standard dicts.
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,

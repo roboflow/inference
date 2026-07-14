@@ -1,22 +1,18 @@
 """Tensor-native sibling of ``contrast_enhancement/v1``.
 
-The enhancement is pure per-channel arithmetic (percentile/min-max stretch,
-linear contrast around 128, optional gamma, clip, uint8), so on a
-tensor-materialised image the whole chain runs as vectorised torch ops on the
-image's device - no host round trip. Channel independence makes the math
-identical for RGB (tensor layout) and BGR (numpy layout).
+Tensor-materialised images run the per-channel chain (percentile/min-max
+stretch, linear contrast around 128, optional gamma, clip, uint8) as torch ops
+on the image's device; numpy/base64-born images delegate to the v1 numpy
+implementation. Channel independence makes the math identical for RGB (tensor
+layout) and BGR (numpy layout).
 
-Numpy parity details preserved deliberately:
-- ``astype(np.uint8)`` TRUNCATES, so the tensor path truncates too;
-- channels with a flat histogram (``v_max <= v_min``) pass through untouched;
-  a flat single-channel image returns the INPUT object, like the numpy
-  grayscale branch;
-- percentiles use numpy's linear interpolation, implemented sort-based (also
-  sidesteps ``torch.quantile``'s input-size limit and patchy MPS support).
-
-Images without a materialised tensor (numpy/base64-born) delegate to the v1
-numpy implementation instead of forcing a host->device conversion - the same
-materialization-aware rule the model blocks follow.
+Numpy parity:
+- ``astype(np.uint8)`` truncates, so the tensor path truncates too;
+- flat-histogram channels (``v_max <= v_min``) pass through untouched; a flat
+  single-channel image returns the input object, like the numpy grayscale
+  branch;
+- percentiles use numpy's linear interpolation, implemented sort-based
+  (``torch.quantile`` has an input-size limit and patchy MPS support).
 """
 
 import math
@@ -47,8 +43,6 @@ class ContrastEnhancementBlock(WorkflowBlock):
         **kwargs,
     ) -> BlockResult:
         if not image.is_tensor_materialised():
-            # Numpy/base64-born image: keep the numpy math instead of forcing
-            # an eager host->device conversion just to enhance contrast.
             return {
                 "image": enhance_contrast(
                     image=image,
@@ -74,7 +68,7 @@ def _enhance_contrast_tensor(
     normalize_brightness: bool,
 ) -> WorkflowImageData:
     """Device-resident mirror of ``v1.enhance_contrast`` for CHW tensors."""
-    chw = image.tensor_image  # (C, H, W) uint8, C in {1, 3} by contract
+    chw = image.tensor_image  # (C, H, W) uint8, C in {1, 3}
     clip_pct = float(clip_limit) / 100.0
     contrast_mult = float(contrast_multiplier)
     gamma_val = 1.0 / 1.3 if normalize_brightness else 1.0

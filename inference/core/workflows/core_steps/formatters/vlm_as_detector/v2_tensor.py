@@ -360,9 +360,8 @@ def build_image_metadata(
     inference_id: str,
     class_names: Dict[int, str],
 ) -> dict:
-    # Tensor-native predictions keep per-image state (class_names map, lineage,
-    # inference_id) on `image_metadata` instead of duplicating it across every
-    # detection row the way the numpy sv.Detections did.
+    # Per-image state (class_names map, lineage, inference_id) lives on
+    # `image_metadata`.
     parent = image.parent_metadata
     root = image.workflow_root_ancestor_metadata
     parent_coordinates = parent.origin_coordinates
@@ -404,9 +403,8 @@ def native_detections_from_parsed(
     confidence: np.ndarray,
 ) -> Detections:
     # `class_names` maps each resolved class_id -> the class name string the VLM
-    # produced (mirroring numpy's per-detection data["class_name"]); built from
-    # the (class_id, class_name) pairs actually present so the serialiser can
-    # resolve every id, including unmapped ids (class_id == -1).
+    # produced; built from the (class_id, class_name) pairs actually present so
+    # the serialiser can resolve every id, including unmapped ids (class_id == -1).
     number_of_detections = len(xyxy)
     class_names = {
         int(detection_class_id): str(detection_class_name)
@@ -419,11 +417,9 @@ def native_detections_from_parsed(
         inference_id=inference_id,
         class_names=class_names,
     )
-    # Carry the per-box VLM label string directly on bboxes_metadata[i]["class"]
-    # so distinct unmapped labels (all sharing class_id == -1) survive: the
-    # serialiser prefers this per-box label over the class_id -> name map,
-    # matching numpy's per-detection class_name parity. Critical for the new
-    # openai/claude open-set paths which routinely emit multiple distinct -1s.
+    # The per-box VLM label string is carried on bboxes_metadata[i]["class"] so
+    # distinct unmapped labels (all sharing class_id == -1) survive: the
+    # serialiser prefers this per-box label over the class_id -> name map.
     bboxes_metadata = (
         [
             {
@@ -540,10 +536,6 @@ def parse_llm_object_detection_response(
 ) -> Detections:
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
-    # Mirror the gemini path's tolerance: accept a bare list root or a dict with
-    # a `detections` key, and raise a clear ValueError on any other shape instead
-    # of a KeyError on a missing key. Keeps openai/claude robust to real-world
-    # response wrapping (a list root, or `{}`).
     detections = extract_gemini_detection_entries(parsed_data=parsed_data)
     if len(detections) == 0:
         return empty_native_detections(
@@ -597,9 +589,8 @@ def parse_florence2_object_detection_response(
     florence_task_type: str,
 ):
     image_height, image_width = image.numpy_image.shape[:2]
-    # sv.Detections.from_lmm is used purely as the Florence-2 parsing algorithm
-    # (mirroring the numpy block); the numpy arrays it returns are read back and
-    # the output is built natively below - no sv.Detections is returned.
+    # sv.Detections.from_lmm is used purely as the Florence-2 parsing algorithm;
+    # the output is built natively from the arrays it returns.
     detections = sv.Detections.from_lmm(
         "florence_2",
         result={florence_task_type: parsed_data},

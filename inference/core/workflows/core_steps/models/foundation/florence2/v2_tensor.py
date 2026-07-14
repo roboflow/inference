@@ -1,11 +1,4 @@
-"""Tensor-native sibling of `roboflow_core/florence_2@v2`.
-
-SCRATCH — first pass for review. v2 is a thin variant of v1 that only renames the
-model selector field (`model_id` instead of `model_version`) and bumps the type
-literal; all inference logic lives in v1. So the tensor sibling simply subclasses
-the tensor-native `Florence2BlockV1` (from `v1_tensor`) and reuses the verbatim,
-mode-agnostic `V2BlockManifest`.
-"""
+"""Tensor-native `roboflow_core/florence_2@v2` block."""
 
 from typing import List, Optional, Type, Union
 

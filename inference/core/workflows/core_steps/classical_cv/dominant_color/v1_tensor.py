@@ -1,37 +1,20 @@
 """Tensor-native sibling of ``dominant_color/v1``.
 
-The block's output is a single ``(r, g, b)`` tuple, not an image, and the
-algorithm is an iterative k-means over a downsampled frame: unseeded global
-``np.random`` initialisation, an empty-cluster reinit that also draws from the
-global RNG, and a host-side convergence check every iteration. Porting the
-loop to the device buys nothing - the clustered array is tiny (~100px min-dim
-after downsampling, k <= 10), every iteration would sync for the convergence
-check, and torch has no drop-in replica of the exact numpy arithmetic (and no
-replica of the global-numpy-RNG draws the trajectory is coupled to). So the
-clustering stays on the CPU in the SAME numpy code both paths share:
-``find_dominant_color``, imported from v1.
+The k-means stays on the CPU in v1's ``find_dominant_color``: the clustered
+array is tiny after downsampling, the convergence check would sync every
+iteration, and the trajectory is coupled to unseeded global ``np.random``
+draws. The tensor path only moves the strided downsample to the device, so
+the small downsampled block crosses device->host instead of the full frame.
 
-What the tensor path DOES win is transfer volume: v1 materialises the full
-frame on the host (megabytes for HD frames) only to immediately discard all
-but every ``scale_factor``-th pixel. For a tensor-materialised image the
-strided downsample runs on the device (a zero-copy strided view) and only the
-small downsampled block (tens of KB) crosses to the host.
+The host-side array is made byte-identical to v1's
+``numpy_image[::scale_factor, ::scale_factor]`` (HWC, BGR) before the shared
+k-means: float32 summation order in the distance computation depends on the
+channel order, so RGB-ordered input could diverge the trajectory. Identical
+bytes + identical RNG state => identical output; the RNG is unseeded, so
+run-to-run output is nondeterministic on both paths.
 
-Trajectory-preservation subtlety: v1's k-means consumes pixels in HWC
-row-major order with BGR channel order. Feeding RGB-ordered pixel vectors
-instead would permute each coordinate triple - mathematically
-distance-preserving, but the floating-point summation order in the distance
-computation changes, which can flip argmin ties and diverge the trajectory.
-The tensor path therefore flips the channel axis back to BGR and permutes to
-HWC before the single D2H copy, making the host-side array BYTE-IDENTICAL to
-v1's ``numpy_image[::scale_factor, ::scale_factor]``: identical bytes +
-identical RNG state => identical trajectory => identical output.
-
-Numpy/base64-born images delegate to the exact v1 numpy path instead of
-forcing an eager host->device conversion - the same materialization-aware rule
-the other tensor siblings follow. NOTE: v1 seeds nothing, so the block is
-nondeterministic run-to-run on BOTH paths; parity is exact only under a pinned
-global RNG (see the tests).
+Numpy/base64-born images delegate to the v1 numpy path (no materialised
+tensor).
 """
 
 from typing import Optional, Type
@@ -80,11 +63,9 @@ class DominantColorBlockV1(WorkflowBlock):
 
 
 def _downsample_to_bgr_numpy(chw: torch.Tensor, scale_factor: int) -> np.ndarray:
-    """Strided downsample on the device, then one small D2H copy of an HWC BGR
-    uint8 array byte-identical to v1's
-    ``numpy_image[::scale_factor, ::scale_factor]`` (see the module docstring
-    for why byte-identity - not mere colour equivalence - is required)."""
+    """Strided downsample on the device, then one small D2H copy yielding an
+    HWC BGR uint8 array byte-identical to v1's
+    ``numpy_image[::scale_factor, ::scale_factor]``."""
     downsampled = chw.detach()[:, ::scale_factor, ::scale_factor]
-    # CHW RGB -> CHW BGR -> HWC BGR; contiguous on-device so the transfer
-    # copies exactly the downsampled block, nothing more.
+    # CHW RGB -> HWC BGR; contiguous so only the downsampled block transfers.
     return downsampled.flip(0).permute(1, 2, 0).contiguous().cpu().numpy()

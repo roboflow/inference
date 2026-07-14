@@ -115,13 +115,7 @@ def test_image_preprocessing_invalid_task_type_raises() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: a tensor-born image through the v1_tensor block must produce
-# BIT-IDENTICAL pixels to the numpy block on the equivalent BGR image. Flips
-# are pure permutations; right-angle rotations replicate warpAffine's
-# degenerate axis-separable sampling (incl. the odd-dimension half-pixel
-# averaging and the even-dimension out-of-range border row/column); arbitrary
-# angles, all real resizes and numpy-born images delegate to the numpy
-# implementation.
+# Parity contract: outputs match the numpy block bit-exactly on every path.
 
 
 def _tensor_preprocessing_imports():
@@ -176,8 +170,7 @@ def _case_image(case: str) -> np.ndarray:
     if case == "color_larger":
         return rng.integers(0, 256, size=(48, 64, 3), dtype=np.uint8)
     if case == "checker":
-        # 0/1 checkerboard: every 2-tap half-pixel sum is odd and every 4-tap
-        # sum is 2 - adversarial for the fixed-point rounding ties
+        # 0/1 checkerboard: every 2-tap half-pixel sum is an exact rounding tie
         checker = ((np.indices((7, 9)).sum(axis=0)) % 2).astype(np.uint8)
         return np.stack([checker, 1 - checker, checker], axis=-1)
     raise ValueError(case)
@@ -200,15 +193,13 @@ def test_tensor_flip_bit_exact_parity(flip_type, case) -> None:
         flip_type=flip_type,
     )
 
-    # then - a flip is a pure permutation, so parity is bit-exact and the
-    # output stays tensor-born
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
 
 def test_tensor_flip_unrecognized_type_passes_image_through() -> None:
-    # given - flip_type=None is the only run()-reachable value hitting v1's
-    # pass-through else-branch (other invalid values fail validation)
+    # given - flip_type=None is the only run()-reachable pass-through value in v1
     torch, TensorImagePreprocessingBlockV1 = _tensor_preprocessing_imports()
     bgr = _case_image("color_odd")
     numpy_born, tensor_born = _paired_images(torch, bgr)
@@ -219,7 +210,7 @@ def test_tensor_flip_unrecognized_type_passes_image_through() -> None:
         TensorImagePreprocessingBlockV1, tensor_born, task_type="flip", flip_type=None
     )
 
-    # then - image passes through unchanged on both paths
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(numpy_result.numpy_image, bgr)
     assert np.array_equal(tensor_result.numpy_image, bgr)
@@ -228,8 +219,7 @@ def test_tensor_flip_unrecognized_type_passes_image_through() -> None:
 @pytest.mark.parametrize("rotation_degrees", [90, 180, 270, -90, -180, -270, 360, -360])
 @pytest.mark.parametrize("case", ["color_odd", "color_even", "color_mixed", "checker"])
 def test_tensor_rotate_right_angles_bit_exact_parity(rotation_degrees, case) -> None:
-    # given - odd, even and mixed dims (the warpAffine mapping differs per
-    # axis parity) plus a rounding-tie checkerboard
+    # given - the warpAffine mapping differs per axis parity, hence odd/even/mixed dims
     torch, TensorImagePreprocessingBlockV1 = _tensor_preprocessing_imports()
     bgr = _case_image(case)
     numpy_born, tensor_born = _paired_images(torch, bgr)
@@ -245,7 +235,7 @@ def test_tensor_rotate_right_angles_bit_exact_parity(rotation_degrees, case) -> 
         rotation_degrees=rotation_degrees,
     )
 
-    # then - the degenerate warp is replicated exactly, tensor-natively
+    # then
     assert tensor_result.is_tensor_materialised()
     assert tensor_result.numpy_image.shape == numpy_result.numpy_image.shape
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
@@ -253,7 +243,7 @@ def test_tensor_rotate_right_angles_bit_exact_parity(rotation_degrees, case) -> 
 
 @pytest.mark.parametrize("rotation_degrees", [90, -90, 180, 360])
 def test_tensor_rotate_right_angles_grayscale_parity(rotation_degrees) -> None:
-    # given - (1, H, W) tensors follow the same per-axis sampling
+    # given
     torch, TensorImagePreprocessingBlockV1 = _tensor_preprocessing_imports()
     gray = _case_image("gray_odd")
     numpy_born, tensor_born = _paired_images(torch, gray)
@@ -275,8 +265,7 @@ def test_tensor_rotate_right_angles_grayscale_parity(rotation_degrees) -> None:
 
 
 def test_tensor_rotate_arbitrary_angle_delegates_to_numpy_math() -> None:
-    # given - a 33 degrees rotation is a real fixed-point bilinear warp, so
-    # the tensor block delegates to the numpy implementation
+    # given - arbitrary angles are a real bilinear warp, so the block delegates
     torch, TensorImagePreprocessingBlockV1 = _tensor_preprocessing_imports()
     bgr = _case_image("color_larger")
     numpy_born, tensor_born = _paired_images(torch, bgr)
@@ -290,7 +279,7 @@ def test_tensor_rotate_arbitrary_angle_delegates_to_numpy_math() -> None:
         rotation_degrees=33,
     )
 
-    # then - identical output via the numpy delegate (emitted numpy-born)
+    # then
     assert not tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
@@ -310,7 +299,7 @@ def test_tensor_rotate_zero_degrees_returns_tensor_copy() -> None:
         rotation_degrees=0,
     )
 
-    # then - the copy stays tensor-born and pixel-identical
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
     assert np.array_equal(tensor_result.numpy_image, bgr)
@@ -326,8 +315,7 @@ def test_tensor_rotate_zero_degrees_returns_tensor_copy() -> None:
     ],
 )
 def test_tensor_resize_delegates_with_identical_output(width, height) -> None:
-    # given - INTER_AREA rounding is not replicable bit-exactly in torch, so
-    # every real resize delegates to the numpy implementation
+    # given - INTER_AREA is not bit-exactly replicable in torch, so resizes delegate
     torch, TensorImagePreprocessingBlockV1 = _tensor_preprocessing_imports()
     bgr = _case_image("color_larger")
     numpy_born, tensor_born = _paired_images(torch, bgr)
@@ -342,8 +330,7 @@ def test_tensor_resize_delegates_with_identical_output(width, height) -> None:
         height=height,
     )
 
-    # then - identical dims (incl. the int() truncated aspect-derived ones)
-    # and identical pixels via the numpy delegate
+    # then
     assert tensor_result.numpy_image.shape == numpy_result.numpy_image.shape
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
@@ -364,7 +351,7 @@ def test_tensor_resize_without_target_dims_returns_tensor_copy() -> None:
         height=None,
     )
 
-    # then - the copy stays tensor-born and pixel-identical to the input
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
     assert np.array_equal(tensor_result.numpy_image, bgr)
@@ -388,7 +375,7 @@ def test_tensor_validation_errors_match_v1(overrides) -> None:
     bgr = _case_image("color_odd")
     numpy_born, tensor_born = _paired_images(torch, bgr)
 
-    # when / then - both siblings raise the same validation error
+    # when / then
     with pytest.raises(ValueError):
         _run_v1(numpy_born, **overrides)
     with pytest.raises(ValueError):
@@ -412,14 +399,13 @@ def test_tensor_block_delegates_for_numpy_born_images() -> None:
         flip_type="vertical",
     )
 
-    # then - identical output via the numpy delegate, and no forced H2D
+    # then
     assert np.array_equal(result.numpy_image, reference)
     assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"
 
 
 def test_tensor_flip_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check math runs on-device
+    # given - patch the global device so tensor-born images materialise on MPS
     torch, TensorImagePreprocessingBlockV1 = _tensor_preprocessing_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
@@ -442,6 +428,6 @@ def test_tensor_flip_on_mps_device(monkeypatch) -> None:
         flip_type="horizontal",
     )
 
-    # then - stays on device, and matches the numpy block bit-exactly
+    # then
     assert result.tensor_image.device.type == "mps"
     assert np.array_equal(result.numpy_image, reference)

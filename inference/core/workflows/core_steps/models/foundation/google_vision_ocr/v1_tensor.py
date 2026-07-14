@@ -1,24 +1,4 @@
-"""Tensor-native sibling of `roboflow_core/google_vision_ocr@v1`.
-
-Calls the Google Vision API (directly or via the Roboflow proxy) on every path —
-there is no inference_models adapter here — so the ONLY change is the OUTPUT
-representation of the `predictions` kind: instead of `sv.Detections` (with the
-recognized text stored as the per-box class name in `.data`) this builds an
-`inference_models.Detections` that PRESERVES the numpy per-box semantics:
-
-- the recognized TEXT per block is carried PER BOX in
-  ``bboxes_metadata[i][CLASS_NAME_KEY]`` (== "class") so the serializer (C1) emits it
-  as ``predictions[i]["class"]`` — exactly as the numpy sibling, which stored the text
-  as the per-box class name;
-- a non-empty ``image_metadata[CLASS_NAMES_KEY] = {0: "text-region"}`` map is still
-  attached as the serializer's class-id fallback (every box carries ``class_id == 0``);
-- a ``detection_id`` per box;
-- image lineage / dimensions via ``build_native_image_metadata``.
-
-Boxes are built on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``. The google-vision-specific
-``text`` (full recognized text) and ``language`` outputs are preserved exactly.
-The output kind becomes the tensor-native object-detection kind.
-"""
+"""Tensor-native `roboflow_core/google_vision_ocr@v1` block."""
 
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
@@ -58,12 +38,10 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_models.models.base.object_detection import Detections
 
-# Google Vision returns blocks of recognized text. To preserve numpy parity for the
-# serialized output, the recognized text per block is carried PER BOX in
-# `bboxes_metadata[i][CLASS_NAME_KEY]` (== "class"); the serializer (C1) emits that
-# value as `predictions[i]["class"]` (matching the numpy sibling, which stored the
-# text as the per-box class name). A non-empty `CLASS_NAMES_KEY` map is still
-# required on image_metadata as the serializer's class-id fallback.
+# The recognized text per block is carried per box in
+# `bboxes_metadata[i][CLASS_NAME_KEY]`, which the serializer emits as
+# `predictions[i]["class"]`; this image-level class map must stay non-empty as the
+# serializer's class-id fallback (every box carries `class_id == 0`).
 CLASS_NAMES = {0: "text-region"}
 PREDICTION_TYPE = "ocr"
 
@@ -321,14 +299,7 @@ def _build_native_detections(
     confidence: List[float],
     texts: List[str],
 ) -> Detections:
-    """Build an `inference_models.Detections` from the parsed Google Vision blocks.
-
-    Every box shares ``class_id == 0`` (the image_metadata class map is the
-    serializer's fallback); the recognized text per block is carried PER BOX in
-    ``bboxes_metadata[i][CLASS_NAME_KEY]`` so the serializer emits it as the box's
-    ``class`` (numpy parity), and each box gets a ``detection_id``. Tensors are
-    built on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``.
-    """
+    """Build an `inference_models.Detections` from the parsed Google Vision blocks."""
     number_of_detections = len(xyxy)
     detections = Detections(
         xyxy=(

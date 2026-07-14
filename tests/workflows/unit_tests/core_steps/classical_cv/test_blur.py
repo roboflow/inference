@@ -80,17 +80,7 @@ def test_image_blur_block() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: a tensor-born image through the v1_tensor block must produce
-# BIT-IDENTICAL pixels to the numpy block. Tensor-native paths: "average" with
-# an ODD kernel <= 15 (integer window sums; odd k^2 makes .5 rounding ties
-# unrepresentable), "gaussian" with a coerced kernel in {1, 3, 5, 7} (OpenCV's
-# dyadic small_gaussian_tab Q8.8 fixed-point pipeline replicated with
-# integer-exact float32 convolutions) and "median" with a coerced kernel <= 15
-# (exact integer window median over replicate borders). Everything else
-# delegates to the v1 numpy implementation: even-kernel average (cv2's .5-tie
-# rounding is build-specific), gaussian kernels >= 9 (softdouble-derived
-# fixed-point coefficients), bilateral (data-dependent float weights), kernels
-# whose border pad reaches the image size, and numpy-born inputs.
+# Parity contract: outputs match the numpy block bit-exactly on every path.
 
 
 def _tensor_blur_imports():
@@ -157,7 +147,7 @@ def test_tensor_image_blur_average_bit_exact_parity(kernel_size, case) -> None:
         torch, TensorImageBlurBlockV1, bgr, "average", kernel_size
     )
 
-    # then - odd kernels run tensor-natively with bit-exact rounding
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
@@ -165,8 +155,7 @@ def test_tensor_image_blur_average_bit_exact_parity(kernel_size, case) -> None:
 @pytest.mark.parametrize("kernel_size", [1, 3, 4, 5, 6, 7])
 @pytest.mark.parametrize("case", ["noise_color", "noise_gray", "gradient"])
 def test_tensor_image_blur_gaussian_bit_exact_parity(kernel_size, case) -> None:
-    # given - even kernel sizes exercise the v1 _to_positive_odd coercion
-    # (4 -> 5, 6 -> 7); all coerced sizes hit the small_gaussian_tab regime
+    # given - even sizes exercise v1's _to_positive_odd coercion (4 -> 5, 6 -> 7)
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     bgr = _blur_case_image(case)
 
@@ -175,7 +164,7 @@ def test_tensor_image_blur_gaussian_bit_exact_parity(kernel_size, case) -> None:
         torch, TensorImageBlurBlockV1, bgr, "gaussian", kernel_size
     )
 
-    # then - the Q8.8 fixed-point pipeline is bit-exact
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
@@ -183,8 +172,7 @@ def test_tensor_image_blur_gaussian_bit_exact_parity(kernel_size, case) -> None:
 @pytest.mark.parametrize("kernel_size", [2, 3, 5, 9, 15])
 @pytest.mark.parametrize("case", ["noise_color", "noise_gray", "extremes"])
 def test_tensor_image_blur_median_bit_exact_parity(kernel_size, case) -> None:
-    # given - "extremes" is a salt-and-pepper image, the classic median input;
-    # kernel_size=2 exercises the v1 _to_positive_odd coercion (2 -> 3)
+    # given - kernel_size=2 exercises v1's _to_positive_odd coercion (2 -> 3)
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     bgr = _blur_case_image(case)
 
@@ -193,18 +181,15 @@ def test_tensor_image_blur_median_bit_exact_parity(kernel_size, case) -> None:
         torch, TensorImageBlurBlockV1, bgr, "median", kernel_size
     )
 
-    # then - the integer window median is bit-exact
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
 
 @pytest.mark.parametrize("kernel_size", [2, 4])
 def test_tensor_image_blur_average_even_kernel_ties_delegate(kernel_size) -> None:
-    # given - a 0/1 checkerboard: EVERY 2x2 window sums to 2 and every 4x4
-    # window to 8, i.e. sum / k^2 is an exact .5 rounding tie at every pixel.
-    # cv2's tie rounding is build-specific (the ARM carotene HAL rounds up,
-    # x86 builds mix SIMD/scalar tails), so even kernels delegate to the very
-    # same cv2 call instead of replicating one build's behaviour
+    # given - 0/1 checkerboard: every window mean is an exact .5 rounding tie;
+    # cv2's tie rounding is build-specific, so even kernels delegate
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     yy, xx = np.mgrid[0:16, 0:20]
     checker = ((yy + xx) % 2).astype(np.uint8)
@@ -214,15 +199,13 @@ def test_tensor_image_blur_average_even_kernel_ties_delegate(kernel_size) -> Non
         torch, TensorImageBlurBlockV1, checker, "average", kernel_size
     )
 
-    # then - delegated outputs are numpy-born, and trivially bit-identical
+    # then
     assert not tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result.numpy_image)
 
 
 def test_tensor_image_blur_gaussian_large_kernel_delegates() -> None:
-    # given - kernel 9 leaves the hardcoded small_gaussian_tab regime; OpenCV
-    # derives its fixed-point coefficients with softdouble arithmetic that a
-    # float64 re-derivation cannot be trusted to match
+    # given - kernel 9 is beyond the small_gaussian_tab regime, so gaussian delegates
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     bgr = _blur_case_image("noise_color")
 
@@ -237,7 +220,7 @@ def test_tensor_image_blur_gaussian_large_kernel_delegates() -> None:
 
 
 def test_tensor_image_blur_median_large_kernel_delegates() -> None:
-    # given - kernel 17 exceeds the verified bound (and the k^2 unfold cost)
+    # given - median kernels above 15 delegate
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     bgr = _blur_case_image("noise_color")
 
@@ -252,8 +235,7 @@ def test_tensor_image_blur_median_large_kernel_delegates() -> None:
 
 
 def test_tensor_image_blur_bilateral_delegates() -> None:
-    # given - bilateral weights are data-dependent floats (exp LUTs); the
-    # tensor block always delegates that type
+    # given - bilateral always delegates (data-dependent float weights)
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     bgr = _blur_case_image("noise_color")
 
@@ -268,9 +250,7 @@ def test_tensor_image_blur_bilateral_delegates() -> None:
 
 
 def test_tensor_image_blur_oversized_kernel_regime_delegates() -> None:
-    # given - kernel pad (15 // 2 = 7) reaches the 6-pixel image height: cv2
-    # multi-reflects there while F.pad(mode="reflect") refuses, so the tensor
-    # block delegates that size regime
+    # given - kernel pad 7 reaches the 6-pixel image height, so this regime delegates
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     rng = np.random.default_rng(7)
     bgr = rng.integers(0, 256, size=(6, 9, 3), dtype=np.uint8)
@@ -287,8 +267,7 @@ def test_tensor_image_blur_oversized_kernel_regime_delegates() -> None:
 
 @pytest.mark.parametrize("blur_type", ["average", "gaussian", "median", "bilateral"])
 def test_tensor_image_blur_delegates_for_numpy_born_images(blur_type) -> None:
-    # given - numpy-born images must keep the numpy math instead of forcing an
-    # eager host->device conversion
+    # given
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     bgr = _blur_case_image("noise_color")
     numpy_born, _ = _paired_images(torch, bgr)
@@ -303,14 +282,13 @@ def test_tensor_image_blur_delegates_for_numpy_born_images(blur_type) -> None:
         image=numpy_born, blur_type=blur_type, kernel_size=5
     )["image"]
 
-    # then - identical output via the numpy delegate, and no forced H2D
+    # then
     assert np.array_equal(result.numpy_image, reference)
     assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"
 
 
 def test_tensor_image_blur_unknown_blur_type_raises() -> None:
-    # given - unknown types delegate through apply_blur, so the tensor path
-    # raises v1's exact ValueError
+    # given
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     tensor_born = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -325,8 +303,7 @@ def test_tensor_image_blur_unknown_blur_type_raises() -> None:
 
 
 def test_tensor_image_blur_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check math runs on-device
+    # given - patch the global device so tensor-born images materialise on MPS
     torch, TensorImageBlurBlockV1 = _tensor_blur_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
@@ -348,6 +325,6 @@ def test_tensor_image_blur_on_mps_device(monkeypatch) -> None:
         image=tensor_born, blur_type="average", kernel_size=5
     )["image"]
 
-    # then - stays on device, and matches the numpy block bit-exactly
+    # then
     assert result.tensor_image.device.type == "mps"
     assert np.array_equal(result.numpy_image, reference)

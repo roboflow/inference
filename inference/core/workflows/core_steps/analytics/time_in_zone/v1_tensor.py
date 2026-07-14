@@ -258,7 +258,6 @@ class TimeInZoneBlockV1(WorkflowBlock):
         # zone-membership test only needs box anchors + tracker_id) and run
         # trigger. The returned mask is aligned to the input order, so the
         # original tensor-native detections can be sliced directly.
-        # It's not optimal and next versions should run this fully tensor-native.
         sv_input = sv.Detections(
             xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
             tracker_id=np.array(

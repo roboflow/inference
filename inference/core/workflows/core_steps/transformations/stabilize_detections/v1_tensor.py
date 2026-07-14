@@ -184,10 +184,10 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         self._batch_of_last_known_detections: Dict[
             str, Dict[Union[int, str], NativeDetections]
         ] = {}
-        # Parallel cache of each cached slice's xyxy as a small (4,) numpy array,
-        # so the numpy Kalman / smoothing loops don't re-issue a device->host
-        # ``.to("cpu")`` per cached detection every frame (mirrors the slices in
-        # ``_batch_of_last_known_detections`` and is updated in lockstep).
+        # Parallel cache of each cached slice's xyxy as a (4,) numpy array, kept
+        # in lockstep with ``_batch_of_last_known_detections``, so the Kalman /
+        # smoothing loops don't re-issue a device->host copy per cached
+        # detection every frame.
         self._batch_of_last_known_xyxy: Dict[str, Dict[Union[int, str], np.ndarray]] = (
             {}
         )
@@ -221,8 +221,8 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
             )
 
         device = detections.xyxy.device
-        # Per-row xyxy as plain python floats so the numpy Kalman / smoothing
-        # helpers stay device-agnostic (the same scalars the numpy block worked on).
+        # Per-row xyxy materialised to host once so the numpy Kalman / smoothing
+        # helpers stay device-agnostic.
         xyxy_rows = detections.xyxy.detach().to("cpu").numpy().astype(float)
 
         cached_detections = self._batch_of_last_known_detections.setdefault(
@@ -268,7 +268,7 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
             else:
                 predicted_detections[tracker_id] = curr_frame_detection
             # Cache the unsmoothed current detection for next frame's velocity /
-            # gap-fill measurements (mirrors the numpy block caching detections[i]).
+            # gap-fill measurements.
             cached_detections[tracker_id] = take_detections_by_indices(detections, [i])
             cached_xyxy[tracker_id] = np.asarray(xyxy_rows[i], dtype=float).reshape(-1)[
                 :4
@@ -338,14 +338,12 @@ def _merge_native_detections(
     empty_template: NativeDetections,
     device: torch.device,
 ) -> NativeDetections:
-    """Concatenate single-row native detections back into one prediction.
-
-    Mirrors ``sv.Detections.merge`` for the tensor-native types: xyxy / class_id /
-    confidence are concatenated, ``bboxes_metadata`` lists are joined (preserving
-    each box's ``tracker_id`` and ``detection_id``), and masks are concatenated
-    (dense torch stack or RLE ``masks`` list). ``image_metadata`` (carrying the
-    ``class_names`` map needed by the serialiser) is taken from the current input.
-    """
+    """Concatenate single-row native detections back into one prediction:
+    xyxy / class_id / confidence are concatenated, ``bboxes_metadata`` lists are
+    joined (preserving each box's ``tracker_id`` and ``detection_id``), and
+    masks are concatenated (dense torch stack or RLE ``masks`` list).
+    ``image_metadata`` (carrying the ``class_names`` map needed by the
+    serialiser) is taken from the current input."""
     if not detections_list:
         return _empty_like(empty_template, device=device)
 

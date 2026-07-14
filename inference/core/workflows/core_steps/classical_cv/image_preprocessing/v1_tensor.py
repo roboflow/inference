@@ -1,52 +1,37 @@
 """Tensor-native sibling of ``image_preprocessing/v1``.
 
-Per-task parity rationale:
+Per-task contract:
 
-* ``flip`` is a pure pixel permutation (``cv2.flip`` <-> ``torch.flip`` on the
-  H/W dims), independent of channel order, so it is tensor-native and
-  trivially BIT-EXACT. Unrecognized flip types keep v1's pass-through
-  behaviour (only ``None`` reaches it - ``run`` validates the rest away).
+* ``flip``: tensor-native, bit-exact - a pure pixel permutation
+  (``cv2.flip`` <-> ``torch.flip``), independent of channel order.
 
-* ``rotate`` by right angles (+-90/+-180/+-270/+-360) is tensor-native and
-  BIT-EXACT, but NOT via a naive ``rot90``: v1 rotates about
-  ``(w // 2, h // 2)`` - offset from the true pixel centre for odd dims and
-  sitting on a half-integer grid crossing for even dims - then shifts onto an
-  ``int()``-truncated canvas. Working the ``getRotationMatrix2D`` +
-  ``warpAffine`` algebra through with the exact float64 trig values (cos 90deg
-  is 6.1e-17, which warpAffine's 1/1024-fixed-point coordinates round away),
-  the inverse map degenerates to axis-separable sampling of the source at
-  integer or half-integer coordinates:
+* ``rotate`` by right angles (+-90/+-180/+-270/+-360): tensor-native and
+  bit-exact, but not a naive ``rot90``: v1 rotates about ``(w // 2, h // 2)``
+  (off the true pixel centre for odd dims) onto an ``int()``-truncated
+  canvas. In float64 the residual trig terms (cos 90deg ~ 6.1e-17) vanish in
+  ``warpAffine``'s 1/1024 fixed-point coordinates, so the inverse map
+  degenerates to axis-separable sampling at integer or half-integer
+  coordinates:
 
-  - even source axes sample at integers - a pure permutation, except that one
-    border index falls OUTSIDE the source (e.g. the top row of an
-    even-dimension 90deg rotation is BORDER_CONSTANT zeros, and the first
-    source column never appears - warpAffine really does that);
+  - even source axes sample at integers - a permutation, except one border
+    index falls outside the source (BORDER_CONSTANT zeros);
   - odd source axes sample halfway between pixels - a 2-tap average with
-    warpAffine's fixed-point rounding: ``(a + b + 1) >> 1`` for one half axis,
-    and a single fused ``(a + b + c + d + 2) >> 2`` when both axes are half
+    warpAffine's fixed-point rounding: ``(a + b + 1) >> 1`` for one half
+    axis, a single fused ``(a + b + c + d + 2) >> 2`` when both are half
     (composing two rounded 1-D averages would round twice and diverge on
     ties).
 
-  The same algebra makes +-360deg a genuine warp in v1 (only ``0``/``None``
-  early-returns a copy): identity for even dims, a half-pixel self-average
-  for odd ones. All of it is replicated below with device-side int32
-  arithmetic and verified pixel-identical against ``cv2.warpAffine`` over an
-  adversarial corpus (odd/even/1-pixel dims, colour + grayscale, tie-heavy
-  checkerboards exercising every rounding branch).
+  +-360deg is a genuine warp in v1 (only ``0``/``None`` early-returns a
+  copy): identity for even dims, a half-pixel self-average for odd ones.
 
-* ``rotate`` by arbitrary angles is a real fixed-point bilinear warp - not
-  worth replicating; it delegates to the v1 implementation.
+* ``rotate`` by arbitrary angles: delegates (full fixed-point bilinear warp).
 
-* ``resize`` delegates for every real target: ``cv2.INTER_AREA`` rounding is
-  kernel-size- and SIMD-path-dependent (locally, 2x integer downscale matches
-  half-up ``(sum + 2) >> 2`` while 4x matches ``cvRound`` half-to-even), so no
-  torch pooling can be trusted to stay bit-exact. The ``width=height=None``
-  early-return copy IS tensor-native (a device-side ``clone``).
+* ``resize``: delegates for every real target - ``cv2.INTER_AREA`` rounding
+  is kernel-size- and SIMD-path-dependent, so no torch pooling stays
+  bit-exact across platforms. The ``width=height=None`` early-return copy is
+  tensor-native (a device-side ``clone``).
 
-Numpy/base64-born images always delegate instead of forcing an eager
-host->device conversion - the materialization-aware rule the model blocks
-follow. Validation (width/height bounds, rotation range, flip types, task
-type) mirrors v1 exactly and runs BEFORE any tensor-vs-delegate decision.
+Numpy/base64-born images always delegate (no materialised tensor).
 """
 
 from typing import Callable, Optional, Tuple, Type
@@ -79,8 +64,8 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
         *args,
         **kwargs,
     ) -> BlockResult:
-        # Validation mirrors v1 exactly and precedes any tensor-vs-delegate
-        # decision, so both siblings raise identically.
+        # Validation mirrors v1 and precedes any tensor-vs-delegate decision,
+        # so both siblings raise identically.
         if task_type == "resize":
             if width is not None and width <= 0:
                 raise ValueError("Width must be greater than 0")
@@ -150,16 +135,16 @@ def _flip_tensor(chw: torch.Tensor, flip_type: Optional[str]) -> torch.Tensor:
         return torch.flip(chw, dims=(-1,))
     if flip_type == "both":
         return torch.flip(chw, dims=(-2, -1))
-    # v1's apply_flip_image else-branch: pass the image through unchanged
-    # (reachable via run() only with flip_type=None).
+    # v1's apply_flip_image else-branch: pass-through (only flip_type=None
+    # reaches it via run()).
     return chw
 
 
-# Per-axis sampling modes of the degenerate right-angle warp (see the module
-# docstring): "exact" copies the axis, "shift" moves it by one index with a
-# zero fill (the out-of-range border sample of even axes), "half" sums each
-# element with its predecessor (the 2-tap half-pixel average; the /2 with
-# fixed-point rounding is applied once, fused, at the end).
+# Per-axis sampling modes of the right-angle warp (see the module docstring):
+# "exact" copies the axis, "shift" moves it by one index with a zero fill
+# (the out-of-range border sample of even axes), "half" sums each element
+# with its predecessor (the /2 with fixed-point rounding is applied once,
+# fused, at the end).
 _AXIS_EXACT = "exact"
 _AXIS_SHIFT = "shift"
 _AXIS_HALF = "half"

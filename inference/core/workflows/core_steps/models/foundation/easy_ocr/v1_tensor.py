@@ -210,12 +210,6 @@ class EasyOCRBlockV1(WorkflowBlock):
         version: str = "english_g2",
         quantize: bool = False,
     ) -> BlockResult:
-        # Tensor-native local path: register the EasyOCR core model by id only
-        # (no InferenceRequest / image needed - that pydantic object requires an
-        # `image` and would force a numpy round-trip just to register), then run
-        # through the inference_models adapter's run_tensor_native_inference, which
-        # keeps boxes as native Detections (on-device) and returns the joined OCR
-        # text per image. No JSON / numpy round-trip, no post_process_ocr_result.
         model_id = f"easy_ocr/{version}"
         self._model_manager.add_model(
             model_id,
@@ -232,10 +226,8 @@ class EasyOCRBlockV1(WorkflowBlock):
                 model_id,
                 images=[model_image],
                 input_color_format=image_color_format,
-                confidence=0.0,  # align with old inference default
+                confidence=0.0,  # no confidence filtering
             )
-            # EasyOCRTorch.pre_process honours input_color_format for tensor inputs
-            # (defaults to "rgb"), so passing it explicitly matches tensor_image.
             detections = attach_native_detection_metadata(
                 dets[0],
                 single_image,
@@ -286,9 +278,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         )
         if len(images) == 1:
             predictions = [predictions]
-        # Remote returns standard OCRInferenceResponse dicts (result text +
-        # ObjectDetectionPrediction list); rebuild boxes as native Detections via
-        # the shared helper instead of sv.Detections.from_inference.
+        # Remote returns OCRInferenceResponse dicts: result text + ObjectDetectionPrediction list.
         results = []
         for single_image, prediction in zip(images, predictions):
             raw_predictions = prediction.get("predictions", []) or []

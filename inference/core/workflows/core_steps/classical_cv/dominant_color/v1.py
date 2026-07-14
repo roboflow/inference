@@ -167,12 +167,12 @@ class DominantColorBlockV1(WorkflowBlock):
 def find_dominant_color(
     pixels_image: np.ndarray, color_clusters: int, max_iterations: int
 ) -> Tuple[int, int, int]:
-    """K-means dominant color of an ALREADY-DOWNSAMPLED HWC BGR uint8 image,
+    """K-means dominant color of an already-downsampled HWC BGR uint8 image,
     returned as an ``(r, g, b)`` tuple.
 
-    Extracted verbatim from ``DominantColorBlockV1.run()`` (pure code motion:
-    the same unseeded global ``np.random`` draws in the same order) so the
-    tensor-native sibling can share the exact clustering trajectory."""
+    Shared by v1 and the tensor sibling: the clustering trajectory depends on
+    the exact input bytes (float32 arithmetic) and on the unseeded global
+    ``np.random`` draw order."""
     pixels = pixels_image.reshape(-1, 3).astype(np.float32)
 
     centroids = pixels[np.random.choice(pixels.shape[0], color_clusters, replace=False)]

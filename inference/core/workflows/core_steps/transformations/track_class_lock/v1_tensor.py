@@ -1,34 +1,18 @@
 """Tensor-native sibling of track_class_lock/v1.py.
 
-Loaded INSTEAD of v1.py when ENABLE_TENSOR_DATA_REPRESENTATION is set. Reuses the
-exact same class name / block type@version (``TrackClassLockBlockV1``,
-``roboflow_core/track_class_lock@v1``) so it is a drop-in swap in loader.py.
+The voting/lock logic is numpy/``sv.Detections``-based and stateful across
+engine runs, so the native input is materialised to ``sv.Detections`` at the
+boundary (tracker_id / class_name / detection_id carried from
+``bboxes_metadata`` / ``image_metadata[CLASS_NAMES_KEY]`` into ``.data``), the
+lock/vote state machine runs on it (``self._per_video_state`` persists across
+runs, keyed by video identifier), and the result is repacked natively: the
+locked ``class``, ``class_id``, ``confidence`` and a boolean ``class_locked``
+flag land in ``bboxes_metadata[i]``, and ``image_metadata[CLASS_NAMES_KEY]`` is
+rebuilt so a relabelled class id resolves to a name downstream.
 
-The underlying voting/lock logic is numpy/``sv.Detections``-based and inherently
-STATEFUL across engine runs (per-video vote tallies and locks persist between
-frames). Rather than re-implement that delicate state machine on torch tensors,
-this block:
-
-1. materialises the native ``inference_models.Detections`` input to an
-   ``sv.Detections`` at the boundary (xyxy/class_id/confidence pulled from torch
-   via ``.detach().cpu().numpy()``; tracker_id + class_name + detection_id carried
-   from ``bboxes_metadata`` / ``image_metadata[CLASS_NAMES_KEY]`` into sv ``.data``
-   so the existing voting/lock logic reads them unchanged);
-2. runs the SAME lock/vote logic as v1 (the per-video state dict ``self._per_video_state``
-   persists across runs, exactly like the numpy block — this is the persistence the
-   test asserts);
-3. re-packs the result back into a native ``inference_models.Detections``: the
-   locked/relabelled ``class``, ``class_id``, ``confidence`` and a boolean
-   ``class_locked`` flag are written into ``bboxes_metadata[i]``, and
-   ``image_metadata[CLASS_NAMES_KEY]`` is rebuilt so any newly introduced class id
-   (a relabelled class) resolves to a name downstream.
-
-Keypoint input arrives as a ``(KeyPoints, Detections)`` tuple; the bbox component
-drives the voting and the (possibly relabelled) tuple is returned so keypoints
+Keypoint input arrives as a ``(KeyPoints, Detections)`` tuple; the bbox
+component drives the voting and the relabelled tuple is returned so keypoints
 survive. Instance-segmentation masks are carried through unchanged.
-
-The voting/lock math, re-attachment logic and parameter validation are imported
-from v1.py verbatim — only the input/output marshalling differs.
 """
 
 from collections import OrderedDict, defaultdict
@@ -65,8 +49,6 @@ from inference_models.models.base.object_detection import Detections
 OUTPUT_KEY: str = "tracked_detections"
 CLASS_LOCKED_KEY: str = "class_locked"
 
-# sentinel name used internally when a detection has no resolvable class name; the
-# numpy block falls back to ``str(class_id)`` in this case, and so do we.
 _CLASS_NAME_DATA_KEY = "class_name"
 
 TensorNativeDetectionsLike = Union[Detections, InstanceDetections]
@@ -78,15 +60,10 @@ TensorNativeTrackInput = Union[
 
 
 def _resolve_class_names(detections: TensorNativeDetectionsLike) -> List[Optional[str]]:
-    """Per-box class name, mirroring how the numpy block reads
-    ``detections.data["class_name"]``.
-
-    Native predictions carry the per-box class name on ``bboxes_metadata[i]["class"]``
-    (the ``CLASS_NAME_KEY`` convention) and/or a ``class_id -> name`` map on
-    ``image_metadata[CLASS_NAMES_KEY]``. We prefer the per-box value, fall back to the
-    image map keyed by ``class_id``, and finally to ``None`` (the numpy block then
-    uses ``str(class_id)`` for voting).
-    """
+    """Per-box class name: prefer ``bboxes_metadata[i]["class"]`` (the
+    ``CLASS_NAME_KEY`` convention), fall back to the
+    ``image_metadata[CLASS_NAMES_KEY]`` class_id -> name map, else ``None``
+    (voting then uses ``str(class_id)``)."""
     n = int(detections.xyxy.shape[0])
     bboxes_metadata = detections.bboxes_metadata or [{} for _ in range(n)]
     class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
@@ -103,11 +80,10 @@ def _resolve_class_names(detections: TensorNativeDetectionsLike) -> List[Optiona
 
 
 def _to_supervision_boundary(detections: TensorNativeDetectionsLike) -> sv.Detections:
-    """Materialise a native ``Detections``/``InstanceDetections`` to ``sv.Detections``
-    carrying tracker_id + class_name + detection_id in ``.data`` so the v1 voting
-    logic runs unchanged. Masks are intentionally dropped — the voting/lock logic
-    only uses xyxy/class_id/confidence/tracker_id/class_name.
-    """
+    """Materialise a native ``Detections``/``InstanceDetections`` to
+    ``sv.Detections`` carrying tracker_id + class_name + detection_id in
+    ``.data``. Masks are dropped — the voting/lock logic only uses
+    xyxy/class_id/confidence/tracker_id/class_name."""
     n = int(detections.xyxy.shape[0])
     bboxes_metadata = detections.bboxes_metadata or [{} for _ in range(n)]
     xyxy = detections.xyxy.detach().to("cpu").numpy().astype(np.float64)
@@ -150,14 +126,11 @@ def _vote_and_lock(
     reattach_window: int,
     reattach_iou: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Run the v1 majority-vote / lock state machine over a boundary
+    """Run the majority-vote / lock state machine over a boundary
     ``sv.Detections``. Mutates ``dets.class_id``/``dets.confidence`` and the
-    ``class_name`` column in place (matching v1) and returns
-    ``(class_names, class_id, locked_flags)`` for repacking into the native output.
-
-    This is the EXACT logic from ``TrackClassLockBlockV1.run`` in v1.py, lifted so
-    the cross-run ``self._per_video_state`` persistence is identical.
-    """
+    ``class_name`` column in place and returns
+    ``(class_names, class_id, locked_flags)`` for repacking into the native
+    output."""
     video_id = image.video_metadata.video_identifier
     video_state = self._per_video_state.setdefault(video_id, {"tracks": {}, "frame": 0})
     self._per_video_state.move_to_end(video_id)
@@ -345,7 +318,7 @@ class TrackClassLockBlockV1(WorkflowBlock):
         reattach_iou: float,
     ) -> BlockResult:
         # selector-provided params bypass the manifest's pydantic Field bounds,
-        # so the same constraints are re-checked here at runtime (verbatim from v1)
+        # so the same constraints are re-checked here at runtime
         if min_votes < 1:
             raise ValueError(f"`min_votes` must be >= 1, got {min_votes}")
         if not 0.0 <= vote_confidence <= 1.0:
@@ -411,8 +384,8 @@ class TrackClassLockBlockV1(WorkflowBlock):
 
 
 def _has_tracker_ids(detections: TensorNativeDetectionsLike) -> bool:
-    """Native equivalent of ``detections.tracker_id is not None``: at least one box
-    carries a ``tracker_id`` in ``bboxes_metadata``."""
+    """True when at least one box carries a ``tracker_id`` in
+    ``bboxes_metadata``."""
     if detections.bboxes_metadata is None:
         return False
     return any(

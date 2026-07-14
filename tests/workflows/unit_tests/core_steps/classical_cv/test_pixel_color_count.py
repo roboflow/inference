@@ -132,11 +132,7 @@ def test_convert_color_to_bgr_tuple_when_invalid_value() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: for tensor-born 3-channel images the v1_tensor block must
-# return EXACTLY the count v1 produces on the equivalent BGR numpy image.
-# cv2.inRange is an inclusive per-channel integer range test (bounds cvRound-ed
-# but NOT saturated to uint8), so the torch mirror is exact integer math and
-# only the final scalar count crosses device->host - never the frame.
+# Parity contract: exact count parity with v1; the frame never crosses device->host.
 
 
 def _tensor_pixel_count_imports():
@@ -165,8 +161,7 @@ def _paired_images(torch, bgr: np.ndarray):
 
 
 def _image_with_planted_target() -> np.ndarray:
-    # random background with a planted block of the exact target colour
-    # RGB (68, 17, 34) - i.e. BGR (34, 17, 68) - plus pixels at +-10 offsets
+    # random background, a planted block of target RGB (68, 17, 34), +-10 offset pixels
     rng = np.random.default_rng(42)
     bgr = rng.integers(0, 256, size=(24, 32, 3), dtype=np.uint8)
     bgr[0:4, 0:5] = (34, 17, 68)
@@ -184,8 +179,7 @@ def _image_with_planted_target() -> np.ndarray:
 def test_tensor_pixel_color_count_exact_parity_across_formats(
     target_color, tolerance
 ) -> None:
-    # given - every target format spells the same colour, RGB (68, 17, 34),
-    # which is planted in the image so counts are non-trivial
+    # given - every target format spells the same colour, RGB (68, 17, 34)
     torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
     numpy_born, tensor_born = _paired_images(torch, _image_with_planted_target())
 
@@ -197,7 +191,7 @@ def test_tensor_pixel_color_count_exact_parity_across_formats(
         image=tensor_born, target_color=target_color, tolerance=tolerance
     )["matching_pixels_count"]
 
-    # then - exact count parity, and the frame never crossed device->host
+    # then
     assert isinstance(tensor_count, int)
     assert tensor_count == numpy_count
     assert tensor_count >= 20, "planted 4x5 block must match at any tolerance"
@@ -206,9 +200,7 @@ def test_tensor_pixel_color_count_exact_parity_across_formats(
 
 
 def test_tensor_pixel_color_count_boundary_inclusivity() -> None:
-    # given - target RGB (100, 150, 200) i.e. BGR (200, 150, 100), tolerance
-    # 10: pixels exactly AT the lower and upper bounds are inclusive matches;
-    # one unit beyond either bound is not
+    # given - cv2.inRange bounds are inclusive: pixels exactly at a bound match
     torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
     bgr = np.zeros((4, 4, 3), dtype=np.uint8)
     bgr[0, 0] = (190, 140, 90)  # exactly at lower bound -> match
@@ -226,17 +218,16 @@ def test_tensor_pixel_color_count_boundary_inclusivity() -> None:
         image=tensor_born, target_color=(100, 150, 200), tolerance=10
     )["matching_pixels_count"]
 
-    # then - pins the inclusive semantics on both paths
+    # then
     assert tensor_count == numpy_count == 3
 
 
 @pytest.mark.parametrize(
     "target_rgb, planted_matching, planted_non_matching",
     [
-        # target at 0 with tolerance 10: lower bound -10 is below uint8 range
-        # and acts as "no lower limit" (v1 does not clip its bounds)
+        # bounds are not clipped to uint8: lower bound -10 acts as "no lower limit"
         ((0, 0, 0), [(0, 0, 0), (10, 10, 10)], [(11, 11, 11)]),
-        # target at 255 with tolerance 10: upper bound 265 acts as "no upper limit"
+        # upper bound 265 acts as "no upper limit"
         ((255, 255, 255), [(255, 255, 255), (245, 245, 245)], [(244, 244, 244)]),
     ],
     ids=["lower_bound_below_zero", "upper_bound_above_255"],
@@ -284,8 +275,7 @@ def test_tensor_pixel_color_count_tolerance_255_matches_everything() -> None:
 
 
 def test_tensor_pixel_color_count_zero_matches() -> None:
-    # given - pixel values capped at 200, so a target red channel of 255 with
-    # tolerance 10 (range [245, 265]) can never match
+    # given - pixels capped at 200, so the target range [245, 265] never matches
     torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
     rng = np.random.default_rng(3)
     bgr = rng.integers(0, 200, size=(16, 16, 3), dtype=np.uint8)
@@ -322,7 +312,7 @@ def test_tensor_pixel_color_count_delegates_for_numpy_born_images() -> None:
         image=numpy_born, target_color="#441122", tolerance=10
     )["matching_pixels_count"]
 
-    # then - identical count via the numpy delegate, and no forced H2D
+    # then
     assert result == reference
     assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"
 
@@ -338,8 +328,7 @@ def test_tensor_pixel_color_count_invalid_color_raises(invalid_color) -> None:
     bgr = np.zeros((4, 4, 3), dtype=np.uint8)
     numpy_born, tensor_born = _paired_images(torch, bgr)
 
-    # when / then - the shared converter raises the identical ValueError on
-    # both paths, before any image work
+    # when / then
     with pytest.raises(ValueError):
         PixelationCountBlockV1().run(
             image=numpy_born, target_color=invalid_color, tolerance=10
@@ -352,9 +341,7 @@ def test_tensor_pixel_color_count_invalid_color_raises(invalid_color) -> None:
 
 
 def test_tensor_pixel_color_count_grayscale_matches_v1_error() -> None:
-    # given - v1 on a (H, W) grayscale image raises cv2.error (3-element
-    # bounds against a 1-channel image); the sibling delegates tensor-born
-    # (1, H, W) images to the numpy path so the failure mode is identical
+    # given - 3-element inRange bounds against a 1-channel image raise cv2.error
     import cv2
 
     torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
@@ -373,8 +360,7 @@ def test_tensor_pixel_color_count_grayscale_matches_v1_error() -> None:
 
 
 def test_tensor_pixel_color_count_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check math runs on-device
+    # given - patch the global device so tensor-born images materialise on MPS
     torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
@@ -394,6 +380,6 @@ def test_tensor_pixel_color_count_on_mps_device(monkeypatch) -> None:
         image=tensor_born, target_color=(68, 17, 34), tolerance=10
     )["matching_pixels_count"]
 
-    # then - exact parity with the numpy block, computed on the MPS device
+    # then
     assert result == reference
     assert tensor_born._numpy_image is None, "tensor path must not materialise numpy"

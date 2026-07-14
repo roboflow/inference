@@ -81,12 +81,7 @@ def test_dominant_color_block() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: the sibling downsamples ON DEVICE, then hands the host a
-# BGR HWC array byte-identical to v1's numpy_image[::s, ::s] and runs the very
-# same numpy k-means (find_dominant_color, imported from v1). Identical bytes
-# + identical global-RNG state force an identical clustering trajectory, so
-# outputs must be EXACTLY equal. v1 is unseeded (nondeterministic run-to-run),
-# hence every parity test pins np.random.seed immediately before each run.
+# Parity contract: outputs equal the numpy block's exactly under a pinned RNG.
 
 
 def _tensor_dominant_color_imports():
@@ -144,7 +139,7 @@ def test_tensor_dominant_color_seeded_parity(seed: int, case: str) -> None:
         image=tensor_born, color_clusters=4, max_iterations=100, target_size=100
     )
 
-    # then - byte-identical downsample + identical RNG => identical trajectory
+    # then
     assert isinstance(tensor_result["rgb_color"], tuple)
     assert tensor_result["rgb_color"] == numpy_result["rgb_color"]
 
@@ -183,8 +178,7 @@ def test_tensor_dominant_color_downsample_matches_v1_slicing(target_size: int) -
         chw=tensor_born.tensor_image, scale_factor=scale_factor
     )
 
-    # then - byte-identical to v1's strided numpy slice: THE invariant that
-    # keeps the k-means trajectory shared between the two paths
+    # then
     assert scale_factor == {250: 1, 100: 2, 50: 4}[target_size]
     assert device_downsampled.dtype == np.uint8
     assert np.array_equal(
@@ -217,7 +211,7 @@ def test_tensor_dominant_color_numpy_born_delegates_without_materialisation() ->
         image=numpy_born, color_clusters=4, max_iterations=100, target_size=100
     )
 
-    # then - identical output via the numpy delegate, and no forced H2D
+    # then
     assert result["rgb_color"] == reference["rgb_color"]
     assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"
 
@@ -234,8 +228,7 @@ def test_tensor_dominant_color_obvious_dominant_color_on_tensor_path() -> None:
         image=tensor_born, color_clusters=4, max_iterations=100, target_size=100
     )
 
-    # then - dominant colour is red-ish (greens may or may not split off into
-    # their own cluster depending on the seeded init, hence bounds, not equality)
+    # then - bounds, not equality: the green cluster split is seed-dependent
     r, g, b = result["rgb_color"]
     assert r >= 200
     assert g <= 60
@@ -243,9 +236,7 @@ def test_tensor_dominant_color_obvious_dominant_color_on_tensor_path() -> None:
 
 
 def test_tensor_dominant_color_insufficient_pixels_raises_on_both_paths() -> None:
-    # given - 2x2 image: 4 downsampled pixels < 10 requested clusters, so
-    # np.random.choice(..., replace=False) must raise on BOTH paths (error
-    # parity: the sibling does not "fix" v1 edge cases)
+    # given - 4 pixels < 10 clusters, so np.random.choice(replace=False) raises
     torch, v1_tensor = _tensor_dominant_color_imports()
     bgr = np.full((2, 2, 3), 128, dtype=np.uint8)
     numpy_born, tensor_born = _paired_images(torch, bgr)
@@ -262,9 +253,7 @@ def test_tensor_dominant_color_insufficient_pixels_raises_on_both_paths() -> Non
 
 
 def test_tensor_dominant_color_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check the device-side
-    # downsample + host k-means still match v1 exactly under a pinned RNG
+    # given - patch the global device so tensor-born images materialise on MPS
     torch, v1_tensor = _tensor_dominant_color_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
@@ -286,5 +275,5 @@ def test_tensor_dominant_color_on_mps_device(monkeypatch) -> None:
         image=tensor_born, color_clusters=4, max_iterations=100, target_size=100
     )
 
-    # then - device slice on MPS, identical result
+    # then
     assert result["rgb_color"] == reference["rgb_color"]

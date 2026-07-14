@@ -23,14 +23,9 @@ from inference.core.workflows.execution_engine.constants import (
 from inference_models import ClassificationPrediction as NativeClassificationPrediction
 from inference_models.models.base.object_detection import Detections as NativeDetections
 
-# PropertyDefinitionBlockV1 runs UQL operation chains internally, so under
-# ENABLE_TENSOR_DATA_REPRESENTATION it inherits the native-only behaviour of the
-# UQL extractors: the block must be fed native `inference_models` predictions, not
-# serialised dicts / sv.Detections. The dict/sv tests below skip when the flag is on;
-# each has a `*_tensor_native` parity test (skipped when the flag is off) feeding the
-# native equivalent. Geometric anchor properties return rounded-int lists identical
-# to the numpy path; per-box scalars (area_px, area_converted) are read from
-# `bboxes_metadata`.
+# PropertyDefinitionBlockV1 runs UQL operation chains internally, which are
+# native-only under ENABLE_TENSOR_DATA_REPRESENTATION - hence the flag-opposed
+# _NUMPY_ONLY / _TENSOR_ONLY split below.
 _NUMPY_ONLY = pytest.mark.skipif(
     ENABLE_TENSOR_DATA_REPRESENTATION,
     reason="dict / sv.Detections input; the UQL chain inside the block is native-only "
@@ -266,9 +261,7 @@ def test_property_extraction_block_with_area_converted() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tensor-native parity variants (run only under ENABLE_TENSOR_DATA_REPRESENTATION).
-# Same scenarios as above, but feeding the block native `inference_models`
-# predictions instead of dict / sv.Detections.
+# Tensor-native variants (run only under ENABLE_TENSOR_DATA_REPRESENTATION)
 # ---------------------------------------------------------------------------
 
 
@@ -304,7 +297,6 @@ def test_property_extraction_block_tensor_native() -> None:
 
 
 def _native_detections_for_property_extraction() -> NativeDetections:
-    # mirrors the sv.Detections fixture used by the geometric parity tests
     return NativeDetections(
         xyxy=torch.tensor([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=torch.float32),
         class_id=torch.tensor([0, 1], dtype=torch.long),
@@ -328,7 +320,7 @@ def test_property_extraction_block_with_center_tensor_native() -> None:
     # when
     result = step.run(data=detections, operations=operations)
 
-    # then - anchor coords are .round().long().tolist() -> ints, like the numpy path
+    # then - anchor coords are rounded ints
     assert result == {"output": [[20, 30], [40, 50]]}
 
 

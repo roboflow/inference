@@ -81,14 +81,7 @@ def test_threshold_block(dogs_image: np.ndarray) -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: a tensor-born image through the v1_tensor block must produce
-# BIT-IDENTICAL pixels to the numpy block on the equivalent BGR image. Fixed
-# types replicate cv2's floor/round/saturate parameter handling and strict `>`
-# comparison; otsu replicates getThreshVal_Otsu_8u's double-precision histogram
-# scan on the host from a 256-count D2H; adaptive_mean replicates the rounded
-# uint8 box mean with exact integer sums. adaptive_gaussian (SIMD-dispatch
-# dependent float32 blur) and numpy-born images delegate to the numpy
-# implementation.
+# Parity contract: outputs match the numpy block bit-exactly on every path.
 
 
 def _tensor_threshold_imports():
@@ -136,9 +129,8 @@ FIXED_THRESHOLD_TYPES = ["binary", "binary_inv", "trunc", "tozero", "tozero_inv"
 def test_tensor_threshold_fixed_types_bit_exact_parity(
     threshold_type, thresh_value, layout
 ) -> None:
-    # given - the same pixels numpy-born (BGR) and tensor-born (RGB CHW); half
-    # the pixels hug the threshold (values in {t-1, t, t+1}) so pixels exactly
-    # AT thresh_value exercise cv2's strict `>` comparison
+    # given - same pixels numpy-born (BGR) and tensor-born (RGB CHW); half the
+    # pixels sit in {t-1, t, t+1} to exercise cv2's strict `>` comparison
     torch, TensorImageThresholdBlockV1 = _tensor_threshold_imports()
     rng = np.random.default_rng(31)
     shape = (24, 32) if layout == "grayscale" else (24, 32, 3)
@@ -157,7 +149,7 @@ def test_tensor_threshold_fixed_types_bit_exact_parity(
         TensorImageThresholdBlockV1, tensor_born, threshold_type, thresh_value, 255
     )
 
-    # then - bit-exact pixels, and the output stays tensor-born
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result)
 
@@ -176,8 +168,7 @@ def test_tensor_threshold_fixed_types_bit_exact_parity(
 def test_tensor_threshold_fixed_types_non_standard_params_parity(
     threshold_type, thresh_value, max_value
 ) -> None:
-    # given - selectors can feed values outside the documented 0-255 ints; the
-    # tensor path must replicate cv2's floor/round/saturate handling exactly
+    # given - selectors can feed values outside the documented 0-255 ints
     torch, TensorImageThresholdBlockV1 = _tensor_threshold_imports()
     rng = np.random.default_rng(7)
     pixels = rng.integers(0, 256, size=(16, 20), dtype=np.uint8)
@@ -242,8 +233,7 @@ def test_tensor_threshold_otsu_bit_exact_parity(case) -> None:
         TensorImageThresholdBlockV1, tensor_born, "otsu", 0, 255
     )
 
-    # then - the replicated scan finds cv2's EXACT threshold, and the applied
-    # pixels are bit-identical
+    # then
     expected_threshold, _ = cv2.threshold(
         gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
@@ -254,8 +244,7 @@ def test_tensor_threshold_otsu_bit_exact_parity(case) -> None:
 
 
 def test_tensor_threshold_otsu_three_channel_tensor_raises_like_v1() -> None:
-    # given - cv2 asserts single-channel input for otsu; the tensor block
-    # delegates multi-channel input so the identical cv2 error surfaces
+    # given - cv2 rejects multi-channel otsu; delegation surfaces the identical error
     import cv2
 
     torch, TensorImageThresholdBlockV1 = _tensor_threshold_imports()
@@ -282,8 +271,7 @@ def _adaptive_case_image(case: str) -> np.ndarray:
         # smaller than the 11x11 window - cv2's replicate border still works
         return rng.integers(0, 256, size=(3, 5), dtype=np.uint8)
     if case == "boundary_hugging":
-        # constant +- 2 keeps src within 2 of the local mean, so the strict
-        # `src > mean - 2` decision flips on exact off-by-one mean errors
+        # src within 2 of the local mean - off-by-one mean errors flip the decision
         base = np.full((32, 32), 100, dtype=np.int32)
         return np.clip(base + rng.integers(-2, 3, size=base.shape), 0, 255).astype(
             np.uint8
@@ -309,15 +297,13 @@ def test_tensor_threshold_adaptive_mean_bit_exact_parity(case, max_value) -> Non
         TensorImageThresholdBlockV1, tensor_born, "adaptive_mean", 127, max_value
     )
 
-    # then - the rounded uint8 box mean and the integer decision are exact
+    # then
     assert tensor_result.is_tensor_materialised()
     assert np.array_equal(tensor_result.numpy_image, numpy_result)
 
 
 def test_tensor_threshold_adaptive_gaussian_delegates_to_numpy_math() -> None:
-    # given - cv2's float32 Gaussian mean is SIMD-dispatch dependent, so the
-    # tensor block delegates to the numpy implementation even for tensor-born
-    # images - equality is by construction, checked end-to-end here
+    # given - cv2's float32 Gaussian mean is SIMD-dispatch dependent, so it delegates
     torch, TensorImageThresholdBlockV1 = _tensor_threshold_imports()
     gray = _adaptive_case_image("noise")
     numpy_born, tensor_born = _paired_images(torch, gray)
@@ -356,7 +342,7 @@ def test_tensor_threshold_delegates_for_numpy_born_images() -> None:
         TensorImageThresholdBlockV1, numpy_born, "binary", 127, 255
     )
 
-    # then - identical output via the numpy delegate, and no forced H2D
+    # then
     assert np.array_equal(result.numpy_image, reference)
     assert not numpy_born.is_tensor_materialised(), "delegate must not materialise"
 
@@ -377,8 +363,7 @@ def test_tensor_threshold_unknown_type_raises_on_tensor_path() -> None:
 
 
 def test_tensor_threshold_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check math runs on-device
+    # given - patch the global device so tensor-born images materialise on MPS
     torch, TensorImageThresholdBlockV1 = _tensor_threshold_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
@@ -402,6 +387,6 @@ def test_tensor_threshold_on_mps_device(monkeypatch) -> None:
             TensorImageThresholdBlockV1, tensor_born, threshold_type, 127, 255
         )
 
-        # then - stays on device, and matches the numpy block bit-exactly
+        # then
         assert result.tensor_image.device.type == "mps"
         assert np.array_equal(result.numpy_image, reference)

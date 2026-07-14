@@ -814,11 +814,7 @@ def test_classes_replacement_with_strings_and_none_with_fallback() -> None:
 def test_classes_replacement_tensor_native_empty_prediction_with_fallback_and_none_class_id() -> (
     None
 ):
-    # Tensor-native mirror of
-    # test_classes_replacement_when_empty_classification_predictions_fallback_class_provided_with_default_class_id:
-    # an empty single-label distribution + fallback_class_name with
-    # fallback_class_id=None must fall back to sys.maxsize instead of raising
-    # TypeError on int(None).
+    # fallback_class_id=None must not raise TypeError on int(None)
     torch = pytest.importorskip("torch")
     pytest.importorskip("inference_models")
     from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
@@ -885,9 +881,6 @@ def test_classes_replacement_tensor_native_empty_prediction_with_fallback_and_no
 def test_classes_replacement_tensor_native_string_predictions_with_negative_fallback_class_id() -> (
     None
 ):
-    # Tensor-native mirror of the numpy fallback-id normalisation on the
-    # string-prediction path: a NEGATIVE fallback_class_id must map to
-    # sys.maxsize (main commit c03c2514b), not be used verbatim.
     torch = pytest.importorskip("torch")
     pytest.importorskip("inference_models")
     from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (

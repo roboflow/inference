@@ -106,10 +106,8 @@ def test_contrast_equalization_block_with_unknown_method() -> None:
 
 
 # --- tensor-native sibling ---------------------------------------------------
-# Parity contract: a tensor-born image through the v1_tensor block must produce
-# BIT-IDENTICAL pixels to the numpy block on the equivalent BGR image. The two
-# LUT methods (stretching, histogram equalization) achieve this by rebuilding
-# the exact numpy/skimage float arithmetic on the 256 distinct values; CLAHE
+# Parity contract: for the two LUT methods a tensor-born image must produce
+# bit-identical pixels to the numpy block on the equivalent BGR image; CLAHE
 # and numpy-born images delegate to the numpy implementation.
 
 
@@ -174,8 +172,7 @@ def test_tensor_contrast_equalization_bit_exact_parity(equalization_type, case) 
         image=tensor_born, equalization_type=equalization_type
     )["image"]
 
-    # then - all float math runs host-side in the identical numpy code path,
-    # so parity is bit-exact, and the output stays tensor-born
+    # then - bit-exact parity, and the output stays tensor-born
     assert tensor_result_image.is_tensor_materialised()
     assert np.array_equal(tensor_result_image.numpy_image, numpy_result)
 
@@ -299,8 +296,8 @@ def test_tensor_contrast_equalization_unknown_method_raises() -> None:
 
 
 def test_tensor_contrast_equalization_on_mps_device(monkeypatch) -> None:
-    # given - tensor images live on the globally configured device; simulate an
-    # MPS deployment by patching the global, then check math runs on-device
+    # given - tensor images land on the globally configured device; simulate an
+    # MPS deployment by patching the global
     torch, TensorContrastEqualizationBlockV1 = _tensor_equalization_imports()
     if not torch.backends.mps.is_available():
         pytest.skip("MPS device not available")
