@@ -76,6 +76,7 @@ class _RowSelection:
     fields (``bboxes_metadata`` / RLE masks / ``key_points_metadata``) need
     concrete row positions, which are pulled to host lazily and cached - a
     selection that only touches tensor fields never pays the transfer.
+    Known-empty selections use zero-row tensor views without creating a selector.
     """
 
     def __init__(
@@ -83,19 +84,27 @@ class _RowSelection:
         selector: Optional[torch.Tensor],
         host_indices: Optional[List[int]],
         is_identity: bool,
+        is_empty: bool,
         total_rows: int,
     ) -> None:
         self._selector = selector
         self._host_indices = host_indices
         self.is_identity = is_identity
+        self.is_empty = is_empty
         self._total_rows = total_rows
 
     @classmethod
     def from_indices(cls, indices: Sequence[int], total_rows: int) -> "_RowSelection":
         indices = [int(index) for index in indices]
+        if not indices:
+            if total_rows == 0:
+                # Selecting nothing from nothing: identity avoids even the
+                # zero-row slice views.
+                return cls(None, [], True, False, total_rows)
+            return cls(None, [], False, True, total_rows)
         is_identity = indices == list(range(total_rows))
         selector = None if is_identity else torch.as_tensor(indices, dtype=torch.long)
-        return cls(selector, indices, is_identity, total_rows)
+        return cls(selector, indices, is_identity, False, total_rows)
 
     @classmethod
     def from_mask(
@@ -108,13 +117,18 @@ class _RowSelection:
             # exact index-list semantics of the old implementation.
             return cls.from_indices(mask_to_indices(mask), total_rows)
         mask = mask.detach().to(dtype=torch.bool).reshape(-1)
-        if bool(mask.all()):
-            return cls(None, None, True, total_rows)
-        return cls(mask, None, False, total_rows)
+        nnz = int(mask.sum())
+        if nnz == total_rows:
+            return cls(None, None, True, False, total_rows)
+        if nnz == 0:
+            return cls(None, [], False, True, total_rows)
+        return cls(mask, None, False, False, total_rows)
 
     def select_tensor(self, field: torch.Tensor) -> torch.Tensor:
         if self.is_identity:
             return field
+        if self.is_empty:
+            return field[0:0]
         if self._selector.device != field.device:
             # Move once, reuse for every subsequent field of this prediction.
             self._selector = self._selector.to(field.device)
@@ -124,6 +138,8 @@ class _RowSelection:
         if self._host_indices is None:
             if self.is_identity:
                 self._host_indices = list(range(self._total_rows))
+            elif self.is_empty:
+                self._host_indices = []
             else:
                 # The single (lazy) device->host transfer of this selection.
                 self._host_indices = (

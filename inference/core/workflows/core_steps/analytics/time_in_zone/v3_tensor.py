@@ -7,6 +7,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
+from inference.core.workflows.core_steps.analytics._zone_geometry import LeanPolygonZone
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
@@ -229,7 +230,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 class TimeInZoneBlockV3(WorkflowBlock):
     def __init__(self):
         self._batch_of_tracked_ids_in_zone: Dict[str, Dict[Union[int, str], float]] = {}
-        self._batch_of_polygon_zones: OrderedDict[str, List[sv.PolygonZone]] = (
+        self._batch_of_polygon_zones: OrderedDict[str, List[LeanPolygonZone]] = (
             OrderedDict()
         )
 
@@ -278,7 +279,7 @@ class TimeInZoneBlockV3(WorkflowBlock):
                     f"{self.__class__.__name__} requires each coordinate of zone to be a number"
                 )
             self._batch_of_polygon_zones[zone_key] = [
-                sv.PolygonZone(
+                LeanPolygonZone(
                     polygon=np.array(zone),
                     triggering_anchors=(sv.Position(triggering_anchor),),
                 )
@@ -296,21 +297,12 @@ class TimeInZoneBlockV3(WorkflowBlock):
         else:
             ts_end = metadata.frame_timestamp.timestamp()
 
-        # sv.PolygonZone is numpy-based: materialise a minimal sv.Detections (the
-        # zone-membership test only needs box anchors + tracker_id) and run
-        # trigger. The returned masks are aligned to the input order, so the
-        # original tensor-native detections can be sliced directly.
-        # It's not optimal and next versions should run this fully tensor-native.
-        sv_input = sv.Detections(
-            xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
-            tracker_id=np.array(
-                [int(tracker_id) for tracker_id in tracker_ids], dtype=int
-            ),
-        )
+        # Transfer box geometry once and reuse it across every cached zone.
+        xyxy_host = detections.xyxy.detach().to("cpu").numpy().astype(float)
 
         # get trigger for all zones. It is a matrix of shape (len(zones), len(detections))
         polygon_triggers = [
-            polygon_zone.trigger(sv_input) for polygon_zone in polygon_zones
+            polygon_zone.trigger(xyxy_host) for polygon_zone in polygon_zones
         ]
         is_in_any_zone = (
             np.any(polygon_triggers, axis=0)
@@ -347,11 +339,9 @@ class TimeInZoneBlockV3(WorkflowBlock):
             {} for _ in range(int(result_detections.xyxy.shape[0]))
         ]
         for position, source_index in enumerate(np.nonzero(surviving_mask)[0].tolist()):
-            box_metadata = dict(result_bboxes_metadata[position])
-            box_metadata[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = surviving_times[
-                source_index
-            ]
-            result_bboxes_metadata[position] = box_metadata
+            result_bboxes_metadata[position][TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = (
+                surviving_times[source_index]
+            )
         result_detections.bboxes_metadata = result_bboxes_metadata
         return {OUTPUT_KEY: result_detections}
 
