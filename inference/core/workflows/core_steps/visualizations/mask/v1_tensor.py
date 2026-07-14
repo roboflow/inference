@@ -279,14 +279,44 @@ def gpu_mask_composite(
     return scene
 
 
+def _resolve_color_ids(
+    predictions: "InstanceDetections", color_axis: str
+) -> np.ndarray:
+    """The palette indices sv's ``resolve_color_idx`` would use, raising its
+    exact ``ValueError``s when the ids are missing — but BEFORE any mask work,
+    so a doomed run doesn't densify RLE masks on the sv fallback path just to
+    crash on the same check."""
+    n = int(predictions.xyxy.shape[0])
+    if color_axis == "INDEX":
+        return np.arange(n)
+    if color_axis == "CLASS":
+        if predictions.class_id is None:
+            raise ValueError(
+                "Could not resolve color by class because "
+                "Detections do not have class_id. If using an annotator, "
+                "try setting color_lookup to sv.ColorLookup.INDEX or "
+                "sv.ColorLookup.TRACK."
+            )
+        return predictions.class_id.detach().cpu().numpy().astype(int)
+    # TRACK: the tensor pipeline carries tracker ids in per-box metadata (the
+    # same place to_supervision_for_annotation reads them from).
+    metadata = predictions.bboxes_metadata or []
+    tracker_ids = [box.get("tracker_id") for box in metadata]
+    if len(tracker_ids) != n or any(tid is None for tid in tracker_ids):
+        raise ValueError(
+            "Could not resolve color by track because "
+            "Detections do not have tracker_id. Did you call "
+            "tracker.update_with_detections(...) before annotating?"
+        )
+    return np.asarray([int(tid) for tid in tracker_ids])
+
+
 def _gpu_composite_eligible(predictions, color_axis: str) -> bool:
     """True when the torch compositor supports the inputs."""
-    if color_axis not in ("CLASS", "INDEX"):
-        # TRACK / custom lookups keep the battle-tested sv path.
+    if color_axis not in ("CLASS", "INDEX", "TRACK"):
+        # Custom lookups keep the battle-tested sv path.
         return False
     if not isinstance(predictions, InstanceDetections):
-        return False
-    if color_axis == "CLASS" and predictions.class_id is None:
         return False
     n = int(predictions.xyxy.shape[0])
     if n == 0:
@@ -415,16 +445,16 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
         if _gpu_composite_eligible(predictions, color_axis) and (
             image.is_tensor_materialised()
         ):
+            # Raises sv's ValueError when class/tracker ids are missing —
+            # deliberately outside the try: the sv fallback would fail the
+            # same way, only after a pointless mask materialisation.
+            ids = _resolve_color_ids(predictions, color_axis)
             try:
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
                 if not isinstance(palette, sv.ColorPalette):
                     raise TypeError("expected sv.ColorPalette")
-                # Same colors sv's resolve_color would pick: CLASS ->
-                # palette.by_idx(class_id), INDEX -> palette.by_idx(det index).
-                if color_axis == "CLASS":
-                    ids = predictions.class_id.detach().cpu().numpy().astype(int)
-                else:
-                    ids = np.arange(int(predictions.xyxy.shape[0]))
+                # Same colors sv's resolve_color_idx would pick:
+                # palette.by_idx(class_id | det index | tracker_id).
                 colors_rgb = np.asarray(
                     [palette.by_idx(int(idx)).as_rgb() for idx in ids],
                     dtype=np.uint8,

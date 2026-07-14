@@ -11,6 +11,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_tensor impor
 from inference.core.workflows.core_steps.visualizations.mask.v1_tensor import (
     _coco_rle_counts_to_runs,
     _gpu_composite_eligible,
+    _resolve_color_ids,
     gpu_mask_composite,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
@@ -97,8 +98,17 @@ def test_gpu_composite_eligible_when_track_lookup_is_requested() -> None:
     # when
     result = _gpu_composite_eligible(predictions, "TRACK")
 
-    # then: TRACK lookup always keeps the sv path
-    assert result is False
+    # then: tracker ids resolve from bboxes_metadata at run time
+    assert result is True
+
+
+def test_gpu_composite_eligible_when_custom_lookup_is_requested() -> None:
+    # given
+    masks, boxes, class_id = _single_mask_inputs()
+    predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
+
+    # when / then: unknown lookups keep the sv path
+    assert _gpu_composite_eligible(predictions, "SOMETHING_ELSE") is False
 
 
 def test_gpu_composite_eligible_when_there_are_no_detections() -> None:
@@ -126,15 +136,30 @@ def test_gpu_composite_eligible_when_predictions_are_not_instance_detections() -
     assert result is False
 
 
-def test_gpu_composite_eligible_when_class_id_is_missing_for_class_lookup() -> None:
+def test_resolve_color_ids_matches_sv_semantics() -> None:
     # given
+    masks, boxes, class_id = _single_mask_inputs()
+    predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
+    predictions.bboxes_metadata = [{"tracker_id": 7}]
+
+    # when / then: same palette indices sv's resolve_color_idx would use
+    assert np.array_equal(_resolve_color_ids(predictions, "CLASS"), class_id)
+    assert np.array_equal(_resolve_color_ids(predictions, "INDEX"), [0])
+    assert np.array_equal(_resolve_color_ids(predictions, "TRACK"), [7])
+
+
+def test_resolve_color_ids_raises_sv_errors_when_ids_are_missing() -> None:
+    # given: missing class_id / tracker_id crash with sv's exact ValueError,
+    # raised before any mask work instead of after an sv-fallback mask decode
     masks, boxes, class_id = _single_mask_inputs()
     predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
     predictions.class_id = None
 
-    # when / then: CLASS lookup needs class ids; INDEX does not
-    assert _gpu_composite_eligible(predictions, "CLASS") is False
-    assert _gpu_composite_eligible(predictions, "INDEX") is True
+    # when / then
+    with pytest.raises(ValueError, match="resolve color by class"):
+        _resolve_color_ids(predictions, "CLASS")
+    with pytest.raises(ValueError, match="resolve color by track"):
+        _resolve_color_ids(predictions, "TRACK")
 
 
 def test_gpu_composite_eligible_when_dense_mask_is_on_cpu() -> None:
@@ -552,6 +577,37 @@ def test_gpu_mask_composite_with_fully_off_frame_boxes_leaves_scene_unchanged() 
 
     # then
     assert np.array_equal(actual, scene)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_gpu_mask_composite_track_colors_match_sv_annotator(device: str) -> None:
+    # given: disjoint masks colored by tracker_id (non-contiguous ids to
+    # catch any id-vs-index mixup), bit-exact vs sv's TRACK lookup
+    scene = _make_scene(909)
+    masks = _scenario_disjoint_masks()
+    detections, _ = _detections_and_colors(masks, device=device)
+    tracker_ids = [12, 3, 27]
+    detections.bboxes_metadata = [{"tracker_id": tid} for tid in tracker_ids]
+    annotator = sv.MaskAnnotator(
+        color=PALETTE, color_lookup=sv.ColorLookup.TRACK, opacity=OPACITY
+    )
+    expected = annotator.annotate(
+        scene=scene.copy(), detections=to_supervision_for_annotation(detections)
+    )
+    colors_bgr = np.asarray(
+        [
+            PALETTE.by_idx(int(tid)).as_bgr()
+            for tid in _resolve_color_ids(detections, "TRACK")
+        ],
+        dtype=np.uint8,
+    )
+
+    # when
+    actual = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
+
+    # then
+    assert float((expected == actual).all(axis=2).mean()) == 1.0
+    assert int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max()) == 0
 
 
 @requires_cuda
