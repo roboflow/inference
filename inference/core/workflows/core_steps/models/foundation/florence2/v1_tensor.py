@@ -20,7 +20,6 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
 )
-
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     TASK_TYPE_TO_FLORENCE_TASK,
     TASKS_REQUIRING_DETECTION_GROUNDING,

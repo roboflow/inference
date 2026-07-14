@@ -9,7 +9,6 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
     BlockManifest,
 )

@@ -267,7 +267,7 @@ def _extract_inference_ids(
         KeyPointPrediction,
         ClassificationPrediction,
         MultiLabelClassificationPrediction,
-    ]
+    ],
 ) -> List[str]:
     # Tensor-native predictions keep the inference_id as a single per-image value in
     # `image_metadata` (detections / keypoints) or in the classification prediction's
