@@ -477,18 +477,12 @@ def _run_phase_samples(
 
             def build_results() -> list[dict[str, Any]]:
                 """Run tensor InstanceCache classification and result slicing."""
-                return [
-                    block._build_tracker_result(
-                        video_id=prepared_item[0],
-                        tracked_detections=tracked_detections,
-                        tracker_ids=tracker_ids,
-                        instances_cache_size=_CACHE_SIZE,
-                    )
-                    for prepared_item, (tracked_detections, tracker_ids) in zip(
-                        prepared,
-                        recovered,
-                    )
-                ]
+                return block._build_tracker_results_batch(
+                    video_ids=[item[0] for item in prepared],
+                    tracked_detections=[item[0] for item in recovered],
+                    tracker_ids=[item[1] for item in recovered],
+                    instances_cache_size=_CACHE_SIZE,
+                )
 
             results, cache_ms = _synchronized_call(build_results)
             if metadata_mode == "tensor-only":
