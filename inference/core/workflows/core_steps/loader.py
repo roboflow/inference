@@ -106,9 +106,14 @@ else:
     from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor import (
         ContrastEnhancementBlock,
     )
-from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
-    ContrastEqualizationBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
+        ContrastEqualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1_tensor import (
+        ContrastEqualizationBlockV1,
+    )
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
