@@ -525,8 +525,7 @@ def _apply_index_op_on_prediction(
     returns the absolute index list to keep. For a keypoint-detection tuple
     ``(KeyPoints, Detections)`` the same index list slices both components and the
     result is re-wrapped as a tuple; for a plain detections object only the boxes are
-    sliced. Centralising this prevents a future index-based op from silently dropping
-    the tuple branch (the numpy path never had this branch).
+    sliced.
     """
     if _is_key_point_prediction(value):
         key_points, bboxes = _split_key_point_prediction(
@@ -610,15 +609,13 @@ def _class_names_lookup(
 def _extract_class_names_property_tensor_native(
     detections: TensorNativeDetections,
 ) -> List[str]:
-    """Numpy-parity ``class_name`` extractor for ``extract_detections_property``.
+    """``class_name`` extractor for ``extract_detections_property``.
 
-    The numpy sibling reads ``detections.data.get("class_name", [])`` and therefore
-    yields ``[]`` for a producer that never attached class names (no ``data["class_name"]``)
-    instead of raising. Mirror that here: when the class_id -> name mapping is absent
-    from ``image_metadata[CLASS_NAMES_KEY]`` we return ``[]`` rather than failing the
-    whole extraction. A *present-but-incomplete* mapping is still treated as a producer
-    contract violation by ``_resolve_class_names`` (a class_id without a name is a real
-    inconsistency, not an "absent property" case).
+    Numpy parity: the numpy sibling reads ``detections.data.get("class_name", [])``,
+    so an absent ``image_metadata[CLASS_NAMES_KEY]`` mapping yields ``[]`` rather
+    than raising. A present-but-incomplete mapping still raises in
+    ``_resolve_class_names`` (a class_id without a name is a producer contract
+    violation, not an absent property).
     """
     if _detections_count(detections) == 0:
         return []
@@ -654,14 +651,11 @@ def _resolve_class_names(
 def _resolve_effective_class_names(
     detections: TensorNativeDetections, operation_name: str
 ) -> List[str]:
-    """Per-row class names, honoring the per-box ``CLASS_NAME_KEY`` override that
-    the tensor serializer prefers (its C1 convention) before falling back to the
-    image-level ``CLASS_NAMES_KEY`` map. This is the native analog of numpy's
-    per-row ``data["class_name"]`` values: producers like
-    detections_classes_replacement attach per-box labels that diverge from the
-    map, and row-level operations (rename) must see those labels. A row with an
-    override never touches the map, so a missing/incomplete map raises only for
-    rows that actually need it."""
+    """Per-row class names — the native analog of numpy's per-row
+    ``data["class_name"]``: the per-box ``CLASS_NAME_KEY`` override wins (the
+    serializer's precedence), with fallback to the image-level ``CLASS_NAMES_KEY``
+    map. A row with an override never touches the map, so a missing/incomplete
+    map raises only for rows that actually need it."""
     if _detections_count(detections) == 0:
         return []
     bboxes_metadata = detections.bboxes_metadata
@@ -1046,9 +1040,8 @@ def _select_leftmost_detection_tensor_native(
 ) -> TensorNativeDetections:
     index = _select_leftmost_index_tensor_native(detections)
     if index is None:
-        # Return a copy on empty for consistency with the other tensor-native
-        # selectors (first/last/top-confidence) so no selector aliases the caller's
-        # object. Still parity-faithful: numpy's leftmost returns an empty object.
+        # Copy on empty so no tensor-native selector aliases the caller's object
+        # (numpy's leftmost returns the original; value-parity still holds).
         return _copy_detections(detections)
     return _take_detections(detections, [index])
 

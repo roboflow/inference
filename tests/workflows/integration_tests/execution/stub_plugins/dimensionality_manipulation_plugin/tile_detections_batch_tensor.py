@@ -1,11 +1,7 @@
 """
-Tensor-native sibling of ``tile_detections_batch.py``.
-
-Drawing is inherently numpy (``sv.BoxAnnotator``), so the native ``Detections`` is
-converted to ``sv.Detections`` via ``.to_supervision()`` ONLY to feed ``annotate()``.
-The output is the IMAGE tiles (unchanged) — this conversion is acceptable because it
-feeds a numpy renderer, not a detection output. The ``BlockManifest`` is reused
-verbatim from the numpy module.
+Tensor-native sibling of ``tile_detections_batch.py``: native ``Detections`` is
+converted via ``.to_supervision()`` only to feed ``sv.BoxAnnotator``; the block
+outputs image tiles, not detections.
 
 This is just example, test implementation, please do not assume it being fully functional.
 """

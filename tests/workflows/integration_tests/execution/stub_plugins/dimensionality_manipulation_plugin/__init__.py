@@ -3,7 +3,7 @@ from typing import List, Type
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
-# numpy / sv-shaped blocks (the original stub implementations)
+# numpy / sv-shaped blocks
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_batch import (
     DetectionsToParentCoordinatesBatchBlock,
 )
@@ -23,7 +23,7 @@ from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_man
     TileDetectionsNonBatchBlock,
 )
 
-# tensor-native siblings (operate on inference_models.Detections)
+# tensor-native siblings
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_batch_tensor import (
     DetectionsToParentCoordinatesBatchBlock as DetectionsToParentCoordinatesBatchBlockTensor,
 )

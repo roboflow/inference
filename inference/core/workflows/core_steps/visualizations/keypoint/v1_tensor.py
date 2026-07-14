@@ -288,8 +288,13 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         key_points = predictions[0] if isinstance(predictions, tuple) else predictions
         keypoints = key_points.to_supervision()
 
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             key_points=keypoints,
         )
         return {

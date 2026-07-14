@@ -157,9 +157,8 @@ class OverlapBlockV1(WorkflowBlock):
         overlap_class_name: str,
     ) -> BlockResult:
 
-        # Tensor-native predictions carry class names in `image_metadata`; resolve
-        # each detection's class name from the {class_id: name} map (fallback to
-        # `class_<id>` if absent) to mirror numpy `data["class_name"]`.
+        # Class names resolve through the image_metadata {class_id: name} map
+        # (fallback `class_<id>` when absent).
         class_names_map = (predictions.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
         xyxy = predictions.xyxy.detach().to("cpu").numpy().astype(float)
         class_id = predictions.class_id.detach().to("cpu").numpy()

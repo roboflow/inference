@@ -263,7 +263,11 @@ class IconVisualizationBlockV1(VisualizationBlock):
     ) -> BlockResult:
         if predictions is not None:
             predictions = to_supervision_for_annotation(predictions)
-        annotated_image = image.numpy_image.copy() if copy_image else image.numpy_image
+        annotated_image = image.numpy_image
+        if copy_image:
+            annotated_image = annotated_image.copy()
+        else:
+            image.declare_numpy_image_mutated()
         icon_np = icon.numpy_image.copy()
 
         import os

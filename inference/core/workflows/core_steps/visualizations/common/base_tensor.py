@@ -46,9 +46,7 @@ from inference_models.models.base.types import InstancesRLEMasks
 
 OUTPUT_IMAGE_KEY: str = "image"
 
-#: ``sv.Detections.data`` column carrying the resolved class-name string. This is
-#: the supervision-native key the annotators (e.g. ``sv.LabelAnnotator``) and the
-#: numpy visualisers read via ``predictions["class_name"]``.
+#: ``sv.Detections.data`` key the supervision annotators read class names from.
 CLASS_NAME_DATA_FIELD: str = "class_name"
 
 
@@ -59,21 +57,13 @@ def to_supervision_for_annotation(
     """Materialise a tensor-native prediction into an ``sv.Detections`` carrying
     everything the supervision annotators read.
 
-    ``materialise_masks=False`` skips the dense-mask materialisation entirely
-    (``mask`` stays ``None``) for annotators that never read ``.mask`` — e.g. the
-    label annotator — avoiding the device->host mask transfer/decode for them.
-
-    This is the single, sanctioned native -> sv conversion used by the
-    visualisation block siblings: the annotators (``sv.BoxAnnotator`` /
-    ``sv.LabelAnnotator`` / ``sv.MaskAnnotator`` / ...) require an
-    ``sv.Detections``, and the visualiser output is an annotated image (never a
-    native detection), so there is no round-trip back to a native object.
+    ``materialise_masks=False`` leaves ``mask`` as ``None``, skipping the
+    device->host mask transfer/decode for annotators that never read it.
 
     The reconstructed ``sv.Detections`` carries:
 
-    * ``xyxy`` / ``class_id`` / ``confidence`` (and a dense boolean ``mask`` for
-      instance segmentation, materialised in a single bulk transfer/decode for
-      the whole stack),
+    * ``xyxy`` / ``class_id`` / ``confidence`` (plus ``mask`` for instance
+      segmentation),
     * ``tracker_id`` (from ``bboxes_metadata[i]["tracker_id"]`` when present),
     * ``data["class_name"]`` resolved from ``image_metadata["class_names"]``
       (``{int class_id: str name}``), falling back to ``f"class_{id}"``,
@@ -82,9 +72,8 @@ def to_supervision_for_annotation(
     * any extra per-box ``bboxes_metadata`` keys (``time_in_zone``,
       ``area``-derived keys, etc.) that specific annotators consume.
 
-    For the keypoint-detection tuple input, the bounding-box component is used
-    (the keypoint annotators take an ``sv.KeyPoints`` from the native
-    ``KeyPoints`` component via its own ``.to_supervision()``, separately).
+    For the keypoint-detection tuple input, only the bounding-box component is
+    converted.
     """
     if isinstance(prediction, tuple):
         _, detections = split_key_point_prediction(prediction)
@@ -140,15 +129,11 @@ def _materialise_mask(
         return None
     mask = detections.mask
     if isinstance(mask, InstancesRLEMasks):
-        # RLE path: transcode straight to a supervision CompactMask (per-crop
-        # RLE) WITHOUT ever decoding the full-frame (N, H, W) boolean stack.
-        # Compact-aware annotators (sv.MaskAnnotator / HaloAnnotator via
-        # `_paint_masks_by_area`) then paint into each bbox crop only. The boxes
-        # double as crop bounds — identical to `CompactMask.from_dense`.
+        # RLE is transcoded without decoding the full-frame (N, H, W) boolean
+        # stack; the boxes provide the per-crop bounds.
         return instances_rle_to_compact_mask(mask, xyxy)
-    # Dense torch.Tensor (N, H, W): a single bulk device->host transfer instead of
-    # N per-instance `.detach().to("cpu").numpy()` round-trips (each a blocking CUDA
-    # sync). Mirrors `InstanceDetections.to_supervision`'s dense branch.
+    # Dense (N, H, W) masks: one bulk device->host transfer instead of N
+    # per-instance round-trips (each a blocking CUDA sync).
     return mask.detach().cpu().numpy().astype(bool)
 
 

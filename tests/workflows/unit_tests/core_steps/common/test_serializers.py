@@ -1208,14 +1208,7 @@ def test_serialise_native_classification_key_ordering_matches_numpy_path() -> No
         multi_label({**base_metadata, "time": 0.0123})
     )
 
-    # then
-    # top-level and per-entry key ORDER mirror the numpy flag-off path
-    # (response model_dump(by_alias=True, exclude_none=True) + the block's
-    # in-place prediction_type/parent_id/root_parent_id writes); orjson
-    # byte-parity depends on it. When the producer block stamps `time`
-    # (model-call elapsed, as `Model.infer_from_request` does on the numpy
-    # path) it must land between `inference_id` and `image`; when absent,
-    # the key is omitted entirely.
+    # then - exact key order matters: orjson byte-parity with the numpy path depends on it
     assert list(single_label_result.keys()) == [
         "inference_id",
         "image",
@@ -1348,7 +1341,7 @@ def test_tensor_wildcard_serializer_dispatches_native_values_like_kind_serialize
         }
     )
 
-    # then - every native arm must equal its kind serialiser's output
+    # then
     assert result["od"] == serializers_tensor.serialise_sv_detections(od)
     assert result["nested"][0] == serializers_tensor.serialise_sv_detections(
         instance_dense
@@ -1440,7 +1433,7 @@ def test_tensor_wildcard_serializer_keeps_numpy_behavior_for_legacy_values() -> 
         value={"sv": sv_detections, "ts": timestamp, "img": image}
     )
 
-    # then - byte-for-byte the numpy wildcard behavior for legacy values
+    # then
     expected = serialize_wildcard_kind(
         value={"sv": sv_detections, "ts": timestamp, "img": image}
     )

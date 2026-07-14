@@ -54,11 +54,8 @@ Using a detections model then cropping detections allows you to isolate your ana
 on particular regions of an image.
 """
 
-# Class id -> name mapping for DocTR's structured OCR detections. Sourced from the
-# inference_models DocTR model's `class_names` property
-# (inference_models/inference_models/models/doctr/doctr_torch.py -> ["block", "line", "word"]),
-# which assigns class_id 0 to block, 1 to line, 2 to word. The serialiser needs this
-# id -> name map on image_metadata to resolve every detection's class.
+# Must match the inference_models DocTR model's `class_names` order; the serializer
+# resolves each detection's class from this map on image_metadata.
 DOCTR_CLASS_NAMES: Dict[int, str] = {0: "block", 1: "line", 2: "word"}
 
 PREDICTION_TYPE = "ocr"
@@ -149,15 +146,6 @@ class OCRModelBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
     ) -> BlockResult:
-        # Tensor-native local path: the DocTR core model runs through the
-        # inference_models adapter's run_tensor_native_inference, which returns
-        # (rendered_texts, [Detections]) - the per-image Detections already carry
-        # xyxy / class_id / confidence and per-box {"text": ...} on bboxes_metadata.
-        # We register the core model by id only (its InferenceRequest requires an
-        # `image` we don't need just to register; the block has no version selector,
-        # so the id is always "doctr/default" - the request's doctr_version_id
-        # default), then attach the workflow image lineage + class_names map (and
-        # guarantee detection_ids) natively - no JSON / sv.Detections round-trip.
         doctr_model_id = "doctr/default"
         self._model_manager.add_model(
             doctr_model_id,
@@ -170,6 +158,7 @@ class OCRModelBlockV1(WorkflowBlock):
                 model_image, image_color_format = single_image.tensor_image, "rgb"
             else:
                 model_image, image_color_format = single_image.numpy_image, "bgr"
+            # The returned Detections carry per-box {"text": ...} on bboxes_metadata.
             texts, detections_batch = self._model_manager.run_tensor_native_inference(
                 doctr_model_id,
                 images=[model_image],
@@ -219,10 +208,8 @@ class OCRModelBlockV1(WorkflowBlock):
         )
         if len(images) == 1:
             responses = [responses]
-        # Remote returns JSON OCR responses; build the tensor-native Detections from
-        # the standard inference detection dicts under "predictions". When
-        # generate_bounding_boxes yields nothing the key may be absent/empty -
-        # native_detections_from_inference_predictions handles an empty list.
+        # The "predictions" key may be absent/empty when generate_bounding_boxes
+        # yields nothing.
         predictions = []
         for single_image, response in zip(images, responses):
             raw_predictions = response.get("predictions") or []
