@@ -165,12 +165,12 @@ ENV CUDA_HOME=/usr/local/cuda \
 
 WORKDIR /build/pytorch
 RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132 \
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
-    cmake --version | grep -q "cmake version ${CMAKE_VERSION}" && \
-    test "$(ninja --version)" = "${NINJA_VERSION%.*}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
     export CUDNN_LIB_DIR=/usr/lib/aarch64-linux-gnu CUDNN_INCLUDE_DIR=/usr/include && \
     export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" && \
@@ -210,8 +210,8 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     cd onnxruntime && \
     python3 -m pip install --break-system-packages -r requirements-dev.txt && \
-    cmake --version | grep -q "cmake version ${CMAKE_VERSION}" && \
-    test "$(ninja --version)" = "${NINJA_VERSION%.*}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
     ./build.sh --config Release --update --build --parallel ${ORT_BUILD_PARALLEL} \
         --build_wheel \
         --allow_running_as_root \
@@ -268,8 +268,8 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
         -r /build/triton/src/python/requirements.txt; \
-    cmake --version | grep -q "cmake version ${CMAKE_VERSION}"; \
-    test "$(ninja --version)" = "${NINJA_VERSION%.*}"; \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}"; \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}"; \
     MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
         --no-build-isolation \
         --no-deps \
