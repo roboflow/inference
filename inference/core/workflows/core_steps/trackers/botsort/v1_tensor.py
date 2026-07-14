@@ -275,18 +275,28 @@ class BoTSORTBlockV1(TrackerBlockBase):
         detections: sv.Detections,
         image: WorkflowImageData,
     ) -> sv.Detections:
-        if not getattr(tracker, "enable_cmc", False):
+        frame = self._tracker_batch_frame(tracker, image)
+        if frame is None:
             return tracker.update(detections)
+        return tracker.update(detections, frame=frame)
+
+    def _tracker_batch_frame(
+        self,
+        tracker: Any,
+        image: WorkflowImageData,
+    ) -> Any | None:
+        """Materialize a frame only when camera-motion compensation needs it."""
+        if not getattr(tracker, "enable_cmc", False):
+            return None
         try:
-            frame = image.numpy_image
+            return image.numpy_image
         except Exception as exc:
             logger.warning(
                 "%s: enable_cmc=True but frame unavailable (%s); running without CMC.",
                 self.__class__.__name__,
                 exc,
             )
-            return tracker.update(detections)
-        return tracker.update(detections, frame=frame)
+            return None
 
     def run(
         self,
