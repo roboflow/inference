@@ -1,3 +1,12 @@
+"""On-device Jetson tensor-runtime check. No CI job runs this: it needs a
+Jetson with the BSP media stack, torch, and the inference package installed.
+Run it manually inside a Jetson image, e.g.:
+
+    docker run --rm --runtime nvidia --entrypoint python3 \
+        -v "$PWD/docker/scripts/verify_jetson_tensor_runtime.py:/tmp/verify.py:ro" \
+        <jetson image> /tmp/verify.py
+"""
+
 import gc
 import subprocess
 import tempfile
@@ -152,6 +161,34 @@ def _validate_repeated_grab_advances(path: Path) -> None:
     producer.release()
 
 
+def _validate_threaded_retrieve(path: Path) -> None:
+    # Mirrors VideoSource's threading: the producer is constructed (and
+    # discovery runs) on the caller thread while retrieve happens on a
+    # dedicated consumer thread that has made no prior CUDA call. This is the
+    # configuration production uses and single-threaded checks miss.
+    producer = JetsonVideoFrameProducer(str(path), output_tensor=True)
+    producer.discover_source_properties()
+    result = {}
+
+    def consume() -> None:
+        try:
+            success, tensor = producer.retrieve()
+            result["success"] = success
+            result["shape"] = tuple(tensor.shape)
+        except Exception as error:  # noqa: BLE001 - surfaced via assert below
+            result["error"] = error
+
+    thread = threading.Thread(target=consume)
+    thread.start()
+    thread.join(timeout=30.0)
+
+    assert not thread.is_alive()
+    assert "error" not in result, f"retrieve failed off-thread: {result.get('error')!r}"
+    assert result["success"]
+    assert result["shape"] == (3, 180, 320)
+    producer.release()
+
+
 def _validate_interrupt_unblocks_pull() -> None:
     pipeline = NativeJetsonTensorPipeline(
         "appsrc is-live=true ! appsink name=rf_tensor_sink wait-on-eos=false",
@@ -201,6 +238,7 @@ def main() -> None:
         _validate_source(jpeg_path, minimum_frames=1)
         _validate_numpy_source(h264_path)
         _validate_repeated_grab_advances(changing_h264_path)
+        _validate_threaded_retrieve(h264_path)
         _validate_interrupt_unblocks_pull()
 
 
