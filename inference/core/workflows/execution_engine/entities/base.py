@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 import torch
 from pydantic import BaseModel, Field
+from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
 from inference.core.env import (
@@ -507,8 +508,14 @@ class WorkflowImageData:
         return self._workflow_root_ancestor_metadata
 
     def _read_shape_without_materialization(self) -> Tuple[int, int]:
-        """Returns (height, width). Prefers whichever representation is set
-        so tensor-mode never triggers device→host materialization."""
+        """Returns (height, width). Prefers whichever representation is already
+        set, so no numpy<->tensor conversion is ever triggered. When neither is
+        materialised yet (a base64/reference-born image), the source is decoded
+        into the representation the current mode works with - tensor under
+        ENABLE_TENSOR_DATA_REPRESENTATION (every caller of this helper is a
+        tensor-mode block that will need the tensor anyway), numpy otherwise -
+        so the shape read does not leave behind a representation the run has no
+        use for."""
         if self._numpy_image is not None:
             return self._numpy_image.shape[0], self._numpy_image.shape[1]
         if self._tensor_image is not None:
@@ -517,6 +524,9 @@ class WorkflowImageData:
                 int(self._tensor_image.shape[1]),
                 int(self._tensor_image.shape[2]),
             )
+        if ENABLE_TENSOR_DATA_REPRESENTATION:
+            tensor = self.tensor_image
+            return int(tensor.shape[1]), int(tensor.shape[2])
         np_img = self.numpy_image
         return np_img.shape[0], np_img.shape[1]
 
@@ -554,18 +564,51 @@ class WorkflowImageData:
         # of the returned tensor must call declare_tensor_image_mutated().
         if self._tensor_image is not None:
             return self._tensor_image
-        bgr_np = self.numpy_image
-        if bgr_np.ndim == 2:
-            # Single-channel (grayscale / threshold outputs): (H, W) -> (1, H, W),
-            # no channel reversal - there is no BGR/RGB semantics to convert.
-            chw = torch.from_numpy(np.ascontiguousarray(bgr_np)).unsqueeze(0)
+        if self._numpy_image is not None:
+            bgr_np = self._numpy_image
+            if bgr_np.ndim == 2:
+                # Single-channel (grayscale / threshold outputs): (H, W) ->
+                # (1, H, W), no channel reversal - there is no BGR/RGB
+                # semantics to convert.
+                chw = torch.from_numpy(np.ascontiguousarray(bgr_np)).unsqueeze(0)
+            else:
+                # HWC BGR -> HWC RGB -> CHW RGB; contiguous so model ingestion
+                # gets a dense buffer.
+                chw = torch.from_numpy(bgr_np[:, :, ::-1].copy()).permute(2, 0, 1)
         else:
-            # HWC BGR -> HWC RGB -> CHW RGB; contiguous so model ingestion gets a
-            # dense buffer.
-            chw = torch.from_numpy(bgr_np[:, :, ::-1].copy()).permute(2, 0, 1)
+            # A base64/reference-born image asked for the tensor first: the
+            # source decodes DIRECTLY into a CHW RGB tensor - no numpy hop and
+            # nothing cached besides the tensor itself.
+            chw = self._decode_source_to_tensor()
         # Allocated on the globally configured WORKFLOWS_IMAGE_TENSOR_DEVICE.
         self._tensor_image = chw.contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
         return self._tensor_image
+
+    def _decode_source_to_tensor(self) -> torch.Tensor:
+        """Decode the base64 / file / URL source straight into a CHW RGB uint8
+        tensor via ``torchvision.io`` - no numpy intermediate, no cv2. Only
+        reached when neither in-memory representation exists (the constructor
+        guarantees a source). EXIF handling mirrors the numpy path: cv2.imdecode
+        (the base64 route) does not apply EXIF orientation, cv2.imread (local
+        files) does. URLs are the one exception: their bytes come through the
+        SSRF-guarded numpy loader today, so they keep a single numpy hop until a
+        bytes-level guarded fetcher exists."""
+
+        if self._base64_image:
+            payload = torch.frombuffer(
+                bytearray(base64.b64decode(self._base64_image)), dtype=torch.uint8
+            )
+            return decode_image(payload, mode=ImageReadMode.RGB)
+        if self._image_reference.startswith(
+            "http://"
+        ) or self._image_reference.startswith("https://"):
+            hwc_bgr = load_image_from_url(value=self._image_reference)
+            return torch.from_numpy(hwc_bgr[:, :, ::-1].copy()).permute(2, 0, 1)
+        return decode_image(
+            read_file(self._image_reference),
+            mode=ImageReadMode.RGB,
+            apply_exif_orientation=True,
+        )
 
     def declare_numpy_image_mutated(self) -> None:
         """A client that mutated the ``numpy_image`` buffer in place declares it

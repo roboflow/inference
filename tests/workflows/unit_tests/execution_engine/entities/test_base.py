@@ -1131,7 +1131,10 @@ def test_parent_origin_validation_rejects_negative_height() -> None:
 
 import torch  # noqa: E402  (kept low to avoid touching the existing import block)
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE  # noqa: E402
+from inference.core.env import (  # noqa: E402
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+)
 
 
 def test_init_workflow_image_data_from_tensor_only() -> None:
@@ -1445,3 +1448,79 @@ def test_workflow_image_data_declared_tensor_mutation_refreshes_numpy() -> None:
 
     # then - numpy is re-derived from the mutated tensor (BGR order at [0, 0])
     assert np.array_equal(image.numpy_image[0, 0], np.array([1, 2, 3], dtype=np.uint8))
+
+
+def test_workflow_image_data_tensor_from_base64_does_not_cache_numpy() -> None:
+    # given - PNG so the decode is lossless and pixel assertions are exact
+    numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
+    numpy_image[..., 0] = 30  # B
+    numpy_image[..., 1] = 20  # G
+    numpy_image[..., 2] = 10  # R
+    encoded = base64.b64encode(cv2.imencode(".png", numpy_image)[1]).decode("ascii")
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        base64_image=encoded,
+    )
+
+    # when - the tensor is requested FIRST on a base64-born image
+    tensor = image.tensor_image
+
+    # then - the source decodes straight into the tensor representation; the
+    # transient decode buffer must NOT be left behind as a cached numpy
+    assert image._numpy_image is None, "decode must not leave a cached numpy behind"
+    assert tuple(tensor.shape) == (3, 4, 6)
+    assert torch.all(tensor[0] == 10)  # R
+    assert torch.all(tensor[1] == 20)  # G
+    assert torch.all(tensor[2] == 30)  # B
+    # numpy, when later needed, re-derives from the tensor - pixel-exact
+    assert np.array_equal(image.numpy_image, numpy_image)
+
+
+def test_workflow_image_data_shape_read_fallback_materializes_per_flag() -> None:
+    # given - a base64-born image with no in-memory representation yet
+    encoded = base64.b64encode(
+        cv2.imencode(".png", np.zeros((7, 11, 3), dtype=np.uint8))[1]
+    ).decode("ascii")
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        base64_image=encoded,
+    )
+
+    # when
+    shape = image._read_shape_without_materialization()
+
+    # then - the flag-appropriate representation (and only it) materialised
+    assert shape == (7, 11)
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        assert image._tensor_image is not None, "tensor mode materialises the tensor"
+        assert image._numpy_image is None, "tensor mode must not cache numpy"
+    else:
+        assert image._numpy_image is not None, "numpy mode materialises numpy"
+        assert image._tensor_image is None, "numpy mode must not build the tensor"
+
+
+def test_workflow_image_data_tensor_from_file_reference_does_not_cache_numpy(
+    tmp_path,
+) -> None:
+    # given - a lossless PNG on disk referenced by path
+    numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
+    numpy_image[..., 0] = 30  # B
+    numpy_image[..., 1] = 20  # G
+    numpy_image[..., 2] = 10  # R
+    path = str(tmp_path / "reference.png")
+    assert cv2.imwrite(path, numpy_image)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        image_reference=path,
+    )
+
+    # when - the tensor is requested FIRST on a reference-born image
+    tensor = image.tensor_image
+
+    # then - decoded straight to CHW RGB, no cached numpy left behind
+    assert image._numpy_image is None, "decode must not leave a cached numpy behind"
+    assert tuple(tensor.shape) == (3, 4, 6)
+    assert torch.all(tensor[0] == 10)  # R
+    assert torch.all(tensor[1] == 20)  # G
+    assert torch.all(tensor[2] == 30)  # B
+    assert np.array_equal(image.numpy_image, numpy_image)
