@@ -14,13 +14,10 @@ from typing import Any
 import supervision as sv
 import torch
 
-TrackerBatchOutput = tuple[sv.Detections, list[int] | None]
-
 
 @dataclass(slots=True)
 class _TrackerResult:
     detections: sv.Detections
-    host_tracker_ids: list[int] | None
     completion_event: torch.cuda.Event | None
 
 
@@ -60,6 +57,7 @@ class TrackerBatchScheduler:
         self._pending: deque[_TrackerRequest] = deque()
         self._closed = False
         self._executor: Any | None = None
+        self._execution_lock = threading.Lock()
         self._worker = threading.Thread(
             target=self._run,
             name="tracktors-batch-scheduler",
@@ -74,7 +72,7 @@ class TrackerBatchScheduler:
         *,
         frame: Any | None = None,
         timestamp: float | None = None,
-    ) -> TrackerBatchOutput:
+    ) -> sv.Detections:
         """Submit one stream update and wait for its ordered batch result."""
         future: Future[_TrackerResult] = Future()
         request = _TrackerRequest(
@@ -92,7 +90,33 @@ class TrackerBatchScheduler:
             self._condition.notify()
         result = future.result()
         self._prepare_consumer_handoff(result)
-        return result.detections, result.host_tracker_ids
+        return result.detections
+
+    def execute_batch(
+        self,
+        trackers: list[Any],
+        detections: list[sv.Detections],
+        *,
+        frames: list[Any | None],
+        timestamps: list[float | None],
+    ) -> list[sv.Detections]:
+        """Execute one explicit SIMD batch with the persistent CUDA executor."""
+        import tracktors
+
+        with self._execution_lock:
+            if self._executor is None:
+                executor_type = getattr(tracktors, "CUDABatchExecutor", None)
+                if executor_type is not None:
+                    self._executor = executor_type(
+                        max_workers=self.max_batch_size,
+                    )
+            return tracktors.update_batch(
+                trackers,
+                detections,
+                frames=frames,
+                timestamps=timestamps,
+                executor=self._executor,
+            )
 
     def close(self) -> None:
         """Stop accepting work and fail requests that have not started."""
@@ -107,9 +131,10 @@ class TrackerBatchScheduler:
             request.future.set_exception(RuntimeError("tracker batch scheduler closed"))
         if threading.current_thread() is not self._worker:
             self._worker.join()
-        if self._executor is not None:
-            self._executor.close()
-            self._executor = None
+        with self._execution_lock:
+            if self._executor is not None:
+                self._executor.close()
+                self._executor = None
 
     def _take_batch(self) -> list[_TrackerRequest]:
         with self._condition:
@@ -150,44 +175,33 @@ class TrackerBatchScheduler:
                     return
                 continue
             try:
-                import tracktors
-
                 self._prepare_worker_handoff(batch)
-                if self._executor is None:
-                    executor_type = getattr(tracktors, "CUDABatchExecutor", None)
-                    if executor_type is not None:
-                        self._executor = executor_type(
-                            max_workers=self.max_batch_size,
-                        )
-
-                outputs = tracktors.update_batch(
+                outputs = self.execute_batch(
                     [request.tracker for request in batch],
                     [request.detections for request in batch],
                     frames=[request.frame for request in batch],
                     timestamps=[request.timestamp for request in batch],
-                    executor=self._executor,
                 )
                 if len(outputs) != len(batch):
                     raise RuntimeError(
                         "tracktors.update_batch returned the wrong number of results"
                     )
-                host_tracker_ids = self._materialize_tracker_ids(outputs)
                 completion_events = [
                     self._record_completion_event(output) for output in outputs
                 ]
-            except Exception as error:
+            except BaseException as error:
                 for request in batch:
                     request.future.set_exception(error)
             else:
-                for index, (request, output) in enumerate(zip(batch, outputs)):
-                    output_host_ids = (
-                        None if host_tracker_ids is None else host_tracker_ids[index]
-                    )
+                for request, output, completion_event in zip(
+                    batch,
+                    outputs,
+                    completion_events,
+                ):
                     request.future.set_result(
                         _TrackerResult(
                             detections=output,
-                            host_tracker_ids=output_host_ids,
-                            completion_event=completion_events[index],
+                            completion_event=completion_event,
                         )
                     )
 
@@ -270,30 +284,6 @@ class TrackerBatchScheduler:
             "data",
         ):
             cls._record_value_stream(getattr(detections, field_name, None), stream)
-
-    @staticmethod
-    def _materialize_tracker_ids(
-        outputs: list[sv.Detections],
-    ) -> list[list[int]] | None:
-        """Transfer tracker IDs once for the whole batch's object metadata."""
-        tensors: list[torch.Tensor] = []
-        lengths: list[int] = []
-        for output in outputs:
-            tracker_ids = getattr(output, "tracker_id", None)
-            if not isinstance(tracker_ids, torch.Tensor):
-                return None
-            tensors.append(tracker_ids.reshape(-1))
-            lengths.append(tracker_ids.numel())
-        if not tensors:
-            return []
-        packed = torch.cat(tensors) if len(tensors) > 1 else tensors[0]
-        host_values = packed.detach().to("cpu").tolist()
-        offset = 0
-        result: list[list[int]] = []
-        for length in lengths:
-            result.append(host_values[offset : offset + length])
-            offset += length
-        return result
 
 
 _GLOBAL_SCHEDULER: TrackerBatchScheduler | None = None

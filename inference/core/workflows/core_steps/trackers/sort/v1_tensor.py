@@ -9,6 +9,7 @@ from inference.core.workflows.core_steps.trackers._base_tensor import (
     tracker_describe_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -148,6 +149,10 @@ class SORTManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["image", "detections"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return tracker_describe_outputs()
 
@@ -179,11 +184,18 @@ class SORTBlockV1(TrackerBlockBase):
 
     def run(
         self,
-        image: WorkflowImageData,
+        image: Union[WorkflowImageData, Batch[WorkflowImageData]],
         detections: Union[
             Detections,
             InstanceDetections,
             Tuple[KeyPoints, Optional[Detections]],
+            Batch[
+                Union[
+                    Detections,
+                    InstanceDetections,
+                    Tuple[KeyPoints, Optional[Detections]],
+                ]
+            ],
         ],
         lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
         minimum_iou_threshold: float = DEFAULT_MINIMUM_IOU_THRESHOLD,
@@ -191,7 +203,7 @@ class SORTBlockV1(TrackerBlockBase):
         instances_cache_size: int = DEFAULT_INSTANCES_CACHE_SIZE,
         track_activation_threshold: float = DEFAULT_TRACK_ACTIVATION_THRESHOLD,
     ) -> BlockResult:
-        return self._run_tracker(
+        return self._run_tracker_auto(
             image=image,
             detections=detections,
             instances_cache_size=instances_cache_size,

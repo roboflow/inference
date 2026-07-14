@@ -15,9 +15,11 @@ input/output handling in ``_run_tracker``: detection predictions are native
 ``sv.Detections`` (bounding boxes only, with a stashed row index) as the
 transport to/from the tracker, then maps the surviving rows back onto the
 ORIGINAL native input — preserving masks / keypoints / all native metadata —
-and writes the assigned ``tracker_id`` into ``bboxes_metadata``. Block outputs
-are always native ``inference_models`` objects; ``sv.Detections`` is used only
-as the algorithm boundary to the tracker library.
+and writes the assigned ``tracker_id`` as a same-device tensor field. Block
+outputs are always native
+``inference_models`` objects; ``sv.Detections`` is used only as the algorithm
+boundary to the tracker library. Metadata receives IDs only when an explicit
+legacy iteration or serialization boundary requests Python values.
 
 Each concrete tracker block (ByteTrack, BoT-SORT, SORT, OC-SORT) inherits from
 ``TrackerBlockBase`` and implements ``_create_tracker`` and ``get_manifest``.
@@ -30,7 +32,6 @@ library-based and identical to ``_base.py`` (the third-party trackers are
 
 import os
 from abc import abstractmethod
-from collections import deque
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import supervision as sv
@@ -45,6 +46,7 @@ from inference.core.workflows.core_steps.trackers.batch_scheduler import (
     get_tracker_batch_scheduler,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -85,35 +87,87 @@ TRACKER_PREDICTION_KINDS = [
 
 
 class InstanceCache:
-    """FIFO cache that tracks which object track IDs have been seen before.
+    """Device-resident FIFO cache for exact new/seen tracker classification.
 
     Used to categorize tracked detections as new (first appearance) or
     already seen (reappearance) across video frames.
     """
 
     def __init__(self, size: int):
-        size = max(1, size)
-        self._cache_inserts_track = deque(maxlen=size)
-        self._cache = set()
+        self._size = max(1, size)
+        self._ids: Optional[torch.Tensor] = None
+        self._valid: Optional[torch.Tensor] = None
+        self._write_index: Optional[torch.Tensor] = None
+
+    def record_instances(self, tracker_ids: torch.Tensor) -> torch.Tensor:
+        """Record an ID tensor and return an exact same-device seen mask.
+
+        Tracktor outputs guarantee unique IDs within a frame. That contract lets
+        membership, insertion ranks, wraparound positions, and final ring writes
+        run as vector operations rather than one launch sequence per object.
+        """
+        tracker_ids = tracker_ids.to(dtype=torch.long).reshape(-1)
+        self._ensure_device(tracker_ids.device)
+        if tracker_ids.numel() == 0:
+            return torch.empty(0, dtype=torch.bool, device=tracker_ids.device)
+        assert self._ids is not None
+        assert self._valid is not None
+        assert self._write_index is not None
+        cache_ids = self._ids[: self._size]
+        valid = self._valid[: self._size]
+        seen = (tracker_ids[:, None].eq(cache_ids[None, :]) & valid[None, :]).any(dim=1)
+        new = ~seen
+        insertion_rank = torch.cumsum(new.to(dtype=torch.long), dim=0) - 1
+        insertion_slot = torch.remainder(
+            self._write_index + insertion_rank,
+            self._size,
+        )
+        sentinel = torch.full_like(insertion_slot, self._size)
+        scatter_slot = torch.where(new, insertion_slot, sentinel)
+
+        # Multiple complete wraps can target one slot. Select the greatest
+        # insertion rank so the final ring contains the newest ID for that slot.
+        last_rank = torch.full(
+            (self._size + 1,),
+            -1,
+            dtype=torch.long,
+            device=tracker_ids.device,
+        )
+        last_rank.scatter_reduce_(
+            0,
+            scatter_slot,
+            torch.where(new, insertion_rank, torch.full_like(insertion_rank, -1)),
+            reduce="amax",
+            include_self=True,
+        )
+        selected_ids = tracker_ids.index_select(0, last_rank.clamp_min(0))
+        updated = last_rank >= 0
+        self._ids.copy_(torch.where(updated, selected_ids, self._ids))
+        self._valid.logical_or_(updated)
+        self._write_index.copy_(
+            torch.remainder(self._write_index + new.sum(dtype=torch.long), self._size)
+        )
+        return seen
+
+    def _ensure_device(self, device: torch.device) -> None:
+        """Initialize fixed cache tensors or reject cross-device video state."""
+        if self._ids is not None:
+            if self._ids.device != device:
+                raise ValueError("tracker cache device changed for an active video")
+            return
+        self._ids = torch.zeros(self._size + 1, dtype=torch.long, device=device)
+        self._valid = torch.zeros(self._size + 1, dtype=torch.bool, device=device)
+        self._write_index = torch.zeros((), dtype=torch.long, device=device)
 
     def record_instance(self, tracker_id: int) -> bool:
-        """Record a tracker ID and return whether it was previously seen.
+        """Retain the legacy scalar API as an explicit host-facing adapter.
 
         Returns:
             True if the tracker_id was already in the cache (seen before),
             False if this is its first appearance.
         """
-        in_cache = tracker_id in self._cache
-        if not in_cache:
-            self._cache_new_tracker_id(tracker_id=tracker_id)
-        return in_cache
-
-    def _cache_new_tracker_id(self, tracker_id: int) -> None:
-        while len(self._cache) >= self._cache_inserts_track.maxlen:
-            to_drop = self._cache_inserts_track.popleft()
-            self._cache.remove(to_drop)
-        self._cache_inserts_track.append(tracker_id)
-        self._cache.add(tracker_id)
+        seen = self.record_instances(torch.tensor([tracker_id], dtype=torch.long))
+        return bool(seen[0].item())
 
 
 # Native prediction shapes accepted by tracker blocks (object detection,
@@ -206,6 +260,134 @@ class TrackerBlockBase(WorkflowBlock):
         without moving them off-device. Surviving rows are mapped back onto the
         original native input so masks, keypoints, and metadata are preserved.
         """
+        video_id, tracker, bbox, sv_input = self._prepare_tracker_input(
+            image=image,
+            detections=detections,
+            tracker_kwargs=tracker_kwargs,
+        )
+
+        if self._can_batch_tracker_update(sv_input):
+            tracked_sv = get_tracker_batch_scheduler().update(
+                tracker,
+                sv_input,
+                frame=self._tracker_batch_frame(tracker, image),
+            )
+        else:
+            tracked_sv = self._tracker_update(tracker, sv_input, image)
+        tracked_detections, tracker_ids_tensor = self._recover_tracker_output(
+            detections=detections,
+            bbox=bbox,
+            tracked_sv=tracked_sv,
+        )
+        return self._build_tracker_result(
+            video_id=video_id,
+            tracked_detections=tracked_detections,
+            tracker_ids=tracker_ids_tensor,
+            instances_cache_size=instances_cache_size,
+        )
+
+    def _run_tracker_auto(
+        self,
+        image: Union[WorkflowImageData, Batch[WorkflowImageData]],
+        detections: Union[
+            TensorNativeTrackerPrediction,
+            Batch[TensorNativeTrackerPrediction],
+        ],
+        instances_cache_size: int,
+        **tracker_kwargs: Any,
+    ) -> Union[BlockResult, List[BlockResult]]:
+        """Dispatch direct callers scalarly and execution-engine SIMD as a batch."""
+        image_is_batch = isinstance(image, Batch)
+        detections_are_batch = isinstance(detections, Batch)
+        if image_is_batch != detections_are_batch:
+            raise ValueError("tracker image and detections must both be batched")
+        if image_is_batch and detections_are_batch:
+            return self._run_tracker_batch(
+                images=image,
+                detections=detections,
+                instances_cache_size=instances_cache_size,
+                **tracker_kwargs,
+            )
+        return self._run_tracker(
+            image=image,
+            detections=detections,
+            instances_cache_size=instances_cache_size,
+            **tracker_kwargs,
+        )
+
+    def _run_tracker_batch(
+        self,
+        images: Batch[WorkflowImageData],
+        detections: Batch[TensorNativeTrackerPrediction],
+        instances_cache_size: int,
+        **tracker_kwargs: Any,
+    ) -> List[BlockResult]:
+        """Run one aligned SIMD batch with a single Tracktors batch invocation."""
+        if len(images) != len(detections) or images.indices != detections.indices:
+            raise ValueError("tracker image and detection batches must be aligned")
+        prepared = [
+            self._prepare_tracker_input(
+                image=image,
+                detections=prediction,
+                tracker_kwargs=tracker_kwargs,
+            )
+            for image, prediction in zip(images, detections)
+        ]
+        trackers = [item[1] for item in prepared]
+        sv_inputs = [item[3] for item in prepared]
+        can_batch = len({id(tracker) for tracker in trackers}) == len(trackers) and all(
+            self._can_batch_tracker_update(item) for item in sv_inputs
+        )
+        if can_batch:
+            tracked_outputs = get_tracker_batch_scheduler().execute_batch(
+                trackers,
+                sv_inputs,
+                frames=[
+                    self._tracker_batch_frame(tracker, image)
+                    for tracker, image in zip(trackers, images)
+                ],
+                timestamps=[None] * len(trackers),
+            )
+        else:
+            tracked_outputs = [
+                self._tracker_update(tracker, sv_input, image)
+                for tracker, sv_input, image in zip(trackers, sv_inputs, images)
+            ]
+        if len(tracked_outputs) != len(prepared):
+            raise RuntimeError("tracktors.update_batch returned the wrong batch size")
+
+        recovered = [
+            self._recover_tracker_output(
+                detections=prediction,
+                bbox=prepared_item[2],
+                tracked_sv=tracked_sv,
+            )
+            for prediction, prepared_item, tracked_sv in zip(
+                detections,
+                prepared,
+                tracked_outputs,
+            )
+        ]
+        return [
+            self._build_tracker_result(
+                video_id=prepared_item[0],
+                tracked_detections=tracked_detections,
+                tracker_ids=tracker_ids,
+                instances_cache_size=instances_cache_size,
+            )
+            for prepared_item, (tracked_detections, tracker_ids) in zip(
+                prepared,
+                recovered,
+            )
+        ]
+
+    def _prepare_tracker_input(
+        self,
+        image: WorkflowImageData,
+        detections: TensorNativeTrackerPrediction,
+        tracker_kwargs: Dict[str, Any],
+    ) -> Tuple[str, Any, Union[Detections, InstanceDetections], sv.Detections]:
+        """Resolve per-video state and wrap native bounding boxes for Tracktors."""
         metadata = image.video_metadata
         fps = metadata.fps
         if not fps:
@@ -215,118 +397,83 @@ class TrackerBlockBase(WorkflowBlock):
                 "defaulting to 30 fps for tracker initialisation"
             )
         video_id = metadata.video_identifier
-
         if video_id not in self._trackers:
-            self._trackers[video_id] = self._create_tracker(fps=fps, **tracker_kwargs)
-
+            self._trackers[video_id] = self._create_tracker(
+                fps=fps,
+                **tracker_kwargs,
+            )
         tracker = self._trackers[video_id]
-
         _, bbox = split_key_point_prediction(detections)
-        n = int(bbox.xyxy.shape[0])
+        row_count = int(bbox.xyxy.shape[0])
         sv_input = sv.Detections(
             xyxy=bbox.xyxy,
             confidence=bbox.confidence,
             class_id=bbox.class_id,
             data={
                 _TRACKER_ROW_INDEX_KEY: torch.arange(
-                    n,
+                    row_count,
                     dtype=torch.long,
                     device=bbox.xyxy.device,
                 )
             },
         )
+        return video_id, tracker, bbox, sv_input
 
-        host_tracker_ids: Optional[List[int]] = None
-        if self._can_batch_tracker_update(sv_input):
-            tracked_sv, host_tracker_ids = get_tracker_batch_scheduler().update(
-                tracker,
-                sv_input,
-                frame=self._tracker_batch_frame(tracker, image),
-            )
-        else:
-            tracked_sv = self._tracker_update(tracker, sv_input, image)
-
-        if host_tracker_ids is not None and len(host_tracker_ids) != len(tracked_sv):
-            raise RuntimeError("batched tracker IDs do not align with tracker output")
-
-        # Filter out immature / unmatched tracks (tracker_id == -1). Mirror the
-        # numpy guard exactly: only filter when tracker_id is present and there
-        # is at least one tracked detection.
+    @staticmethod
+    def _recover_tracker_output(
+        detections: TensorNativeTrackerPrediction,
+        bbox: Union[Detections, InstanceDetections],
+        tracked_sv: sv.Detections,
+    ) -> Tuple[TensorNativeTrackerPrediction, torch.Tensor]:
+        """Map tracker rows back to native tensors and attach device-resident IDs."""
         if tracked_sv.tracker_id is not None and len(tracked_sv) > 0:
-            if host_tracker_ids is not None:
-                host_tracker_ids = [
-                    tracker_id for tracker_id in host_tracker_ids if tracker_id != -1
-                ]
-            valid_mask = tracked_sv.tracker_id != -1
-            tracked_sv = tracked_sv[valid_mask]
-
-        # Recover the surviving native-input row indices (stashed in .data and
-        # preserved by the tracker library's internal sv indexing) and the
-        # assigned tracker ids. The empty / library-emptied case yields no rows.
-        if (
+            tracked_sv = tracked_sv[tracked_sv.tracker_id != -1]
+        has_rows = (
             tracked_sv.data
             and _TRACKER_ROW_INDEX_KEY in tracked_sv.data
             and tracked_sv.tracker_id is not None
             and len(tracked_sv) > 0
-        ):
+        )
+        if has_rows:
             surviving = torch.as_tensor(
                 tracked_sv.data[_TRACKER_ROW_INDEX_KEY],
                 dtype=torch.long,
                 device=bbox.xyxy.device,
             )
-            tracker_ids_tensor = torch.as_tensor(
+            tracker_ids = torch.as_tensor(
                 tracked_sv.tracker_id,
                 dtype=torch.long,
                 device=bbox.xyxy.device,
             )
         else:
-            surviving = torch.empty(
-                0,
-                dtype=torch.long,
-                device=bbox.xyxy.device,
-            )
-            tracker_ids_tensor = torch.empty(
-                0,
-                dtype=torch.long,
-                device=bbox.xyxy.device,
-            )
-
-        if host_tracker_ids is not None and len(host_tracker_ids) != len(surviving):
-            raise RuntimeError(
-                "batched tracker IDs do not align with surviving input rows"
-            )
-
-        # Slice the ORIGINAL native input by the surviving rows (handles
-        # Detections / InstanceDetections / the keypoint tuple, dense + RLE
-        # masks). This preserves every native field for the surviving rows.
+            surviving = torch.empty(0, dtype=torch.long, device=bbox.xyxy.device)
+            tracker_ids = torch.empty(0, dtype=torch.long, device=bbox.xyxy.device)
         tracked_detections = take_prediction_by_indices(detections, surviving)
+        _bbox_component(tracked_detections).tracker_id = tracker_ids
+        return tracked_detections, tracker_ids
 
-        tracker_ids = (
-            host_tracker_ids
-            if host_tracker_ids is not None
-            else tracker_ids_tensor.detach().to("cpu").tolist()
-        )
-        _patch_tracker_ids(tracked_detections, tracker_ids)
-
+    def _build_tracker_result(
+        self,
+        video_id: str,
+        tracked_detections: TensorNativeTrackerPrediction,
+        tracker_ids: torch.Tensor,
+        instances_cache_size: int,
+    ) -> BlockResult:
+        """Classify exact FIFO new/seen outputs at the explicit cache boundary."""
         if video_id not in self._per_video_cache:
             self._per_video_cache[video_id] = InstanceCache(size=instances_cache_size)
-        cache = self._per_video_cache[video_id]
-
-        not_seen_indices, seen_indices = [], []
-        for position, tracker_id in enumerate(tracker_ids):
-            already_seen = cache.record_instance(tracker_id=tracker_id)
-            if already_seen:
-                seen_indices.append(position)
-            else:
-                not_seen_indices.append(position)
-
+        seen = self._per_video_cache[video_id].record_instances(tracker_ids)
+        not_seen_indices = torch.nonzero(~seen, as_tuple=False).reshape(-1)
+        seen_indices = torch.nonzero(seen, as_tuple=False).reshape(-1)
         return {
             OUTPUT_KEY: tracked_detections,
             "new_instances": take_prediction_by_indices(
-                tracked_detections, not_seen_indices
+                tracked_detections,
+                not_seen_indices,
             ),
             "already_seen_instances": take_prediction_by_indices(
-                tracked_detections, seen_indices
+                tracked_detections,
+                seen_indices,
             ),
         }
 
@@ -339,29 +486,6 @@ def _bbox_component(
     tuple)."""
     _, bbox = split_key_point_prediction(prediction)
     return bbox
-
-
-def _patch_tracker_ids(
-    prediction: TensorNativeTrackerPrediction,
-    tracker_ids: List[int],
-) -> None:
-    """Write ``tracker_id`` into the bbox component's ``bboxes_metadata``.
-
-    Builds ``bboxes_metadata`` as a list of dicts when it is ``None``, and
-    copies any existing per-detection dict so caller-owned state is not mutated.
-    Mutates the bbox component of ``prediction`` in place (the native objects
-    produced by ``take_prediction_by_indices`` are freshly allocated for this
-    block, so this is safe).
-    """
-    bbox = _bbox_component(prediction)
-    n = int(bbox.xyxy.shape[0])
-    existing = bbox.bboxes_metadata
-    new_meta: List[dict] = []
-    for i in range(n):
-        base = dict(existing[i]) if existing is not None and existing[i] else {}
-        base["tracker_id"] = int(tracker_ids[i])
-        new_meta.append(base)
-    bbox.bboxes_metadata = new_meta if new_meta else None
 
 
 def tracker_describe_outputs() -> List[OutputDefinition]:
