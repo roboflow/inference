@@ -67,111 +67,191 @@ def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
     return np.nonzero(np.asarray(mask))[0].tolist()
 
 
-def take_detections_by_indices(
+class _RowSelection:
+    """Normalised row selection shared by the ``take_*`` helpers.
+
+    Tensor fields are selected with a torch selector (a boolean mask stays a
+    boolean mask - it is moved to the field's device ONCE and reused, so a
+    device-resident mask never round-trips through a python list). Python-list
+    fields (``bboxes_metadata`` / RLE masks / ``key_points_metadata``) need
+    concrete row positions, which are pulled to host lazily and cached - a
+    selection that only touches tensor fields never pays the transfer.
+    """
+
+    def __init__(
+        self,
+        selector: Optional[torch.Tensor],
+        host_indices: Optional[List[int]],
+        is_identity: bool,
+        total_rows: int,
+    ) -> None:
+        self._selector = selector
+        self._host_indices = host_indices
+        self.is_identity = is_identity
+        self._total_rows = total_rows
+
+    @classmethod
+    def from_indices(cls, indices: Sequence[int], total_rows: int) -> "_RowSelection":
+        indices = [int(index) for index in indices]
+        is_identity = indices == list(range(total_rows))
+        selector = None if is_identity else torch.as_tensor(indices, dtype=torch.long)
+        return cls(selector, indices, is_identity, total_rows)
+
+    @classmethod
+    def from_mask(
+        cls,
+        mask: Union[np.ndarray, Sequence[bool], torch.Tensor],
+        total_rows: int,
+    ) -> "_RowSelection":
+        if not isinstance(mask, torch.Tensor) or mask.numel() != total_rows:
+            # Host-born masks (and the legacy mismatched-length edge) keep the
+            # exact index-list semantics of the old implementation.
+            return cls.from_indices(mask_to_indices(mask), total_rows)
+        mask = mask.detach().to(dtype=torch.bool).reshape(-1)
+        if bool(mask.all()):
+            return cls(None, None, True, total_rows)
+        return cls(mask, None, False, total_rows)
+
+    def select_tensor(self, field: torch.Tensor) -> torch.Tensor:
+        if self.is_identity:
+            return field
+        if self._selector.device != field.device:
+            # Move once, reuse for every subsequent field of this prediction.
+            self._selector = self._selector.to(field.device)
+        return field[self._selector]
+
+    def host_indices(self) -> List[int]:
+        if self._host_indices is None:
+            if self.is_identity:
+                self._host_indices = list(range(self._total_rows))
+            else:
+                # The single (lazy) device->host transfer of this selection.
+                self._host_indices = (
+                    torch.nonzero(self._selector, as_tuple=False)
+                    .reshape(-1)
+                    .cpu()
+                    .tolist()
+                )
+        return self._host_indices
+
+
+def _take_detections(
     detections: TensorNativeDetections,
-    indices: Sequence[int],
+    selection: _RowSelection,
 ) -> TensorNativeDetections:
-    """Select rows of a ``Detections`` / ``InstanceDetections`` by index list.
+    """Shared gather body for ``Detections`` / ``InstanceDetections``.
 
     Per-detection state (``bboxes_metadata``) and masks (dense torch or RLE) are
     carried over for the surviving rows; ``image_metadata`` is shared as-is.
-
     The surviving ``bboxes_metadata`` dicts are COPIED (not shared by reference)
     so a downstream block that mutates a selected box's metadata (e.g. assigns a
-    ``tracker_id``) cannot leak the mutation back into the source prediction. The
-    index tensor is built on CPU and left to advanced indexing to move (avoiding a
-    per-call host->device sync of a small Python list); an identity selection
-    skips the gather entirely.
+    ``tracker_id``) cannot leak the mutation back into the source prediction.
+    An identity selection skips the tensor gathers entirely.
     """
-    indices = list(indices)
-    is_identity = indices == list(range(int(detections.xyxy.shape[0])))
-    index_tensor = torch.as_tensor(indices, dtype=torch.long)
     bboxes_metadata = None
     if detections.bboxes_metadata is not None:
-        bboxes_metadata = [dict(detections.bboxes_metadata[i]) for i in indices]
+        bboxes_metadata = [
+            dict(detections.bboxes_metadata[i]) for i in selection.host_indices()
+        ]
     if isinstance(detections, InstanceDetections):
         mask_field = detections.mask
         if isinstance(mask_field, InstancesRLEMasks):
             new_mask: Union[torch.Tensor, InstancesRLEMasks] = InstancesRLEMasks(
                 image_size=mask_field.image_size,
-                masks=[mask_field.masks[i] for i in indices],
+                masks=[mask_field.masks[i] for i in selection.host_indices()],
             )
-        elif is_identity:
-            new_mask = mask_field
         else:
-            new_mask = mask_field[index_tensor]
+            new_mask = selection.select_tensor(mask_field)
         return InstanceDetections(
-            xyxy=detections.xyxy if is_identity else detections.xyxy[index_tensor],
-            class_id=(
-                detections.class_id
-                if is_identity
-                else detections.class_id[index_tensor]
-            ),
-            confidence=(
-                detections.confidence
-                if is_identity
-                else detections.confidence[index_tensor]
-            ),
+            xyxy=selection.select_tensor(detections.xyxy),
+            class_id=selection.select_tensor(detections.class_id),
+            confidence=selection.select_tensor(detections.confidence),
             mask=new_mask,
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
     return Detections(
-        xyxy=detections.xyxy if is_identity else detections.xyxy[index_tensor],
-        class_id=(
-            detections.class_id if is_identity else detections.class_id[index_tensor]
-        ),
-        confidence=(
-            detections.confidence
-            if is_identity
-            else detections.confidence[index_tensor]
-        ),
+        xyxy=selection.select_tensor(detections.xyxy),
+        class_id=selection.select_tensor(detections.class_id),
+        confidence=selection.select_tensor(detections.confidence),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
     )
+
+
+def _take_key_points(
+    key_points: KeyPoints,
+    selection: _RowSelection,
+) -> KeyPoints:
+    """Shared gather body for ``KeyPoints`` (instance dimension).
+
+    The surviving ``key_points_metadata`` dicts are COPIED (not shared by
+    reference) so downstream mutation cannot leak back into the source; the
+    auxiliary per-instance tensors (populated by RF-DETR) are sliced in
+    lockstep so lossless selections stay lossless."""
+    key_points_metadata = None
+    if key_points.key_points_metadata is not None:
+        key_points_metadata = [
+            dict(key_points.key_points_metadata[i]) for i in selection.host_indices()
+        ]
+    covariance = key_points.covariance
+    if covariance is not None:
+        covariance = selection.select_tensor(covariance)
+    detection_confidence = key_points.detection_confidence
+    if detection_confidence is not None:
+        detection_confidence = selection.select_tensor(detection_confidence)
+    return KeyPoints(
+        xy=selection.select_tensor(key_points.xy),
+        class_id=selection.select_tensor(key_points.class_id),
+        confidence=selection.select_tensor(key_points.confidence),
+        image_metadata=key_points.image_metadata,
+        key_points_metadata=key_points_metadata,
+        covariance=covariance,
+        detection_confidence=detection_confidence,
+    )
+
+
+def take_detections_by_indices(
+    detections: TensorNativeDetections,
+    indices: Sequence[int],
+) -> TensorNativeDetections:
+    """Select rows of a ``Detections`` / ``InstanceDetections`` by index list."""
+    selection = _RowSelection.from_indices(indices, int(detections.xyxy.shape[0]))
+    return _take_detections(detections, selection)
 
 
 def take_key_points_by_indices(
     key_points: KeyPoints,
     indices: Sequence[int],
 ) -> KeyPoints:
-    """Select instances of a ``KeyPoints`` by index list (slices along the
-    instance dimension; per-instance ``key_points_metadata`` carried over).
+    """Select instances of a ``KeyPoints`` by index list."""
+    selection = _RowSelection.from_indices(indices, int(key_points.xy.shape[0]))
+    return _take_key_points(key_points, selection)
 
-    The surviving ``key_points_metadata`` dicts are COPIED (not shared by
-    reference) so downstream mutation cannot leak back into the source. The index
-    tensor is built on CPU and left to advanced indexing to move (avoiding a
-    per-call host->device sync); an identity selection skips the gather entirely.
-    """
-    indices = list(indices)
-    is_identity = indices == list(range(int(key_points.xy.shape[0])))
-    index_tensor = torch.as_tensor(indices, dtype=torch.long)
-    key_points_metadata = None
-    if key_points.key_points_metadata is not None:
-        key_points_metadata = [dict(key_points.key_points_metadata[i]) for i in indices]
-    # Auxiliary per-instance tensors (populated by RF-DETR) are sliced in
-    # lockstep so lossless selections stay lossless.
-    covariance = key_points.covariance
-    if covariance is not None and not is_identity:
-        covariance = covariance[index_tensor]
-    detection_confidence = key_points.detection_confidence
-    if detection_confidence is not None and not is_identity:
-        detection_confidence = detection_confidence[index_tensor]
-    return KeyPoints(
-        xy=key_points.xy if is_identity else key_points.xy[index_tensor],
-        class_id=(
-            key_points.class_id if is_identity else key_points.class_id[index_tensor]
-        ),
-        confidence=(
-            key_points.confidence
-            if is_identity
-            else key_points.confidence[index_tensor]
-        ),
-        image_metadata=key_points.image_metadata,
-        key_points_metadata=key_points_metadata,
-        covariance=covariance,
-        detection_confidence=detection_confidence,
-    )
+
+def _prediction_row_count(prediction: TensorNativePrediction) -> int:
+    if isinstance(prediction, tuple):
+        key_points, _ = prediction
+        return int(key_points.xy.shape[0])
+    if isinstance(prediction, KeyPoints):
+        return int(prediction.xy.shape[0])
+    return int(prediction.xyxy.shape[0])
+
+
+def _take_prediction(
+    prediction: TensorNativePrediction,
+    selection: _RowSelection,
+) -> TensorNativePrediction:
+    if isinstance(prediction, tuple):
+        key_points, detections = prediction
+        sliced_key_points = _take_key_points(key_points, selection)
+        sliced_detections = (
+            _take_detections(detections, selection) if detections is not None else None
+        )
+        return sliced_key_points, sliced_detections
+    if isinstance(prediction, KeyPoints):
+        return _take_key_points(prediction, selection)
+    return _take_detections(prediction, selection)
 
 
 def take_prediction_by_indices(
@@ -181,26 +261,23 @@ def take_prediction_by_indices(
     """Select a subset of any tensor-native prediction by index list, returning
     the same shape. For the keypoint-detection tuple, both the ``KeyPoints`` and
     the bbox ``Detections`` components are sliced consistently."""
-    if isinstance(prediction, tuple):
-        key_points, detections = prediction
-        sliced_key_points = take_key_points_by_indices(key_points, indices)
-        sliced_detections = (
-            take_detections_by_indices(detections, indices)
-            if detections is not None
-            else None
-        )
-        return sliced_key_points, sliced_detections
-    if isinstance(prediction, KeyPoints):
-        return take_key_points_by_indices(prediction, indices)
-    return take_detections_by_indices(prediction, indices)
+    selection = _RowSelection.from_indices(indices, _prediction_row_count(prediction))
+    return _take_prediction(prediction, selection)
 
 
 def take_prediction_by_mask(
     prediction: TensorNativePrediction,
-    mask: Union[np.ndarray, Sequence[bool]],
+    mask: Union[np.ndarray, Sequence[bool], torch.Tensor],
 ) -> TensorNativePrediction:
-    """Select a subset of any tensor-native prediction by boolean mask."""
-    return take_prediction_by_indices(prediction, mask_to_indices(mask))
+    """Select a subset of any tensor-native prediction by boolean mask.
+
+    A torch mask is used AS the selector: tensor fields are boolean-indexed on
+    their own device with no host round trip; the row positions only reach the
+    host (once, lazily) when a python-list field of the prediction needs them.
+    Non-torch masks (and torch masks whose length does not match the
+    prediction) keep the legacy index-list semantics."""
+    selection = _RowSelection.from_mask(mask, _prediction_row_count(prediction))
+    return _take_prediction(prediction, selection)
 
 
 def split_key_point_prediction(

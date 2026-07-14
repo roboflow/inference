@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import torch
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -175,12 +176,20 @@ def filter_detections_by_class_confidence(
     class_names = _resolve_class_names(detections)
     thresholds = {str(k): float(v) for k, v in (class_thresholds or {}).items()}
     default = float(default_threshold)
-    keep: List[bool] = []
-    for i in range(int(confidences.shape[0])):
-        class_name = class_names[i] if i < len(class_names) else None
-        threshold = thresholds.get(str(class_name), default)
-        keep.append(float(confidences[i]) >= threshold)
-    if all(keep):
+    # Per-row thresholds are host data (class names live in image_metadata), so
+    # they are assembled on host in ONE pass and shipped to the confidence
+    # tensor's device in ONE transfer; the comparison then runs vectorised
+    # on-device and the resulting torch mask feeds take_prediction_by_mask's
+    # device-native selection - the previous per-row `float(confidences[i])`
+    # loop synced device->host once per detection.
+    per_row_thresholds = [
+        thresholds.get(str(class_names[i] if i < len(class_names) else None), default)
+        for i in range(int(confidences.shape[0]))
+    ]
+    keep = confidences >= torch.as_tensor(
+        per_row_thresholds, dtype=confidences.dtype, device=confidences.device
+    )
+    if bool(keep.all()):
         return prediction
     return take_prediction_by_mask(prediction, keep)
 
