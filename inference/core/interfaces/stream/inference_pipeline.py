@@ -1176,16 +1176,19 @@ def _materialise_video_frame_for_sink(
         return video_frame
 
     tensor_image = video_frame.image.detach().cpu()
+    if tensor_image.ndim == 3 and tensor_image.shape[0] == 1:
+        tensor_image = tensor_image[0]
     if tensor_image.ndim == 2:
-        numpy_image = tensor_image.contiguous().numpy()
-    elif tensor_image.ndim == 3 and tensor_image.shape[0] == 1:
-        numpy_image = tensor_image[0].contiguous().numpy()
+        # cv2-based sinks expect 3-channel BGR frames, so grayscale is
+        # broadcast across the channels.
+        numpy_image = tensor_image.unsqueeze(-1).repeat(1, 1, 3).numpy()
     elif tensor_image.ndim == 3 and tensor_image.shape[0] in {3, 4}:
-        numpy_image = tensor_image.permute(1, 2, 0).contiguous().numpy()
         channel_order = [2, 1, 0]
         if tensor_image.shape[0] == 4:
             channel_order.append(3)
-        numpy_image = np.ascontiguousarray(numpy_image[..., channel_order])
+        # Single copy: advanced indexing on the HWC view materialises a
+        # contiguous BGR(A) array directly.
+        numpy_image = tensor_image.permute(1, 2, 0)[..., channel_order].numpy()
     else:
         raise ValueError("Tensor video frames must use HW, 1CHW, 3CHW, or 4CHW layout")
     return replace(video_frame, image=numpy_image)

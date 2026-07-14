@@ -66,9 +66,7 @@ def test_generic_cuda_backend_remains_available_for_numpy_consumers(
 
     assert availability[GSTREAMER_CUDA].available
     check_gstreamer_cuda_mock.assert_called_once_with("sample.mp4")
-    check_jetson_gstreamer_mock.assert_called_once_with(
-        video="sample.mp4", require_cuda_tensor=False
-    )
+    check_jetson_gstreamer_mock.assert_called_once_with(video="sample.mp4")
     check_pynvvideocodec_mock.assert_not_called()
 
 
@@ -86,7 +84,7 @@ def test_jetson_numpy_probe_requires_the_native_cuda_bridge(
     bridge_available_mock,
     cuda_available_mock,
 ) -> None:
-    availability = check_jetson_gstreamer(video="sample.mp4", require_cuda_tensor=False)
+    availability = check_jetson_gstreamer(video="sample.mp4")
 
     assert availability.available
     bridge_available_mock.assert_called_once_with()

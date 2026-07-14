@@ -202,27 +202,32 @@ RUN chmod +x \
 
 FROM gstreamer-builder AS cuda-runtime-export
 
-RUN mkdir -p /opt/cuda-runtime/lib /opt/cuda-runtime/share/licenses && \
+ARG CUDA_IMAGE_VERSION
+
+RUN cuda_major="${CUDA_IMAGE_VERSION%%.*}" && \
+    cuda_minor="$(echo "${CUDA_IMAGE_VERSION}" | cut -d. -f2)" && \
+    cuda_package_suffix="${cuda_major}-${cuda_minor}" && \
+    mkdir -p /opt/cuda-runtime/lib /opt/cuda-runtime/share/licenses && \
     for library in \
-        libcudart.so.13 \
-        libnvjpeg.so.13 \
-        libnppc.so.13 \
-        libnppial.so.13 \
-        libnppicc.so.13 \
-        libnppidei.so.13 \
-        libnppif.so.13 \
-        libnppig.so.13 \
-        libnppim.so.13 \
-        libnppist.so.13 \
-        libnppitc.so.13; do \
+        "libcudart.so.${cuda_major}" \
+        "libnvjpeg.so.${cuda_major}" \
+        "libnppc.so.${cuda_major}" \
+        "libnppial.so.${cuda_major}" \
+        "libnppicc.so.${cuda_major}" \
+        "libnppidei.so.${cuda_major}" \
+        "libnppif.so.${cuda_major}" \
+        "libnppig.so.${cuda_major}" \
+        "libnppim.so.${cuda_major}" \
+        "libnppist.so.${cuda_major}" \
+        "libnppitc.so.${cuda_major}"; do \
         cp -L "/usr/local/cuda/lib64/${library}" \
             "/opt/cuda-runtime/lib/${library}"; \
     done && \
-    cp /usr/share/doc/cuda-cudart-13-2/copyright \
+    cp "/usr/share/doc/cuda-cudart-${cuda_package_suffix}/copyright" \
         /opt/cuda-runtime/share/licenses/cuda-cudart && \
-    cp /usr/share/doc/libnvjpeg-13-2/copyright \
+    cp "/usr/share/doc/libnvjpeg-${cuda_package_suffix}/copyright" \
         /opt/cuda-runtime/share/licenses/libnvjpeg && \
-    cp /usr/share/doc/libnpp-13-2/copyright \
+    cp "/usr/share/doc/libnpp-${cuda_package_suffix}/copyright" \
         /opt/cuda-runtime/share/licenses/libnpp && \
     test "$(du -sm /opt/cuda-runtime | cut -f1)" -lt 165
 
@@ -323,7 +328,7 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
         OPENCV_EXPECTED_CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH_BIN}" \
         OPENCV_REQUIRE_CUDA_BUILD=true \
         sh /tmp/verify_opencv && \
-    sh /tmp/verify_media_runtime && \
+    MEDIA_RUNTIME_REQUIRE_JETSON_PLUGINS=true sh /tmp/verify_media_runtime && \
     test -s /usr/lib/aarch64-linux-gnu/libEGL.so.1 && \
     test -s /usr/lib/aarch64-linux-gnu/libGLESv2.so.2 && \
     test -z "$(find /usr/lib/aarch64-linux-gnu -maxdepth 1 -type f \

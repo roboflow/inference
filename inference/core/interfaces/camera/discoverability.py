@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from inference.core.interfaces.camera.entities import VideoFrameProducer
+from inference.core.logger import logger
 
 JETSON = "jetson"
 DGPU = "dgpu"
@@ -21,8 +22,6 @@ class ProducerAvailability:
 
 def check_jetson_gstreamer(
     video: Optional[Union[str, int]] = None,
-    *,
-    require_cuda_tensor: bool = True,
 ) -> ProducerAvailability:
     """Probe the in-repo Jetson GStreamer producer and its required elements."""
 
@@ -35,9 +34,7 @@ def check_jetson_gstreamer(
         return ProducerAvailability(
             JETSON, False, f"Jetson GStreamer producer import failed: {error!r}"
         )
-    gst_ok, gst_reason = probe_gstreamer_elements(
-        required_gstreamer_elements(video, output_tensor=True)
-    )
+    gst_ok, gst_reason = probe_gstreamer_elements(required_gstreamer_elements(video))
     if not gst_ok:
         return ProducerAvailability(JETSON, False, gst_reason)
     try:
@@ -171,9 +168,7 @@ def available_producers(
     gstreamer_cuda_availability = check_gstreamer_cuda(video)
     return {
         GSTREAMER_CUDA: gstreamer_cuda_availability,
-        JETSON: check_jetson_gstreamer(
-            video=video, require_cuda_tensor=require_cuda_tensor
-        ),
+        JETSON: check_jetson_gstreamer(video=video),
         DGPU: dgpu_availability,
     }
 
@@ -232,7 +227,17 @@ def build_hw_producer(
                 return PyNvVideoCodecFrameProducer(video, **producer_kwargs)
         except (
             Exception
-        ):  # noqa: BLE001 - probe said ok but construction failed; try next
+        ) as error:  # noqa: BLE001 - probe said ok but construction failed; try next
+            # Without this log a hardware-backend failure is invisible: the
+            # probe result still reads "ok" and the source lands on the cv2
+            # CPU path with no trace of why.
+            logger.warning(
+                "Hardware video producer %s failed to construct for %r: %r. "
+                "Trying the next candidate.",
+                name,
+                video,
+                error,
+            )
             continue
     return None
 

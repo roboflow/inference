@@ -2,6 +2,12 @@
 
 set -eu
 
+# Shared runtime hygiene check for every media-enabled image. Jetson-only
+# artifacts are validated when present; set
+# MEDIA_RUNTIME_REQUIRE_JETSON_PLUGINS=true to make the baked L4T plugin set
+# a hard requirement (only the Jetson media image bakes them: JetPack 6
+# injects the BSP plugins at container start, and dGPU images have none).
+
 for command_name in \
     cc \
     c++ \
@@ -32,17 +38,22 @@ if [ -n "${development_packages}" ]; then
     exit 1
 fi
 
-set -- /opt/ffmpeg /opt/gstreamer /opt/roboflow
+set -- /opt/ffmpeg /opt/gstreamer
+if [ -d /opt/roboflow ]; then
+    set -- "$@" /opt/roboflow
+fi
 if [ -d /opt/opencv ]; then
     set -- "$@" /opt/opencv
 fi
 if [ -d /opt/cuda-runtime ]; then
     set -- "$@" /opt/cuda-runtime
 fi
-set -- \
-    "$@" \
-    /usr/lib/aarch64-linux-gnu/gstreamer-1.0 \
-    /usr/lib/aarch64-linux-gnu/nvidia
+if [ -d /usr/lib/aarch64-linux-gnu/gstreamer-1.0 ]; then
+    set -- "$@" /usr/lib/aarch64-linux-gnu/gstreamer-1.0
+fi
+if [ -d /usr/lib/aarch64-linux-gnu/nvidia ]; then
+    set -- "$@" /usr/lib/aarch64-linux-gnu/nvidia
+fi
 if [ -d /usr/lib/aarch64-linux-gnu/tegra ]; then
     set -- "$@" /usr/lib/aarch64-linux-gnu/tegra
 fi
@@ -57,7 +68,10 @@ if [ -n "${development_artifact}" ]; then
     exit 1
 fi
 
-set -- /opt/ffmpeg /opt/gstreamer /opt/roboflow
+set -- /opt/ffmpeg /opt/gstreamer
+if [ -d /opt/roboflow ]; then
+    set -- "$@" /opt/roboflow
+fi
 if [ -d /opt/opencv ]; then
     set -- "$@" /opt/opencv
 fi
@@ -71,9 +85,11 @@ required_jetson_plugins="
 /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvidconv.so
 /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideo4linux2.so
 "
-for plugin in ${required_jetson_plugins}; do
-    test -s "${plugin}"
-done
+if [ "${MEDIA_RUNTIME_REQUIRE_JETSON_PLUGINS:-false}" = "true" ]; then
+    for plugin in ${required_jetson_plugins}; do
+        test -s "${plugin}"
+    done
+fi
 
 if [ -s /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvjpeg.so ]; then
     test -s /opt/cuda-runtime/lib/libnvjpeg.so.13
@@ -95,6 +111,9 @@ find "$@" -type f -name '*.so*' -print0 |
     ' sh
 
 for library in ${required_jetson_plugins}; do
+    if [ ! -s "${library}" ]; then
+        continue
+    fi
     missing="$(
         ldd "${library}" 2>/dev/null |
             awk '/not found/ { print $1 }' |

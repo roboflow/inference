@@ -69,6 +69,8 @@ struct RfFrameInfo {
 struct RfBridgeStats {
     uint64_t frames;
     uint64_t descriptor_maps;
+    // The next four counters must stay zero on the zero-copy path; the
+    // verify scripts assert on them to prove no host fallback executed.
     uint64_t host_pixel_maps;
     uint64_t host_to_device_copies;
     uint64_t device_to_host_copies;
@@ -117,6 +119,7 @@ struct ChannelMap {
 std::once_flag g_gstreamer_once;
 std::once_flag g_nvbufsurface_once;
 NvBufSurfaceApi g_nvbufsurface;
+char g_dlerror_message[256];
 
 void write_error(char* destination, size_t capacity, const char* format, ...) {
     if (destination == nullptr || capacity == 0) {
@@ -133,6 +136,17 @@ void initialize_gstreamer() {
     gst_init(nullptr, nullptr);
 }
 
+const char* capture_dlerror() {
+    // dlerror() returns a pointer into a thread-local buffer that later dl*
+    // calls (Python's ctypes dlopens constantly) overwrite; snapshot it.
+    const char* message = dlerror();
+    if (message == nullptr) {
+        return nullptr;
+    }
+    std::snprintf(g_dlerror_message, sizeof(g_dlerror_message), "%s", message);
+    return g_dlerror_message;
+}
+
 void initialize_nvbufsurface() {
     const char* candidates[] = {
         "libnvbufsurface.so.1.0.0",
@@ -147,7 +161,7 @@ void initialize_nvbufsurface() {
         }
     }
     if (g_nvbufsurface.library == nullptr) {
-        g_nvbufsurface.error = dlerror();
+        g_nvbufsurface.error = capture_dlerror();
         return;
     }
     g_nvbufsurface.map_egl_image =
@@ -158,7 +172,7 @@ void initialize_nvbufsurface() {
             dlsym(g_nvbufsurface.library, "NvBufSurfaceUnMapEglImage"));
     if (g_nvbufsurface.map_egl_image == nullptr ||
         g_nvbufsurface.unmap_egl_image == nullptr) {
-        g_nvbufsurface.error = dlerror();
+        g_nvbufsurface.error = capture_dlerror();
     }
 }
 
@@ -237,9 +251,14 @@ void delete_managed_tensor(DLManagedTensor* managed) {
     if (context == nullptr) {
         return;
     }
+    int previous_device = -1;
+    cudaGetDevice(&previous_device);
     cudaSetDevice(context->device_id);
     if (context->allocation != nullptr) {
         cudaFree(context->allocation);
+    }
+    if (previous_device >= 0 && previous_device != context->device_id) {
+        cudaSetDevice(previous_device);
     }
     delete context;
 }
@@ -285,19 +304,18 @@ bool read_sample_info(GstSample* sample, RfFrameInfo* info) {
     return true;
 }
 
-void read_bus_error(
+bool read_bus_error(
     RfJetsonPipeline* handle,
     char* error,
     size_t error_capacity) {
     GstBus* bus = gst_element_get_bus(handle->pipeline);
     if (bus == nullptr) {
-        write_error(error, error_capacity, "GStreamer did not produce a frame");
-        return;
+        return false;
     }
-    GstMessage* message = gst_bus_pop_filtered(
-        bus,
-        static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
-    if (message != nullptr && GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
+    GstMessage* message = gst_bus_pop_filtered(bus, GST_MESSAGE_ERROR);
+    bool has_error = false;
+    if (message != nullptr) {
+        has_error = true;
         GError* gst_error = nullptr;
         gchar* debug = nullptr;
         gst_message_parse_error(message, &gst_error, &debug);
@@ -310,15 +328,10 @@ void read_bus_error(
             g_error_free(gst_error);
         }
         g_free(debug);
-    } else if (message != nullptr) {
-        write_error(error, error_capacity, "GStreamer reached end of stream");
-    } else {
-        write_error(error, error_capacity, "GStreamer did not produce a frame");
-    }
-    if (message != nullptr) {
         gst_message_unref(message);
     }
     gst_object_unref(bus);
+    return has_error;
 }
 
 bool pipeline_has_factory(RfJetsonPipeline* handle, const char* factory_name) {
@@ -363,7 +376,7 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
-    return "2";
+    return "3";
 }
 
 __attribute__((visibility("default")))
@@ -473,6 +486,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         gst_element_set_state(pipeline, GST_STATE_PLAYING);
     if (state_status == GST_STATE_CHANGE_FAILURE) {
         write_error(error, error_capacity, "GStreamer could not enter PLAYING state");
+        // A failed PLAYING transition can leave elements in READY/PAUSED with
+        // running task threads; GStreamer refuses to dispose a non-NULL
+        // pipeline, so reset it before dropping the reference.
+        gst_element_set_state(pipeline, GST_STATE_NULL);
         cudaStreamDestroy(handle->stream);
         gst_object_unref(sink_element);
         gst_object_unref(pipeline);
@@ -505,11 +522,16 @@ int rf_jetson_pipeline_grab(
     }
     handle->sample = gst_app_sink_try_pull_sample(handle->sink, timeout_ns);
     if (handle->sample == nullptr) {
-        if (handle->interrupted.load(std::memory_order_acquire)) {
+        if (handle->interrupted.load(std::memory_order_acquire) ||
+            gst_app_sink_is_eos(handle->sink)) {
             return 0;
         }
-        read_bus_error(handle, error, error_capacity);
-        return gst_app_sink_is_eos(handle->sink) ? 0 : -1;
+        if (read_bus_error(handle, error, error_capacity)) {
+            return -1;
+        }
+        // No frame, no error, no EOS: the finite timeout expired while the
+        // stream is still live.
+        return 2;
     }
     if (!sample_has_nvmm_caps(handle->sample)) {
         write_error(
@@ -570,6 +592,22 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
     std::lock_guard<std::mutex> lock(handle->mutex);
     if (handle->sample == nullptr) {
         write_error(error, error_capacity, "No grabbed frame is available");
+        return nullptr;
+    }
+    // Bind the device context on the calling thread: retrieve() typically
+    // runs on a consumer thread that has made no prior CUDA runtime call, and
+    // the driver-API EGL registration below requires a current context.
+    cudaError_t bind_status = cudaSetDevice(handle->device_id);
+    if (bind_status == cudaSuccess) {
+        bind_status = cudaFree(nullptr);
+    }
+    if (bind_status != cudaSuccess) {
+        write_error(
+            error,
+            error_capacity,
+            "CUDA device %d binding failed: %s",
+            handle->device_id,
+            cudaGetErrorString(bind_status));
         return nullptr;
     }
 
@@ -860,6 +898,12 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
         if (handle->pipeline != nullptr) {
             gst_object_unref(handle->pipeline);
         }
+        // Null the element pointers before the handle is freed so a
+        // contract-violating late interrupt() dereferences null instead of
+        // freed objects. The Python wrapper serializes interrupt()/close().
+        handle->stream = nullptr;
+        handle->sink = nullptr;
+        handle->pipeline = nullptr;
     }
     delete handle;
 }

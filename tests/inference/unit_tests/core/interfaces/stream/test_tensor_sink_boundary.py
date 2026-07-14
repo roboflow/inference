@@ -73,9 +73,11 @@ def test_tensor_frames_are_materialised_in_batch_sink_payload() -> None:
 
     assert received["predictions"] == [{"result": "ok"}, None]
     assert received["frames"][1] is None
+    # Grayscale tensors materialise as 3-channel frames: cv2-based sinks
+    # expect BGR images.
     np.testing.assert_array_equal(
         received["frames"][0].image,
-        np.array([[0, 1], [2, 3]], dtype=np.uint8),
+        np.stack([np.array([[0, 1], [2, 3]], dtype=np.uint8)] * 3, axis=-1),
     )
 
 

@@ -11,9 +11,15 @@ from inference.core.interfaces.camera.entities import (
     SourceProperties,
     VideoFrameProducer,
 )
+from inference.core.interfaces.camera.exceptions import NativeGrabTimeoutError
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
+# Bounded grabs keep a stalled source recoverable: the first grab runs under
+# VideoSource's state-transition lock (terminate() needs the same lock), and
+# a silent steady-state stall must surface as an error so restart logic fires.
+_STARTUP_GRAB_TIMEOUT_NS = 10 * 1_000_000_000
+_FRAME_GRAB_TIMEOUT_NS = 30 * 1_000_000_000
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
 _RTSP_ELEMENTS = (
     "h264parse",
@@ -70,19 +76,23 @@ _FORBIDDEN_FACTORY_NAMES = (
 )
 
 
-def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
+class _GError(ctypes.Structure):
+    _fields_ = [
+        ("domain", ctypes.c_uint32),
+        ("code", ctypes.c_int),
+        ("message", ctypes.c_char_p),
+    ]
+
+
+def _load_gstreamer_library():
     library_name = ctypes.util.find_library("gstreamer-1.0")
     if not library_name:
         library_name = "libgstreamer-1.0.so.0"
-    try:
-        gst = ctypes.CDLL(library_name)
-    except OSError as error:
-        return False, f"could not load {library_name}: {error}"
-
+    gst = ctypes.CDLL(library_name)
     gst.gst_init_check.argtypes = [
         ctypes.c_void_p,
         ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.POINTER(_GError)),
     ]
     gst.gst_init_check.restype = ctypes.c_int
     gst.gst_element_factory_find.argtypes = [ctypes.c_char_p]
@@ -91,36 +101,71 @@ def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
     gst.gst_plugin_feature_set_rank.restype = None
     gst.gst_object_unref.argtypes = [ctypes.c_void_p]
     gst.gst_object_unref.restype = None
+    gst.g_error_free.argtypes = [ctypes.c_void_p]
+    gst.g_error_free.restype = None
+    return gst
 
-    error = ctypes.c_void_p()
+
+def _init_gstreamer(gst) -> Tuple[bool, str]:
+    error = ctypes.POINTER(_GError)()
     if not gst.gst_init_check(None, None, ctypes.byref(error)):
-        return False, "GStreamer initialisation failed"
+        reason = "GStreamer initialisation failed"
+        if error:
+            if error.contents.message:
+                message = error.contents.message.decode("utf-8", errors="replace")
+                reason = f"{reason}: {message}"
+            gst.g_error_free(error)
+        return False, reason
+    return True, "ok"
 
-    factories = {}
+
+def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
+    # Availability check only. It must not mutate process-wide GStreamer
+    # state: it also runs when producers are merely enumerated for logging.
+    try:
+        gst = _load_gstreamer_library()
+    except OSError as error:
+        return False, f"could not load GStreamer: {error}"
+
+    initialised, reason = _init_gstreamer(gst)
+    if not initialised:
+        return False, reason
+
     missing = []
     for name in sorted(set(elements)):
         factory = gst.gst_element_factory_find(name.encode("utf-8"))
         if not factory:
             missing.append(name)
         else:
-            factories[name] = factory
-    try:
-        if missing:
-            return False, f"missing GStreamer elements: {', '.join(missing)}"
-
-        decoder_found = False
-        for decoder_name in _DECODER_FACTORY_NAMES:
-            decoder = gst.gst_element_factory_find(decoder_name.encode("utf-8"))
-            if decoder:
-                decoder_found = True
-                gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
-                gst.gst_object_unref(decoder)
-        if not decoder_found:
-            return False, "no NVIDIA GStreamer decoder factory is available"
-        return True, "ok"
-    finally:
-        for factory in factories.values():
             gst.gst_object_unref(factory)
+    if missing:
+        return False, f"missing GStreamer elements: {', '.join(missing)}"
+
+    decoder_found = False
+    for decoder_name in _DECODER_FACTORY_NAMES:
+        decoder = gst.gst_element_factory_find(decoder_name.encode("utf-8"))
+        if decoder:
+            decoder_found = True
+            gst.gst_object_unref(decoder)
+            break
+    if not decoder_found:
+        return False, "no NVIDIA GStreamer decoder factory is available"
+    return True, "ok"
+
+
+def promote_nvidia_decoder_ranks() -> None:
+    # Raising NVIDIA decoders above the software ones re-ranks them for every
+    # GStreamer consumer in the process, so this runs only when a producer is
+    # actually constructed, never from availability probes.
+    gst = _load_gstreamer_library()
+    initialised, reason = _init_gstreamer(gst)
+    if not initialised:
+        raise RuntimeError(reason)
+    for decoder_name in _DECODER_FACTORY_NAMES:
+        decoder = gst.gst_element_factory_find(decoder_name.encode("utf-8"))
+        if decoder:
+            gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
+            gst.gst_object_unref(decoder)
 
 
 def required_gstreamer_cuda_elements(
@@ -199,6 +244,8 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
         if not bridge_ok:
             raise RuntimeError(bridge_reason)
 
+        promote_nvidia_decoder_ranks()
+
         self._source_ref = video
         self._output_tensor = output_tensor
         self._pipeline_description = build_gstreamer_cuda_pipeline(
@@ -220,13 +267,21 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     def isOpened(self) -> bool:
         return not self._closed and not self._eos
 
-    def grab(self) -> bool:
+    def grab(self, timeout_ns: Optional[int] = None) -> bool:
         if self._closed or self._eos:
             return False
         if self._prerolled_frame_pending:
             self._prerolled_frame_pending = False
             return True
-        grabbed = self._native_pipeline.grab()
+        try:
+            grabbed = self._native_pipeline.grab(
+                timeout_ns=_FRAME_GRAB_TIMEOUT_NS if timeout_ns is None else timeout_ns
+            )
+        except NativeGrabTimeoutError as error:
+            raise RuntimeError(
+                "GStreamer CUDA pipeline stalled: no frame arrived within "
+                f"{(_FRAME_GRAB_TIMEOUT_NS if timeout_ns is None else timeout_ns) / 1e9:.0f}s"
+            ) from error
         if grabbed and not self._decoder_validated:
             self._validate_pipeline()
         if not grabbed:
@@ -248,7 +303,9 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     def discover_source_properties(self) -> SourceProperties:
         if self._cached_source_properties is not None:
             return self._cached_source_properties
-        if not self.grab():
+        # Discovery runs under VideoSource's state-transition lock, which
+        # terminate() also needs, so this grab must be bounded.
+        if not self.grab(timeout_ns=_STARTUP_GRAB_TIMEOUT_NS):
             raise RuntimeError(
                 "GStreamer CUDA pipeline did not produce source metadata"
             )
@@ -286,8 +343,8 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     def interrupt(self) -> None:
         if self._closed or self._eos:
             return
-        self._eos = True
         self._native_pipeline.interrupt()
+        self._eos = True
 
     def release(self) -> None:
         if self._closed:
