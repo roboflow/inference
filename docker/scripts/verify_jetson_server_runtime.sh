@@ -74,6 +74,7 @@ done
 python3 - <<'PY'
 import cv2
 import flash_attn
+import importlib.metadata
 import importlib.util
 import onnxruntime
 import tensorrt
@@ -96,6 +97,20 @@ assert torchvision.__version__
 assert triton.__version__
 assert torchvision_io
 assert hasattr(torch.ops.image, "decode_jpegs_cuda")
+
+torch_requirements = importlib.metadata.requires("torch") or []
+assert not any(
+    requirement.partition(";")[0].strip().lower().startswith("nvidia-")
+    for requirement in torch_requirements
+), torch_requirements
+
+pip_cuda_distributions = sorted(
+    name
+    for distribution in importlib.metadata.distributions()
+    if (name := distribution.metadata.get("Name"))
+    and name.lower().startswith("nvidia-")
+)
+assert not pip_cuda_distributions, pip_cuda_distributions
 
 for module in (
     "build",
