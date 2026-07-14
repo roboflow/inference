@@ -426,8 +426,6 @@ class TrackerBlockBase(WorkflowBlock):
         tracked_sv: sv.Detections,
     ) -> Tuple[TensorNativeTrackerPrediction, torch.Tensor]:
         """Map tracker rows back to native tensors and attach device-resident IDs."""
-        if tracked_sv.tracker_id is not None and len(tracked_sv) > 0:
-            tracked_sv = tracked_sv[tracked_sv.tracker_id != -1]
         has_rows = (
             tracked_sv.data
             and _TRACKER_ROW_INDEX_KEY in tracked_sv.data
@@ -435,16 +433,19 @@ class TrackerBlockBase(WorkflowBlock):
             and len(tracked_sv) > 0
         )
         if has_rows:
-            surviving = torch.as_tensor(
+            tracker_rows = torch.as_tensor(
                 tracked_sv.data[_TRACKER_ROW_INDEX_KEY],
                 dtype=torch.long,
                 device=bbox.xyxy.device,
             )
-            tracker_ids = torch.as_tensor(
+            all_tracker_ids = torch.as_tensor(
                 tracked_sv.tracker_id,
                 dtype=torch.long,
                 device=bbox.xyxy.device,
             )
+            confirmed = all_tracker_ids != -1
+            surviving = tracker_rows[confirmed]
+            tracker_ids = all_tracker_ids[confirmed]
         else:
             surviving = torch.empty(0, dtype=torch.long, device=bbox.xyxy.device)
             tracker_ids = torch.empty(0, dtype=torch.long, device=bbox.xyxy.device)

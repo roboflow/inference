@@ -145,6 +145,46 @@ def test_recover_tracker_output_keeps_ids_on_native_bbox_component(
     assert _bbox_component(tracked).bboxes_metadata is None
 
 
+def test_recover_tracker_output_filters_control_tensors_without_sv_row_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unconfirmed rows are removed before the one native prediction gather."""
+    prediction = Detections(
+        xyxy=torch.tensor(
+            [
+                [0.0, 0.0, 2.0, 2.0],
+                [4.0, 4.0, 6.0, 6.0],
+                [8.0, 8.0, 10.0, 10.0],
+            ]
+        ),
+        class_id=torch.tensor([0, 1, 2]),
+        confidence=torch.tensor([0.9, 0.8, 0.7]),
+    )
+    tracked_sv = sv.Detections(
+        xyxy=prediction.xyxy,
+        class_id=prediction.class_id,
+        confidence=prediction.confidence,
+        tracker_id=torch.tensor([-1, 42, -1]),
+        data={_TRACKER_ROW_INDEX_KEY: torch.tensor([2, 0, 1])},
+    )
+
+    def reject_supervision_slice(*args, **kwargs):
+        """The recovery boundary must not copy the temporary tracker output."""
+        raise AssertionError("unexpected sv.Detections row selection")
+
+    monkeypatch.setattr(sv.Detections, "__getitem__", reject_supervision_slice)
+
+    tracked, tracker_ids = ByteTrackBlockV1._recover_tracker_output(
+        detections=prediction,
+        bbox=prediction,
+        tracked_sv=tracked_sv,
+    )
+
+    assert torch.equal(tracker_ids, torch.tensor([42]))
+    assert torch.equal(tracked.xyxy, prediction.xyxy[[0]])
+    assert torch.equal(tracked.tracker_id, tracker_ids)
+
+
 class _ExecutionDataManager:
     """Minimal batch-mode manager used to exercise the real SIMD dispatcher."""
 
