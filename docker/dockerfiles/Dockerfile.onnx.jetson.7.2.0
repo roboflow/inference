@@ -65,6 +65,7 @@ FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
+ARG NINJA_VERSION=1.11.1.4
 ARG PYTORCH_VERSION=2.10.0
 ARG TORCHVISION_VERSION=0.25.0
 ARG TRITON_VERSION=3.6.0
@@ -147,7 +148,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-on
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
     chmod +x cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
     ./cmake-${CMAKE_VERSION}-linux-aarch64.sh --prefix=/usr/local --skip-license && \
-    rm cmake-${CMAKE_VERSION}-linux-aarch64.sh
+    rm cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    printf 'cmake==%s\nninja==%s\n' "${CMAKE_VERSION}" "${NINJA_VERSION}" > /opt/builder-constraints.txt
+
+ENV PIP_CONSTRAINT=/opt/builder-constraints.txt
 
 RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
     python3 -m pip install --break-system-packages "numpy>=2.0.0,<2.4.0"
@@ -165,6 +169,8 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
+    cmake --version | grep -q "cmake version ${CMAKE_VERSION}" && \
+    test "$(ninja --version)" = "${NINJA_VERSION%.*}" && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
     export CUDNN_LIB_DIR=/usr/lib/aarch64-linux-gnu CUDNN_INCLUDE_DIR=/usr/include && \
     export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" && \
@@ -204,6 +210,8 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     cd onnxruntime && \
     python3 -m pip install --break-system-packages -r requirements-dev.txt && \
+    cmake --version | grep -q "cmake version ${CMAKE_VERSION}" && \
+    test "$(ninja --version)" = "${NINJA_VERSION%.*}" && \
     ./build.sh --config Release --update --build --parallel ${ORT_BUILD_PARALLEL} \
         --build_wheel \
         --allow_running_as_root \
@@ -260,6 +268,8 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
         -r /build/triton/src/python/requirements.txt; \
+    cmake --version | grep -q "cmake version ${CMAKE_VERSION}"; \
+    test "$(ninja --version)" = "${NINJA_VERSION%.*}"; \
     MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
         --no-build-isolation \
         --no-deps \
