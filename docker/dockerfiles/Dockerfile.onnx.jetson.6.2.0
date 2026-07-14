@@ -628,13 +628,10 @@ RUN mkdir -p /usr/lib/aarch64-linux-gnu/gstreamer-1.0 && \
 
 WORKDIR /app
 
-RUN ln -sf /usr/bin/python3 /usr/bin/python
-
 # Install runtime dependencies (cache id is runtime-specific, distinct from builder).
 # Trimmed relative to the original list (all verified unreferenced on-device):
 #   file (libmagic; nothing executes it), libproj22 (+proj-data; only served the
-#   removed system GDAL - rasterio bundles its own proj), python3-pip (pip already
-#   ships in dist-packages and the runtime stage no longer runs pip),
+#   removed system GDAL - rasterio bundles its own proj),
 # libegl1/libgles2 (glvnd loaders, ~1.8MB) are required by the host-injected NV
 # GStreamer plugins (nvarguscamerasrc/nvivafilter/nveglglessink/...); the actual
 # EGL/GLES drivers come from the host's tegra-egl mount at container start.
@@ -672,7 +669,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     build-essential \
     python3-dev \
     zlib1g-dev \
-    libxml2-dev
+    libxml2-dev && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    python --version && \
+    python3 --version
 
 # No system GDAL: rasterio (the only GDAL consumer, via requirements.sam.txt)
 # installs as a manylinux wheel with its own bundled libgdal/libproj/gdal-data;
@@ -779,6 +779,9 @@ COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info 
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/lib/python3.10/dist-packages/tensorrt_lean
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
+COPY --from=builder /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.10 /usr/local/bin/
+
+RUN pip --version && pip3 --version && python3 -m pip --version
 
 ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages
 
