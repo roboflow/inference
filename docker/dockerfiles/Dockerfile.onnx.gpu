@@ -283,6 +283,11 @@ RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies
 
 COPY . .
 
+# The `create_wheels_for_gpu_notebook` Makefile target invokes bare `python`;
+# the CUDA devel base only ships `python3`, so alias it here in the builder
+# stage (the runtime stage has its own symlink further down).
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
 RUN /bin/make create_wheels_for_gpu_notebook && \
     python3 -m pip install --no-cache-dir \
         dist/inference_cli*.whl \
