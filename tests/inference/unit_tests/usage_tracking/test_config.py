@@ -1,5 +1,6 @@
 import importlib
 from unittest import mock
+from urllib.parse import parse_qs, urlparse
 
 import inference.core.utils.url_utils as url_utils
 from inference.usage_tracking import config as telemetry_config
@@ -45,7 +46,9 @@ def test_telemetry_endpoint_env_overrides_are_wrapped_with_secure_gateway(monkey
         settings = telemetry_config.TelemetrySettings()
 
     # then - env override is routed through the gateway too
-    assert settings.api_usage_endpoint_url.startswith(
-        "https://gateway.local/proxy?url="
+    parsed = urlparse(settings.api_usage_endpoint_url)
+    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == (
+        "https://gateway.local/proxy"
     )
-    assert "custom.example.com" in settings.api_usage_endpoint_url
+    proxied_url = parse_qs(parsed.query)["url"][0]
+    assert proxied_url == "https://custom.example.com/usage"
