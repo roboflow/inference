@@ -500,4 +500,12 @@ def construct_model_type_cache_path(
 ) -> str:
     model_id = dataset_id if version_id is None else f"{dataset_id}/{version_id}"
     cache_dir = get_cache_dir(model_id=model_id)
-    return os.path.join(cache_dir, "model_type.json")
+    # dataset_id / version_id may originate from request data - make sure the
+    # resolved path cannot escape the cache directory.
+    model_type_cache_path = os.path.realpath(os.path.join(cache_dir, "model_type.json"))
+    cache_dir_root = os.path.realpath(get_cache_dir())
+    if not model_type_cache_path.startswith(cache_dir_root + os.sep):
+        raise ValueError(
+            f"Model metadata cache path for model {model_id} escapes the model cache directory."
+        )
+    return model_type_cache_path

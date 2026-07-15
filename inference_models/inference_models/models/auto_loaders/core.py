@@ -62,6 +62,7 @@ from inference_models.models.auto_loaders.entities import (
 from inference_models.models.auto_loaders.model_cache_paths import (
     generate_model_cache_root_for_model_id,
     generate_model_package_cache_path,
+    generate_models_cache_dir,
     generate_shared_blobs_path,
 )
 from inference_models.models.auto_loaders.models_registry import (
@@ -1166,7 +1167,15 @@ def find_cached_model_package_dir(model_id: str) -> Optional[str]:
 
 
 def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, None]:
-    cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
+    # model_id may originate from request data - resolve both roots and make
+    # sure scanned paths cannot escape the models cache (also guards against
+    # symlinked cache entries pointing outside of it).
+    models_cache_root = os.path.realpath(generate_models_cache_dir())
+    cache_root = os.path.realpath(
+        generate_model_cache_root_for_model_id(model_id=model_id)
+    )
+    if not cache_root.startswith(models_cache_root + os.sep):
+        return
     if not os.path.isdir(cache_root):
         return
     try:
@@ -1176,7 +1185,9 @@ def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, No
     for entry in entries:
         if entry.startswith("."):
             continue
-        package_dir = os.path.join(cache_root, entry)
+        package_dir = os.path.realpath(os.path.join(cache_root, entry))
+        if not package_dir.startswith(cache_root + os.sep):
+            continue
         if not os.path.isdir(package_dir):
             continue
         if os.path.isfile(os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)):
