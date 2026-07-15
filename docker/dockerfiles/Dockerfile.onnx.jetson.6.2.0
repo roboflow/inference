@@ -797,6 +797,8 @@ COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
+RUN python3 -c "import cv2, numpy; print(cv2.__version__); print(numpy.__version__)"
+
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     sh /tmp/verify_ffmpeg && \
