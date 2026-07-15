@@ -126,7 +126,7 @@ def resolve_rfdetr_preprocessor(implementation_id: str) -> str:
 
 @lru_cache(maxsize=None)
 def _log_selected_preprocessor(implementation_id: str, max_workers: int) -> None:
-    LOGGER.info(
+    LOGGER.warning(
         "Selected RF-DETR preprocessor implementation=%s max_workers=%d",
         implementation_id,
         max_workers,
