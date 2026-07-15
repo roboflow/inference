@@ -11,6 +11,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+    INFERENCE_MODELS_YOLO_PACKED_RESCALE_ENABLED,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -36,6 +37,7 @@ from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
+    rescale_detections_packed_cuda_params,
     run_nms_for_object_detection,
 )
 from inference_models.models.common.roboflow.pre_processing import (
@@ -278,7 +280,12 @@ class YOLOv8ForObjectDetectionTRT(
                     max_detections=max_detections,
                     class_agnostic=class_agnostic_nms,
                 )
-            rescaled_results = rescale_detections(
+            rescale = (
+                rescale_detections_packed_cuda_params
+                if INFERENCE_MODELS_YOLO_PACKED_RESCALE_ENABLED
+                else rescale_detections
+            )
+            rescaled_results = rescale(
                 detections=nms_results,
                 images_metadata=pre_processing_meta,
             )
