@@ -1,11 +1,18 @@
 import ctypes
 import ctypes.util
 import os
+import threading
+import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 _ERROR_CAPACITY = 1024
-_INFINITE_TIMEOUT_NS = (1 << 64) - 1
+# Upper bound on a single native pull. grab() loops on this window so that an
+# interrupt() from another thread, a GStreamer bus error, and the caller's
+# overall deadline are re-checked between pulls instead of the pull blocking
+# forever inside gst_app_sink_try_pull_sample (e.g. an unreachable RTSP source
+# or a mid-stream drop that never posts EOS).
+_GRAB_POLL_TIMEOUT_NS = 250_000_000
 _DEFAULT_LIBRARY_PATH = "/opt/roboflow/lib/libroboflow_jetson_tensor.so.1"
 
 
@@ -50,13 +57,21 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
-    if version != b"2":
+    if version != b"3":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
 
 class NativeJetsonTensorPipeline:
     def __init__(self, pipeline: str, *, device_id: int = 0) -> None:
+        # Created before anything that can raise so __del__ -> close() can always
+        # acquire it. This lock serializes interrupt()/close() so that a native
+        # release() (which unrefs sink/pipeline and frees the handle) can never
+        # run concurrently with a native interrupt() that dereferences the same
+        # handle. The native release() explicitly relies on the Python wrapper
+        # providing this serialization.
+        self._lifecycle_lock = threading.Lock()
+        self._handle = None
         self._library = _load_bridge_library()
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         self._handle = self._library.rf_jetson_pipeline_create(
@@ -69,17 +84,47 @@ class NativeJetsonTensorPipeline:
             raise RuntimeError(_decode_error(error))
 
     def grab(self, timeout_ns: Optional[int] = None) -> bool:
-        self._ensure_open()
+        """Poll the native pipeline for the next frame.
+
+        ``timeout_ns`` is the overall deadline: when it elapses without a frame
+        the source is treated as stalled and ``TimeoutError`` is raised so the
+        caller can surface an error / reconnect instead of blocking forever.
+        ``None`` preserves the historic unbounded wait, but still returns
+        promptly on interrupt()/EOS/bus errors because the pull is chunked.
+        """
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
-        status = self._library.rf_jetson_pipeline_grab(
-            self._handle,
-            _INFINITE_TIMEOUT_NS if timeout_ns is None else timeout_ns,
-            error,
-            len(error),
-        )
-        if status < 0:
-            raise RuntimeError(_decode_error(error))
-        return status == 1
+        deadline_ns: Optional[int] = None
+        if timeout_ns is not None:
+            deadline_ns = time.monotonic_ns() + int(timeout_ns)
+        while True:
+            self._ensure_open()
+            poll_ns = _GRAB_POLL_TIMEOUT_NS
+            if deadline_ns is not None:
+                remaining_ns = deadline_ns - time.monotonic_ns()
+                if remaining_ns <= 0:
+                    raise TimeoutError(
+                        "Jetson pipeline produced no frame within "
+                        f"{timeout_ns} ns; the source appears stalled or "
+                        "unreachable"
+                    )
+                poll_ns = min(poll_ns, remaining_ns)
+            status = self._library.rf_jetson_pipeline_grab(
+                self._handle,
+                poll_ns,
+                error,
+                len(error),
+            )
+            if status < 0:
+                raise RuntimeError(_decode_error(error))
+            if status == 1:
+                return True
+            if status == 0:
+                # End of stream, or interrupt() flipped the native flag from
+                # another thread.
+                return False
+            # status == 2: the poll window expired while the stream is still
+            # live. Loop so interrupt(), bus errors and the overall deadline are
+            # re-checked instead of blocking on a single unbounded pull.
 
     def retrieve(self):
         self._ensure_open()
@@ -145,17 +190,19 @@ class NativeJetsonTensorPipeline:
         return {name: int(getattr(stats, name)) for name, _ in stats._fields_}
 
     def interrupt(self) -> None:
-        handle = getattr(self, "_handle", None)
-        if handle:
-            status = self._library.rf_jetson_pipeline_interrupt(handle)
-            if status < 0:
-                raise RuntimeError("Could not interrupt Jetson tensor pipeline")
+        with self._lifecycle_lock:
+            handle = getattr(self, "_handle", None)
+            if handle:
+                status = self._library.rf_jetson_pipeline_interrupt(handle)
+                if status < 0:
+                    raise RuntimeError("Could not interrupt Jetson tensor pipeline")
 
     def close(self) -> None:
-        handle = getattr(self, "_handle", None)
-        if handle:
-            self._library.rf_jetson_pipeline_release(handle)
-            self._handle = None
+        with self._lifecycle_lock:
+            handle = getattr(self, "_handle", None)
+            if handle:
+                self._library.rf_jetson_pipeline_release(handle)
+                self._handle = None
 
     def _ensure_open(self) -> None:
         if not getattr(self, "_handle", None):

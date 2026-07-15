@@ -20,9 +20,11 @@ class _NativePipeline:
         self.frame = frame if frame is not None else object()
         self.factories = set(factories)
         self.factory_queries = []
+        self.last_grab_timeout_ns = None
 
-    def grab(self) -> bool:
+    def grab(self, timeout_ns=None) -> bool:
         self.grab_calls += 1
+        self.last_grab_timeout_ns = timeout_ns
         return True
 
     def retrieve(self):
@@ -60,6 +62,7 @@ def _native_producer(
     producer._decoder_validated = True
     producer._prerolled_frame_pending = False
     producer._cached_source_properties = None
+    producer._grab_timeout_ns = 5_000_000_000
     producer._closed = False
     producer._eos = False
     return producer
@@ -78,6 +81,9 @@ def test_metadata_preroll_is_consumable_once_and_later_grabs_advance() -> None:
     assert native_pipeline.grab_calls == 1
     assert producer.grab()
     assert native_pipeline.grab_calls == 2
+    # The producer must hand the native pull a finite deadline so a stalled
+    # source raises instead of blocking VideoSource forever (FQ-1).
+    assert native_pipeline.last_grab_timeout_ns == producer._grab_timeout_ns
 
 
 def test_retrieving_preroll_clears_pending_grab_and_interrupts_native_wait() -> None:

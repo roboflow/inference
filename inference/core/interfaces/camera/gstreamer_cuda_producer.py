@@ -14,6 +14,14 @@ from inference.core.interfaces.camera.entities import (
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
+# A live/RTSP source that yields no frame within this window is treated as
+# stalled: the native grab() raises TimeoutError instead of blocking forever, so
+# VideoSource surfaces an error (reconnect / cv2 fallback) rather than deadlock
+# on its state-change lock. Applies to first-frame discovery and steady-state
+# consumption alike. Tune per deployment via the env var below; the value must
+# be validated on-device against real RTSP connect + keyframe latency.
+_DEFAULT_GRAB_TIMEOUT_NS = 15_000_000_000
+_GRAB_TIMEOUT_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_GRAB_TIMEOUT_SECONDS"
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
 _RTSP_ELEMENTS = (
     "h264parse",
@@ -68,6 +76,19 @@ _FORBIDDEN_FACTORY_NAMES = (
     "jpegdec",
     "videoconvert",
 )
+
+
+def _resolve_grab_timeout_ns() -> int:
+    raw = os.getenv(_GRAB_TIMEOUT_ENV_VAR)
+    if raw is None:
+        return _DEFAULT_GRAB_TIMEOUT_NS
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return _DEFAULT_GRAB_TIMEOUT_NS
+    if seconds <= 0:
+        return _DEFAULT_GRAB_TIMEOUT_NS
+    return int(seconds * 1_000_000_000)
 
 
 def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
@@ -210,6 +231,7 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
         self._decoder_validated = False
         self._prerolled_frame_pending = False
         self._cached_source_properties: Optional[SourceProperties] = None
+        self._grab_timeout_ns = _resolve_grab_timeout_ns()
         self._closed = False
         self._eos = False
 
@@ -226,7 +248,7 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
         if self._prerolled_frame_pending:
             self._prerolled_frame_pending = False
             return True
-        grabbed = self._native_pipeline.grab()
+        grabbed = self._native_pipeline.grab(timeout_ns=self._grab_timeout_ns)
         if grabbed and not self._decoder_validated:
             self._validate_pipeline()
         if not grabbed:
