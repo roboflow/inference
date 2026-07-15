@@ -5,7 +5,6 @@ import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
-from inference.core import logger
 from inference.core.env import (
     CORE_MODEL_SAM2_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -133,18 +132,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
         examples=[True, "$inputs.multimask_output"],
     )
-    # NOTE (BREAKING CHANGE, tensor path): `mask_representation` is retained for
-    # schema stability but is NO LONGER HONORED — RLE mask output is enforced
-    # ALWAYS (see run()). The 'dense' carrier is a flag-on-only option with no
-    # flag-off analog (the numpy SAM2 sibling has no such field), so honoring it
-    # would break the flag-on == flag-off JSON contract. A non-'rle' selection is
-    # downgraded to 'rle' with a warning.
-    mask_representation: Literal["rle", "dense"] = Field(
-        default="rle",
-        description="Carrier for instance masks. RLE is always enforced on the "
-        "tensor path; a non-'rle' value is ignored (downgraded to 'rle') with a "
-        "warning. Breaking change vs the flag-on-only 'dense' option.",
-    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -226,21 +213,12 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         version: str,
         threshold: float,
         multimask_output: bool,
-        mask_representation: Literal["rle", "dense"],
     ) -> BlockResult:
-        # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS,
-        # regardless of the requested `mask_representation`. The 'dense' carrier is a
-        # flag-on-only option with no flag-off analog, so honoring it would break the
-        # flag-on == flag-off JSON contract. A non-'rle' selection is downgraded to
-        # 'rle' with a warning. (Previously RLE was forced only on GCP_SERVERLESS.)
-        if mask_representation != "rle":
-            logger.warning(
-                "Segment Anything 2 (tensor) block: mask_representation=%r is not "
-                "honored; RLE mask output is enforced. Selecting a non-'rle' carrier "
-                "is a no-op (breaking change vs the flag-on-only 'dense' option).",
-                mask_representation,
-            )
-            mask_representation = "rle"
+        # RLE mask output is enforced ALWAYS on the tensor path. The numpy SAM2
+        # sibling exposes no mask-format field, so neither does this manifest; the
+        # shared internal helpers (with SAM3 v1/v2/v3) still take a
+        # `mask_representation` argument, so it is pinned to "rle" here.
+        mask_representation = "rle"
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,

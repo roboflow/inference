@@ -3,15 +3,14 @@
 v3 = v2 (per-class thresholds + cross-prompt NMS) plus `class_mapping` (rename
 predicted class names after inference).
 
-BREAKING CHANGE (tensor path) — mask output format: the numpy v3's `output_format`
-(`Literal["rle", "polygons"]`) has no LOCAL-tensor analog —
-`run_tensor_native_inference` always returns raw binary masks — so this tensor
-sibling exposes `mask_representation` (`Literal["rle", "dense"]`) instead, DROPPING
-the `polygons` option. Per product decision, RLE output is now ENFORCED ALWAYS on
-this tensor path (see run()): the `mask_representation` field is retained for schema
-stability but is no longer honored — a non-'rle' selection (dense) is downgraded to
-'rle' with a warning. The numpy v3 sibling KEEPS its original
-`output_format: Literal["rle", "polygons"]` literal unchanged.
+BREAKING CHANGE (tensor path) — mask output format: this sibling KEEPS the numpy
+v3 manifest field `output_format: Literal["rle", "polygons"]` verbatim (so existing
+workflow definitions validate identically against the tensor block), but
+`run_tensor_native_inference` always returns raw binary masks with no polygon
+analog, so RLE output is ENFORCED ALWAYS on this tensor path (see run()). Selecting
+`output_format="polygons"` is now a NO-OP — it is silently downgraded to 'rle' with
+a warning. That downgrade IS the breaking change: the field is honored for 'rle'
+and ignored for 'polygons'.
 
 Output kinds: the numpy v3 declares DUAL kinds
 (RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND + INSTANCE_SEGMENTATION_PREDICTION_KIND).
@@ -20,7 +19,7 @@ The tensor world has the matching pair
 TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND), so `describe_outputs` declares
 BOTH (RLE first) — matching the roboflow instance_segmentation tensor producers and
 the established convention. At runtime there is still ONE `InstanceDetections`
-carrier (rle or dense per `mask_representation`); the dual kind is purely a
+carrier (always RLE, since `output_format` is enforced to 'rle'); the dual kind is purely a
 wiring/advertisement concern. Downstream tensor consumers (mask/polygon/halo/icon
 visualizers, trackers, fusion blocks) accept both kinds, so no graph is broken by
 the carrier choice.
@@ -180,17 +179,16 @@ class BlockManifest(WorkflowBlockManifest):
         description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
         examples=[0.5, 0.9],
     )
-    # NOTE (BREAKING CHANGE, tensor path): `mask_representation` replaces numpy v3's
-    # `output_format: Literal["rle", "polygons"]`, DROPPING the 'polygons' option.
-    # It is retained for schema stability but is NO LONGER HONORED — RLE mask output
-    # is enforced ALWAYS (see run()). A non-'rle' selection ('dense') is downgraded
-    # to 'rle' with a warning. The numpy v3 sibling keeps its original literal.
-    mask_representation: Literal["rle", "dense"] = Field(
+    # NOTE (BREAKING CHANGE, tensor path): this field mirrors the numpy v3 sibling's
+    # `output_format: Literal["rle", "polygons"]` verbatim so existing workflow
+    # definitions validate identically. At runtime 'polygons' is NOT honored — RLE
+    # mask output is enforced ALWAYS (see run()); a 'polygons' selection is silently
+    # downgraded to 'rle' with a warning. That downgrade is the breaking change.
+    output_format: Literal["rle", "polygons"] = Field(
         default="rle",
-        description="Carrier for instance masks. RLE is always enforced on the "
-        "tensor path; a non-'rle' value is ignored (downgraded to 'rle') with a "
-        "warning. Replaces numpy v3's output_format and drops the 'polygons' option "
-        "(breaking change).",
+        description="Mask output format. Mirrors the numpy v3 sibling. On the tensor "
+        "path only 'rle' is honored; 'polygons' is downgraded to 'rle' with a "
+        "warning (breaking change).",
     )
 
     @field_validator("nms_iou_threshold")
@@ -224,15 +222,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         # Declare BOTH the RLE and the plain tensor instance-seg kinds (RLE first,
-        # mirroring the default `mask_representation="rle"`). This restores the
+        # mirroring the enforced `output_format="rle"`). This restores the
         # dual-kind shape the numpy v3 sibling declares
         # (RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND +
         # INSTANCE_SEGMENTATION_PREDICTION_KIND) and matches the established tensor
         # convention used by the roboflow instance_segmentation tensor producers
         # (v1-v4) and accepted by every tensor instance-seg consumer (mask/polygon/
         # halo/icon visualizers, trackers, fusion blocks). The runtime carrier is
-        # still ONE InstanceDetections (rle or dense per `mask_representation`); the
-        # two kinds are advertised purely so downstream wiring that selects either
+        # still ONE InstanceDetections (always RLE, since `output_format` is enforced
+        # to 'rle'); the two kinds are advertised purely so downstream wiring that selects either
         # the rle-tensor or the plain-tensor kind resolves against this producer.
         # Audit: no tensor consumer requires the rle-tensor kind EXCLUSIVELY, so
         # the previous single-kind output was wiring-compatible too, but it diverged
@@ -311,22 +309,22 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         per_class_confidence: Optional[List[float]],
         apply_nms: bool,
         nms_iou_threshold: float,
-        mask_representation: Literal["rle", "dense"],
+        output_format: Literal["rle", "polygons"],
     ) -> BlockResult:
-        # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS,
-        # regardless of the requested `mask_representation`. This replaces numpy v3's
-        # `output_format` and drops the 'polygons' option; the 'dense' carrier is a
-        # flag-on-only option with no flag-off analog, so honoring it would break the
-        # flag-on == flag-off JSON contract. A non-'rle' selection is downgraded to
-        # 'rle' with a warning. (Previously RLE was forced only on GCP_SERVERLESS.)
-        if mask_representation != "rle":
+        # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS. The
+        # manifest keeps numpy v3's `output_format: Literal["rle", "polygons"]`
+        # verbatim, but `run_tensor_native_inference` has no polygon analog, so
+        # 'polygons' is silently downgraded to 'rle' with a warning. The shared
+        # internal helpers (with SAM2/v1/v2) take a `mask_representation` arg, so it
+        # is pinned to "rle" here.
+        if output_format != "rle":
             logger.warning(
-                "SAM3 v3 (tensor) block: mask_representation=%r is not honored; RLE "
-                "mask output is enforced. Selecting a non-'rle' carrier is a no-op "
-                "(breaking change vs numpy v3's output_format 'polygons'/'rle').",
-                mask_representation,
+                "SAM3 v3 (tensor) block: output_format=%r is not honored; RLE mask "
+                "output is enforced on the tensor path. Selecting 'polygons' is a "
+                "no-op (breaking change vs the numpy v3 sibling).",
+                output_format,
             )
-            mask_representation = "rle"
+        mask_representation = "rle"
         class_names = _normalize_class_names(class_names)
         if SAM3_EXEC_MODE == "remote":
             return self.run_via_request(
