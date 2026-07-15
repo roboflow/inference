@@ -45,6 +45,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 RFDETR_PREPROCESSOR_BASE = "base"
 RFDETR_PREPROCESSOR_AUTO = "auto"
 RFDETR_PREPROCESSOR_THREADED_EXACT_V1 = "threaded-exact-v1"
+RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1 = "triton-universal-v1"
 
 RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
     RFDETR_PREPROCESSOR_BASE: {
@@ -88,6 +89,47 @@ RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
             "caller's RF-DETR preprocessing stream"
         ),
         "supports_cuda_graphs": True,
+        "fallback_id": RFDETR_PREPROCESSOR_BASE,
+        "validated_environments": (),
+    },
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1: {
+        "implementation_id": RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        "stage": "preprocess",
+        "version": "1",
+        "target": {
+            "device_kind": "gpu",
+            "device_families": ("nvidia_jetson", "nvidia_discrete_gpu"),
+        },
+        "inputs": {
+            "types": ("numpy.ndarray", "torch.Tensor", "list"),
+            "dtype": "uint8 NumPy/tensor or floating tensor",
+            "layout": "HWC/NHWC or CHW/NCHW",
+            "location": "CPU or CUDA",
+            "channels": 3,
+            "batch": ">=1 with homogeneous source dimensions and semantics",
+        },
+        "output": {
+            "device": "selected CUDA device",
+            "dtype": "float32",
+            "layout": "contiguous NCHW",
+            "ownership": "per-call tensor from the PyTorch CUDA allocator",
+        },
+        "dependencies": ("torch", "torchvision", "triton"),
+        "numerical_behavior": (
+            "PIL byte-exact fixed-point resize for uint8 inputs; floating "
+            "tensors preserve the RF-DETR tensor-input CUDA resize semantics"
+        ),
+        "concurrency": {
+            "safe_for_concurrent_calls": True,
+            "shared_state": "serialized reusable pinned/source/scratch buffers",
+            "per_call_resources": "output tensor and completion event",
+        },
+        "stream_behavior": (
+            "preprocessing is submitted to the RF-DETR preprocessing stream; "
+            "TensorRT waits on a CUDA event without a host-wide stream sync"
+        ),
+        "supports_cuda_graphs": False,
+        "downstream_trt_cuda_graph_compatible": True,
         "fallback_id": RFDETR_PREPROCESSOR_BASE,
         "validated_environments": (),
     },

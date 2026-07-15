@@ -15,6 +15,7 @@ from inference_models.errors import (
     MissingDependencyError,
     ModelRuntimeError,
 )
+from inference_models.logger import LOGGER
 from inference_models.models.common.cuda import (
     use_cuda_context,
     use_primary_cuda_context,
@@ -45,8 +46,12 @@ from inference_models.models.rfdetr.common import post_process_object_detection_
 from inference_models.models.rfdetr.pre_processing import (
     RFDETR_PREPROCESSOR_BASE,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
     pre_process_network_input,
     resolve_rfdetr_preprocessor,
+)
+from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
+    UniversalFastPreprocessRuntime,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -234,6 +239,16 @@ class RFDetrForObjectDetectionTRT(
         self._rfdetr_preprocessor_max_workers = rfdetr_preprocessor_max_workers
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._universal_preprocessor = (
+            UniversalFastPreprocessRuntime(device=self._device)
+            if self._rfdetr_preprocessor == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+            else None
+        )
+        if self._universal_preprocessor is not None:
+            LOGGER.warning(
+                "Selected RF-DETR preprocessor implementation=%s",
+                self._rfdetr_preprocessor,
+            )
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
 
@@ -256,6 +271,23 @@ class RFDetrForObjectDetectionTRT(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+        if self._universal_preprocessor is not None:
+            result = self._universal_preprocessor.preprocess(
+                images=images,
+                input_color_format=input_color_format,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                pre_processing_overrides=pre_processing_overrides,
+                stream=self._pre_process_stream,
+            )
+            result.tensor._rfdetr_preprocess_ready_event = (  # type: ignore[attr-defined]
+                result.ready_event
+            )
+            result.tensor._rfdetr_preprocess_input_kind = (  # type: ignore[attr-defined]
+                result.input_kind
+            )
+            return result.tensor, result.metadata
+
         with torch.cuda.stream(self._pre_process_stream):
             pre_processed_images, pre_processing_meta = pre_process_network_input(
                 images=images,
@@ -279,6 +311,13 @@ class RFDetrForObjectDetectionTRT(
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
+                ready_event = getattr(
+                    pre_processed_images,
+                    "_rfdetr_preprocess_ready_event",
+                    None,
+                )
+                if ready_event is not None:
+                    self._inference_stream.wait_event(ready_event)
                 detections, labels = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
