@@ -107,6 +107,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        return False
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
@@ -156,6 +160,10 @@ class SegPreviewBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    def is_async_stream_step(self) -> bool:
+        # External API call — remote regardless of execution mode; request path is re-entrant.
+        return True
+
     def run(
         self,
         images: Batch[WorkflowImageData],
@@ -183,8 +191,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         threshold: float,
     ) -> BlockResult:
         predictions = []
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 

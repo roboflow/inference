@@ -3,7 +3,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
 import cv2
@@ -57,11 +57,13 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
 )
 from inference.core.workflows.execution_engine.v1.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
+    establish_execution_order,
 )
 from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
 )
 from inference.core.workflows.execution_engine.v1.executor.utils import (
+    chain_output_future,
     run_steps_in_parallel,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
@@ -106,7 +108,7 @@ def run_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
     resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
@@ -133,7 +135,7 @@ def _run_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
     resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
@@ -141,26 +143,15 @@ def _run_workflow(
         execution_graph=workflow.execution_graph,
         runtime_parameters=runtime_parameters,
     )
-    execution_coordinator = ParallelStepExecutionCoordinator.init(
-        execution_graph=workflow.execution_graph,
-    )
-    workflow_execution_id = get_or_create_workflow_execution_id()
     try:
-        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-        while next_steps is not None:
-            execute_steps(
-                next_steps=next_steps,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                max_concurrent_steps=max_concurrent_steps,
-                workflow_execution_id=workflow_execution_id,
-                profiler=profiler,
-                executor=executor,
-                step_error_handler=step_error_handler,
-            )
-            next_steps = execution_coordinator.get_steps_to_execute_next(
-                profiler=profiler
-            )
+        _execute_workflow_steps(
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+        )
         if not defer_stream_pipeline_flush:
             with profiler.profile_execution_phase(
                 name="stream_pipeline_flush",
@@ -195,14 +186,11 @@ def flush_stream_pipeline_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
         runtime_parameters=runtime_parameters,
-    )
-    execution_coordinator = ParallelStepExecutionCoordinator.init(
-        execution_graph=workflow.execution_graph,
     )
     flushed_step_selectors = flush_stream_pipeline_outputs(
         workflow=workflow,
@@ -212,29 +200,20 @@ def flush_stream_pipeline_workflow(
         workflow=workflow,
         step_selectors=flushed_step_selectors,
     )
-    workflow_execution_id = get_or_create_workflow_execution_id()
-    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-    while next_steps is not None:
-        runnable_steps = [
-            step_selector
-            for step_selector in next_steps
-            if step_selector in downstream_step_selectors
+    _execute_workflow_steps(
+        workflow=workflow,
+        execution_data_manager=execution_data_manager,
+        max_concurrent_steps=max_concurrent_steps,
+        profiler=profiler,
+        executor=executor,
+        step_error_handler=step_error_handler,
+        step_execution_filter=lambda step_selector: (
+            step_selector in downstream_step_selectors
             and execution_data_manager.all_inputs_impacting_step_are_registered(
                 step_selector=step_selector
             )
-        ]
-        if runnable_steps:
-            execute_steps(
-                next_steps=runnable_steps,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                max_concurrent_steps=max_concurrent_steps,
-                profiler=profiler,
-                executor=executor,
-                step_error_handler=step_error_handler,
-                workflow_execution_id=workflow_execution_id,
-            )
-        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+        ),
+    )
     return construct_workflow_output(
         workflow_outputs=workflow.workflow_definition.outputs,
         execution_graph=workflow.execution_graph,
@@ -289,6 +268,372 @@ def flush_stream_pipeline_outputs(
             )
             flushed_step_selectors.append(step_selector)
     return flushed_step_selectors
+
+
+def _execute_workflow_steps(
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    max_concurrent_steps: int,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    step_execution_filter: Optional[Callable[[str], bool]] = None,
+    async_step_selectors: Optional[Set[str]] = None,
+    lookahead_executor: Optional[ThreadPoolExecutor] = None,
+) -> None:
+    execution_coordinator = ParallelStepExecutionCoordinator.init(
+        execution_graph=workflow.execution_graph,
+    )
+    workflow_execution_id = get_or_create_workflow_execution_id()
+    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+    while next_steps is not None:
+        runnable_steps = (
+            next_steps
+            if step_execution_filter is None
+            else [
+                step_selector
+                for step_selector in next_steps
+                if step_execution_filter(step_selector)
+            ]
+        )
+        if async_step_selectors and lookahead_executor is not None:
+            for step_selector in runnable_steps:
+                if step_selector in async_step_selectors:
+                    launch_async_simd_step(
+                        step_selector=step_selector,
+                        workflow=workflow,
+                        execution_data_manager=execution_data_manager,
+                        lookahead_executor=lookahead_executor,
+                        workflow_execution_id=workflow_execution_id,
+                        step_error_handler=step_error_handler,
+                    )
+            runnable_steps = [
+                step_selector
+                for step_selector in runnable_steps
+                if step_selector not in async_step_selectors
+            ]
+        if runnable_steps:
+            execute_steps(
+                next_steps=runnable_steps,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                max_concurrent_steps=max_concurrent_steps,
+                workflow_execution_id=workflow_execution_id,
+                profiler=profiler,
+                executor=executor,
+                step_error_handler=step_error_handler,
+            )
+        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+
+
+def launch_async_simd_step(
+    step_selector: str,
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    lookahead_executor: ThreadPoolExecutor,
+    workflow_execution_id: Optional[str] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+) -> None:
+    """Execute a declared async step on the lookahead pool.
+
+    Inputs are assembled on the calling thread; the block's whole ``run()``
+    executes on a worker thread, and per-output future placeholders (built
+    from the block's declared outputs) are registered so downstream steps
+    resolve them at input assembly during the resume pass.
+    """
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    step = workflow.steps[step_name]
+    step_input = execution_data_manager.get_simd_step_input(
+        step_selector=step_selector,
+    )
+    if not step_input.indices:
+        execution_data_manager.register_simd_step_output(
+            step_selector=step_selector,
+            indices=[],
+            outputs=[],
+        )
+        return
+    if remote_processing_times is not None:
+        processing_time_collector = remote_processing_times.get()
+    else:
+        processing_time_collector = None
+    if apply_duration_minimum is not None:
+        duration_minimum_value = apply_duration_minimum.get()
+    else:
+        duration_minimum_value = None
+    result_future = lookahead_executor.submit(
+        partial(
+            _run_async_simd_step,
+            step_name=step_name,
+            workflow=workflow,
+            parameters=step_input.parameters,
+            workflow_execution_id=workflow_execution_id,
+            processing_time_collector=processing_time_collector,
+            duration_minimum_value=duration_minimum_value,
+            debug_collector=current_debug_collector.get(),
+            debug_trace=current_debug_trace.get(),
+            otel_ctx=capture_context(),
+            step_error_handler=step_error_handler,
+            expected_output_elements=len(step_input.indices),
+        )
+    )
+    output_names = [
+        output.name
+        for output in step.block_specification.manifest_class.describe_outputs()
+    ]
+    outputs = [
+        {
+            output_name: chain_output_future(
+                result_future=result_future,
+                element_index=element_index,
+                output_name=output_name,
+            )
+            for output_name in output_names
+        }
+        for element_index in range(len(step_input.indices))
+    ]
+    execution_data_manager.register_simd_step_output(
+        step_selector=step_selector,
+        indices=step_input.indices,
+        outputs=outputs,
+    )
+
+
+def _run_async_simd_step(
+    step_name: str,
+    workflow: CompiledWorkflow,
+    parameters: Dict[str, Any],
+    workflow_execution_id: Optional[str],
+    processing_time_collector,
+    duration_minimum_value,
+    debug_collector,
+    debug_trace,
+    otel_ctx,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    expected_output_elements: Optional[int] = None,
+) -> Any:
+    # Lookahead workers need the same ContextVar / OTel rebinding as
+    # safe_execute_step: values set on the stream thread do not propagate
+    # into pool threads, and pool threads are reused across frames.
+    if execution_id is not None and workflow_execution_id:
+        execution_id.set(workflow_execution_id)
+    if remote_processing_times is not None and processing_time_collector is not None:
+        remote_processing_times.set(processing_time_collector)
+    if apply_duration_minimum is not None and duration_minimum_value is not None:
+        apply_duration_minimum.set(duration_minimum_value)
+    current_debug_collector.set(debug_collector)
+    current_debug_trace.set(debug_trace)
+    current_debug_step_name.set(step_name)
+    _otel_token = attach_context(otel_ctx)
+    try:
+        with start_span("workflow.step", {"workflow.step": step_name}):
+            try:
+                result = workflow.steps[step_name].step.run(**parameters)
+                if (
+                    expected_output_elements is not None
+                    and isinstance(result, list)
+                    and len(result) != expected_output_elements
+                ):
+                    # Sequential execution fails fast at output registration
+                    # when a block breaks its batch contract; without this
+                    # check the mismatch would surface at resume time as an
+                    # index error blamed on the consuming step.
+                    raise ValueError(
+                        f"Async step {step_name} returned {len(result)} output "
+                        f"elements for {expected_output_elements} input indices."
+                    )
+                return result
+            except WorkflowError:
+                raise
+            except Exception as error:
+                if step_error_handler:
+                    step_error_handler(step_name, error)
+                logger.exception(
+                    f"Execution of async step {step_name} encountered error."
+                )
+                error_traceback = "".join(
+                    traceback.format_exception(type(error), error, error.__traceback__)
+                )
+                block_traceback = BlockTraceback(
+                    traceback=error_traceback,
+                    error_line=getattr(error, "error_line", None),
+                    code_snippet=getattr(error, "code_snippet", None),
+                    stdout=getattr(error, "stdout", None),
+                    stderr=getattr(error, "stderr", None),
+                )
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=workflow.steps[step_name].manifest.type,
+                    block_traceback=block_traceback,
+                    public_message=str(error),
+                    context="workflow_execution | step_execution",
+                    inner_error=error,
+                ) from error
+    finally:
+        detach_context(_otel_token)
+
+
+def compute_async_stream_step_selectors(workflow: CompiledWorkflow) -> Set[str]:
+    """Steps declared and eligible for async launch in the deferred pass.
+
+    A step qualifies when its block declares ``is_async_stream_step()`` and
+    the engine can offload it generically: SIMD with batch input, no output
+    dimensionality offset, and concrete declared outputs to build future
+    placeholders from.
+    """
+    async_step_selectors = set()
+    for step_name, step in workflow.steps.items():
+        declares_fn = getattr(step.step, "is_async_stream_step", None)
+        if not callable(declares_fn) or not declares_fn():
+            continue
+        manifest_class = step.block_specification.manifest_class
+        output_names = [output.name for output in manifest_class.describe_outputs()]
+        if (
+            not manifest_class.accepts_batch_input()
+            or manifest_class.get_output_dimensionality_offset() != 0
+            or not output_names
+            or any("*" in output_name for output_name in output_names)
+        ):
+            continue
+        async_step_selectors.add(construct_step_selector(step_name=step_name))
+    return async_step_selectors
+
+
+@execution_phase(
+    name="workflow_lookahead_execution",
+    categories=["execution_engine_operation"],
+)
+def run_stream_lookahead_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    frontier_step_selectors: Set[str],
+    async_step_selectors: Set[str],
+    lookahead_executor: ThreadPoolExecutor,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+) -> ExecutionDataManager:
+    """Deferred pass of stream-lookahead execution for one video frame.
+
+    Runs only the frontier steps — declared async steps have their whole
+    ``run()`` offloaded to the lookahead pool and register future-bearing
+    outputs — and returns the live ExecutionDataManager so the caller can
+    buffer it and resume the remaining steps at ordered emission time.
+    """
+    with start_span("workflow.run_stream_lookahead"):
+        execution_data_manager = ExecutionDataManager.init(
+            execution_graph=workflow.execution_graph,
+            runtime_parameters=runtime_parameters,
+        )
+        _execute_workflow_steps(
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+            step_execution_filter=lambda step_selector: step_selector
+            in frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
+        )
+        return execution_data_manager
+
+
+@usage_collector("workflows")
+def resume_stream_lookahead_workflow(
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    frontier_step_selectors: Set[str],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+) -> List[Dict[str, Any]]:
+    """Emission pass of stream-lookahead execution for one buffered frame.
+
+    Usage is collected here rather than on the deferred pass, which returns
+    as soon as async work is launched. Counting is exactly once per frame,
+    but the recorded duration is an approximation: in steady state the
+    frame's futures have already resolved by emission time (that wait is
+    hidden behind newer frames' work — the point of the lookahead), so the
+    duration reflects the resume-pass compute, not the remote inference
+    wall time.
+
+    Resumes the frame's ExecutionDataManager from the deferred pass and runs
+    every step outside the frontier. Frontier steps must not be re-executed:
+    their outputs (including in-flight futures resolved at input assembly)
+    are already registered.
+    """
+    with start_span("workflow.resume_stream_lookahead"):
+        _execute_workflow_steps(
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+            step_execution_filter=lambda step_selector: step_selector
+            not in frontier_step_selectors,
+        )
+        return construct_workflow_output(
+            workflow_outputs=workflow.workflow_definition.outputs,
+            execution_graph=workflow.execution_graph,
+            execution_data_manager=execution_data_manager,
+            serialize_results=serialize_results,
+            kinds_serializers=kinds_serializers,
+        )
+
+
+def compute_stream_lookahead_frontier(workflow: CompiledWorkflow) -> Set[str]:
+    """Steps that may execute ahead of stream order in the deferred pass.
+
+    Stream-lookahead terminology: per video frame, the *deferred pass*
+    (``run_stream_lookahead_workflow``) executes only the *frontier*; the
+    *resume pass* (``resume_stream_lookahead_workflow``) later executes the
+    remaining steps in frame order at emission time.
+
+    A step belongs to the frontier when its manifest declares it stateless
+    for video processing and every step feeding it is itself in the frontier
+    and is not an async-launching (stream-pipelined) step — async steps are
+    frontier sinks: their future-bearing outputs must only be consumed at
+    resume time, otherwise input assembly would block the deferred pass.
+    """
+    step_selectors = {
+        construct_step_selector(step_name=step_name) for step_name in workflow.steps
+    }
+    async_step_selectors = compute_async_stream_step_selectors(workflow=workflow)
+    frontier: Set[str] = set()
+    for execution_layer in establish_execution_order(
+        execution_graph=workflow.execution_graph
+    ):
+        for step_selector in execution_layer:
+            step_name = get_last_chunk_of_selector(selector=step_selector)
+            manifest_class = workflow.steps[
+                step_name
+            ].block_specification.manifest_class
+            is_stateful_fn = getattr(
+                manifest_class, "is_stateful_for_video_processing", None
+            )
+            if not callable(is_stateful_fn) or is_stateful_fn():
+                # Manifests without the declaration (e.g. dynamic Custom
+                # Python blocks, built without the WorkflowBlockManifest
+                # base) are conservatively treated as stateful.
+                continue
+            feeding_step_selectors = [
+                predecessor
+                for predecessor in workflow.execution_graph.predecessors(step_selector)
+                if predecessor in step_selectors
+            ]
+            if all(
+                predecessor in frontier and predecessor not in async_step_selectors
+                for predecessor in feeding_step_selectors
+            ):
+                frontier.add(step_selector)
+    return frontier
 
 
 def _downstream_step_selectors(

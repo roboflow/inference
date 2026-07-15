@@ -1,8 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Type, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
+
+if TYPE_CHECKING:
+    from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
+        ExecutionDataManager,
+    )
 
 from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
@@ -84,6 +89,36 @@ class ExecutionEngine(BaseExecutionEngine):
             serialize_results=serialize_results,
             defer_stream_pipeline_flush=defer_stream_pipeline_flush,
             resolve_output_futures=resolve_output_futures,
+        )
+
+    def run_stream_lookahead(
+        self,
+        runtime_parameters: Dict[str, Any],
+        frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        lookahead_executor: ThreadPoolExecutor,
+    ) -> "ExecutionDataManager":
+        return self._engine.run_stream_lookahead(
+            runtime_parameters=runtime_parameters,
+            frontier_step_selectors=frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
+        )
+
+    def resume_stream_lookahead(
+        self,
+        execution_data_manager: "ExecutionDataManager",
+        frontier_step_selectors: Set[str],
+        serialize_results: bool = False,
+        fps: float = 0,
+        _is_preview: bool = False,
+    ) -> List[Dict[str, Any]]:
+        return self._engine.resume_stream_lookahead(
+            execution_data_manager=execution_data_manager,
+            frontier_step_selectors=frontier_step_selectors,
+            serialize_results=serialize_results,
+            fps=fps,
+            _is_preview=_is_preview,
         )
 
     def flush_stream_pipeline(

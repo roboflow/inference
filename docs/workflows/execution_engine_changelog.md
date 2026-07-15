@@ -2,6 +2,32 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.13.0` | inference `v1.3.5`
+
+**What changed**
+
+* **Stream-lookahead execution for video pipelines (opt-in, default off)** — With
+  `WORKFLOWS_STREAM_LOOKAHEAD_DEPTH=N` (N > 1), `InferencePipeline` video workflows may
+  keep up to N frames' long-latency step executions (remote model requests, external
+  API calls) in flight concurrently, while stateful steps (trackers, counters, sinks)
+  still observe frames strictly in stream order. Emission order and outputs are
+  identical to sequential execution.
+* **Per-block statefulness declaration** — `WorkflowBlockManifest` gained the
+  `is_stateful_for_video_processing()` classmethod (default `True`, conservative).
+  Blocks that are pure functions of their per-frame inputs may declare `False`;
+  blocks additionally declaring `is_async_stream_step()` on the block class certify
+  their `run()` as long-latency and re-entrant, letting the engine offload it to a
+  lookahead worker pool with per-output `Future` placeholders built from
+  `describe_outputs()`.
+* **New engine entry points** — `run_stream_lookahead(...)` (deferred pass: executes
+  the stateless-ancestor frontier of the DAG and returns the frame's live
+  `ExecutionDataManager`) and `resume_stream_lookahead(...)` (emission pass: runs the
+  remaining steps on that state). Both exist on `ExecutionEngine` and
+  `ExecutionEngineV1` only — like `flush_stream_pipeline`, they are intentionally not
+  part of the `BaseExecutionEngine` ABC. Default `run(...)` behavior is unchanged;
+  with the env variable unset (default `1`) nothing about compilation or execution
+  differs.
+
 ## Execution Engine `v1.12.0` | inference `v1.3.2`
 
 **What changed**

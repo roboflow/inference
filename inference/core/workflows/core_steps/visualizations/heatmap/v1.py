@@ -149,6 +149,12 @@ class HeatmapManifest(PredictionsVisualizationManifest):
     )
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        # Accumulates cross-frame state (trajectory/track history) and must
+        # observe frames strictly in stream order.
+        return True
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 

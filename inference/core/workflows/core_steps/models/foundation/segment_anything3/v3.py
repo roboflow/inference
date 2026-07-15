@@ -217,6 +217,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        return False
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
@@ -270,6 +274,15 @@ class SegmentAnything3BlockV3(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    def is_async_stream_step(self) -> bool:
+        # The remote request path is re-entrant (fresh client per call,
+        # thread-local connection pooling in the SDK executors), so the
+        # stream scheduler may execute run() ahead of stream order.
+        return (
+            SAM3_EXEC_MODE != "remote"
+            and self._step_execution_mode is StepExecutionMode.REMOTE
+        )
 
     def run(
         self,
@@ -346,8 +359,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -437,8 +449,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -522,8 +533,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 

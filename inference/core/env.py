@@ -754,6 +754,15 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
 )
+# Number of video frames whose async step executions (remote models, API
+# calls) may be in flight concurrently in stream-lookahead scheduling;
+# 1 disables lookahead. The old name is honored as a fallback.
+WORKFLOWS_STREAM_LOOKAHEAD_DEPTH = int(
+    os.getenv(
+        "WORKFLOWS_STREAM_LOOKAHEAD_DEPTH",
+        os.getenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "1"),
+    )
+)
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )

@@ -246,6 +246,26 @@ class WorkflowBlockManifest(BaseModel, ABC):
         return []
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        """Whether the block must observe video frames strictly in stream order.
+
+        Stateful blocks keep cross-frame state (trackers, counters,
+        aggregators) or have order-sensitive side effects (notifications,
+        sinks), so the stream scheduler must run them frame by frame, in
+        order. Stateless blocks — pure functions of their per-frame inputs —
+        may be executed ahead of stream order, which lets the stream
+        scheduler overlap several frames' expensive steps (e.g. remote model
+        requests).
+
+        This is a scheduling contract about video-frame ordering, distinct
+        from the "stateless HTTP runtime" caveats in ``RuntimeRestriction``.
+
+        The default is conservative: blocks are assumed stateful unless they
+        override this to return ``False``.
+        """
+        return True
+
+    @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return model IDs whose cached weights enable this block to run offline.
 

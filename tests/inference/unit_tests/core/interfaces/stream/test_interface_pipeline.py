@@ -29,6 +29,7 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
     lock_state_transition,
 )
+from inference.core.interfaces.stream import inference_pipeline
 from inference.core.interfaces.stream.entities import (
     InferenceHandlerResult,
     ModelConfig,
@@ -39,6 +40,9 @@ from inference.core.interfaces.stream.inference_pipeline import (
 )
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
+)
+from inference.core.interfaces.stream.model_handlers.workflows import (
+    StreamLookaheadDrainError,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
@@ -201,6 +205,33 @@ def test_inference_pipeline_drain_enqueues_flush_results_with_bound_frames() -> 
     assert pipeline._predictions_queue.get_nowait() == (["p1"], [frame_1])
     assert pipeline._predictions_queue.get_nowait() == (["p2"], [frame_2])
     assert watchdog.ready_frames == [[frame_1], [frame_2]]
+
+
+def test_inference_pipeline_drain_dispatches_partial_results_and_reraises() -> None:
+    # given - a failed tail frame must not disappear as a normal empty drain:
+    # the frames that drained are dispatched, the failure propagates
+    frame_1 = VideoFrame(
+        image=np.zeros((8, 8, 3), dtype=np.uint8),
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=0,
+    )
+    drained = [InferenceHandlerResult(predictions=["p1"], video_frames=[frame_1])]
+    handler = _FlushableInferenceHandler(results=None)
+    handler.flush = lambda: (_ for _ in ()).throw(
+        StreamLookaheadDrainError("final frame failed", drained_results=drained)
+    )
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._on_video_frame = handler
+    pipeline._watchdog = _PredictionReadyWatchdog()
+    pipeline._predictions_queue = Queue()
+    pipeline._status_update_handlers = []
+
+    # when / then
+    with pytest.raises(StreamLookaheadDrainError):
+        pipeline._drain_inference_handler()
+    assert pipeline._predictions_queue.get_nowait() == (["p1"], [frame_1])
+    assert pipeline._predictions_queue.empty()
 
 
 def test_resolve_prediction_futures_recursively_resolves_nested_values() -> None:
@@ -743,3 +774,63 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     assert frames_by_sources[1] == list(
         range(1, 431 * 2 + 1)
     ), "Order of prediction frames violated for source 1"
+
+
+def test_buffered_stream_dispatch_keys_on_actual_handler_not_env() -> None:
+    # given - buffered dispatch must follow whether the handler actually
+    # buffers (exposes flush()), NOT whether a depth env var is set: a depth
+    # flag on a workflow that does not qualify for pipelining falls back to a
+    # plain WorkflowRunner, which must still use the normal dispatch path
+    class _BufferingRunner:
+        def __call__(self, video_frames):
+            return None
+
+        def flush(self):
+            return None
+
+    class _PlainRunner:
+        def __call__(self, video_frames):
+            return []
+
+    # when / then
+    assert inference_pipeline._uses_buffered_stream_dispatch(_BufferingRunner())
+    assert not inference_pipeline._uses_buffered_stream_dispatch(_PlainRunner())
+    assert not inference_pipeline._uses_buffered_stream_dispatch(lambda frames: [])
+
+
+def test_init_with_custom_logic_caps_queue_only_for_buffering_handler() -> None:
+    # given - the predictions queue is capped to 4 only when the handler
+    # buffers; a non-buffering handler keeps the full queue even if a depth
+    # env var happens to be set (the bug: cap + buffered path with nothing
+    # buffered starves throughput)
+    class _BufferingRunner:
+        def __call__(self, video_frames):
+            return None
+
+        def flush(self):
+            return None
+
+    class _PlainRunner:
+        def __call__(self, video_frames):
+            return []
+
+    buffering_pipeline = object.__new__(InferencePipeline)
+    buffering_pipeline.__init__(
+        on_video_frame=_BufferingRunner(),
+        video_sources=[],
+        predictions_queue=Queue(),
+        watchdog=BasePipelineWatchDog(),
+        status_update_handlers=[],
+    )
+    plain_pipeline = object.__new__(InferencePipeline)
+    plain_pipeline.__init__(
+        on_video_frame=_PlainRunner(),
+        video_sources=[],
+        predictions_queue=Queue(),
+        watchdog=BasePipelineWatchDog(),
+        status_update_handlers=[],
+    )
+
+    # then
+    assert buffering_pipeline._buffered_stream_dispatch is True
+    assert plain_pipeline._buffered_stream_dispatch is False

@@ -670,6 +670,9 @@ class InferencePipeline:
             on_video_frame = wrap_workflow_runner_for_stream_pipeline(
                 workflow_runner=workflow_runner,
                 execution_engine=execution_engine,
+                allow_lookahead=(
+                    not isinstance(video_reference, list) or len(video_reference) <= 1
+                ),
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
@@ -821,12 +824,13 @@ class InferencePipeline:
         except ValueError:
             predictions_queue_size = 512
         if (
-            _rfdetr_stream_pipeline_enabled()
+            _uses_buffered_stream_dispatch(on_video_frame)
             and "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" not in os.environ
         ):
-            # Stream-pipelined RF-DETR returns async response futures. Letting
-            # the producer queue hundreds of full-resolution VideoFrame objects
-            # can exhaust host memory on 4K videos before dispatch catches up.
+            # Stream-pipelined runs buffer frames already; letting the
+            # producer queue hundreds of full-resolution VideoFrame objects
+            # on top can exhaust host memory on 4K videos before dispatch
+            # catches up.
             predictions_queue_size = min(predictions_queue_size, 4)
         predictions_queue = Queue(maxsize=predictions_queue_size)
         return cls(
@@ -858,6 +862,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ):
         self._on_video_frame = on_video_frame
+        self._buffered_stream_dispatch = _uses_buffered_stream_dispatch(on_video_frame)
         self._video_sources = video_sources
         self._on_prediction = on_prediction
         self._max_fps = max_fps
@@ -931,7 +936,7 @@ class InferencePipeline:
                     frames=video_frames,
                 )
                 predictions = self._on_video_frame(video_frames)
-                if _rfdetr_stream_pipeline_enabled():
+                if self._buffered_stream_dispatch:
                     self._queue_inference_result(
                         inference_result=predictions,
                         fallback_video_frames=video_frames,
@@ -951,10 +956,20 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
-            if _rfdetr_stream_pipeline_enabled():
+            if self._buffered_stream_dispatch:
                 self._drain_inference_handler()
 
         except Exception as error:
+            if self._buffered_stream_dispatch:
+                # Deliver buffered frames whose requests already completed
+                # before the stream shuts down.
+                try:
+                    self._drain_inference_handler()
+                except Exception as drain_error:
+                    logger.exception(
+                        "Failed to drain buffered frames after inference " "error: %s",
+                        drain_error,
+                    )
             payload = {
                 "error_type": error.__class__.__name__,
                 "error_message": str(error),
@@ -968,7 +983,7 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
-            if _rfdetr_stream_pipeline_enabled():
+            if self._buffered_stream_dispatch:
                 self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
@@ -987,7 +1002,7 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
-            if _rfdetr_stream_pipeline_enabled():
+            if self._buffered_stream_dispatch:
                 predictions = _resolve_prediction_futures(predictions)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
@@ -1044,10 +1059,24 @@ class InferencePipeline:
         return inference_result, fallback_video_frames
 
     def _drain_inference_handler(self) -> None:
+        from inference.core.interfaces.stream.model_handlers.workflows import (
+            StreamLookaheadDrainError,
+        )
+
         flush_fn = getattr(self._on_video_frame, "flush", None)
         if not callable(flush_fn):
             return None
-        flush_result = flush_fn()
+        try:
+            flush_result = flush_fn()
+        except StreamLookaheadDrainError as error:
+            # Dispatch the frames that did drain, then let the emission
+            # failure surface through the normal inference error path.
+            for result in error.drained_results:
+                self._queue_inference_result(
+                    inference_result=result,
+                    fallback_video_frames=[],
+                )
+            raise
         if flush_result is None:
             return None
         if isinstance(flush_result, list) and all(
@@ -1181,8 +1210,16 @@ def _resolve_prediction_futures(value: Any) -> Any:
     )
 
 
-def _rfdetr_stream_pipeline_enabled() -> bool:
-    try:
-        return int(os.getenv("RFDETR_PIPELINE_DEPTH", "1").strip()) > 1
-    except ValueError:
-        return False
+def _uses_buffered_stream_dispatch(on_video_frame: InferenceHandler) -> bool:
+    # Buffered dispatch (bounded predictions queue + drain/close on stream end
+    # + late future resolution) is correct only when the handler actually
+    # buffers frames across calls. The stream-pipeline runners
+    # (RF-DETR PipelinedWorkflowRunner, LookaheadPipelinedWorkflowRunner)
+    # expose flush(); a plain WorkflowRunner does not. Keying on the actual
+    # handler rather than the env var means a depth flag set on a workflow
+    # that does not qualify for pipelining (e.g. no async steps, multi-source,
+    # stateful-fed model — wrap falls back to a plain runner) keeps the normal
+    # dispatch path instead of needlessly capping the queue and draining
+    # nothing. This mirrors how _drain_inference_handler / _close_inference_handler
+    # already discover the handler's capabilities.
+    return callable(getattr(on_video_frame, "flush", None))

@@ -1,15 +1,46 @@
+import weakref
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import thread as _futures_thread
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from threading import Barrier, Thread
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
+from inference.core import logger
+from inference.core.env import WORKFLOWS_STREAM_LOOKAHEAD_DEPTH
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+from inference.core.workflows.execution_engine.v1.executor.core import (
+    compute_async_stream_step_selectors,
+    compute_stream_lookahead_frontier,
+)
+
+if TYPE_CHECKING:
+    from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
+        ExecutionDataManager,
+    )
 
 
 @dataclass(frozen=True)
 class _StreamPipelineStep:
     step: Any
+    name: Optional[str] = None
+
+
+class StreamLookaheadDrainError(RuntimeError):
+    """A frame emission failed while draining the stream-lookahead buffer.
+
+    Raised only after every buffered frame was drained best-effort; the
+    frames that did emit successfully are carried in ``drained_results`` so
+    the pipeline can dispatch them before propagating the error.
+    """
+
+    def __init__(
+        self, message: str, drained_results: List[InferenceHandlerResult]
+    ) -> None:
+        super().__init__(message)
+        self.drained_results = drained_results
 
 
 class WorkflowRunner:
@@ -61,18 +92,44 @@ class WorkflowRunner:
             _is_preview=self._is_preview,
         )
 
+    def _run_stream_lookahead(
+        self,
+        video_frames: List[VideoFrame],
+        frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        lookahead_executor: "ThreadPoolExecutor",
+    ) -> "ExecutionDataManager":
+        workflows_parameters, _ = self._build_workflows_parameters(
+            video_frames=video_frames
+        )
+        return self._execution_engine.run_stream_lookahead(
+            runtime_parameters=workflows_parameters,
+            frontier_step_selectors=frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
+        )
+
+    def _resume_stream_lookahead(
+        self,
+        execution_data_manager: "ExecutionDataManager",
+        frontier_step_selectors: Set[str],
+        video_frames: List[VideoFrame],
+    ) -> List[dict]:
+        return self._execution_engine.resume_stream_lookahead(
+            execution_data_manager=execution_data_manager,
+            frontier_step_selectors=frontier_step_selectors,
+            serialize_results=self._serialize_results,
+            fps=_resolve_stream_fps(video_frames=video_frames),
+            _is_preview=self._is_preview,
+        )
+
     def _build_workflows_parameters(
         self,
         video_frames: List[VideoFrame],
     ) -> tuple[Dict[str, Any], float]:
         workflows_parameters: Dict[str, Any] = dict(self._workflows_parameters or {})
         # TODO: pass fps reflecting each stream to workflows_parameters
-        fps = video_frames[0].fps
-        if video_frames[0].measured_fps:
-            fps = video_frames[0].measured_fps
-        if fps is None:
-            # for FPS reporting we expect 0 when FPS cannot be determined
-            fps = 0
+        fps = _resolve_stream_fps(video_frames=video_frames)
         video_metadata_for_images = [
             VideoMetadata(
                 video_identifier=(
@@ -102,6 +159,16 @@ class WorkflowRunner:
             video_metadata_for_images
         )
         return workflows_parameters, fps
+
+
+def _resolve_stream_fps(video_frames: List[VideoFrame]) -> float:
+    fps = video_frames[0].fps
+    if video_frames[0].measured_fps:
+        fps = video_frames[0].measured_fps
+    if fps is None:
+        # for FPS reporting we expect 0 when FPS cannot be determined
+        fps = 0
+    return fps
 
 
 class PipelinedWorkflowRunner:
@@ -165,29 +232,212 @@ class PipelinedWorkflowRunner:
         return results
 
     def close(self) -> None:
-        for stream_step in self._stream_steps:
-            close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
-            if callable(close_fn):
-                close_fn()
+        _close_stream_steps(stream_steps=self._stream_steps)
 
     def _stream_buffer_depth(self) -> int:
-        return max(
-            (_stream_step_depth(stream_step) for stream_step in self._stream_steps),
-            default=0,
+        return _max_stream_buffer_depth(stream_steps=self._stream_steps)
+
+
+class LookaheadPipelinedWorkflowRunner:
+    """Pipelined runner for steps that defer downstream execution.
+
+    Each frame gets a deferred pass that executes only the workflow's
+    stream-lookahead frontier (stateless steps; pipelined model steps launch
+    their remote requests and register future-bearing outputs), and the
+    frame's live execution state is buffered. Once the buffer exceeds the
+    pipeline depth, the oldest frame is emitted by resuming its execution
+    state: the remaining steps run with that frame's own inputs, in frame
+    order, with in-flight futures resolved at input assembly.
+    """
+
+    def __init__(
+        self,
+        workflow_runner: WorkflowRunner,
+        frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        buffer_depth: int,
+    ) -> None:
+        self._workflow_runner = workflow_runner
+        self._frontier_step_selectors = frontier_step_selectors
+        self._async_step_selectors = async_step_selectors
+        self._buffer_depth = buffer_depth
+        max_workers = max(1, (buffer_depth + 1) * len(async_step_selectors))
+        self._lookahead_executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="workflows_stream_lookahead",
         )
+        _prespawn_daemon_workers(
+            executor=self._lookahead_executor, max_workers=max_workers
+        )
+        # GC fallback: if the owner is dropped without close(), still reap
+        # the pool so it cannot outlive the runner.
+        weakref.finalize(self, _shutdown_lookahead_executor, self._lookahead_executor)
+        self._pending_frames: List[Tuple[List[VideoFrame], "ExecutionDataManager"]] = []
+
+    def __call__(
+        self, video_frames: List[VideoFrame]
+    ) -> Optional[InferenceHandlerResult]:
+        execution_data_manager = self._workflow_runner._run_stream_lookahead(
+            video_frames=video_frames,
+            frontier_step_selectors=self._frontier_step_selectors,
+            async_step_selectors=self._async_step_selectors,
+            lookahead_executor=self._lookahead_executor,
+        )
+        self._pending_frames.append((video_frames, execution_data_manager))
+        if len(self._pending_frames) <= self._buffer_depth:
+            return None
+        return self._emit_oldest_frame()
+
+    def flush(self) -> Optional[List[InferenceHandlerResult]]:
+        if not self._pending_frames:
+            return None
+        results = []
+        first_error: Optional[Exception] = None
+        failed_frames = 0
+        while self._pending_frames:
+            try:
+                results.append(self._emit_oldest_frame())
+            except Exception as error:
+                # One failed frame must not drop the rest of the buffered
+                # frames whose requests already completed — keep draining
+                # and re-raise the first failure afterwards.
+                failed_frames += 1
+                if first_error is None:
+                    first_error = error
+                logger.exception(
+                    "Failed to emit a buffered frame during stream-lookahead "
+                    "drain: %s",
+                    error,
+                )
+        if first_error is not None:
+            raise StreamLookaheadDrainError(
+                f"Failed to emit {failed_frames} buffered frame(s) during "
+                "stream-lookahead drain.",
+                drained_results=results,
+            ) from first_error
+        return results
+
+    def close(self) -> None:
+        _shutdown_lookahead_executor(executor=self._lookahead_executor)
+
+    def _emit_oldest_frame(self) -> InferenceHandlerResult:
+        emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
+        predictions = self._workflow_runner._resume_stream_lookahead(
+            execution_data_manager=execution_data_manager,
+            frontier_step_selectors=self._frontier_step_selectors,
+            video_frames=emit_video_frames,
+        )
+        return InferenceHandlerResult(
+            predictions=predictions,
+            video_frames=emit_video_frames,
+        )
+
+
+def _shutdown_lookahead_executor(executor: ThreadPoolExecutor) -> None:
+    executor.shutdown(wait=False, cancel_futures=True)
+    # shutdown(wait=False) leaves the workers registered in
+    # concurrent.futures' interpreter-shutdown hook, which joins every pool
+    # thread regardless of its daemon flag — a request hung past close()
+    # would still block process exit. Detach them so that join skips them;
+    # their daemon flag (set at spawn) keeps threading's own shutdown from
+    # waiting on them as well.
+    #
+    # `executor._threads` and `concurrent.futures.thread._threads_queues` are
+    # CPython internals (validated on 3.9-3.12; the detach degrades safely via
+    # pop(..., None) if a future CPython reworks the shutdown hook — worst case
+    # is the pre-existing "hung request blocks exit" behavior, never a crash).
+    # `test_lookahead_runner_pool_threads_are_daemon` guards the detach.
+    for worker in executor._threads:
+        _futures_thread._threads_queues.pop(worker, None)
+
+
+def _prespawn_daemon_workers(executor: ThreadPoolExecutor, max_workers: int) -> None:
+    """Force all lookahead pool threads into existence as daemon threads.
+
+    ThreadPoolExecutor spawns worker threads lazily on submit(), and a new
+    thread inherits the daemon flag of the thread that created it. The
+    daemon flag alone is NOT sufficient to let the interpreter exit while a
+    request hangs: concurrent.futures joins every registered pool thread at
+    interpreter shutdown regardless of daemonness. It is one half of the
+    lifecycle guarantee — close() detaches the workers from that shutdown
+    hook, and the daemon flag set here keeps threading's own shutdown from
+    waiting on them afterwards.
+    """
+
+    def _spawn_all_workers() -> None:
+        all_workers_started = Barrier(parties=max_workers + 1)
+        for _ in range(max_workers):
+            executor.submit(all_workers_started.wait)
+        all_workers_started.wait()
+
+    spawner = Thread(target=_spawn_all_workers, daemon=True)
+    spawner.start()
+    spawner.join()
 
 
 def wrap_workflow_runner_for_stream_pipeline(
     workflow_runner: WorkflowRunner,
     execution_engine: ExecutionEngine,
+    allow_lookahead: bool = True,
 ):
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
-    if not stream_steps:
-        return workflow_runner
-    return PipelinedWorkflowRunner(
-        workflow_runner=workflow_runner,
-        stream_steps=stream_steps,
+    compiled_workflow = _compiled_workflow_with_graph(execution_engine=execution_engine)
+    async_step_selectors = (
+        compute_async_stream_step_selectors(workflow=compiled_workflow)
+        if compiled_workflow is not None and WORKFLOWS_STREAM_LOOKAHEAD_DEPTH > 1
+        else set()
     )
+    if not async_step_selectors:
+        if stream_steps:
+            return PipelinedWorkflowRunner(
+                workflow_runner=workflow_runner,
+                stream_steps=stream_steps,
+            )
+        return workflow_runner
+    if not allow_lookahead:
+        # Multi-source pipelines feed frame batches larger than one image;
+        # buffering them would add latency without any overlap.
+        logger.warning(
+            "Stream lookahead is disabled: it currently supports "
+            "single-source pipelines only. Falling back to sequential "
+            "execution."
+        )
+        return workflow_runner
+    if stream_steps:
+        # A workflow mixing async lookahead steps with a local stream
+        # pipeline (RF-DETR) would leave the latter's flush queue undrained
+        # under the lookahead runner.
+        logger.warning(
+            "Stream lookahead is disabled for this workflow: it mixes async "
+            "steps with a locally stream-pipelined model. Falling back to "
+            "sequential execution."
+        )
+        return workflow_runner
+    frontier_step_selectors = compute_stream_lookahead_frontier(
+        workflow=compiled_workflow
+    )
+    if not async_step_selectors <= frontier_step_selectors:
+        logger.warning(
+            "Stream lookahead is disabled for this workflow. Every async "
+            "step must sit in the stream-lookahead frontier: fed only by "
+            "steps that are stateless for video processing and not by "
+            "another async step. Falling back to sequential execution."
+        )
+        return workflow_runner
+    return LookaheadPipelinedWorkflowRunner(
+        workflow_runner=workflow_runner,
+        frontier_step_selectors=frontier_step_selectors,
+        async_step_selectors=async_step_selectors,
+        buffer_depth=WORKFLOWS_STREAM_LOOKAHEAD_DEPTH - 1,
+    )
+
+
+def _compiled_workflow_with_graph(execution_engine: ExecutionEngine) -> Optional[Any]:
+    engine = getattr(execution_engine, "_engine", None)
+    compiled_workflow = getattr(engine, "_compiled_workflow", None)
+    if getattr(compiled_workflow, "execution_graph", None) is None:
+        return None
+    return compiled_workflow
 
 
 def _stream_pipeline_steps(
@@ -197,10 +447,10 @@ def _stream_pipeline_steps(
     compiled_workflow = getattr(engine, "_compiled_workflow", None)
     steps = getattr(compiled_workflow, "steps", {})
     stream_steps = []
-    for initialised_step in steps.values():
+    for step_name, initialised_step in steps.items():
         step_instance = getattr(initialised_step, "step", None)
         if _is_stream_pipeline_step(step_instance=step_instance):
-            stream_steps.append(_StreamPipelineStep(step=step_instance))
+            stream_steps.append(_StreamPipelineStep(step=step_instance, name=step_name))
     return stream_steps
 
 
@@ -210,6 +460,24 @@ def _is_stream_pipeline_step(step_instance: Any) -> bool:
         return True
     can_activate_pipeline = getattr(step_instance, "can_activate_stream_pipeline", None)
     return callable(can_activate_pipeline) and can_activate_pipeline()
+
+
+def _close_stream_steps(stream_steps: List[_StreamPipelineStep]) -> None:
+    for stream_step in stream_steps:
+        close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
+        if not callable(close_fn):
+            continue
+        try:
+            close_fn()
+        except Exception as error:
+            logger.exception("Failed to close stream pipeline step: %s", error)
+
+
+def _max_stream_buffer_depth(stream_steps: List[_StreamPipelineStep]) -> int:
+    return max(
+        (_stream_step_depth(stream_step) for stream_step in stream_steps),
+        default=0,
+    )
 
 
 def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
