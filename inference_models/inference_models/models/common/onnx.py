@@ -1,13 +1,15 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import torch
 
 from inference_models.errors import (
+    EnvironmentConfigurationError,
     MissingDependencyError,
     ModelInputError,
     ModelRuntimeError,
 )
+from inference_models.logger import LOGGER
 
 try:
     import onnxruntime
@@ -24,6 +26,14 @@ except ImportError as import_error:
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
+
+GPU_CAPABLE_EXECUTION_PROVIDERS = {
+    "CUDAExecutionProvider",
+    "TensorrtExecutionProvider",
+    "NvTensorRTRTXExecutionProvider",
+    "ROCMExecutionProvider",
+    "MIGraphXExecutionProvider",
+}
 
 TORCH_TYPES_MAPPING = {
     torch.float32: np.float32,
@@ -179,12 +189,122 @@ def set_onnx_execution_provider_defaults(
     return result
 
 
+DeviceMismatchResolutionMode = Literal["fail", "fallback"]
+
+ALLOWED_DEVICE_MISMATCH_RESOLUTION_MODES = {"fail", "fallback"}
+
+
+def align_device_with_onnx_session(
+    session: onnxruntime.InferenceSession,
+    device: torch.device,
+    resolution_mode: DeviceMismatchResolutionMode = "fallback",
+    fallback_device: Optional[torch.device] = None,
+) -> torch.device:
+    """Make sure the declared torch device is in line with onnxruntime session capacity.
+
+    An onnxruntime session can only consume GPU-resident tensors when it runs a
+    GPU-capable execution provider. When a model is initialized with a CUDA
+    torch device (e.g. the auto-selected default on a GPU machine) but the
+    session ended up CPU-only - either because the caller requested only
+    `CPUExecutionProvider` or because onnxruntime silently fell back during
+    initialization - binding CUDA tensors would fail at runtime with a cryptic
+    "no data transfer registered" error. This function detects that mismatch
+    upfront and resolves it according to `resolution_mode`, so pre- and
+    post-processing stay on a device the session can read from.
+
+    Limitations:
+        For now, only CUDA devices passed as the primary `device` are verified -
+        any non-CUDA device is returned unchanged without validation.
+
+    Args:
+        session: Initialized ONNX Runtime session. Its effective (post-fallback)
+            providers are read via `session.get_providers()`.
+
+        device: Torch device requested for the model.
+
+        resolution_mode: How to resolve a detected mismatch. `"fallback"`
+            (default) logs a warning and returns the fallback device,
+            `"fail"` raises `EnvironmentConfigurationError`.
+
+        fallback_device: Device to return when a mismatch is resolved in
+            `"fallback"` mode. Default value (`None`) means default behaviour -
+            falling back to the CPU device.
+
+    Returns:
+        The requested device when it is compatible with the session's providers,
+        otherwise the fallback device (in `"fallback"` mode).
+
+    Raises:
+        ModelInputError: When `resolution_mode` is not one of `"fail"`,
+            `"fallback"`.
+
+        EnvironmentConfigurationError: When a mismatch is detected and
+            `resolution_mode` is `"fail"`.
+
+    Examples:
+        Align device in a model's `from_pretrained`:
+
+        >>> session = onnxruntime.InferenceSession(
+        ...     "model.onnx", providers=["CPUExecutionProvider"]
+        ... )
+        >>> device = align_device_with_onnx_session(
+        ...     session=session, device=torch.device("cuda:0")
+        ... )
+        >>> device
+        device(type='cpu')
+
+        Raise instead of falling back:
+
+        >>> device = align_device_with_onnx_session(
+        ...     session=session,
+        ...     device=torch.device("cuda:0"),
+        ...     resolution_mode="fail",
+        ... )
+        Traceback (most recent call last):
+        EnvironmentConfigurationError: ...
+    """
+    if resolution_mode not in ALLOWED_DEVICE_MISMATCH_RESOLUTION_MODES:
+        raise ModelInputError(
+            message=f"`align_device_with_onnx_session(...)` supports the following values of "
+            f"`resolution_mode` parameter: {sorted(ALLOWED_DEVICE_MISMATCH_RESOLUTION_MODES)}. "
+            f"Requested mode: {resolution_mode} is not supported. Please verify your integration "
+            f"to make sure that appropriate value of `resolution_mode` parameter is set.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
+    if device.type != "cuda":
+        return device
+    session_providers = set(session.get_providers())
+    if session_providers & GPU_CAPABLE_EXECUTION_PROVIDERS:
+        return device
+    if resolution_mode == "fail":
+        raise EnvironmentConfigurationError(
+            message=f"Model requested device {device}, but the onnxruntime session runs only CPU-bound "
+            f"execution providers ({', '.join(sorted(session_providers))}), so it cannot consume "
+            f"GPU-resident tensors. If you run model locally - adjust your setup (either request a "
+            f"GPU-capable execution provider or initialize the model with CPU device), otherwise "
+            f"contact the platform support.",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
+        )
+    resolved_fallback_device = (
+        fallback_device if fallback_device is not None else torch.device("cpu")
+    )
+    LOGGER.warning(
+        "Model requested device %s, but the onnxruntime session runs only CPU-bound "
+        "execution providers (%s) - falling back to %s tensors for this model.",
+        device,
+        ", ".join(sorted(session_providers)),
+        resolved_fallback_device,
+    )
+    return resolved_fallback_device
+
+
 def run_onnx_session_with_batch_size_limit(
     session: onnxruntime.InferenceSession,
     inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
     max_batch_size: Optional[int] = None,
     min_batch_size: Optional[int] = None,
+    stream: Optional[torch.cuda.Stream] = None,
 ) -> List[torch.Tensor]:
     """Run ONNX inference session with automatic batch splitting.
 
@@ -211,6 +331,11 @@ def run_onnx_session_with_batch_size_limit(
         min_batch_size: Minimum batch size for the model. If the last chunk is
             smaller, it will be padded to this size. Useful for models with
             static batch size requirements.
+        stream: Optional CUDA stream to run the torch side of the operation on
+            (batch chunking, input casts, result concatenation). Defaults to the
+            calling thread's current stream. The stream is synchronized before
+            each dispatch to ONNX Runtime and after results are assembled, so
+            returned tensors are fully materialized. Ignored for CPU inputs.
 
     Returns:
         List of output tensors from the ONNX model, in the order defined by
@@ -263,11 +388,46 @@ def run_onnx_session_with_batch_size_limit(
         - `run_onnx_session_via_iobinding()`: Lower-level ONNX execution
         - `generate_batch_chunks()`: Utility for creating batch chunks
     """
+    device = get_input_device(inputs=inputs)
+    if device.type != "cuda":
+        return _run_onnx_session_with_batch_size_limit(
+            session=session,
+            inputs=inputs,
+            output_shape_mapping=output_shape_mapping,
+            max_batch_size=max_batch_size,
+            min_batch_size=min_batch_size,
+        )
+    if stream is None:
+        stream = torch.cuda.current_stream(device)
+    with torch.cuda.stream(stream):
+        for input_tensor in inputs.values():
+            input_tensor.record_stream(stream)
+        results = _run_onnx_session_with_batch_size_limit(
+            session=session,
+            inputs=inputs,
+            output_shape_mapping=output_shape_mapping,
+            max_batch_size=max_batch_size,
+            min_batch_size=min_batch_size,
+            stream=stream,
+        )
+    stream.synchronize()
+    return results
+
+
+def _run_onnx_session_with_batch_size_limit(
+    session: onnxruntime.InferenceSession,
+    inputs: Dict[str, torch.Tensor],
+    output_shape_mapping: Optional[Dict[str, tuple]] = None,
+    max_batch_size: Optional[int] = None,
+    min_batch_size: Optional[int] = None,
+    stream: Optional[torch.cuda.Stream] = None,
+) -> List[torch.Tensor]:
     if max_batch_size is None:
         return run_onnx_session_via_iobinding(
             session=session,
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
+            stream=stream,
         )
     input_batch_sizes = set()
     for input_tensor in inputs.values():
@@ -289,6 +449,7 @@ def run_onnx_session_with_batch_size_limit(
             session=session,
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
+            stream=stream,
         )
     all_results = []
     for _ in session.get_outputs():
@@ -323,6 +484,7 @@ def run_onnx_session_with_batch_size_limit(
             session=session,
             inputs=batch_inputs,
             output_shape_mapping=batch_output_shape_mapping,
+            stream=stream,
         )
         if reminder > 0:
             batch_results = [r[:-reminder] for r in batch_results]
@@ -335,6 +497,7 @@ def run_onnx_session_via_iobinding(
     session: onnxruntime.InferenceSession,
     inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
+    stream: Optional[torch.cuda.Stream] = None,
 ) -> List[torch.Tensor]:
     """Run ONNX inference session using IO binding for optimal GPU performance.
 
@@ -356,6 +519,12 @@ def run_onnx_session_via_iobinding(
             expected shapes. Used for pre-allocating output buffers on GPU,
             which improves performance. If not provided or if output has dynamic
             shape, outputs are allocated dynamically.
+
+        stream: Optional CUDA stream to run the torch side of the operation on
+            (input casts, output buffer allocation). Defaults to the calling
+            thread's current stream. The stream is synchronized right before the
+            session run, so all pending torch writes to the bound buffers are
+            complete when ONNX Runtime reads them. Ignored for CPU inputs.
 
     Returns:
         List of output tensors from the ONNX model, in the order defined by
@@ -412,6 +581,9 @@ def run_onnx_session_via_iobinding(
         - Automatically casts input types to match model requirements
         - Uses IO binding for CUDA devices, standard execution for CPU
         - Requires PyCUDA for CUDA execution
+        - Synchronizes `stream` (the current stream by default) before the session
+          run - ONNX Runtime executes on its own internal stream, so all pending
+          torch work on the bound buffers must be complete before it reads them
         - Pre-allocating outputs via output_shape_mapping improves performance
         - Handles both static and dynamic output shapes
 
@@ -419,12 +591,12 @@ def run_onnx_session_via_iobinding(
         - `run_onnx_session_with_batch_size_limit()`: Higher-level function with batching
         - `set_onnx_execution_provider_defaults()`: Configure execution providers
     """
-    inputs = auto_cast_session_inputs(
-        session=session,
-        inputs=inputs,
-    )
     device = get_input_device(inputs=inputs)
     if device.type != "cuda":
+        inputs = auto_cast_session_inputs(
+            session=session,
+            inputs=inputs,
+        )
         inputs_np = {name: value.cpu().numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
         return [torch.from_numpy(element).to(device=device) for element in results]
@@ -445,9 +617,29 @@ def run_onnx_session_via_iobinding(
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
         ) from import_error
 
+    if not any(
+        provider in GPU_CAPABLE_EXECUTION_PROVIDERS
+        for provider in session.get_providers()
+    ):
+        raise ModelRuntimeError(
+            message="Model inputs reside on CUDA device, but the onnxruntime session does not run any "
+            "GPU-capable execution provider, so it cannot consume GPU-resident tensors. This is a bug in "
+            "the model implementation - the model should align its processing device with the session "
+            "providers (see `align_device_with_onnx_session(...)`). Submit issue to help us solve this "
+            "problem: https://github.com/roboflow/inference/issues",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    if stream is None:
+        stream = torch.cuda.current_stream(device)
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
-    with use_primary_cuda_context(cuda_device=cuda_device):
+    with use_primary_cuda_context(cuda_device=cuda_device), torch.cuda.stream(stream):
+        for input_tensor in inputs.values():
+            input_tensor.record_stream(stream)
+        inputs = auto_cast_session_inputs(
+            session=session,
+            inputs=inputs,
+        )
         if output_shape_mapping is None:
             output_shape_mapping = {}
         binding = session.io_binding()
@@ -508,7 +700,12 @@ def run_onnx_session_via_iobinding(
                 shape=input_tensor.shape,
                 buffer_ptr=input_tensor.data_ptr(),
             )
-        binding.synchronize_inputs()
+        # ORT executes on its own internal stream and binding.synchronize_inputs()
+        # cannot be relied upon to order it against torch work (it resolves to
+        # cudaDeviceSynchronize under CUDA EP - a device-wide barrier - and to a no-op
+        # under TensorrtExecutionProvider), so the torch stream carrying all pending
+        # writes to the bound buffers is synchronized here instead.
+        stream.synchronize()
         session.run_with_iobinding(binding)
         if not some_outputs_dynamically_allocated:
             return pre_allocated_outputs

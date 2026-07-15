@@ -209,6 +209,44 @@ def test_serverless_does_not_register_sam3_3d_route_when_sam3_3d_flag_is_disable
     assert "/sam3_3d/infer" not in paths
 
 
+def test_serverless_registers_pp_ocr_route_when_model_flag_is_enabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" in paths
+
+
+def test_serverless_does_not_register_pp_ocr_route_when_model_flag_is_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", False)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" not in paths
+
+
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
@@ -702,6 +740,7 @@ def test_serverless_auth_middleware_adds_observability_headers_and_logs_on_denia
 
     monkeypatch.setattr(http_api, "EXECUTION_ID_HEADER", "X-Execution-Id")
     monkeypatch.setattr(http_api, "get_trace_id", lambda: "trace-123")
+    monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", True)
     denied_log_mock = MagicMock()
     monkeypatch.setattr(http_api.logger, "info", denied_log_mock)
     interface, _, _, _ = _build_serverless_interface(

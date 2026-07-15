@@ -1,98 +1,89 @@
 ---
 name: review-http-api-server
-description: Review guidance for PRs changing inference/core/interfaces/http/** (http_api.py, error_handlers.py, orjson_utils.py, dependencies.py, middlewares/, builder/, handlers/) or inference_cli/server.py — enforces HTTP API server standards, response/header/error contracts, env-flag gating, and required version-bump + test companions.
+description: Review guidance for PRs touching inference/core/interfaces/http/** (http_api.py, error_handlers.py, orjson_utils.py, dependencies.py, request_metrics.py, middlewares/, builder/, handlers/) or inference_cli/server.py. Also loads on diffs adding a route/middleware, an except arm in with_route_exceptions / with_route_exceptions_async, a new exception in inference/core/exceptions.py needing HTTP mapping, a header constant in constants.py, or a route-gating env flag in inference/core/env.py.
 ---
 
 # Reviewing http-api-server changes
 
 ## Scope
 Trigger this skill when a PR touches any of:
-- `inference/core/interfaces/http/**` — `http_api.py` (the FastAPI app factory `HttpInterface`), `error_handlers.py`, `orjson_utils.py`, `dependencies.py`, `request_metrics.py`, `uvicorn_config.py`, `middlewares/` (cors, gzip), `builder/routes.py`, `handlers/workflows.py`
-- `inference_cli/server.py` — the `inference server start|status|stop` typer CLI
-- Companion touch-points that this surface owns the contract for: new exceptions in `inference/core/exceptions.py` that need an HTTP mapping, HTTP status mapping in `inference/core/roboflow_api.py`, header constants in `inference/core/constants.py`.
+- `inference/core/interfaces/http/**` — `http_api.py` (the FastAPI app factory `HttpInterface`, all route registrations, middleware wiring, serverless auth), `error_handlers.py`, `orjson_utils.py`, `dependencies.py`, `request_metrics.py`, `uvicorn_config.py`, `middlewares/{cors,gzip}.py`, `builder/routes.py`, `handlers/workflows.py`.
+- `inference_cli/server.py` — the `inference server start|status|stop` typer CLI.
+- Companion touch-points this surface owns the contract for: a new exception in `inference/core/exceptions.py` that needs an HTTP mapping; the status-code map in `inference/core/roboflow_api.py`; header constants in `inference/core/constants.py` / `request_metrics.py`; a route-gating env flag in `inference/core/env.py`; `inference/core/version.py`.
 
-OUT of scope (other skills own these): Workflows execution-engine internals, model implementations under `inference/models/`, stream-manager/pipeline internals, `inference_sdk` client. Only review the HTTP *surface* of those.
-
-## What this surface is
-`http_api.py` builds one FastAPI `app` in the `HttpInterface` constructor. Routes are registered inline, heavily gated by env flags (`LAMBDA`, `GCP_SERVERLESS`, `LEGACY_ROUTE_ENABLED`, `CORE_MODEL_*_ENABLED`, `ENABLE_BUILDER`, `ENABLE_STREAM_API`, `GET_MODEL_REGISTRY_ENABLED`). Contracts a reviewer must protect:
-- **Public JSON response shapes are backward-compatible.** Responses are pydantic models serialized via `orjson_response(...)`/`orjson_response_keeping_parent_id(...)` in `orjson_utils.py` with `by_alias=True, exclude_none=True`. Removing/renaming a field, or dropping a field that clients rely on, is a breaking change (see #1599 — `parent_id` must be retained even when empty).
-- **Error → HTTP status mapping is centralized** in `error_handlers.py` via the `with_route_exceptions` (sync) and `with_route_exceptions_async` (async) decorators. Every route must be wrapped by one of them; the mapping of exception → `status_code` is the API's error contract.
-- **Response headers are a contract.** Constants live in `inference/core/constants.py` (`PROCESSING_TIME_HEADER="X-Processing-Time"`, `WORKSPACE_ID_HEADER="X-Workspace-Id"`, etc.) and `request_metrics.py` (`REMOTE_PROCESSING_TIME_HEADER`). Any header returned cross-origin must also appear in the CORS `expose_headers` list (`http_api.py` ~L649-663).
-- **Legacy `/infer/...` routes** and serverless/Lambda auth middleware have Lambda-authorizer constraints (only path params work) — new endpoints often must be excluded under `if not (LAMBDA or GCP_SERVERLESS)`.
-
-## Standards enforced here
-- **Every route wrapped in the right exception decorator.** Async routes use `with_route_exceptions_async`, sync use `with_route_exceptions`. Mismatched wrapping is a bug — #1512 fixed `builder/routes.py` to import `with_route_exceptions_async` from `error_handlers` (not from `http_api`) for its `async def` routes.
-- **New public error → add a mapped handler with an explicit `status_code`.** Adding an exception without an `except` arm in BOTH the sync and async wrappers means it falls through to a generic 500. #2099 added `PaymentRequiredError` → 402 in both wrappers of `error_handlers.py`, plus the `402:` entry in `roboflow_api.py`'s status-code lambda map, plus workflow step-error handling. Handlers of the same error must be mirrored across sync+async arms.
-- **Type unions use `Union[...]`, not `X | Y`, in `response_model=`.** #1599 changed `OCRInferenceResponse | List[...]` to `Union[OCRInferenceResponse, List[...]]` (runtime-eval compatibility for FastAPI response_model).
-- **New endpoints are gated behind an env flag defined in `inference/core/env.py`** using `str2bool(os.getenv("FLAG", "True"))`. #1557 added `GET_MODEL_REGISTRY_ENABLED` and gated `GET /model/registry` with `if not LAMBDA and GET_MODEL_REGISTRY_ENABLED`. Perf toggles follow the same pattern (#1717 `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED`/`_WORKERS`).
-- **Magic numeric bounds become named env constants**, not inline literals. #1611 replaced inline `confidence = 0` with `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION` (env-configurable, default `0.01`) with a comment explaining the OOM rationale.
-- **Exception log level signals severity.** In `error_handlers.py`: client-caused/expected conditions (402, missing key) use `logger.warning(...)`; unexpected server faults use `logger.exception(...)`. #1104 also added `logger.error("%s: %s", type(error).__name__, error)` to previously-silent `except` arms and standardized the caught var to `error`.
-- **Builder file access must be path-traversal-safe.** `builder/routes.py` validates `workflow_id` with `re.match(r"^[\w\-]+$", ...)` and resolves the on-disk file via `sha256(workflow_id.encode()).hexdigest()` (#1096, code-scanning fix). Never build a path directly from user input.
-- **Request-body parsing for legacy routes goes through `dependencies.py`.** The request body/stream must be read exactly once; multipart form is parsed there and returns `Optional[Union[bytes, UploadFile]]` (#1518).
-- **CLI options are typer `Annotated[..., typer.Option(...)]` with a `--flag/--no-flag` form and a help string**, and must be threaded into `start_inference_container(...)` (#1024 `--metrics-enabled/--metrics-disabled`).
-
-## Required companions
-Block the PR if a change on this surface lands without its companion:
-- **Version bump:** `inference/core/version.py` (`__version__`) is bumped on nearly every merged behavior change here (#2528, #1611, #1557, #1593). A functional change with no version bump is suspect — flag it.
-- **Env var registration:** any new `os.getenv(...)` flag/const must be declared in `inference/core/env.py` (not read inline in `http_api.py`) — #1557, #1611, #1717, #1512.
-- **Tests** under `tests/inference/unit_tests/core/interfaces/http/`: `test_http_api.py`, `test_error_handlers.py`, `test_orjson_utils.py`, `test_cors.py`, `test_model_response_headers.py`, `test_remote_processing_time_middleware.py`, `test_legacy_http_route_accepts_confidence_modes.py`, `test_builder.py`, `handlers/test_workflows.py`. New error mapping → assert the status_code (#2528 added a fail-closed 503 test); new response field → assert its presence/shape; middleware/header change → header assertion.
-- **CORS expose_headers:** any new response header returned to browsers must be added to the `expose_headers` list in the `PathAwareCORSMiddleware` block of `http_api.py`.
-- **Docs:** endpoint additions/changes should update `docs/api.md` and, for CLI, `docs/server_configuration/` / `docs/inference_helpers/`.
-
-## Common pitfalls & past regressions
-- **#1746** — `elif confidence < LOWER_BOUND` after an `if confidence >= 1: confidence /= 100` skipped the lower-bound clamp for percentage-form inputs. Chained `if/elif` on normalized numeric inputs: verify each branch independently applies. Check `test_legacy_http_route_accepts_confidence_modes.py`.
-- **#1518** — multipart request body read twice: parsing content-type inline AND letting FastAPI re-read the stream corrupted the request. Confirm the body/stream is consumed exactly once, via `dependencies.py`.
-- **#1599** — `exclude_none=True` silently dropped `parent_id` from OCR responses, breaking clients. When a field can be legitimately empty/None but is part of the contract, use `orjson_response_keeping_parent_id` (or equivalent) so it stays in the payload.
-- **#998** — `WorkflowSyntaxError` was lumped with `WorkflowDefinitionError`; needed its own `except` arm to serialize the right error shape. Check that new workflow/error subclasses aren't swallowed by a broader `except (...)` tuple above them (order matters — specific before general).
-- **#795** — malformed `usage_fps`/`frames` (non-numeric) crashed usage accounting; guard external numeric inputs with `isinstance(x, numbers.Number)` before rounding/arithmetic.
-- **#1365 / #1096** — builder `createTime`/`updateTime` must be `{"_seconds": int(...)}` (Firestore-shaped) not a bare int; and file lookups must hash the id. Builder route response shapes have external consumers — don't change them casually.
-- **#1104** — versionless legacy model ids and silent `except` arms: legacy routes must handle `dataset_id`+`version_id` composition and log every caught exception.
-- **#2528 → #2529** — the serverless-auth "fail closed on unexpected upstream status" fix was merged then **reverted**. Treat changes to serverless/Lambda auth middleware caching + fail-open/closed semantics as high-risk: they must not cache unexpected upstream statuses and must be covered by tests asserting both status and that responses aren't cached (`await_count`). Expect extra scrutiny / a maintainer sign-off.
-- **#2222 / #721 / #724 / #190** — cold-start header aggregation, Prometheus GPU metrics, and orjson swaps were all reverted historically. Response-header aggregation, metrics endpoints, and serializer swaps are recurring revert magnets — require strong justification + tests.
+OUT of scope (other skills own these): Workflows execution-engine internals, model implementations under `inference/models/`, stream-manager/pipeline internals, `inference_sdk` client. Only review the HTTP *surface* of those. Serverless/tenant auth semantics are co-owned with `review-topic-auth-and-tenant-security` — that skill owns the fail-open rule; this skill enforces that every route on the surface declares its auth story.
 
 ## Review checklist
-1. Every new/modified route is decorated with `with_route_exceptions` (sync) or `with_route_exceptions_async` (async), imported from `error_handlers.py`.
-2. Any new exception surfaced to a route has an explicit `except` arm with an intentional `status_code` in BOTH sync and async wrappers, plus the `roboflow_api.py` status map if it originates from a Roboflow API call.
-3. `except` arm ordering: specific exceptions precede the broad tuples that would otherwise catch them (#998).
-4. New endpoint is gated by an env flag from `env.py`, and excluded for `LAMBDA`/`GCP_SERVERLESS` where the Lambda authorizer can't support it.
-5. New env var/flag/numeric bound is declared in `inference/core/env.py` (not read inline), with sane default and, for tuning knobs, a rationale comment.
-6. `response_model` unions use `Union[...]`; response pydantic changes preserve existing fields/aliases; None-but-contractual fields aren't dropped by `exclude_none`.
-7. New response header is added to CORS `expose_headers` and its constant lives in `constants.py`/`request_metrics.py`.
-8. Request body/stream is read exactly once; user-supplied file paths (builder) are regex-validated and hashed.
-9. `inference/core/version.py` bumped for behavior changes.
-10. Tests added/updated in `tests/inference/unit_tests/core/interfaces/http/` covering the new status/field/header/branch; serverless-auth and metrics/header-aggregation changes carry extra test + justification.
-11. CLI options follow the `Annotated[..., typer.Option("--x/--no-x", help=...)]` pattern and are passed through to the container adapter.
-12. Log level matches severity (warning for client-caused, exception for server faults); every caught exception is logged.
+Severity-tagged. Resolve BLOCK before merge; raise FLAG; NIT is optional.
+
+- **BLOCK** — Serverless auth (`check_authorization_serverless` middleware in `http_api.py`) must fail *closed* on unexpected upstream status and must not cache it. The middleware only branches on 200 / 401 / 402 from `get_serverless_usage_check_async`; any other status must deny (not silently authorize) and must NOT be written into `cached_api_keys`. This exact fix landed then was **reverted** (#2528 → #2529) — treat any change to this middleware, `AuthorizationCacheEntry`, or the `AUTH_CACHE_TTL_SECONDS`/`SHORT_AUTH_CACHE_TTL_SECONDS` TTLs as high-risk; require tests asserting both the status AND that the response was not cached (`await_count`), plus maintainer sign-off.
+- **BLOCK** — Every new/modified route states its auth story. A route added under `if not (LAMBDA or GCP_SERVERLESS)` is unreachable serverless; a route reachable serverless is subject to `check_authorization_serverless`. The PR must make explicit which applies and confirm the route isn't an unintended authenticated-surface addition or an unintended auth bypass.
+- **BLOCK** — Every new/modified route is wrapped in the correct decorator from `error_handlers.py`: `with_route_exceptions_async` for `async def`, `with_route_exceptions` for sync. Import from `error_handlers`, not `http_api` (#1512).
+- **BLOCK** — A new exception surfaced to a route has an explicit `except` arm with an intentional `status_code` in BOTH `with_route_exceptions` and `with_route_exceptions_async`, mirrored — otherwise it falls through to a generic 500 (#2099). Add the `roboflow_api.py` `DEFAULT_ERROR_HANDLERS` entry too if it originates from a Roboflow API call.
+- **BLOCK** — `except` arm ordering: specific exceptions precede the broad tuples that would otherwise swallow them (#998, #1104).
+- **BLOCK** — Public JSON response shapes stay backward-compatible. No removed/renamed field or alias; `exclude_none=True` must not drop a contractual-but-empty field (#1599). Builder response shapes are Firestore-shaped and externally consumed (#1096/#1365).
+- **BLOCK** — Builder file access is path-traversal-safe: `workflow_id` is validated with `re.match(r"^[\w\-]+$", ...)` and the on-disk path is `sha256(workflow_id.encode()).hexdigest()`, never built directly from user input (#1096).
+- **FLAG** — New endpoint is gated behind an env flag from `inference/core/env.py` and excluded for `LAMBDA`/`GCP_SERVERLESS` where the Lambda authorizer can't support it (#1557, #1717).
+- **FLAG** — New env var / flag / numeric bound is declared in `inference/core/env.py` (not read inline in `http_api.py`), with a sane default and, for tuning knobs, a rationale comment (#1611, #1717).
+- **FLAG** — `response_model` type unions use `Union[...]`, not `X | Y` (FastAPI runtime-evals the annotation) (#1599).
+- **FLAG** — A new response header is added to the CORS `expose_headers` list in the `PathAwareCORSMiddleware` block of `http_api.py`, and its constant lives in `constants.py` / `request_metrics.py`.
+- **FLAG** — Request body/stream is read exactly once, via `parse_body_content_for_legacy_request_handler` in `dependencies.py` (#1518).
+- **FLAG** — External numeric inputs (`confidence`, `usage_fps`, `frames`) are guarded before arithmetic: clamp order is correct for percentage-vs-fraction inputs (#1746), and non-numeric values are rejected with `isinstance(x, numbers.Number)` (#795).
+- **FLAG** — Behavior changes bump `inference/core/version.py` `__version__`.
+- **FLAG** — Tests added/updated under `tests/inference/unit_tests/core/interfaces/http/` for the new status / field / header / branch.
+- **NIT** — Exception log level matches severity: `logger.warning(...)` for client-caused/expected (402, missing key), `logger.exception(...)` for server faults; every caught exception is logged, not silently swallowed (#1104).
+- **NIT** — CLI options follow `Annotated[..., typer.Option("--x/--no-x", help=...)]` and are threaded into `start_inference_container(...)` (#1024).
+- **NIT** — Endpoint/CLI changes update `docs/api.md` / `docs/server_configuration/` / `docs/inference_helpers/`.
+
+### Not blocking
+- Do NOT demand a version bump for pure-refactor / comment / test-only diffs that don't change behavior.
+- Do NOT demand CORS `expose_headers` changes for headers that are internal-only or never returned cross-origin.
+- Do NOT demand a new env flag for routes that are already unconditionally serverless-excluded and carry no perf/rollout risk.
+- Response-header aggregation, Prometheus/GPU metrics endpoints, and serializer swaps are recurring revert magnets (#2222, #721, #724, #190) — ask for justification + tests, but a well-tested change here is not automatically a BLOCK.
+
+## Standards
+One canonical statement per rule. The checklist above references these.
+
+- **Exception wrapping.** All routes route their errors through `with_route_exceptions` / `with_route_exceptions_async` in `error_handlers.py`; these decorators ARE the exception→`status_code` contract. The two wrappers must stay mirrored: a new mapped exception needs an arm in both, and specific `except` arms must precede broad tuples.
+- **Error→status mapping.** New public errors get an explicit `status_code` in both wrappers; Roboflow-API-originating errors also get an entry in `DEFAULT_ERROR_HANDLERS` in `roboflow_api.py`. Missing arms fall through to 500.
+- **Response backward-compat.** Responses are pydantic models serialized by `orjson_response(...)` / `orjson_response_keeping_parent_id(...)` in `orjson_utils.py` with `by_alias=True, exclude_none=True`. Public field/alias set is append-only; contractual-but-empty fields must survive `exclude_none` (use `orjson_response_keeping_parent_id` for `parent_id`).
+- **Headers as contract.** Header constants live in `inference/core/constants.py` (`PROCESSING_TIME_HEADER`, `WORKSPACE_ID_HEADER`, …) and `request_metrics.py` (`REMOTE_PROCESSING_TIME_HEADER`). Anything returned cross-origin must be listed in the `expose_headers` of the `PathAwareCORSMiddleware` block in `http_api.py`.
+- **Route gating & serverless.** New endpoints are gated by an `inference/core/env.py` flag via `str2bool(os.getenv("FLAG", "True"))` and excluded under `if not (LAMBDA or GCP_SERVERLESS)` when the Lambda authorizer can't carry them (only path params work). Magic numeric bounds become named env constants (e.g. `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION`), not inline literals.
+- **Serverless authorization.** The `check_authorization_serverless` middleware in `http_api.py` resolves an `api_key`, keys `cached_api_keys` on `(api_key, enforce_credits_verification)` via `AuthorizationCacheEntry`, and returns via `_authorization_error_response`. It handles 200 (authorize), 401 (deny), 402 (credits). Any other/unexpected upstream status must fail closed and must not be cached. Every route reachable in serverless is governed by this middleware; auth semantics are co-owned with `review-topic-auth-and-tenant-security`.
+- **Legacy request parsing.** Legacy `/infer/...` request bodies are read exactly once through `parse_body_content_for_legacy_request_handler` in `dependencies.py`, returning `Optional[Union[bytes, UploadFile]]`.
+- **Builder path safety.** `builder/routes.py` validates `workflow_id` (`^[\w\-]+$`) and resolves files by `sha256(...).hexdigest()`; response times are Firestore-shaped `{"_seconds": int(...)}`.
+- **CLI.** `inference_cli/server.py` options are typer `Annotated[..., typer.Option("--flag/--no-flag", help=...)]` threaded into `start_inference_container(...)`.
 
 ## Key files & entry points
-- `inference/core/interfaces/http/http_api.py` — `HttpInterface` app factory, all route registrations, middleware wiring, CORS `expose_headers`.
+- `inference/core/interfaces/http/http_api.py` — `HttpInterface` app factory; route registrations; `check_authorization_serverless` middleware; `AuthorizationCacheEntry`; CORS `expose_headers` in the `PathAwareCORSMiddleware` block.
 - `inference/core/interfaces/http/error_handlers.py` — `with_route_exceptions` / `with_route_exceptions_async`; the exception→status contract.
-- `inference/core/interfaces/http/orjson_utils.py` — response serialization (`orjson_response`, `orjson_response_keeping_parent_id`).
-- `inference/core/interfaces/http/dependencies.py` — legacy request body/multipart parsing.
-- `inference/core/interfaces/http/builder/routes.py` — builder UI routes (path-safety, response shapes).
+- `inference/core/interfaces/http/orjson_utils.py` — `orjson_response`, `orjson_response_keeping_parent_id`.
+- `inference/core/interfaces/http/dependencies.py` — `parse_body_content_for_legacy_request_handler` (legacy body/multipart parsing).
+- `inference/core/interfaces/http/builder/routes.py` — builder UI routes (path safety, Firestore-shaped responses).
 - `inference/core/interfaces/http/middlewares/{cors,gzip}.py`, `request_metrics.py`, `uvicorn_config.py`.
-- `inference/core/env.py`, `inference/core/version.py`, `inference/core/constants.py`, `inference/core/roboflow_api.py`.
+- `inference/core/exceptions.py`, `inference/core/env.py`, `inference/core/version.py`, `inference/core/constants.py`, `inference/core/roboflow_api.py` (`DEFAULT_ERROR_HANDLERS`).
 - `inference_cli/server.py` — CLI. Tests: `tests/inference/unit_tests/core/interfaces/http/`.
 
 ## Reference PRs
-- [#2099](https://github.com/roboflow/inference/pull/2099) — feature: `PaymentRequiredError` → 402 mirrored across sync+async handlers + roboflow_api status map.
-- [#1557](https://github.com/roboflow/inference/pull/1557) — feature: gate `GET /model/registry` behind `GET_MODEL_REGISTRY_ENABLED` env flag.
-- [#1717](https://github.com/roboflow/inference/pull/1717) — perf: shared workflows thread pool behind `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_*` flags.
-- [#1512](https://github.com/roboflow/inference/pull/1512) — feature: async handlers use `with_route_exceptions_async` (correct decorator import).
-- [#1611](https://github.com/roboflow/inference/pull/1611) — bugfix: reject confidence 0 via `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION` env const.
-- [#1746](https://github.com/roboflow/inference/pull/1746) — bugfix: `elif` skipped confidence lower-bound clamp for percentage inputs.
-- [#1518](https://github.com/roboflow/inference/pull/1518) — bugfix: multipart body read twice; centralized parsing in `dependencies.py`.
-- [#1599](https://github.com/roboflow/inference/pull/1599) — bugfix: retain empty `parent_id` in OCR response; `Union[...]` response_model.
-- [#998](https://github.com/roboflow/inference/pull/998) — bugfix: `WorkflowSyntaxError` needs its own `except` arm (400).
-- [#1096](https://github.com/roboflow/inference/pull/1096) — security: builder path-traversal fix (regex + sha256 file lookup).
-- [#2528](https://github.com/roboflow/inference/pull/2528) / [#2529](https://github.com/roboflow/inference/pull/2529) — bugfix + revert: serverless-auth fail-closed (503, no caching) — high-risk area.
-- [#1024](https://github.com/roboflow/inference/pull/1024) — feature: `--metrics-enabled/--metrics-disabled` CLI flag threaded to container adapter.
+- [#2528](https://github.com/roboflow/inference/pull/2528) / [#2529](https://github.com/roboflow/inference/pull/2529) — bugfix + revert: serverless-auth fail-closed on unexpected upstream status, no caching — high-risk area.
+- [#2099](https://github.com/roboflow/inference/pull/2099) — `PaymentRequiredError` → 402 mirrored across sync+async handlers + `roboflow_api.py` status map.
+- [#1557](https://github.com/roboflow/inference/pull/1557) — gate `GET /model/registry` behind `GET_MODEL_REGISTRY_ENABLED`.
+- [#1717](https://github.com/roboflow/inference/pull/1717) — shared workflows thread pool behind `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_*` flags.
+- [#1512](https://github.com/roboflow/inference/pull/1512) — async handlers import `with_route_exceptions_async` from `error_handlers`.
+- [#1611](https://github.com/roboflow/inference/pull/1611) — reject confidence 0 via `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION` env const.
+- [#1746](https://github.com/roboflow/inference/pull/1746) — `elif` skipped confidence lower-bound clamp for percentage inputs.
+- [#1518](https://github.com/roboflow/inference/pull/1518) — multipart body read twice; centralized parsing in `dependencies.py`.
+- [#1599](https://github.com/roboflow/inference/pull/1599) — retain empty `parent_id` in OCR response; `Union[...]` response_model.
+- [#998](https://github.com/roboflow/inference/pull/998) — `WorkflowSyntaxError` needs its own `except` arm.
+- [#1104](https://github.com/roboflow/inference/pull/1104) — versionless legacy model ids; log every caught exception.
+- [#795](https://github.com/roboflow/inference/pull/795) — guard non-numeric `usage_fps`/`frames` before arithmetic.
+- [#1096](https://github.com/roboflow/inference/pull/1096) / [#1365](https://github.com/roboflow/inference/pull/1365) — builder path-traversal fix (regex + sha256) and Firestore-shaped times.
+- [#1024](https://github.com/roboflow/inference/pull/1024) — `--metrics-enabled/--metrics-disabled` CLI flag threaded to container adapter.
+- [#2222](https://github.com/roboflow/inference/pull/2222) / [#721](https://github.com/roboflow/inference/pull/721) / [#724](https://github.com/roboflow/inference/pull/724) / [#190](https://github.com/roboflow/inference/pull/190) — historically-reverted header-aggregation / metrics / orjson swaps.
 
 ## Related topic skills
-
-When the PR also exhibits these cross-cutting concerns, load the matching topic skill too (see each skill's `description` for the trigger):
-
-- `review-topic-auth-and-tenant-security`
+When the PR also exhibits these cross-cutting concerns, load the matching topic skill too:
+- `review-topic-auth-and-tenant-security` (owns the serverless-auth fail-open rule)
 - `review-topic-backward-compat-and-versioning`
 - `review-topic-external-contract-and-silent-fallback`
 - `review-topic-test-hygiene`

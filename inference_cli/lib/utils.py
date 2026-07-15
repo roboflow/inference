@@ -38,7 +38,7 @@ VIDEOS_EXTENSIONS = [
     "m4b",
     "m4r",
     "m4v",
-    "MP$",
+    "MP4",
     "M4A",
     "M4P",
     "M4B",

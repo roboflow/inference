@@ -66,6 +66,7 @@ GENERIC_MODELS = {
     "doctr": ("ocr", "doctr"),
     "easy_ocr": ("ocr", "easy_ocr"),
     "trocr": ("ocr", "trocr"),
+    "pp_ocr": ("ocr", "pp_ocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),

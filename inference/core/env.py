@@ -15,6 +15,22 @@ from inference.core.warnings import (
 
 load_dotenv(os.getcwd() + "/.env")
 
+# Install warning filters before any module-level ``warnings.warn`` calls below,
+# so these flags also suppress warnings emitted during this module's own import
+# (e.g. the gaze deprecation stub warning), not just warnings raised afterwards.
+INFERENCE_WARNINGS_DISABLED = str2bool(
+    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
+)
+if INFERENCE_WARNINGS_DISABLED:
+    warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)
+
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
@@ -39,6 +55,26 @@ if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
         BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
     )
+
+# SSRF hardening for URL image input (GHSA-hjmm-hr52-vrp2).
+# When enabled, redirects are followed one hop at a time and every hop URL is
+# re-validated (scheme / FQDN / allow-list / block-list) instead of being
+# followed blindly by `requests`. Default is currently False to preserve the
+# legacy behaviour; the default is scheduled to flip to True in Q4 2026.
+VALIDATE_IMAGE_URL_REDIRECTS = str2bool(
+    os.getenv("VALIDATE_IMAGE_URL_REDIRECTS", False)
+)
+# Hard cap on the number of redirect hops allowed when fetching a URL image.
+# Enforced regardless of VALIDATE_IMAGE_URL_REDIRECTS. 30 mirrors the historical
+# `requests` default.
+MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", 30))
+# When False, a URL image whose hostname resolves to a non-global address
+# (loopback, private, link-local/metadata, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP. Default is currently True to preserve
+# the legacy behaviour; the default is scheduled to flip to False in Q4 2026.
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+)
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
@@ -109,7 +145,7 @@ GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
 # OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
 OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
 
-# OWLv2 image cache size, default is 1000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
+# OWLv2 image cache size, default is 10000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
 OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
@@ -118,7 +154,7 @@ OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 # OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
 OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
 
-# OWLv2 CPU image cache size, default is 10000
+# OWLv2 CPU image cache size, default is 1000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
 # OWLv2 compile model, default is True
@@ -149,7 +185,7 @@ CLASS_AGNOSTIC_NMS = str2bool(
     os.getenv(CLASS_AGNOSTIC_NMS_ENV, DEFAULT_CLASS_AGNOSTIC_NMS)
 )
 
-# Confidence threshold, default is 50%
+# Confidence threshold, default is 40%
 CONFIDENCE_ENV = "CONFIDENCE"
 DEFAULT_CONFIDENCE = 0.4
 CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
@@ -211,6 +247,9 @@ CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", Tr
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
 
+# Flag to enable PP-OCR core model, default is True
+CORE_MODEL_PPOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_PPOCR_ENABLED", True))
+
 # Flag to enable GROUNDINGDINO core model, default is True
 CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
@@ -261,6 +300,16 @@ MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
 )
 INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
     os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
+)
+
+# Periodically returns cached-but-unused CUDA memory to the driver
+# (torch.cuda.empty_cache) from a daemon thread, to bound the PyTorch caching
+# allocator high-water mark on long-running servers. Disabled by default.
+ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
+    os.getenv("ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG", "False")
+)
+CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
+    os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
 )
 
 # ID of host device, default is None
@@ -714,6 +763,35 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
 ).lower()  # "local" or "modal"
 
+# JPEG quality used when serializing images for the webexec round-trip.
+# Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
+# shrink payloads significantly for WebRTC preview with minimal visual impact.
+WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
+
+# Transport protocol for webexec execution: "http" or "websocket".
+# Modal code validation always uses the HTTP execute-block endpoint, so
+# websocket deployments must keep both execute-block and wsapp deployed.
+WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
+
+# Websocket transport timeouts. Keep connection establishment fast, but allow
+# reads to wait for Modal's custom block execution budget.
+WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
+)
+# Set slightly above the server's 700s execution budget (modal_app.py Executor
+# timeout) so that when a block hits the server limit, the server's error frame
+# arrives before the client read times out. Equal values race and surface an
+# ambiguous "connection lost after send" instead of the real server error.
+WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
+)
+
+WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))
+WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
+    os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
+)
+
+
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
 _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
@@ -722,6 +800,10 @@ _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
 MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+MODAL_WEB_ENDPOINT_URL = os.getenv("MODAL_WEB_ENDPOINT_URL", "")
+MODAL_WS_ENDPOINT_URL = os.getenv("MODAL_WS_ENDPOINT_URL", "")
+WEBEXEC_MODAL_APP_NAME = os.getenv("WEBEXEC_MODAL_APP_NAME", f"webexec-{PROJECT}")
+WEBEXEC_INFERENCE_VERSION = os.getenv("WEBEXEC_INFERENCE_VERSION")
 
 # Control whether anonymous Modal execution is allowed (when no api_key is available)
 MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
@@ -733,14 +815,6 @@ MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
 )
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
-
-INFERENCE_WARNINGS_DISABLED = str2bool(
-    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
-)
-
-if INFERENCE_WARNINGS_DISABLED:
-    warnings.simplefilter("ignore", InferenceDeprecationWarning)
-    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
@@ -831,12 +905,6 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
 # Control SSL certificate verification for requests to the Roboflow API
 # Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
 ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
-
-IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
-    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
-)
-if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
-    warnings.simplefilter("ignore", ModelDependencyMissing)
 
 DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
 MEMORY_FREE_THRESHOLD = float(

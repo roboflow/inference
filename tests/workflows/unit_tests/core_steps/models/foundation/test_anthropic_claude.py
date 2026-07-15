@@ -13,6 +13,8 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 i
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V3,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     MAX_OUTPUT_TOKENS as MAX_OUTPUT_TOKENS_V3,
 )
 

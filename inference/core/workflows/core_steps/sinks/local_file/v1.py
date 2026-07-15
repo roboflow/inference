@@ -286,6 +286,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
             file_name_prefix=file_name_prefix,
             file_type=file_type,
         )
+        self._verify_write_access_to_directory(target_directory=target_path)
         return handle_content_saving(
             target_path=target_path,
             file_operation_mode="w",
@@ -356,6 +357,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
             file_name_prefix=file_name_prefix,
             file_type=extension,
         )
+        self._verify_write_access_to_directory(target_directory=file_path)
         parent_dir = os.path.dirname(file_path)
         os.makedirs(parent_dir, exist_ok=True)
         return open(file_path, "w")

@@ -151,6 +151,13 @@ def take_static_crop(
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
+    image_height, image_width = image.numpy_image.shape[:2]
+    x_min = max(0, x_min)
+    y_min = max(0, y_min)
+    x_max = min(image_width, x_max)
+    y_max = min(image_height, y_max)
+    if x_max <= x_min or y_max <= y_min:
+        return None
     cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
     if not cropped_image.size:
         return None
