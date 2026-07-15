@@ -124,7 +124,9 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
     ) -> BlockResult:
         # sv.BlurAnnotator blurs the `xyxy` box region and never reads `.mask`;
         # skip the device->host dense-mask materialisation.
-        predictions = to_supervision_for_annotation(predictions, materialise_masks=False)
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         annotator = self.getAnnotator(kernel_size)
         scene = image.numpy_image
         if copy_image:

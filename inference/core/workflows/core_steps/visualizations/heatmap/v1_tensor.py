@@ -278,7 +278,9 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
         # (get_anchors_coordinates); this block's `position` excludes
         # CENTER_OF_MASS, so no path reads `.mask`. Skip the device->host
         # dense-mask materialisation.
-        predictions = to_supervision_for_annotation(predictions, materialise_masks=False)
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         self._cleanup_history()
         detections_to_plot = predictions
         video_id = metadata.video_identifier if metadata else "default_video"

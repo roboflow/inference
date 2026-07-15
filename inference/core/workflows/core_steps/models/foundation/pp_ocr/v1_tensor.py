@@ -42,9 +42,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     native_detections_from_inference_predictions,
 )
 from inference.core.workflows.core_steps.common.utils import load_core_model
-from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAME_KEY,
-)
+from inference.core.workflows.execution_engine.constants import CLASS_NAME_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,

@@ -502,9 +502,7 @@ def _merge_native_detections(
     # confidence (they come from the input predictions' device); a CPU mask here
     # would build a mixed-device InstanceDetections that later fails to
     # concatenate with CUDA/MPS model predictions.
-    mask = (
-        torch.from_numpy(np.stack(mask_rows, axis=0)).to(torch.bool).to(xyxy.device)
-    )
+    mask = torch.from_numpy(np.stack(mask_rows, axis=0)).to(torch.bool).to(xyxy.device)
     return InstanceDetections(
         xyxy=xyxy,
         class_id=class_id,

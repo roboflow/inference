@@ -174,7 +174,9 @@ class EllipseVisualizationBlockV1(ColorableVisualizationBlock):
     ) -> BlockResult:
         # sv.EllipseAnnotator draws from `xyxy` only and never reads `.mask`;
         # skip the device->host dense-mask materialisation.
-        predictions = to_supervision_for_annotation(predictions, materialise_masks=False)
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
