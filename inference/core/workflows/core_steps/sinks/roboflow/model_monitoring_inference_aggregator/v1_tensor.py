@@ -66,6 +66,13 @@ TensorNativePrediction = Union[
     MultiLabelClassificationPrediction,
 ]
 
+# Key the classification model producers attach to `image_metadata` carrying the
+# resolved confidence threshold. Defined locally (mirroring the other `_tensor`
+# classification blocks) so this file stays self-contained. Flag-OFF the numpy
+# classification response was already cut at this threshold before model monitoring
+# ever saw it, so the tensor sink must apply the same cut here.
+CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY = "classification_confidence_threshold"
+
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 
 LONG_DESCRIPTION = """
@@ -471,10 +478,34 @@ def format_predictions_for_model_monitoring(
                 prediction_type = image_metadata.get(PREDICTION_TYPE_KEY, "")
                 inference_id = image_metadata.get(INFERENCE_ID_KEY, "")
                 image_confidence = predictions.confidence[image_index].detach().cpu()
+                confidence_threshold = image_metadata.get(
+                    CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY
+                )
+                # Mirror the numpy `prepare_classification_response` /
+                # `_serialise_classification_model_style` semantics that flag-OFF
+                # produced the serialised `predictions` list model monitoring then
+                # iterated: drop classes whose (raw) softmax score is below the
+                # confidence threshold when the producer attached one, round each
+                # surviving score to 4 dp, and sort descending by confidence. Without
+                # this the sink emitted one entry per class of the FULL class map
+                # (e.g. 1000 for a 1000-class model) with raw softmax scores, diverging
+                # from the few above-threshold, rounded entries flag-OFF reports.
+                per_class_predictions = []
                 for class_id in sorted(class_names):
+                    class_score = float(image_confidence[class_id])
+                    if (
+                        confidence_threshold is not None
+                        and class_score < confidence_threshold
+                    ):
+                        continue
+                    per_class_predictions.append(
+                        (class_names[class_id], round(class_score, 4))
+                    )
+                per_class_predictions.sort(key=lambda item: item[1], reverse=True)
+                for class_name, class_confidence in per_class_predictions:
                     pred_instance = ParsedPrediction(
-                        class_name=class_names[class_id],
-                        confidence=float(image_confidence[class_id]),
+                        class_name=class_name,
+                        confidence=class_confidence,
                         inference_id=inference_id,
                         model_type=prediction_type,
                         model_id=model_id,
@@ -490,10 +521,27 @@ def format_predictions_for_model_monitoring(
             prediction_type = image_metadata.get(PREDICTION_TYPE_KEY, "")
             inference_id = image_metadata.get(INFERENCE_ID_KEY, "")
             confidence = predictions.confidence.detach().cpu()
+            confidence_threshold = image_metadata.get(
+                CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY
+            )
+            # Mirror the numpy multi-label serialisation model monitoring consumed
+            # flag-OFF (`prepare_multi_label_classification_response` /
+            # `_serialise_classification_model_style`): the `predictions` dict keeps
+            # every class whose (raw, UNROUNDED) sigmoid score clears the confidence
+            # threshold when the producer attached one (e.g. visual_search_classifier
+            # gap-fills a dense vector and attaches it); plain model predictions attach
+            # no threshold and keep every class. Unlike single-label, numpy does NOT
+            # round or sort the multi-label dict, so neither do we.
             for class_id in sorted(class_names):
+                class_score = float(confidence[class_id])
+                if (
+                    confidence_threshold is not None
+                    and class_score < confidence_threshold
+                ):
+                    continue
                 pred_instance = ParsedPrediction(
                     class_name=class_names[class_id],
-                    confidence=float(confidence[class_id]),
+                    confidence=class_score,
                     inference_id=inference_id,
                     model_type=prediction_type,
                     model_id=model_id,
