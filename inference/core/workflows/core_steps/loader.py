@@ -376,6 +376,9 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainti
 from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
     StabilityAIOutpaintingBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.twelvelabs.v1 import (
+    TwelveLabsPegasusBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -955,6 +958,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV3,
         TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
+        TwelveLabsPegasusBlockV1,
         TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
