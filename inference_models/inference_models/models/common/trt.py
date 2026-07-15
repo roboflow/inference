@@ -576,6 +576,11 @@ def infer_from_trt_engine(
         )
     if synchronize:
         stream.synchronize()
+    else:
+        produce_event = torch.cuda.Event()
+        produce_event.record(stream)
+        for result in results:
+            result._trt_produce_event = produce_event  # type: ignore[attr-defined]
     return results
 
 
