@@ -56,6 +56,7 @@ from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
     ROOT_PARENT_ORIGIN_KEY,
+    SERIALISE_POLYGONS_KEY,
     SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
     SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
     SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
@@ -84,6 +85,17 @@ from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mas
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 
+# D4 discriminator signals. A single native ``ClassificationPrediction`` /
+# ``MultiLabelClassificationPrediction`` type is emitted by producers whose flag-OFF
+# JSON has two INCOMPATIBLE shapes (see ``serialise_native_classification``): the
+# numpy ``*InferenceResponse`` "model" shape and the hand-built ``vlm_as_classifier``
+# "formatter" shape. Since the tensors cannot self-describe which shape they want,
+# we infer it from metadata the producers already attach - the model producers carry
+# a confidence threshold and/or ``root_parent_id`` and/or ``time``; the vlm formatter
+# carries none of these.
+_CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY = "classification_confidence_threshold"
+_TIME_KEY = "time"
+
 
 def serialise_sv_detections(
     detections: TensorNativeDetections,
@@ -103,20 +115,40 @@ def serialise_sv_detections(
 
 def _serialise_sv_detections(
     detections: TensorNativeDetections,
+    emit_polygons: Optional[bool] = None,
 ) -> Tuple[dict, List[dict], List[int]]:
     """Shared core for the detection serialisers.
 
     Returns the serialised image metadata, the per-box prediction dicts (after the
     polygon-None skip) and the ORIGINAL row index of each surviving prediction so
     downstream serialisers (e.g. RLE) can re-align masks despite skipped instances.
+
+    ``emit_polygons`` controls the per-instance mask -> ``points`` polygon work
+    (the RLE-decode + ``mask_to_polygon``/``findContours`` cost):
+
+    * ``None`` (default): resolve from ``image_metadata[SERIALISE_POLYGONS_KEY]``,
+      defaulting to ``True`` when the key is ABSENT. Absent-key behaviour is
+      byte-identical to the historical serialiser (polygons computed & emitted,
+      instances with an empty contour dropped). A producer that sets the key to
+      ``False`` gets the polygon work skipped: instances are kept (no drop) and
+      no ``points`` field is emitted.
+    * ``False`` (forced): callers that discard the polygon anyway (the native RLE
+      serialiser) pass this to avoid the wasted O(N*H*W) computation. Overrides the
+      metadata flag.
     """
     if not isinstance(detections, (Detections, InstanceDetections)):
+        # C2: this typed path only accepts the native tensor objects. ``sv.Detections``
+        # is routed to the numpy serialiser by ``serialize_wildcard_kind`` instead, so
+        # the message must NOT claim this function accepts it.
         raise ValueError(
-            f"serialise_sv_detections(...) expected `inference_models.Detections`, "
-            f"`inference_models.InstanceDetections` or `sv.Detections`, "
-            f"got {type(detections)}."
+            f"serialise_sv_detections(...) expected `inference_models.Detections` "
+            f"or `inference_models.InstanceDetections`, got {type(detections)}."
         )
     image_metadata = detections.image_metadata or {}
+    if emit_polygons is None:
+        # Absent key -> True -> historical behaviour (byte-identical). Producer may
+        # set it to False to disable polygon emission.
+        emit_polygons = image_metadata.get(SERIALISE_POLYGONS_KEY, True)
     detections_number = int(detections.xyxy.shape[0])
     bboxes_metadata = detections.bboxes_metadata
     if bboxes_metadata is None:
@@ -145,7 +177,7 @@ def _serialise_sv_detections(
         detection_dict[Y_KEY] = y1 + detection_dict[HEIGHT_KEY] / 2
         detection_dict[CONFIDENCE_KEY] = float(confidences[index])
         detection_dict[CLASS_ID_KEY] = class_ids[index]
-        if isinstance(detections, InstanceDetections):
+        if isinstance(detections, InstanceDetections) and emit_polygons:
             polygon = _resolve_instance_polygon(
                 mask=detections.mask, index=index, data=data
             )
@@ -306,10 +338,12 @@ def serialise_native_rle_detections(detections: InstanceDetections) -> dict:
     """C3 native RLE serialiser for the rle-instance-seg and semantic-seg kinds.
 
     Emits the same per-box prediction dicts as ``serialise_sv_detections`` (re-using
-    its class-name / detection_id / image_metadata logic) but replaces the per-box
-    ``polygon`` with the COCO RLE pulled straight from the carried
-    ``InstancesRLEMasks`` (no polygon collapse). Masks are attached by ORIGINAL row
-    index so they stay aligned after polygon-None skips.
+    its class-name / detection_id / image_metadata logic) but attaches the COCO RLE
+    pulled straight from the carried ``InstancesRLEMasks`` instead of a ``points``
+    polygon. Polygon computation is skipped up front (``emit_polygons=False``) so the
+    O(N*H*W) mask->polygon work is never spent on a value that would only be popped;
+    as a consequence no instance is dropped for an empty contour and every box keeps
+    its RLE, attached by ORIGINAL row index.
     """
     if not isinstance(detections, InstanceDetections):
         raise ValueError(
@@ -322,11 +356,10 @@ def serialise_native_rle_detections(detections: InstanceDetections) -> dict:
             f"carried as `InstancesRLEMasks`, got {type(detections.mask)}."
         )
     serialized_image_metadata, serialized_detections, kept_indices = (
-        _serialise_sv_detections(detections=detections)
+        _serialise_sv_detections(detections=detections, emit_polygons=False)
     )
     rle_masks = detections.mask.to_coco_rle_masks()
     for detection_dict, original_index in zip(serialized_detections, kept_indices):
-        detection_dict.pop(POLYGON_KEY, None)
         rle = rle_masks[original_index]
         counts = rle.get("counts")
         if isinstance(counts, bytes):
@@ -378,26 +411,40 @@ def serialise_native_classification(
     prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
 ) -> dict:
     """Serialise a native single-label ``ClassificationPrediction`` (single-row,
-    bs=1) or a native ``MultiLabelClassificationPrediction`` into the same output
-    dict shape the numpy classification blocks produce.
+    bs=1) or a native ``MultiLabelClassificationPrediction`` into the response dict
+    the numpy classification blocks produce flag-OFF.
 
     The ``class_id -> name`` map is read from the prediction's metadata
     (``image_metadata[CLASS_NAMES_KEY]``). Single-label carries PLURAL
     ``images_metadata`` (list, [0] used); multi-label carries SINGULAR
     ``image_metadata`` (dict).
 
-    Key ordering mirrors the numpy path byte-for-byte (the response
-    ``model_dump(by_alias=True, exclude_none=True)`` followed by the block's
-    in-place ``prediction_type`` / ``parent_id`` / ``root_parent_id`` writes):
-    ``inference_id`` first, then ``image``, the predictions section, and the
-    appended lineage keys. Per-entry order follows the pydantic field order of
-    ``ClassificationPrediction`` (``class``, ``class_id``, ``confidence``) /
-    ``MultiLabelClassificationPrediction`` (``confidence``, ``class_id``).
-    ``time`` (model-call elapsed, stamped by ``Model.infer_from_request`` on
-    the numpy path or by the server on remote responses) sits between
-    ``inference_id`` and ``image`` in the dump; tensor blocks stamp/copy it
-    into the image metadata, so the output shape matches the numpy dump
-    exactly (the value itself is nondeterministic wall-clock).
+    IMPORTANT - two INCOMPATIBLE flag-OFF shapes share this one serialiser, because
+    the tensor-native ``CLASSIFICATION_PREDICTION_KIND`` is produced both by model
+    blocks and by hand-built formatter blocks:
+
+    * "model" shape - roboflow multi_class / multi_label classification model blocks
+      (and visual_search_classifier). Flag-OFF these ``model_dump(by_alias=True,
+      exclude_none=True)`` a numpy ``*InferenceResponse`` then append
+      ``prediction_type`` / ``parent_id`` / ``root_parent_id``. Dict is
+      ``inference_id``-first (``time`` right after when present); single-label is
+      confidence-threshold FILTERED, ``round(..., 4)`` and SORTED desc; a
+      ``prediction_type`` key is appended.
+    * "formatter" shape - ``vlm_as_classifier`` (D4). Flag-OFF it hand-builds the
+      dict and passes it through UNSERIALISED, so it is ``image``-first, in INSERTION
+      (== class_id) order, UNROUNDED, with NO threshold filter and NO
+      ``prediction_type``. Key order single-label
+      ``image, predictions, top, confidence, inference_id, parent_id``; multi-label
+      ``image, predictions, predicted_classes, inference_id, parent_id``.
+
+    A native prediction cannot self-describe which shape it wants, so the shape is
+    inferred from metadata the producers already attach (see
+    ``_wants_model_style_classification``). NOTE (reported): this is an interim
+    heuristic - an explicit producer-set style key would be cleaner - and the
+    formatter shape cannot reproduce the numpy vlm ``class_id = -1`` for an
+    out-of-list class, because the native producer collapses such classes into a
+    dense ``len(classes)`` id before building the tensors (in-list classes ARE
+    byte-identical).
     """
     if isinstance(prediction, ClassificationPrediction):
         metadata_list = prediction.images_metadata or [{}]
@@ -428,6 +475,55 @@ def serialise_native_classification(
             "height": int(image_dimensions[0]),
         }
 
+    if _wants_model_style_classification(image_metadata):
+        return _serialise_classification_model_style(
+            prediction=prediction,
+            image_metadata=image_metadata,
+            class_names_mapping=class_names_mapping,
+            serialized_image_metadata=serialized_image_metadata,
+        )
+    return _serialise_classification_formatter_style(
+        prediction=prediction,
+        image_metadata=image_metadata,
+        class_names_mapping=class_names_mapping,
+        serialized_image_metadata=serialized_image_metadata,
+    )
+
+
+def _wants_model_style_classification(image_metadata: dict) -> bool:
+    """D4: choose which flag-OFF classification shape to reproduce.
+
+    ``True`` -> numpy ``*InferenceResponse``-derived "model" shape (today's
+    behaviour). ``False`` -> hand-built ``vlm_as_classifier`` "formatter" shape.
+
+    The vlm formatter attaches only CLASS_NAMES / PREDICTION_TYPE / IMAGE_DIMENSIONS
+    / INFERENCE_ID / PARENT_ID. The model producers additionally attach a confidence
+    threshold (multi_class model blocks), ``root_parent_id`` (all model blocks +
+    visual_search_classifier) and/or ``time``. Presence of ANY of the three signals
+    the model shape. This keeps every existing model producer - and the pinned
+    key-ordering tests, which set ``root_parent_id`` - on today's output while
+    letting the vlm formatter reach its byte-identical flag-OFF dict.
+    """
+    return (
+        image_metadata.get(_CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY) is not None
+        or image_metadata.get(ROOT_PARENT_ID_KEY) is not None
+        or image_metadata.get(_TIME_KEY) is not None
+    )
+
+
+def _serialise_classification_model_style(
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
+    image_metadata: dict,
+    class_names_mapping: dict,
+    serialized_image_metadata: dict,
+) -> dict:
+    """Numpy ``*InferenceResponse``-derived "model" shape (unchanged behaviour).
+
+    Key order mirrors the numpy ``model_dump(by_alias=True, exclude_none=True)``
+    followed by the block's in-place ``prediction_type`` / ``parent_id`` /
+    ``root_parent_id`` writes: ``inference_id`` first, ``time`` next when present,
+    then ``image``, the predictions section, and the appended lineage keys.
+    """
     result: dict = {}
     # numpy dump order puts inference_id BEFORE image (InferenceResponse base
     # fields precede CvInferenceResponse.image in the pydantic MRO).
@@ -436,18 +532,20 @@ def serialise_native_classification(
     # `time` sits between inference_id and image in the numpy dump
     # (InferenceResponse declares inference_id, frame_id, time before
     # CvInferenceResponse.image; frame_id is None-excluded in workflows).
-    if image_metadata.get("time") is not None:
-        result["time"] = image_metadata["time"]
+    if image_metadata.get(_TIME_KEY) is not None:
+        result[_TIME_KEY] = image_metadata[_TIME_KEY]
     result["image"] = serialized_image_metadata
 
     if isinstance(prediction, ClassificationPrediction):
         # confidence: (1, num_classes) full softmax; class_id: (1,)
         confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
-        # C2: mirror the numpy `prepare_classification_response` cutoff - drop classes
+        # Mirror the numpy `prepare_classification_response` cutoff - drop classes
         # whose (raw) score is below the resolved threshold when the producer attached
         # it; otherwise keep the full softmax. Rounding/sort match the numpy
         # `ClassificationInferenceResponse` (round(score, 4); sort desc by confidence).
-        confidence_threshold = image_metadata.get("classification_confidence_threshold")
+        confidence_threshold = image_metadata.get(
+            _CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY
+        )
         individual_classes_predictions = []
         for class_id, score in enumerate(confidence_vector):
             class_score = float(score)
@@ -479,11 +577,13 @@ def serialise_native_classification(
     else:
         # MultiLabel: confidence (num_classes,) sigmoid; class_ids = predicted ids
         confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
-        # Same C2 opt-in cutoff as the multi-class branch above: producers that
+        # Same opt-in cutoff as the multi-class branch above: producers that
         # gap-fill a dense vector (e.g. visual_search_classifier) attach the
         # threshold so their synthetic zero-confidence entries are dropped;
         # model predictions attach no threshold and keep every class.
-        confidence_threshold = image_metadata.get("classification_confidence_threshold")
+        confidence_threshold = image_metadata.get(
+            _CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY
+        )
         predictions_dict = {
             str(class_names_mapping.get(class_id, class_id)): {
                 "confidence": float(score),
@@ -509,6 +609,70 @@ def serialise_native_classification(
     ):
         if image_metadata.get(source_key) is not None:
             result[source_key] = image_metadata[source_key]
+    return result
+
+
+def _serialise_classification_formatter_style(
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
+    image_metadata: dict,
+    class_names_mapping: dict,
+    serialized_image_metadata: dict,
+) -> dict:
+    """D4: reproduce the hand-built ``vlm_as_classifier`` flag-OFF dict byte-for-byte.
+
+    Single-label key order: ``image, predictions, top, confidence, inference_id,
+    parent_id``. Multi-label: ``image, predictions, predicted_classes, inference_id,
+    parent_id``. Predictions are in INSERTION (== class_id) order, confidences are
+    UNROUNDED, there is no threshold filter and no ``prediction_type`` key. Per-entry
+    order matches the numpy vlm path (single-label ``class, class_id, confidence``;
+    multi-label ``confidence, class_id``).
+
+    Residual divergences (reported, not fixable in the serialiser): (a) an out-of-list
+    class gets a dense ``len(classes)`` id from the producer instead of the numpy
+    ``-1`` (in-list classes are byte-identical); (b) confidences are read back through
+    a float32 tensor, so their least-significant digits can differ from the numpy
+    float. ``top`` / ``confidence`` are taken from the native argmax id, matching the
+    numpy path even when the top class was out-of-list.
+    """
+    result: dict = {"image": serialized_image_metadata}
+
+    if isinstance(prediction, ClassificationPrediction):
+        confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
+        result["predictions"] = [
+            {
+                "class": class_names_mapping.get(class_id, class_id),
+                "class_id": class_id,
+                "confidence": float(score),
+            }
+            for class_id, score in enumerate(confidence_vector)
+        ]
+        top_ids = prediction.class_id.detach().cpu().reshape(-1).tolist()
+        top_id = int(top_ids[0]) if top_ids else None
+        if top_id is not None and 0 <= top_id < len(confidence_vector):
+            result["top"] = class_names_mapping.get(top_id, top_id)
+            result["confidence"] = float(confidence_vector[top_id])
+        else:
+            # Empty prediction - numpy vlm never emits this (there is always a top),
+            # but keep the numpy `ClassificationInferenceResponse` empty fallback.
+            result["top"] = ""
+            result["confidence"] = 0.0
+    else:
+        confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
+        result["predictions"] = {
+            class_names_mapping.get(class_id, class_id): {
+                "confidence": float(score),
+                "class_id": class_id,
+            }
+            for class_id, score in enumerate(confidence_vector)
+        }
+        result["predicted_classes"] = [
+            class_names_mapping.get(int(class_id), int(class_id))
+            for class_id in prediction.class_ids.detach().cpu().tolist()
+        ]
+
+    # Trailing keys, matching the numpy vlm dict (always present there).
+    result[INFERENCE_ID_KEY] = image_metadata.get(INFERENCE_ID_KEY)
+    result[PARENT_ID_KEY] = image_metadata.get(PARENT_ID_KEY)
     return result
 
 
