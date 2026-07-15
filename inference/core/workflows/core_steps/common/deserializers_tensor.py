@@ -485,7 +485,9 @@ def deserialize_native_classification_prediction_kind(
     input cannot be represented losslessly in the native (dense, index==class_id) structure
     and will normalise rather than preserve. Flagged in the owner report.
     """
-    if isinstance(value, (ClassificationPrediction, MultiLabelClassificationPrediction)):
+    if isinstance(
+        value, (ClassificationPrediction, MultiLabelClassificationPrediction)
+    ):
         return value
     value = _validate_classification_dict(parameter=parameter, value=value)
     if "predicted_classes" in value:
@@ -611,7 +613,9 @@ def _build_single_label_prediction(value: dict) -> ClassificationPrediction:
             [top_class_id], dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
         ),
         confidence=torch.tensor(
-            [confidence_vector], dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            [confidence_vector],
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
         ),
         images_metadata=[image_metadata],
     )
