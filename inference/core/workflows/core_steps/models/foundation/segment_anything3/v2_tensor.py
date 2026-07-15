@@ -28,11 +28,11 @@ import requests
 from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from inference.core import logger
 from inference.core.entities.requests.sam3 import Sam3Prompt
 from inference.core.env import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
-    GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -171,10 +171,17 @@ class BlockManifest(WorkflowBlockManifest):
         description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
         examples=[0.5, 0.9],
     )
+    # NOTE (BREAKING CHANGE, tensor path): `mask_representation` is retained for
+    # schema stability but is NO LONGER HONORED — RLE mask output is enforced
+    # ALWAYS (see run()). The 'dense' carrier is a flag-on-only option with no
+    # flag-off analog (the numpy SAM3 v2 sibling has no such field), so honoring it
+    # would break the flag-on == flag-off JSON contract. A non-'rle' selection is
+    # downgraded to 'rle' with a warning.
     mask_representation: Literal["rle", "dense"] = Field(
         default="rle",
-        description="Carrier for instance masks. RLE (compact) by default; forced to "
-        "'rle' on GCP_SERVERLESS regardless of this value.",
+        description="Carrier for instance masks. RLE is always enforced on the "
+        "tensor path; a non-'rle' value is ignored (downgraded to 'rle') with a "
+        "warning. Breaking change vs the flag-on-only 'dense' option.",
     )
 
     @field_validator("nms_iou_threshold")
@@ -279,7 +286,18 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: Literal["rle", "dense"],
     ) -> BlockResult:
-        if GCP_SERVERLESS:
+        # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS,
+        # regardless of the requested `mask_representation`. The 'dense' carrier is a
+        # flag-on-only option with no flag-off analog, so honoring it would break the
+        # flag-on == flag-off JSON contract. A non-'rle' selection is downgraded to
+        # 'rle' with a warning. (Previously RLE was forced only on GCP_SERVERLESS.)
+        if mask_representation != "rle":
+            logger.warning(
+                "SAM3 v2 (tensor) block: mask_representation=%r is not honored; RLE "
+                "mask output is enforced. Selecting a non-'rle' carrier is a no-op "
+                "(breaking change vs the flag-on-only 'dense' option).",
+                mask_representation,
+            )
             mask_representation = "rle"
         class_names = _normalize_class_names(class_names)
         if SAM3_EXEC_MODE == "remote":

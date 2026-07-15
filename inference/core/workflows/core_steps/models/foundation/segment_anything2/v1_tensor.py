@@ -5,9 +5,9 @@ import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
+from inference.core import logger
 from inference.core.env import (
     CORE_MODEL_SAM2_ENABLED,
-    GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -133,15 +133,17 @@ class BlockManifest(WorkflowBlockManifest):
         description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
         examples=[True, "$inputs.multimask_output"],
     )
+    # NOTE (BREAKING CHANGE, tensor path): `mask_representation` is retained for
+    # schema stability but is NO LONGER HONORED — RLE mask output is enforced
+    # ALWAYS (see run()). The 'dense' carrier is a flag-on-only option with no
+    # flag-off analog (the numpy SAM2 sibling has no such field), so honoring it
+    # would break the flag-on == flag-off JSON contract. A non-'rle' selection is
+    # downgraded to 'rle' with a warning.
     mask_representation: Literal["rle", "dense"] = Field(
         default="rle",
-        description="Carrier for instance masks. RLE (compact) by default; forced to "
-        "'rle' on GCP_SERVERLESS regardless of this value.",
-    )
-    collapse_to_most_confident: bool = Field(
-        default=True,
-        description="Collapse SAM2 multi-mask proposals to the single most-confident "
-        "mask per prompt.",
+        description="Carrier for instance masks. RLE is always enforced on the "
+        "tensor path; a non-'rle' value is ignored (downgraded to 'rle') with a "
+        "warning. Breaking change vs the flag-on-only 'dense' option.",
     )
 
     @classmethod
@@ -225,10 +227,19 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         threshold: float,
         multimask_output: bool,
         mask_representation: Literal["rle", "dense"],
-        collapse_to_most_confident: bool,
     ) -> BlockResult:
-        # GCP_SERVERLESS forces RLE regardless of the requested knob.
-        if GCP_SERVERLESS:
+        # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS,
+        # regardless of the requested `mask_representation`. The 'dense' carrier is a
+        # flag-on-only option with no flag-off analog, so honoring it would break the
+        # flag-on == flag-off JSON contract. A non-'rle' selection is downgraded to
+        # 'rle' with a warning. (Previously RLE was forced only on GCP_SERVERLESS.)
+        if mask_representation != "rle":
+            logger.warning(
+                "Segment Anything 2 (tensor) block: mask_representation=%r is not "
+                "honored; RLE mask output is enforced. Selecting a non-'rle' carrier "
+                "is a no-op (breaking change vs the flag-on-only 'dense' option).",
+                mask_representation,
+            )
             mask_representation = "rle"
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -238,7 +249,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 threshold=threshold,
                 multimask_output=multimask_output,
                 mask_representation=mask_representation,
-                collapse_to_most_confident=collapse_to_most_confident,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -248,7 +258,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 threshold=threshold,
                 multimask_output=multimask_output,
                 mask_representation=mask_representation,
-                collapse_to_most_confident=collapse_to_most_confident,
             )
         raise ValueError(f"Unknown step execution mode: {self._step_execution_mode}")
 
@@ -260,7 +269,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         threshold: float,
         multimask_output: bool,
         mask_representation: Literal["rle", "dense"],
-        collapse_to_most_confident: bool,
     ) -> BlockResult:
         sam_model_id = f"sam2/{version}"
         self._model_manager.add_model(
@@ -296,7 +304,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 image=image,
                 prompt_detections=prompt_detections,
                 threshold=threshold,
-                collapse=collapse_to_most_confident,
                 mask_representation=mask_representation,
             )
             results.append({"predictions": instance_detections})
@@ -310,7 +317,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         threshold: float,
         multimask_output: bool,
         mask_representation: Literal["rle", "dense"],
-        collapse_to_most_confident: bool,
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -322,13 +328,8 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             client.select_api_v0()
 
         # The SAM2 server always collapses to the most-confident mask per prompt
-        # (segment_image -> choose_most_confident_sam_prediction), so collapse=False
-        # cannot be honored remotely.
-        if not collapse_to_most_confident:
-            raise NotImplementedError(
-                "collapse_to_most_confident=False is not supported on the remote SAM2 "
-                "path (the server always returns the most-confident mask)."
-            )
+        # (segment_image -> choose_most_confident_sam_prediction), matching the numpy
+        # sibling; there is no non-collapsed mode.
         boxes_iter = boxes if boxes is not None else [None] * len(images)
         results: List[dict] = []
         for image, boxes_for_image in zip(images, boxes_iter):
@@ -409,15 +410,10 @@ def _sam2_prediction_to_instance_detections(
     image: WorkflowImageData,
     prompt_detections,
     threshold: float,
-    collapse: bool,
     mask_representation: str,
 ) -> InstanceDetections:
-    if not collapse:
-        # Non-collapsed output (multiple proposals per prompt) has no defined
-        # instance semantics yet — needs a product decision before wiring.
-        raise NotImplementedError(
-            "collapse_to_most_confident=False is not yet defined for tensor SAM2."
-        )
+    # SAM2 always collapses to the single most-confident mask per prompt, matching
+    # the numpy sibling (choose_most_confident_sam_prediction).
     selected_masks, selected_scores = _choose_most_confident_torch(
         sam2_prediction.masks, sam2_prediction.scores
     )  # (m, H, W) mask logits, (m,)

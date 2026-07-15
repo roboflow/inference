@@ -1,11 +1,17 @@
 """Tensor-native sibling of `roboflow_core/sam3@v3`.
 
 v3 = v2 (per-class thresholds + cross-prompt NMS) plus `class_mapping` (rename
-predicted class names after inference). The numpy v3's `output_format`
-(rle/polygons response-wire knob) has no LOCAL-tensor analog —
-`run_tensor_native_inference` always returns raw binary masks — so it is replaced by
-the tensor `mask_representation` carrier (rle/dense), whose default "rle" matches v3's
-default `output_format="rle"`.
+predicted class names after inference).
+
+BREAKING CHANGE (tensor path) — mask output format: the numpy v3's `output_format`
+(`Literal["rle", "polygons"]`) has no LOCAL-tensor analog —
+`run_tensor_native_inference` always returns raw binary masks — so this tensor
+sibling exposes `mask_representation` (`Literal["rle", "dense"]`) instead, DROPPING
+the `polygons` option. Per product decision, RLE output is now ENFORCED ALWAYS on
+this tensor path (see run()): the `mask_representation` field is retained for schema
+stability but is no longer honored — a non-'rle' selection (dense) is downgraded to
+'rle' with a warning. The numpy v3 sibling KEEPS its original
+`output_format: Literal["rle", "polygons"]` literal unchanged.
 
 Output kinds: the numpy v3 declares DUAL kinds
 (RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND + INSTANCE_SEGMENTATION_PREDICTION_KIND).
@@ -38,11 +44,11 @@ import numpy as np
 import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from inference.core import logger
 from inference.core.entities.requests.sam3 import Sam3Prompt
 from inference.core.env import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
-    GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -174,10 +180,17 @@ class BlockManifest(WorkflowBlockManifest):
         description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
         examples=[0.5, 0.9],
     )
+    # NOTE (BREAKING CHANGE, tensor path): `mask_representation` replaces numpy v3's
+    # `output_format: Literal["rle", "polygons"]`, DROPPING the 'polygons' option.
+    # It is retained for schema stability but is NO LONGER HONORED — RLE mask output
+    # is enforced ALWAYS (see run()). A non-'rle' selection ('dense') is downgraded
+    # to 'rle' with a warning. The numpy v3 sibling keeps its original literal.
     mask_representation: Literal["rle", "dense"] = Field(
         default="rle",
-        description="Carrier for instance masks. RLE (compact) by default; forced to "
-        "'rle' on GCP_SERVERLESS regardless of this value. (Replaces v3 output_format.)",
+        description="Carrier for instance masks. RLE is always enforced on the "
+        "tensor path; a non-'rle' value is ignored (downgraded to 'rle') with a "
+        "warning. Replaces numpy v3's output_format and drops the 'polygons' option "
+        "(breaking change).",
     )
 
     @field_validator("nms_iou_threshold")
@@ -300,7 +313,19 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: Literal["rle", "dense"],
     ) -> BlockResult:
-        if GCP_SERVERLESS:
+        # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS,
+        # regardless of the requested `mask_representation`. This replaces numpy v3's
+        # `output_format` and drops the 'polygons' option; the 'dense' carrier is a
+        # flag-on-only option with no flag-off analog, so honoring it would break the
+        # flag-on == flag-off JSON contract. A non-'rle' selection is downgraded to
+        # 'rle' with a warning. (Previously RLE was forced only on GCP_SERVERLESS.)
+        if mask_representation != "rle":
+            logger.warning(
+                "SAM3 v3 (tensor) block: mask_representation=%r is not honored; RLE "
+                "mask output is enforced. Selecting a non-'rle' carrier is a no-op "
+                "(breaking change vs numpy v3's output_format 'polygons'/'rle').",
+                mask_representation,
+            )
             mask_representation = "rle"
         class_names = _normalize_class_names(class_names)
         if SAM3_EXEC_MODE == "remote":
