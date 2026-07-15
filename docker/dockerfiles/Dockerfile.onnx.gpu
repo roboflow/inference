@@ -300,7 +300,8 @@ RUN find /usr/local/lib/python3.10 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
     python3 -m pip uninstall -y uv && \
-    rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
+    rm -f /usr/local/bin/uv /usr/local/bin/uvx \
+          /usr/local/bin/ninja /usr/local/bin/cmake /usr/local/bin/meson && \
     python3 -m pip uninstall -y pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
