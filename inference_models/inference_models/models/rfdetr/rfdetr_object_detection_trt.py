@@ -50,6 +50,13 @@ from inference_models.models.rfdetr.pre_processing import (
     pre_process_network_input,
     resolve_rfdetr_preprocessor,
 )
+from inference_models.models.rfdetr.triton_object_detection_postprocess import (
+    RFDETR_POSTPROCESSOR_BASE,
+    RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
+    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+    FusedObjectDetectionPostprocessor,
+    resolve_rfdetr_postprocessor,
+)
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     UniversalFastPreprocessRuntime,
 )
@@ -101,6 +108,7 @@ class RFDetrForObjectDetectionTRT(
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         rfdetr_preprocessor: str = RFDETR_PREPROCESSOR_BASE,
         rfdetr_preprocessor_max_workers: int = 4,
+        rfdetr_postprocessor: str = RFDETR_POSTPROCESSOR_BASE,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
@@ -194,6 +202,7 @@ class RFDetrForObjectDetectionTRT(
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             rfdetr_preprocessor=rfdetr_preprocessor,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
+            rfdetr_postprocessor=rfdetr_postprocessor,
             recommended_parameters=recommended_parameters,
         )
 
@@ -212,6 +221,7 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         rfdetr_preprocessor: str = RFDETR_PREPROCESSOR_BASE,
         rfdetr_preprocessor_max_workers: int = 4,
+        rfdetr_postprocessor: str = RFDETR_POSTPROCESSOR_BASE,
         recommended_parameters=None,
     ):
         self._engine = engine
@@ -227,6 +237,9 @@ class RFDetrForObjectDetectionTRT(
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._rfdetr_preprocessor = resolve_rfdetr_preprocessor(
             implementation_id=rfdetr_preprocessor
+        )
+        self._rfdetr_postprocessor = resolve_rfdetr_postprocessor(
+            implementation_id=rfdetr_postprocessor
         )
         if rfdetr_preprocessor_max_workers < 1:
             raise ModelRuntimeError(
@@ -249,6 +262,16 @@ class RFDetrForObjectDetectionTRT(
                 "Selected RF-DETR preprocessor implementation=%s",
                 self._rfdetr_preprocessor,
             )
+        self._fused_postprocessor = (
+            FusedObjectDetectionPostprocessor(device=self._device)
+            if self._rfdetr_postprocessor == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+            else None
+        )
+        if self._fused_postprocessor is not None:
+            LOGGER.warning(
+                "Selected RF-DETR postprocessor implementation=%s",
+                self._rfdetr_postprocessor,
+            )
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
 
@@ -263,6 +286,14 @@ class RFDetrForObjectDetectionTRT(
     @property
     def preprocessor_implementation_metadata(self) -> Dict[str, Any]:
         return RFDETR_PREPROCESSOR_IMPLEMENTATIONS[self._rfdetr_preprocessor]
+
+    @property
+    def postprocessor_implementation_id(self) -> str:
+        return self._rfdetr_postprocessor
+
+    @property
+    def postprocessor_implementation_metadata(self) -> Dict[str, Any]:
+        return RFDETR_POSTPROCESSOR_IMPLEMENTATIONS[self._rfdetr_postprocessor]
 
     def pre_process(
         self,
@@ -343,19 +374,31 @@ class RFDetrForObjectDetectionTRT(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
+        threshold = confidence_filter.get_threshold(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits = model_results
-            results = post_process_object_detection_results(
-                bboxes=bboxes,
-                logits=logits,
-                pre_processing_meta=pre_processing_meta,
-                threshold=confidence_filter.get_threshold(self.class_names),
-                num_classes=len(self.class_names),
-                classes_re_mapping=self._classes_re_mapping,
-                device=self._device,
-            )
+            if self._fused_postprocessor is not None:
+                results = self._fused_postprocessor.postprocess(
+                    bboxes=bboxes,
+                    logits=logits,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=threshold,
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                    stream=self._post_process_stream,
+                )
+            else:
+                results = post_process_object_detection_results(
+                    bboxes=bboxes,
+                    logits=logits,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=threshold,
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                    device=self._device,
+                )
         self._post_process_stream.synchronize()
         return results
 
