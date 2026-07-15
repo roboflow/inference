@@ -17,6 +17,9 @@
   cache entries back to their canonical model IDs.
 - `find_cached_model_package_dir(...)` helper exposed from the auto-loaders module for downstream
   cache introspection.
+- `INFERENCE_HOME` now falls back to `MODEL_CACHE_DIR` (when set) before the `/tmp/cache` default,
+  so the `inference` server's mounted cache volume persists both cache layouts regardless of
+  module import order.
 
 ---
 

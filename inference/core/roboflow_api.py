@@ -737,7 +737,11 @@ def register_image_at_roboflow(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> dict:
     if OFFLINE_MODE:
-        return {}
+        # callers consume the response (e.g. `["id"]`) - raise so existing
+        # error handling reports a clear cause instead of a KeyError
+        raise RoboflowAPIConnectionError(
+            "Cannot register image at Roboflow - OFFLINE_MODE is enabled."
+        )
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = [
         ("api_key", api_key),
@@ -794,7 +798,9 @@ def annotate_image_at_roboflow(
     is_prediction: bool = True,
 ) -> dict:
     if OFFLINE_MODE:
-        return {}
+        raise RoboflowAPIConnectionError(
+            "Cannot annotate image at Roboflow - OFFLINE_MODE is enabled."
+        )
     url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
     params = [
         ("api_key", api_key),
