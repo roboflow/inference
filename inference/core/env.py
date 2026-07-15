@@ -436,6 +436,18 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+    # Roboflow-hosted serverless runtimes require API connectivity for auth
+    # and usage accounting - OFFLINE_MODE would leave that state undefined
+    # (e.g. usage checks succeeding with no workspace resolved).
+    warnings.warn(
+        "OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS "
+        "deployments - authentication and usage accounting require API "
+        "connectivity. Unset OFFLINE_MODE for serverless runtimes.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+
 # This variable affects extra headers passed to new weights provider created for
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
 # makes the weights provider to reject request for model weights that are coming to
@@ -549,9 +561,11 @@ METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 # Keep the `inference-models` cache co-located with the traditional cache so
-# that mounting MODEL_CACHE_DIR persists both layouts. `inference_models`
-# reads INFERENCE_HOME at import time; this module is imported first in all
-# server entrypoints. An explicit INFERENCE_HOME always wins.
+# that mounting MODEL_CACHE_DIR persists both layouts. The authoritative
+# fallback lives in `inference_models.configuration` (INFERENCE_HOME defaults
+# to MODEL_CACHE_DIR there, independent of import order); this setdefault is
+# defense-in-depth for any consumer reading the INFERENCE_HOME env var
+# directly. An explicit INFERENCE_HOME always wins.
 os.environ.setdefault("INFERENCE_HOME", MODEL_CACHE_DIR)
 INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
 

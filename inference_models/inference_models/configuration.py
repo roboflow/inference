@@ -57,7 +57,12 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
-INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Fall back to the inference server's MODEL_CACHE_DIR so that both cache
+# layouts live on the same (typically mounted) volume without relying on
+# import order between `inference` and `inference_models`.
+INFERENCE_HOME = (
+    os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
+)
 # Offline mode - disables all outbound network requests. Models are loaded
 # exclusively from local cache. Designed for air-gapped deployments.
 OFFLINE_MODE = get_boolean_from_env(variable_name="OFFLINE_MODE", default=False)
