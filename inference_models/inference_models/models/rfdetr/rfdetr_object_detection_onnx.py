@@ -8,6 +8,7 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
 )
 from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
@@ -35,6 +36,9 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import post_process_object_detection_results
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.rfdetr.triton_preprocess_runtime import (
+    FastPreprocessRuntime,
+)
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -175,6 +179,11 @@ class RFDetrForObjectDetectionONNX(
         )
         self._session_thread_lock = threading.Lock()
         self.recommended_parameters = recommended_parameters
+        self._fast_preprocess_runtime = (
+            FastPreprocessRuntime(device=device)
+            if INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
+            else None
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -188,6 +197,18 @@ class RFDetrForObjectDetectionONNX(
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         pre_process_stream = self._pre_process_stream
+        if self._fast_preprocess_runtime is not None:
+            fast = self._fast_preprocess_runtime.try_preprocess(
+                images=images,
+                input_color_format=input_color_format,
+                image_size=None,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                stream=pre_process_stream,
+            )
+            if fast is not None:
+                self._fast_preprocess_event = fast.ready_event
+                return fast.tensor, fast.metadata
         with torch.cuda.stream(pre_process_stream):
             pre_processed_images, pre_processing_meta = pre_process_network_input(
                 images=images,
@@ -204,6 +225,10 @@ class RFDetrForObjectDetectionONNX(
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        fast_preprocess_event = getattr(self, "_fast_preprocess_event", None)
+        if fast_preprocess_event is not None:
+            self._inference_stream.wait_event(fast_preprocess_event)
+            self._fast_preprocess_event = None
         with self._session_thread_lock:
             bboxes, logits = run_onnx_session_with_batch_size_limit(
                 session=self._session,
