@@ -11,7 +11,9 @@ torch.Tensor inputs (advanced caller, float CHW [0, 1]):
     tensor F.resize → F.normalize
 """
 
-from typing import List, Optional, Tuple, Union
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -40,6 +42,96 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_numpy_image,
 )
 
+RFDETR_PREPROCESSOR_BASE = "base"
+RFDETR_PREPROCESSOR_AUTO = "auto"
+RFDETR_PREPROCESSOR_THREADED_EXACT_V1 = "threaded-exact-v1"
+
+RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
+    RFDETR_PREPROCESSOR_BASE: {
+        "implementation_id": RFDETR_PREPROCESSOR_BASE,
+        "stage": "preprocess",
+        "version": "1",
+        "numerical_behavior": "reference RF-DETR PIL/torch pipeline",
+        "fallback_id": RFDETR_PREPROCESSOR_BASE,
+        "validated_environments": (),
+    },
+    RFDETR_PREPROCESSOR_THREADED_EXACT_V1: {
+        "implementation_id": RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+        "stage": "preprocess",
+        "version": "1",
+        "target": {
+            "device_kind": "gpu",
+            "device_families": ("nvidia_jetson", "nvidia_discrete_gpu"),
+        },
+        "inputs": {
+            "types": ("numpy.ndarray", "list[numpy.ndarray]"),
+            "dtype": "uint8",
+            "layout": "HWC or NHWC",
+            "channels": 3,
+            "batch": ">=1",
+        },
+        "output": {
+            "device": "selected CUDA device",
+            "dtype": "float32",
+            "layout": "contiguous NCHW",
+            "ownership": "new tensor owned by caller",
+        },
+        "dependencies": ("Pillow", "torch", "torchvision"),
+        "numerical_behavior": "byte-identical per-image reference pipeline",
+        "concurrency": {
+            "safe_for_concurrent_calls": True,
+            "shared_state": False,
+            "per_call_resources": "bounded ThreadPoolExecutor for batch > 1",
+        },
+        "stream_behavior": (
+            "CPU work completes before ordered H2D copies are submitted to the "
+            "caller's RF-DETR preprocessing stream"
+        ),
+        "supports_cuda_graphs": True,
+        "fallback_id": RFDETR_PREPROCESSOR_BASE,
+        "validated_environments": (),
+    },
+}
+
+
+def resolve_rfdetr_preprocessor(implementation_id: str) -> str:
+    """Resolve an explicit RF-DETR preprocessing implementation.
+
+    ``auto`` deliberately remains on ``base`` until a candidate has a recorded
+    validation environment. Explicit candidate requests never fall back.
+    """
+    if implementation_id == RFDETR_PREPROCESSOR_AUTO:
+        return RFDETR_PREPROCESSOR_BASE
+    if implementation_id in RFDETR_PREPROCESSOR_IMPLEMENTATIONS:
+        return implementation_id
+    available = ", ".join(
+        sorted(
+            [
+                RFDETR_PREPROCESSOR_AUTO,
+                *RFDETR_PREPROCESSOR_IMPLEMENTATIONS.keys(),
+            ]
+        )
+    )
+    raise ModelRuntimeError(
+        message=(
+            f"Unknown RF-DETR preprocessor implementation {implementation_id!r}. "
+            f"Available implementations: {available}."
+        ),
+        help_url=(
+            "https://inference-models.roboflow.com/errors/models-runtime/"
+            "#modelruntimeerror"
+        ),
+    )
+
+
+@lru_cache(maxsize=None)
+def _log_selected_preprocessor(implementation_id: str, max_workers: int) -> None:
+    LOGGER.info(
+        "Selected RF-DETR preprocessor implementation=%s max_workers=%d",
+        implementation_id,
+        max_workers,
+    )
+
 
 def pre_process_network_input(
     images: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
@@ -49,7 +141,24 @@ def pre_process_network_input(
     input_color_format: Optional[ColorFormat] = None,
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    preprocessor_implementation_id: str = RFDETR_PREPROCESSOR_BASE,
+    preprocessor_max_workers: int = 4,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    selected_preprocessor = resolve_rfdetr_preprocessor(
+        implementation_id=preprocessor_implementation_id
+    )
+    if preprocessor_max_workers < 1:
+        raise ModelRuntimeError(
+            message="RF-DETR preprocessor_max_workers must be at least 1.",
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
+    _log_selected_preprocessor(
+        implementation_id=selected_preprocessor,
+        max_workers=preprocessor_max_workers,
+    )
     input_color_mode = (
         ColorMode(input_color_format) if input_color_format is not None else None
     )
@@ -92,41 +201,102 @@ def pre_process_network_input(
     else:
         image_list = [images]
 
-    tensors: List[torch.Tensor] = []
-    metadata: List[PreProcessingMetadata] = []
-    for img in image_list:
-        if isinstance(img, torch.Tensor) and img.is_floating_point():
-            tensor, meta = _pre_process_tensor(
-                image=img,
-                image_pre_processing=image_pre_processing,
-                network_input=network_input,
-                target_size=target_size,
-                input_color_mode=input_color_mode,
-                pre_processing_overrides=pre_processing_overrides,
+    def preprocess_one(
+        image: Union[np.ndarray, torch.Tensor],
+    ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+        return _pre_process_one(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_size=target_size,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+
+    if selected_preprocessor == RFDETR_PREPROCESSOR_THREADED_EXACT_V1:
+        unsupported = [
+            type(image).__name__
+            for image in image_list
+            if not isinstance(image, np.ndarray)
+        ]
+        if unsupported:
+            raise ModelRuntimeError(
+                message=(
+                    f"{RFDETR_PREPROCESSOR_THREADED_EXACT_V1!r} accepts only "
+                    "numpy uint8 HWC/NHWC images; received unsupported entries: "
+                    f"{unsupported}. Select 'base' for torch.Tensor inputs."
+                ),
+                help_url=(
+                    "https://inference-models.roboflow.com/errors/models-runtime/"
+                    "#modelruntimeerror"
+                ),
             )
-        elif isinstance(img, (np.ndarray, torch.Tensor)):
-            np_img = (
-                _tensor_to_hwc_uint8(img)
-                if isinstance(img, torch.Tensor)
-                else _ensure_hwc_uint8(img)
+        invalid = [
+            (str(image.dtype), tuple(image.shape))
+            for image in image_list
+            if image.dtype != np.uint8 or image.ndim != 3 or image.shape[-1] != 3
+        ]
+        if invalid:
+            raise ModelRuntimeError(
+                message=(
+                    f"{RFDETR_PREPROCESSOR_THREADED_EXACT_V1!r} requires uint8 "
+                    f"HWC images with 3 channels; received: {invalid}."
+                ),
+                help_url=(
+                    "https://inference-models.roboflow.com/errors/models-runtime/"
+                    "#modelruntimeerror"
+                ),
             )
-            tensor, meta = _pre_process_numpy(
-                image=np_img,
-                image_pre_processing=image_pre_processing,
-                network_input=network_input,
-                target_size=target_size,
-                input_color_mode=input_color_mode,
-                pre_processing_overrides=pre_processing_overrides,
-            )
+        if len(image_list) > 1 and preprocessor_max_workers > 1:
+            worker_count = min(len(image_list), preprocessor_max_workers)
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                processed = list(executor.map(preprocess_one, image_list))
         else:
-            raise TypeError(
-                f"Unsupported image input type for RFDETR pre-processing: {type(img)}"
-            )
-        tensors.append(tensor.to(device=target_device))
-        metadata.append(meta)
+            processed = [preprocess_one(image) for image in image_list]
+    else:
+        processed = [preprocess_one(image) for image in image_list]
+
+    tensors = [tensor.to(device=target_device) for tensor, _ in processed]
+    metadata = [meta for _, meta in processed]
 
     batch = torch.stack(tensors).contiguous()
     return batch, metadata
+
+
+def _pre_process_one(
+    image: Union[np.ndarray, torch.Tensor],
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    target_size: ImageDimensions,
+    input_color_mode: Optional[ColorMode],
+    pre_processing_overrides: Optional[PreProcessingOverrides],
+) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+    if isinstance(image, torch.Tensor) and image.is_floating_point():
+        return _pre_process_tensor(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_size=target_size,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+    if isinstance(image, (np.ndarray, torch.Tensor)):
+        np_image = (
+            _tensor_to_hwc_uint8(image)
+            if isinstance(image, torch.Tensor)
+            else _ensure_hwc_uint8(image)
+        )
+        return _pre_process_numpy(
+            image=np_image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_size=target_size,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+    raise TypeError(
+        f"Unsupported image input type for RFDETR pre-processing: {type(image)}"
+    )
 
 
 def _pre_process_numpy(

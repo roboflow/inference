@@ -1,5 +1,5 @@
 import threading
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -42,7 +42,12 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.common import post_process_object_detection_results
-from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.rfdetr.pre_processing import (
+    RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+    pre_process_network_input,
+    resolve_rfdetr_preprocessor,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -89,6 +94,8 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        rfdetr_preprocessor: str = RFDETR_PREPROCESSOR_BASE,
+        rfdetr_preprocessor_max_workers: int = 4,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
@@ -180,6 +187,8 @@ class RFDetrForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            rfdetr_preprocessor=rfdetr_preprocessor,
+            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             recommended_parameters=recommended_parameters,
         )
 
@@ -196,6 +205,8 @@ class RFDetrForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        rfdetr_preprocessor: str = RFDETR_PREPROCESSOR_BASE,
+        rfdetr_preprocessor_max_workers: int = 4,
         recommended_parameters=None,
     ):
         self._engine = engine
@@ -209,6 +220,18 @@ class RFDetrForObjectDetectionTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
+        self._rfdetr_preprocessor = resolve_rfdetr_preprocessor(
+            implementation_id=rfdetr_preprocessor
+        )
+        if rfdetr_preprocessor_max_workers < 1:
+            raise ModelRuntimeError(
+                message="rfdetr_preprocessor_max_workers must be at least 1.",
+                help_url=(
+                    "https://inference-models.roboflow.com/errors/models-runtime/"
+                    "#modelruntimeerror"
+                ),
+            )
+        self._rfdetr_preprocessor_max_workers = rfdetr_preprocessor_max_workers
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
@@ -217,6 +240,14 @@ class RFDetrForObjectDetectionTRT(
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    @property
+    def preprocessor_implementation_id(self) -> str:
+        return self._rfdetr_preprocessor
+
+    @property
+    def preprocessor_implementation_metadata(self) -> Dict[str, Any]:
+        return RFDETR_PREPROCESSOR_IMPLEMENTATIONS[self._rfdetr_preprocessor]
 
     def pre_process(
         self,
@@ -233,6 +264,8 @@ class RFDetrForObjectDetectionTRT(
                 target_device=self._device,
                 input_color_format=input_color_format,
                 pre_processing_overrides=pre_processing_overrides,
+                preprocessor_implementation_id=self._rfdetr_preprocessor,
+                preprocessor_max_workers=self._rfdetr_preprocessor_max_workers,
             )
         self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
