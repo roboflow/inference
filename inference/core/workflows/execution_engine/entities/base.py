@@ -4,7 +4,6 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum
 from typing import (
-    TYPE_CHECKING,
     Any,
     Dict,
     Generic,
@@ -19,16 +18,10 @@ from typing import (
 
 import cv2
 import numpy as np
+import torch
 from pydantic import BaseModel, Field
+from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
-
-if TYPE_CHECKING:
-    # torch / torchvision are OPTIONAL dependencies (absent from the slim
-    # `inference-core` artifact). Only the tensor-native path (flag ON) touches
-    # them, via deferred local imports inside `tensor_image` /
-    # `_decode_source_to_tensor`. Here the import is type-checking only so the
-    # `torch.Tensor` annotations below stay resolvable without torch installed.
-    import torch
 
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -311,7 +304,7 @@ class WorkflowImageData:
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
         video_metadata: Optional[VideoMetadata] = None,
-        tensor_image: Optional["torch.Tensor"] = None,
+        tensor_image: Optional[torch.Tensor] = None,
     ):
         if (
             not base64_image
@@ -449,7 +442,7 @@ class WorkflowImageData:
         cls,
         origin_image_data: "WorkflowImageData",
         crop_identifier: str,
-        cropped_tensor_image: "torch.Tensor",
+        cropped_tensor_image: torch.Tensor,
         offset_x: int,
         offset_y: int,
         preserve_video_metadata: bool = False,
@@ -580,13 +573,9 @@ class WorkflowImageData:
         return self._numpy_image
 
     @property
-    def tensor_image(self) -> "torch.Tensor":
+    def tensor_image(self) -> torch.Tensor:
         # Layout + mutation contract: see the class docstring. In-place mutators
         # of the returned tensor must call declare_tensor_image_mutated().
-        # torch is an optional dep; this property is only ever reached on the
-        # tensor-native (flag-on) path, so the import is deferred to here.
-        import torch
-
         if self._tensor_image is not None:
             return self._tensor_image
         if self._numpy_image is not None:
@@ -594,12 +583,11 @@ class WorkflowImageData:
             if bgr_np.ndim == 2:
                 # Single-channel (grayscale / threshold outputs): (H, W) ->
                 # (1, H, W), no channel reversal - there is no BGR/RGB
-                # semantics to convert. `.copy()` (not a bare ascontiguousarray,
-                # which aliases an already-contiguous source) so the tensor owns
-                # its buffer: on a CPU device the trailing `.to(...)` is a no-op,
-                # and without the copy a grayscale tensor would alias
-                # `self._numpy_image`, breaking mutation isolation between the
-                # two representations (the 3-channel branch already copies).
+                # semantics to convert. `.copy()` so the tensor owns its buffer:
+                # without it a CPU grayscale tensor aliases `self._numpy_image`
+                # (the trailing `.to(...)` is a no-op on CPU), breaking mutation
+                # isolation between the two representations - the 3-channel branch
+                # below already copies.
                 chw = torch.from_numpy(np.ascontiguousarray(bgr_np).copy()).unsqueeze(
                     0
                 )
@@ -615,7 +603,7 @@ class WorkflowImageData:
         self._tensor_image = chw.contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
         return self._tensor_image
 
-    def _decode_source_to_tensor(self) -> "torch.Tensor":
+    def _decode_source_to_tensor(self) -> torch.Tensor:
         """Decode the base64 / file / URL source straight into a CHW RGB uint8
         tensor via ``torchvision.io`` - no numpy intermediate, no cv2. Only
         reached when neither in-memory representation exists (the constructor
@@ -624,11 +612,6 @@ class WorkflowImageData:
         files) does. URLs are the one exception: their bytes come through the
         SSRF-guarded numpy loader today, so they keep a single numpy hop until a
         bytes-level guarded fetcher exists."""
-        # torch / torchvision are optional deps; this helper is only reached on
-        # the tensor-native (flag-on) path, so the imports are deferred to here.
-        import torch
-        from torchvision.io import ImageReadMode, decode_image, read_file
-
         if self._base64_image:
             # Post-mutation this can only be a RE-DERIVED base64 (see the
             # matching note in numpy_image) - always valid to decode.

@@ -32,34 +32,12 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     create_dynamic_block_code_error,
     extract_code_snippet,
 )
-if ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
-        collect_declared_input_kind_names,
-        collect_declared_output_kind_names,
-        convert_block_result_to_native,
-        convert_kwargs_to_legacy,
-    )
-else:
-    # Flag OFF: the representation boundary is a strict identity (every function
-    # in representation_boundary.py early-returns when the flag is off), so it is
-    # never imported here. That module pulls in torch + inference_models — both
-    # directly and transitively via serializers_tensor / tensor_native — which
-    # are OPTIONAL deps absent from the slim `inference-core` artifact. Importing
-    # this module (an always-imported custom-python path) must not require them
-    # off-flag. These trivial stand-ins reproduce the boundary's flag-off
-    # behaviour byte-for-byte: kwargs / results pass through untouched, and the
-    # declared-kind lookups (consumed only by the convert_* identities) are unused.
-    def collect_declared_input_kind_names(manifest_description):
-        return None
-
-    def collect_declared_output_kind_names(manifest_description):
-        return None
-
-    def convert_kwargs_to_legacy(kwargs, **_ignored):
-        return kwargs
-
-    def convert_block_result_to_native(result, **_ignored):
-        return result
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+    collect_declared_input_kind_names,
+    collect_declared_output_kind_names,
+    convert_block_result_to_native,
+    convert_kwargs_to_legacy,
+)
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,

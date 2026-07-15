@@ -10,12 +10,9 @@ from networkx import DiGraph
 
 from inference.core import logger
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-
-# NOTE: `tensor_native` imports torch + inference_models at module top, so it is
-# NOT imported here — this always-imported module must load without those
-# OPTIONAL deps when the flag is off. `native_detections_to_root_coordinates` is
-# imported lazily at its single (flag-gated) call site in
-# `convert_sv_detections_coordinates`.
+from inference.core.workflows.core_steps.common.tensor_native import (
+    native_detections_to_root_coordinates,
+)
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
@@ -49,13 +46,13 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     maybe_resolve_futures,
     resolve_futures,
 )
-
-# NOTE: `inference_models` (and its `torch` dependency) is an OPTIONAL dependency
-# absent from the slim `inference-core` artifact, so it is NOT imported at module
-# top level. The native prediction types are imported lazily inside
-# `_is_native_prediction`, which is only ever called on the tensor-native
-# (ENABLE_TENSOR_DATA_REPRESENTATION on) path — keeping this always-imported
-# module importable without inference_models / torch when the flag is off.
+from inference_models.models.base.instance_segmentation import (
+    InstanceDetections as NativeInstanceDetections,
+)
+from inference_models.models.base.keypoints_detection import (
+    KeyPoints as NativeKeyPoints,
+)
+from inference_models.models.base.object_detection import Detections as NativeDetections
 
 
 def construct_workflow_output(
@@ -579,20 +576,7 @@ def _is_native_prediction(data: Any) -> bool:
     """Recognise a tensor-native prediction (the inference_models dataclasses, or the
     ``(KeyPoints, Detections)`` keypoint-detection tuple) emitted by ``_tensor``
     blocks under ``ENABLE_TENSOR_DATA_REPRESENTATION``. These are not ``sv.Detections``,
-    so the existing sv-only coordinate-conversion gate skips them.
-
-    Only called on the tensor-native (flag-on) path, so the optional
-    ``inference_models`` import is deferred to here."""
-    from inference_models.models.base.instance_segmentation import (
-        InstanceDetections as NativeInstanceDetections,
-    )
-    from inference_models.models.base.keypoints_detection import (
-        KeyPoints as NativeKeyPoints,
-    )
-    from inference_models.models.base.object_detection import (
-        Detections as NativeDetections,
-    )
-
+    so the existing sv-only coordinate-conversion gate skips them."""
     if isinstance(data, (NativeDetections, NativeInstanceDetections, NativeKeyPoints)):
         return True
     if isinstance(data, tuple) and len(data) == 2:
@@ -625,12 +609,6 @@ def convert_sv_detections_coordinates(data: Any) -> Any:
     if isinstance(data, sv.Detections):
         return sv_detections_to_root_coordinates(detections=data)
     if ENABLE_TENSOR_DATA_REPRESENTATION and _is_native_prediction(data):
-        # Deferred: tensor_native pulls torch + inference_models (optional deps),
-        # and this branch is only reached on the flag-on / native-prediction path.
-        from inference.core.workflows.core_steps.common.tensor_native import (
-            native_detections_to_root_coordinates,
-        )
-
         return native_detections_to_root_coordinates(prediction=data)
     if isinstance(data, dict):
         return {k: convert_sv_detections_coordinates(data=v) for k, v in data.items()}

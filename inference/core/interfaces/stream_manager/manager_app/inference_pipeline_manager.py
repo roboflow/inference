@@ -4,10 +4,9 @@ import os
 import signal
 import threading
 import time
-import multiprocessing
 from dataclasses import asdict
 from functools import partial
-from multiprocessing import Queue
+from multiprocessing import Process, Queue
 from queue import Empty
 from threading import Event
 from types import FrameType
@@ -71,16 +70,7 @@ def ignore_signal(signal_number: int, frame: FrameType) -> None:
     )
 
 
-# Spawn (not the POSIX default fork) so the manager child starts from a fresh
-# interpreter instead of inheriting the parent's already-initialised CUDA/torch
-# state. Forking a process that has touched CUDA at import poisons the child's
-# CUDA context (unusable device handles / hangs). The queues passed to the child
-# are created from this same spawn context in the manager app so they pickle
-# correctly across the spawn boundary.
-_MP_SPAWN_CONTEXT = multiprocessing.get_context("spawn")
-
-
-class InferencePipelineManager(_MP_SPAWN_CONTEXT.Process):
+class InferencePipelineManager(Process):
     @classmethod
     def init(
         cls, pipeline_id: str, command_queue: Queue, responses_queue: Queue
