@@ -32,6 +32,7 @@ from inference.core.env import (
     DEVICE_ID,
     GCP_SERVERLESS,
     LAMBDA,
+    OFFLINE_MODE,
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
@@ -687,6 +688,8 @@ class UsageCollector:
         self._offload_to_api(payloads=merged_payloads)
 
     def _offload_to_api(self, payloads: List[APIKeyUsage]):
+        if OFFLINE_MODE:
+            return
         ssl_verify = ssl_verify_for_endpoint(self._settings.api_usage_endpoint_url)
 
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
