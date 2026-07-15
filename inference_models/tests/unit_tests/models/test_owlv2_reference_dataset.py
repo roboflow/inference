@@ -59,6 +59,44 @@ def test_canonicalize_url_strips_query_for_other_known_signers() -> None:
     assert all(result == OBJECT_URL for result in results)
 
 
+def test_canonicalize_url_preserves_content_params_next_to_signature() -> None:
+    # given - version/generation params select different bytes for the same
+    # path and must survive canonicalization
+    gcs_gen_1 = f"{OBJECT_URL}?generation=111&X-Goog-Signature=aaaa&X-Goog-Date=20260715T190000Z"
+    gcs_gen_1_resigned = (
+        f"{OBJECT_URL}?generation=111&X-Goog-Signature=bbbb&X-Goog-Date=20260715T193000Z"
+    )
+    gcs_gen_2 = f"{OBJECT_URL}?generation=222&X-Goog-Signature=aaaa&X-Goog-Date=20260715T190000Z"
+    s3_version_a = f"{OBJECT_URL}?versionId=abc&X-Amz-Signature=aaaa"
+    s3_version_b = f"{OBJECT_URL}?versionId=def&X-Amz-Signature=aaaa"
+
+    # when
+    results = [
+        canonicalize_url_for_hashing(reference=url)
+        for url in (gcs_gen_1, gcs_gen_1_resigned, gcs_gen_2, s3_version_a, s3_version_b)
+    ]
+
+    # then
+    assert results[0] == f"{OBJECT_URL}?generation=111"
+    assert results[0] == results[1]  # re-signing same generation -> same key
+    assert results[2] == f"{OBJECT_URL}?generation=222"  # other generation distinct
+    assert results[3] == f"{OBJECT_URL}?versionId=abc"
+    assert results[3] != results[4]
+
+
+def test_canonicalize_url_key_is_independent_of_param_order() -> None:
+    # given
+    url_a = f"{OBJECT_URL}?generation=111&versionId=abc&X-Goog-Signature=aaaa"
+    url_b = f"{OBJECT_URL}?versionId=abc&generation=111&X-Goog-Signature=bbbb"
+
+    # when
+    result_a = canonicalize_url_for_hashing(reference=url_a)
+    result_b = canonicalize_url_for_hashing(reference=url_b)
+
+    # then
+    assert result_a == result_b
+
+
 def test_canonicalize_url_preserves_unsigned_query_parameters() -> None:
     # given
     versioned_url = f"{OBJECT_URL}?v=2"

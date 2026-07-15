@@ -31,6 +31,52 @@ SIGNED_URL_MARKER_PARAMS = {
     "signature",  # GCS/S3 V2, CloudFront
 }
 
+# Auth-only query parameters, removed from the cache key when a signature
+# marker is present. Content-selecting parameters that can ride alongside a
+# signature (GCS `generation`, S3 `versionId`, Azure `versionid`/`snapshot`)
+# are deliberately NOT listed: they select different bytes for the same path
+# and must stay part of the cache identity.
+SIGNED_URL_AUTH_PARAMS = SIGNED_URL_MARKER_PARAMS | {
+    # GCS V4
+    "x-goog-algorithm",
+    "x-goog-credential",
+    "x-goog-date",
+    "x-goog-expires",
+    "x-goog-signedheaders",
+    # S3 V4
+    "x-amz-algorithm",
+    "x-amz-credential",
+    "x-amz-date",
+    "x-amz-expires",
+    "x-amz-signedheaders",
+    "x-amz-security-token",
+    # GCS/S3 V2, CloudFront
+    "expires",
+    "policy",
+    "key-pair-id",
+    # Azure SAS
+    "sv",
+    "ss",
+    "srt",
+    "sp",
+    "se",
+    "st",
+    "spr",
+    "sr",
+    "sip",
+    "ses",
+    "sdd",
+    "skoid",
+    "sktid",
+    "skt",
+    "ske",
+    "sks",
+    "skv",
+    "saoid",
+    "suoid",
+    "scid",
+}
+
 
 def canonicalize_url_for_hashing(reference: str) -> str:
     """Signed URLs (GCS/S3/Azure/CloudFront) carry rotating auth parameters
@@ -38,21 +84,29 @@ def canonicalize_url_for_hashing(reference: str) -> str:
     yields a different URL string on every signing. Hashing the raw URL would
     defeat the image-embeddings cache (and the class-embeddings cache keyed on
     top of it) for every caller that re-signs URLs per request. When the query
-    string contains a recognized signature parameter, scheme+host+path alone
-    identifies the object, so only that part is hashed. URLs without signature
+    string contains a recognized signature parameter, the recognized auth
+    parameters are removed from the cache key; any remaining parameters (e.g.
+    GCS `generation`, S3 `versionId`) still select content and are kept,
+    sorted for a signing-order-independent key. URLs without signature
     parameters keep their full form: a bare query string (e.g. ?v=2) may
     legitimately select different content.
     """
     parsed = urllib.parse.urlparse(reference)
     if not parsed.query:
         return reference
-    query_param_names = {
-        key.lower()
-        for key, _ in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    }
+    query_params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query_param_names = {key.lower() for key, _ in query_params}
     if query_param_names.isdisjoint(SIGNED_URL_MARKER_PARAMS):
         return reference
-    return urllib.parse.urlunparse(parsed._replace(query="", fragment=""))
+    content_params = sorted(
+        (key, value)
+        for key, value in query_params
+        if key.lower() not in SIGNED_URL_AUTH_PARAMS
+    )
+    canonical_query = urllib.parse.urlencode(content_params)
+    return urllib.parse.urlunparse(
+        parsed._replace(query=canonical_query, fragment="")
+    )
 
 
 class LazyImageWrapper:
