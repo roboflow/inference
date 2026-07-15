@@ -589,7 +589,8 @@ def _write_offline_package(
     os.makedirs(package_dir, exist_ok=True)
     if config is not None:
         _create_file(os.path.join(package_dir, "model_config.json"), json.dumps(config))
-    return package_dir
+    # scanning helpers yield realpath-resolved paths
+    return os.path.realpath(package_dir)
 
 
 _OFFLINE_PACKAGE_CONFIG = {
