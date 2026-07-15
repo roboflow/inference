@@ -1137,6 +1137,11 @@ from inference.core.env import (  # noqa: E402
 )
 
 
+@pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-only: WORKFLOWS_IMAGE_TENSOR_DEVICE is None when the flag is off, "
+    "so the configured-device assertion does not apply",
+)
 def test_init_workflow_image_data_from_tensor_only() -> None:
     # given
     # Allocated on the configured device so the no-copy identity below holds even
