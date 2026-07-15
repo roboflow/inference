@@ -26,10 +26,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.stitch_detections_batch import (
     BlockManifest,
 )
-from inference_models.models.base.object_detection import Detections
 
 
 def _shift_native_to_parent(prediction: Detections) -> Detections:

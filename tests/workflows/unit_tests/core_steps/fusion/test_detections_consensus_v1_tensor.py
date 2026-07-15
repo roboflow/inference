@@ -78,9 +78,9 @@ def _oracle_max_overlap(
     ):
         if tv._resolve_detection_id(other_detection) in detections_already_considered:
             continue
-        if class_aware and tv._resolve_class_name(
-            detection
-        ) != tv._resolve_class_name(other_detection):
+        if class_aware and tv._resolve_class_name(detection) != tv._resolve_class_name(
+            other_detection
+        ):
             continue
         iou_value = tv.calculate_iou(detection_a=detection, detection_b=other_detection)
         if iou_value <= iou_threshold:
@@ -349,11 +349,7 @@ def _build_sources(scenario_index: int) -> Tuple[List[_DetSpec], Dict[str, Any]]
                 boxes.append(np.array(rng.choice(anchors), dtype=np.float64))
             else:
                 boxes.append(_random_box(rng))
-        xyxy = (
-            np.stack(boxes, axis=0)
-            if boxes
-            else np.zeros((0, 4), dtype=np.float64)
-        )
+        xyxy = np.stack(boxes, axis=0) if boxes else np.zeros((0, 4), dtype=np.float64)
         cids = [rng.choice(class_ids) for _ in range(count)]
         confs = [round(rng.uniform(0.05, 0.99), 4) for _ in range(count)]
         dids = [f"s{source_id}_d{i}" for i in range(count)]
@@ -376,9 +372,7 @@ def _build_sources(scenario_index: int) -> Tuple[List[_DetSpec], Dict[str, Any]]
     classes_to_consider = rng.choice(
         [None, None, [_CLASS_POOL[0]], _CLASS_POOL[:pool_size], ["nonexistent"]]
     )
-    required_objects_choice = rng.choice(
-        [None, 1, 2, {"a": 1}, {"a": 1, "b": 1}]
-    )
+    required_objects_choice = rng.choice([None, 1, 2, {"a": 1}, {"a": 1, "b": 1}])
     params = {
         "required_votes": rng.randint(1, 3),
         "class_aware": rng.random() < 0.5,

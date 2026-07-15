@@ -10,7 +10,10 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v2, v2_tensor
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import (
+    v2,
+    v2_tensor,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.tensor_input_utils import (
     numpy_image_as_tensor,

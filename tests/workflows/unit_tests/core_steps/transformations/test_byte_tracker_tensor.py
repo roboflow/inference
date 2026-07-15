@@ -324,9 +324,7 @@ def _run_v3(builder, keypoint_input: bool = False) -> None:
             detections=raw,
         )
         oracle_out, kept, tracker_ids = _oracle_track(oracle_tracker, bbox_input)
-        _assert_box_parity(
-            result["tracked_detections"], oracle_out, bbox_input, kept
-        )
+        _assert_box_parity(result["tracked_detections"], oracle_out, bbox_input, kept)
         # new / already-seen split parity.
         not_seen, seen = [], []
         for position, tid in enumerate(tracker_ids.tolist()):

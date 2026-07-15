@@ -277,13 +277,9 @@ def test_inlined_dynamic_crop_matches_inner_workflow_tensor_native(
 
     assert run_mock.call_count == 2
     for call in run_mock.call_args_list:
-        model_id = call.kwargs.get(
-            "model_id", call.args[0] if call.args else None
-        )
+        model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
         assert model_id == "yolov8n-640"
-        imgs = call.kwargs.get(
-            "images", call.args[1] if len(call.args) > 1 else None
-        )
+        imgs = call.kwargs.get("images", call.args[1] if len(call.args) > 1 else None)
         assert imgs is not None and len(imgs) == 1
 
     # Native Detections has no value __eq__; assert the values on BOTH runs instead of

@@ -50,9 +50,7 @@ IMAGE_WIDTH = 168
 def _tensor_source_image() -> WorkflowImageData:
     # CHW RGB uint8 tensor source - constructing with `tensor_image` leaves the
     # numpy representation unmaterialised (`_numpy_image is None`).
-    tensor_image = torch.zeros(
-        (3, IMAGE_HEIGHT, IMAGE_WIDTH), dtype=torch.uint8
-    )
+    tensor_image = torch.zeros((3, IMAGE_HEIGHT, IMAGE_WIDTH), dtype=torch.uint8)
     image = WorkflowImageData(
         tensor_image=tensor_image,
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -75,9 +73,7 @@ def _assert_not_materialised(image: WorkflowImageData) -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize(
-    "block_cls", [VLMAsClassifierBlockV1, VLMAsClassifierBlockV2]
-)
+@pytest.mark.parametrize("block_cls", [VLMAsClassifierBlockV1, VLMAsClassifierBlockV2])
 def test_classifier_multi_class_reads_shape_without_materialization(
     block_cls,
 ) -> None:
@@ -86,9 +82,7 @@ def test_classifier_multi_class_reads_shape_without_materialization(
     vlm_output = '{"class_name": "cat", "confidence": 0.9}'
 
     # when
-    result = block_cls().run(
-        image=image, vlm_output=vlm_output, classes=["cat", "dog"]
-    )
+    result = block_cls().run(image=image, vlm_output=vlm_output, classes=["cat", "dog"])
 
     # then
     assert result["error_status"] is False
@@ -97,9 +91,7 @@ def test_classifier_multi_class_reads_shape_without_materialization(
     _assert_not_materialised(image)
 
 
-@pytest.mark.parametrize(
-    "block_cls", [VLMAsClassifierBlockV1, VLMAsClassifierBlockV2]
-)
+@pytest.mark.parametrize("block_cls", [VLMAsClassifierBlockV1, VLMAsClassifierBlockV2])
 def test_classifier_multi_label_reads_shape_without_materialization(
     block_cls,
 ) -> None:
@@ -112,9 +104,7 @@ def test_classifier_multi_label_reads_shape_without_materialization(
     )
 
     # when
-    result = block_cls().run(
-        image=image, vlm_output=vlm_output, classes=["cat", "dog"]
-    )
+    result = block_cls().run(image=image, vlm_output=vlm_output, classes=["cat", "dog"])
 
     # then
     assert result["error_status"] is False
@@ -191,9 +181,7 @@ def test_detector_florence_reads_shape_without_materialization(block_cls) -> Non
     # given - the florence-2 parser passes (W, H) as resolution_wh to
     # sv.Detections.from_lmm; exercises the florence changed site in each block.
     image = _tensor_source_image()
-    vlm_output = (
-        '{"bboxes": [[10.0, 20.0, 90.0, 120.0]], "bboxes_labels": ["cat"]}'
-    )
+    vlm_output = '{"bboxes": [[10.0, 20.0, 90.0, 120.0]], "bboxes_labels": ["cat"]}'
 
     # when
     result = block_cls().run(

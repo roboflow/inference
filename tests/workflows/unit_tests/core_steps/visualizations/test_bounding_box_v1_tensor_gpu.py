@@ -228,9 +228,7 @@ def _tensor_backed_image() -> WorkflowImageData:
 def test_gpu_box_draw_eligible_happy_path() -> None:
     for axis in ("CLASS", "INDEX", "TRACK"):
         assert (
-            _gpu_box_draw_eligible(
-                _eligible_detections(), axis, _tensor_backed_image()
-            )
+            _gpu_box_draw_eligible(_eligible_detections(), axis, _tensor_backed_image())
             is True
         )
 
@@ -247,9 +245,8 @@ def test_gpu_box_draw_not_eligible_for_numpy_sourced_image() -> None:
         parent_metadata=ImageParentMetadata(parent_id="p"),
         numpy_image=np.zeros((64, 64, 3), dtype=np.uint8),
     )
-    assert (
-        _gpu_box_draw_eligible(_eligible_detections(), "CLASS", numpy_image) is False
-    )
+    assert _gpu_box_draw_eligible(_eligible_detections(), "CLASS", numpy_image) is False
+
 
 def test_track_color_axis_matches_sv_colors() -> None:
     from inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor import (
@@ -280,9 +277,7 @@ def test_track_color_axis_matches_sv_colors() -> None:
     assert out._tensor_image is not None and out._numpy_image is None  # GPU path
     annotated = out._tensor_image
     for (x1, y1, _, _), tid in zip(boxes, tracker_ids):
-        expected = (
-            (128, 128, 128) if tid == -1 else PALETTE.by_idx(tid).as_rgb()
-        )
+        expected = (128, 128, 128) if tid == -1 else PALETTE.by_idx(tid).as_rgb()
         got = tuple(int(v) for v in annotated[:, y1, x1 + 10])  # top band pixel
         assert got == expected, f"track {tid}: {got} != {expected}"
 

@@ -10,6 +10,7 @@ tensor that `WorkflowImageData.tensor_image` builds, on WORKFLOWS_IMAGE_TENSOR_D
 image deserializer wraps a raw torch.Tensor as `WorkflowImageData(tensor_image=...)`, so
 passing the result as the `image` runtime parameter makes the input arrive pre-materialised.
 """
+
 import numpy as np
 import torch
 
@@ -20,5 +21,8 @@ def numpy_image_as_tensor(bgr_hwc_image: np.ndarray) -> torch.Tensor:
     """BGR HWC uint8 numpy fixture -> CHW RGB uint8 tensor on WORKFLOWS_IMAGE_TENSOR_DEVICE."""
     rgb = bgr_hwc_image[:, :, ::-1].copy()
     return (
-        torch.from_numpy(rgb).permute(2, 0, 1).contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        torch.from_numpy(rgb)
+        .permute(2, 0, 1)
+        .contiguous()
+        .to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
     )

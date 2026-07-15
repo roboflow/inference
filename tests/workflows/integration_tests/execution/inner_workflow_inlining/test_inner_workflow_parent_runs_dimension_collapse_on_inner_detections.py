@@ -330,9 +330,7 @@ def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection_tens
     for call in run_mock.call_args_list:
         model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
         assert model_id == "yolov8n-640"
-        imgs = call.kwargs.get(
-            "images", call.args[1] if len(call.args) > 1 else None
-        )
+        imgs = call.kwargs.get("images", call.args[1] if len(call.args) > 1 else None)
         assert imgs is not None and len(imgs) == 1
 
     # Native Detections has no value __eq__; assert the values on BOTH runs instead of
@@ -369,9 +367,7 @@ def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection_runt
     for call in run_mock.call_args_list:
         model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
         assert model_id == "yolov8n-640"
-        imgs = call.kwargs.get(
-            "images", call.args[1] if len(call.args) > 1 else None
-        )
+        imgs = call.kwargs.get("images", call.args[1] if len(call.args) > 1 else None)
         assert imgs is not None and len(imgs) == 2
 
     # Native Detections has no value __eq__; assert the values on BOTH runs instead of

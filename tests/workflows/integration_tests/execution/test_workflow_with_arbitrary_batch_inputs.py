@@ -54,6 +54,7 @@ def _native_top_confidence(prediction) -> float:
     # row max, equivalent to sv's `p["confidence"]`.
     return float(prediction.confidence[0].max())
 
+
 TWO_STAGE_WORKFLOW = {
     "version": "1.3.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -295,18 +296,14 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     # then
     # Native per-image ClassificationPrediction objects: top class via class_id,
     # top confidence via the per-image max over the full softmax row.
-    e2e_top_classes = [
-        _native_top_class_id(p) for p in e2e_results[0]["predictions"]
-    ]
+    e2e_top_classes = [_native_top_class_id(p) for p in e2e_results[0]["predictions"]]
     debug_top_classes = [
         _native_top_class_id(p) for p in classification_results[0]["predictions"]
     ]
     assert (
         e2e_top_classes == debug_top_classes
     ), "Expected top class prediction from step-by-step execution to match e2e execution"
-    e2e_confidence = [
-        _native_top_confidence(p) for p in e2e_results[0]["predictions"]
-    ]
+    e2e_confidence = [_native_top_confidence(p) for p in e2e_results[0]["predictions"]]
     debug_confidence = [
         _native_top_confidence(p) for p in classification_results[0]["predictions"]
     ]
@@ -378,18 +375,14 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     # then
     # Native per-image ClassificationPrediction objects: top class via class_id,
     # top confidence via the per-image max over the full softmax row.
-    e2e_top_classes = [
-        _native_top_class_id(p) for p in e2e_results[0]["predictions"]
-    ]
+    e2e_top_classes = [_native_top_class_id(p) for p in e2e_results[0]["predictions"]]
     debug_top_classes = [
         _native_top_class_id(p) for p in classification_results[0]["predictions"]
     ]
     assert (
         e2e_top_classes == debug_top_classes
     ), "Expected top class prediction from step-by-step execution to match e2e execution"
-    e2e_confidence = [
-        _native_top_confidence(p) for p in e2e_results[0]["predictions"]
-    ]
+    e2e_confidence = [_native_top_confidence(p) for p in e2e_results[0]["predictions"]]
     debug_confidence = [
         _native_top_confidence(p) for p in classification_results[0]["predictions"]
     ]
@@ -996,17 +989,26 @@ def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_eva
     # when
     e2e_results = end_to_end_execution_engine.run(
         runtime_parameters={
-            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
         }
     )
     detection_results = first_step_execution_engine.run(
         runtime_parameters={
-            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
         }
     )
     cropping_results = second_step_execution_engine.run(
         runtime_parameters={
-            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
             "predictions": [
                 detection_results[0]["result"]["predictions"],
                 detection_results[1]["result"]["predictions"],
@@ -1354,17 +1356,26 @@ def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evalua
     # when
     e2e_results = end_to_end_execution_engine.run(
         runtime_parameters={
-            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
         }
     )
     detection_results = first_step_execution_engine.run(
         runtime_parameters={
-            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
         }
     )
     cropping_results = second_step_execution_engine.run(
         runtime_parameters={
-            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
             "predictions": [
                 detection_results[0]["result"]["predictions"],
                 detection_results[1]["result"]["predictions"],

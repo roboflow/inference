@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 import supervision as sv
 
-
 _MODULE_PATH = (
     Path(__file__).parents[5]
     / "inference/core/workflows/core_steps/analytics/_zone_geometry.py"
@@ -134,9 +133,7 @@ def test_lean_polygon_zone_matches_supervision() -> None:
             sizes = rng.uniform(0, 90, size=(n, 2))
             if n:
                 sizes[0] = 0
-            xyxy = np.concatenate([top_left, top_left + sizes], axis=1).astype(
-                float
-            )
+            xyxy = np.concatenate([top_left, top_left + sizes], axis=1).astype(float)
 
             lean_zone = LeanPolygonZone(polygon, triggering_anchors)
             supervision_zone = sv.PolygonZone(polygon, triggering_anchors)

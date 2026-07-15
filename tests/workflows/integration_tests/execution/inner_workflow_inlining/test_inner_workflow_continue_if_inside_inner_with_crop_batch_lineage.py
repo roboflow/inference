@@ -515,9 +515,7 @@ def _run_tensor_native_inference_factory(h: int, w: int):
             assert len(imgs) == 2, f"Mock Expected 2 crop images, got {len(imgs)}"
             return NativeClassificationPrediction(
                 class_id=torch.tensor([0, 1], dtype=torch.long),
-                confidence=torch.tensor(
-                    [[0.9, 0.1], [0.6, 0.4]], dtype=torch.float32
-                ),
+                confidence=torch.tensor([[0.9, 0.1], [0.6, 0.4]], dtype=torch.float32),
             )
         raise AssertionError(f"Unexpected model_id: {model_id!r}")
 
