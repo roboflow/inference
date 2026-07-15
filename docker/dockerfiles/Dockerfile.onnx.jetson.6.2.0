@@ -635,6 +635,8 @@ WORKDIR /app
 # libegl1/libgles2 (glvnd loaders, ~1.8MB) are required by the host-injected NV
 # GStreamer plugins (nvarguscamerasrc/nvivafilter/nveglglessink/...); the actual
 # EGL/GLES drivers come from the host's tegra-egl mount at container start.
+# libgl1 (glvnd desktop-GL loader) provides libGL.so.1, linked by the Qt5 libs
+# bundled inside the opencv-python wheel (manylinux forbids vendoring libGL).
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
@@ -658,6 +660,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libasound2 \
     libdrm2 \
     libegl1 \
+    libgl1 \
     libgles2 \
     libpcre3 \
     libwayland-client0 \
