@@ -231,6 +231,36 @@ def rescale_detections(
     return detections
 
 
+def rescale_detections_packed_cuda_params(
+    detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
+) -> List[torch.Tensor]:
+    for image_detections, metadata in zip(detections, images_metadata):
+        xyxy = image_detections[:, :4]
+        params = torch.as_tensor(
+            [
+                [metadata.pad_left, metadata.pad_top] * 2,
+                [metadata.scale_width, metadata.scale_height] * 2,
+                [
+                    metadata.static_crop_offset.offset_x,
+                    metadata.static_crop_offset.offset_y,
+                ]
+                * 2,
+                [0, 0, 0, 0],
+                [metadata.original_size.width, metadata.original_size.height] * 2,
+            ],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        xyxy.sub_(params[0]).div_(params[1])
+        if (
+            metadata.static_crop_offset.offset_x != 0
+            or metadata.static_crop_offset.offset_y != 0
+        ):
+            xyxy.add_(params[2])
+        xyxy.clamp_(params[3], params[4])
+    return detections
+
+
 def rescale_image_detections(
     image_detections: torch.Tensor,
     image_metadata: PreProcessingMetadata,

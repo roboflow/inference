@@ -18,6 +18,8 @@ from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     align_instance_segmentation_results,
     post_process_nms_fused_model_output,
+    rescale_detections,
+    rescale_detections_packed_cuda_params,
     rescale_image_detections,
     rescale_key_points_detections,
     run_nms_for_instance_segmentation,
@@ -356,6 +358,25 @@ class TestRescaleImageDetectionsClipping:
         out = rescale_image_detections(detections, self._meta(orig_h=400, orig_w=600))
         assert out[0, 4].item() == pytest.approx(0.42)
         assert out[0, 5].item() == pytest.approx(7.0)
+
+    def test_packed_rescaling_matches_base(self) -> None:
+        metadata = self._meta()._replace(
+            pad_left=10,
+            pad_top=20,
+            scale_width=2.0,
+            scale_height=4.0,
+            static_crop_offset=self._meta().static_crop_offset._replace(
+                offset_x=3, offset_y=5
+            ),
+        )
+        detections = torch.tensor(
+            [[20.0, 40.0, 1300.0, 1700.0, 0.42, 7.0]], dtype=torch.float32
+        )
+        expected = rescale_detections([detections.clone()], [metadata])
+        actual = rescale_detections_packed_cuda_params(
+            [detections.clone()], [metadata]
+        )
+        assert torch.equal(actual[0], expected[0])
 
 
 class TestRescaleKeyPointsDetectionsClipping:

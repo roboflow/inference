@@ -7,6 +7,7 @@ import torch
 from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import (
     DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO_PACKED_RESCALE_ENABLED,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
@@ -37,6 +38,7 @@ from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
+    rescale_detections_packed_cuda_params,
     run_nms_for_object_detection,
 )
 from inference_models.models.common.roboflow.pre_processing import (
@@ -282,7 +284,12 @@ class YOLOv8ForObjectDetectionTRT(
                         INFERENCE_MODELS_YOLO_ULTRALYTICS_SKIP_EMPTY_NMS_CHECK_ENABLED
                     ),
                 )
-            rescaled_results = rescale_detections(
+            rescale = (
+                rescale_detections_packed_cuda_params
+                if INFERENCE_MODELS_YOLO_PACKED_RESCALE_ENABLED
+                else rescale_detections
+            )
+            rescaled_results = rescale(
                 detections=nms_results,
                 images_metadata=pre_processing_meta,
             )
