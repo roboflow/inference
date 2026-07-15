@@ -22,6 +22,38 @@ from inference_models.errors import ModelInputError, ModelRuntimeError, RetryErr
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
+SIGNED_URL_MARKER_PARAMS = {
+    "x-goog-signature",  # GCS V4
+    "x-amz-signature",  # S3 V4
+    "awsaccesskeyid",  # S3 V2
+    "googleaccessid",  # GCS V2
+    "sig",  # Azure SAS
+    "signature",  # GCS/S3 V2, CloudFront
+}
+
+
+def canonicalize_url_for_hashing(reference: str) -> str:
+    """Signed URLs (GCS/S3/Azure/CloudFront) carry rotating auth parameters
+    (signature, timestamp, expiry) in the query string, so the same object
+    yields a different URL string on every signing. Hashing the raw URL would
+    defeat the image-embeddings cache (and the class-embeddings cache keyed on
+    top of it) for every caller that re-signs URLs per request. When the query
+    string contains a recognized signature parameter, scheme+host+path alone
+    identifies the object, so only that part is hashed. URLs without signature
+    parameters keep their full form: a bare query string (e.g. ?v=2) may
+    legitimately select different content.
+    """
+    parsed = urllib.parse.urlparse(reference)
+    if not parsed.query:
+        return reference
+    query_param_names = {
+        key.lower()
+        for key, _ in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    }
+    if query_param_names.isdisjoint(SIGNED_URL_MARKER_PARAMS):
+        return reference
+    return urllib.parse.urlunparse(parsed._replace(query="", fragment=""))
+
 
 class LazyImageWrapper:
 
@@ -101,7 +133,10 @@ class LazyImageWrapper:
         if self._image_hash is not None:
             return self._image_hash
         if self._image_reference is not None:
-            self._image_hash = hash_function(value=self._image_reference)
+            reference = self._image_reference
+            if isinstance(reference, str) and is_url(reference=reference):
+                reference = canonicalize_url_for_hashing(reference=reference)
+            self._image_hash = hash_function(value=reference)
         else:
             self._image_hash = hash_function(value=self.as_numpy().tobytes())
         return self._image_hash
