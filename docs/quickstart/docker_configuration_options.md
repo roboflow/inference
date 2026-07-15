@@ -65,6 +65,17 @@ If true, the batch size will be fixed to the maximum batch size configured for t
 
 Sets the address of a Roboflow Secure Gateway for air-gapped deployments. All API and model download traffic will be routed through this proxy.
 
+Setting `SECURE_GATEWAY` also adjusts behavior that cannot work through the gateway:
+
+- The `inference` version check (which calls `api.github.com`) is force-disabled —
+  `DISABLE_VERSION_CHECK` is set to `True` even if explicitly configured otherwise.
+- If `WORKFLOWS_STEP_EXECUTION_MODE=remote` is combined with
+  `WORKFLOWS_REMOTE_API_TARGET=hosted`, step execution falls back to `local` with a
+  `RuntimeWarning` — the hosted Roboflow inference endpoints
+  (`detect`/`outline`/`segment`/`classify`/`infer.roboflow.com`) cannot be reached through
+  the gateway proxy. Use `WORKFLOWS_REMOTE_API_TARGET=self-hosted` to target another
+  server inside the gateway perimeter instead.
+
 The legacy `LICENSE_SERVER` environment variable is still accepted but deprecated.
 
 ## Maximum Active Models
