@@ -18,6 +18,7 @@ from inference_models.errors import (
     MissingDependencyError,
     ModelRuntimeError,
 )
+from inference_models.logger import LOGGER
 from inference_models.models.common.cuda import (
     use_cuda_context,
     use_primary_cuda_context,
@@ -82,6 +83,13 @@ class YOLOv8ForObjectDetectionTRT(
     ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
 ):
 
+    _TRT_EXECUTION_MODE_BASE = "base"
+    _TRT_EXECUTION_MODE_EVENT_HANDOFF = "event-handoff-v1"
+    _TRT_EXECUTION_MODES = {
+        _TRT_EXECUTION_MODE_BASE,
+        _TRT_EXECUTION_MODE_EVENT_HANDOFF,
+    }
+
     @classmethod
     def from_pretrained(
         cls,
@@ -90,9 +98,19 @@ class YOLOv8ForObjectDetectionTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
+        trt_execution_mode: str = _TRT_EXECUTION_MODE_BASE,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForObjectDetectionTRT":
+        if trt_execution_mode not in cls._TRT_EXECUTION_MODES:
+            raise ModelRuntimeError(
+                message=(
+                    "Unsupported YOLOv8 TensorRT execution mode "
+                    f"{trt_execution_mode!r}. Supported values are "
+                    f"{sorted(cls._TRT_EXECUTION_MODES)}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
@@ -161,6 +179,18 @@ class YOLOv8ForObjectDetectionTRT(
             default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
             cuda_graph_cache=trt_cuda_graph_cache,
         )
+        if (
+            trt_execution_mode == cls._TRT_EXECUTION_MODE_EVENT_HANDOFF
+            and trt_cuda_graph_cache is None
+        ):
+            raise ModelRuntimeError(
+                message=(
+                    "YOLOv8 TensorRT execution mode 'event-handoff-v1' requires "
+                    "a CUDA graph cache. Use the base execution mode when CUDA graphs "
+                    "are disabled."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
         return cls(
             engine=engine,
             input_name=inputs[0],
@@ -172,6 +202,7 @@ class YOLOv8ForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            trt_execution_mode=trt_execution_mode,
             recommended_parameters=recommended_parameters,
         )
 
@@ -187,6 +218,7 @@ class YOLOv8ForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        trt_execution_mode: str,
         recommended_parameters=None,
     ):
         self._engine = engine
@@ -199,14 +231,32 @@ class YOLOv8ForObjectDetectionTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
+        self._trt_execution_mode = trt_execution_mode
         self._lock = threading.Lock()
+        self._event_handoff_lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
+        LOGGER.info(
+            "YOLOv8 TensorRT execution mode selected: %s", self._trt_execution_mode
+        )
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    def infer(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        if self._trt_execution_mode == self._TRT_EXECUTION_MODE_BASE:
+            return super().infer(images, **kwargs)
+        # The graph-owned output buffer is reused on the next request. Keep the
+        # event-handoff alternative serial until it has been separately validated
+        # for concurrent callers.
+        with self._event_handoff_lock:
+            return super().infer(images, **kwargs)
 
     def pre_process(
         self,
@@ -233,7 +283,19 @@ class YOLOv8ForObjectDetectionTRT(
         disable_cuda_graphs: bool = False,
         **kwargs,
     ) -> torch.Tensor:
+        if (
+            self._trt_execution_mode == self._TRT_EXECUTION_MODE_EVENT_HANDOFF
+            and disable_cuda_graphs
+        ):
+            raise ModelRuntimeError(
+                message=(
+                    "YOLOv8 TensorRT execution mode 'event-handoff-v1' cannot be "
+                    "used when CUDA graphs are disabled."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
+        synchronize = self._trt_execution_mode == self._TRT_EXECUTION_MODE_BASE
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
@@ -246,6 +308,7 @@ class YOLOv8ForObjectDetectionTRT(
                     outputs=self._output_names,
                     stream=self._inference_stream,
                     trt_cuda_graph_cache=cache,
+                    synchronize=synchronize,
                 )[0]
 
     def post_process(
@@ -265,6 +328,18 @@ class YOLOv8ForObjectDetectionTRT(
         )
         confidence = confidence_filter.get_threshold(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
+            if self._trt_execution_mode == self._TRT_EXECUTION_MODE_EVENT_HANDOFF:
+                ready_event = getattr(model_results, "_trt_produce_event", None)
+                graph_state = getattr(model_results, "_trt_graph_state", None)
+                if ready_event is None or graph_state is None:
+                    raise ModelRuntimeError(
+                        message=(
+                            "YOLOv8 TensorRT execution mode 'event-handoff-v1' "
+                            "requires CUDA graph output metadata."
+                        ),
+                        help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                    )
+                self._post_process_stream.wait_event(ready_event)
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:
                 nms_results = post_process_nms_fused_model_output(
@@ -291,6 +366,10 @@ class YOLOv8ForObjectDetectionTRT(
                         confidence=result[:, 4],
                     )
                 )
+            if self._trt_execution_mode == self._TRT_EXECUTION_MODE_EVENT_HANDOFF:
+                consumer_done_event = torch.cuda.Event()
+                consumer_done_event.record(self._post_process_stream)
+                graph_state.consumer_done_event = consumer_done_event
         self._post_process_stream.synchronize()
         return results
 
