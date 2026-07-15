@@ -27,6 +27,7 @@ from inference_models.models.common.onnx import (
     set_onnx_execution_provider_defaults,
 )
 from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
