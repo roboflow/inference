@@ -273,6 +273,14 @@ class ClipComparisonBlockV2(WorkflowBlock):
                 class_id=torch.tensor([int(max_similarity_id)]),
                 confidence=torch.tensor([similarities], dtype=torch.float32),
                 images_metadata=[
+                    # Lane 1b NOTE: intentionally NOT stamped with CLASSIFICATION_STYLE_KEY.
+                    # clip_comparison v2's flag-OFF `classification_predictions` is a
+                    # bespoke dict ({predictions, top, confidence, parent_id}) that matches
+                    # NEITHER the serialiser's "model" nor "formatter" shape (both add
+                    # `image`/`inference_id`; model also sorts/rounds/filters + prediction_type).
+                    # This is a PRE-EXISTING byte-parity gap, not a lane-1b regression, so the
+                    # prediction is left on the fallback heuristic (-> formatter, unchanged from
+                    # before lane 1b). Byte-parity for clip_comparison needs its own decision.
                     {
                         CLASS_NAMES_KEY: {
                             class_id: class_name

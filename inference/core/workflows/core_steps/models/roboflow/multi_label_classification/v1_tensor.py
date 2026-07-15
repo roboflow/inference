@@ -46,6 +46,8 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_KEY,
+    CLASSIFICATION_STYLE_MODEL,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -364,6 +366,8 @@ def _build_native_classification_metadata(
     height, width = image._read_shape_without_materialization()
     metadata = {
         CLASS_NAMES_KEY: class_names,
+        # Lane 1b: explicit style tag the serialiser reads to pick the flag-OFF shape.
+        CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_MODEL,
         PREDICTION_TYPE_KEY: PREDICTION_TYPE,
         IMAGE_DIMENSIONS_KEY: [height, width],
         INFERENCE_ID_KEY: inference_id,

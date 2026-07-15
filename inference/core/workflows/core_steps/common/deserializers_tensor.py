@@ -25,6 +25,8 @@ from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_KEY,
+    CLASSIFICATION_STYLE_MODEL,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -550,6 +552,9 @@ def _build_classification_image_metadata(
     """Assemble the per-image ``image_metadata`` that the serializer and the UQL
     ``*_tensor_native`` classification extractors read back."""
     metadata: dict = {CLASS_NAMES_KEY: class_names_mapping}
+    # Lane 1b: deserialised predictions follow the canonical model contract (decision
+    # 1a), so tag them "model" rather than relying on which incidental keys survived.
+    metadata[CLASSIFICATION_STYLE_KEY] = CLASSIFICATION_STYLE_MODEL
     image = value.get("image") or {}
     height, width = image.get("height"), image.get("width")
     if height is not None and width is not None:

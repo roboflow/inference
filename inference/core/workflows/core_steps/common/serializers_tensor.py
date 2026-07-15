@@ -30,6 +30,9 @@ from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_FORMATTER,
+    CLASSIFICATION_STYLE_KEY,
+    CLASSIFICATION_STYLE_MODEL,
     CONFIDENCE_KEY,
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
@@ -437,13 +440,14 @@ def serialise_native_classification(
       ``image, predictions, top, confidence, inference_id, parent_id``; multi-label
       ``image, predictions, predicted_classes, inference_id, parent_id``.
 
-    A native prediction cannot self-describe which shape it wants, so the shape is
-    inferred from metadata the producers already attach (see
-    ``_wants_model_style_classification``). NOTE (reported): this is an interim
-    heuristic - an explicit producer-set style key would be cleaner - and the
-    formatter shape cannot reproduce the numpy vlm ``class_id = -1`` for an
-    out-of-list class, because the native producer collapses such classes into a
-    dense ``len(classes)`` id before building the tensors (in-list classes ARE
+    A native prediction cannot self-describe which shape it wants, so the producer
+    stamps an explicit ``CLASSIFICATION_STYLE_KEY`` (``"model"`` / ``"formatter"``)
+    into ``image_metadata`` and the serialiser reads it (see
+    ``_wants_model_style_classification``, which falls back to the original
+    metadata heuristic when the key is absent). NOTE: the formatter shape still
+    cannot reproduce the numpy vlm ``class_id = -1`` for an out-of-list class,
+    because the native producer collapses such classes into a dense
+    ``len(classes)`` id before building the tensors (in-list classes ARE
     byte-identical).
     """
     if isinstance(prediction, ClassificationPrediction):
@@ -491,19 +495,29 @@ def serialise_native_classification(
 
 
 def _wants_model_style_classification(image_metadata: dict) -> bool:
-    """D4: choose which flag-OFF classification shape to reproduce.
+    """D4 / lane 1b: choose which flag-OFF classification shape to reproduce.
 
-    ``True`` -> numpy ``*InferenceResponse``-derived "model" shape (today's
-    behaviour). ``False`` -> hand-built ``vlm_as_classifier`` "formatter" shape.
+    ``True`` -> numpy ``*InferenceResponse``-derived "model" shape. ``False`` ->
+    hand-built ``vlm_as_classifier`` "formatter" shape.
 
-    The vlm formatter attaches only CLASS_NAMES / PREDICTION_TYPE / IMAGE_DIMENSIONS
-    / INFERENCE_ID / PARENT_ID. The model producers additionally attach a confidence
-    threshold (multi_class model blocks), ``root_parent_id`` (all model blocks +
-    visual_search_classifier) and/or ``time``. Presence of ANY of the three signals
-    the model shape. This keeps every existing model producer - and the pinned
-    key-ordering tests, which set ``root_parent_id`` - on today's output while
-    letting the vlm formatter reach its byte-identical flag-OFF dict.
+    Primary signal: the explicit ``CLASSIFICATION_STYLE_KEY`` the producer stamps
+    into ``image_metadata`` (``"model"`` / ``"formatter"``). This replaces the
+    original brittle heuristic, which inferred the shape from incidental metadata.
+
+    Fallback (key ABSENT or an unrecognised value): the original heuristic. The vlm
+    formatter attaches only CLASS_NAMES / PREDICTION_TYPE / IMAGE_DIMENSIONS /
+    INFERENCE_ID / PARENT_ID, while the model producers additionally attach a
+    confidence threshold (multi_class model blocks), ``root_parent_id`` (all model
+    blocks + visual_search_classifier) and/or ``time`` - presence of ANY of the
+    three signals the model shape. Keeping the heuristic as a fallback makes wiring
+    the explicit key non-breaking: an un-wired producer, and the pinned key-ordering
+    tests (which set ``root_parent_id``), keep today's output.
     """
+    style = image_metadata.get(CLASSIFICATION_STYLE_KEY)
+    if style == CLASSIFICATION_STYLE_MODEL:
+        return True
+    if style == CLASSIFICATION_STYLE_FORMATTER:
+        return False
     return (
         image_metadata.get(_CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY) is not None
         or image_metadata.get(ROOT_PARENT_ID_KEY) is not None

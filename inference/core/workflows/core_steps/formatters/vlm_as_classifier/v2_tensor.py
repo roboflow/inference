@@ -10,6 +10,8 @@ from pydantic import ConfigDict, Field
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_FORMATTER,
+    CLASSIFICATION_STYLE_KEY,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -283,6 +285,8 @@ def parse_multi_class_classification_results(
         top_class_id = class2id_mapping[top_class]
         image_metadata = {
             CLASS_NAMES_KEY: class_names,
+            # Lane 1b: explicit style tag -> serialiser reproduces the vlm formatter shape.
+            CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_FORMATTER,
             PREDICTION_TYPE_KEY: "classification",
             IMAGE_DIMENSIONS_KEY: [height, width],
             INFERENCE_ID_KEY: inference_id,
@@ -358,6 +362,8 @@ def parse_multi_label_classification_results(
         ]
         image_metadata = {
             CLASS_NAMES_KEY: class_names,
+            # Lane 1b: explicit style tag -> serialiser reproduces the vlm formatter shape.
+            CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_FORMATTER,
             PREDICTION_TYPE_KEY: "classification",
             IMAGE_DIMENSIONS_KEY: [height, width],
             INFERENCE_ID_KEY: inference_id,
