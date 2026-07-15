@@ -18,6 +18,7 @@ from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
     MissingDependencyError,
+    ModelInputError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -263,11 +264,24 @@ class YOLOv8ForObjectDetectionOnnx(
         image_size: Optional[Union[Tuple[int, int], int]],
         pre_processing_overrides: Optional[PreProcessingOverrides],
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+        if isinstance(images, list):
+            if len(images) != 1 or not isinstance(images[0], np.ndarray):
+                raise ModelInputError(
+                    message=(
+                        f"YOLOv8 ONNX preprocess implementation "
+                        f"{self._GPU_NUMPY_PREPROCESSOR!r} accepts one NumPy image "
+                        "or a one-element list containing one. Use 'base' for "
+                        "other batch forms."
+                    ),
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/",
+                )
+            images = images[0]
         if not isinstance(images, np.ndarray):
             raise ModelInputError(
                 message=(
                     f"YOLOv8 ONNX preprocess implementation "
-                    f"{self._GPU_NUMPY_PREPROCESSOR!r} accepts one NumPy image; "
+                    f"{self._GPU_NUMPY_PREPROCESSOR!r} accepts one NumPy image "
+                    "or a one-element list containing one; "
                     f"received {type(images).__name__}. Use 'base' for this input."
                 ),
                 help_url="https://inference-models.roboflow.com/errors/input-validation/",
