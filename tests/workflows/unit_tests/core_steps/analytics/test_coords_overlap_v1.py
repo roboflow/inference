@@ -74,9 +74,9 @@ def test_overlap_run_masks_no_false_positive():
     )
 
     # Sanity check: masks do NOT overlap at the pixel level
-    assert not np.logical_and(masks[0], masks[1]).any(), (
-        "Sanity check failed: masks should not overlap"
-    )
+    assert not np.logical_and(
+        masks[0], masks[1]
+    ).any(), "Sanity check failed: masks should not overlap"
 
     block = OverlapBlockV1()
 
@@ -92,46 +92,64 @@ def test_overlap_run_masks_no_false_positive():
     )
 
     # Masks don't overlap, so no detections should be returned
-    assert len(result_any[OUTPUT_KEY]) == 0, (
-        "Expected no overlap — masks do not intersect"
-    )
-    assert len(result_center[OUTPUT_KEY]) == 0, (
-        "Expected no overlap — masks do not intersect"
-    )
+    assert (
+        len(result_any[OUTPUT_KEY]) == 0
+    ), "Expected no overlap — masks do not intersect"
+    assert (
+        len(result_center[OUTPUT_KEY]) == 0
+    ), "Expected no overlap — masks do not intersect"
 
 
 def test_masks_overlap():
     """Unit tests for the masks_overlap classmethod, mirroring test_coords_overlap."""
     image_h, image_w = 100, 100
 
-    # overlap mask: bottom-left quadrant
+    # overlap mask: bottom-left quadrant. Coords are float32 to mirror real
+    # sv.Detections.xyxy, which guards against integer-only mask slicing.
     overlap_mask = np.zeros((image_h, image_w), dtype=bool)
     overlap_mask[50:100, 0:50] = True
+    overlap_bbox = np.array([0, 50, 50, 100], dtype=np.float32)
 
-    # other mask in top-right — no pixel overlap
+    # other mask in top-right — no pixel overlap (and disjoint bounding boxes)
     other_mask_far = np.zeros((image_h, image_w), dtype=bool)
     other_mask_far[10:40, 60:90] = True
-    other_bbox_far = [60, 10, 90, 40]
+    other_bbox_far = np.array([60, 10, 90, 40], dtype=np.float32)
 
     # other mask inside overlap — pixel overlap exists
     other_mask_inside = np.zeros((image_h, image_w), dtype=bool)
     other_mask_inside[60:80, 20:40] = True
-    other_bbox_inside = [20, 60, 40, 80]
+    other_bbox_inside = np.array([20, 60, 40, 80], dtype=np.float32)
 
     # No overlap cases
     assert not OverlapBlockV1.masks_overlap(
-        overlap_mask, other_mask_far, other_bbox_far, "Center Overlap"
+        overlap_mask=overlap_mask,
+        overlap_bbox=overlap_bbox,
+        other_mask=other_mask_far,
+        other_bbox=other_bbox_far,
+        overlap_type="Center Overlap",
     )
     assert not OverlapBlockV1.masks_overlap(
-        overlap_mask, other_mask_far, other_bbox_far, "Any Overlap"
+        overlap_mask=overlap_mask,
+        overlap_bbox=overlap_bbox,
+        other_mask=other_mask_far,
+        other_bbox=other_bbox_far,
+        overlap_type="Any Overlap",
     )
 
     # Overlap cases
     assert OverlapBlockV1.masks_overlap(
-        overlap_mask, other_mask_inside, other_bbox_inside, "Center Overlap"
+        overlap_mask=overlap_mask,
+        overlap_bbox=overlap_bbox,
+        other_mask=other_mask_inside,
+        other_bbox=other_bbox_inside,
+        overlap_type="Center Overlap",
     )
     assert OverlapBlockV1.masks_overlap(
-        overlap_mask, other_mask_inside, other_bbox_inside, "Any Overlap"
+        overlap_mask=overlap_mask,
+        overlap_bbox=overlap_bbox,
+        other_mask=other_mask_inside,
+        other_bbox=other_bbox_inside,
+        overlap_type="Any Overlap",
     )
 
 
@@ -196,9 +214,9 @@ def test_overlap_run_with_masks_true_positive():
     )
 
     # Sanity check: masks DO overlap
-    assert np.logical_and(masks[0], masks[1]).any(), (
-        "Sanity check failed: masks should overlap"
-    )
+    assert np.logical_and(
+        masks[0], masks[1]
+    ).any(), "Sanity check failed: masks should overlap"
 
     block = OverlapBlockV1()
     result = block.run(
@@ -221,7 +239,7 @@ def test_overlap_run_no_overlap_at_all():
 
     xyxy = np.array(
         [
-            [0, 0, 30, 30],   # container — top-left
+            [0, 0, 30, 30],  # container — top-left
             [70, 70, 90, 90],  # item — bottom-right, far away
         ],
         dtype=np.float32,

@@ -149,6 +149,7 @@ class OverlapBlockV1(WorkflowBlock):
     def masks_overlap(
         cls,
         overlap_mask: np.ndarray,
+        overlap_bbox: list[int],
         other_mask: np.ndarray,
         other_bbox: list[int],
         overlap_type: Literal["Center Overlap", "Any Overlap"],
@@ -157,6 +158,7 @@ class OverlapBlockV1(WorkflowBlock):
 
         Args:
             overlap_mask: Boolean mask of the overlap-class detection.
+            overlap_bbox: Bounding box [x1, y1, x2, y2] of the overlap-class detection.
             other_mask: Boolean mask of the other detection.
             other_bbox: Bounding box [x1, y1, x2, y2] of the other detection.
             overlap_type: "Center Overlap" checks whether the center of
@@ -171,7 +173,20 @@ class OverlapBlockV1(WorkflowBlock):
                 return bool(overlap_mask[cy, cx])
             return False
         else:
-            return bool(np.logical_and(overlap_mask, other_mask).any())
+            # masks lie within their bboxes, so only the bbox intersection can
+            # share pixels - restrict logical_and there to skip a full (H, W) scan
+            h, w = overlap_mask.shape
+            x1 = max(int(np.floor(max(overlap_bbox[0], other_bbox[0]))), 0)
+            y1 = max(int(np.floor(max(overlap_bbox[1], other_bbox[1]))), 0)
+            x2 = min(int(np.ceil(min(overlap_bbox[2], other_bbox[2]))), w)
+            y2 = min(int(np.ceil(min(overlap_bbox[3], other_bbox[3]))), h)
+            if x1 >= x2 or y1 >= y2:
+                return False
+            return bool(
+                np.logical_and(
+                    overlap_mask[y1:y2, x1:x2], other_mask[y1:y2, x1:x2]
+                ).any()
+            )
 
     def run(
         self,
@@ -180,10 +195,8 @@ class OverlapBlockV1(WorkflowBlock):
         overlap_class_name: str,
     ) -> BlockResult:
 
-        has_masks = (
-            getattr(predictions, "mask", None) is not None
-            and len(predictions.mask) == len(predictions.xyxy)
-        )
+        mask = getattr(predictions, "mask", None)
+        has_masks = mask is not None and len(mask) == len(predictions.xyxy)
 
         overlap_indices = []
         others = {}
@@ -205,10 +218,11 @@ class OverlapBlockV1(WorkflowBlock):
                     k
                     for k in others
                     if OverlapBlockV1.masks_overlap(
-                        predictions.mask[oi],
-                        predictions.mask[k],
-                        predictions.xyxy[k],
-                        overlap_type,
+                        overlap_mask=predictions.mask[oi],
+                        overlap_bbox=predictions.xyxy[oi],
+                        other_mask=predictions.mask[k],
+                        other_bbox=predictions.xyxy[k],
+                        overlap_type=overlap_type,
                     )
                 }
             else:
