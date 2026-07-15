@@ -19,6 +19,7 @@ from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
 )
+from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
@@ -38,6 +39,7 @@ from inference_models.models.common.roboflow.post_processing import (
     run_nms_for_object_detection,
 )
 from inference_models.models.common.roboflow.pre_processing import (
+    pre_process_images_tensor,
     pre_process_network_input,
 )
 from inference_models.models.common.streams import get_cuda_stream
@@ -65,6 +67,9 @@ except ImportError as import_error:
 class YOLOv8ForObjectDetectionOnnx(
     ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
 ):
+    _BASE_PREPROCESSOR = "base"
+    _GPU_NUMPY_PREPROCESSOR = "torch-gpu-numpy-letterbox-v1"
+
 
     @classmethod
     def from_pretrained(
@@ -74,6 +79,7 @@ class YOLOv8ForObjectDetectionOnnx(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        preprocess_implementation: str = _BASE_PREPROCESSOR,
         **kwargs,
     ) -> "YOLOv8ForObjectDetectionOnnx":
         if onnx_execution_providers is None:
@@ -137,6 +143,10 @@ class YOLOv8ForObjectDetectionOnnx(
         if isinstance(input_batch_size, str):
             input_batch_size = None
         input_name = session.get_inputs()[0].name
+        resolved_preprocess_implementation = cls._resolve_preprocess_implementation(
+            requested_implementation=preprocess_implementation,
+            device=device,
+        )
         return cls(
             session=session,
             input_name=input_name,
@@ -145,6 +155,7 @@ class YOLOv8ForObjectDetectionOnnx(
             device=device,
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
+            preprocess_implementation=resolved_preprocess_implementation,
         )
 
     def __init__(
@@ -156,6 +167,7 @@ class YOLOv8ForObjectDetectionOnnx(
         device: torch.device,
         input_batch_size: Optional[int],
         recommended_parameters=None,
+        preprocess_implementation: str = _BASE_PREPROCESSOR,
     ):
         self._session = session
         self._input_name = input_name
@@ -170,6 +182,42 @@ class YOLOv8ForObjectDetectionOnnx(
         )
         self._session_thread_lock = Lock()
         self.recommended_parameters = recommended_parameters
+        self._preprocess_implementation = preprocess_implementation
+        LOGGER.info(
+            "YOLOv8 ONNX selected preprocess implementation: %s",
+            preprocess_implementation,
+        )
+
+    @classmethod
+    def _resolve_preprocess_implementation(
+        cls,
+        requested_implementation: str,
+        device: torch.device,
+    ) -> str:
+        if requested_implementation == "auto":
+            return cls._BASE_PREPROCESSOR
+        if requested_implementation == cls._BASE_PREPROCESSOR:
+            return cls._BASE_PREPROCESSOR
+        if requested_implementation != cls._GPU_NUMPY_PREPROCESSOR:
+            raise EnvironmentConfigurationError(
+                message=(
+                    "Unknown YOLOv8 ONNX preprocess implementation "
+                    f"{requested_implementation!r}. Supported values are "
+                    f"{cls._BASE_PREPROCESSOR!r}, 'auto', and "
+                    f"{cls._GPU_NUMPY_PREPROCESSOR!r}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/",
+            )
+        if device.type != "cuda":
+            raise EnvironmentConfigurationError(
+                message=(
+                    f"YOLOv8 ONNX preprocess implementation "
+                    f"{cls._GPU_NUMPY_PREPROCESSOR!r} requires a CUDA device; "
+                    f"received {device}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/",
+            )
+        return cls._GPU_NUMPY_PREPROCESSOR
 
     @property
     def class_names(self) -> List[str]:
@@ -185,18 +233,85 @@ class YOLOv8ForObjectDetectionOnnx(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         pre_process_stream = self._pre_process_stream
         with torch.cuda.stream(pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                image_size_wh=image_size,
-                pre_processing_overrides=pre_processing_overrides,
-            )
+            if self._preprocess_implementation == self._GPU_NUMPY_PREPROCESSOR:
+                pre_processed_images, pre_processing_meta = (
+                    self._pre_process_numpy_on_gpu(
+                        images=images,
+                        input_color_format=input_color_format,
+                        image_size=image_size,
+                        pre_processing_overrides=pre_processing_overrides,
+                    )
+                )
+            else:
+                pre_processed_images, pre_processing_meta = pre_process_network_input(
+                    images=images,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    target_device=self._device,
+                    input_color_format=input_color_format,
+                    image_size_wh=image_size,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
         if pre_process_stream is not None:
             pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
+
+    def _pre_process_numpy_on_gpu(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat],
+        image_size: Optional[Union[Tuple[int, int], int]],
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+    ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+        if not isinstance(images, np.ndarray):
+            raise ModelInputError(
+                message=(
+                    f"YOLOv8 ONNX preprocess implementation "
+                    f"{self._GPU_NUMPY_PREPROCESSOR!r} accepts one NumPy image; "
+                    f"received {type(images).__name__}. Use 'base' for this input."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/input-validation/",
+            )
+        if images.ndim != 3 or images.shape[2] != 3 or images.dtype != np.uint8:
+            raise ModelInputError(
+                message=(
+                    f"YOLOv8 ONNX preprocess implementation "
+                    f"{self._GPU_NUMPY_PREPROCESSOR!r} requires a uint8 HWC image "
+                    f"with three channels; received shape={images.shape}, dtype={images.dtype}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/input-validation/",
+            )
+        if not images.flags.c_contiguous:
+            raise ModelInputError(
+                message=(
+                    f"YOLOv8 ONNX preprocess implementation "
+                    f"{self._GPU_NUMPY_PREPROCESSOR!r} requires a C-contiguous image. "
+                    "Use 'base' for non-contiguous input."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/input-validation/",
+            )
+        if self._inference_config.network_input.resize_mode is not ResizeMode.LETTERBOX:
+            raise ModelInputError(
+                message=(
+                    f"YOLOv8 ONNX preprocess implementation "
+                    f"{self._GPU_NUMPY_PREPROCESSOR!r} supports only letterbox packages; "
+                    f"received {self._inference_config.network_input.resize_mode.value!r}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/input-validation/",
+            )
+        return pre_process_images_tensor(
+            images=torch.from_numpy(images),
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+            target_device=self._device,
+            input_color_mode=(
+                ColorMode(input_color_format)
+                if input_color_format is not None
+                else ColorMode.BGR
+            ),
+            image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
+        )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
