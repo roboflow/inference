@@ -11,6 +11,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_SKIP_EMPTY_NMS_CHECK_ENABLED,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -277,6 +278,9 @@ class YOLOv8ForObjectDetectionTRT(
                     iou_thresh=iou_threshold,
                     max_detections=max_detections,
                     class_agnostic=class_agnostic_nms,
+                    skip_empty_check=(
+                        INFERENCE_MODELS_YOLO_ULTRALYTICS_SKIP_EMPTY_NMS_CHECK_ENABLED
+                    ),
                 )
             rescaled_results = rescale_detections(
                 detections=nms_results,

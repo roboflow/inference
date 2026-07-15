@@ -28,6 +28,7 @@ def run_nms_for_object_detection(
     max_detections: int = 100,
     class_agnostic: bool = False,
     box_format: Literal["xywh", "xyxy"] = "xywh",
+    skip_empty_check: bool = False,
 ) -> List[torch.Tensor]:
     """
     `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
@@ -44,7 +45,7 @@ def run_nms_for_object_detection(
             mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
-        if not torch.any(mask):
+        if not skip_empty_check and not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue
         bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes

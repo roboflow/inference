@@ -76,6 +76,13 @@ class TestRunNmsForObjectDetection:
         result = run_nms_for_object_detection(out, conf_thresh=thresholds)
         assert result[0].shape[0] == 1
 
+    def test_skip_empty_check_preserves_empty_result(self) -> None:
+        out = _od_output([((10, 10, 10, 10), 0, 0.1)])
+        result = run_nms_for_object_detection(
+            out, conf_thresh=0.4, skip_empty_check=True
+        )
+        assert result[0].shape == (0, 6)
+
 
 class TestPostProcessNmsFused:
     def _fused(self, rows):
