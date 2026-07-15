@@ -224,7 +224,12 @@ class YOLOv8ForObjectDetectionTRT(
                 input_color_format=input_color_format,
                 pre_processing_overrides=pre_processing_overrides,
             )
-        self._pre_process_stream.synchronize()
+            if self._trt_execution_mode == self._TRT_EXECUTION_MODE_EVENT_HANDOFF:
+                ready_event = torch.cuda.Event()
+                ready_event.record(self._pre_process_stream)
+                pre_processed_images._trt_pre_process_ready_event = ready_event  # type: ignore[attr-defined]
+        if self._trt_execution_mode == self._TRT_EXECUTION_MODE_BASE:
+            self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
 
     def forward(
@@ -236,6 +241,20 @@ class YOLOv8ForObjectDetectionTRT(
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
+                if self._trt_execution_mode == self._TRT_EXECUTION_MODE_EVENT_HANDOFF:
+                    ready_event = getattr(
+                        pre_processed_images, "_trt_pre_process_ready_event", None
+                    )
+                    if ready_event is None:
+                        raise ModelRuntimeError(
+                            message=(
+                                "YOLOv8 TensorRT execution mode 'event-handoff-v1' "
+                                "requires preprocessing readiness metadata."
+                            ),
+                            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                        )
+                    self._inference_stream.wait_event(ready_event)
+                    pre_processed_images.record_stream(self._inference_stream)
                 return infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
