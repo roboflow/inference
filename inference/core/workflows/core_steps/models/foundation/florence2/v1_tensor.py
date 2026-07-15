@@ -150,7 +150,17 @@ class Florence2BlockV1(WorkflowBlock):
                 input_color_format=image_color_format,
                 prompt=final_prompt,
             )
-            prediction_data = result[0]
+            # `run_tensor_native_inference` -> `Florence2HF.prompt` returns one
+            # `post_process_generation` dict per image, each shaped
+            # `{task: answer}`. Unwrap the per-task answer exactly like the numpy
+            # sibling (v1.py `run_locally`) so `raw_output`/`parsed_output`/`classes`
+            # match flag-off; leaving the wrapper on makes `raw_output` a wrapper
+            # dict and `.get("labels")` miss the nested labels (classes == []).
+            prediction_dict = result[0]
+            if is_not_florence_task:
+                prediction_data = prediction_dict[list(prediction_dict.keys())[0]]
+            else:
+                prediction_data = prediction_dict[florence_task]
 
             extracted_classes = classes
             if florence_task in TASKS_TO_EXTRACT_LABELS_AS_CLASSES and isinstance(
