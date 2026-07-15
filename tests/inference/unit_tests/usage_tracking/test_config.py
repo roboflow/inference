@@ -1,4 +1,3 @@
-import importlib
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
