@@ -489,6 +489,7 @@ COPY requirements/_requirements.txt \
 # Install Python dependencies (torch/torchvision/numpy/onnxruntime already installed from source)
 RUN echo "opencv-python==4.12.0.88" > /tmp/jetson-opencv-overrides.txt && \
     echo "opencv-contrib-python==4.12.0.88" >> /tmp/jetson-opencv-overrides.txt && \
+    echo "opencv-python-headless==4.12.0.88" >> /tmp/jetson-opencv-overrides.txt && \
     uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --override /tmp/jetson-opencv-overrides.txt \
     -r _requirements.txt \
