@@ -3,7 +3,7 @@ import importlib.util
 import os.path
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Union
 
 import torch
 from filelock import FileLock
@@ -13,6 +13,8 @@ from rich.text import Text
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     FILE_LOCK_ACQUIRE_TIMEOUT,
+    INFERENCE_HOME,
+    OFFLINE_MODE,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -22,7 +24,9 @@ from inference_models.errors import (
     InvalidParameterError,
     MissingModelInitParameterError,
     ModelPackageAlternativesExhaustedError,
+    ModelRetrievalError,
     NoModelPackagesAvailableError,
+    RetryError,
     UnauthorizedModelAccessError,
 )
 from inference_models.logger import LOGGER, verbose_info
@@ -56,6 +60,7 @@ from inference_models.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_models.models.auto_loaders.model_cache_paths import (
+    generate_model_cache_root_for_model_id,
     generate_model_package_cache_path,
     generate_shared_blobs_path,
 )
@@ -790,6 +795,25 @@ class AutoModel:
             )
             if model_from_cache:
                 return model_from_cache
+            if OFFLINE_MODE:
+                offline_result = attempt_loading_model_from_offline_cache(
+                    model_id=model_id_or_path,
+                    model_init_kwargs=model_init_kwargs,
+                    allow_local_code_packages=allow_local_code_packages,
+                    verbose=verbose,
+                )
+                if offline_result is not None:
+                    model, offline_cache_dir = offline_result
+                    if point_model_directory:
+                        point_model_directory(offline_cache_dir)
+                    return model
+                raise ModelRetrievalError(
+                    message=f"Cannot load model {model_id_or_path} in OFFLINE_MODE - "
+                    f"no cached model package found in {INFERENCE_HOME}/models-cache/. "
+                    f"Pre-populate the cache by running once with network access, "
+                    f"or disable OFFLINE_MODE.",
+                    help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+                )
             try:
                 model_metadata = get_model_from_provider(
                     provider=weights_provider,
@@ -835,6 +859,24 @@ class AutoModel:
                     model_id=model_id_or_path, api_key=api_key
                 )
                 raise error
+            except RetryError:
+                verbose_info(
+                    message=f"API unreachable for model {model_id_or_path}, "
+                    f"attempting offline cache fallback.",
+                    verbose_requested=verbose,
+                )
+                offline_result = attempt_loading_model_from_offline_cache(
+                    model_id=model_id_or_path,
+                    model_init_kwargs=model_init_kwargs,
+                    allow_local_code_packages=allow_local_code_packages,
+                    verbose=verbose,
+                )
+                if offline_result is None:
+                    raise
+                model, offline_cache_dir = offline_result
+                if point_model_directory:
+                    point_model_directory(offline_cache_dir)
+                return model
             # here we verify if de-aliasing or access confirmation from auth master changed something
             model_from_access_manager = model_access_manager.retrieve_model_instance(
                 model_id=model_id_or_path,
@@ -1111,6 +1153,80 @@ def attempt_loading_model_with_auto_load_cache(
         return None
 
 
+def find_cached_model_package_dir(model_id: str) -> Optional[str]:
+    """Return the path to a locally-cached model package for *model_id*, or ``None``.
+
+    Scans the model's cache root under ``{INFERENCE_HOME}/models-cache/`` for any
+    package directory that contains a ``model_config.json``. This is used as a
+    fallback when the weights-provider API is unreachable (offline / air-gapped).
+    """
+    for package_dir in _iterate_cached_model_package_dirs(model_id=model_id):
+        return package_dir
+    return None
+
+
+def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, None]:
+    cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
+    if not os.path.isdir(cache_root):
+        return
+    try:
+        entries = sorted(os.listdir(cache_root))
+    except OSError:
+        return
+    for entry in entries:
+        if entry.startswith("."):
+            continue
+        package_dir = os.path.join(cache_root, entry)
+        if not os.path.isdir(package_dir):
+            continue
+        if os.path.isfile(os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)):
+            yield package_dir
+
+
+def attempt_loading_model_from_offline_cache(
+    model_id: str,
+    model_init_kwargs: dict,
+    allow_local_code_packages: bool = True,
+    verbose: bool = False,
+) -> Optional[Tuple[AnyModel, str]]:
+    """Try to load a model from local cache when the API is unreachable.
+
+    Scans the model's cache root for package directories containing
+    ``model_config.json`` and attempts to load each until one succeeds.
+    Returns ``(model, package_dir)`` on success, ``None`` if no cached
+    package could be loaded.
+    """
+    found_any_package = False
+    for package_dir in _iterate_cached_model_package_dirs(model_id=model_id):
+        found_any_package = True
+        try:
+            model = attempt_loading_model_from_local_storage(
+                model_dir_or_weights_path=package_dir,
+                allow_local_code_packages=allow_local_code_packages,
+                model_init_kwargs=dict(model_init_kwargs),
+            )
+            verbose_info(
+                message=f"Loaded model {model_id} from offline cache at {package_dir}.",
+                verbose_requested=verbose,
+            )
+            return model, package_dir
+        except Exception as error:
+            LOGGER.warning(
+                f"Failed to load cached model package from {package_dir}: {error}"
+            )
+    if not found_any_package:
+        verbose_info(
+            message=f"No offline cache packages found for model {model_id}.",
+            verbose_requested=verbose,
+        )
+    else:
+        verbose_info(
+            message=f"No usable cached model package found for {model_id}.",
+            verbose_requested=verbose,
+        )
+    return None
+
+
 def all_files_exist(files: List[str]) -> bool:
     return all(os.path.exists(f) for f in files)
 
@@ -1338,6 +1454,7 @@ def initialize_model(
         task_type=task_type,
         backend_type=model_package.backend,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        model_id=model_id,
         on_file_created=on_file_created,
     )
     resolved_files = set(shared_files_mapping.values())
@@ -1446,6 +1563,7 @@ def dump_model_config_for_offline_use(
     task_type: TaskType,
     backend_type: Optional[BackendType],
     file_lock_acquire_timeout: int,
+    model_id: Optional[str] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     if os.path.exists(config_path):
@@ -1454,14 +1572,17 @@ def dump_model_config_for_offline_use(
         return None
     target_file_dir, target_file_name = os.path.split(config_path)
     lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
+    content = {
+        "model_architecture": model_architecture,
+        "task_type": task_type,
+        "backend_type": backend_type,
+    }
+    if model_id is not None:
+        content["model_id"] = model_id
     with FileLock(lock_path, timeout=file_lock_acquire_timeout):
         dump_json(
             path=config_path,
-            content={
-                "model_architecture": model_architecture,
-                "task_type": task_type,
-                "backend_type": backend_type,
-            },
+            content=content,
         )
         if on_file_created:
             on_file_created(config_path)

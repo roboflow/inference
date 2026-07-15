@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from inference_models.configuration import (
     AUTO_LOADER_CACHE_EXPIRATION_MINUTES,
     INFERENCE_HOME,
+    OFFLINE_MODE,
 )
 from inference_models.logger import LOGGER, verbose_info
 from inference_models.models.auto_loaders.entities import (
@@ -104,7 +105,12 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
             minutes_since_entry_created = (
                 datetime.now() - cache_entry.created_at
             ).total_seconds() / 60
-            if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
+            # In OFFLINE_MODE the API cannot be reached to re-resolve, so cache
+            # entries must never expire - a warmed cache is the only source.
+            if (
+                not OFFLINE_MODE
+                and minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES
+            ):
                 self.invalidate(auto_negotiation_hash=auto_negotiation_hash)
                 verbose_info(
                     message=f"Auto-negotiation cache for hash: {auto_negotiation_hash} is expired - removed its content",

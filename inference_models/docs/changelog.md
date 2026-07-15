@@ -2,8 +2,21 @@
 
 ## Unreleased
 
-Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
-`### Removed` subsections as appropriate.
+### Added
+
+- `OFFLINE_MODE` environment variable. When set to `True`, all outbound HTTP requests are blocked
+  and models are loaded exclusively from local cache. Designed for air-gapped deployments where the
+  inference server has no network access. Models must be pre-cached by running once with network
+  connectivity. In `OFFLINE_MODE`, auto-resolution cache entries never expire. If a cached model is
+  not found, a clear error is raised immediately with no retries or timeouts.
+- Offline cache fallback on connectivity failures: when the weights-provider API is unreachable
+  (`RetryError`), `AutoModel.from_pretrained(...)` now scans `{INFERENCE_HOME}/models-cache/` for a
+  previously cached package of the requested model and loads it locally instead of failing. This
+  applies even when `OFFLINE_MODE` is not set.
+- `model_id` is now written into each package's `model_config.json`, so offline scanning can map
+  cache entries back to their canonical model IDs.
+- `find_cached_model_package_dir(...)` helper exposed from the auto-loaders module for downstream
+  cache introspection.
 
 ---
 
@@ -75,9 +88,6 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).
-
----
-
 ## `0.31.0`
 
 ### Fixed

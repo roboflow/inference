@@ -838,3 +838,69 @@ def test_roboflow_model_registry_get_model_on_cache_ht(
 
     # then
     assert result == "some"
+
+
+# ---------------------------------------------------------------------------
+# _get_model_metadata_from_inference_models_cache
+# ---------------------------------------------------------------------------
+
+
+def test_get_model_metadata_from_inference_models_cache_when_config_found(
+    empty_local_dir: str,
+) -> None:
+    # given
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": "coco/22",
+                "task_type": "object-detection",
+                "model_architecture": "yolov8",
+                "backend_type": "onnx",
+            },
+            f,
+        )
+    fake_module = MagicMock()
+    fake_module.find_cached_model_package_dir = MagicMock(return_value=package_dir)
+
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.dict(
+        "sys.modules",
+        {"inference_models.models.auto_loaders.core": fake_module},
+    ):
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/22"
+        )
+
+    # then
+    assert result == ("object-detection", "yolov8")
+
+
+def test_get_model_metadata_from_inference_models_cache_when_no_package_found() -> None:
+    # given
+    fake_module = MagicMock()
+    fake_module.find_cached_model_package_dir = MagicMock(return_value=None)
+
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.dict(
+        "sys.modules",
+        {"inference_models.models.auto_loaders.core": fake_module},
+    ):
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/22"
+        )
+
+    # then
+    assert result is None
+
+
+def test_get_model_metadata_from_inference_models_cache_when_backend_disabled() -> None:
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/22"
+        )
+
+    # then
+    assert result is None

@@ -349,8 +349,14 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
+# Offline mode - disables all outbound network requests to Roboflow API.
+# Models must be pre-cached locally. Telemetry and metrics are silently skipped.
+OFFLINE_MODE = str2bool(os.getenv("OFFLINE_MODE", False))
+
 # Flag to disable version check, default is False
 DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
+if OFFLINE_MODE:
+    DISABLE_VERSION_CHECK = True
 
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
@@ -531,7 +537,7 @@ OTEL_METRIC_EXPORT_INTERVAL_MS = int(
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA or GCP_SERVERLESS:
+if LAMBDA or GCP_SERVERLESS or OFFLINE_MODE:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60
@@ -542,6 +548,11 @@ METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
+# Keep the `inference-models` cache co-located with the traditional cache so
+# that mounting MODEL_CACHE_DIR persists both layouts. `inference_models`
+# reads INFERENCE_HOME at import time; this module is imported first in all
+# server entrypoints. An explicit INFERENCE_HOME always wins.
+os.environ.setdefault("INFERENCE_HOME", MODEL_CACHE_DIR)
 INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
 
 # Model ID, default is None
@@ -670,6 +681,8 @@ INFER_BUCKET = os.getenv(
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
+if OFFLINE_MODE:
+    ACTIVE_LEARNING_ENABLED = False
 ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager
@@ -878,6 +891,8 @@ USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
 SINGLE_TENANT_WORKFLOW_CACHE = str2bool(
     os.getenv("SINGLE_TENANT_WORKFLOW_CACHE", "False")
 )
+if OFFLINE_MODE:
+    SINGLE_TENANT_WORKFLOW_CACHE = True
 ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )

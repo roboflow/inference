@@ -58,6 +58,9 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Offline mode - disables all outbound network requests. Models are loaded
+# exclusively from local cache. Designed for air-gapped deployments.
+OFFLINE_MODE = get_boolean_from_env(variable_name="OFFLINE_MODE", default=False)
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,
