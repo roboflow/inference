@@ -82,6 +82,41 @@ def _native_detections() -> Detections:
     )
 
 
+def test_tracker_input_reuses_immutable_row_index_storage() -> None:
+    block = _TensorTrackerBlock()
+    image = wrap_with_workflow_image(make_metadata(1))
+    source = _native_detections()
+
+    first = block._prepare_tracker_input(image, source, {})[3]
+    second = block._prepare_tracker_input(image, source, {})[3]
+    first_rows = first.data[_TRACKER_ROW_INDEX_KEY]
+    second_rows = second.data[_TRACKER_ROW_INDEX_KEY]
+
+    assert first_rows.data_ptr() == second_rows.data_ptr()
+    assert first_rows.tolist() == [0, 1]
+    assert block.tracker_row_index_allocations == 1
+    assert block.tracker_row_index_reuses == 1
+
+    larger = Detections(
+        xyxy=torch.zeros((5, 4), dtype=torch.float32),
+        confidence=torch.ones(5, dtype=torch.float32),
+        class_id=torch.zeros(5, dtype=torch.long),
+    )
+    larger_rows = block._prepare_tracker_input(image, larger, {})[3].data[
+        _TRACKER_ROW_INDEX_KEY
+    ]
+    after_growth = block._prepare_tracker_input(image, source, {})[3].data[
+        _TRACKER_ROW_INDEX_KEY
+    ]
+
+    assert larger_rows.tolist() == [0, 1, 2, 3, 4]
+    assert after_growth.tolist() == [0, 1]
+    assert after_growth.data_ptr() != first_rows.data_ptr()
+    assert first_rows.tolist() == [0, 1]
+    assert block.tracker_row_index_allocations == 2
+    assert block.tracker_row_index_reuses == 2
+
+
 def test_packed_tensor_tracker_ids_follow_unmatched_track_filter(
     monkeypatch,
 ) -> None:

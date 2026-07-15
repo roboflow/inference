@@ -513,6 +513,25 @@ class TrackerBlockBase(WorkflowBlock):
         self._instance_cache_batch_arenas: Dict[
             Tuple[int, torch.device], _InstanceCacheBatchArena
         ] = {}
+        self._tracker_row_index_buffers: Dict[torch.device, torch.Tensor] = {}
+        self.tracker_row_index_allocations = 0
+        self.tracker_row_index_reuses = 0
+
+    def _tracker_row_indices(
+        self,
+        row_count: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Return an immutable row-order view backed by reusable device storage."""
+        buffer = self._tracker_row_index_buffers.get(device)
+        if buffer is None or buffer.numel() < row_count:
+            capacity = max(1, 1 << max(0, row_count - 1).bit_length())
+            buffer = torch.arange(capacity, dtype=torch.long, device=device)
+            self._tracker_row_index_buffers[device] = buffer
+            self.tracker_row_index_allocations += 1
+        else:
+            self.tracker_row_index_reuses += 1
+        return buffer[:row_count]
 
     @classmethod
     @abstractmethod
@@ -719,9 +738,8 @@ class TrackerBlockBase(WorkflowBlock):
             confidence=bbox.confidence,
             class_id=bbox.class_id,
             data={
-                _TRACKER_ROW_INDEX_KEY: torch.arange(
-                    row_count,
-                    dtype=torch.long,
+                _TRACKER_ROW_INDEX_KEY: self._tracker_row_indices(
+                    row_count=row_count,
                     device=bbox.xyxy.device,
                 )
             },
