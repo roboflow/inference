@@ -102,9 +102,7 @@ class LeanLineZone:
         self.start = start
         self.end = end
         self.triggering_anchors = tuple(
-            _DEFAULT_LINE_ANCHORS
-            if triggering_anchors is None
-            else triggering_anchors
+            _DEFAULT_LINE_ANCHORS if triggering_anchors is None else triggering_anchors
         )
         if not self.triggering_anchors:
             raise ValueError("Triggering anchors cannot be empty.")
@@ -156,9 +154,7 @@ class LeanLineZone:
             return crossed_in, crossed_out
 
         all_anchors = _stack_anchor_coordinates(xyxy, self.triggering_anchors)
-        limit_deltas = (
-            all_anchors[None, :, :, :] - self._limit_starts[:, None, None, :]
-        )
+        limit_deltas = all_anchors[None, :, :, :] - self._limit_starts[:, None, None, :]
         limit_cross_products = (
             self._limit_vectors[:, 0, None, None] * limit_deltas[:, :, :, 1]
             - self._limit_vectors[:, 1, None, None] * limit_deltas[:, :, :, 0]

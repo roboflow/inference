@@ -528,11 +528,13 @@ def get_detections_from_different_sources_with_max_overlap(
     # predictions are materialised only for the surviving winners, not per pair.
     current_max_overlap: Dict[int, Tuple[int, float]] = {}
     detection_class_name = class_names[detection_global_index]
-    for other_source, other_global_index, other_local_index in (
-        enumerate_detection_indices(
-            detections_from_sources=detections_from_sources,
-            excluded_source_id=source,
-        )
+    for (
+        other_source,
+        other_global_index,
+        other_local_index,
+    ) in enumerate_detection_indices(
+        detections_from_sources=detections_from_sources,
+        excluded_source_id=source,
     ):
         if detection_ids[other_global_index] in detections_already_considered:
             continue

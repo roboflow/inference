@@ -398,9 +398,11 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                 pending_gray = (128, 128, 128)  # sv PENDING_TRACK_COLOR
                 colors_rgb = np.asarray(
                     [
-                        pending_gray
-                        if color_axis == "TRACK" and idx == -1
-                        else palette.by_idx(int(idx)).as_rgb()
+                        (
+                            pending_gray
+                            if color_axis == "TRACK" and idx == -1
+                            else palette.by_idx(int(idx)).as_rgb()
+                        )
                         for idx in ids
                     ],
                     dtype=np.uint8,
