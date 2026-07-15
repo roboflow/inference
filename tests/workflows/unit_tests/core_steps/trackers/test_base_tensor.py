@@ -93,9 +93,12 @@ def test_tracker_input_reuses_immutable_row_index_storage() -> None:
     second_rows = second.data[_TRACKER_ROW_INDEX_KEY]
 
     assert first_rows.data_ptr() == second_rows.data_ptr()
+    assert first.data is second.data
     assert first_rows.tolist() == [0, 1]
     assert block.tracker_row_index_allocations == 1
-    assert block.tracker_row_index_reuses == 1
+    assert block.tracker_row_index_reuses == 0
+    assert block.tracker_row_data_allocations == 1
+    assert block.tracker_row_data_reuses == 1
 
     larger = Detections(
         xyxy=torch.zeros((5, 4), dtype=torch.float32),
@@ -111,10 +114,12 @@ def test_tracker_input_reuses_immutable_row_index_storage() -> None:
 
     assert larger_rows.tolist() == [0, 1, 2, 3, 4]
     assert after_growth.tolist() == [0, 1]
-    assert after_growth.data_ptr() != first_rows.data_ptr()
+    assert after_growth.data_ptr() == first_rows.data_ptr()
     assert first_rows.tolist() == [0, 1]
     assert block.tracker_row_index_allocations == 2
-    assert block.tracker_row_index_reuses == 2
+    assert block.tracker_row_index_reuses == 0
+    assert block.tracker_row_data_allocations == 2
+    assert block.tracker_row_data_reuses == 2
 
 
 def test_packed_tensor_tracker_ids_follow_unmatched_track_filter(
