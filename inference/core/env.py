@@ -469,6 +469,11 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
         DeprecationWarning,
         stacklevel=1,
     )
+if SECURE_GATEWAY:
+    # The version check pings api.github.com, which is unreachable behind a
+    # secure gateway - with the default VERSION_CHECK_MODE=once it runs
+    # synchronously at import and can stall startup until the TCP timeout.
+    DISABLE_VERSION_CHECK = True
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
@@ -741,6 +746,24 @@ HOSTED_CORE_MODEL_URL = os.getenv(
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
 WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
+if (
+    SECURE_GATEWAY
+    and WORKFLOWS_STEP_EXECUTION_MODE == "remote"
+    and WORKFLOWS_REMOTE_API_TARGET == "hosted"
+):
+    # Remote step execution against hosted Roboflow inference endpoints
+    # (detect/outline/segment/classify/infer.roboflow.com) bypasses the secure
+    # gateway - the SDK client cannot route through the /proxy endpoint. Fall
+    # back to local execution instead of dead-ending every remote step.
+    warnings.warn(
+        "WORKFLOWS_STEP_EXECUTION_MODE=remote with WORKFLOWS_REMOTE_API_TARGET=hosted "
+        "is not supported behind SECURE_GATEWAY - hosted Roboflow inference endpoints "
+        "are not reachable through the gateway proxy. Forcing local step execution. "
+        "Use WORKFLOWS_REMOTE_API_TARGET=self-hosted to target another server instead.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+    WORKFLOWS_STEP_EXECUTION_MODE = "local"
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
 WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
     os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH", "4")
