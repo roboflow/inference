@@ -4,6 +4,7 @@ import socket
 import sys
 import time
 import uuid
+import multiprocessing
 from collections import deque
 from dataclasses import dataclass, field
 from functools import partial
@@ -55,6 +56,12 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
     RoboflowTCPServer,
 )
+
+# Same spawn context the InferencePipelineManager process uses (see
+# inference_pipeline_manager.py). The command/response queues handed to the child
+# MUST come from the spawn context so they pickle correctly across the spawn
+# boundary; a fork-context queue passed into a spawned child is not portable.
+_MP_SPAWN_CONTEXT = multiprocessing.get_context("spawn")
 
 
 @dataclass
@@ -519,8 +526,11 @@ def spawn_managed_pipeline_process(
         f"Spawning new managed InferencePipeline process. Idle flag: {mark_as_idle}"
     )
     pipeline_id = str(uuid4())
-    command_queue = Queue()
-    responses_queue = Queue()
+    # Spawn-context queues (not the fork-context `Queue()`): the manager child is
+    # a spawn process, so its queues must be created from the same context to
+    # pickle across the spawn boundary.
+    command_queue = _MP_SPAWN_CONTEXT.Queue()
+    responses_queue = _MP_SPAWN_CONTEXT.Queue()
     inference_pipeline_manager = InferencePipelineManager.init(
         pipeline_id=pipeline_id,
         command_queue=command_queue,

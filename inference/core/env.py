@@ -4,7 +4,6 @@ import uuid
 import warnings
 from typing import Optional
 
-import torch
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
@@ -1179,9 +1178,27 @@ ENABLE_TENSOR_DATA_REPRESENTATION = (
 WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
     "WORKFLOWS_IMAGE_TENSOR_DEVICE"
 )
-if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
-    WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = "cuda" if torch.cuda.is_available() else "cpu"
-WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)
+# `torch` is an OPTIONAL dependency: the slim `inference-core` artifact ships
+# without it, and `import inference.core.env` must succeed when torch is ABSENT.
+# Only the tensor-native path (ENABLE_TENSOR_DATA_REPRESENTATION on) needs a torch
+# device, so both the import and the device materialisation are deferred behind
+# the flag AND guarded on torch's presence — this code never touches torch when
+# the flag is off or torch is missing. Every consumer of this value is a
+# tensor-only (flag-on) code path, so leaving it ``None`` off-flag is safe.
+WORKFLOWS_IMAGE_TENSOR_DEVICE = None
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    try:
+        import torch
+
+        if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
+            WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = (
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
+        WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)
+    except ImportError:
+        # Flag on but torch not installed: keep env import working; the tensor
+        # path surfaces a targeted error when it actually tries to use a device.
+        pass
 
 # VideoSource decode-buffer depth. 64 buffered frames is a sane host-RAM
 # default, but under ENABLE_TENSOR_DATA_REPRESENTATION the hardware decoders
