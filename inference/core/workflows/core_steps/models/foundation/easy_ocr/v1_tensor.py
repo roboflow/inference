@@ -17,6 +17,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     native_detections_from_inference_predictions,
 )
+from inference.core.workflows.execution_engine.constants import CLASS_NAME_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -38,6 +39,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
 
@@ -64,8 +66,13 @@ MODELS: Dict[str, Tuple[str, List[str]]] = {
     "Simplified Chinese": ("zh_sim_g2", ["en", "ch_sim"]),
 }
 
-# The EasyOCR inference_models model exposes a single class ("text-region"); OCR
-# text per box is carried in the detection's bboxes_metadata, not the class name.
+# Fixed, non-empty `class_id -> name` fallback map. The EasyOCR inference_models model
+# emits `class_id == 0` for every box; the recognised text is attached per box onto
+# `bboxes_metadata[i][CLASS_NAME_KEY]` (see `_attach_local_ocr_text` /
+# `_attach_remote_ocr_text`), so the tensor serializer's per-box override emits the
+# recognised text as `class` - byte-parity with the numpy sibling, whose
+# `sv.Detections.from_inference` carries the recognised text as the class name. This
+# map only satisfies the serializer's "CLASS_NAMES_KEY must be present" check.
 CLASS_NAMES: Dict[int, str] = {0: "text-region"}
 PREDICTION_TYPE = "ocr"
 
@@ -234,6 +241,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 class_names=CLASS_NAMES,
                 prediction_type=PREDICTION_TYPE,
             )
+            detections = _attach_local_ocr_text(detections)
             results.append(
                 {
                     "result": texts[0],
@@ -289,6 +297,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 class_names=CLASS_NAMES,
                 device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
             )
+            detections = _attach_remote_ocr_text(detections, raw_predictions)
             results.append(
                 {
                     "result": prediction.get("result", ""),
@@ -299,3 +308,37 @@ class EasyOCRBlockV1(WorkflowBlock):
                 }
             )
         return results
+
+
+def _attach_local_ocr_text(detections: Detections) -> Detections:
+    """Byte-parity (`class`) for the LOCAL path.
+
+    The EasyOCR inference_models model carries each box's recognised text on
+    ``bboxes_metadata[i]["text"]`` (and ``class_id == 0`` for every box). The tensor
+    serializer emits ``bboxes_metadata[i][CLASS_NAME_KEY]`` as the per-box ``class``
+    when present, else it falls back to the fixed ``CLASS_NAMES`` label. So promote the
+    recognised ``text`` onto ``CLASS_NAME_KEY`` to match the numpy sibling, whose
+    ``sv.Detections.from_inference`` carries the recognised text as the class name.
+    Mutates and returns the same object.
+    """
+    if detections.bboxes_metadata is not None:
+        for entry in detections.bboxes_metadata:
+            entry[CLASS_NAME_KEY] = str(entry.get("text", ""))
+    return detections
+
+
+def _attach_remote_ocr_text(
+    detections: Detections, predictions: List[dict]
+) -> Detections:
+    """Byte-parity (`class`) for the REMOTE path.
+
+    The inference OCR response carries each box's recognised text under ``class``, but
+    ``native_detections_from_inference_predictions`` keeps only ``detection_id`` on
+    ``bboxes_metadata``. Re-attach the per-box ``class`` (mirrors ``pp_ocr/v1_tensor``)
+    so the serializer emits the recognised text, matching the numpy sibling. Mutates
+    and returns the same object.
+    """
+    if detections.bboxes_metadata is not None:
+        for entry, prediction in zip(detections.bboxes_metadata, predictions):
+            entry[CLASS_NAME_KEY] = str(prediction.get(CLASS_NAME_KEY, ""))
+    return detections
