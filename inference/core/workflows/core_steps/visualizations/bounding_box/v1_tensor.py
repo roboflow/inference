@@ -437,7 +437,9 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                     "sv.BoxAnnotator path.",
                     gpu_error,
                 )
-        predictions = to_supervision_for_annotation(predictions)
+        # sv.BoxAnnotator / sv.RoundBoxAnnotator draw from `xyxy` only and never
+        # read `.mask`; skip the device->host dense-mask materialisation.
+        predictions = to_supervision_for_annotation(predictions, materialise_masks=False)
         annotator = self.getAnnotator(
             color_palette,
             palette_size,

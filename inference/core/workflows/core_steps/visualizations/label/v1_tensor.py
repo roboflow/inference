@@ -250,9 +250,19 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         text_padding: Optional[int],
         border_radius: Optional[int],
     ) -> BlockResult:
-        # The label annotator never reads `.mask`.
+        # The Label annotator reads `.mask` for exactly two configurations, and
+        # only for instance-segmentation input (there is no mask to materialise
+        # otherwise, so `materialise_masks=True` is a no-op for OD input):
+        #   * text == "Area": `sv.Detections.area` returns MASK area when a mask
+        #     is present and BOX area when it is None — flag-off shows mask area
+        #     on IS input, so the mask must be materialised to match.
+        #   * text_position == "CENTER_OF_MASS": `sv.LabelAnnotator` anchors on
+        #     the mask centroid; `get_anchors_coordinates` RAISES without a mask.
+        # Every other label reads xyxy / confidence / per-box metadata, so the
+        # device->host dense-mask copy is skipped for them.
+        needs_masks = text == "Area" or text_position == "CENTER_OF_MASS"
         predictions = to_supervision_for_annotation(
-            predictions, materialise_masks=False
+            predictions, materialise_masks=needs_masks
         )
         if len(predictions) == 0:
             return {

@@ -161,7 +161,9 @@ class CornerVisualizationBlockV1(ColorableVisualizationBlock):
         thickness: Optional[int],
         corner_length: Optional[int],
     ) -> BlockResult:
-        predictions = to_supervision_for_annotation(predictions)
+        # sv.BoxCornerAnnotator draws from `xyxy` only and never reads `.mask`;
+        # skip the device->host dense-mask materialisation.
+        predictions = to_supervision_for_annotation(predictions, materialise_masks=False)
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
