@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import supervision as sv
 import torch
+from supervision.utils.tensor import TensorDataDict
 
 from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -514,8 +515,11 @@ class TrackerBlockBase(WorkflowBlock):
             Tuple[int, torch.device], _InstanceCacheBatchArena
         ] = {}
         self._tracker_row_index_buffers: Dict[torch.device, torch.Tensor] = {}
+        self._tracker_row_data: Dict[Tuple[torch.device, int], TensorDataDict] = {}
         self.tracker_row_index_allocations = 0
         self.tracker_row_index_reuses = 0
+        self.tracker_row_data_allocations = 0
+        self.tracker_row_data_reuses = 0
 
     def _tracker_row_indices(
         self,
@@ -532,6 +536,53 @@ class TrackerBlockBase(WorkflowBlock):
         else:
             self.tracker_row_index_reuses += 1
         return buffer[:row_count]
+
+    def _tracker_input_data(
+        self,
+        row_count: int,
+        device: torch.device,
+    ) -> TensorDataDict:
+        """Return cached immutable row-lineage metadata for one input shape."""
+        key = (device, row_count)
+        data = self._tracker_row_data.get(key)
+        if data is None:
+            data = TensorDataDict(
+                {
+                    _TRACKER_ROW_INDEX_KEY: self._tracker_row_indices(
+                        row_count=row_count,
+                        device=device,
+                    )
+                },
+                device=device,
+            )
+            self._tracker_row_data[key] = data
+            self.tracker_row_data_allocations += 1
+        else:
+            self.tracker_row_data_reuses += 1
+        return data
+
+    def _assemble_tracker_input(
+        self,
+        bbox: Union[Detections, InstanceDetections],
+    ) -> sv.Detections:
+        """Wrap validated native bbox tensors without redundant public validation."""
+        row_count = int(bbox.xyxy.shape[0])
+        result = object.__new__(sv.Detections)
+        object.__setattr__(result, "xyxy", bbox.xyxy)
+        object.__setattr__(result, "mask", None)
+        object.__setattr__(result, "confidence", bbox.confidence)
+        object.__setattr__(result, "class_id", bbox.class_id)
+        object.__setattr__(result, "tracker_id", None)
+        object.__setattr__(
+            result,
+            "data",
+            self._tracker_input_data(
+                row_count=row_count,
+                device=bbox.xyxy.device,
+            ),
+        )
+        object.__setattr__(result, "metadata", {})
+        return result
 
     @classmethod
     @abstractmethod
@@ -732,18 +783,7 @@ class TrackerBlockBase(WorkflowBlock):
             )
         tracker = self._trackers[video_id]
         _, bbox = split_key_point_prediction(detections)
-        row_count = int(bbox.xyxy.shape[0])
-        sv_input = sv.Detections(
-            xyxy=bbox.xyxy,
-            confidence=bbox.confidence,
-            class_id=bbox.class_id,
-            data={
-                _TRACKER_ROW_INDEX_KEY: self._tracker_row_indices(
-                    row_count=row_count,
-                    device=bbox.xyxy.device,
-                )
-            },
-        )
+        sv_input = self._assemble_tracker_input(bbox)
         return video_id, tracker, bbox, sv_input
 
     @staticmethod
