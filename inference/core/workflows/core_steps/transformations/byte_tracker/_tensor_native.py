@@ -45,14 +45,15 @@ def update_tensor_byte_tracker(
         },
     )
     tracked = tracker.update_with_detections(tracker_input)
-    has_rows = all(
-        (
-            bool(tracked.data),
-            _INPUT_INDEX_KEY in tracked.data,
-            tracked.tracker_id is not None,
-            len(tracked) > 0,
+    has_rows = False
+    if tracked.data:
+        has_rows = all(
+            (
+                _INPUT_INDEX_KEY in tracked.data,
+                tracked.tracker_id is not None,
+                len(tracked) > 0,
+            )
         )
-    )
     if not has_rows:
         empty = torch.empty(0, dtype=torch.long, device=device)
         return empty, empty
