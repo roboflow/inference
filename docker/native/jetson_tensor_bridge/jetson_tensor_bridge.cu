@@ -15,13 +15,20 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <new>
+#include <vector>
 
 namespace {
 
 constexpr const char* kSinkName = "rf_tensor_sink";
 constexpr const char* kNvmmCapsFeature = "memory:NVMM";
+// Upper bound on device buffers the per-pipeline tensor pool recycles. The
+// steady state holds only the frames a consumer keeps in flight (typically
+// one or two); this cap only bounds a slow or bursty consumer. Buffers are
+// allocated lazily on demand, so a small cap costs nothing until it is hit.
+constexpr size_t kJetsonTensorPoolBuffers = 8;
 
 enum DLDeviceType : int32_t {
     kDLCUDA = 2,
@@ -82,10 +89,100 @@ struct RfBridgeStats {
     int32_t last_egl_color_format;
 };
 
+// Recycles fixed-size device allocations so the hot retrieve()/free path never
+// calls cudaMalloc/cudaFree. On the Jetson unified-memory allocator a per-frame
+// cudaFree synchronizes the whole device, stalling the consumer that drops a
+// tensor; returning the buffer to a free list instead makes release a pure CPU
+// push. The pool is reference-counted (shared_ptr) so it outlives the pipeline
+// whenever a consumer is still holding a tensor.
+class RfBufferPool {
+ public:
+    RfBufferPool(int device_id, size_t max_buffers)
+        : device_id_(device_id), max_buffers_(max_buffers) {}
+
+    ~RfBufferPool() {
+        // The pool is only destroyed once the pipeline and every outstanding
+        // tensor have released, so all pooled buffers are back on the free
+        // list here. Bind the device because the destructor may run on a
+        // consumer thread that never touched CUDA.
+        int previous_device = -1;
+        cudaGetDevice(&previous_device);
+        cudaSetDevice(device_id_);
+        for (void* buffer : free_list_) {
+            cudaFree(buffer);
+        }
+        if (previous_device >= 0 && previous_device != device_id_) {
+            cudaSetDevice(previous_device);
+        }
+    }
+
+    // Hands out a device buffer of `size` bytes. The caller (retrieve()) has
+    // already bound the device. `*pooled` reports whether release() should
+    // recycle the buffer (true) or free it immediately (false, for one-off
+    // over-budget or off-size allocations). Returns nullptr on cudaMalloc
+    // failure.
+    void* acquire(size_t size, bool* pooled) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (buffer_size_ == 0) {
+            buffer_size_ = size;  // Adopt the first frame's size as the pool size.
+        }
+        if (size == buffer_size_ && !free_list_.empty()) {
+            void* buffer = free_list_.back();
+            free_list_.pop_back();
+            *pooled = true;
+            return buffer;
+        }
+        // Cold start or pool miss: allocate. cudaMalloc under the lock is fine
+        // here — this is the slow path, not the steady-state recycle.
+        void* buffer = nullptr;
+        if (cudaMalloc(&buffer, size) != cudaSuccess) {
+            return nullptr;
+        }
+        // Only track pool-sized buffers within budget; anything else is a
+        // one-off (resolution change mid-stream, or a consumer holding more
+        // frames than the cap) that release() frees directly.
+        if (size == buffer_size_ && total_pooled_ < max_buffers_) {
+            total_pooled_ += 1;
+            *pooled = true;
+        } else {
+            *pooled = false;
+        }
+        return buffer;
+    }
+
+    // Returns a buffer handed out by acquire(). Pooled buffers go back on the
+    // free list (no CUDA call, hence no device-wide sync); one-offs are freed.
+    // For the one-off path the caller must have bound the device.
+    void release(void* buffer, bool pooled) {
+        if (buffer == nullptr) {
+            return;
+        }
+        if (pooled) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            free_list_.push_back(buffer);
+            return;
+        }
+        cudaFree(buffer);
+    }
+
+ private:
+    int device_id_;
+    size_t max_buffers_;
+    size_t buffer_size_ = 0;
+    size_t total_pooled_ = 0;
+    std::vector<void*> free_list_;
+    std::mutex mutex_;
+};
+
 struct RfTensorContext {
     void* allocation = nullptr;
     int device_id = 0;
     int64_t shape[3] = {0, 0, 0};
+    // Non-null when `allocation` came from the pool; release routes back to it
+    // instead of cudaFree. Held by shared_ptr so the pool survives a pipeline
+    // that closes while this tensor is still alive.
+    std::shared_ptr<RfBufferPool> pool;
+    bool pooled = false;
     DLManagedTensor managed{};
 };
 
@@ -95,6 +192,7 @@ struct RfJetsonPipeline {
     GstSample* sample = nullptr;
     cudaStream_t stream = nullptr;
     int device_id = 0;
+    std::shared_ptr<RfBufferPool> tensor_pool;
     RfBridgeStats stats{};
     std::atomic<bool> interrupted{false};
     std::mutex mutex;
@@ -255,7 +353,14 @@ void delete_managed_tensor(DLManagedTensor* managed) {
     cudaGetDevice(&previous_device);
     cudaSetDevice(context->device_id);
     if (context->allocation != nullptr) {
-        cudaFree(context->allocation);
+        if (context->pool != nullptr) {
+            // Pooled buffers return without a CUDA call; only one-offs hit
+            // cudaFree here, and both need the device bound (above) in case
+            // this runs on a consumer thread that never touched CUDA.
+            context->pool->release(context->allocation, context->pooled);
+        } else {
+            cudaFree(context->allocation);
+        }
     }
     if (previous_device >= 0 && previous_device != context->device_id) {
         cudaSetDevice(previous_device);
@@ -470,6 +575,15 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
     handle->pipeline = pipeline;
     handle->sink = GST_APP_SINK(sink_element);
     handle->device_id = device_id;
+    handle->tensor_pool =
+        std::make_shared<RfBufferPool>(device_id, kJetsonTensorPoolBuffers);
+    if (handle->tensor_pool == nullptr) {
+        write_error(error, error_capacity, "Could not allocate tensor buffer pool");
+        gst_object_unref(sink_element);
+        gst_object_unref(pipeline);
+        delete handle;
+        return nullptr;
+    }
     cuda_status = cudaStreamCreateWithFlags(&handle->stream, cudaStreamNonBlocking);
     if (cuda_status != cudaSuccess) {
         write_error(
@@ -718,20 +832,22 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
             goto cleanup;
         }
         tensor->device_id = handle->device_id;
+        tensor->pool = handle->tensor_pool;
         tensor->managed.manager_ctx = tensor;
         tensor->managed.deleter = delete_managed_tensor;
         const size_t output_size =
             static_cast<size_t>(frame_info.width) * frame_info.height * 3;
-        cudaError_t cuda_status = cudaMalloc(&tensor->allocation, output_size);
-        if (cuda_status != cudaSuccess) {
+        tensor->allocation = handle->tensor_pool->acquire(output_size, &tensor->pooled);
+        if (tensor->allocation == nullptr) {
             write_error(
                 error,
                 error_capacity,
-                "CUDA tensor allocation failed: %s",
-                cudaGetErrorString(cuda_status));
+                "CUDA tensor allocation failed for %zu bytes",
+                output_size);
             goto cleanup;
         }
 
+        cudaError_t cuda_status = cudaSuccess;
         const dim3 threads(32, 8);
         const dim3 blocks(
             (frame_info.width + threads.x - 1) / threads.x,

@@ -15,20 +15,26 @@ from inference.core.interfaces.camera.discoverability import (
 
 @patch("platform.system", return_value="Linux")
 @patch("platform.machine", return_value="aarch64")
-def test_jetson_backend_is_preferred_on_aarch64_linux(
+def test_jetson_routes_gstreamer_for_streams_and_cv2_for_files(
     machine_mock,
     system_mock,
 ) -> None:
-    assert _resolution_order(prefer=None) == [JETSON, GSTREAMER_CUDA, DGPU]
+    # Streams / cameras -> Jetson HW GStreamer.
+    assert _resolution_order(prefer=None, video="rtsp://cam/stream") == [JETSON]
+    # Local files -> no HW producer selected (cv2 CPU decode, tensorised lazily).
+    assert _resolution_order(prefer=None, video="sample.mp4") == []
 
 
 @patch("platform.system", return_value="Linux")
 @patch("platform.machine", return_value="x86_64")
-def test_generic_cuda_backend_is_preferred_on_x86_linux(
+def test_dgpu_routes_gstreamer_for_streams_and_pynvdec_for_files(
     machine_mock,
     system_mock,
 ) -> None:
-    assert _resolution_order(prefer=None) == [GSTREAMER_CUDA, DGPU, JETSON]
+    # Streams -> GStreamer CUDA.
+    assert _resolution_order(prefer=None, video="rtsp://cam/stream") == [GSTREAMER_CUDA]
+    # Local files -> PyNvVideoCodec (dGPU).
+    assert _resolution_order(prefer=None, video="sample.mp4") == [DGPU]
 
 
 def test_explicit_backend_preference_takes_priority() -> None:

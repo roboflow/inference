@@ -76,8 +76,17 @@ _FILE_DEMUXERS = {
 }
 
 
-def probe_gstreamer_elements(elements: Iterable[str]) -> Tuple[bool, str]:
-    """Find required element factories and rank NVIDIA decoders first."""
+def probe_gstreamer_elements(
+    elements: Iterable[str], *, boost_ranks: bool = False
+) -> Tuple[bool, str]:
+    """Verify the required GStreamer element factories exist.
+
+    When ``boost_ranks`` is True (only at producer BUILD time, not during availability
+    probing) the NVIDIA HW decoders (``nvv4l2decoder``/``nvjpegdec``) are ranked above
+    software decoders so ``decodebin``/``uridecodebin`` auto-selects them. Keeping the
+    boost OFF during probing means merely discovering this backend no longer perturbs
+    decoder selection process-wide for unrelated paths (e.g. a later cv2-GStreamer
+    decode) - the boost is applied only when a Jetson pipeline is actually built."""
 
     library_name = ctypes.util.find_library("gstreamer-1.0")
     if not library_name:
@@ -116,10 +125,11 @@ def probe_gstreamer_elements(elements: Iterable[str]) -> Tuple[bool, str]:
         if missing:
             return False, f"missing GStreamer elements: {', '.join(missing)}"
 
-        for decoder_name in ("nvv4l2decoder", "nvjpegdec"):
-            decoder = factories.get(decoder_name)
-            if decoder:
-                gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
+        if boost_ranks:
+            for decoder_name in ("nvv4l2decoder", "nvjpegdec"):
+                decoder = factories.get(decoder_name)
+                if decoder:
+                    gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
         return True, "ok"
     finally:
         for factory in factories.values():
@@ -223,7 +233,8 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         pin_host_memory: bool = True,
     ):
         gst_ok, gst_reason = probe_gstreamer_elements(
-            required_gstreamer_elements(video, output_tensor=True)
+            required_gstreamer_elements(video, output_tensor=True),
+            boost_ranks=True,
         )
         if not gst_ok:
             raise RuntimeError(gst_reason)

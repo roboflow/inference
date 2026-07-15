@@ -91,7 +91,15 @@ def _resolve_grab_timeout_ns() -> int:
     return int(seconds * 1_000_000_000)
 
 
-def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
+def probe_gstreamer_cuda_elements(
+    elements: Iterable[str], *, boost_ranks: bool = False
+) -> Tuple[bool, str]:
+    """Verify the required GStreamer-CUDA elements exist (including at least one NVIDIA
+    decoder). When ``boost_ranks`` is True (only at producer BUILD time, not during
+    availability probing) the NVIDIA decoders are ranked above software decoders so
+    ``uridecodebin`` auto-selects them; kept OFF during probing so discovery does not
+    perturb decoder selection process-wide for unrelated paths (e.g. a later
+    cv2-GStreamer decode)."""
     library_name = ctypes.util.find_library("gstreamer-1.0")
     if not library_name:
         library_name = "libgstreamer-1.0.so.0"
@@ -134,7 +142,8 @@ def probe_gstreamer_cuda_elements(elements: Iterable[str]) -> Tuple[bool, str]:
             decoder = gst.gst_element_factory_find(decoder_name.encode("utf-8"))
             if decoder:
                 decoder_found = True
-                gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
+                if boost_ranks:
+                    gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
                 gst.gst_object_unref(decoder)
         if not decoder_found:
             return False, "no NVIDIA GStreamer decoder factory is available"
@@ -197,7 +206,8 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
             raise TypeError("GStreamer CUDA producer requires a URI or file path")
 
         gst_ok, gst_reason = probe_gstreamer_cuda_elements(
-            required_gstreamer_cuda_elements(video)
+            required_gstreamer_cuda_elements(video),
+            boost_ranks=True,
         )
         if not gst_ok:
             raise RuntimeError(gst_reason)
