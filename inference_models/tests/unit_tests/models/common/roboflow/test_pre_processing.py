@@ -6,6 +6,7 @@ from PIL.Image import Image
 from inference_models import PreProcessingOverrides
 from inference_models.entities import ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
+from inference_models.models.common.roboflow import pre_processing
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
     Contrast,
@@ -2850,6 +2851,52 @@ def test_pre_process_numpy_images_list_with_letterbox_selected() -> None:
     )
     assert result_meta[0] == expected_meta
     assert result_meta[1] == expected_meta
+
+
+def test_pre_process_numpy_singleton_list_reuses_preprocessed_tensor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A one-image list already produces a batched, contiguous tensor. Reusing it
+    # avoids a full device-to-device copy without changing shape or ownership.
+    expected_tensor = torch.zeros((1, 3, 64, 96), dtype=torch.float32)
+    expected_metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=64, width=96),
+        size_after_pre_processing=ImageDimensions(height=64, width=96),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=96,
+            crop_height=64,
+        ),
+    )
+    monkeypatch.setattr(
+        pre_processing,
+        "pre_process_numpy_image",
+        lambda **_: (expected_tensor, [expected_metadata]),
+    )
+
+    result_tensor, result_metadata = pre_processing.pre_process_numpy_images_list(
+        images=[np.zeros((64, 96, 3), dtype=np.uint8)],
+        image_pre_processing=ImagePreProcessing(),
+        network_input=NetworkInputDefinition(
+            training_input_size=TrainingInputSize(height=64, width=96),
+            dynamic_spatial_size_supported=False,
+            color_mode=ColorMode.RGB,
+            resize_mode=ResizeMode.LETTERBOX,
+            input_channels=3,
+        ),
+        target_device=torch.device("cpu"),
+    )
+
+    assert result_tensor is expected_tensor
+    assert result_metadata == [expected_metadata]
 
 
 def test_pre_process_torch_3d_image_with_letterbox_selected() -> None:

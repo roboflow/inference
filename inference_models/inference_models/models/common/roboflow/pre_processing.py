@@ -862,6 +862,8 @@ def pre_process_numpy_images_list(
         )
         result_tensors.append(tensor)
         result_metadata.extend(metadata)
+    if len(result_tensors) == 1:
+        return result_tensors[0], result_metadata
     return torch.concat(result_tensors, dim=0).contiguous(), result_metadata
 
 
