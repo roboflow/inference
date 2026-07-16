@@ -8,11 +8,13 @@ on:
     paths:
       - inference_model_manager/**
       - inference_server/**
+      - inference_models/**
   push:
     branches: [main]
     paths:
       - inference_model_manager/**
       - inference_server/**
+      - inference_models/**
   workflow_dispatch:
 
 concurrency:
