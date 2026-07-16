@@ -32,6 +32,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS,
     INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS,
     INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA,
+    QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,8 +43,6 @@ LORA_FILE = os.getenv(
     "QWEN_LIGHTNING_LORA_FILE",
     "Qwen-Image-Edit-Lightning-4steps-V1.0-bf16.safetensors",
 )
-
-_CPU_OFFLOAD_ENV_VAR = "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD"
 
 # The Lightning step-distillation LoRA only produces good results with this
 # specific FlowMatchEuler scheduler configuration (matches lightx2v's recipe).
@@ -301,7 +300,7 @@ def _place_on_device(pipe, device: torch.device, use_lightning_lora: bool) -> No
         pipe.to(device)
         return
 
-    if _CPU_OFFLOAD_ENV_VAR in os.environ:
+    if QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME in os.environ:
         offload_mode = INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD
     elif use_lightning_lora:
         offload_mode = "sequential"

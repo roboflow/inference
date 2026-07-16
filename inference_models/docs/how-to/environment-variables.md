@@ -404,6 +404,64 @@ Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
 export INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE="true"
 ```
 
+#### Qwen-Image-Edit
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS`**
+Default: `28` — diffusion denoising steps used when the Lightning LoRA is not active.
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS="50"
+```
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE`**
+Default: `5.0` — classifier-free guidance scale used when the Lightning LoRA is not active.
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE="7.5"
+```
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA`**
+Default: `False` — when enabled, the lightx2v Qwen-Image-Lightning step-distillation LoRA
+is loaded into the pipeline, enabling ~4-step inference with guidance disabled.
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA="True"
+```
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS`**
+Default: `4` — diffusion denoising steps used when the Lightning LoRA is active.
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS="8"
+```
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE`**
+Default: `1.0` — guidance scale used when the Lightning LoRA is active (the Lightning
+recipe disables classifier-free guidance).
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE="1.0"
+```
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS`**
+Default: `0.35` — when the Lightning LoRA is active, inputs larger than this many
+megapixels are downscaled before inference (never upscaled).
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS="1.0"
+```
+
+**`INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD`**
+Default: `model` — how the diffusers pipeline is placed on the device. One of:
+`model` (keep one sub-model on the GPU at a time), `sequential` (submodule-level
+offload — much lower VRAM, slower; needed to fit the full base model on <=24GB cards),
+`none` (keep the whole pipeline resident on the GPU). Any other value raises
+`InvalidEnvVariable`.
+
+```bash
+export INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD="sequential"
+```
+
 #### ResNet
 
 **`INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE`**

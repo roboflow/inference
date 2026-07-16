@@ -1,5 +1,22 @@
 # Changelog
 
+## `0.32.0`
+
+### Added
+
+- Support for [Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit), Alibaba's
+  diffusion-based instruction-following image editing model (`qwen-image-edit`, HF backend,
+  GPU only). Includes an optional lightx2v
+  [Qwen-Image-Lightning](https://huggingface.co/lightx2v/Qwen-Image-Lightning) LoRA path
+  enabling ~4-step, low-VRAM inference on consumer GPUs. See the
+  [model documentation](models/qwen-image-edit.md) for details. Requires the optional
+  `diffusers` dependency.
+- Validation of the `INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD` environment variable —
+  values other than `model`, `sequential` or `none` now raise `InvalidEnvVariable` instead
+  of silently falling back to the default offload strategy.
+
+---
+
 ## `0.31.0`
 
 ### Fixed

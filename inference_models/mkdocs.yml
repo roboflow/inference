@@ -83,6 +83,8 @@ nav:
           - Qwen3-VL: models/qwen3vl.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
+      - Image Editing:
+          - Qwen-Image-Edit: models/qwen-image-edit.md
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md

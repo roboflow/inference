@@ -262,10 +262,6 @@ INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE = get_float_from_env(
     variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE",
     default=5.0,
 )
-INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_STRENGTH = get_float_from_env(
-    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_STRENGTH",
-    default=0.85,
-)
 # When enabled, the lightx2v Qwen-Image-Lightning LoRA is fused into the base
 # Qwen-Image-Edit pipeline. This is a step-distillation LoRA: it lets the model
 # produce results in a handful of diffusion steps with guidance disabled, making
@@ -293,13 +289,30 @@ INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS = get_float_from_env(
 # sub-model on the GPU at a time (default), "sequential" offloads at the
 # submodule level (much lower VRAM, slower — needed for the full base model on
 # <=24GB cards), "none" keeps the whole pipeline resident on the device.
-INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD = (
-    os.getenv(
-        "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD",
-        "model",
-    )
-    .strip()
-    .lower()
+QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME = "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD"
+DEFAULT_QWEN_IMAGE_EDIT_CPU_OFFLOAD = "model"
+ALLOWED_QWEN_IMAGE_EDIT_CPU_OFFLOAD_MODES = {"model", "sequential", "none"}
+
+
+def parse_qwen_image_edit_cpu_offload(value: Optional[str]) -> str:
+    """Parse and validate the Qwen-Image-Edit CPU-offload mode."""
+    if value is None:
+        return DEFAULT_QWEN_IMAGE_EDIT_CPU_OFFLOAD
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED_QWEN_IMAGE_EDIT_CPU_OFFLOAD_MODES:
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME}` "
+                f"to be one of {sorted(ALLOWED_QWEN_IMAGE_EDIT_CPU_OFFLOAD_MODES)} "
+                f"but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return normalized
+
+
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD = parse_qwen_image_edit_cpu_offload(
+    os.getenv(QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME)
 )
 INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
