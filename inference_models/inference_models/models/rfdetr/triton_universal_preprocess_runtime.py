@@ -441,7 +441,13 @@ class UniversalFastPreprocessRuntime:
             and image_pre_processing.auto_orient.enabled
         ):
             unsupported.append("auto orient")
-        if pre_processing_overrides is not None:
+        if pre_processing_overrides is not None and any(
+            (
+                pre_processing_overrides.disable_contrast_enhancement,
+                pre_processing_overrides.disable_grayscale,
+                pre_processing_overrides.disable_static_crop,
+            )
+        ):
             unsupported.append("pre-processing overrides")
         if unsupported:
             details = ", ".join(unsupported)

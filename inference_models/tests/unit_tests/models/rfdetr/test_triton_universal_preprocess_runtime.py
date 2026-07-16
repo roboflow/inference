@@ -1,8 +1,12 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
 
+from inference_models import PreProcessingOverrides
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.common.roboflow.model_packages import ResizeMode
 from inference_models.models.rfdetr.pre_processing import (
     RFDETR_PREPROCESSOR_BASE,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
@@ -166,3 +170,33 @@ def test_preprocessor_worker_limit_rejects_non_positive_environment_value(
 def test_universal_runtime_requires_cuda_device() -> None:
     with pytest.raises(ModelRuntimeError, match="requires a CUDA target"):
         UniversalFastPreprocessRuntime(device=torch.device("cpu"))
+
+
+def test_universal_runtime_accepts_no_op_preprocessing_overrides() -> None:
+    runtime = object.__new__(UniversalFastPreprocessRuntime)
+    image_pre_processing = SimpleNamespace(
+        static_crop=None,
+        contrast=None,
+        grayscale=None,
+        auto_orient=None,
+    )
+    network_input = SimpleNamespace(
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_resize_dimensions=None,
+        input_channels=3,
+        scaling_factor=255,
+        normalization=((0.1, 0.2, 0.3), (0.4, 0.5, 0.6)),
+    )
+
+    runtime._validate_model_contract(
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        pre_processing_overrides=PreProcessingOverrides(),
+    )
+
+    with pytest.raises(ModelRuntimeError, match="pre-processing overrides"):
+        runtime._validate_model_contract(
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            pre_processing_overrides=PreProcessingOverrides(disable_grayscale=True),
+        )
