@@ -453,6 +453,30 @@ Supported values: `base`, `auto`, `triton-fused-v1`.
 export INFERENCE_MODELS_RFDETR_POSTPROCESSOR="triton-fused-v1"
 ```
 
+Code that can pass backend-specific arguments may instead provide a composed, immutable
+execution plan:
+
+```python
+from inference_models import AutoModel
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
+
+plan = RFDetrExecutionPlan(
+    preprocessor_id="triton-universal-v1",
+    postprocessor_id="triton-fused-v1",
+)
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    rfdetr_execution_plan=plan,
+)
+```
+
+The plan also reserves independently selectable buffer-strategy, scheduler, and engine
+plugin stages. Those stages currently accept only `base`. An explicit plan cannot be
+combined with the legacy `rfdetr_preprocessor` or `rfdetr_postprocessor` arguments.
+
 #### Roboflow Instant
 
 **`INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE`**

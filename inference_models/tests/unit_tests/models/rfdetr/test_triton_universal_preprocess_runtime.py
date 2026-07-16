@@ -106,8 +106,8 @@ def test_universal_candidate_is_explicitly_selectable() -> None:
     metadata = RFDETR_PREPROCESSOR_IMPLEMENTATIONS[
         RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
     ]
-    assert metadata["validated_environments"] == ()
-    assert metadata["fallback_id"] == "base"
+    assert metadata.validated_environments == ()
+    assert metadata.fallback_id == "base"
 
 
 def test_preprocessor_can_be_selected_from_environment(monkeypatch) -> None:

@@ -53,12 +53,10 @@ def test_fused_postprocessor_is_explicitly_selectable() -> None:
         resolve_rfdetr_postprocessor(RFDETR_POSTPROCESSOR_TRITON_FUSED_V1)
         == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
     )
-    assert (
-        RFDETR_POSTPROCESSOR_IMPLEMENTATIONS[RFDETR_POSTPROCESSOR_TRITON_FUSED_V1][
-            "validated_environments"
-        ]
-        == ()
-    )
+    metadata = RFDETR_POSTPROCESSOR_IMPLEMENTATIONS[
+        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    ]
+    assert metadata.validated_environments == ()
 
 
 def test_auto_postprocessor_remains_on_base() -> None:

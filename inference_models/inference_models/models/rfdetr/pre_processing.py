@@ -14,7 +14,7 @@ torch.Tensor inputs (advanced caller, float CHW [0, 1]):
 import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -42,105 +42,19 @@ from inference_models.models.common.roboflow.pre_processing import (
     make_the_value_divisible,
     pre_process_numpy_image,
 )
+from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_PREPROCESSOR_AUTO,
+    RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
+    RFDETR_PREPROCESSOR_ENV_NAME,
+    RFDETR_PREPROCESSOR_IDS,
+    RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME,
+    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+)
 from inference_models.utils.environment import get_integer_from_env
 
-RFDETR_PREPROCESSOR_BASE = "base"
-RFDETR_PREPROCESSOR_AUTO = "auto"
-RFDETR_PREPROCESSOR_THREADED_EXACT_V1 = "threaded-exact-v1"
-RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1 = "triton-universal-v1"
-RFDETR_PREPROCESSOR_ENV_NAME = "INFERENCE_MODELS_RFDETR_PREPROCESSOR"
-RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME = (
-    "INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS"
-)
-RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS = 4
-
-RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
-    RFDETR_PREPROCESSOR_BASE: {
-        "implementation_id": RFDETR_PREPROCESSOR_BASE,
-        "stage": "preprocess",
-        "version": "1",
-        "numerical_behavior": "reference RF-DETR PIL/torch pipeline",
-        "fallback_id": RFDETR_PREPROCESSOR_BASE,
-        "validated_environments": (),
-    },
-    RFDETR_PREPROCESSOR_THREADED_EXACT_V1: {
-        "implementation_id": RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
-        "stage": "preprocess",
-        "version": "1",
-        "target": {
-            "device_kind": "gpu",
-            "device_families": ("nvidia_jetson", "nvidia_discrete_gpu"),
-        },
-        "inputs": {
-            "types": ("numpy.ndarray", "list[numpy.ndarray]"),
-            "dtype": "uint8",
-            "layout": "HWC or NHWC",
-            "channels": 3,
-            "batch": ">=1",
-        },
-        "output": {
-            "device": "selected CUDA device",
-            "dtype": "float32",
-            "layout": "contiguous NCHW",
-            "ownership": "new tensor owned by caller",
-        },
-        "dependencies": ("Pillow", "torch", "torchvision"),
-        "numerical_behavior": "byte-identical per-image reference pipeline",
-        "concurrency": {
-            "safe_for_concurrent_calls": True,
-            "shared_state": False,
-            "per_call_resources": "bounded ThreadPoolExecutor for batch > 1",
-        },
-        "stream_behavior": (
-            "CPU work completes before ordered H2D copies are submitted to the "
-            "caller's RF-DETR preprocessing stream"
-        ),
-        "supports_cuda_graphs": True,
-        "fallback_id": RFDETR_PREPROCESSOR_BASE,
-        "validated_environments": (),
-    },
-    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1: {
-        "implementation_id": RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
-        "stage": "preprocess",
-        "version": "1",
-        "target": {
-            "device_kind": "gpu",
-            "device_families": ("nvidia_jetson", "nvidia_discrete_gpu"),
-        },
-        "inputs": {
-            "types": ("numpy.ndarray", "torch.Tensor", "list"),
-            "dtype": "uint8 NumPy/tensor or floating tensor",
-            "layout": "HWC/NHWC or CHW/NCHW",
-            "location": "CPU or CUDA",
-            "channels": 3,
-            "batch": ">=1 with homogeneous source dimensions and semantics",
-        },
-        "output": {
-            "device": "selected CUDA device",
-            "dtype": "float32",
-            "layout": "contiguous NCHW",
-            "ownership": "per-call tensor from the PyTorch CUDA allocator",
-        },
-        "dependencies": ("torch", "torchvision", "triton"),
-        "numerical_behavior": (
-            "PIL byte-exact fixed-point resize for uint8 inputs; floating "
-            "tensors preserve the RF-DETR tensor-input CUDA resize semantics"
-        ),
-        "concurrency": {
-            "safe_for_concurrent_calls": True,
-            "shared_state": "serialized reusable pinned/source/scratch buffers",
-            "per_call_resources": "output tensor and completion event",
-        },
-        "stream_behavior": (
-            "preprocessing is submitted to the RF-DETR preprocessing stream; "
-            "TensorRT waits on a CUDA event without a host-wide stream sync"
-        ),
-        "supports_cuda_graphs": False,
-        "downstream_trt_cuda_graph_compatible": True,
-        "fallback_id": RFDETR_PREPROCESSOR_BASE,
-        "validated_environments": (),
-    },
-}
+__all__ = ["RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1"]
 
 
 def resolve_rfdetr_preprocessor(implementation_id: Optional[str] = None) -> str:
@@ -167,13 +81,13 @@ def resolve_rfdetr_preprocessor(implementation_id: Optional[str] = None) -> str:
         )
     if implementation_id == RFDETR_PREPROCESSOR_AUTO:
         return RFDETR_PREPROCESSOR_BASE
-    if implementation_id in RFDETR_PREPROCESSOR_IMPLEMENTATIONS:
+    if implementation_id in RFDETR_PREPROCESSOR_IDS:
         return implementation_id
     available = ", ".join(
         sorted(
             [
                 RFDETR_PREPROCESSOR_AUTO,
-                *RFDETR_PREPROCESSOR_IMPLEMENTATIONS.keys(),
+                *RFDETR_PREPROCESSOR_IDS,
             ]
         )
     )
@@ -187,6 +101,17 @@ def resolve_rfdetr_preprocessor(implementation_id: Optional[str] = None) -> str:
             "#modelruntimeerror"
         ),
     )
+
+
+def __getattr__(name: str):
+    """Provide the legacy metadata catalog import without a module cycle."""
+    if name == "RFDETR_PREPROCESSOR_IMPLEMENTATIONS":
+        from inference_models.models.rfdetr.optimization.catalog import (
+            RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+        )
+
+        return RFDETR_PREPROCESSOR_IMPLEMENTATIONS
+    raise AttributeError(name)
 
 
 def resolve_rfdetr_preprocessor_max_workers(max_workers: Optional[int] = None) -> int:

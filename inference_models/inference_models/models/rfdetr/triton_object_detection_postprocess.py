@@ -16,7 +16,7 @@ import os
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import torch
 
@@ -24,7 +24,16 @@ from inference_models import Detections
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
+from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_POSTPROCESSOR_AUTO,
+    RFDETR_POSTPROCESSOR_BASE,
+    RFDETR_POSTPROCESSOR_ENV_NAME,
+    RFDETR_POSTPROCESSOR_IDS,
+    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+)
 from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
+
+__all__ = ["RFDETR_POSTPROCESSOR_TRITON_FUSED_V1"]
 
 try:
     import triton
@@ -35,63 +44,6 @@ except ImportError:  # pragma: no cover - depends on optional GPU package
     triton = None
     tl = None
     TRITON_AVAILABLE = False
-
-
-RFDETR_POSTPROCESSOR_BASE = "base"
-RFDETR_POSTPROCESSOR_AUTO = "auto"
-RFDETR_POSTPROCESSOR_TRITON_FUSED_V1 = "triton-fused-v1"
-RFDETR_POSTPROCESSOR_ENV_NAME = "INFERENCE_MODELS_RFDETR_POSTPROCESSOR"
-
-RFDETR_POSTPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
-    RFDETR_POSTPROCESSOR_BASE: {
-        "implementation_id": RFDETR_POSTPROCESSOR_BASE,
-        "stage": "postprocess",
-        "version": "1",
-        "numerical_behavior": "reference RF-DETR PyTorch pipeline",
-        "fallback_id": RFDETR_POSTPROCESSOR_BASE,
-        "validated_environments": (),
-    },
-    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1: {
-        "implementation_id": RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
-        "stage": "postprocess",
-        "version": "1",
-        "target": {
-            "device_kind": "gpu",
-            "device_families": ("nvidia_jetson", "nvidia_discrete_gpu"),
-        },
-        "inputs": {
-            "types": "CUDA torch.Tensor",
-            "dtype": "float32",
-            "layout": "contiguous BQ4 boxes and BQC logits",
-            "batch": ">=1",
-            "queries": "1..1024",
-        },
-        "output": {
-            "device": "selected CUDA device",
-            "boxes_dtype": "int32",
-            "confidence_dtype": "float32",
-            "class_dtype": "int32",
-            "ownership": "per-call tensors owned by returned Detections",
-        },
-        "dependencies": ("torch", "triton"),
-        "numerical_behavior": (
-            "same sigmoid, sorted flat top-k, strict threshold, metadata "
-            "rescaling, clipping, and PyTorch round-to-int semantics as base"
-        ),
-        "concurrency": {
-            "safe_for_concurrent_calls": True,
-            "shared_state": "immutable bounded metadata/threshold tensor caches",
-            "per_call_resources": "top-k and fixed-capacity output tensors",
-        },
-        "stream_behavior": (
-            "all GPU work uses the caller's current CUDA stream; one batched "
-            "count copy synchronizes variable-length result construction"
-        ),
-        "supports_cuda_graphs": False,
-        "fallback_id": RFDETR_POSTPROCESSOR_BASE,
-        "validated_environments": (),
-    },
-}
 
 
 def resolve_rfdetr_postprocessor(implementation_id: Optional[str] = None) -> str:
@@ -115,13 +67,13 @@ def resolve_rfdetr_postprocessor(implementation_id: Optional[str] = None) -> str
         )
     if implementation_id == RFDETR_POSTPROCESSOR_AUTO:
         return RFDETR_POSTPROCESSOR_BASE
-    if implementation_id in RFDETR_POSTPROCESSOR_IMPLEMENTATIONS:
+    if implementation_id in RFDETR_POSTPROCESSOR_IDS:
         return implementation_id
     available = ", ".join(
         sorted(
             [
                 RFDETR_POSTPROCESSOR_AUTO,
-                *RFDETR_POSTPROCESSOR_IMPLEMENTATIONS.keys(),
+                *RFDETR_POSTPROCESSOR_IDS,
             ]
         )
     )
@@ -135,6 +87,17 @@ def resolve_rfdetr_postprocessor(implementation_id: Optional[str] = None) -> str
             "#modelruntimeerror"
         ),
     )
+
+
+def __getattr__(name: str):
+    """Provide the legacy metadata catalog import without a module cycle."""
+    if name == "RFDETR_POSTPROCESSOR_IMPLEMENTATIONS":
+        from inference_models.models.rfdetr.optimization.catalog import (
+            RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
+        )
+
+        return RFDETR_POSTPROCESSOR_IMPLEMENTATIONS
+    raise AttributeError(name)
 
 
 if TRITON_AVAILABLE:
