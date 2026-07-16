@@ -1147,6 +1147,157 @@ def handle_numpy_input_preparation_with_letterbox(
     return final_batch.contiguous(), [image_metadata]
 
 
+def pre_process_numpy_image_with_host_packed_letterbox(
+    image: np.ndarray,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_format: Optional[ColorFormat] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    """Build a letterboxed FP32 NCHW image on the host before one CUDA copy.
+
+    This is a deliberately narrow alternative to
+    :func:`pre_process_numpy_image`. The base letterbox implementation uploads
+    the resized HWC uint8 image, fills a separate FP32 CUDA tensor, copies the
+    image into it, reorders channels on CUDA, and scales it in another kernel.
+    This implementation performs those layout-only operations on the host and
+    uploads the final tensor once.
+
+    Args:
+        image: A single contiguous uint8 HWC NumPy image.
+
+        image_pre_processing: Roboflow preprocessing configuration.
+
+        network_input: Network input definition. Only fixed-size letterbox
+            inputs without normalization are supported.
+
+        target_device: CUDA device receiving the packed tensor.
+
+        input_color_format: Color format of ``image``. NumPy inputs default to
+            BGR, matching the base implementation.
+
+        pre_processing_overrides: Optional preprocessing overrides applied
+            before letterboxing.
+
+    Returns:
+        A single-image FP32 NCHW CUDA tensor and its preprocessing metadata.
+
+    Raises:
+        ModelRuntimeError: If the explicit alternative is incompatible with
+            the input or network preprocessing configuration.
+    """
+    implementation_id = "host-packed-letterbox-fp32-v1"
+    if target_device.type != "cuda":
+        raise ModelRuntimeError(
+            message=(
+                f"Preprocessor '{implementation_id}' requires a CUDA target; "
+                f"received {target_device}. Select preprocessor 'base' instead."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    if (
+        not isinstance(image, np.ndarray)
+        or image.dtype != np.uint8
+        or image.ndim != 3
+        or image.shape[2] != 3
+        or not image.flags.c_contiguous
+    ):
+        raise ModelRuntimeError(
+            message=(
+                f"Preprocessor '{implementation_id}' requires one contiguous "
+                "uint8 HWC NumPy image with three channels. Select "
+                "preprocessor 'base' for other input representations."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    if network_input.resize_mode is not ResizeMode.LETTERBOX:
+        raise ModelRuntimeError(
+            message=(
+                f"Preprocessor '{implementation_id}' requires letterbox resize; "
+                f"received {network_input.resize_mode}. Select preprocessor "
+                "'base' instead."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    if network_input.dynamic_spatial_size_supported:
+        raise ModelRuntimeError(
+            message=(
+                f"Preprocessor '{implementation_id}' supports fixed spatial "
+                "dimensions only. Select preprocessor 'base' for dynamic inputs."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    if network_input.normalization is not None:
+        raise ModelRuntimeError(
+            message=(
+                f"Preprocessor '{implementation_id}' does not support input "
+                "normalization. Select preprocessor 'base' instead."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+
+    input_color_mode = (
+        ColorMode(input_color_format)
+        if input_color_format is not None
+        else ColorMode.BGR
+    )
+    original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
+    image, static_crop_offset = apply_pre_processing_to_numpy_image(
+        image=image,
+        image_pre_processing=image_pre_processing,
+        network_input_channels=network_input.input_channels,
+        input_color_mode=input_color_mode,
+        pre_processing_overrides=pre_processing_overrides,
+    )
+    target_size = ImageDimensions(
+        width=network_input.training_input_size.width,
+        height=network_input.training_input_size.height,
+    )
+    size_after_pre_processing = ImageDimensions(
+        height=image.shape[0], width=image.shape[1]
+    )
+    scale = min(
+        target_size.width / image.shape[1], target_size.height / image.shape[0]
+    )
+    new_width = int(image.shape[1] * scale)
+    new_height = int(image.shape[0] * scale)
+    pad_top = int((target_size.height - new_height) / 2)
+    pad_left = int((target_size.width - new_width) / 2)
+
+    scaled_image = cv2.resize(image, (new_width, new_height))
+    packed_image = np.full(
+        (target_size.height, target_size.width, network_input.input_channels),
+        network_input.padding_value or 0,
+        dtype=np.float32,
+    )
+    packed_image[
+        pad_top : pad_top + new_height, pad_left : pad_left + new_width
+    ] = scaled_image
+    if input_color_mode != network_input.color_mode:
+        packed_image = packed_image[:, :, ::-1]
+    packed_image = np.ascontiguousarray(
+        packed_image.transpose(2, 0, 1), dtype=np.float32
+    )
+    if network_input.scaling_factor is not None:
+        packed_image /= np.float32(network_input.scaling_factor)
+
+    tensor = torch.from_numpy(packed_image).unsqueeze(0).to(target_device)
+    metadata = PreProcessingMetadata(
+        pad_left=pad_left,
+        pad_top=pad_top,
+        pad_right=target_size.width - pad_left - new_width,
+        pad_bottom=target_size.height - pad_top - new_height,
+        original_size=original_size,
+        size_after_pre_processing=size_after_pre_processing,
+        inference_size=target_size,
+        scale_width=scale,
+        scale_height=scale,
+        static_crop_offset=static_crop_offset,
+    )
+    return tensor, [metadata]
+
+
 def handle_numpy_input_preparation_with_center_crop(
     image: np.ndarray,
     network_input: NetworkInputDefinition,

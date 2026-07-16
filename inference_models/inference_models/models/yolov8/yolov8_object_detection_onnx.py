@@ -18,7 +18,9 @@ from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
     MissingDependencyError,
+    ModelRuntimeError,
 )
+from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
@@ -39,6 +41,7 @@ from inference_models.models.common.roboflow.post_processing import (
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
+    pre_process_numpy_image_with_host_packed_letterbox,
 )
 from inference_models.models.common.streams import get_cuda_stream
 from inference_models.utils.onnx_introspection import (
@@ -66,6 +69,15 @@ class YOLOv8ForObjectDetectionOnnx(
     ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
 ):
 
+    _PREPROCESSOR_BASE = "base"
+    _PREPROCESSOR_AUTO = "auto"
+    _PREPROCESSOR_HOST_PACKED_LETTERBOX = "host-packed-letterbox-fp32-v1"
+    _PREPROCESSOR_IMPLEMENTATIONS = {
+        _PREPROCESSOR_BASE,
+        _PREPROCESSOR_AUTO,
+        _PREPROCESSOR_HOST_PACKED_LETTERBOX,
+    }
+
     @classmethod
     def from_pretrained(
         cls,
@@ -74,6 +86,7 @@ class YOLOv8ForObjectDetectionOnnx(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        preprocessor_implementation: str = _PREPROCESSOR_BASE,
         **kwargs,
     ) -> "YOLOv8ForObjectDetectionOnnx":
         if onnx_execution_providers is None:
@@ -145,6 +158,7 @@ class YOLOv8ForObjectDetectionOnnx(
             device=device,
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
+            preprocessor_implementation=preprocessor_implementation,
         )
 
     def __init__(
@@ -156,7 +170,19 @@ class YOLOv8ForObjectDetectionOnnx(
         device: torch.device,
         input_batch_size: Optional[int],
         recommended_parameters=None,
+        preprocessor_implementation: str = _PREPROCESSOR_BASE,
     ):
+        if preprocessor_implementation not in self._PREPROCESSOR_IMPLEMENTATIONS:
+            raise ModelRuntimeError(
+                message=(
+                    "Unknown YOLOv8 ONNX preprocessor implementation "
+                    f"'{preprocessor_implementation}'. Supported values are: "
+                    f"{sorted(self._PREPROCESSOR_IMPLEMENTATIONS)}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+        if preprocessor_implementation == self._PREPROCESSOR_AUTO:
+            preprocessor_implementation = self._PREPROCESSOR_BASE
         self._session = session
         self._input_name = input_name
         self._inference_config = inference_config
@@ -170,10 +196,20 @@ class YOLOv8ForObjectDetectionOnnx(
         )
         self._session_thread_lock = Lock()
         self.recommended_parameters = recommended_parameters
+        self._preprocessor_implementation = preprocessor_implementation
+        LOGGER.info(
+            "YOLOv8 ONNX selected preprocessor implementation: %s",
+            self._preprocessor_implementation,
+        )
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    @property
+    def preprocessor_implementation(self) -> str:
+        """Return the selected preprocessing implementation identifier."""
+        return self._preprocessor_implementation
 
     def pre_process(
         self,
@@ -185,15 +221,48 @@ class YOLOv8ForObjectDetectionOnnx(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         pre_process_stream = self._pre_process_stream
         with torch.cuda.stream(pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                image_size_wh=image_size,
-                pre_processing_overrides=pre_processing_overrides,
-            )
+            if (
+                self._preprocessor_implementation
+                == self._PREPROCESSOR_HOST_PACKED_LETTERBOX
+            ):
+                if image_size is not None:
+                    raise ModelRuntimeError(
+                        message=(
+                            "Preprocessor 'host-packed-letterbox-fp32-v1' does "
+                            "not support image_size overrides. Select preprocessor "
+                            "'base' instead."
+                        ),
+                        help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                    )
+                if not isinstance(images, list) or len(images) != 1:
+                    raise ModelRuntimeError(
+                        message=(
+                            "Preprocessor 'host-packed-letterbox-fp32-v1' "
+                            "requires a single-image NumPy list. Select "
+                            "preprocessor 'base' for other batch layouts."
+                        ),
+                        help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                    )
+                pre_processed_images, pre_processing_meta = (
+                    pre_process_numpy_image_with_host_packed_letterbox(
+                        image=images[0],
+                        image_pre_processing=self._inference_config.image_pre_processing,
+                        network_input=self._inference_config.network_input,
+                        target_device=self._device,
+                        input_color_format=input_color_format,
+                        pre_processing_overrides=pre_processing_overrides,
+                    )
+                )
+            else:
+                pre_processed_images, pre_processing_meta = pre_process_network_input(
+                    images=images,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    target_device=self._device,
+                    input_color_format=input_color_format,
+                    image_size_wh=image_size,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
         if pre_process_stream is not None:
             pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
