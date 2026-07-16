@@ -196,13 +196,9 @@ def build_gstreamer_pipeline(
         )
 
     uri = _source_uri(video)
-    # expose-all-streams=false: only streams matching `caps` (video) are
-    # autoplugged; other tracks (e.g. an RTSP camera's A-Law audio) are ignored
-    # instead of erroring on a missing decoder and poisoning the pipeline with
-    # bus errors from the dead branch (silent startup EOS / mid-run reconnects).
     return (
         f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
-        'caps="video/x-raw(memory:NVMM)" expose-all-streams=false ! '
+        'caps="video/x-raw(memory:NVMM)" ! '
         f"{sink}"
     )
 
