@@ -34,6 +34,16 @@ target "jetson-wheels-flash-attn-jp72" {
   tags     = []
 }
 
+# Isolated parallelism experiment. The separate target and cache key let us
+# compare an eight-way FlashAttention compile with the conservative two-way
+# production setting without contending for its resumable build tree.
+target "jetson-wheels-flash-attn-8way-jp72" {
+  inherits = ["jetson-wheels-flash-attn-jp72"]
+  args = {
+    FLASH_ATTN_MAX_JOBS = "8"
+  }
+}
+
 target "jetson-wheels-ort-jp72" {
   inherits = ["jetson-wheels-jp72"]
   target   = "ort-builder"

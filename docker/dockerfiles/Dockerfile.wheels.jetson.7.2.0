@@ -235,7 +235,7 @@ RUN --mount=type=bind,source=docker/patches/flash-attention-sm87.patch,target=/t
     git checkout ${FLASH_ATTN_REF} && \
     git apply /tmp/flash-attention-sm87.patch && \
     git submodule update --init --recursive
-RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132 \
+RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132-jobs${FLASH_ATTN_MAX_JOBS} \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-flash-attn-${TARGETARCH} \
     cd flash-attention && \
     export FLASH_ATTENTION_FORCE_BUILD=TRUE && \
