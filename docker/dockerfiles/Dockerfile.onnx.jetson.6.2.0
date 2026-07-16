@@ -819,6 +819,8 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 && \
     missing="$(ldd /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 | awk '/not found/ { print $1 }' | grep -v -x libcuda.so.1 || true)" && \
     test -z "${missing}" && \
+    command -v lsmod >/dev/null && \
+    command -v modprobe >/dev/null && \
     rm -rf /root/.cache/gstreamer-1.0
 
 # Environment variables
