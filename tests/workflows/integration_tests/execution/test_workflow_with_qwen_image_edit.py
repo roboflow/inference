@@ -53,7 +53,11 @@ a workflow output.
 )
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_QWEN_IMAGE_EDIT_TEST", True)),
-    reason="Skipping Qwen-Image-Edit test (requires a local GPU and model weights)",
+    reason=(
+        "Skipping Qwen-Image-Edit test (requires a local GPU; with default "
+        "config the first run downloads tens of GB of weights from HuggingFace). "
+        "Set SKIP_QWEN_IMAGE_EDIT_TEST=False to opt in."
+    ),
 )
 def test_qwen_image_edit_inference(
     model_manager: ModelManager,
@@ -124,7 +128,11 @@ QWEN_IMAGE_EDIT_PARAMETERIZED_WORKFLOW_DEFINITION = {
 
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_QWEN_IMAGE_EDIT_TEST", True)),
-    reason="Skipping Qwen-Image-Edit test (requires a local GPU and model weights)",
+    reason=(
+        "Skipping Qwen-Image-Edit test (requires a local GPU; with default "
+        "config the first run downloads tens of GB of weights from HuggingFace). "
+        "Set SKIP_QWEN_IMAGE_EDIT_TEST=False to opt in."
+    ),
 )
 def test_qwen_image_edit_with_prompt_input_and_custom_params(
     model_manager: ModelManager,

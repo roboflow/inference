@@ -1,9 +1,12 @@
 """Integration tests for the Qwen-Image-Edit HF backend.
 
 These tests exercise the REAL diffusers pipeline (no mocks): weight loading,
-Lightning LoRA fusing, CPU-offload placement and end-to-end generation. They are
-GPU-only and slow — the Lightning path downloads the base model + LoRA from
-HuggingFace on first run.
+Lightning LoRA fusing, CPU-offload placement and end-to-end generation.
+
+They NEVER run unless explicitly opted in with
+``RUN_QWEN_IMAGE_EDIT_INTEGRATION_TESTS=True``: the first run downloads the
+base model + LoRA from HuggingFace (tens of GB), which must not be triggered
+by a plain ``pytest tests/integration_tests`` invocation on a GPU machine.
 
 Set ``QWEN_IMAGE_EDIT_WEIGHTS_DIR`` to a locally downloaded weights directory to
 skip the HuggingFace download and load with ``local_files_only=True``.
@@ -22,6 +25,18 @@ from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
 )
 
 LOCAL_WEIGHTS_DIR = os.getenv("QWEN_IMAGE_EDIT_WEIGHTS_DIR")
+
+# Opt-in gate: these tests can pull tens of GB of weights from HuggingFace on
+# first run, so selecting them by marker/directory alone is not enough.
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_QWEN_IMAGE_EDIT_INTEGRATION_TESTS", "").strip().lower()
+    not in {"1", "true", "yes"},
+    reason=(
+        "Qwen-Image-Edit integration tests download tens of GB of weights on "
+        "first run; set RUN_QWEN_IMAGE_EDIT_INTEGRATION_TESTS=True (and "
+        "optionally QWEN_IMAGE_EDIT_WEIGHTS_DIR for offline loading) to run."
+    ),
+)
 
 
 @pytest.fixture(scope="module")
