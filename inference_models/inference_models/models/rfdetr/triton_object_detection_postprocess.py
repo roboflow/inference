@@ -275,7 +275,10 @@ class FusedObjectDetectionPostprocessor:
                     "#modelruntimeerror"
                 ),
             )
-        self._device = device
+        device_index = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
+        self._device = torch.device("cuda", device_index)
         self._metadata_cache: OrderedDict[Tuple[Any, ...], _CachedTensor] = (
             OrderedDict()
         )

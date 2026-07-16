@@ -103,6 +103,14 @@ def test_fused_postprocessor_requires_cuda() -> None:
         FusedObjectDetectionPostprocessor(torch.device("cpu"))
 
 
+def test_fused_postprocessor_resolves_implicit_cuda_device(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 2)
+
+    postprocessor = FusedObjectDetectionPostprocessor(torch.device("cuda"))
+
+    assert postprocessor._device == torch.device("cuda:2")
+
+
 def test_metadata_values_match_reference_transform_parameters() -> None:
     values = _metadata_values(_metadata())
 
