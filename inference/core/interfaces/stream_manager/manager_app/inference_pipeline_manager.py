@@ -32,6 +32,7 @@ from inference.core.interfaces.http.orjson_utils import (
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import InMemoryBufferSink, multi_sink
+from inference.core.interfaces.stream.utils import materialise_video_frame_for_sink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
@@ -412,7 +413,12 @@ class InferencePipelineManager(Process):
                             "Please try to adjust the scene so models detect objects"
                         )
                         errors.append("or stop preview, update workflow and try again.")
-                        frame = video_frame.image.copy()
+                        # The WebRTC preview needs CPU pixels; the pipeline
+                        # hands tensor frames through unmaterialised, so
+                        # convert at this consumer boundary.
+                        frame = materialise_video_frame_for_sink(
+                            video_frame
+                        ).image.copy()
 
                     for row, error in enumerate(errors):
                         frame = cv.putText(
