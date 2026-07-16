@@ -638,6 +638,11 @@ WORKDIR /app
 # EGL/GLES drivers come from the host's tegra-egl mount at container start.
 # libgl1 (glvnd desktop-GL loader) provides libGL.so.1, linked by the Qt5 libs
 # bundled inside the opencv-python wheel (manylinux forbids vendoring libGL).
+# kmod (lsmod/modprobe) is shelled out to by the host-injected NV BSP
+# v4l2/GStreamer libs to check the codec kernel modules; without it every
+# nvv4l2decoder plugin load spams "sh: 1: lsmod: not found" and the module
+# check degrades. The media.jetson.7.2.0 image installs it for the same reason
+# (verify_media_runtime.sh requires lsmod whenever BSP plugins are baked).
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
@@ -658,6 +663,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libpng16-16 \
     libexpat1 \
     curl \
+    kmod \
     libasound2 \
     libdrm2 \
     libegl1 \
