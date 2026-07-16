@@ -12,6 +12,8 @@
 
 #include <cstdarg>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -84,6 +86,9 @@ struct RfBridgeStats {
     uint64_t array_flatten_copies;
     uint64_t conversion_kernels;
     uint64_t nvmm_frames;
+    // Frames decoded+converted on the streaming thread but replaced by a newer
+    // frame before the consumer collected them (latest-wins handoff slot).
+    uint64_t frames_dropped_by_consumer;
     int32_t last_nvbuf_memory_type;
     int32_t last_egl_frame_type;
     int32_t last_egl_color_format;
@@ -189,13 +194,26 @@ struct RfTensorContext {
 struct RfJetsonPipeline {
     GstElement* pipeline = nullptr;
     GstAppSink* sink = nullptr;
-    GstSample* sample = nullptr;
     cudaStream_t stream = nullptr;
     int device_id = 0;
     std::shared_ptr<RfBufferPool> tensor_pool;
     RfBridgeStats stats{};
     std::atomic<bool> interrupted{false};
     std::mutex mutex;
+    // Streaming-thread handoff (the jetson-utils consume model): the appsink
+    // new-sample callback converts each frame on the GStreamer streaming
+    // thread, releases the GStreamer buffer immediately (the decoder pool is
+    // never held hostage by a slow consumer), and publishes the finished CUDA
+    // tensor here. grab() waits on `frame_ready`; retrieve() takes the tensor.
+    // A newer frame replaces an uncollected one (latest-wins, like appsink
+    // drop=true, but the drop happens AFTER decode so nothing stalls).
+    std::condition_variable frame_ready;
+    RfTensorContext* ready_tensor = nullptr;
+    std::atomic<bool> eos{false};
+    bool conversion_failed = false;
+    char conversion_error[1024] = {0};
+    RfFrameInfo last_frame_info{};
+    bool frame_info_valid = false;
 };
 
 using NvBufSurfaceMapEglImageFn = int (*)(NvBufSurface*, int);
@@ -341,6 +359,108 @@ __global__ void rgba_array_to_rgb_chw(
     store_rgb_chw(pixel, channels, destination, index, width * height);
 }
 
+// YUV -> RGB conversion coefficients for the direct-NV12 path (no nvvidconv
+// RGBA hop): R = y_scale*(Y - y_offset) + r_v*(V-128), etc.
+struct YuvCoeffs {
+    float y_scale;
+    float y_offset;
+    float r_v;
+    float g_u;
+    float g_v;
+    float b_u;
+};
+
+bool select_nv12_coeffs(NvBufSurfaceColorFormat format, YuvCoeffs* result) {
+    switch (format) {
+        case NVBUF_COLOR_FORMAT_NV12:  // BT.601 limited range (decoder default)
+            *result = {1.1644f, 16.0f, 1.5960f, -0.3918f, -0.8130f, 2.0172f};
+            return true;
+        case NVBUF_COLOR_FORMAT_NV12_ER:  // BT.601 full range
+            *result = {1.0f, 0.0f, 1.4020f, -0.3441f, -0.7141f, 1.7720f};
+            return true;
+        case NVBUF_COLOR_FORMAT_NV12_709:  // BT.709 limited range
+            *result = {1.1644f, 16.0f, 1.7927f, -0.2132f, -0.5329f, 2.1124f};
+            return true;
+        case NVBUF_COLOR_FORMAT_NV12_709_ER:  // BT.709 full range
+            *result = {1.0f, 0.0f, 1.5748f, -0.1873f, -0.4681f, 1.8556f};
+            return true;
+        default:
+            return false;
+    }
+}
+
+__device__ inline void store_yuv_as_rgb_chw(
+    float y_value,
+    float u_value,
+    float v_value,
+    YuvCoeffs coeffs,
+    uint8_t* destination,
+    uint32_t index,
+    uint32_t plane_size) {
+    const float luma = coeffs.y_scale * (y_value - coeffs.y_offset);
+    const float d = u_value - 128.0f;
+    const float e = v_value - 128.0f;
+    const float red = luma + coeffs.r_v * e;
+    const float green = luma + coeffs.g_u * d + coeffs.g_v * e;
+    const float blue = luma + coeffs.b_u * d;
+    destination[index] =
+        static_cast<uint8_t>(fminf(fmaxf(red, 0.0f), 255.0f));
+    destination[plane_size + index] =
+        static_cast<uint8_t>(fminf(fmaxf(green, 0.0f), 255.0f));
+    destination[2 * plane_size + index] =
+        static_cast<uint8_t>(fminf(fmaxf(blue, 0.0f), 255.0f));
+}
+
+__global__ void nv12_pitch_to_rgb_chw(
+    const uint8_t* y_plane,
+    const uint8_t* uv_plane,
+    size_t pitch,
+    uint8_t* destination,
+    uint32_t width,
+    uint32_t height,
+    YuvCoeffs coeffs) {
+    const uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) {
+        return;
+    }
+    const float y_value = static_cast<float>(y_plane[y * pitch + x]);
+    const uint8_t* uv_row = uv_plane + (y / 2) * pitch;
+    const uint32_t uv_x = (x / 2) * 2;
+    const float u_value = static_cast<float>(uv_row[uv_x]);
+    const float v_value = static_cast<float>(uv_row[uv_x + 1]);
+    const uint32_t index = y * width + x;
+    store_yuv_as_rgb_chw(
+        y_value, u_value, v_value, coeffs, destination, index, width * height);
+}
+
+__global__ void nv12_array_to_rgb_chw(
+    cudaTextureObject_t y_texture,
+    cudaTextureObject_t uv_texture,
+    uint8_t* destination,
+    uint32_t width,
+    uint32_t height,
+    YuvCoeffs coeffs) {
+    const uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) {
+        return;
+    }
+    const float y_value =
+        static_cast<float>(tex2D<uint8_t>(y_texture, x + 0.5f, y + 0.5f));
+    const uchar2 uv =
+        tex2D<uchar2>(uv_texture, (x / 2) + 0.5f, (y / 2) + 0.5f);
+    const uint32_t index = y * width + x;
+    store_yuv_as_rgb_chw(
+        y_value,
+        static_cast<float>(uv.x),
+        static_cast<float>(uv.y),
+        coeffs,
+        destination,
+        index,
+        width * height);
+}
+
 void delete_managed_tensor(DLManagedTensor* managed) {
     if (managed == nullptr) {
         return;
@@ -475,13 +595,366 @@ bool pipeline_has_factory(RfJetsonPipeline* handle, const char* factory_name) {
     return found;
 }
 
+struct RfEglDiagnostics {
+    int32_t memory_type = -1;
+    int32_t frame_type = -1;
+    int32_t color_format = -1;
+};
+
+// Convert one appsink sample into a pooled CHW RGB CUDA tensor. Runs on the
+// GStreamer STREAMING thread (the jetson-utils consume model): the sample is
+// fully consumed here and the caller unrefs it immediately afterwards, so the
+// decoder's capture pool is never held across consumer latency. Takes no lock
+// — it only touches handle fields that are immutable after create()
+// (device_id, stream, tensor_pool). Supports both the direct decoder output
+// (NV12 semi-planar, the RTSP path) and nvvidconv output (RGBA, the
+// CSI/v4l2/file paths).
+RfTensorContext* convert_sample_to_tensor(
+    RfJetsonPipeline* handle,
+    GstSample* sample,
+    RfFrameInfo* frame_info_out,
+    RfEglDiagnostics* diagnostics,
+    char* error,
+    size_t error_capacity) {
+    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    GstMapInfo map = GST_MAP_INFO_INIT;
+    bool buffer_mapped = false;
+    bool egl_mapped = false;
+    CUgraphicsResource graphics_resource = nullptr;
+    cudaTextureObject_t textures[2] = {0, 0};
+    RfTensorContext* tensor = nullptr;
+    RfTensorContext* result = nullptr;
+
+    // Bind the device on this streaming thread (it has made no prior CUDA
+    // runtime call); the driver-API EGL registration below needs a context.
+    cudaError_t bind_status = cudaSetDevice(handle->device_id);
+    if (bind_status == cudaSuccess) {
+        bind_status = cudaFree(nullptr);
+    }
+    if (bind_status != cudaSuccess) {
+        write_error(
+            error,
+            error_capacity,
+            "CUDA device %d binding failed: %s",
+            handle->device_id,
+            cudaGetErrorString(bind_status));
+        return nullptr;
+    }
+
+    RfFrameInfo frame_info{};
+    if (!read_sample_info(sample, &frame_info) || !sample_has_nvmm_caps(sample)) {
+        write_error(error, error_capacity, "Frame caps are invalid");
+        goto cleanup;
+    }
+    if (buffer == nullptr || !gst_buffer_map(buffer, &map, GST_MAP_READ) ||
+        map.data == nullptr) {
+        write_error(error, error_capacity, "Could not map the NvBufSurface descriptor");
+        goto cleanup;
+    }
+    buffer_mapped = true;
+
+    {
+        auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
+        diagnostics->memory_type = static_cast<int32_t>(surface->memType);
+        if (surface->memType != NVBUF_MEM_SURFACE_ARRAY ||
+            surface->surfaceList == nullptr || surface->batchSize == 0 ||
+            surface->numFilled == 0) {
+            write_error(
+                error,
+                error_capacity,
+                "Frame is not a populated NvBufSurface SURFACE_ARRAY");
+            goto cleanup;
+        }
+        const NvBufSurfaceColorFormat surface_format =
+            surface->surfaceList[0].colorFormat;
+        const bool is_rgba = surface_format == NVBUF_COLOR_FORMAT_RGBA;
+        YuvCoeffs yuv_coeffs{};
+        if (!is_rgba && !select_nv12_coeffs(surface_format, &yuv_coeffs)) {
+            write_error(
+                error,
+                error_capacity,
+                "NvBufSurface format is unsupported (format=%d, expected RGBA "
+                "or an NV12 variant)",
+                static_cast<int>(surface_format));
+            goto cleanup;
+        }
+        if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
+            write_error(error, error_capacity, "NvBufSurface EGL mapping failed");
+            goto cleanup;
+        }
+        egl_mapped = true;
+        void* egl_image = surface->surfaceList[0].mappedAddr.eglImage;
+        if (egl_image == nullptr) {
+            write_error(error, error_capacity, "NvBufSurface EGL image is null");
+            goto cleanup;
+        }
+        CUresult driver_status = cuGraphicsEGLRegisterImage(
+            &graphics_resource,
+            reinterpret_cast<EGLImageKHR>(egl_image),
+            CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
+        if (driver_status != CUDA_SUCCESS) {
+            const char* driver_error = nullptr;
+            cuGetErrorString(driver_status, &driver_error);
+            write_error(
+                error,
+                error_capacity,
+                "CUDA EGL registration failed: %s",
+                driver_error == nullptr ? "unknown error" : driver_error);
+            goto cleanup;
+        }
+
+        CUeglFrame egl_frame{};
+        driver_status = cuGraphicsResourceGetMappedEglFrame(
+            &egl_frame, graphics_resource, 0, 0);
+        if (driver_status != CUDA_SUCCESS) {
+            const char* driver_error = nullptr;
+            cuGetErrorString(driver_status, &driver_error);
+            write_error(
+                error,
+                error_capacity,
+                "CUDA EGL frame mapping failed: %s",
+                driver_error == nullptr ? "unknown error" : driver_error);
+            goto cleanup;
+        }
+        diagnostics->frame_type = static_cast<int32_t>(egl_frame.frameType);
+        diagnostics->color_format = static_cast<int32_t>(egl_frame.eglColorFormat);
+        const uint32_t expected_planes = is_rgba ? 1 : 2;
+        if (egl_frame.width < frame_info.width ||
+            egl_frame.height < frame_info.height ||
+            egl_frame.planeCount != expected_planes ||
+            egl_frame.cuFormat != CU_AD_FORMAT_UNSIGNED_INT8 ||
+            (is_rgba && egl_frame.numChannels != 4)) {
+            write_error(error, error_capacity, "CUDA EGL frame layout is invalid");
+            goto cleanup;
+        }
+
+        ChannelMap channels{};
+        if (is_rgba && !get_channel_map(egl_frame.eglColorFormat, &channels)) {
+            write_error(
+                error,
+                error_capacity,
+                "CUDA EGL color format is unsupported: %d",
+                static_cast<int>(egl_frame.eglColorFormat));
+            goto cleanup;
+        }
+        tensor = new (std::nothrow) RfTensorContext();
+        if (tensor == nullptr) {
+            write_error(error, error_capacity, "Could not allocate tensor state");
+            goto cleanup;
+        }
+        tensor->device_id = handle->device_id;
+        tensor->pool = handle->tensor_pool;
+        tensor->managed.manager_ctx = tensor;
+        tensor->managed.deleter = delete_managed_tensor;
+        const size_t output_size =
+            static_cast<size_t>(frame_info.width) * frame_info.height * 3;
+        tensor->allocation = handle->tensor_pool->acquire(output_size, &tensor->pooled);
+        if (tensor->allocation == nullptr) {
+            write_error(
+                error,
+                error_capacity,
+                "CUDA tensor allocation failed for %zu bytes",
+                output_size);
+            goto cleanup;
+        }
+
+        cudaError_t cuda_status = cudaSuccess;
+        const dim3 threads(32, 8);
+        const dim3 blocks(
+            (frame_info.width + threads.x - 1) / threads.x,
+            (frame_info.height + threads.y - 1) / threads.y);
+        if (egl_frame.frameType == CU_EGL_FRAME_TYPE_PITCH) {
+            if (is_rgba) {
+                rgba_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    static_cast<const uint8_t*>(egl_frame.frame.pPitch[0]),
+                    egl_frame.pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    channels);
+            } else {
+                nv12_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    static_cast<const uint8_t*>(egl_frame.frame.pPitch[0]),
+                    static_cast<const uint8_t*>(egl_frame.frame.pPitch[1]),
+                    egl_frame.pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    yuv_coeffs);
+            }
+        } else if (egl_frame.frameType == CU_EGL_FRAME_TYPE_ARRAY) {
+            const uint32_t texture_count = is_rgba ? 1 : 2;
+            for (uint32_t plane = 0; plane < texture_count; ++plane) {
+                cudaResourceDesc resource_description{};
+                resource_description.resType = cudaResourceTypeArray;
+                resource_description.res.array.array =
+                    reinterpret_cast<cudaArray_t>(egl_frame.frame.pArray[plane]);
+                cudaTextureDesc texture_description{};
+                texture_description.addressMode[0] = cudaAddressModeClamp;
+                texture_description.addressMode[1] = cudaAddressModeClamp;
+                texture_description.filterMode = cudaFilterModePoint;
+                texture_description.readMode = cudaReadModeElementType;
+                texture_description.normalizedCoords = 0;
+                cuda_status = cudaCreateTextureObject(
+                    &textures[plane],
+                    &resource_description,
+                    &texture_description,
+                    nullptr);
+                if (cuda_status != cudaSuccess) {
+                    write_error(
+                        error,
+                        error_capacity,
+                        "CUDA texture creation failed: %s",
+                        cudaGetErrorString(cuda_status));
+                    goto cleanup;
+                }
+            }
+            if (is_rgba) {
+                rgba_array_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    textures[0],
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    channels);
+            } else {
+                nv12_array_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    textures[0],
+                    textures[1],
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    yuv_coeffs);
+            }
+        } else {
+            write_error(error, error_capacity, "CUDA EGL frame storage is unsupported");
+            goto cleanup;
+        }
+        cuda_status = cudaGetLastError();
+        if (cuda_status == cudaSuccess) {
+            cuda_status = cudaStreamSynchronize(handle->stream);
+        }
+        if (cuda_status != cudaSuccess) {
+            write_error(
+                error,
+                error_capacity,
+                "CUDA frame conversion failed: %s",
+                cudaGetErrorString(cuda_status));
+            goto cleanup;
+        }
+
+        tensor->shape[0] = 3;
+        tensor->shape[1] = frame_info.height;
+        tensor->shape[2] = frame_info.width;
+        tensor->managed.dl_tensor.data = tensor->allocation;
+        tensor->managed.dl_tensor.device = {kDLCUDA, handle->device_id};
+        tensor->managed.dl_tensor.ndim = 3;
+        tensor->managed.dl_tensor.dtype = {kDLUInt, 8, 1};
+        tensor->managed.dl_tensor.shape = tensor->shape;
+        tensor->managed.dl_tensor.strides = nullptr;
+        tensor->managed.dl_tensor.byte_offset = 0;
+        *frame_info_out = frame_info;
+        result = tensor;
+        tensor = nullptr;
+    }
+
+cleanup:
+    for (cudaTextureObject_t texture : textures) {
+        if (texture != 0) {
+            cudaDestroyTextureObject(texture);
+        }
+    }
+    if (graphics_resource != nullptr) {
+        cuGraphicsUnregisterResource(graphics_resource);
+    }
+    if (egl_mapped) {
+        auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
+        g_nvbufsurface.unmap_egl_image(surface, 0);
+    }
+    if (buffer_mapped) {
+        gst_buffer_unmap(buffer, &map);
+    }
+    if (tensor != nullptr) {
+        delete_managed_tensor(&tensor->managed);
+    }
+    return result;
+}
+
+GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
+    auto* handle = static_cast<RfJetsonPipeline*>(user_data);
+    GstSample* sample = gst_app_sink_pull_sample(sink);
+    if (sample == nullptr) {
+        return GST_FLOW_OK;
+    }
+    if (handle->interrupted.load(std::memory_order_acquire)) {
+        gst_sample_unref(sample);
+        return GST_FLOW_OK;
+    }
+    char error[1024] = {0};
+    RfFrameInfo frame_info{};
+    RfEglDiagnostics diagnostics{};
+    RfTensorContext* tensor = convert_sample_to_tensor(
+        handle, sample, &frame_info, &diagnostics, error, sizeof(error));
+    gst_sample_unref(sample);
+    {
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        handle->stats.descriptor_maps += 1;
+        handle->stats.last_nvbuf_memory_type = diagnostics.memory_type;
+        handle->stats.last_egl_frame_type = diagnostics.frame_type;
+        handle->stats.last_egl_color_format = diagnostics.color_format;
+        if (tensor == nullptr) {
+            handle->conversion_failed = true;
+            std::snprintf(
+                handle->conversion_error,
+                sizeof(handle->conversion_error),
+                "%s",
+                error);
+        } else {
+            if (handle->ready_tensor != nullptr) {
+                // Latest-wins: the consumer never collected the previous
+                // frame. Its buffer goes straight back to the pool.
+                delete_managed_tensor(&handle->ready_tensor->managed);
+                handle->stats.frames_dropped_by_consumer += 1;
+            }
+            handle->ready_tensor = tensor;
+            handle->last_frame_info = frame_info;
+            handle->frame_info_valid = true;
+            handle->stats.frames += 1;
+            handle->stats.conversion_kernels += 1;
+            handle->stats.nvmm_frames += 1;
+        }
+    }
+    handle->frame_ready.notify_all();
+    return GST_FLOW_OK;
+}
+
+GstFlowReturn handle_new_preroll(GstAppSink* sink, gpointer user_data) {
+    // Live pipelines re-deliver the preroll buffer as the first sample once
+    // PLAYING; consuming it here just keeps the sink from holding it.
+    GstSample* sample = gst_app_sink_pull_preroll(sink);
+    if (sample != nullptr) {
+        gst_sample_unref(sample);
+    }
+    (void)user_data;
+    return GST_FLOW_OK;
+}
+
+void handle_appsink_eos(GstAppSink* sink, gpointer user_data) {
+    auto* handle = static_cast<RfJetsonPipeline*>(user_data);
+    (void)sink;
+    handle->eos.store(true, std::memory_order_release);
+    handle->frame_ready.notify_all();
+}
+
 }  // namespace
 
 extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
-    return "3";
+    // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
+    // model), direct NV12 path, frames_dropped_by_consumer added to
+    // RfBridgeStats (ABI change — python mirror must match).
+    return "4";
 }
 
 __attribute__((visibility("default")))
@@ -596,6 +1069,15 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         delete handle;
         return nullptr;
     }
+    // Consume frames via appsink callbacks on the GStreamer streaming thread
+    // (jetson-utils model): each sample is converted and released immediately,
+    // so a slow consumer can never pin the decoder's capture pool or force
+    // drops upstream. Must be installed before the PLAYING transition.
+    GstAppSinkCallbacks sink_callbacks{};
+    sink_callbacks.eos = handle_appsink_eos;
+    sink_callbacks.new_preroll = handle_new_preroll;
+    sink_callbacks.new_sample = handle_new_sample;
+    gst_app_sink_set_callbacks(handle->sink, &sink_callbacks, handle, nullptr);
     const GstStateChangeReturn state_status =
         gst_element_set_state(pipeline, GST_STATE_PLAYING);
     if (state_status == GST_STATE_CHANGE_FAILURE) {
@@ -626,44 +1108,44 @@ int rf_jetson_pipeline_grab(
     if (handle->interrupted.load(std::memory_order_acquire)) {
         return 0;
     }
-    std::lock_guard<std::mutex> lock(handle->mutex);
-    if (handle->interrupted.load(std::memory_order_acquire)) {
-        return 0;
-    }
-    if (handle->sample != nullptr) {
-        gst_sample_unref(handle->sample);
-        handle->sample = nullptr;
-    }
-    handle->sample = gst_app_sink_try_pull_sample(handle->sink, timeout_ns);
-    if (handle->sample == nullptr) {
+    {
+        std::unique_lock<std::mutex> lock(handle->mutex);
+        const auto frame_or_terminal = [handle]() {
+            return handle->ready_tensor != nullptr || handle->conversion_failed ||
+                   handle->interrupted.load(std::memory_order_acquire) ||
+                   handle->eos.load(std::memory_order_acquire);
+        };
+        if (!frame_or_terminal()) {
+            handle->frame_ready.wait_for(
+                lock, std::chrono::nanoseconds(timeout_ns), frame_or_terminal);
+        }
         if (handle->interrupted.load(std::memory_order_acquire)) {
             return 0;
         }
-        // Check the bus BEFORE the EOS flag: gst_app_sink_is_eos() also
-        // reports TRUE when the sink never started (a pipeline that died
-        // during startup — RTSP connect/auth failure, autoplug failure), which
-        // would misclassify a real error as a silent end-of-stream and swallow
-        // its message. A genuine EOS posts no ERROR, so it still returns 0.
-        if (read_bus_error(handle, error, error_capacity)) {
+        if (handle->conversion_failed) {
+            write_error(error, error_capacity, "%s", handle->conversion_error);
+            handle->conversion_failed = false;
             return -1;
         }
-        if (gst_app_sink_is_eos(handle->sink)) {
-            return 0;
+        if (handle->ready_tensor != nullptr) {
+            return 1;
         }
-        // No frame, no error, no EOS: the finite timeout expired while the
-        // stream is still live.
-        return 2;
     }
-    if (!sample_has_nvmm_caps(handle->sample)) {
-        write_error(
-            error,
-            error_capacity,
-            "GStreamer appsink frame is not memory:NVMM");
-        gst_sample_unref(handle->sample);
-        handle->sample = nullptr;
+    // Nothing ready. Check the bus BEFORE the EOS flag: a pipeline that died
+    // during startup (RTSP connect/auth failure, autoplug failure) never
+    // delivers a frame — the real error would otherwise be misclassified as a
+    // silent end-of-stream. A genuine EOS posts no ERROR, so it still
+    // returns 0.
+    if (read_bus_error(handle, error, error_capacity)) {
         return -1;
     }
-    return 1;
+    if (handle->eos.load(std::memory_order_acquire) ||
+        gst_app_sink_is_eos(handle->sink)) {
+        return 0;
+    }
+    // No frame, no error, no EOS: the finite timeout expired while the
+    // stream is still live.
+    return 2;
 }
 
 __attribute__((visibility("default")))
@@ -677,10 +1159,11 @@ int rf_jetson_pipeline_get_frame_info(
         return -1;
     }
     std::lock_guard<std::mutex> lock(handle->mutex);
-    if (handle->sample == nullptr || !read_sample_info(handle->sample, info)) {
+    if (!handle->frame_info_valid) {
         write_error(error, error_capacity, "Frame caps do not contain dimensions");
         return -1;
     }
+    *info = handle->last_frame_info;
     gint64 duration = GST_CLOCK_TIME_NONE;
     if (gst_element_query_duration(handle->pipeline, GST_FORMAT_TIME, &duration)) {
         info->duration_ns = duration;
@@ -711,242 +1194,16 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
         return nullptr;
     }
     std::lock_guard<std::mutex> lock(handle->mutex);
-    if (handle->sample == nullptr) {
+    if (handle->ready_tensor == nullptr) {
         write_error(error, error_capacity, "No grabbed frame is available");
         return nullptr;
     }
-    // Bind the device context on the calling thread: retrieve() typically
-    // runs on a consumer thread that has made no prior CUDA runtime call, and
-    // the driver-API EGL registration below requires a current context.
-    cudaError_t bind_status = cudaSetDevice(handle->device_id);
-    if (bind_status == cudaSuccess) {
-        bind_status = cudaFree(nullptr);
-    }
-    if (bind_status != cudaSuccess) {
-        write_error(
-            error,
-            error_capacity,
-            "CUDA device %d binding failed: %s",
-            handle->device_id,
-            cudaGetErrorString(bind_status));
-        return nullptr;
-    }
-
-    GstSample* sample = handle->sample;
-    handle->sample = nullptr;
-    GstBuffer* buffer = gst_sample_get_buffer(sample);
-    GstMapInfo map = GST_MAP_INFO_INIT;
-    bool buffer_mapped = false;
-    bool egl_mapped = false;
-    CUgraphicsResource graphics_resource = nullptr;
-    cudaTextureObject_t texture = 0;
-    RfTensorContext* tensor = nullptr;
-    DLManagedTensor* result = nullptr;
-
-    RfFrameInfo frame_info{};
-    if (!read_sample_info(sample, &frame_info) || !sample_has_nvmm_caps(sample)) {
-        write_error(error, error_capacity, "Frame caps are invalid");
-        goto cleanup;
-    }
-    if (buffer == nullptr || !gst_buffer_map(buffer, &map, GST_MAP_READ) ||
-        map.data == nullptr) {
-        write_error(error, error_capacity, "Could not map the NvBufSurface descriptor");
-        goto cleanup;
-    }
-    buffer_mapped = true;
-    handle->stats.descriptor_maps += 1;
-
-    {
-        auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
-        handle->stats.last_nvbuf_memory_type = static_cast<int32_t>(surface->memType);
-        if (surface->memType != NVBUF_MEM_SURFACE_ARRAY ||
-            surface->surfaceList == nullptr || surface->batchSize == 0 ||
-            surface->numFilled == 0) {
-            write_error(
-                error,
-                error_capacity,
-                "Frame is not a populated NvBufSurface SURFACE_ARRAY");
-            goto cleanup;
-        }
-        if (surface->surfaceList[0].colorFormat != NVBUF_COLOR_FORMAT_RGBA) {
-            write_error(
-                error,
-                error_capacity,
-                "NvBufSurface is not RGBA (format=%d)",
-                static_cast<int>(surface->surfaceList[0].colorFormat));
-            goto cleanup;
-        }
-        if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
-            write_error(error, error_capacity, "NvBufSurface EGL mapping failed");
-            goto cleanup;
-        }
-        egl_mapped = true;
-        void* egl_image = surface->surfaceList[0].mappedAddr.eglImage;
-        if (egl_image == nullptr) {
-            write_error(error, error_capacity, "NvBufSurface EGL image is null");
-            goto cleanup;
-        }
-        CUresult driver_status = cuGraphicsEGLRegisterImage(
-            &graphics_resource,
-            reinterpret_cast<EGLImageKHR>(egl_image),
-            CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
-        if (driver_status != CUDA_SUCCESS) {
-            const char* driver_error = nullptr;
-            cuGetErrorString(driver_status, &driver_error);
-            write_error(
-                error,
-                error_capacity,
-                "CUDA EGL registration failed: %s",
-                driver_error == nullptr ? "unknown error" : driver_error);
-            goto cleanup;
-        }
-
-        CUeglFrame egl_frame{};
-        driver_status = cuGraphicsResourceGetMappedEglFrame(
-            &egl_frame, graphics_resource, 0, 0);
-        if (driver_status != CUDA_SUCCESS) {
-            const char* driver_error = nullptr;
-            cuGetErrorString(driver_status, &driver_error);
-            write_error(
-                error,
-                error_capacity,
-                "CUDA EGL frame mapping failed: %s",
-                driver_error == nullptr ? "unknown error" : driver_error);
-            goto cleanup;
-        }
-        handle->stats.last_egl_frame_type = static_cast<int32_t>(egl_frame.frameType);
-        handle->stats.last_egl_color_format =
-            static_cast<int32_t>(egl_frame.eglColorFormat);
-        if (egl_frame.width < frame_info.width || egl_frame.height < frame_info.height ||
-            egl_frame.planeCount != 1 || egl_frame.numChannels != 4 ||
-            egl_frame.cuFormat != CU_AD_FORMAT_UNSIGNED_INT8) {
-            write_error(error, error_capacity, "CUDA EGL RGBA frame layout is invalid");
-            goto cleanup;
-        }
-
-        ChannelMap channels{};
-        if (!get_channel_map(egl_frame.eglColorFormat, &channels)) {
-            write_error(
-                error,
-                error_capacity,
-                "CUDA EGL color format is unsupported: %d",
-                static_cast<int>(egl_frame.eglColorFormat));
-            goto cleanup;
-        }
-        tensor = new (std::nothrow) RfTensorContext();
-        if (tensor == nullptr) {
-            write_error(error, error_capacity, "Could not allocate tensor state");
-            goto cleanup;
-        }
-        tensor->device_id = handle->device_id;
-        tensor->pool = handle->tensor_pool;
-        tensor->managed.manager_ctx = tensor;
-        tensor->managed.deleter = delete_managed_tensor;
-        const size_t output_size =
-            static_cast<size_t>(frame_info.width) * frame_info.height * 3;
-        tensor->allocation = handle->tensor_pool->acquire(output_size, &tensor->pooled);
-        if (tensor->allocation == nullptr) {
-            write_error(
-                error,
-                error_capacity,
-                "CUDA tensor allocation failed for %zu bytes",
-                output_size);
-            goto cleanup;
-        }
-
-        cudaError_t cuda_status = cudaSuccess;
-        const dim3 threads(32, 8);
-        const dim3 blocks(
-            (frame_info.width + threads.x - 1) / threads.x,
-            (frame_info.height + threads.y - 1) / threads.y);
-        if (egl_frame.frameType == CU_EGL_FRAME_TYPE_PITCH) {
-            rgba_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
-                static_cast<const uint8_t*>(egl_frame.frame.pPitch[0]),
-                egl_frame.pitch,
-                static_cast<uint8_t*>(tensor->allocation),
-                frame_info.width,
-                frame_info.height,
-                channels);
-        } else if (egl_frame.frameType == CU_EGL_FRAME_TYPE_ARRAY) {
-            cudaResourceDesc resource_description{};
-            resource_description.resType = cudaResourceTypeArray;
-            resource_description.res.array.array =
-                reinterpret_cast<cudaArray_t>(egl_frame.frame.pArray[0]);
-            cudaTextureDesc texture_description{};
-            texture_description.addressMode[0] = cudaAddressModeClamp;
-            texture_description.addressMode[1] = cudaAddressModeClamp;
-            texture_description.filterMode = cudaFilterModePoint;
-            texture_description.readMode = cudaReadModeElementType;
-            texture_description.normalizedCoords = 0;
-            cuda_status = cudaCreateTextureObject(
-                &texture, &resource_description, &texture_description, nullptr);
-            if (cuda_status != cudaSuccess) {
-                write_error(
-                    error,
-                    error_capacity,
-                    "CUDA texture creation failed: %s",
-                    cudaGetErrorString(cuda_status));
-                goto cleanup;
-            }
-            rgba_array_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
-                texture,
-                static_cast<uint8_t*>(tensor->allocation),
-                frame_info.width,
-                frame_info.height,
-                channels);
-        } else {
-            write_error(error, error_capacity, "CUDA EGL frame storage is unsupported");
-            goto cleanup;
-        }
-        cuda_status = cudaGetLastError();
-        if (cuda_status == cudaSuccess) {
-            cuda_status = cudaStreamSynchronize(handle->stream);
-        }
-        if (cuda_status != cudaSuccess) {
-            write_error(
-                error,
-                error_capacity,
-                "CUDA frame conversion failed: %s",
-                cudaGetErrorString(cuda_status));
-            goto cleanup;
-        }
-
-        tensor->shape[0] = 3;
-        tensor->shape[1] = frame_info.height;
-        tensor->shape[2] = frame_info.width;
-        tensor->managed.dl_tensor.data = tensor->allocation;
-        tensor->managed.dl_tensor.device = {kDLCUDA, handle->device_id};
-        tensor->managed.dl_tensor.ndim = 3;
-        tensor->managed.dl_tensor.dtype = {kDLUInt, 8, 1};
-        tensor->managed.dl_tensor.shape = tensor->shape;
-        tensor->managed.dl_tensor.strides = nullptr;
-        tensor->managed.dl_tensor.byte_offset = 0;
-        result = &tensor->managed;
-        tensor = nullptr;
-        handle->stats.frames += 1;
-        handle->stats.conversion_kernels += 1;
-        handle->stats.nvmm_frames += 1;
-    }
-
-cleanup:
-    if (texture != 0) {
-        cudaDestroyTextureObject(texture);
-    }
-    if (graphics_resource != nullptr) {
-        cuGraphicsUnregisterResource(graphics_resource);
-    }
-    if (egl_mapped) {
-        auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
-        g_nvbufsurface.unmap_egl_image(surface, 0);
-    }
-    if (buffer_mapped) {
-        gst_buffer_unmap(buffer, &map);
-    }
-    gst_sample_unref(sample);
-    if (tensor != nullptr) {
-        delete_managed_tensor(&tensor->managed);
-    }
-    return result;
+    // The tensor was fully converted on the streaming thread; hand it over.
+    // No CUDA call happens on the consumer thread (the DLPack deleter binds
+    // the device itself when the consumer eventually drops the tensor).
+    RfTensorContext* tensor = handle->ready_tensor;
+    handle->ready_tensor = nullptr;
+    return &tensor->managed;
 }
 
 __attribute__((visibility("default")))
@@ -974,6 +1231,8 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
         return -1;
     }
     handle->interrupted.store(true, std::memory_order_release);
+    // Wake a grab() parked on the handoff slot so interrupt is prompt.
+    handle->frame_ready.notify_all();
     if (handle->sink != nullptr) {
         gst_app_sink_set_drop(handle->sink, TRUE);
         GstSample* queued_sample = nullptr;
@@ -996,9 +1255,12 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
     rf_jetson_pipeline_interrupt(handle);
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
-        if (handle->sample != nullptr) {
-            gst_sample_unref(handle->sample);
-            handle->sample = nullptr;
+        if (handle->ready_tensor != nullptr) {
+            // interrupt() already reached GST_STATE_NULL, so the streaming
+            // thread is joined and no further callback can repopulate the
+            // slot; return the uncollected frame's buffer to the pool.
+            delete_managed_tensor(&handle->ready_tensor->managed);
+            handle->ready_tensor = nullptr;
         }
         if (handle->sink != nullptr) {
             gst_app_sink_set_drop(handle->sink, TRUE);

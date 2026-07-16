@@ -169,16 +169,24 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
     )
 
     # Explicit video-only chain: a codec-specific depayloader never links the
-    # audio track, so an audio-muxing camera cannot poison the pipeline.
+    # audio track, so an audio-muxing camera cannot poison the pipeline. The
+    # decoder's NV12 NVMM output feeds the appsink directly (the bridge
+    # converts NV12->RGB in CUDA) — no nvvidconv VIC pass, and the queue
+    # buffers compressed data before the depayloader instead of leaking
+    # decoded frames.
     assert pipeline.startswith(
         'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
-        "protocols=tcp latency=200 ! "
+        "protocols=tcp latency=200 ! queue ! "
     )
-    assert "rtph264depay ! h264parse ! nvv4l2decoder" in pipeline
+    assert (
+        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
+    )
     assert "uridecodebin" not in pipeline
-    assert "nvvidconv" in pipeline
+    assert "nvvidconv" not in pipeline
+    assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
-    assert "max-buffers=1 drop=true sync=false" in pipeline
+    assert "max-buffers=4 drop=false sync=false" in pipeline
+    assert "leaky" not in pipeline
 
 
 def test_rtspt_source_is_recognised_as_rtsp() -> None:
@@ -217,7 +225,7 @@ def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
         output_tensor=True,
     )
 
-    assert "nvvidconv ! video/x-raw(memory:NVMM),format=RGBA" in pipeline
+    assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "videoconvert" not in pipeline
     assert "video/x-raw,format=BGR" not in pipeline

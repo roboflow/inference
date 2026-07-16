@@ -218,12 +218,27 @@ def build_gstreamer_pipeline(
         # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
         # and a NAT-free path that containers typically lack, and a failed UDP
         # SETUP can make cameras drop the whole control connection.
+        #
+        # Further jetson-utils parity (v4 bridge):
+        # - the queue buffers COMPRESSED data before the depayloader (cheap,
+        #   non-leaky) instead of leaking decoded NVMM frames after the decoder;
+        # - no nvvidconv: the decoder's NV12 NVMM output goes straight to the
+        #   appsink and the bridge converts NV12->RGB CHW in CUDA, removing the
+        #   per-frame VIC pass and its extra buffer pool;
+        # - enable-max-performance keeps the decoder clocks pinned;
+        # - the appsink never accumulates (the bridge's new-sample callback
+        #   drains it on the streaming thread), so a small non-dropping queue
+        #   is enough.
         codec = _rtsp_video_codec()
         return (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
-            f"rtp{codec}depay ! {codec}parse ! nvv4l2decoder ! "
-            f"{sink}"
+            "queue ! "
+            f"rtp{codec}depay ! {codec}parse ! "
+            "nvv4l2decoder enable-max-performance=1 ! "
+            "video/x-raw(memory:NVMM),format=NV12 ! "
+            "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
+            "wait-on-eos=false"
         )
 
     uri = _source_uri(video)

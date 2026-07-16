@@ -36,6 +36,7 @@ class _BridgeStats(ctypes.Structure):
         ("array_flatten_copies", ctypes.c_uint64),
         ("conversion_kernels", ctypes.c_uint64),
         ("nvmm_frames", ctypes.c_uint64),
+        ("frames_dropped_by_consumer", ctypes.c_uint64),
         ("last_nvbuf_memory_type", ctypes.c_int32),
         ("last_egl_frame_type", ctypes.c_int32),
         ("last_egl_color_format", ctypes.c_int32),
@@ -57,7 +58,9 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
-    if version != b"3":
+    # v4 = streaming-thread conversion + tensor handoff; the RfBridgeStats ABI
+    # gained frames_dropped_by_consumer, so older .so versions must be refused.
+    if version != b"4":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
