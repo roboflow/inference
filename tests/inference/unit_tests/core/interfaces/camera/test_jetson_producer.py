@@ -168,13 +168,47 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "rtsps://camera.example.test:7441/live?token=secret"
     )
 
+    # Explicit video-only chain: a codec-specific depayloader never links the
+    # audio track, so an audio-muxing camera cannot poison the pipeline.
     assert pipeline.startswith(
-        'uridecodebin uri="rtsps://camera.example.test:7441/live?token=secret"'
+        'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
+        "protocols=tcp latency=200 ! "
     )
-    assert 'caps="video/x-raw(memory:NVMM)"' in pipeline
+    assert "rtph264depay ! h264parse ! nvv4l2decoder" in pipeline
+    assert "uridecodebin" not in pipeline
     assert "nvvidconv" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "max-buffers=1 drop=true sync=false" in pipeline
+
+
+def test_rtspt_source_is_recognised_as_rtsp() -> None:
+    pipeline = build_gstreamer_pipeline("rtspt://camera.example.test/live")
+
+    assert pipeline.startswith('rtspsrc location="rtspt://camera.example.test/live"')
+
+
+def test_rtsp_codec_env_selects_h265_chain(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "h265")
+
+    pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
+
+    assert "rtph265depay ! h265parse ! nvv4l2decoder" in pipeline
+
+
+def test_rtsp_codec_env_rejects_unsupported_codec(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "mjpeg")
+
+    with pytest.raises(ValueError, match="Unsupported RTSP video codec"):
+        build_gstreamer_pipeline("rtsp://camera.example.test/live")
+
+
+def test_rtsp_transport_env_overrides_protocols_and_latency(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_PROTOCOLS", "tcp+udp")
+    monkeypatch.setenv("ROBOFLOW_RTSP_LATENCY_MS", "1000")
+
+    pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
+
+    assert "protocols=tcp+udp latency=1000 ! " in pipeline
 
 
 def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
@@ -196,23 +230,20 @@ def test_rtsps_source_requires_rtsp_and_nvidia_decode_elements() -> None:
         "appsink",
         "h264parse",
         "h265parse",
-        "jpegparse",
         "nvvidconv",
         "nvv4l2decoder",
         "rtph264depay",
         "rtph265depay",
         "rtspsrc",
-        "uridecodebin",
     } <= elements
+    # The explicit rtspsrc chain does not autoplug, so the uridecodebin stack
+    # is no longer part of the RTSP requirements.
+    assert "uridecodebin" not in elements
     assert "videoconvert" not in elements
 
 
 def test_tensor_source_requires_hardware_jpeg_without_cpu_converter() -> None:
-    elements = set(
-        required_gstreamer_elements(
-            "rtsps://camera.example.test/live", output_tensor=True
-        )
-    )
+    elements = set(required_gstreamer_elements("/tmp/sample.mp4", output_tensor=True))
 
     assert "nvjpegdec" in elements
     assert "nvv4l2decoder" in elements

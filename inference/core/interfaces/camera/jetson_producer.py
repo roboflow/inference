@@ -39,6 +39,13 @@ def _resolve_grab_timeout_ns() -> int:
     return int(seconds * 1_000_000_000)
 
 
+_RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
+_RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
+_RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+_DEFAULT_RTSP_PROTOCOLS = "tcp"
+_DEFAULT_RTSP_LATENCY_MS = 200
+_RTSP_VIDEO_CODECS = ("h264", "h265")
+
 _COMMON_ELEMENTS = (
     "appsink",
     "nvvidconv",
@@ -161,9 +168,15 @@ def required_gstreamer_elements(
                 "v4l2src",
             ]
         )
-    elements.extend(_URI_DECODE_ELEMENTS)
     if _is_rtsp_source(video):
-        elements.extend(_RTSP_ELEMENTS)
+        # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
+        # (no uridecodebin autoplugging), so only those elements are required.
+        return tuple(
+            elements
+            + ["h264parse", "h265parse", "nvv4l2decoder"]
+            + list(_RTSP_ELEMENTS)
+        )
+    elements.extend(_URI_DECODE_ELEMENTS)
     local_file_path = _local_file_path(video)
     if local_file_path is not None:
         demuxer = _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
@@ -195,12 +208,57 @@ def build_gstreamer_pipeline(
             f"decodebin ! {sink}"
         )
 
+    if _is_rtsp_source(video):
+        # Explicit video-only chain (the jetson-utils shape) instead of
+        # uridecodebin: autoplugging an RTSP source decodes EVERY track, and a
+        # camera that muxes audio (e.g. A-Law) poisons the bus with a
+        # missing-decoder error — fatal at startup when it races preroll, and a
+        # mid-run grab() failure otherwise. A codec-specific depayloader only
+        # ever links the video stream, so the audio track is never plugged.
+        # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
+        # and a NAT-free path that containers typically lack, and a failed UDP
+        # SETUP can make cameras drop the whole control connection.
+        codec = _rtsp_video_codec()
+        return (
+            f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
+            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
+            f"rtp{codec}depay ! {codec}parse ! nvv4l2decoder ! "
+            f"{sink}"
+        )
+
     uri = _source_uri(video)
     return (
         f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
         'caps="video/x-raw(memory:NVMM)" ! '
         f"{sink}"
     )
+
+
+def _rtsp_video_codec() -> str:
+    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
+    if codec not in _RTSP_VIDEO_CODECS:
+        raise ValueError(
+            f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
+            f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
+        )
+    return codec
+
+
+def _rtsp_protocols() -> str:
+    return os.getenv(_RTSP_PROTOCOLS_ENV_VAR, _DEFAULT_RTSP_PROTOCOLS).strip() or (
+        _DEFAULT_RTSP_PROTOCOLS
+    )
+
+
+def _rtsp_latency_ms() -> int:
+    raw = os.getenv(_RTSP_LATENCY_ENV_VAR)
+    if raw is None:
+        return _DEFAULT_RTSP_LATENCY_MS
+    try:
+        latency = int(raw)
+    except ValueError:
+        return _DEFAULT_RTSP_LATENCY_MS
+    return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
 
 
 def _build_sink(is_live: bool) -> str:
@@ -401,7 +459,10 @@ def _local_file_path(video: Union[str, int]) -> Optional[str]:
 
 
 def _is_rtsp_source(video: Union[str, int]) -> bool:
-    return isinstance(video, str) and video.lower().startswith(("rtsp://", "rtsps://"))
+    # rtspt:// / rtspst:// are rtspsrc's force-TCP variants of rtsp:// / rtsps://.
+    return isinstance(video, str) and video.lower().startswith(
+        ("rtsp://", "rtsps://", "rtspt://", "rtspst://")
+    )
 
 
 def _is_csi_source(video: Union[str, int]) -> bool:
