@@ -104,9 +104,7 @@ def canonicalize_url_for_hashing(reference: str) -> str:
         if key.lower() not in SIGNED_URL_AUTH_PARAMS
     )
     canonical_query = urllib.parse.urlencode(content_params)
-    return urllib.parse.urlunparse(
-        parsed._replace(query=canonical_query, fragment="")
-    )
+    return urllib.parse.urlunparse(parsed._replace(query=canonical_query, fragment=""))
 
 
 class LazyImageWrapper:

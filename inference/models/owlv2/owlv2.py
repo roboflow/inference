@@ -68,6 +68,7 @@ except ImportError:
     def canonicalize_url_for_hashing(reference: str) -> str:
         return reference
 
+
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 PRELOADED_HF_MODELS = {}
 
@@ -370,9 +371,7 @@ class LazyImageRetrievalWrapper:
         if self._image_hash is None:
             image_payload, image_type = extract_image_payload_and_type(self.image)
             if image_type is ImageType.URL:
-                self._image_hash = canonicalize_url_for_hashing(
-                    reference=image_payload
-                )
+                self._image_hash = canonicalize_url_for_hashing(reference=image_payload)
             elif image_type is ImageType.FILE:
                 self._image_hash = image_payload
             elif image_type is ImageType.BASE64:

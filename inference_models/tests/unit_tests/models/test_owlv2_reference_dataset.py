@@ -63,9 +63,7 @@ def test_canonicalize_url_preserves_content_params_next_to_signature() -> None:
     # given - version/generation params select different bytes for the same
     # path and must survive canonicalization
     gcs_gen_1 = f"{OBJECT_URL}?generation=111&X-Goog-Signature=aaaa&X-Goog-Date=20260715T190000Z"
-    gcs_gen_1_resigned = (
-        f"{OBJECT_URL}?generation=111&X-Goog-Signature=bbbb&X-Goog-Date=20260715T193000Z"
-    )
+    gcs_gen_1_resigned = f"{OBJECT_URL}?generation=111&X-Goog-Signature=bbbb&X-Goog-Date=20260715T193000Z"
     gcs_gen_2 = f"{OBJECT_URL}?generation=222&X-Goog-Signature=aaaa&X-Goog-Date=20260715T190000Z"
     s3_version_a = f"{OBJECT_URL}?versionId=abc&X-Amz-Signature=aaaa"
     s3_version_b = f"{OBJECT_URL}?versionId=def&X-Amz-Signature=aaaa"
@@ -73,7 +71,13 @@ def test_canonicalize_url_preserves_content_params_next_to_signature() -> None:
     # when
     results = [
         canonicalize_url_for_hashing(reference=url)
-        for url in (gcs_gen_1, gcs_gen_1_resigned, gcs_gen_2, s3_version_a, s3_version_b)
+        for url in (
+            gcs_gen_1,
+            gcs_gen_1_resigned,
+            gcs_gen_2,
+            s3_version_a,
+            s3_version_b,
+        )
     ]
 
     # then
@@ -148,7 +152,9 @@ def test_lazy_image_wrapper_hash_keeps_unsigned_query_variants_distinct() -> Non
     assert hash_v1 != hash_v2
 
 
-def test_lazy_image_wrapper_hash_for_base64_reference_is_not_url_canonicalized() -> None:
+def test_lazy_image_wrapper_hash_for_base64_reference_is_not_url_canonicalized() -> (
+    None
+):
     # given - base64 payloads are not URLs and must hash on their full content
     payload_a = "aGVsbG8/sig=looks-like-query"
     payload_b = "aGVsbG8/sig=other-value"
