@@ -140,7 +140,7 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     /opt/wheels/onnxruntime_gpu-*.whl \
     /opt/wheels/pycuda-*.whl \
     /opt/wheels/triton-*.whl \
-    "setuptools<=75.5.0" \
+    "setuptools>=77.0.3" \
     "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/overrides.txt
@@ -159,7 +159,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools<=75.5.0" && \
+        "setuptools>=77.0.3" && \
     cp dist/*.whl /opt/wheels/ && \
     find /usr/local/lib/python3.12/dist-packages -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
@@ -197,7 +197,7 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl \
         /opt/wheels/triton-*.whl \
-        "setuptools<=75.5.0" \
+        "setuptools>=77.0.3" \
         "transformers>=4.57.3,<5.9.0" \
         packaging && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
