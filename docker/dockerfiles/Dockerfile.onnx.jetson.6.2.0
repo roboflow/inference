@@ -799,11 +799,20 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 RUN python3 -c "import cv2, numpy; print(cv2.__version__); print(numpy.__version__)"
 
+# The Jetson tensor bridge is built and verified in its builder stage, but this
+# final stage only COPYs it in — assert it actually landed (a bridge-less image
+# silently degrades HW video decode to the cv2 CPU path at runtime) and that
+# every linked dependency resolves in THIS stage. libcuda.so.1 is excluded from
+# the ldd check: the NVIDIA container runtime injects it at container start, so
+# it is legitimately absent at build time.
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     sh /tmp/verify_ffmpeg && \
     sh /tmp/verify_gstreamer && \
     python3 -c "import cv2, numpy; assert cv2.__version__.startswith('4.12.'); assert numpy.__version__.startswith('2.')" && \
+    test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 && \
+    missing="$(ldd /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 | awk '/not found/ { print $1 }' | grep -v -x libcuda.so.1 || true)" && \
+    test -z "${missing}" && \
     rm -rf /root/.cache/gstreamer-1.0
 
 # Environment variables
