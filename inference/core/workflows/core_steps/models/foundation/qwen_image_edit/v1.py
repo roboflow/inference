@@ -155,7 +155,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[4, 28, 50],
     )
 
-    guidance_scale: Optional[Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]] = (
+    guidance_scale: Optional[Union[Selector(kind=[FLOAT_KIND]), float]] = (
         Field(
             default=None,
             description=(
