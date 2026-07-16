@@ -515,10 +515,20 @@ def test_run_returns_error_when_project_search_fails() -> None:
 def test_run_batch_returns_one_classification_per_image() -> None:
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
 
+    # Searches are dispatched on parallel threads, so canned responses must be
+    # keyed on the requested image rather than handed out in call order.
+    responses_by_image = {
+        "image-1": {
+            "results": [make_candidate(image_id="img-1", class_name="a", class_id=0)]
+        },
+        "image-2": {
+            "results": [make_candidate(image_id="img-2", class_name="b", class_id=1)]
+        },
+    }
+
     with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
-        search_mock.side_effect = [
-            {"results": [make_candidate(image_id="img-1", class_name="a", class_id=0)]},
-            {"results": [make_candidate(image_id="img-2", class_name="b", class_id=1)]},
+        search_mock.side_effect = lambda **kwargs: responses_by_image[
+            kwargs["image_base64"]
         ]
 
         result = block.run(
@@ -529,8 +539,10 @@ def test_run_batch_returns_one_classification_per_image() -> None:
 
     assert [row["predictions"]["top"] for row in result] == ["a", "b"]
     assert [row["inference_id"] for row in result]
-    assert search_mock.call_args_list[0].kwargs["image_base64"] == "image-1"
-    assert search_mock.call_args_list[1].kwargs["image_base64"] == "image-2"
+    assert {call.kwargs["image_base64"] for call in search_mock.call_args_list} == {
+        "image-1",
+        "image-2",
+    }
 
 
 def test_run_batch_searches_images_in_parallel_and_preserves_output_order() -> None:
