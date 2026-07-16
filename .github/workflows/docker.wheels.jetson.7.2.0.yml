@@ -26,6 +26,10 @@ on:
         type: string
         description: "Custom tag to use for the image"
         default: ""
+      benchmark_flash_attn_8way:
+        type: boolean
+        description: "Run only the isolated eight-way FlashAttention build experiment"
+        default: false
 
 env:
   VERSION: "0.0.0"
@@ -35,6 +39,7 @@ jobs:
   # The expensive compiles fan out to separate Depot builders; each populates the
   # shared project cache, and the assemble job below cache-hits all of them.
   components:
+    if: ${{ !inputs.benchmark_flash_attn_8way }}
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +69,7 @@ jobs:
           project: v1xzfwkc4b
 
   assemble:
+    if: ${{ !inputs.benchmark_flash_attn_8way }}
     name: Assemble wheels image
     needs: components
     runs-on:
@@ -106,3 +112,25 @@ jobs:
           push: ${{ github.event_name == 'release' || inputs.force_push }}
           save: ${{ github.event_name != 'release' && !inputs.force_push }}
           save-tag: ${{ github.event_name != 'release' && !inputs.force_push && format('wheels-jp72-{0}', github.sha) || '' }}
+
+  flash-attn-8way:
+    if: ${{ inputs.benchmark_flash_attn_8way }}
+    name: Build FlashAttention (8-way experiment)
+    runs-on:
+      labels: depot-ubuntu-24.04-4
+      group: public-depot
+    timeout-minutes: 1440
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      - name: Build experimental FlashAttention stage
+        uses: depot/bake-action@v1
+        with:
+          files: ./docker/docker-bake.jetson.7.2.0.hcl
+          targets: jetson-wheels-flash-attn-8way-jp72
+          project: v1xzfwkc4b
