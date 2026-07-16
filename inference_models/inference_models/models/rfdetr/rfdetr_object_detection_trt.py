@@ -301,12 +301,12 @@ class RFDetrForObjectDetectionTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._preprocess_readiness = PreprocessReadinessTracker()
         if self.preprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
-            LOGGER.warning(
+            LOGGER.info(
                 "Selected RF-DETR preprocessor implementation=%s",
                 self.preprocessor_implementation_id,
             )
         if self.postprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
-            LOGGER.warning(
+            LOGGER.info(
                 "Selected RF-DETR postprocessor implementation=%s",
                 self.postprocessor_implementation_id,
             )
