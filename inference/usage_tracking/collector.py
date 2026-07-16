@@ -71,7 +71,7 @@ from .payload_helpers import (
 from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
-from .utils import collect_func_params
+from .utils import collect_func_params, ssl_verify_for_endpoint
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -532,11 +532,7 @@ class UsageCollector:
         self._offload_to_api(payloads=merged_payloads)
 
     def _offload_to_api(self, payloads: List[APIKeyUsage]):
-        ssl_verify = True
-        if "localhost" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
-        if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
+        ssl_verify = ssl_verify_for_endpoint(self._settings.api_usage_endpoint_url)
 
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 

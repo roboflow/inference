@@ -51,3 +51,20 @@ def test_telemetry_endpoint_env_overrides_are_wrapped_with_secure_gateway(monkey
     )
     proxied_url = parse_qs(parsed.query)["url"][0]
     assert proxied_url == "https://custom.example.com/usage"
+
+
+def test_ssl_verify_for_endpoint_judges_the_request_host_not_the_embedded_target():
+    from inference.usage_tracking.utils import ssl_verify_for_endpoint
+
+    # local development endpoints skip verification
+    assert ssl_verify_for_endpoint("http://localhost:8080/usage") is False
+    assert ssl_verify_for_endpoint("https://127.0.0.1/usage") is False
+    # real hosts verify
+    assert ssl_verify_for_endpoint("https://api.roboflow.com/usage") is True
+    # a gateway-wrapped localhost target is judged by the gateway host
+    assert (
+        ssl_verify_for_endpoint(
+            "https://gateway.local/proxy?url=http%3A%2F%2Flocalhost%3A9000%2Fusage"
+        )
+        is True
+    )

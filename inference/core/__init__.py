@@ -16,6 +16,10 @@ log_frequency = 300  # 5 minutes
 
 def get_latest_release_version():
     global latest_release, last_checked
+    if DISABLE_VERSION_CHECK:
+        # guard at the network call itself so every caller is covered
+        # (github.com is unreachable behind SECURE_GATEWAY / air gaps)
+        return
     now = time.time()
     if latest_release is None or now - last_checked > cache_duration:
         try:
@@ -27,7 +31,11 @@ def get_latest_release_version():
             response.raise_for_status()
             latest_release = response.json()["tag_name"].lstrip("v")
             last_checked = now
-        except requests.exceptions.RequestException:
+        except (requests.exceptions.RequestException, KeyError, ValueError, TypeError):
+            # KeyError/ValueError/TypeError: a 200 response whose body is not
+            # the expected GitHub payload (proxy interstitials, rate-limit
+            # bodies) must degrade like a network failure, not crash the
+            # import or kill the continuous-check thread.
             pass
 
 
@@ -52,8 +60,11 @@ def check_latest_release_against_current_continuous():
 
 if not DISABLE_VERSION_CHECK:
     if VERSION_CHECK_MODE == "continuous":
-        t = threading.Thread(target=check_latest_release_against_current_continuous)
-        t.daemon = True
-        t.start()
+        _version_check_target = check_latest_release_against_current_continuous
     else:
-        check_latest_release_against_current()
+        # run the single check off the import path too - a slow or blackholed
+        # network must not delay interpreter startup
+        _version_check_target = check_latest_release_against_current
+    t = threading.Thread(target=_version_check_target)
+    t.daemon = True
+    t.start()

@@ -76,3 +76,17 @@ def test_wrap_url_is_idempotent() -> None:
     # then
     assert wrapped_twice == wrapped_once
     assert parse_qs(urlparse(wrapped_twice).query)["url"][0] == original_url
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "gateway.local:8080/")
+def test_wrap_url_when_bare_host_secure_gateway_has_trailing_slash() -> None:
+    # given
+    original_url = "https://detection.roboflow.com/eye-detection/1?api_key=X"
+
+    # when
+    result = wrap_url(url=original_url)
+
+    # then - no double slash in the proxy path, idempotence still holds
+    assert result.startswith("http://gateway.local:8080/proxy?url=")
+    assert "//proxy" not in result
+    assert wrap_url(url=result) == result

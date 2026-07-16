@@ -9,10 +9,11 @@ def wrap_url(url: str) -> str:
     # The secure gateway serves TLS on 443 by default, so SECURE_GATEWAY may
     # be scheme-qualified (https://gateway.local). Bare host[:port] values
     # keep the historical http:// behaviour for legacy license servers.
-    if "://" in SECURE_GATEWAY:
-        gateway_base = SECURE_GATEWAY.rstrip("/")
+    gateway = SECURE_GATEWAY.rstrip("/")
+    if "://" in gateway:
+        gateway_base = gateway
     else:
-        gateway_base = f"http://{SECURE_GATEWAY}"
+        gateway_base = f"http://{gateway}"
     gateway_prefix = f"{gateway_base}/proxy?url="
     # Idempotent: values may already be wrapped (e.g. env overrides configured
     # with a gateway URL) - wrapping twice would proxy the proxy.

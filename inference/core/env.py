@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
 from inference.core.warnings import (
+    InferenceConfigurationWarning,
     InferenceDeprecationWarning,
     InferenceModelsStackMissing,
     ModelDependencyMissing,
@@ -24,6 +25,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
     warnings.simplefilter("ignore", InferenceModelsStackMissing)
+    warnings.simplefilter("ignore", InferenceConfigurationWarning)
 
 IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
     os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
@@ -744,8 +746,10 @@ HOSTED_CORE_MODEL_URL = os.getenv(
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
-WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
-WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
+    "WORKFLOWS_STEP_EXECUTION_MODE", "local"
+).lower()
+WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
 if (
     SECURE_GATEWAY
     and WORKFLOWS_STEP_EXECUTION_MODE == "remote"
@@ -759,8 +763,9 @@ if (
         "WORKFLOWS_STEP_EXECUTION_MODE=remote with WORKFLOWS_REMOTE_API_TARGET=hosted "
         "is not supported behind SECURE_GATEWAY - hosted Roboflow inference endpoints "
         "are not reachable through the gateway proxy. Forcing local step execution. "
-        "Use WORKFLOWS_REMOTE_API_TARGET=self-hosted to target another server instead.",
-        RuntimeWarning,
+        "Use WORKFLOWS_REMOTE_API_TARGET=self-hosted (with LOCAL_INFERENCE_API_URL "
+        "pointing at a server inside the gateway perimeter) to keep remote execution.",
+        InferenceConfigurationWarning,
         stacklevel=1,
     )
     WORKFLOWS_STEP_EXECUTION_MODE = "local"
