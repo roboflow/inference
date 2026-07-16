@@ -1,12 +1,16 @@
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime
 from typing import Callable, Dict, List, Optional, TypeVar, Union
+
+import numpy as np
 
 from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_WORKFLOWS_PROFILING
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
+    VideoFrame,
     VideoSourceIdentifier,
 )
 from inference.core.interfaces.camera.video_source import (
@@ -107,6 +111,47 @@ def initialise_video_sources(
             zip(video_reference, video_source_properties)
         )
     ]
+
+
+def materialise_video_frames_for_sink(
+    video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
+) -> Union[VideoFrame, List[Optional[VideoFrame]]]:
+    if isinstance(video_frames, list):
+        return [
+            materialise_video_frame_for_sink(video_frame)
+            for video_frame in video_frames
+        ]
+    return materialise_video_frame_for_sink(video_frames)
+
+
+def materialise_video_frame_for_sink(
+    video_frame: Optional[VideoFrame],
+) -> Optional[VideoFrame]:
+    """Convert a tensor video frame to a host BGR ``np.ndarray`` frame.
+
+    Under ENABLE_TENSOR_DATA_REPRESENTATION the pipeline hands sinks the
+    original on-device tensor frame — nothing materialises in dispatch. Sinks
+    that actually consume pixels on CPU (visualisation, active learning, ...)
+    call this at their own boundary and pay the device-to-host copy only when
+    the pixels are genuinely needed. A numpy frame passes through untouched.
+    """
+    if video_frame is None or isinstance(video_frame.image, np.ndarray):
+        return video_frame
+
+    tensor_image = video_frame.image.detach().cpu()
+    if tensor_image.ndim == 2:
+        numpy_image = tensor_image.contiguous().numpy()
+    elif tensor_image.ndim == 3 and tensor_image.shape[0] == 1:
+        numpy_image = tensor_image[0].contiguous().numpy()
+    elif tensor_image.ndim == 3 and tensor_image.shape[0] in {3, 4}:
+        numpy_image = tensor_image.permute(1, 2, 0).contiguous().numpy()
+        channel_order = [2, 1, 0]
+        if tensor_image.shape[0] == 4:
+            channel_order.append(3)
+        numpy_image = np.ascontiguousarray(numpy_image[..., channel_order])
+    else:
+        raise ValueError("Tensor video frames must use HW, 1CHW, 3CHW, or 4CHW layout")
+    return replace(video_frame, image=numpy_image)
 
 
 def on_pipeline_end(

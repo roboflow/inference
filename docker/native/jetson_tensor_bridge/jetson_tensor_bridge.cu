@@ -636,12 +636,19 @@ int rf_jetson_pipeline_grab(
     }
     handle->sample = gst_app_sink_try_pull_sample(handle->sink, timeout_ns);
     if (handle->sample == nullptr) {
-        if (handle->interrupted.load(std::memory_order_acquire) ||
-            gst_app_sink_is_eos(handle->sink)) {
+        if (handle->interrupted.load(std::memory_order_acquire)) {
             return 0;
         }
+        // Check the bus BEFORE the EOS flag: gst_app_sink_is_eos() also
+        // reports TRUE when the sink never started (a pipeline that died
+        // during startup — RTSP connect/auth failure, autoplug failure), which
+        // would misclassify a real error as a silent end-of-stream and swallow
+        // its message. A genuine EOS posts no ERROR, so it still returns 0.
         if (read_bus_error(handle, error, error_capacity)) {
             return -1;
+        }
+        if (gst_app_sink_is_eos(handle->sink)) {
+            return 0;
         }
         // No frame, no error, no EOS: the finite timeout expired while the
         // stream is still live.
