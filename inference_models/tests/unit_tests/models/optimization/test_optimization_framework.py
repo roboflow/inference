@@ -70,6 +70,7 @@ def test_inference_execution_plan_defaults_and_serializes() -> None:
         "scheduler": "base",
         "postprocessor": "base",
         "engine_plugin": "base",
+        "allow_compatibility_fallback": True,
     }
 
 

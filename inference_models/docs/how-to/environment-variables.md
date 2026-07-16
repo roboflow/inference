@@ -468,6 +468,7 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
 plan = RFDetrExecutionPlan(
     preprocessor_id="triton-universal-v1",
     postprocessor_id="triton-fused-v1",
+    allow_compatibility_fallback=True,
 )
 model = AutoModel.from_pretrained(
     "rfdetr-small",
@@ -481,10 +482,13 @@ plugin stages. Those stages currently accept only `base`. When supplied, an expl
 plan takes precedence and the implementation-selection environment variables are not
 read.
 
-When a selected optimized preprocessor declares that it cannot preserve a model or
-request preprocessing contract, RF-DETR uses its declared `base` fallback and logs the
-requested implementation, effective implementation, and reason. Compilation and CUDA
-execution failures are not converted into fallbacks.
+When a selected optimized stage declares that it cannot preserve a model or request
+contract, RF-DETR uses its declared `base` fallback and records the requested
+implementation, effective implementation, and reason in logs and runtime metadata.
+This policy applies consistently to preprocessing and postprocessing. Set
+`allow_compatibility_fallback=False` in an explicit plan to require the selected
+implementation or an error. Compilation, CUDA, allocation, and other execution
+failures are never converted into fallbacks.
 
 #### Roboflow Instant
 

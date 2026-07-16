@@ -6,8 +6,9 @@ compaction, box conversion, metadata rescaling, and clipping into one Triton
 kernel. A single device-to-host count handoff is required because the public
 ``Detections`` result contains variable-length tensors.
 
-Explicit selection is strict: unsupported inputs raise an actionable error and
-never silently fall back to the reference PyTorch implementation.
+The runtime exposes a side-effect-free compatibility check so the execution-plan
+selector can follow the implementation's declared fallback before launching work.
+Direct runtime calls remain strict, and execution failures never fall back.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import torch
 from inference_models import Detections
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
+from inference_models.models.optimization.contracts import CompatibilityResult
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
 
@@ -304,6 +306,52 @@ class FusedObjectDetectionPostprocessor:
         num_classes: int,
         classes_re_mapping: Optional[ClassesReMapping],
     ) -> None:
+        compatibility = self.check_request_compatibility(
+            bboxes=bboxes,
+            logits=logits,
+            pre_processing_meta=pre_processing_meta,
+            threshold=threshold,
+            num_classes=num_classes,
+            classes_re_mapping=classes_re_mapping,
+        )
+        if compatibility.supported:
+            return
+
+        raise ModelRuntimeError(
+            message=(
+                "triton-fused-v1 cannot preserve this postprocessing contract: "
+                + "; ".join(compatibility.reasons)
+                + ". Select 'base' for this configuration."
+            ),
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
+
+    def check_request_compatibility(
+        self,
+        *,
+        bboxes: torch.Tensor,
+        logits: torch.Tensor,
+        pre_processing_meta: List[PreProcessingMetadata],
+        threshold: Union[float, torch.Tensor],
+        num_classes: int,
+        classes_re_mapping: Optional[ClassesReMapping],
+    ) -> CompatibilityResult:
+        """Check inputs supported by fused Triton postprocessing.
+
+        Args:
+            bboxes: Batched CUDA box predictions.
+            logits: Batched CUDA class logits.
+            pre_processing_meta: Per-image preprocessing transformations.
+            threshold: Scalar or per-class confidence threshold.
+            num_classes: Number of output classes.
+            classes_re_mapping: Optional class-remapping tensors.
+
+        Returns:
+            Compatibility result with every unsupported input characteristic.
+        """
         unsupported = []
         if not bboxes.is_cuda or not logits.is_cuda:
             unsupported.append("boxes and logits must be CUDA tensors")
@@ -339,17 +387,11 @@ class FusedObjectDetectionPostprocessor:
             if classes_re_mapping.class_mapping.device != self._device:
                 unsupported.append("class mapping must use the target CUDA device")
         if unsupported:
-            raise ModelRuntimeError(
-                message=(
-                    "triton-fused-v1 cannot preserve this postprocessing contract: "
-                    + "; ".join(unsupported)
-                    + ". Select 'base' for this configuration."
-                ),
-                help_url=(
-                    "https://inference-models.roboflow.com/errors/models-runtime/"
-                    "#modelruntimeerror"
-                ),
-            )
+            result = CompatibilityResult.incompatible(*unsupported)
+        else:
+            result = CompatibilityResult.compatible()
+
+        return result
 
     def _prepare_inputs(
         self,

@@ -7,6 +7,7 @@ import torch
 from inference_models import Detections
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -78,6 +79,33 @@ class TritonFusedPostprocessor:
             Whether the target is compatible.
         """
         return metadata_supports_context(self.metadata, context)
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check request constraints supported by fused Triton postprocessing.
+
+        Args:
+            request: Typed postprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+        del context
+        result = self._runtime.check_request_compatibility(
+            bboxes=request.bboxes,
+            logits=request.logits,
+            pre_processing_meta=request.pre_processing_meta,
+            threshold=request.threshold,
+            num_classes=request.num_classes,
+            classes_re_mapping=request.classes_re_mapping,
+        )
+
+        return result
 
     def postprocess(
         self,

@@ -61,6 +61,42 @@ def test_fused_postprocessor_requires_cuda() -> None:
         FusedObjectDetectionPostprocessor(torch.device("cpu"))
 
 
+def test_fused_postprocessor_reports_request_incompatibility_without_cuda() -> None:
+    postprocessor = FusedObjectDetectionPostprocessor.__new__(
+        FusedObjectDetectionPostprocessor
+    )
+    postprocessor._device = torch.device("cuda:0")
+
+    compatibility = postprocessor.check_request_compatibility(
+        bboxes=torch.zeros((1, 2, 4)),
+        logits=torch.zeros((1, 2, 3)),
+        pre_processing_meta=[_metadata()],
+        threshold=0.5,
+        num_classes=3,
+        classes_re_mapping=None,
+    )
+
+    assert not compatibility.supported
+    assert "boxes and logits must be CUDA tensors" in compatibility.reasons
+
+
+def test_fused_postprocessor_direct_call_remains_strict_for_incompatibility() -> None:
+    postprocessor = FusedObjectDetectionPostprocessor.__new__(
+        FusedObjectDetectionPostprocessor
+    )
+    postprocessor._device = torch.device("cuda:0")
+
+    with pytest.raises(ModelRuntimeError, match="cannot preserve this.*contract"):
+        postprocessor._validate_inputs(
+            bboxes=torch.zeros((1, 2, 4)),
+            logits=torch.zeros((1, 2, 3)),
+            pre_processing_meta=[_metadata()],
+            threshold=0.5,
+            num_classes=3,
+            classes_re_mapping=None,
+        )
+
+
 def test_metadata_values_match_reference_transform_parameters() -> None:
     values = _metadata_values(_metadata())
 

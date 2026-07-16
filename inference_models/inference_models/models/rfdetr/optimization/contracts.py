@@ -16,6 +16,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.optimization.contracts import (
     CompatibilityResult,
     ExecutionContext,
+    InferenceStage,
     OptimizationMetadata,
 )
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
@@ -58,7 +59,7 @@ class PostprocessRequest:
     classes_re_mapping: Optional[ClassesReMapping]
 
 
-class Preprocessor(Protocol):
+class Preprocessor(InferenceStage, Protocol):
     """RF-DETR preprocessing stage interface."""
 
     metadata: OptimizationMetadata
@@ -121,7 +122,7 @@ class Preprocessor(Protocol):
         """
 
 
-class Postprocessor(Protocol):
+class Postprocessor(InferenceStage, Protocol):
     """RF-DETR postprocessing stage interface."""
 
     metadata: OptimizationMetadata
@@ -134,6 +135,22 @@ class Postprocessor(Protocol):
 
         Returns:
             Whether the postprocessor is compatible.
+        """
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check compatibility with one concrete postprocessing request.
+
+        Args:
+            request: Typed postprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with actionable reasons.
         """
 
     def postprocess(

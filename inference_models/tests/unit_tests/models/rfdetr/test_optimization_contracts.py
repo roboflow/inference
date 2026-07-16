@@ -28,7 +28,10 @@ from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
 )
-from inference_models.models.rfdetr.optimization.contracts import PreprocessRequest
+from inference_models.models.rfdetr.optimization.contracts import (
+    PostprocessRequest,
+    PreprocessRequest,
+)
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
@@ -42,6 +45,7 @@ from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
 from inference_models.models.rfdetr.optimization.selection import (
+    resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
 )
@@ -56,6 +60,7 @@ class _Stage:
         validated: bool = False,
         model_supported: bool = True,
         request_supported: bool = True,
+        stage: OptimizationStage = OptimizationStage.PREPROCESS,
     ) -> None:
         validation_environments = (
             (
@@ -76,7 +81,7 @@ class _Stage:
         )
         self.metadata = OptimizationMetadata(
             implementation_id=implementation_id,
-            stage=OptimizationStage.PREPROCESS,
+            stage=stage,
             version="1",
             target=DeviceCompatibility(device_kind="gpu"),
             inputs=InputCompatibility(scenarios=("*",)),
@@ -254,6 +259,7 @@ def test_model_contract_incompatibility_resolves_declared_base_fallback() -> Non
         context=_context(),
         image_pre_processing=ImagePreProcessing(),
         network_input=_network_input(),
+        allow_fallback=True,
     )
 
     assert selection.implementation is base
@@ -275,6 +281,7 @@ def test_auto_selection_is_not_reported_as_fallback_when_candidate_is_supported(
         context=_context(),
         image_pre_processing=ImagePreProcessing(),
         network_input=_network_input(),
+        allow_fallback=True,
     )
 
     assert selection.implementation is candidate
@@ -301,6 +308,7 @@ def test_request_incompatibility_resolves_declared_base_fallback() -> None:
         implementation=candidate,
         request=request,
         context=_context(),
+        allow_fallback=True,
     )
 
     assert selection.implementation is base
@@ -320,6 +328,64 @@ def test_fallback_is_rejected_when_base_is_also_incompatible() -> None:
             context=_context(),
             image_pre_processing=ImagePreProcessing(),
             network_input=_network_input(),
+            allow_fallback=True,
+        )
+
+
+def test_strict_plan_rejects_compatibility_fallback() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    registry.register(_Stage("base"))
+    registry.register(_Stage("candidate", model_supported=False))
+
+    with pytest.raises(ModelRuntimeError, match="fallback is disabled"):
+        resolve_preprocessor_for_model(
+            registry=registry,
+            requested_id="candidate",
+            context=_context(),
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_network_input(),
+            allow_fallback=False,
+        )
+
+
+def test_postprocessor_contract_uses_same_declared_fallback_policy() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base", stage=OptimizationStage.POSTPROCESS)
+    candidate = _Stage(
+        "candidate",
+        request_supported=False,
+        stage=OptimizationStage.POSTPROCESS,
+    )
+    registry.register(base)
+    registry.register(candidate)
+    request = PostprocessRequest(
+        bboxes=torch.zeros((1, 2, 4)),
+        logits=torch.zeros((1, 2, 3)),
+        pre_processing_meta=[],
+        threshold=0.5,
+        num_classes=3,
+        classes_re_mapping=None,
+    )
+
+    selection = resolve_postprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    assert selection.implementation is base
+    assert selection.effective_id == "base"
+    assert selection.fallback_reason == "heterogeneous source dimensions"
+
+    with pytest.raises(ModelRuntimeError, match="fallback is disabled"):
+        resolve_postprocessor_for_request(
+            registry=registry,
+            implementation=candidate,
+            request=request,
+            context=_context(),
+            allow_fallback=False,
         )
 
 

@@ -77,6 +77,7 @@ RFDetrExecutionPlan(
     scheduler_id="base",
     postprocessor_id="triton-fused-v1",
     engine_plugin_id="base",
+    allow_compatibility_fallback=True,
 )
 ```
 
@@ -99,6 +100,11 @@ Compatibility fallback is decided before execution and records the requested ID,
 effective ID, and reason. It does not catch compilation, CUDA, allocation, or other
 unexpected runtime failures.
 
+The same policy applies to every selectable stage. Set
+`allow_compatibility_fallback=False` when an explicitly requested implementation must
+either run or raise. The default is `True`, which preserves the base inference path for
+contracts that an optimized implementation declares unsupported.
+
 The catalog answers **what exists**. The registry answers **what may run here**.
 
 ### Implementations
@@ -113,9 +119,11 @@ metadata.
 
 ### Runtime observability
 
-The resolved plan is the plan that actually runs. Models expose both selected IDs and
-JSON-compatible metadata, so profiling and validation output can record the exact
-implementation rather than relying on the environment that happened to be set.
+The resolved plan is the model-level plan that actually runs. Models expose both
+selected IDs and JSON-compatible selection metadata. The metadata records model-level
+and latest per-request requested/effective IDs plus any fallback reason, so profiling
+and validation output does not need to infer selection from environment variables or
+log messages.
 
 ## Current RF-DETR integration
 

@@ -4,6 +4,7 @@ from typing import List
 
 from inference_models import Detections
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -56,6 +57,26 @@ class BasePostprocessor:
             Whether the target is compatible.
         """
         return metadata_supports_context(self.metadata, context)
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Accept requests handled by the preserved postprocessing path.
+
+        Args:
+            request: Typed postprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatible result; detailed validation remains in the base path.
+        """
+        del request, context
+        result = CompatibilityResult.compatible()
+
+        return result
 
     def postprocess(
         self,

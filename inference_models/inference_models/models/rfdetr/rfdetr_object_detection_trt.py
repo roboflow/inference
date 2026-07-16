@@ -64,6 +64,7 @@ from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
 from inference_models.models.rfdetr.optimization.selection import (
+    resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
 )
@@ -284,8 +285,10 @@ class RFDetrForObjectDetectionTRT(
             context=resolution_context,
             image_pre_processing=self._inference_config.image_pre_processing,
             network_input=self._inference_config.network_input,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
         )
         self._preprocessor = preprocessor_selection.implementation
+        self._preprocessor_model_selection = preprocessor_selection.to_dict()
         if preprocessor_selection.used_fallback:
             LOGGER.warning(
                 "RF-DETR preprocessor fallback requested=%s effective=%s reason=%s",
@@ -307,6 +310,7 @@ class RFDetrForObjectDetectionTRT(
             scheduler_id=requested_plan.scheduler_id,
             postprocessor_id=self._postprocessor.metadata.implementation_id,
             engine_plugin_id=requested_plan.engine_plugin_id,
+            allow_compatibility_fallback=(requested_plan.allow_compatibility_fallback),
         )
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
@@ -360,7 +364,21 @@ class RFDetrForObjectDetectionTRT(
             "execution_plan": self.rfdetr_execution_plan.to_dict(),
             "preprocessor": self.preprocessor_implementation_metadata.to_dict(),
             "postprocessor": self.postprocessor_implementation_metadata.to_dict(),
+            "model_selection": {
+                "preprocessor": dict(self._preprocessor_model_selection),
+            },
         }
+        last_execution = {}
+        for stage in ("preprocessor", "postprocessor"):
+            selection = getattr(
+                self._thread_local_storage,
+                f"last_{stage}_selection",
+                None,
+            )
+            if selection is not None:
+                last_execution[stage] = dict(selection)
+        if last_execution:
+            metadata["last_execution"] = last_execution
 
         return metadata
 
@@ -402,7 +420,9 @@ class RFDetrForObjectDetectionTRT(
             implementation=self._preprocessor,
             request=request,
             context=context,
+            allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
+        self._thread_local_storage.last_preprocessor_selection = selection.to_dict()
         if selection.used_fallback:
             LOGGER.warning(
                 "RF-DETR request preprocessor fallback requested=%s effective=%s "
@@ -512,7 +532,27 @@ class RFDetrForObjectDetectionTRT(
                     "classes": int(logits.shape[2]),
                 },
             )
-            results = self._postprocessor.postprocess(
+            selection = resolve_postprocessor_for_request(
+                registry=self._implementation_registry,
+                implementation=self._postprocessor,
+                request=request,
+                context=context,
+                allow_fallback=(
+                    self._rfdetr_execution_plan.allow_compatibility_fallback
+                ),
+            )
+            self._thread_local_storage.last_postprocessor_selection = (
+                selection.to_dict()
+            )
+            if selection.used_fallback:
+                LOGGER.warning(
+                    "RF-DETR request postprocessor fallback requested=%s "
+                    "effective=%s reason=%s",
+                    selection.requested_id,
+                    selection.effective_id,
+                    selection.fallback_reason,
+                )
+            results = selection.implementation.postprocess(
                 request=request,
                 context=context,
             )
