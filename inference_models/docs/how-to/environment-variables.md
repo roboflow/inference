@@ -426,6 +426,9 @@ The following variables select RF-DETR TensorRT pipeline implementations when a 
 cannot pass backend-specific `from_pretrained` arguments. Explicit arguments take
 precedence over these environment variables.
 
+See [Inference-Path Optimization Architecture](../contributors/inference-path-optimization-architecture.md)
+for the selection model and the complete RF-DETR execution flow.
+
 **`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
 Default: `base`
 

@@ -37,6 +37,9 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 
 ## Supported Backends
 
+For the selectable TensorRT preprocessing and postprocessing architecture, see
+[Inference-Path Optimization Architecture](../contributors/inference-path-optimization-architecture.md#current-rf-detr-integration).
+
 | Backend | Extras Required |
 |---------|----------------|
 | `torch` | `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` |
@@ -158,4 +161,3 @@ cv2.imwrite("annotated.jpg", annotated_image)
 - ✅ **Production-ready** - Leverage all `inference-models` features (multi-backend, caching, optimization)
 
 This seamless workflow eliminates the traditional friction between training and deployment, letting you iterate faster and deploy with confidence.
-
