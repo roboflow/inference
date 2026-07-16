@@ -56,9 +56,17 @@ from inference.core.utils.image_utils import (
 from inference_models.models.owlv2.owlv2_hf import (
     monkey_patch_vision_encoder_before_compilation,
 )
-from inference_models.models.owlv2.reference_dataset import (
-    canonicalize_url_for_hashing,
-)
+
+try:
+    from inference_models.models.owlv2.reference_dataset import (
+        canonicalize_url_for_hashing,
+    )
+except ImportError:
+    # Released `inference-models` wheels lag this repo: until a release
+    # carrying the helper is pinned, keep the legacy behavior of hashing the
+    # raw URL. The canonicalization then activates with the pin bump.
+    def canonicalize_url_for_hashing(reference: str) -> str:
+        return reference
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 PRELOADED_HF_MODELS = {}
