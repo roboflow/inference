@@ -559,6 +559,19 @@ def main() -> None:
     print(f"frames processed     : {counter.frames}  (aggregate across streams)")
     print(f"total wall time      : {elapsed:.2f} s (includes model load / warm-up)")
     print(f"average processing FPS: {counter.overall_fps:.2f} aggregate{per_stream}")
+    # The watchdog splits per-frame time into decode vs workflow vs end-to-end —
+    # the fastest way to localise a slow pipeline (decode-bound vs model-bound).
+    report = watchdog.get_report()
+    if report is not None and report.latency_reports:
+        ms = lambda v: f"{v * 1000:8.1f} ms" if v is not None else "     n/a   "
+        print(f"pipeline throughput   : {report.inference_throughput:.2f} FPS (watchdog)")
+        for latency in report.latency_reports:
+            print(
+                f"  source[{latency.source_id if latency.source_id is not None else 0}]"
+                f" decode: {ms(latency.frame_decoding_latency)}"
+                f" | workflow: {ms(latency.inference_latency)}"
+                f" | e2e: {ms(latency.e2e_latency)}"
+            )
     if args.profile_trace:
         print(
             f"profiler trace        : {os.path.abspath(args.profile_trace)} "
