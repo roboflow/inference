@@ -14,8 +14,8 @@
 
 ARG CMAKE_VERSION=4.2.0
 ARG NINJA_VERSION=1.11.1.4
-ARG PYTORCH_VERSION=2.10.0
-ARG TORCHVISION_VERSION=0.25.0
+ARG PYTORCH_VERSION=2.13.0
+ARG TORCHVISION_VERSION=0.28.0
 ARG TRITON_VERSION=3.6.0
 ARG TRITON_WHEEL_SHA256=374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4
 ARG ONNXRUNTIME_VERSION=1.24.2
@@ -25,7 +25,7 @@ ARG FLASH_ATTN_MAX_JOBS=2
 ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
 ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
 ARG FLASH_ATTN_CUDA_ARCHS=87;110
-ARG FLASH_ATTN_REF=d16e381f6f8041422bd36f27adaf61fbf8ca872a
+ARG FLASH_ATTN_REF=2402cb0bed7a2185cb9ddbe88fb998656cf73066
 
 FROM ubuntu:24.04 AS toolchain
 
@@ -109,7 +109,10 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 
 ENV PIP_CONSTRAINT=/opt/builder-constraints.txt
 
-RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
+RUN python3 -m pip install --break-system-packages --ignore-installed \
+        pip \
+        "setuptools>=77,<82" \
+        wheel && \
     python3 -m pip install --break-system-packages \
         "cmake==${CMAKE_VERSION}" \
         "ninja==${NINJA_VERSION}" \

@@ -67,8 +67,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-se
 FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTORCH_VERSION=2.10.0
-ARG TORCHVISION_VERSION=0.25.0
+ARG PYTORCH_VERSION=2.13.0
+ARG TORCHVISION_VERSION=0.28.0
 ARG TARGETARCH
 ENV LANG=en_US.UTF-8
 
