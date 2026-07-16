@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from inference_models.models.base.keypoints_detection import KeyPoints
@@ -38,3 +39,21 @@ def test_len_counts_instances_not_keypoints_per_instance() -> None:
 
     # when / then
     assert len(key_points) == 2
+
+
+def test_key_points_is_not_iterable() -> None:
+    # KeyPoints intentionally has no __iter__ (and no __getitem__): unlike Detections it
+    # does NOT support positional tuple-destructuring iteration - only __len__ and
+    # to_supervision(). This guard documents that contract so that adding iteration later
+    # (with some field order) is a conscious, explicitly-tested change rather than a
+    # silent one that downstream positional destructures could come to depend on.
+    key_points = KeyPoints(
+        xy=torch.tensor([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]]),  # (1, 3, 2)
+        class_id=torch.tensor([0], dtype=torch.long),
+        confidence=torch.tensor([[0.9, 0.8, 0.7]]),  # (1, 3)
+    )
+
+    # when / then
+    assert not hasattr(type(key_points), "__iter__")
+    with pytest.raises(TypeError):
+        iter(key_points)

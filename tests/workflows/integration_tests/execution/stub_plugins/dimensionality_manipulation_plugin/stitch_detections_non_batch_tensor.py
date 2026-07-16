@@ -18,13 +18,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.stitch_detections_non_batch import (
-    BlockManifest,
-)
+from inference_models.models.base.object_detection import Detections
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.stitch_detections_batch_tensor import (
     merge_native_predictions,
 )
-from inference_models.models.base.object_detection import Detections
+from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.stitch_detections_non_batch import (
+    BlockManifest,
+)
 
 
 class StitchDetectionsNonBatchBlock(WorkflowBlock):

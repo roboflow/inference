@@ -21,8 +21,8 @@ def canonical_name(value: str) -> str:
 
 def assert_distribution_contract() -> dict[str, str]:
     expected_versions = {
-        "superiorvision": "0.30.0.dev2",
-        "tracktors": "2.6.0.dev1",
+        "superiorvision": "0.30.0.dev3",
+        "tracktors": "2.6.0.dev2",
     }
     versions = {name: metadata.version(name) for name in expected_versions}
     assert (

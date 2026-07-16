@@ -583,8 +583,12 @@ class WorkflowImageData:
             if bgr_np.ndim == 2:
                 # Single-channel (grayscale / threshold outputs): (H, W) ->
                 # (1, H, W), no channel reversal - there is no BGR/RGB
-                # semantics to convert.
-                chw = torch.from_numpy(np.ascontiguousarray(bgr_np)).unsqueeze(0)
+                # semantics to convert. `.copy()` so the tensor owns its buffer:
+                # without it a CPU grayscale tensor aliases `self._numpy_image`
+                # (the trailing `.to(...)` is a no-op on CPU), breaking mutation
+                # isolation between the two representations - the 3-channel branch
+                # below already copies.
+                chw = torch.from_numpy(np.ascontiguousarray(bgr_np).copy()).unsqueeze(0)
             else:
                 # HWC BGR -> HWC RGB -> CHW RGB; contiguous so model ingestion
                 # gets a dense buffer.

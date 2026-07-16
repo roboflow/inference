@@ -25,10 +25,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_batch import (
     BlockManifest,
 )
-from inference_models.models.base.object_detection import Detections
 
 
 def _write_parent_metadata_native(

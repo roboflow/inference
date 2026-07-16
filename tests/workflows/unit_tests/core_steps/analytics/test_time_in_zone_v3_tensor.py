@@ -52,9 +52,7 @@ def test_time_in_zone_v3_matches_supervision_and_old_bookkeeping() -> None:
         ),
     ]
     oracle_zones = [
-        sv.PolygonZone(
-            np.asarray(polygon), triggering_anchors=(sv.Position.CENTER,)
-        )
+        sv.PolygonZone(np.asarray(polygon), triggering_anchors=(sv.Position.CENTER,))
         for polygon in zones
     ]
     tracked_ids_in_zone = {}
@@ -107,6 +105,5 @@ def test_time_in_zone_v3_matches_supervision_and_old_bookkeeping() -> None:
             tracker_ids[surviving_mask].tolist()
         )
         assert [
-            item[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS]
-            for item in result.bboxes_metadata
+            item[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] for item in result.bboxes_metadata
         ] == [surviving_times[index] for index in np.flatnonzero(surviving_mask)]

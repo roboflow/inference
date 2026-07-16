@@ -163,8 +163,8 @@ def test_semantic_segmentation_workflow_when_single_image_provided_tensor_native
         detections, NativeInstanceDetections
     ), "Expected predictions to be native InstanceDetections under tensor flag"
     assert len(detections) > 0, "Expected at least one class detected"
-    assert (
-        detections.xyxy.shape[0] == len(detections)
+    assert detections.xyxy.shape[0] == len(
+        detections
     ), "Expected one bounding box per detection"
     assert detections.xyxy.shape[1] == 4, "Expected bounding boxes in xyxy format"
     assert detections.class_id is not None, "Expected class IDs"
@@ -225,8 +225,8 @@ def test_semantic_segmentation_workflow_when_single_image_provided_with_tensor_i
         detections, NativeInstanceDetections
     ), "Expected predictions to be native InstanceDetections under tensor flag"
     assert len(detections) > 0, "Expected at least one class detected"
-    assert (
-        detections.xyxy.shape[0] == len(detections)
+    assert detections.xyxy.shape[0] == len(
+        detections
     ), "Expected one bounding box per detection"
     assert detections.xyxy.shape[1] == 4, "Expected bounding boxes in xyxy format"
     assert detections.class_id is not None, "Expected class IDs"

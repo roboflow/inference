@@ -5,10 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from inference.core.interfaces.camera.exceptions import NativeGrabTimeoutError
 from inference.core.interfaces.camera.jetson_producer import (
-    _FRAME_GRAB_TIMEOUT_NS,
-    _STARTUP_GRAB_TIMEOUT_NS,
     JetsonVideoFrameProducer,
     build_gstreamer_pipeline,
     required_gstreamer_elements,
@@ -24,10 +21,12 @@ class _NativePipeline:
         self.frame = frame if frame is not None else object()
         self.factories = set(factories)
         self.factory_queries = []
+        self.last_grab_timeout_ns = None
 
     def grab(self, timeout_ns=None) -> bool:
         self.grab_calls += 1
         self.grab_timeouts.append(timeout_ns)
+        self.last_grab_timeout_ns = timeout_ns
         return True
 
     def retrieve(self):
@@ -65,6 +64,7 @@ def _native_producer(
     producer._decoder_validated = True
     producer._prerolled_frame_pending = False
     producer._cached_source_properties = None
+    producer._grab_timeout_ns = 5_000_000_000
     producer._closed = False
     producer._eos = False
     return producer
@@ -83,6 +83,9 @@ def test_metadata_preroll_is_consumable_once_and_later_grabs_advance() -> None:
     assert native_pipeline.grab_calls == 1
     assert producer.grab()
     assert native_pipeline.grab_calls == 2
+    # The producer must hand the native pull a finite deadline so a stalled
+    # source raises instead of blocking VideoSource forever (FQ-1).
+    assert native_pipeline.last_grab_timeout_ns == producer._grab_timeout_ns
 
 
 def test_grabs_are_bounded_so_a_stalled_source_cannot_hang_the_state_lock() -> None:
@@ -94,19 +97,19 @@ def test_grabs_are_bounded_so_a_stalled_source_cannot_hang_the_state_lock() -> N
     producer.grab()
 
     assert native_pipeline.grab_timeouts == [
-        _STARTUP_GRAB_TIMEOUT_NS,
-        _FRAME_GRAB_TIMEOUT_NS,
+        producer._grab_timeout_ns,
+        producer._grab_timeout_ns,
     ]
 
 
 def test_stalled_native_grab_surfaces_as_recoverable_error() -> None:
     class _TimeoutPipeline(_NativePipeline):
         def grab(self, timeout_ns=None):
-            raise NativeGrabTimeoutError("no frame")
+            raise TimeoutError("no frame")
 
     producer = _native_producer(_TimeoutPipeline())
 
-    with pytest.raises(RuntimeError, match="stalled"):
+    with pytest.raises(TimeoutError, match="no frame"):
         producer.grab()
 
     assert producer.isOpened()

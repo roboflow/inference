@@ -257,11 +257,14 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_KIND,
+    TENSOR_NATIVE_BAR_CODE_DETECTION_KIND,
     TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+    TENSOR_NATIVE_DETECTION_KIND,
     TENSOR_NATIVE_EMBEDDING_KIND,
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_QR_CODE_DETECTION_KIND,
     TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND,
 )
@@ -270,6 +273,9 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.common.deserializers_tensor import (
         deserialize_detections_kind,
         deserialize_image_kind,
+        deserialize_native_classification_prediction_kind,
+        deserialize_native_embedding_kind,
+        deserialize_native_tensor_kind,
         deserialize_rle_detections_kind,
     )
     from inference.core.workflows.core_steps.common.serializers_tensor import (
@@ -590,7 +596,14 @@ else:
     from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1_tensor import (
         PerceptionEncoderModelBlockV1,
     )
-from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import PPOCRBlockV1
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import (
+        PPOCRBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1_tensor import (
+        PPOCRBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
@@ -1538,6 +1551,16 @@ KINDS_DESERIALIZERS = {
     INFERENCE_ID_KIND.name: deserialize_string_kind,
     TIMESTAMP_KIND.name: deserialize_timestamp,
 }
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    # Tensor-native consumers expect native dataclasses / torch tensors for these
+    # kinds. The numpy classification deserialiser returns a plain dict; embedding /
+    # tensor kinds have NO numpy deserialiser at all (a serialised JSON list would
+    # reach a tensor consumer as a list and break on `.shape` / `torch.dot`).
+    KINDS_DESERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
+        deserialize_native_classification_prediction_kind
+    )
+    KINDS_DESERIALIZERS[EMBEDDING_KIND.name] = deserialize_native_embedding_kind
+    KINDS_DESERIALIZERS[TENSOR_KIND.name] = deserialize_native_tensor_kind
 
 
 def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
@@ -1831,7 +1854,11 @@ def load_kinds() -> List[Kind]:
         TOP_CLASS_KIND,
         FLOAT_KIND,
         DICTIONARY_KIND,
-        DETECTION_KIND,
+        (
+            DETECTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_DETECTION_KIND
+        ),
         (
             CLASSIFICATION_PREDICTION_KIND
             if not ENABLE_TENSOR_DATA_REPRESENTATION
@@ -1872,8 +1899,16 @@ def load_kinds() -> List[Kind]:
         LANGUAGE_MODEL_OUTPUT_KIND,
         NUMPY_ARRAY_KIND,
         TENSOR_KIND,
-        QR_CODE_DETECTION_KIND,
-        BAR_CODE_DETECTION_KIND,
+        (
+            QR_CODE_DETECTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_QR_CODE_DETECTION_KIND
+        ),
+        (
+            BAR_CODE_DETECTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_BAR_CODE_DETECTION_KIND
+        ),
         PREDICTION_TYPE_KIND,
         ROBOFLOW_MANAGED_KEY,
         PARENT_ID_KIND,

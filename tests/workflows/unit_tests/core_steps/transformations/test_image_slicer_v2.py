@@ -269,9 +269,7 @@ def test_running_block_when_tensor_image_given_keeps_crops_on_device() -> None:
         ), f"Expected {i}th crop to have the correct coordinates regarding root"
 
     # zero-copy content correctness: the first crop equals the source tensor slice
-    assert torch.equal(
-        result[0]["slices"].tensor_image, tensor_image[:, 0:100, 0:200]
-    )
+    assert torch.equal(result[0]["slices"].tensor_image, tensor_image[:, 0:100, 0:200])
 
 
 def test_running_block_when_slice_size_exceed_image_size() -> None:

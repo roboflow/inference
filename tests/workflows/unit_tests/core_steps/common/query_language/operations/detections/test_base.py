@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 import pytest
 import supervision as sv
@@ -9,6 +11,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
     OperationError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
+    _concatenate_detections,
+    _copy_detections,
+    _take_detections,
     rename_detections,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -48,6 +53,87 @@ def _native_detections() -> NativeDetections:
         confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
         image_metadata={CLASS_NAMES_KEY: {10: "a", 11: "b"}},
     )
+
+
+def _native_tracked_detections(
+    with_mask: bool,
+) -> Union[NativeDetections, NativeInstanceDetections]:
+    """Build tensor-native detections carrying first-class tracker IDs."""
+    common_fields = {
+        "xyxy": torch.tensor([[0, 1, 2, 3], [4, 5, 6, 7]], dtype=torch.float32),
+        "class_id": torch.tensor([10, 11], dtype=torch.long),
+        "confidence": torch.tensor([0.3, 0.4], dtype=torch.float32),
+        "tracker_id": torch.tensor([7, 9], dtype=torch.long),
+        "image_metadata": {CLASS_NAMES_KEY: {10: "a", 11: "b"}},
+    }
+    if with_mask:
+        return NativeInstanceDetections(
+            **common_fields,
+            mask=torch.zeros((2, 8, 8), dtype=torch.bool),
+        )
+    return NativeDetections(**common_fields)
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize("with_mask", [False, True])
+def test_take_detections_preserves_first_class_tracker_ids(
+    with_mask: bool,
+) -> None:
+    """Taking native rows keeps tracker IDs aligned with the selected rows."""
+    detections = _native_tracked_detections(with_mask=with_mask)
+
+    result = _take_detections(detections=detections, indices=[1, 0])
+
+    assert result.tracker_id is not None
+    assert result.tracker_id.tolist() == [9, 7]
+    assert result.tracker_id.device == detections.tracker_id.device
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize("with_mask", [False, True])
+def test_copy_detections_clones_first_class_tracker_ids(with_mask: bool) -> None:
+    """Copying native detections clones rather than aliases tracker-ID storage."""
+    detections = _native_tracked_detections(with_mask=with_mask)
+
+    result = _copy_detections(detections=detections)
+
+    assert result.tracker_id is not None
+    assert torch.equal(result.tracker_id, detections.tracker_id)
+    assert result.tracker_id.data_ptr() != detections.tracker_id.data_ptr()
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize("with_mask", [False, True])
+def test_concatenate_detections_preserves_first_class_tracker_ids(
+    with_mask: bool,
+) -> None:
+    """Concatenating native detections concatenates their tracker-ID tensors."""
+    detections = _native_tracked_detections(with_mask=with_mask)
+    first = _take_detections(detections=detections, indices=[0])
+    second = _take_detections(detections=detections, indices=[1])
+
+    result = _concatenate_detections(first=first, second=second)
+
+    assert result.tracker_id is not None
+    assert result.tracker_id.tolist() == [7, 9]
+    assert result.tracker_id.device == detections.tracker_id.device
+
+
+@_TENSOR_ONLY
+def test_concatenate_detections_rejects_partial_tracker_ids() -> None:
+    """Concatenation rejects mixed tracker-ID presence like Detections.merge."""
+    first = _take_detections(
+        detections=_native_tracked_detections(with_mask=False), indices=[0]
+    )
+    second = _take_detections(
+        detections=_native_tracked_detections(with_mask=False), indices=[1]
+    )
+    second.tracker_id = None
+
+    with pytest.raises(
+        ValueError, match="All or none of the 'tracker_id' fields must be None"
+    ):
+        _ = _concatenate_detections(first=first, second=second)
 
 
 def _resolved_class_names(detections: NativeDetections) -> list:

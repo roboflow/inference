@@ -100,8 +100,8 @@ assert torchvision.__version__
 assert triton.__version__
 assert torchvision_io
 assert hasattr(torch.ops.image, "decode_jpegs_cuda")
-assert importlib.metadata.version("superiorvision") == "0.30.0.dev2"
-assert importlib.metadata.version("tracktors") == "2.6.0.dev1"
+assert importlib.metadata.version("superiorvision") == "0.30.0.dev3"
+assert importlib.metadata.version("tracktors") == "2.6.0.dev2"
 assert supervision.__file__
 assert trackers.__file__
 assert cv2.__file__.startswith("/opt/opencv/python/"), cv2.__file__

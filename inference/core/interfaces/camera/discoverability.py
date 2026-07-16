@@ -195,9 +195,15 @@ def build_hw_producer(
         video=video,
         require_cuda_tensor=output_tensor,
     )
-    for name in _resolution_order(prefer):
+    for name in _resolution_order(prefer, video):
         if not checks[name].available:
             continue
+        if name in (GSTREAMER_CUDA, DGPU):
+            # The onnx.gpu image's CUDA media stack is built for CC>=7.5; fail fast
+            # with a clear message on older GPUs instead of a cryptic runtime crash.
+            # (Raised here so it propagates to the caller, which logs it and falls
+            # back to the cv2 CPU decoder.)
+            _require_media_compute_capability()
         try:
             if name == GSTREAMER_CUDA:
                 from inference.core.interfaces.camera.gstreamer_cuda_producer import (
@@ -242,15 +248,79 @@ def build_hw_producer(
     return None
 
 
-def _resolution_order(prefer: Optional[str]) -> List[str]:
+def _resolution_order(
+    prefer: Optional[str], video: Optional[Union[str, int]] = None
+) -> List[str]:
+    """Source-type-aware producer routing (per the media-decode plan).
+
+    An explicit ``prefer`` always wins, with the remaining backends kept as
+    fallbacks. Otherwise the backend is chosen from (platform, source type):
+
+    - **Jetson** (aarch64 Linux): GStreamer for live/stream/camera sources; local
+      FILES are left to the cv2 CPU decoder (this returns ``[]`` -> ``build_hw_producer``
+      yields ``None`` -> opencv decode, lazily promoted to a tensor by
+      ``WorkflowImageData``). The Jetson HW GStreamer path is reserved for streams.
+    - **dGPU / x86**: GStreamer for live/stream sources; PyNvVideoCodec (``dgpu``) for
+      local FILES (its ``SimpleDecoder`` is seekable-file only).
+
+    ``http(s)`` and other URI schemes are treated as streams (GStreamer handles them;
+    PyNvVideoCodec cannot seek them).
+    """
     producer_names = (GSTREAMER_CUDA, JETSON, DGPU)
     if prefer in producer_names:
         return [prefer] + [name for name in producer_names if name != prefer]
     import platform
 
+    is_file = _is_file_source(video)
     if platform.machine() == "aarch64" and platform.system() == "Linux":
-        return [JETSON, GSTREAMER_CUDA, DGPU]
-    return [GSTREAMER_CUDA, DGPU, JETSON]
+        # Jetson: streams -> GStreamer; local files -> cv2 (no HW producer selected).
+        return [] if is_file else [JETSON]
+    # dGPU / x86: streams -> GStreamer; local files -> PyNvVideoCodec.
+    return [DGPU] if is_file else [GSTREAMER_CUDA]
+
+
+def _is_file_source(video: Optional[Union[str, int]]) -> bool:
+    """A seekable local FILE path (routed to opencv on Jetson / PyNvVideoCodec on
+    dGPU), as opposed to a live/stream/camera source (routed to GStreamer). URI
+    schemes (rtsp/http/...), ``/dev/video*``, ``csi://`` and integer camera indices
+    are NOT files."""
+    return (
+        isinstance(video, str)
+        and "://" not in video
+        and not video.startswith("/dev/video")
+        and not video.lower().startswith("csi://")
+    )
+
+
+def _require_media_compute_capability(minimum: tuple = (7, 5)) -> None:
+    """Guard the dGPU CUDA media path (GStreamer-CUDA / PyNvVideoCodec) against GPUs
+    below the compiled compute-capability floor.
+
+    ``Dockerfile.onnx.gpu`` builds OpenCV-CUDA + nvcodec for CC>=7.5 only, so on
+    older GPUs (V100 7.0, Pascal 6.x) the nvcodec conversion kernels and cv2.cuda ops
+    fail at runtime with an opaque 'no kernel image' error. Detect this at producer
+    selection and raise a clear, actionable error; the caller (``VideoSource``) logs
+    it and falls back to the cv2 CPU decode path.
+
+    Robust in non-CUDA / test environments: if CUDA is absent or the capability can't
+    be read, this does nothing (the ``check_*`` probe already gates on CUDA, and the
+    runtime would surface any real issue)."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        capability = tuple(torch.cuda.get_device_capability())
+    except Exception:  # noqa: BLE001 - can't determine CC -> don't block here
+        return
+    if capability < minimum:
+        raise RuntimeError(
+            f"Hardware GPU video decode requires CUDA compute capability "
+            f">= {minimum[0]}.{minimum[1]}, but this GPU is "
+            f"{capability[0]}.{capability[1]}. The onnx.gpu image's OpenCV-CUDA + "
+            f"nvcodec media stack is compiled for >= {minimum[0]}.{minimum[1]} only; "
+            f"use the CPU (cv2) decode path on this hardware."
+        )
 
 
 def _dgpu_supports_source(video: Optional[Union[str, int]]) -> bool:

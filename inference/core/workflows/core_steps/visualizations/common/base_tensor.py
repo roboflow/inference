@@ -18,6 +18,10 @@ from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
     TRACKER_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -166,6 +170,24 @@ def _materialise_data(
         data[IMAGE_DIMENSIONS_KEY] = np.asarray(
             [list(image_dimensions) for _ in range(detections_number)]
         )
+    # Per-image lineage that flag-off carries per-box in ``sv.Detections.data``
+    # (the single per-image value broadcast to every row). The tensor-native
+    # path stores these once in ``image_metadata``; re-broadcast them here so a
+    # custom-text Label lookup (e.g. ``predictions["parent_id"]``) resolves
+    # identically to flag-off instead of raising ``KeyError``. Only keys present
+    # on this image are emitted, matching flag-off (which omits ``inference_id``
+    # when the model did not supply one). Fixed-anchor annotators never read
+    # these, so adding them leaves their rendered output unchanged.
+    for lineage_key in (
+        PARENT_ID_KEY,
+        ROOT_PARENT_ID_KEY,
+        PREDICTION_TYPE_KEY,
+        INFERENCE_ID_KEY,
+    ):
+        if lineage_key in image_metadata:
+            data[lineage_key] = np.asarray(
+                [image_metadata[lineage_key]] * detections_number, dtype=object
+            )
     extra_keys = set()
     for per_box in bboxes_metadata:
         extra_keys.update(per_box.keys())

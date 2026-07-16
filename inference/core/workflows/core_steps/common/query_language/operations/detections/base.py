@@ -729,6 +729,7 @@ def _take_detections(
             mask=_take_mask(detections.mask, indices),
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=_take_tensor_field(detections.tracker_id, index_tensor),
         )
     return Detections(
         xyxy=detections.xyxy[index_tensor],
@@ -736,6 +737,7 @@ def _take_detections(
         confidence=_take_tensor_field(detections.confidence, index_tensor),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=_take_tensor_field(detections.tracker_id, index_tensor),
     )
 
 
@@ -753,6 +755,11 @@ def _copy_detections(detections: TensorNativeDetections) -> TensorNativeDetectio
             mask=mask,
             image_metadata=deepcopy(detections.image_metadata),
             bboxes_metadata=deepcopy(detections.bboxes_metadata),
+            tracker_id=(
+                detections.tracker_id.clone()
+                if detections.tracker_id is not None
+                else None
+            ),
         )
     return Detections(
         xyxy=detections.xyxy.clone(),
@@ -760,12 +767,29 @@ def _copy_detections(detections: TensorNativeDetections) -> TensorNativeDetectio
         confidence=detections.confidence.clone(),
         image_metadata=deepcopy(detections.image_metadata),
         bboxes_metadata=deepcopy(detections.bboxes_metadata),
+        tracker_id=(
+            detections.tracker_id.clone() if detections.tracker_id is not None else None
+        ),
     )
+
+
+def _concatenate_tracker_ids(
+    first: TensorNativeDetections, second: TensorNativeDetections
+) -> Optional[torch.Tensor]:
+    """Concatenate tracker IDs while enforcing the all-or-none merge contract."""
+    first_tracker_id = first.tracker_id
+    second_tracker_id = second.tracker_id
+    if first_tracker_id is None and second_tracker_id is None:
+        return None
+    if first_tracker_id is None or second_tracker_id is None:
+        raise ValueError("All or none of the 'tracker_id' fields must be None")
+    return torch.cat([first_tracker_id, second_tracker_id], dim=0)
 
 
 def _concatenate_detections(
     first: TensorNativeDetections, second: TensorNativeDetections
 ) -> TensorNativeDetections:
+    tracker_id = _concatenate_tracker_ids(first=first, second=second)
     bboxes_metadata = None
     if first.bboxes_metadata is not None or second.bboxes_metadata is not None:
         bboxes_metadata = _bboxes_metadata_list(first) + _bboxes_metadata_list(second)
@@ -792,6 +816,7 @@ def _concatenate_detections(
             mask=mask,
             image_metadata=first.image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=tracker_id,
         )
     return Detections(
         xyxy=torch.cat([first.xyxy, second.xyxy], dim=0),
@@ -799,6 +824,7 @@ def _concatenate_detections(
         confidence=torch.cat([first.confidence, second.confidence], dim=0),
         image_metadata=first.image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=tracker_id,
     )
 
 
@@ -1370,6 +1396,36 @@ def _pick_detections_by_parent_class_tensor_native(
         )
 
 
+def _parent_class_row_flags(
+    detections: TensorNativeDetections,
+    parent_class: str,
+    operation_name: str,
+) -> List[bool]:
+    """Per-row "is this a parent-class detection" flags for
+    ``pick_detections_by_parent_class`` — resolving names only as far as the query
+    actually needs.
+
+    Parity with the numpy sibling (``_pick_detections_by_parent_class_impl``): a row
+    is a parent iff its ``class_id`` maps to ``parent_class`` in the image-level
+    ``CLASS_NAMES_KEY`` map; every other row is a dependent. Because dependents are
+    identified by *not* matching ``parent_class`` (never by resolving their own
+    name), an incomplete map that omits an unrelated dependent's ``class_id`` does
+    NOT raise here — the numpy sibling likewise never raises for such a row (its
+    ``data["class_name"]`` simply holds a non-parent string). This is the fix for
+    the divergence where the old ``_resolve_class_names`` call raised on any
+    unmapped row, even ones the query doesn't touch.
+
+    A *truly absent* map (no ``CLASS_NAMES_KEY`` at all) remains a producer contract
+    violation and still raises via ``_class_names_lookup`` — the single accepted
+    divergence from numpy, which returns empty there.
+    """
+    class_names_map = _class_names_lookup(detections, operation_name=operation_name)
+    return [
+        class_names_map.get(int(class_id_scalar)) == parent_class
+        for class_id_scalar in detections.class_id.tolist()
+    ]
+
+
 def _pick_detections_by_parent_class_indices_tensor_native(
     detections: TensorNativeDetections,
     parent_class: str,
@@ -1380,17 +1436,15 @@ def _pick_detections_by_parent_class_indices_tensor_native(
     in the impl). Returned so the keypoint component can be sliced consistently."""
     if _detections_count(detections) == 0:
         return []
-    class_names = _resolve_class_names(
-        detections, operation_name="pick_detections_by_parent_class"
+    is_parent = _parent_class_row_flags(
+        detections,
+        parent_class=parent_class,
+        operation_name="pick_detections_by_parent_class",
     )
-    parent_indices = [
-        index for index, name in enumerate(class_names) if name == parent_class
-    ]
+    parent_indices = [index for index, flag in enumerate(is_parent) if flag]
     if not parent_indices:
         return []
-    dependent_indices = [
-        index for index, name in enumerate(class_names) if name != parent_class
-    ]
+    dependent_indices = [index for index, flag in enumerate(is_parent) if not flag]
     dependent_detections = _take_detections(detections, dependent_indices)
     parent_detections = _take_detections(detections, parent_indices)
     centers_x = (
@@ -1423,17 +1477,15 @@ def _pick_detections_by_parent_class_tensor_native_impl(
 ) -> TensorNativeDetections:
     if _detections_count(detections) == 0:
         return _take_detections(detections, [])
-    class_names = _resolve_class_names(
-        detections, operation_name="pick_detections_by_parent_class"
+    is_parent = _parent_class_row_flags(
+        detections,
+        parent_class=parent_class,
+        operation_name="pick_detections_by_parent_class",
     )
-    parent_indices = [
-        index for index, name in enumerate(class_names) if name == parent_class
-    ]
+    parent_indices = [index for index, flag in enumerate(is_parent) if flag]
     if not parent_indices:
         return _take_detections(detections, [])
-    dependent_indices = [
-        index for index, name in enumerate(class_names) if name != parent_class
-    ]
+    dependent_indices = [index for index, flag in enumerate(is_parent) if not flag]
     parent_detections = _take_detections(detections, parent_indices)
     dependent_detections = _take_detections(detections, dependent_indices)
     centers_x = (

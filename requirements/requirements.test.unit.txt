@@ -11,5 +11,5 @@ httpx~=0.28.1
 uvicorn<=0.22.0
 aioresponses>=0.7.6
 supervision>=0.26; python_version < "3.10"
-superiorvision>=0.30.0.dev2; python_version >= "3.10"
+superiorvision==0.30.0.dev3; python_version >= "3.10"
 pycocotools>=2.0.10

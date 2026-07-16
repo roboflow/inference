@@ -46,9 +46,8 @@ def _native_parent_ids(detections) -> list:
     the real crop id (matching the numpy path) instead of a vacuous `None`."""
     bboxes_metadata = detections.bboxes_metadata or []
     image_parent_id = (detections.image_metadata or {}).get(PARENT_ID_KEY)
-    return [
-        entry.get(PARENT_ID_KEY) or image_parent_id for entry in bboxes_metadata
-    ]
+    return [entry.get(PARENT_ID_KEY) or image_parent_id for entry in bboxes_metadata]
+
 
 DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW = {
     "version": "1.0",

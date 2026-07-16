@@ -26,7 +26,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-24.04-4
       group: public-depot
-    timeout-minutes: 360
+    timeout-minutes: 1440
     permissions:
       id-token: write
       contents: read

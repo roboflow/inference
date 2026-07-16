@@ -66,3 +66,21 @@ AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE = "area_converted"
 RLE_MASK_KEY_IN_SV_DETECTIONS = "rle_mask"
 RLE_MASK_KEY_IN_INFERENCE_RESPONSE = "rle_mask"
 CLASS_NAMES_KEY = "class_names"
+# D1: optional boolean carried in a tensor-native detection's ``image_metadata``.
+# Meaning: "emit per-instance mask polygons (the ``points`` field) during
+# serialisation?". When the key is ABSENT the serialiser behaves exactly as before
+# (polygons ARE computed and emitted). A producer that sets this to ``False``
+# instructs the serialiser to skip the per-instance RLE-decode + ``mask_to_polygon``
+# / ``findContours`` work. Wave-2 InstanceDetections producers set this value.
+SERIALISE_POLYGONS_KEY = "serialise_polygons"
+# Lane 1b: explicit style tag carried in a tensor-native classification prediction's
+# ``image_metadata``, telling ``serialise_native_classification`` which flag-OFF shape
+# to reproduce. ``"model"`` -> numpy ``*InferenceResponse``-derived shape (roboflow
+# classification model blocks + visual_search_classifier + clip_comparison);
+# ``"formatter"`` -> hand-built ``vlm_as_classifier`` shape. Replaces the interim
+# ``threshold|root_parent_id|time`` heuristic; when the key is ABSENT (or an
+# unrecognised value) the serialiser falls back to that heuristic, so this is
+# non-breaking for any producer that has not yet been wired.
+CLASSIFICATION_STYLE_KEY = "classification_style"
+CLASSIFICATION_STYLE_MODEL = "model"
+CLASSIFICATION_STYLE_FORMATTER = "formatter"

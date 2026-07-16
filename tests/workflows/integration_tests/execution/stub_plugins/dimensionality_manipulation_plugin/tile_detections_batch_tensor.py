@@ -8,6 +8,8 @@ This is just example, test implementation, please do not assume it being fully f
 
 from typing import Type
 
+import supervision as sv
+
 from inference.core.utils.drawing import create_tiles
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -18,12 +20,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.tile_detections_batch import (
     BlockManifest,
 )
-from inference_models.models.base.object_detection import Detections
-
-import supervision as sv
 
 
 class TileDetectionsBatchBlock(WorkflowBlock):
