@@ -184,9 +184,13 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
         else "max-buffers=4 drop=false sync=false"
     )
     uri = _source_uri(video)
+    # expose-all-streams=false: only streams matching `caps` (video) are
+    # autoplugged; other tracks (e.g. an RTSP camera's A-Law audio) are ignored
+    # instead of erroring on a missing decoder and poisoning the pipeline with
+    # bus errors from the dead branch (silent startup EOS / mid-run reconnects).
     return (
         f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
-        'caps="video/x-raw(memory:CUDAMemory)" ! '
+        'caps="video/x-raw(memory:CUDAMemory)" expose-all-streams=false ! '
         f"queue {queue_options} ! "
         f"cudaconvertscale cuda-device-id={device_id} ! "
         "video/x-raw(memory:CUDAMemory),format=RGBP ! "
