@@ -1,5 +1,9 @@
 """Unit tests for the Qwen-Image-Edit workflow block (v1)."""
 
+import sys
+import threading
+import time
+import types
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -51,7 +55,9 @@ def test_manifest_minimal_valid():
     # Steps/guidance default to None ("auto") and are resolved by the backend.
     assert manifest.num_inference_steps is None
     assert manifest.guidance_scale is None
-    assert manifest.use_lightning_lora is False
+    # Lightning is the default so the block works out of the box (pulls base
+    # model + LoRA from HuggingFace, no Roboflow registry entry required).
+    assert manifest.use_lightning_lora is True
     assert manifest.scale_megapixels is None
     assert manifest.seed is None
 
@@ -270,3 +276,75 @@ def test_model_cache_reuses_instance():
 
     assert result is fake_model
     assert result2 is fake_model
+
+
+def _install_fake_qwen_backend(monkeypatch, from_pretrained):
+    """Stub the qwen backend module so cache tests run without the real
+    `inference_models` release that ships it (fixture-scoped, auto-undone)."""
+    leaf_name = "inference_models.models.qwen_image_edit.qwen_image_edit_hf"
+    leaf = types.ModuleType(leaf_name)
+    leaf.MODEL_ID = "Qwen/Qwen-Image-Edit"
+    leaf.QwenImageEditHF = types.SimpleNamespace(from_pretrained=from_pretrained)
+    for name in (
+        "inference_models",
+        "inference_models.models",
+        "inference_models.models.qwen_image_edit",
+    ):
+        if name not in sys.modules:
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, leaf_name, leaf)
+
+
+def test_get_model_concurrent_cold_load_loads_only_once(monkeypatch):
+    block = _make_block()
+    load_entered = threading.Event()
+    release_load = threading.Event()
+    load_calls = []
+
+    def slow_from_pretrained(**kwargs):
+        load_calls.append(kwargs)
+        load_entered.set()
+        assert release_load.wait(timeout=5)
+        return MagicMock()
+
+    _install_fake_qwen_backend(monkeypatch, slow_from_pretrained)
+
+    results = [None, None]
+
+    def worker(idx):
+        results[idx] = block._get_model(
+            model_id=DEFAULT_MODEL_ID,
+            local_weights_path=None,
+            use_lightning_lora=True,
+        )
+
+    first = threading.Thread(target=worker, args=(0,))
+    second = threading.Thread(target=worker, args=(1,))
+    first.start()
+    assert load_entered.wait(timeout=5)
+    second.start()
+    time.sleep(0.1)  # let the second thread reach the load lock
+    release_load.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert len(load_calls) == 1, "concurrent cold requests must share one load"
+    assert results[0] is results[1]
+
+
+def test_model_cache_evicts_previous_configuration(monkeypatch):
+    block = _make_block()
+    QwenImageEditBlockV1._model_cache[("/old/weights/path", False)] = MagicMock()
+    new_model = MagicMock()
+    _install_fake_qwen_backend(monkeypatch, lambda **kwargs: new_model)
+
+    result = block._get_model(
+        model_id=DEFAULT_MODEL_ID,
+        local_weights_path=None,
+        use_lightning_lora=True,
+    )
+
+    assert result is new_model
+    # Single-entry policy: loading a new configuration evicts the previous one
+    # so multiple multi-GB pipelines never accumulate in memory.
+    assert list(QwenImageEditBlockV1._model_cache.keys()) == [(DEFAULT_MODEL_ID, True)]

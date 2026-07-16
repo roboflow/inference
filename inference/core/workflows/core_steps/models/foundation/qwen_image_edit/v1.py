@@ -8,9 +8,11 @@ Architecture key: qwen-image-edit
 Task: image-editing
 """
 
+import logging
 import os
 import uuid
-from typing import Dict, List, Literal, Optional, Type, Union
+from threading import Lock
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 from pydantic import ConfigDict, Field
@@ -41,6 +43,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+logger = logging.getLogger(__name__)
+
 LONG_DESCRIPTION = """
 Edit an image using a text instruction with **Qwen-Image-Edit**, Alibaba's
 diffusion-based image editing model.
@@ -53,17 +57,19 @@ output.
 #### ⚠️ Requirements
 
 * Requires a **local GPU** — this block cannot run on CPU or hosted inference.
-* Weights are loaded from `local_weights_path` if provided, otherwise fetched
-  from the Roboflow model registry using `model_id`.
+* Weights are loaded from `local_weights_path` if provided, otherwise (with the
+  default Lightning configuration) pulled directly from HuggingFace — no
+  Roboflow registry / API key needed.
 
-#### Lightning LoRA (fast / low-VRAM)
+#### Lightning LoRA (fast / low-VRAM, enabled by default)
 
-Enable `use_lightning_lora` to fuse the lightx2v **Qwen-Image-Lightning**
+By default the block fuses the lightx2v **Qwen-Image-Lightning**
 step-distillation LoRA into the pipeline. The model then runs in ~4 diffusion
 steps with guidance disabled — dramatically faster and feasible on consumer
-GPUs. When enabled with no `local_weights_path`, the base model and LoRA are
-pulled directly from HuggingFace (no Roboflow registry / API key needed). On
-GPUs with limited VRAM set `INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD=sequential`.
+GPUs. Disable `use_lightning_lora` to run the full base model (higher quality,
+much slower and heavier); the full model is fetched from the Roboflow model
+registry using `model_id`. On GPUs with limited VRAM set
+`INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD=sequential`.
 
 #### Parameters
 
@@ -71,7 +77,7 @@ GPUs with limited VRAM set `INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD=sequent
 |---|---|---|
 | `prompt` | — | Required editing instruction |
 | `local_weights_path` | None | Absolute path to locally downloaded weights directory |
-| `use_lightning_lora` | False | Fuse the 4-step Qwen-Image-Lightning LoRA |
+| `use_lightning_lora` | True | Fuse the 4-step Qwen-Image-Lightning LoRA |
 | `num_inference_steps` | auto | Auto = 4 with LoRA, 28 otherwise |
 | `guidance_scale` | auto | Auto = 1.0 with LoRA, 5.0 otherwise |
 | `seed` | None | Set for reproducible outputs |
@@ -118,7 +124,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     model_id: Union[Selector(kind=[STRING_KIND]), str] = Field(
         default=DEFAULT_MODEL_ID,
-        description="Roboflow model-registry id for the Qwen-Image-Edit weights. Ignored when local_weights_path is set.",
+        description=(
+            "Roboflow model-registry id for the Qwen-Image-Edit weights. Only used "
+            "when use_lightning_lora is False and no local_weights_path is set."
+        ),
         examples=[DEFAULT_MODEL_ID],
     )
 
@@ -133,13 +142,15 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     use_lightning_lora: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
-        default=False,
+        default=True,
         description=(
             "Fuse the lightx2v Qwen-Image-Lightning step-distillation LoRA into the "
-            "pipeline. This lets the model run in ~4 diffusion steps (guidance "
-            "disabled), making it dramatically faster and feasible on consumer GPUs. "
-            "When enabled and no weights path is given, the base model and LoRA are "
-            "pulled directly from HuggingFace (no Roboflow registry / API key needed)."
+            "pipeline (default). This lets the model run in ~4 diffusion steps "
+            "(guidance disabled), making it dramatically faster and feasible on "
+            "consumer GPUs. When enabled and no weights path is given, the base "
+            "model and LoRA are pulled directly from HuggingFace (no Roboflow "
+            "registry / API key needed). Disable to run the full base model fetched "
+            "from the Roboflow registry via model_id."
         ),
         examples=[True, "$inputs.use_lightning_lora"],
     )
@@ -228,11 +239,16 @@ class BlockManifest(WorkflowBlockManifest):
 class QwenImageEditBlockV1(WorkflowBlock):
     """Workflow block that wraps QwenImageEditHF.
 
-    Model instances are cached by their load path so weights are only loaded
-    once per process regardless of how many workflow steps use this block.
+    Model instances are cached by their load configuration so weights are only
+    loaded once per process regardless of how many workflow steps use this
+    block. The cache holds at most one pipeline: the model is multi-GB even
+    with CPU offload, so keeping several configurations resident would exhaust
+    VRAM. Loading a different configuration evicts the previous one (in-flight
+    `edit()` calls keep their own reference, so eviction is safe).
     """
 
-    _model_cache: Dict[str, object] = {}
+    _model_cache: Dict[Tuple[str, bool], object] = {}
+    _model_load_lock = Lock()
 
     def __init__(self, api_key: Optional[str]):
         self._api_key = api_key
@@ -296,13 +312,33 @@ class QwenImageEditBlockV1(WorkflowBlock):
         base_key = local_weights_path if local_weights_path else model_id
         cache_key = (base_key, bool(use_lightning_lora))
 
-        if cache_key not in QwenImageEditBlockV1._model_cache:
-            # Validate the cheap precondition before importing the (heavy) backend
-            # so a bad path fails fast with a clear error regardless of whether the
-            # GPU model stack is importable.
-            if local_weights_path and not os.path.isdir(local_weights_path):
-                raise ValueError(
-                    f"local_weights_path '{local_weights_path}' does not exist or is not a directory."
+        model = QwenImageEditBlockV1._model_cache.get(cache_key)
+        if model is not None:
+            return model
+
+        # Validate the cheap precondition before taking the load lock or
+        # importing the (heavy) backend so a bad path fails fast with a clear
+        # error regardless of whether the GPU model stack is importable.
+        if local_weights_path and not os.path.isdir(local_weights_path):
+            raise ValueError(
+                f"local_weights_path '{local_weights_path}' does not exist or is not a directory."
+            )
+
+        # Serialize loading: concurrent cold requests must not each load a
+        # multi-GB pipeline (double the peak VRAM and likely OOM). Losers of
+        # the race block until the winner finishes, then reuse its instance.
+        with QwenImageEditBlockV1._model_load_lock:
+            model = QwenImageEditBlockV1._model_cache.get(cache_key)
+            if model is not None:
+                return model
+
+            if QwenImageEditBlockV1._model_cache:
+                evicted = list(QwenImageEditBlockV1._model_cache.keys())
+                QwenImageEditBlockV1._model_cache.clear()
+                logger.info(
+                    "Evicting cached Qwen-Image-Edit pipeline(s) %s to load %s.",
+                    evicted,
+                    cache_key,
                 )
 
             from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
@@ -311,31 +347,26 @@ class QwenImageEditBlockV1(WorkflowBlock):
             )
 
             if local_weights_path:
-                QwenImageEditBlockV1._model_cache[cache_key] = (
-                    QwenImageEditHF.from_pretrained(
-                        model_name_or_path=local_weights_path,
-                        local_files_only=True,
-                        use_lightning_lora=use_lightning_lora,
-                    )
+                model = QwenImageEditHF.from_pretrained(
+                    model_name_or_path=local_weights_path,
+                    local_files_only=True,
+                    use_lightning_lora=use_lightning_lora,
                 )
             elif use_lightning_lora:
-                # Dev / offline-friendly path: pull the base model and LoRA
-                # straight from HuggingFace, bypassing the Roboflow registry.
-                QwenImageEditBlockV1._model_cache[cache_key] = (
-                    QwenImageEditHF.from_pretrained(
-                        model_name_or_path=MODEL_ID,
-                        local_files_only=False,
-                        use_lightning_lora=True,
-                    )
+                # Default path: pull the base model and LoRA straight from
+                # HuggingFace, bypassing the Roboflow registry.
+                model = QwenImageEditHF.from_pretrained(
+                    model_name_or_path=MODEL_ID,
+                    local_files_only=False,
+                    use_lightning_lora=True,
                 )
             else:
                 from inference_models import AutoModel
 
-                QwenImageEditBlockV1._model_cache[cache_key] = (
-                    AutoModel.from_pretrained(
-                        model_id_or_path=model_id,
-                        api_key=self._api_key,
-                        use_lightning_lora=False,
-                    )
+                model = AutoModel.from_pretrained(
+                    model_id_or_path=model_id,
+                    api_key=self._api_key,
+                    use_lightning_lora=False,
                 )
-        return QwenImageEditBlockV1._model_cache[cache_key]
+            QwenImageEditBlockV1._model_cache[cache_key] = model
+        return model
