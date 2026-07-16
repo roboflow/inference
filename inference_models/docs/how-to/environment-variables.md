@@ -422,6 +422,37 @@ Default: Inherits from `INFERENCE_MODELS_DEFAULT_CONFIDENCE`
 export INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE="0.5"
 ```
 
+The following variables select RF-DETR TensorRT pipeline implementations when a client
+cannot pass backend-specific `from_pretrained` arguments. Explicit arguments take
+precedence over these environment variables.
+
+**`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
+Default: `base`
+
+Supported values: `base`, `auto`, `threaded-exact-v1`, `triton-universal-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_PREPROCESSOR="triton-universal-v1"
+```
+
+**`INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS`**
+Default: `4`
+
+Controls the bounded worker count used by `threaded-exact-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS="4"
+```
+
+**`INFERENCE_MODELS_RFDETR_POSTPROCESSOR`**
+Default: `base`
+
+Supported values: `base`, `auto`, `triton-fused-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_POSTPROCESSOR="triton-fused-v1"
+```
+
 #### Roboflow Instant
 
 **`INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE`**

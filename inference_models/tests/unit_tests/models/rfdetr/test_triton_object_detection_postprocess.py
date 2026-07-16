@@ -67,6 +67,32 @@ def test_auto_postprocessor_remains_on_base() -> None:
     )
 
 
+def test_postprocessor_can_be_selected_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_POSTPROCESSOR",
+        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+    )
+
+    assert resolve_rfdetr_postprocessor() == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+
+
+def test_postprocessor_defaults_to_base_without_environment(monkeypatch) -> None:
+    monkeypatch.delenv("INFERENCE_MODELS_RFDETR_POSTPROCESSOR", raising=False)
+
+    assert resolve_rfdetr_postprocessor() == RFDETR_POSTPROCESSOR_BASE
+
+
+def test_explicit_postprocessor_overrides_environment(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_POSTPROCESSOR",
+        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+    )
+
+    assert resolve_rfdetr_postprocessor(RFDETR_POSTPROCESSOR_BASE) == (
+        RFDETR_POSTPROCESSOR_BASE
+    )
+
+
 def test_unknown_postprocessor_is_rejected() -> None:
     with pytest.raises(ModelRuntimeError, match="Unknown RF-DETR postprocessor"):
         resolve_rfdetr_postprocessor("unknown")

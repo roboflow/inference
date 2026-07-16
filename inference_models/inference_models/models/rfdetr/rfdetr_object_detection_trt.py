@@ -44,14 +44,13 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import post_process_object_detection_results
 from inference_models.models.rfdetr.pre_processing import (
-    RFDETR_PREPROCESSOR_BASE,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
     pre_process_network_input,
     resolve_rfdetr_preprocessor,
+    resolve_rfdetr_preprocessor_max_workers,
 )
 from inference_models.models.rfdetr.triton_object_detection_postprocess import (
-    RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     FusedObjectDetectionPostprocessor,
@@ -106,12 +105,37 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
-        rfdetr_preprocessor: str = RFDETR_PREPROCESSOR_BASE,
-        rfdetr_preprocessor_max_workers: int = 4,
-        rfdetr_postprocessor: str = RFDETR_POSTPROCESSOR_BASE,
+        rfdetr_preprocessor: Optional[str] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
+        rfdetr_postprocessor: Optional[str] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
+        """Load an RF-DETR TensorRT model package.
+
+        Args:
+            model_name_or_path: Local model package directory.
+            device: CUDA device used for inference.
+            engine_host_code_allowed: Whether TensorRT may execute engine host code.
+            trt_cuda_graph_cache: Optional caller-managed CUDA graph cache.
+            default_trt_cuda_graph_cache_size: Default automatic graph-cache capacity.
+            rf_detr_max_input_resolution: Optional maximum accepted input resolution.
+            rfdetr_preprocessor: Explicit preprocessing implementation ID. When
+                omitted, ``INFERENCE_MODELS_RFDETR_PREPROCESSOR`` is used.
+            rfdetr_preprocessor_max_workers: Explicit threaded preprocessing worker
+                limit. When omitted, the corresponding environment value is used.
+            rfdetr_postprocessor: Explicit postprocessing implementation ID. When
+                omitted, ``INFERENCE_MODELS_RFDETR_POSTPROCESSOR`` is used.
+            recommended_parameters: Optional model-specific recommended parameters.
+            **kwargs: Additional loader arguments accepted for API compatibility.
+
+        Returns:
+            Loaded RF-DETR TensorRT model.
+
+        Raises:
+            ModelRuntimeError: If the target or implementation selection is invalid.
+            CorruptedModelPackageError: If required package contents are inconsistent.
+        """
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
@@ -219,9 +243,9 @@ class RFDetrForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        rfdetr_preprocessor: str = RFDETR_PREPROCESSOR_BASE,
-        rfdetr_preprocessor_max_workers: int = 4,
-        rfdetr_postprocessor: str = RFDETR_POSTPROCESSOR_BASE,
+        rfdetr_preprocessor: Optional[str] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
+        rfdetr_postprocessor: Optional[str] = None,
         recommended_parameters=None,
     ):
         self._engine = engine
@@ -241,15 +265,9 @@ class RFDetrForObjectDetectionTRT(
         self._rfdetr_postprocessor = resolve_rfdetr_postprocessor(
             implementation_id=rfdetr_postprocessor
         )
-        if rfdetr_preprocessor_max_workers < 1:
-            raise ModelRuntimeError(
-                message="rfdetr_preprocessor_max_workers must be at least 1.",
-                help_url=(
-                    "https://inference-models.roboflow.com/errors/models-runtime/"
-                    "#modelruntimeerror"
-                ),
-            )
-        self._rfdetr_preprocessor_max_workers = rfdetr_preprocessor_max_workers
+        self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
+            max_workers=rfdetr_preprocessor_max_workers
+        )
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._universal_preprocessor = (

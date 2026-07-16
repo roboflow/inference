@@ -11,6 +11,7 @@ torch.Tensor inputs (advanced caller, float CHW [0, 1]):
     tensor F.resize → F.normalize
 """
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -41,11 +42,17 @@ from inference_models.models.common.roboflow.pre_processing import (
     make_the_value_divisible,
     pre_process_numpy_image,
 )
+from inference_models.utils.environment import get_integer_from_env
 
 RFDETR_PREPROCESSOR_BASE = "base"
 RFDETR_PREPROCESSOR_AUTO = "auto"
 RFDETR_PREPROCESSOR_THREADED_EXACT_V1 = "threaded-exact-v1"
 RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1 = "triton-universal-v1"
+RFDETR_PREPROCESSOR_ENV_NAME = "INFERENCE_MODELS_RFDETR_PREPROCESSOR"
+RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME = (
+    "INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS"
+)
+RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS = 4
 
 RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
     RFDETR_PREPROCESSOR_BASE: {
@@ -136,12 +143,28 @@ RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def resolve_rfdetr_preprocessor(implementation_id: str) -> str:
-    """Resolve an explicit RF-DETR preprocessing implementation.
+def resolve_rfdetr_preprocessor(implementation_id: Optional[str] = None) -> str:
+    """Resolve an explicit or environment-selected RF-DETR preprocessor.
 
     ``auto`` deliberately remains on ``base`` until a candidate has a recorded
     validation environment. Explicit candidate requests never fall back.
+
+    Args:
+        implementation_id: Explicit implementation ID. When omitted,
+            ``INFERENCE_MODELS_RFDETR_PREPROCESSOR`` is used, defaulting to
+            ``base``.
+
+    Returns:
+        Resolved preprocessor implementation ID.
+
+    Raises:
+        ModelRuntimeError: If the requested implementation ID is unknown.
     """
+    if implementation_id is None:
+        implementation_id = os.getenv(
+            RFDETR_PREPROCESSOR_ENV_NAME,
+            RFDETR_PREPROCESSOR_BASE,
+        )
     if implementation_id == RFDETR_PREPROCESSOR_AUTO:
         return RFDETR_PREPROCESSOR_BASE
     if implementation_id in RFDETR_PREPROCESSOR_IMPLEMENTATIONS:
@@ -166,6 +189,38 @@ def resolve_rfdetr_preprocessor(implementation_id: str) -> str:
     )
 
 
+def resolve_rfdetr_preprocessor_max_workers(max_workers: Optional[int] = None) -> int:
+    """Resolve the explicit or environment-selected preprocessing worker limit.
+
+    Args:
+        max_workers: Explicit worker limit. When omitted,
+            ``INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS`` is used,
+            defaulting to ``4``.
+
+    Returns:
+        Positive preprocessing worker limit.
+
+    Raises:
+        InvalidEnvVariable: If the environment value is not an integer.
+        ModelRuntimeError: If the resolved worker limit is less than one.
+    """
+    if max_workers is None:
+        max_workers = get_integer_from_env(
+            variable_name=RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME,
+            default=RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
+        )
+    if max_workers < 1:
+        raise ModelRuntimeError(
+            message="RF-DETR preprocessor_max_workers must be at least 1.",
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
+
+    return max_workers
+
+
 @lru_cache(maxsize=None)
 def _log_selected_preprocessor(implementation_id: str, max_workers: int) -> None:
     LOGGER.warning(
@@ -184,19 +239,34 @@ def pre_process_network_input(
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     preprocessor_implementation_id: str = RFDETR_PREPROCESSOR_BASE,
-    preprocessor_max_workers: int = 4,
+    preprocessor_max_workers: int = RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    """Preprocess RF-DETR inputs with the selected implementation.
+
+    Args:
+        images: Single image or image batch represented by NumPy arrays or tensors.
+        image_pre_processing: Model-package image preprocessing configuration.
+        network_input: Model-package network input definition.
+        target_device: Device receiving the preprocessed batch.
+        input_color_format: Optional color format supplied by the caller.
+        image_size_wh: Optional requested network input dimensions.
+        pre_processing_overrides: Optional request-specific preprocessing overrides.
+        preprocessor_implementation_id: Explicit implementation ID.
+        preprocessor_max_workers: Explicit threaded worker limit.
+
+    Returns:
+        Contiguous NCHW batch and per-image preprocessing metadata.
+
+    Raises:
+        ModelRuntimeError: If the selected implementation or worker limit is invalid.
+        TypeError: If an input type is unsupported by the selected implementation.
+    """
     selected_preprocessor = resolve_rfdetr_preprocessor(
         implementation_id=preprocessor_implementation_id
     )
-    if preprocessor_max_workers < 1:
-        raise ModelRuntimeError(
-            message="RF-DETR preprocessor_max_workers must be at least 1.",
-            help_url=(
-                "https://inference-models.roboflow.com/errors/models-runtime/"
-                "#modelruntimeerror"
-            ),
-        )
+    preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
+        max_workers=preprocessor_max_workers
+    )
     _log_selected_preprocessor(
         implementation_id=selected_preprocessor,
         max_workers=preprocessor_max_workers,

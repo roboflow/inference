@@ -12,6 +12,7 @@ never silently fall back to the reference PyTorch implementation.
 
 from __future__ import annotations
 
+import os
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ except ImportError:  # pragma: no cover - depends on optional GPU package
 RFDETR_POSTPROCESSOR_BASE = "base"
 RFDETR_POSTPROCESSOR_AUTO = "auto"
 RFDETR_POSTPROCESSOR_TRITON_FUSED_V1 = "triton-fused-v1"
+RFDETR_POSTPROCESSOR_ENV_NAME = "INFERENCE_MODELS_RFDETR_POSTPROCESSOR"
 
 RFDETR_POSTPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
     RFDETR_POSTPROCESSOR_BASE: {
@@ -92,8 +94,25 @@ RFDETR_POSTPROCESSOR_IMPLEMENTATIONS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def resolve_rfdetr_postprocessor(implementation_id: str) -> str:
-    """Resolve an explicit RF-DETR object-detection postprocessor."""
+def resolve_rfdetr_postprocessor(implementation_id: Optional[str] = None) -> str:
+    """Resolve an explicit or environment-selected RF-DETR postprocessor.
+
+    Args:
+        implementation_id: Explicit implementation ID. When omitted,
+            ``INFERENCE_MODELS_RFDETR_POSTPROCESSOR`` is used, defaulting to
+            ``base``.
+
+    Returns:
+        Resolved postprocessor implementation ID.
+
+    Raises:
+        ModelRuntimeError: If the requested implementation ID is unknown.
+    """
+    if implementation_id is None:
+        implementation_id = os.getenv(
+            RFDETR_POSTPROCESSOR_ENV_NAME,
+            RFDETR_POSTPROCESSOR_BASE,
+        )
     if implementation_id == RFDETR_POSTPROCESSOR_AUTO:
         return RFDETR_POSTPROCESSOR_BASE
     if implementation_id in RFDETR_POSTPROCESSOR_IMPLEMENTATIONS:

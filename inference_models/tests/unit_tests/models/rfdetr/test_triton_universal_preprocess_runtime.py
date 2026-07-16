@@ -4,9 +4,12 @@ import torch
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.rfdetr.pre_processing import (
+    RFDETR_PREPROCESSOR_BASE,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
     resolve_rfdetr_preprocessor,
+    resolve_rfdetr_preprocessor_max_workers,
 )
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     UniversalFastPreprocessRuntime,
@@ -105,6 +108,59 @@ def test_universal_candidate_is_explicitly_selectable() -> None:
     ]
     assert metadata["validated_environments"] == ()
     assert metadata["fallback_id"] == "base"
+
+
+def test_preprocessor_can_be_selected_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+    )
+
+    assert resolve_rfdetr_preprocessor() == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+
+
+def test_preprocessor_defaults_to_base_without_environment(monkeypatch) -> None:
+    monkeypatch.delenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR", raising=False)
+
+    assert resolve_rfdetr_preprocessor() == RFDETR_PREPROCESSOR_BASE
+
+
+def test_explicit_preprocessor_overrides_environment(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+    )
+
+    assert (
+        resolve_rfdetr_preprocessor(RFDETR_PREPROCESSOR_THREADED_EXACT_V1)
+        == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
+    )
+    assert resolve_rfdetr_preprocessor(RFDETR_PREPROCESSOR_BASE) == (
+        RFDETR_PREPROCESSOR_BASE
+    )
+
+
+def test_preprocessor_worker_limit_can_be_selected_from_environment(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS", "7")
+
+    assert resolve_rfdetr_preprocessor_max_workers() == 7
+
+
+def test_explicit_preprocessor_worker_limit_overrides_environment(monkeypatch) -> None:
+    monkeypatch.setenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS", "7")
+
+    assert resolve_rfdetr_preprocessor_max_workers(2) == 2
+
+
+def test_preprocessor_worker_limit_rejects_non_positive_environment_value(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS", "0")
+
+    with pytest.raises(ModelRuntimeError, match="must be at least 1"):
+        resolve_rfdetr_preprocessor_max_workers()
 
 
 def test_universal_runtime_requires_cuda_device() -> None:
