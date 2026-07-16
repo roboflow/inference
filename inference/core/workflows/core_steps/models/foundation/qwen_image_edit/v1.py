@@ -25,7 +25,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
@@ -155,16 +154,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[4, 28, 50],
     )
 
-    guidance_scale: Optional[Union[Selector(kind=[FLOAT_KIND]), float]] = (
-        Field(
-            default=None,
-            description=(
-                "Classifier-free guidance scale. Higher values make the output adhere "
-                "more strongly to the prompt. Leave unset to auto-select (1.0 with the "
-                "Lightning LoRA, 5.0 otherwise)."
-            ),
-            examples=[1.0, 5.0, 7.5],
-        )
+    guidance_scale: Optional[Union[Selector(kind=[FLOAT_KIND]), float]] = Field(
+        default=None,
+        description=(
+            "Classifier-free guidance scale. Higher values make the output adhere "
+            "more strongly to the prompt. Leave unset to auto-select (1.0 with the "
+            "Lightning LoRA, 5.0 otherwise)."
+        ),
+        examples=[1.0, 5.0, 7.5],
     )
 
     seed: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
