@@ -2,7 +2,19 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models import PreProcessingOverrides
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
+    Contrast,
+    ContrastType,
+    Grayscale,
+    ImagePreProcessing,
+    NetworkInputDefinition,
+    ResizeMode,
+    StaticCrop,
+    TrainingInputSize,
+)
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
 )
@@ -17,6 +29,25 @@ from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     _build_metadata_batch,
     _canonicalize_batch,
 )
+
+_IMAGENET_MEAN = (0.485, 0.456, 0.406)
+_IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+def _network_input(
+    *,
+    resize_mode: ResizeMode = ResizeMode.STRETCH_TO,
+) -> NetworkInputDefinition:
+    return NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=64),
+        dataset_version_resize_dimensions=None,
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=resize_mode,
+        input_channels=3,
+        scaling_factor=255,
+        normalization=[list(_IMAGENET_MEAN), list(_IMAGENET_STD)],
+    )
 
 
 @pytest.mark.parametrize(
@@ -105,6 +136,84 @@ def test_universal_candidate_is_explicitly_selectable() -> None:
     ]
     assert metadata.validated_environments == ()
     assert metadata.fallback_id == "base"
+
+
+@pytest.mark.parametrize(
+    ("image_pre_processing", "reason"),
+    [
+        (
+            ImagePreProcessing.model_validate(
+                {
+                    "static-crop": StaticCrop(
+                        enabled=True,
+                        x_min=10,
+                        x_max=90,
+                        y_min=10,
+                        y_max=90,
+                    )
+                }
+            ),
+            "static crop",
+        ),
+        (ImagePreProcessing(grayscale=Grayscale(enabled=True)), "grayscale"),
+        (
+            ImagePreProcessing(
+                contrast=Contrast(
+                    enabled=True,
+                    type=ContrastType.CONTRAST_STRETCHING,
+                )
+            ),
+            "contrast",
+        ),
+    ],
+)
+def test_model_compatibility_reports_base_supported_transformations(
+    image_pre_processing: ImagePreProcessing,
+    reason: str,
+) -> None:
+    compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=image_pre_processing,
+        network_input=_network_input(),
+    )
+
+    assert not compatibility.supported
+    assert reason in compatibility.reasons
+
+
+def test_model_compatibility_reports_non_stretch_resize() -> None:
+    compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(resize_mode=ResizeMode.LETTERBOX),
+    )
+
+    assert not compatibility.supported
+    assert any(reason.startswith("resize_mode=") for reason in compatibility.reasons)
+
+
+def test_request_compatibility_reports_overrides_and_heterogeneous_shapes() -> None:
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=[
+            np.zeros((8, 9, 3), dtype=np.uint8),
+            np.zeros((10, 9, 3), dtype=np.uint8),
+        ],
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    assert not compatibility.supported
+    assert "pre-processing overrides" in compatibility.reasons
+    assert any(
+        reason.startswith("heterogeneous source dimensions")
+        for reason in compatibility.reasons
+    )
+
+
+def test_supported_request_is_compatible() -> None:
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((2, 8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert compatibility.supported
 
 
 def test_preprocessor_worker_limit_can_be_selected_from_environment(

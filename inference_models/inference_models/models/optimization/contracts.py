@@ -22,6 +22,50 @@ def immutable_mapping(values: Optional[Mapping[str, Any]] = None) -> Mapping[str
     return immutable
 
 
+@dataclass(frozen=True)
+class CompatibilityResult:
+    """Result of checking an implementation against a concrete contract."""
+
+    supported: bool
+    reasons: Tuple[str, ...] = ()
+
+    @classmethod
+    def compatible(cls) -> "CompatibilityResult":
+        """Create a successful compatibility result.
+
+        Returns:
+            Result indicating that the implementation may execute.
+        """
+        result = cls(supported=True)
+
+        return result
+
+    @classmethod
+    def incompatible(cls, *reasons: str) -> "CompatibilityResult":
+        """Create an unsupported compatibility result.
+
+        Args:
+            *reasons: Human-readable incompatibility reasons.
+
+        Returns:
+            Result indicating that a fallback or error is required.
+        """
+        result = cls(supported=False, reasons=tuple(reasons))
+
+        return result
+
+    @property
+    def reason(self) -> str:
+        """Return all incompatibility reasons as one readable value.
+
+        Returns:
+            Comma-separated reasons, or an empty string when compatible.
+        """
+        reason = ", ".join(self.reasons)
+
+        return reason
+
+
 class OptimizationStage(str, Enum):
     """Common selectable stages in an inference path."""
 

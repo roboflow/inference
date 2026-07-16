@@ -1,11 +1,20 @@
 import json
 from dataclasses import FrozenInstanceError
 
+import numpy as np
 import pytest
 import torch
 
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
+    ImagePreProcessing,
+    NetworkInputDefinition,
+    ResizeMode,
+    TrainingInputSize,
+)
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -19,6 +28,7 @@ from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
 )
+from inference_models.models.rfdetr.optimization.contracts import PreprocessRequest
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
@@ -31,6 +41,10 @@ from inference_models.models.rfdetr.optimization.ids import (
 from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
+from inference_models.models.rfdetr.optimization.selection import (
+    resolve_preprocessor_for_model,
+    resolve_preprocessor_for_request,
+)
 
 
 class _Stage:
@@ -40,6 +54,8 @@ class _Stage:
         *,
         compatible: bool = True,
         validated: bool = False,
+        model_supported: bool = True,
+        request_supported: bool = True,
     ) -> None:
         validation_environments = (
             (
@@ -72,9 +88,35 @@ class _Stage:
             validated_environments=validation_environments,
         )
         self._compatible = compatible
+        self._model_supported = model_supported
+        self._request_supported = request_supported
 
     def is_compatible(self, context: ExecutionContext) -> bool:
         return self._compatible
+
+    def check_model_compatibility(
+        self,
+        *,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+    ) -> CompatibilityResult:
+        del image_pre_processing, network_input
+        if self._model_supported:
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible("static crop")
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        del request, context
+        if self._request_supported:
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible("heterogeneous source dimensions")
 
 
 def _context() -> ExecutionContext:
@@ -84,6 +126,19 @@ def _context() -> ExecutionContext:
         device_name="test-gpu",
         machine_type="test",
         scenario="runtime",
+    )
+
+
+def _network_input() -> NetworkInputDefinition:
+    return NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=64),
+        dataset_version_resize_dimensions=None,
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+        scaling_factor=255,
+        normalization=[[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
     )
 
 
@@ -183,6 +238,88 @@ def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
             stage=OptimizationStage.PREPROCESS,
             requested_id="incompatible",
             context=_context(),
+        )
+
+
+def test_model_contract_incompatibility_resolves_declared_base_fallback() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base")
+    candidate = _Stage("candidate", model_supported=False)
+    registry.register(base)
+    registry.register(candidate)
+
+    selection = resolve_preprocessor_for_model(
+        registry=registry,
+        requested_id="candidate",
+        context=_context(),
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+    )
+
+    assert selection.implementation is base
+    assert selection.effective_id == "base"
+    assert selection.fallback_reason == "static crop"
+
+
+def test_auto_selection_is_not_reported_as_fallback_when_candidate_is_supported() -> (
+    None
+):
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    registry.register(_Stage("base"))
+    candidate = _Stage("candidate", validated=True)
+    registry.register(candidate)
+
+    selection = resolve_preprocessor_for_model(
+        registry=registry,
+        requested_id="auto",
+        context=_context(),
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+    )
+
+    assert selection.implementation is candidate
+    assert selection.effective_id == "candidate"
+    assert not selection.used_fallback
+
+
+def test_request_incompatibility_resolves_declared_base_fallback() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base")
+    candidate = _Stage("candidate", request_supported=False)
+    registry.register(base)
+    registry.register(candidate)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format=ColorMode.RGB,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+
+    selection = resolve_preprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+    )
+
+    assert selection.implementation is base
+    assert selection.effective_id == "base"
+    assert selection.fallback_reason == "heterogeneous source dimensions"
+
+
+def test_fallback_is_rejected_when_base_is_also_incompatible() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    registry.register(_Stage("base", model_supported=False))
+    registry.register(_Stage("candidate", model_supported=False))
+
+    with pytest.raises(ModelRuntimeError, match="Fallback 'base' is unsupported"):
+        resolve_preprocessor_for_model(
+            registry=registry,
+            requested_id="candidate",
+            context=_context(),
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_network_input(),
         )
 
 

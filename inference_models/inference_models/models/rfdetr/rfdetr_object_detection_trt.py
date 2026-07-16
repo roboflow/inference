@@ -1,4 +1,5 @@
 import threading
+from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
 import numpy as np
@@ -54,7 +55,6 @@ from inference_models.models.rfdetr.optimization.catalog import (
 from inference_models.models.rfdetr.optimization.contracts import (
     Postprocessor,
     PostprocessRequest,
-    Preprocessor,
     PreprocessRequest,
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
@@ -62,6 +62,10 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
 )
 from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
+)
+from inference_models.models.rfdetr.optimization.selection import (
+    resolve_preprocessor_for_model,
+    resolve_preprocessor_for_request,
 )
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
@@ -274,14 +278,21 @@ class RFDetrForObjectDetectionTRT(
             preprocessor_max_workers=self._rfdetr_preprocessor_max_workers,
         )
         resolution_context = self._execution_stage_context(current_stream=None)
-        self._preprocessor = cast(
-            Preprocessor,
-            self._implementation_registry.resolve(
-                stage=OptimizationStage.PREPROCESS,
-                requested_id=requested_plan.preprocessor_id,
-                context=resolution_context,
-            ),
+        preprocessor_selection = resolve_preprocessor_for_model(
+            registry=self._implementation_registry,
+            requested_id=requested_plan.preprocessor_id,
+            context=resolution_context,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
         )
+        self._preprocessor = preprocessor_selection.implementation
+        if preprocessor_selection.used_fallback:
+            LOGGER.warning(
+                "RF-DETR preprocessor fallback requested=%s effective=%s reason=%s",
+                preprocessor_selection.requested_id,
+                preprocessor_selection.effective_id,
+                preprocessor_selection.fallback_reason,
+            )
         self._postprocessor = cast(
             Postprocessor,
             self._implementation_registry.resolve(
@@ -386,14 +397,34 @@ class RFDetrForObjectDetectionTRT(
             current_stream=stream,
             resolved_axes=self._resolved_preprocess_axes(images),
         )
-        result = self._preprocessor.preprocess(request=request, context=context)
+        selection = resolve_preprocessor_for_request(
+            registry=self._implementation_registry,
+            implementation=self._preprocessor,
+            request=request,
+            context=context,
+        )
+        if selection.used_fallback:
+            LOGGER.warning(
+                "RF-DETR request preprocessor fallback requested=%s effective=%s "
+                "reason=%s",
+                selection.requested_id,
+                selection.effective_id,
+                selection.fallback_reason,
+            )
+        result = selection.implementation.preprocess(
+            request=request,
+            context=context,
+        )
+        if selection.fallback_reason is not None:
+            result = replace(result, fallback_reason=selection.fallback_reason)
         if result.ready_event is None:
             stream.synchronize()
         self._preprocess_readiness.record(
             result.tensor,
             ready_event=result.ready_event,
             input_kind=result.input_kind,
-            implementation_id=self.preprocessor_implementation_id,
+            implementation_id=result.implementation_id,
+            fallback_reason=result.fallback_reason,
         )
 
         return result.tensor, result.metadata

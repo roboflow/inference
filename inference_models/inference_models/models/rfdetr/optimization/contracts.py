@@ -14,6 +14,7 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
 )
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     ExecutionContext,
     OptimizationMetadata,
 )
@@ -39,8 +40,10 @@ class PreprocessResult:
 
     tensor: torch.Tensor
     metadata: List[PreProcessingMetadata]
+    implementation_id: str
     ready_event: Optional[torch.cuda.Event] = None
     input_kind: str = "reference"
+    fallback_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,38 @@ class Preprocessor(Protocol):
 
         Returns:
             Whether the preprocessor is compatible.
+        """
+
+    def check_model_compatibility(
+        self,
+        *,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+    ) -> CompatibilityResult:
+        """Check compatibility with static model preprocessing configuration.
+
+        Args:
+            image_pre_processing: Model-package image transformations.
+            network_input: Model-package network input definition.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check compatibility with one concrete preprocessing request.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with actionable reasons.
         """
 
     def preprocess(

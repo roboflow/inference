@@ -1,6 +1,11 @@
 """Preserved base RF-DETR preprocessing choice."""
 
+from inference_models.models.common.roboflow.model_packages import (
+    ImagePreProcessing,
+    NetworkInputDefinition,
+)
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -16,6 +21,9 @@ from inference_models.models.rfdetr.optimization.contracts import (
 from inference_models.models.rfdetr.optimization.ids import RFDETR_PREPROCESSOR_BASE
 from inference_models.models.rfdetr.optimization.preprocessors.common import (
     run_reference_preprocessor,
+)
+from inference_models.models.rfdetr.optimization.preprocessors.compatibility import (
+    check_base_request_compatibility,
 )
 
 
@@ -63,6 +71,46 @@ class BasePreprocessor:
             Whether the target is compatible.
         """
         return metadata_supports_context(self.metadata, context)
+
+    def check_model_compatibility(
+        self,
+        *,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+    ) -> CompatibilityResult:
+        """Accept model configurations handled by the reference path.
+
+        Args:
+            image_pre_processing: Model-package image transformations.
+            network_input: Model-package network input definition.
+
+        Returns:
+            Compatible result; detailed validation remains in the reference path.
+        """
+        del image_pre_processing, network_input
+        result = CompatibilityResult.compatible()
+
+        return result
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check broad request compatibility for the reference path.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+        del context
+        result = check_base_request_compatibility(request=request)
+
+        return result
 
     def preprocess(
         self,

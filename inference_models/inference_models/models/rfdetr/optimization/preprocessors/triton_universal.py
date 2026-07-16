@@ -2,7 +2,12 @@
 
 import torch
 
+from inference_models.models.common.roboflow.model_packages import (
+    ImagePreProcessing,
+    NetworkInputDefinition,
+)
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -84,6 +89,51 @@ class TritonUniversalPreprocessor:
         """
         return metadata_supports_context(self.metadata, context)
 
+    def check_model_compatibility(
+        self,
+        *,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+    ) -> CompatibilityResult:
+        """Check static model configuration supported by Triton preprocessing.
+
+        Args:
+            image_pre_processing: Model-package image transformations.
+            network_input: Model-package network input definition.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+        result = self._runtime.check_model_compatibility(
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+        )
+
+        return result
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check request-specific constraints supported by Triton preprocessing.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+        del context
+        result = self._runtime.check_request_compatibility(
+            images=request.images,
+            pre_processing_overrides=request.pre_processing_overrides,
+        )
+
+        return result
+
     def preprocess(
         self,
         request: PreprocessRequest,
@@ -122,6 +172,7 @@ class TritonUniversalPreprocessor:
             metadata=runtime_result.metadata,
             ready_event=runtime_result.ready_event,
             input_kind=runtime_result.input_kind,
+            implementation_id=self.metadata.implementation_id,
         )
 
         return result

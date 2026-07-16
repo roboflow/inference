@@ -481,6 +481,11 @@ plugin stages. Those stages currently accept only `base`. When supplied, an expl
 plan takes precedence and the implementation-selection environment variables are not
 read.
 
+When a selected optimized preprocessor declares that it cannot preserve a model or
+request preprocessing contract, RF-DETR uses its declared `base` fallback and logs the
+requested implementation, effective implementation, and reason. Compilation and CUDA
+execution failures are not converted into fallbacks.
+
 #### Roboflow Instant
 
 **`INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE`**

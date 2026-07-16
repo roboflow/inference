@@ -89,11 +89,15 @@ The registry owns the constructed stage objects and resolves a requested ID agai
 `ExecutionContext`. Resolution follows these rules:
 
 1. `base` selects the preserved reference implementation.
-2. An explicit implementation ID selects that implementation or raises an actionable
-   compatibility error.
+2. An explicit implementation ID selects that implementation when compatible. A
+   declared compatibility miss may follow its observable `fallback_id`.
 3. `auto` selects a compatible implementation only when it has a matching validated
    environment; otherwise it selects `base`.
-4. Unknown IDs and unsupported explicit selections never silently fall back.
+4. Unknown IDs and failures during implementation execution never fall back.
+
+Compatibility fallback is decided before execution and records the requested ID,
+effective ID, and reason. It does not catch compilation, CUDA, allocation, or other
+unexpected runtime failures.
 
 The catalog answers **what exists**. The registry answers **what may run here**.
 
@@ -125,7 +129,7 @@ implementation.
 flowchart TD
     load["AutoModel.from_pretrained(...)"] --> init["RFDetrForObjectDetectionTRT.__init__"]
     init --> explicit{"Explicit RFDetrExecutionPlan?"}
-    explicit -->|yes| use_plan["Use plan<br/>reject legacy stage arguments"]
+    explicit -->|yes| use_plan["Use plan<br/>do not read selection environment"]
     explicit -->|no| precedence["Resolve each stage<br/>environment → base"]
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
@@ -172,7 +176,7 @@ variables. Environment values are read only when no plan is supplied.
 flowchart TD
     inputs["Image inputs<br/>NumPy or torch.Tensor<br/>CPU or CUDA"]
     pre_request["PreprocessRequest + ExecutionContext"]
-    pre_selected{"Selected Preprocessor"}
+    pre_selected{"Selected Preprocessor<br/>compatible with request?"}
     pre_base["base / threaded exact<br/>synchronize before return"]
     pre_triton["Triton universal<br/>record CUDA ready event"]
     readiness["PreprocessReadinessTracker<br/>associate readiness with exact tensor"]
@@ -186,8 +190,8 @@ flowchart TD
     detections["list[Detections]"]
 
     inputs --> pre_request --> pre_selected
-    pre_selected -->|base or threaded-exact-v1| pre_base
-    pre_selected -->|triton-universal-v1| pre_triton
+    pre_selected -->|base or declared fallback| pre_base
+    pre_selected -->|compatible triton-universal-v1| pre_triton
     pre_base --> readiness
     pre_triton --> readiness
     readiness --> wait --> forward --> outputs --> post_request --> post_selected
@@ -231,8 +235,10 @@ need to know which preprocessor produced its input.
   accept only `base`. Selecting an unimplemented value raises an error.
 - `auto` remains on `base` until machine-readable validation records are added for a
   matching runtime environment.
-- Explicit optimized paths validate their request-specific constraints at execution
-  time. They raise instead of hiding a conversion or reference fallback.
+- Static model incompatibilities resolve the stored plan through the implementation's
+  declared fallback. Request-only incompatibilities use the fallback for that request.
+- Fallback decisions are logged and carried with preprocessing readiness metadata;
+  execution failures still propagate.
 - Target-device profiling and output-snapshot parity checks remain required before an
   optimized choice is promoted for automatic selection.
 

@@ -5,6 +5,7 @@ import torch
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -70,6 +71,14 @@ def test_inference_execution_plan_defaults_and_serializes() -> None:
         "postprocessor": "base",
         "engine_plugin": "base",
     }
+
+
+def test_compatibility_result_preserves_actionable_reasons() -> None:
+    result = CompatibilityResult.incompatible("static crop", "grayscale")
+
+    assert not result.supported
+    assert result.reasons == ("static crop", "grayscale")
+    assert result.reason == "static crop, grayscale"
 
 
 def test_validation_environment_matches_target_and_scenario() -> None:

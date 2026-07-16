@@ -58,6 +58,7 @@ def run_reference_preprocessor(
         tensor=tensor,
         metadata=metadata,
         input_kind="reference",
+        implementation_id=implementation_id,
     )
 
     return result

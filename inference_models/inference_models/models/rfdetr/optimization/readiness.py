@@ -15,6 +15,7 @@ class PreprocessReadiness:
     ready_event: Optional[torch.cuda.Event]
     input_kind: str
     implementation_id: str
+    fallback_reason: Optional[str] = None
 
 
 class PreprocessReadinessTracker(TensorReadinessTracker[PreprocessReadiness]):
@@ -27,6 +28,7 @@ class PreprocessReadinessTracker(TensorReadinessTracker[PreprocessReadiness]):
         ready_event: Optional[torch.cuda.Event],
         input_kind: str,
         implementation_id: str,
+        fallback_reason: Optional[str] = None,
     ) -> None:
         """Record readiness for a tensor returned by preprocessing.
 
@@ -35,10 +37,12 @@ class PreprocessReadinessTracker(TensorReadinessTracker[PreprocessReadiness]):
             ready_event: Optional event the inference stream must await.
             input_kind: Canonical input-path description.
             implementation_id: Preprocessor that produced the tensor.
+            fallback_reason: Optional reason the requested implementation was skipped.
         """
         state = PreprocessReadiness(
             ready_event=ready_event,
             input_kind=input_kind,
             implementation_id=implementation_id,
+            fallback_reason=fallback_reason,
         )
         super().record(tensor, state=state)

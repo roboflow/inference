@@ -5,16 +5,16 @@ inputs are staged through a two-slot pinned HWC ring; CUDA tensors are
 consumed directly. Floating-point tensors retain RF-DETR's tensor-input
 semantics and use torchvision's antialiased CUDA resize.
 
-This runtime is intentionally strict: an explicitly selected implementation
-either runs or raises an actionable compatibility error. It never silently
-falls back to the base preprocessor.
+This runtime remains strict when called directly. The RF-DETR implementation
+selector checks its declared compatibility before execution and may choose the
+base preprocessor for unsupported contracts.
 """
 
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -31,6 +31,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     StaticCropOffset,
 )
+from inference_models.models.optimization.contracts import CompatibilityResult
 from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
 from inference_models.models.rfdetr.triton_preprocess import (
     TRITON_AVAILABLE,
@@ -176,11 +177,16 @@ class UniversalFastPreprocessRuntime:
         pre_processing_overrides: Optional[PreProcessingOverrides],
         stream: torch.cuda.Stream,
     ) -> UniversalFastPreprocessResult:
-        self._validate_model_contract(
+        model_compatibility = self.check_model_compatibility(
             image_pre_processing=image_pre_processing,
             network_input=network_input,
+        )
+        self._raise_for_incompatibility(model_compatibility)
+        request_compatibility = self.check_request_compatibility(
+            images=images,
             pre_processing_overrides=pre_processing_overrides,
         )
+        self._raise_for_incompatibility(request_compatibility)
         batch = _canonicalize_batch(images)
         caller_mode = (
             ColorMode(input_color_format)
@@ -402,12 +408,21 @@ class UniversalFastPreprocessRuntime:
             input_kind="float-torch-cuda",
         )
 
-    def _validate_model_contract(
-        self,
+    @staticmethod
+    def check_model_compatibility(
+        *,
         image_pre_processing: ImagePreProcessing,
         network_input: NetworkInputDefinition,
-        pre_processing_overrides: Optional[PreProcessingOverrides],
-    ) -> None:
+    ) -> CompatibilityResult:
+        """Check static model configuration supported by the Triton runtime.
+
+        Args:
+            image_pre_processing: Model-package image transformations.
+            network_input: Model-package network input definition.
+
+        Returns:
+            Compatibility result with every unsupported configuration element.
+        """
         unsupported = []
         if network_input.resize_mode is not ResizeMode.STRETCH_TO:
             unsupported.append(f"resize_mode={network_input.resize_mode!r}")
@@ -441,31 +456,75 @@ class UniversalFastPreprocessRuntime:
             and image_pre_processing.auto_orient.enabled
         ):
             unsupported.append("auto orient")
+        if unsupported:
+            result = CompatibilityResult.incompatible(*unsupported)
+        else:
+            result = CompatibilityResult.compatible()
+
+        return result
+
+    @staticmethod
+    def check_request_compatibility(
+        *,
+        images,
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+    ) -> CompatibilityResult:
+        """Check request-specific constraints without performing GPU work.
+
+        Args:
+            images: Single image or batch supplied to preprocessing.
+            pre_processing_overrides: Optional request transformation overrides.
+
+        Returns:
+            Compatibility result with every unsupported request characteristic.
+        """
+        unsupported = []
         if pre_processing_overrides is not None:
             unsupported.append("pre-processing overrides")
+
+        raw_items = _raw_batch_items(images)
+        if not raw_items:
+            unsupported.append("empty image batch")
+        kinds = []
+        shapes = []
+        for item in raw_items:
+            item_contract = _inspect_item_contract(item)
+            if isinstance(item_contract, str):
+                unsupported.append(item_contract)
+                continue
+            kind, shape = item_contract
+            kinds.append(kind)
+            shapes.append(shape)
+        if len(set(kinds)) > 1:
+            unsupported.append("mixed uint8 and floating tensor semantics")
+        if len(set(shapes)) > 1:
+            unsupported.append(f"heterogeneous source dimensions: {shapes}")
         if unsupported:
-            details = ", ".join(unsupported)
-            raise ModelRuntimeError(
-                message=(
-                    "triton-universal-v1 cannot preserve this model's preprocessing "
-                    f"contract: {details}. Select 'base' for this configuration."
-                ),
-                help_url=(
-                    "https://inference-models.roboflow.com/errors/models-runtime/"
-                    "#modelruntimeerror"
-                ),
-            )
+            result = CompatibilityResult.incompatible(*unsupported)
+        else:
+            result = CompatibilityResult.compatible()
+
+        return result
+
+    @staticmethod
+    def _raise_for_incompatibility(compatibility: CompatibilityResult) -> None:
+        if compatibility.supported:
+            return
+
+        raise ModelRuntimeError(
+            message=(
+                "triton-universal-v1 cannot preserve this preprocessing contract: "
+                f"{compatibility.reason}. Select 'base' for this configuration."
+            ),
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
 
 
 def _canonicalize_batch(images) -> _CanonicalBatch:
-    if isinstance(images, list):
-        raw_items = list(images)
-    elif isinstance(images, torch.Tensor) and images.ndim == 4:
-        raw_items = list(images.unbind(0))
-    elif isinstance(images, np.ndarray) and images.ndim == 4:
-        raw_items = list(images)
-    else:
-        raw_items = [images]
+    raw_items = _raw_batch_items(images)
 
     if not raw_items:
         raise ModelRuntimeError(
@@ -543,6 +602,49 @@ def _canonicalize_batch(images) -> _CanonicalBatch:
         height=height,
         width=width,
     )
+
+
+def _raw_batch_items(images) -> List[Any]:
+    if isinstance(images, list):
+        items = list(images)
+    elif isinstance(images, torch.Tensor) and images.ndim == 4:
+        items = list(images.unbind(0))
+    elif isinstance(images, np.ndarray) and images.ndim == 4:
+        items = list(images)
+    else:
+        items = [images]
+
+    return items
+
+
+def _inspect_item_contract(
+    image,
+) -> Union[Tuple[Literal["uint8", "float"], Tuple[int, int]], str]:
+    if isinstance(image, np.ndarray):
+        if image.ndim != 3 or image.shape[-1] != 3:
+            return f"NumPy input must be HWC with three channels: {tuple(image.shape)}"
+        return "uint8", (int(image.shape[0]), int(image.shape[1]))
+    if not isinstance(image, torch.Tensor):
+        return f"unsupported input type: {type(image).__name__}"
+    if image.ndim != 3:
+        return f"tensor input must be rank 3: {tuple(image.shape)}"
+
+    is_chw = image.shape[0] == 3
+    is_hwc = image.shape[-1] == 3
+    if not is_chw and not is_hwc:
+        return (
+            f"tensor input must be CHW or HWC with three channels: {tuple(image.shape)}"
+        )
+    if not image.is_floating_point() and image.dtype != torch.uint8:
+        return f"integer tensor input must use uint8: {image.dtype}"
+
+    if is_chw:
+        shape = (int(image.shape[1]), int(image.shape[2]))
+    else:
+        shape = (int(image.shape[0]), int(image.shape[1]))
+    kind = "float" if image.is_floating_point() else "uint8"
+
+    return kind, shape
 
 
 def _canonicalize_numpy(image: np.ndarray) -> Tuple[np.ndarray, Literal["uint8"]]:
