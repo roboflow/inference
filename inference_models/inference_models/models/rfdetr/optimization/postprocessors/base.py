@@ -3,17 +3,17 @@
 from typing import List
 
 from inference_models import Detections
-from inference_models.models.rfdetr.common import post_process_object_detection_results
-from inference_models.models.rfdetr.optimization.contracts import (
+from inference_models.models.optimization.contracts import (
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
     OptimizationMetadata,
     OptimizationStage,
-    PostprocessRequest,
     immutable_mapping,
     metadata_supports_context,
 )
+from inference_models.models.rfdetr.common import post_process_object_detection_results
+from inference_models.models.rfdetr.optimization.contracts import PostprocessRequest
 from inference_models.models.rfdetr.optimization.ids import RFDETR_POSTPROCESSOR_BASE
 
 

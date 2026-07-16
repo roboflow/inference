@@ -1,15 +1,17 @@
 """Preserved base RF-DETR preprocessing choice."""
 
-from inference_models.models.rfdetr.optimization.contracts import (
+from inference_models.models.optimization.contracts import (
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
     OptimizationMetadata,
     OptimizationStage,
-    PreprocessRequest,
-    PreprocessResult,
     immutable_mapping,
     metadata_supports_context,
+)
+from inference_models.models.rfdetr.optimization.contracts import (
+    PreprocessRequest,
+    PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.ids import RFDETR_PREPROCESSOR_BASE
 from inference_models.models.rfdetr.optimization.preprocessors.common import (

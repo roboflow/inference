@@ -3,8 +3,8 @@
 import torch
 
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.optimization.contracts import ExecutionContext
 from inference_models.models.rfdetr.optimization.contracts import (
-    ExecutionContext,
     PreprocessRequest,
     PreprocessResult,
 )

@@ -12,7 +12,6 @@ never silently fall back to the reference PyTorch implementation.
 
 from __future__ import annotations
 
-import os
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -24,16 +23,7 @@ from inference_models import Detections
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
-from inference_models.models.rfdetr.optimization.ids import (
-    RFDETR_POSTPROCESSOR_AUTO,
-    RFDETR_POSTPROCESSOR_BASE,
-    RFDETR_POSTPROCESSOR_ENV_NAME,
-    RFDETR_POSTPROCESSOR_IDS,
-    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
-)
 from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
-
-__all__ = ["RFDETR_POSTPROCESSOR_TRITON_FUSED_V1"]
 
 try:
     import triton
@@ -44,60 +34,6 @@ except ImportError:  # pragma: no cover - depends on optional GPU package
     triton = None
     tl = None
     TRITON_AVAILABLE = False
-
-
-def resolve_rfdetr_postprocessor(implementation_id: Optional[str] = None) -> str:
-    """Resolve an explicit or environment-selected RF-DETR postprocessor.
-
-    Args:
-        implementation_id: Explicit implementation ID. When omitted,
-            ``INFERENCE_MODELS_RFDETR_POSTPROCESSOR`` is used, defaulting to
-            ``base``.
-
-    Returns:
-        Resolved postprocessor implementation ID.
-
-    Raises:
-        ModelRuntimeError: If the requested implementation ID is unknown.
-    """
-    if implementation_id is None:
-        implementation_id = os.getenv(
-            RFDETR_POSTPROCESSOR_ENV_NAME,
-            RFDETR_POSTPROCESSOR_BASE,
-        )
-    if implementation_id == RFDETR_POSTPROCESSOR_AUTO:
-        return RFDETR_POSTPROCESSOR_BASE
-    if implementation_id in RFDETR_POSTPROCESSOR_IDS:
-        return implementation_id
-    available = ", ".join(
-        sorted(
-            [
-                RFDETR_POSTPROCESSOR_AUTO,
-                *RFDETR_POSTPROCESSOR_IDS,
-            ]
-        )
-    )
-    raise ModelRuntimeError(
-        message=(
-            f"Unknown RF-DETR postprocessor implementation {implementation_id!r}. "
-            f"Available implementations: {available}."
-        ),
-        help_url=(
-            "https://inference-models.roboflow.com/errors/models-runtime/"
-            "#modelruntimeerror"
-        ),
-    )
-
-
-def __getattr__(name: str):
-    """Provide the legacy metadata catalog import without a module cycle."""
-    if name == "RFDETR_POSTPROCESSOR_IMPLEMENTATIONS":
-        from inference_models.models.rfdetr.optimization.catalog import (
-            RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
-        )
-
-        return RFDETR_POSTPROCESSOR_IMPLEMENTATIONS
-    raise AttributeError(name)
 
 
 if TRITON_AVAILABLE:

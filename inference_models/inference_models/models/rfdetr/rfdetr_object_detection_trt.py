@@ -38,6 +38,12 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.models.optimization.contracts import (
+    ExecutionContext,
+    OptimizationMetadata,
+    OptimizationStage,
+)
+from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -46,9 +52,6 @@ from inference_models.models.rfdetr.optimization.catalog import (
     build_rfdetr_implementation_registry,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
-    ExecutionContext,
-    OptimizationMetadata,
-    OptimizationStage,
     Postprocessor,
     PostprocessRequest,
     Preprocessor,
@@ -111,9 +114,7 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
-        rfdetr_preprocessor: Optional[str] = None,
         rfdetr_preprocessor_max_workers: Optional[int] = None,
-        rfdetr_postprocessor: Optional[str] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
@@ -127,14 +128,10 @@ class RFDetrForObjectDetectionTRT(
             trt_cuda_graph_cache: Optional caller-managed CUDA graph cache.
             default_trt_cuda_graph_cache_size: Default automatic graph-cache capacity.
             rf_detr_max_input_resolution: Optional maximum accepted input resolution.
-            rfdetr_preprocessor: Explicit preprocessing implementation ID. When
-                omitted, ``INFERENCE_MODELS_RFDETR_PREPROCESSOR`` is used.
             rfdetr_preprocessor_max_workers: Explicit threaded preprocessing worker
                 limit. When omitted, the corresponding environment value is used.
-            rfdetr_postprocessor: Explicit postprocessing implementation ID. When
-                omitted, ``INFERENCE_MODELS_RFDETR_POSTPROCESSOR`` is used.
-            rfdetr_execution_plan: Explicit composed execution plan. It cannot be
-                combined with per-stage implementation arguments.
+            rfdetr_execution_plan: Explicit composed execution plan. When omitted,
+                RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
             **kwargs: Additional loader arguments accepted for API compatibility.
 
@@ -233,9 +230,7 @@ class RFDetrForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            rfdetr_preprocessor=rfdetr_preprocessor,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
-            rfdetr_postprocessor=rfdetr_postprocessor,
             rfdetr_execution_plan=rfdetr_execution_plan,
             recommended_parameters=recommended_parameters,
         )
@@ -253,9 +248,7 @@ class RFDetrForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        rfdetr_preprocessor: Optional[str] = None,
         rfdetr_preprocessor_max_workers: Optional[int] = None,
-        rfdetr_postprocessor: Optional[str] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters=None,
     ):
@@ -275,8 +268,6 @@ class RFDetrForObjectDetectionTRT(
         )
         requested_plan = RFDetrExecutionPlan.resolve(
             execution_plan=rfdetr_execution_plan,
-            preprocessor_id=rfdetr_preprocessor,
-            postprocessor_id=rfdetr_postprocessor,
         )
         self._implementation_registry = build_rfdetr_implementation_registry(
             device=self._device,
@@ -309,12 +300,12 @@ class RFDetrForObjectDetectionTRT(
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._preprocess_readiness = PreprocessReadinessTracker()
-        if self.preprocessor_implementation_id != "base":
+        if self.preprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
             LOGGER.warning(
                 "Selected RF-DETR preprocessor implementation=%s",
                 self.preprocessor_implementation_id,
             )
-        if self.postprocessor_implementation_id != "base":
+        if self.postprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
             LOGGER.warning(
                 "Selected RF-DETR postprocessor implementation=%s",
                 self.postprocessor_implementation_id,

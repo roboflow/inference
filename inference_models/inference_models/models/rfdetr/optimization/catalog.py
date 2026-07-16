@@ -5,7 +5,8 @@ from typing import Mapping
 
 import torch
 
-from inference_models.models.rfdetr.optimization.contracts import OptimizationMetadata
+from inference_models.models.optimization.contracts import OptimizationMetadata
+from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.postprocessors import (
     BasePostprocessor,
     TritonFusedPostprocessor,
@@ -15,7 +16,6 @@ from inference_models.models.rfdetr.optimization.preprocessors import (
     ThreadedExactPreprocessor,
     TritonUniversalPreprocessor,
 )
-from inference_models.models.rfdetr.optimization.registry import ImplementationRegistry
 
 RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Mapping[str, OptimizationMetadata] = (
     MappingProxyType(
@@ -54,7 +54,7 @@ def build_rfdetr_implementation_registry(
     Returns:
         Registry containing every available preprocessing and postprocessing choice.
     """
-    registry = ImplementationRegistry()
+    registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register(BasePreprocessor(max_workers=preprocessor_max_workers))
     registry.register(ThreadedExactPreprocessor(max_workers=preprocessor_max_workers))
     registry.register(TritonUniversalPreprocessor(device=device))

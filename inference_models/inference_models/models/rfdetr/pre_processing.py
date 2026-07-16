@@ -11,7 +11,6 @@ torch.Tensor inputs (advanced caller, float CHW [0, 1]):
     tensor F.resize → F.normalize
 """
 
-import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import List, Optional, Tuple, Union
@@ -43,75 +42,12 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_numpy_image,
 )
 from inference_models.models.rfdetr.optimization.ids import (
-    RFDETR_PREPROCESSOR_AUTO,
     RFDETR_PREPROCESSOR_BASE,
     RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
-    RFDETR_PREPROCESSOR_ENV_NAME,
-    RFDETR_PREPROCESSOR_IDS,
     RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME,
     RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
-    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.utils.environment import get_integer_from_env
-
-__all__ = ["RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1"]
-
-
-def resolve_rfdetr_preprocessor(implementation_id: Optional[str] = None) -> str:
-    """Resolve an explicit or environment-selected RF-DETR preprocessor.
-
-    ``auto`` deliberately remains on ``base`` until a candidate has a recorded
-    validation environment. Explicit candidate requests never fall back.
-
-    Args:
-        implementation_id: Explicit implementation ID. When omitted,
-            ``INFERENCE_MODELS_RFDETR_PREPROCESSOR`` is used, defaulting to
-            ``base``.
-
-    Returns:
-        Resolved preprocessor implementation ID.
-
-    Raises:
-        ModelRuntimeError: If the requested implementation ID is unknown.
-    """
-    if implementation_id is None:
-        implementation_id = os.getenv(
-            RFDETR_PREPROCESSOR_ENV_NAME,
-            RFDETR_PREPROCESSOR_BASE,
-        )
-    if implementation_id == RFDETR_PREPROCESSOR_AUTO:
-        return RFDETR_PREPROCESSOR_BASE
-    if implementation_id in RFDETR_PREPROCESSOR_IDS:
-        return implementation_id
-    available = ", ".join(
-        sorted(
-            [
-                RFDETR_PREPROCESSOR_AUTO,
-                *RFDETR_PREPROCESSOR_IDS,
-            ]
-        )
-    )
-    raise ModelRuntimeError(
-        message=(
-            f"Unknown RF-DETR preprocessor implementation {implementation_id!r}. "
-            f"Available implementations: {available}."
-        ),
-        help_url=(
-            "https://inference-models.roboflow.com/errors/models-runtime/"
-            "#modelruntimeerror"
-        ),
-    )
-
-
-def __getattr__(name: str):
-    """Provide the legacy metadata catalog import without a module cycle."""
-    if name == "RFDETR_PREPROCESSOR_IMPLEMENTATIONS":
-        from inference_models.models.rfdetr.optimization.catalog import (
-            RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
-        )
-
-        return RFDETR_PREPROCESSOR_IMPLEMENTATIONS
-    raise AttributeError(name)
 
 
 def resolve_rfdetr_preprocessor_max_workers(max_workers: Optional[int] = None) -> int:
@@ -186,9 +122,23 @@ def pre_process_network_input(
         ModelRuntimeError: If the selected implementation or worker limit is invalid.
         TypeError: If an input type is unsupported by the selected implementation.
     """
-    selected_preprocessor = resolve_rfdetr_preprocessor(
-        implementation_id=preprocessor_implementation_id
-    )
+    supported_preprocessors = {
+        RFDETR_PREPROCESSOR_BASE,
+        RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+    }
+    if preprocessor_implementation_id not in supported_preprocessors:
+        raise ModelRuntimeError(
+            message=(
+                "The RF-DETR reference preprocessing adapter supports only "
+                f"{sorted(supported_preprocessors)}, received "
+                f"{preprocessor_implementation_id!r}."
+            ),
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
+    selected_preprocessor = preprocessor_implementation_id
     preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
         max_workers=preprocessor_max_workers
     )

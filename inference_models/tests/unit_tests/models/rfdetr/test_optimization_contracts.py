@@ -5,11 +5,7 @@ import pytest
 import torch
 
 from inference_models.errors import ModelRuntimeError
-from inference_models.models.rfdetr.optimization.catalog import (
-    RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
-    RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
-)
-from inference_models.models.rfdetr.optimization.contracts import (
+from inference_models.models.optimization.contracts import (
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
@@ -17,6 +13,11 @@ from inference_models.models.rfdetr.optimization.contracts import (
     OptimizationStage,
     ValidationEnvironment,
     immutable_mapping,
+)
+from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.rfdetr.optimization.catalog import (
+    RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
+    RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
@@ -30,7 +31,6 @@ from inference_models.models.rfdetr.optimization.ids import (
 from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
-from inference_models.models.rfdetr.optimization.registry import ImplementationRegistry
 
 
 class _Stage:
@@ -118,14 +118,6 @@ def test_explicit_plan_ignores_environment(monkeypatch) -> None:
     assert resolved is plan
 
 
-def test_execution_plan_rejects_ambiguous_legacy_selection() -> None:
-    with pytest.raises(ModelRuntimeError, match="cannot be combined"):
-        RFDetrExecutionPlan.resolve(
-            execution_plan=RFDetrExecutionPlan(),
-            preprocessor_id=RFDETR_PREPROCESSOR_BASE,
-        )
-
-
 def test_execution_plan_rejects_unimplemented_stage_category() -> None:
     with pytest.raises(ModelRuntimeError, match="does not yet provide"):
         RFDetrExecutionPlan.resolve(
@@ -134,7 +126,7 @@ def test_execution_plan_rejects_unimplemented_stage_category() -> None:
 
 
 def test_registry_resolves_explicit_and_auto_base() -> None:
-    registry = ImplementationRegistry()
+    registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")
     candidate = _Stage("candidate")
     registry.register(base)
@@ -159,7 +151,7 @@ def test_registry_resolves_explicit_and_auto_base() -> None:
 
 
 def test_registry_auto_selects_a_validated_compatible_candidate() -> None:
-    registry = ImplementationRegistry()
+    registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")
     candidate = _Stage("candidate", validated=True)
     registry.register(base)
@@ -176,7 +168,7 @@ def test_registry_auto_selects_a_validated_compatible_candidate() -> None:
 
 
 def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
-    registry = ImplementationRegistry()
+    registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register(_Stage("base"))
     registry.register(_Stage("incompatible", compatible=False))
 

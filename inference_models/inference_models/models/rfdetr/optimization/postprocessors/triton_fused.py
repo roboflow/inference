@@ -6,16 +6,16 @@ import torch
 
 from inference_models import Detections
 from inference_models.errors import ModelRuntimeError
-from inference_models.models.rfdetr.optimization.contracts import (
+from inference_models.models.optimization.contracts import (
     DeviceCompatibility,
     ExecutionContext,
     InputCompatibility,
     OptimizationMetadata,
     OptimizationStage,
-    PostprocessRequest,
     immutable_mapping,
     metadata_supports_context,
 )
+from inference_models.models.rfdetr.optimization.contracts import PostprocessRequest
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,

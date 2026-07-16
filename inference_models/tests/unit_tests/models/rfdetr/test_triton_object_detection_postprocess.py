@@ -9,15 +9,16 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.common import post_process_object_detection_results
-from inference_models.models.rfdetr.triton_object_detection_postprocess import (
-    RFDETR_POSTPROCESSOR_AUTO,
-    RFDETR_POSTPROCESSOR_BASE,
+from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
+)
+from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+)
+from inference_models.models.rfdetr.triton_object_detection_postprocess import (
     TRITON_AVAILABLE,
     FusedObjectDetectionPostprocessor,
     _metadata_values,
-    resolve_rfdetr_postprocessor,
 )
 
 
@@ -49,51 +50,10 @@ def _metadata(
 
 
 def test_fused_postprocessor_is_explicitly_selectable() -> None:
-    assert (
-        resolve_rfdetr_postprocessor(RFDETR_POSTPROCESSOR_TRITON_FUSED_V1)
-        == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
-    )
     metadata = RFDETR_POSTPROCESSOR_IMPLEMENTATIONS[
         RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
     ]
     assert metadata.validated_environments == ()
-
-
-def test_auto_postprocessor_remains_on_base() -> None:
-    assert resolve_rfdetr_postprocessor(RFDETR_POSTPROCESSOR_AUTO) == (
-        RFDETR_POSTPROCESSOR_BASE
-    )
-
-
-def test_postprocessor_can_be_selected_from_environment(monkeypatch) -> None:
-    monkeypatch.setenv(
-        "INFERENCE_MODELS_RFDETR_POSTPROCESSOR",
-        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
-    )
-
-    assert resolve_rfdetr_postprocessor() == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
-
-
-def test_postprocessor_defaults_to_base_without_environment(monkeypatch) -> None:
-    monkeypatch.delenv("INFERENCE_MODELS_RFDETR_POSTPROCESSOR", raising=False)
-
-    assert resolve_rfdetr_postprocessor() == RFDETR_POSTPROCESSOR_BASE
-
-
-def test_explicit_postprocessor_overrides_environment(monkeypatch) -> None:
-    monkeypatch.setenv(
-        "INFERENCE_MODELS_RFDETR_POSTPROCESSOR",
-        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
-    )
-
-    assert resolve_rfdetr_postprocessor(RFDETR_POSTPROCESSOR_BASE) == (
-        RFDETR_POSTPROCESSOR_BASE
-    )
-
-
-def test_unknown_postprocessor_is_rejected() -> None:
-    with pytest.raises(ModelRuntimeError, match="Unknown RF-DETR postprocessor"):
-        resolve_rfdetr_postprocessor("unknown")
 
 
 def test_fused_postprocessor_requires_cuda() -> None:

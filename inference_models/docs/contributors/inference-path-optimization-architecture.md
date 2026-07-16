@@ -14,7 +14,7 @@ The design keeps two concerns separate:
 
 ```mermaid
 flowchart TD
-    selection["Selection inputs<br/>explicit plan / arguments / environment"]
+    selection["Selection inputs<br/>explicit plan / environment"]
     plan["ExecutionPlan<br/>stage IDs only"]
     catalog["Catalog<br/>metadata + constructors"]
     registry["ImplementationRegistry<br/>registered instances"]
@@ -39,15 +39,18 @@ flowchart TD
 
 ### Contracts
 
-Contracts define the stable language shared by all other components. They include:
+Shared contracts define the stable language used by every optimized inference path.
+They include:
 
 - `OptimizationMetadata`, including the stable implementation ID, stage, version,
   target, input constraints, dependencies, numerical behavior, stream behavior,
   output contract, fallback ID, and validation history;
 - `ExecutionContext`, which describes the actual device, scenario, resolved input
   axes, compute capability, and current stream;
-- stage-specific request and result values;
-- stage protocols such as `Preprocessor` and `Postprocessor`.
+- the common `InferenceStage` compatibility protocol.
+
+Stage-specific requests, results, and protocols stay in the model namespace because
+their signatures depend on that model's inputs and outputs.
 
 Metadata is immutable and can be serialized with `to_dict()`. An implementation can
 therefore be inspected without executing it, and the resolved runtime configuration
@@ -123,7 +126,7 @@ flowchart TD
     load["AutoModel.from_pretrained(...)"] --> init["RFDetrForObjectDetectionTRT.__init__"]
     init --> explicit{"Explicit RFDetrExecutionPlan?"}
     explicit -->|yes| use_plan["Use plan<br/>reject legacy stage arguments"]
-    explicit -->|no| precedence["Resolve each stage<br/>explicit argument → environment → base"]
+    explicit -->|no| precedence["Resolve each stage<br/>environment → base"]
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
 
@@ -160,8 +163,8 @@ arguments:
 | `INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS` | threaded preprocessing | `4` |
 | `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` | postprocessing | `triton-fused-v1` |
 
-An explicit plan has the clearest provenance. The legacy per-stage constructor
-arguments take precedence over environment variables when no plan is supplied.
+An explicit plan has the clearest provenance and takes precedence over environment
+variables. Environment values are read only when no plan is supplied.
 
 ### Per-request execution
 
@@ -207,12 +210,16 @@ need to know which preprocessor produced its input.
 
 | Path | Responsibility |
 |---|---|
-| `models/rfdetr/optimization/contracts.py` | Typed metadata, runtime context, requests, results, and protocols |
+| `models/optimization/contracts.py` | Reusable metadata, compatibility, runtime context, and base stage protocol |
+| `models/optimization/execution_plan.py` | Reusable immutable execution-plan representation |
+| `models/optimization/ids.py` | Conventional `base` and `auto` implementation IDs |
+| `models/optimization/registry.py` | Strict explicit and conservative automatic resolution |
+| `models/optimization/torch_readiness.py` | Generic one-shot state handoff tied to exact tensor identity |
+| `models/rfdetr/optimization/contracts.py` | RF-DETR requests, results, and stage-specific protocols |
 | `models/rfdetr/optimization/ids.py` | Stable implementation IDs and environment-variable names |
-| `models/rfdetr/optimization/execution_plan.py` | Immutable plan and configuration precedence |
+| `models/rfdetr/optimization/execution_plan.py` | RF-DETR environment resolution and supported-stage validation |
 | `models/rfdetr/optimization/catalog.py` | Read-only metadata catalogs and registry construction |
-| `models/rfdetr/optimization/registry.py` | Strict explicit and conservative automatic resolution |
-| `models/rfdetr/optimization/readiness.py` | CUDA-event handoff tied to exact tensor identity |
+| `models/rfdetr/optimization/readiness.py` | RF-DETR readiness payload and shared-tracker adapter |
 | `models/rfdetr/optimization/preprocessors/` | One module per preprocessing choice |
 | `models/rfdetr/optimization/postprocessors/` | One module per postprocessing choice |
 | `models/rfdetr/rfdetr_object_detection_trt.py` | Plan integration and request-stage orchestration |

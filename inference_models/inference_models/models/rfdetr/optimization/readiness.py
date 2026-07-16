@@ -1,13 +1,11 @@
-"""Explicit asynchronous readiness handoff between RF-DETR stages."""
+"""RF-DETR readiness state carried by the shared tensor-state tracker."""
 
-from __future__ import annotations
-
-import threading
-import weakref
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
+
+from inference_models.models.optimization.torch_readiness import TensorReadinessTracker
 
 
 @dataclass(frozen=True)
@@ -19,14 +17,8 @@ class PreprocessReadiness:
     implementation_id: str
 
 
-class PreprocessReadinessTracker:
-    """Track typed preprocessing readiness without mutating tensors."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._states: Dict[
-            int, Tuple[weakref.ReferenceType[torch.Tensor], PreprocessReadiness]
-        ] = {}
+class PreprocessReadinessTracker(TensorReadinessTracker[PreprocessReadiness]):
+    """Adapt generic exact-tensor state tracking to RF-DETR preprocessing."""
 
     def record(
         self,
@@ -44,36 +36,9 @@ class PreprocessReadinessTracker:
             input_kind: Canonical input-path description.
             implementation_id: Preprocessor that produced the tensor.
         """
-        key = id(tensor)
-
-        def discard(reference: weakref.ReferenceType[torch.Tensor]) -> None:
-            with self._lock:
-                current = self._states.get(key)
-                if current is not None and current[0] is reference:
-                    self._states.pop(key, None)
-
-        reference = weakref.ref(tensor, discard)
         state = PreprocessReadiness(
             ready_event=ready_event,
             input_kind=input_kind,
             implementation_id=implementation_id,
         )
-        with self._lock:
-            self._states[key] = (reference, state)
-
-    def consume(self, tensor: torch.Tensor) -> Optional[PreprocessReadiness]:
-        """Consume readiness recorded for the exact tensor instance.
-
-        Args:
-            tensor: Tensor entering the protected forward stage.
-
-        Returns:
-            Recorded readiness, or ``None`` for externally supplied tensors.
-        """
-        key = id(tensor)
-        with self._lock:
-            current = self._states.pop(key, None)
-        if current is None or current[0]() is not tensor:
-            return None
-
-        return current[1]
+        super().record(tensor, state=state)

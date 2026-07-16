@@ -477,8 +477,9 @@ model = AutoModel.from_pretrained(
 ```
 
 The plan also reserves independently selectable buffer-strategy, scheduler, and engine
-plugin stages. Those stages currently accept only `base`. An explicit plan cannot be
-combined with the legacy `rfdetr_preprocessor` or `rfdetr_postprocessor` arguments.
+plugin stages. Those stages currently accept only `base`. When supplied, an explicit
+plan takes precedence and the implementation-selection environment variables are not
+read.
 
 #### Roboflow Instant
 
