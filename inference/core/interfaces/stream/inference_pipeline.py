@@ -873,6 +873,14 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
+        # The delayed stream-pipeline emission path (buffered outputs paired with
+        # older frames, drain + close on teardown) is used both for RF-DETR async
+        # pipelining and for any workflow handler that opts into stream pipelining
+        # (e.g. the Time Travel block for future look-ahead).
+        self._stream_pipeline_active = (
+            _rfdetr_stream_pipeline_enabled()
+            or _handler_uses_stream_pipeline(on_video_frame)
+        )
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -931,7 +939,7 @@ class InferencePipeline:
                     frames=video_frames,
                 )
                 predictions = self._on_video_frame(video_frames)
-                if _rfdetr_stream_pipeline_enabled():
+                if self._stream_pipeline_active:
                     self._queue_inference_result(
                         inference_result=predictions,
                         fallback_video_frames=video_frames,
@@ -951,7 +959,7 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
-            if _rfdetr_stream_pipeline_enabled():
+            if self._stream_pipeline_active:
                 self._drain_inference_handler()
 
         except Exception as error:
@@ -968,7 +976,7 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
-            if _rfdetr_stream_pipeline_enabled():
+            if self._stream_pipeline_active:
                 self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
@@ -987,7 +995,7 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
-            if _rfdetr_stream_pipeline_enabled():
+            if self._stream_pipeline_active:
                 predictions = _resolve_prediction_futures(predictions)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
@@ -1186,3 +1194,13 @@ def _rfdetr_stream_pipeline_enabled() -> bool:
         return int(os.getenv("RFDETR_PIPELINE_DEPTH", "1").strip()) > 1
     except ValueError:
         return False
+
+
+def _handler_uses_stream_pipeline(on_video_frame: InferenceHandler) -> bool:
+    try:
+        from inference.core.interfaces.stream.model_handlers.workflows import (
+            PipelinedWorkflowRunner,
+        )
+    except ImportError:
+        return False
+    return isinstance(on_video_frame, PipelinedWorkflowRunner)
