@@ -1,0 +1,294 @@
+# syntax=docker/dockerfile:1.7
+#
+# Prebuilt framework wheels for the JetPack 7.2 server image. Component builds run
+# as independent stages so BuildKit parallelizes them; the dependency graph is
+#
+#   toolchain ─┬─ torch ─┬─ torchvision
+#              │         └─ flash-attn        (critical path)
+#              ├─ onnxruntime
+#              ├─ triton (fetch only)
+#              └─ pycuda
+#
+# Each stage has a private pip-cache mount id: a shared sharing=locked mount would
+# serialize the parallel stages for the full duration of each RUN.
+
+ARG CMAKE_VERSION=4.2.0
+ARG NINJA_VERSION=1.11.1.4
+ARG PYTORCH_VERSION=2.10.0
+ARG TORCHVISION_VERSION=0.25.0
+ARG TRITON_VERSION=3.6.0
+ARG TRITON_WHEEL_SHA256=374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4
+ARG ONNXRUNTIME_VERSION=1.24.2
+ARG PYTORCH_MAX_JOBS=12
+ARG ORT_BUILD_PARALLEL=8
+ARG FLASH_ATTN_MAX_JOBS=2
+ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
+ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
+ARG FLASH_ATTN_CUDA_ARCHS=87;110
+ARG FLASH_ATTN_REF=d16e381f6f8041422bd36f27adaf61fbf8ca872a
+
+FROM ubuntu:24.04 AS toolchain
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CMAKE_VERSION
+ARG NINJA_VERSION
+ARG TARGETARCH
+ENV LANG=en_US.UTF-8
+
+WORKDIR /build
+
+RUN mkdir -p /opt/wheels
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-onnx-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-onnx-builder-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg \
+    wget \
+    && wget -qO - https://repo.download.nvidia.com/jetson/jetson-ota-public.asc | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/common r39.2 main" > /etc/apt/sources.list.d/nvidia-jetson.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/som r39.2 main" >> /etc/apt/sources.list.d/nvidia-jetson.list \
+    && apt-get update -y
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-onnx-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-onnx-builder-${TARGETARCH} \
+    apt-get install -y --no-install-recommends \
+    cuda-toolkit-13-2 \
+    libcudnn9-cuda-13 \
+    libcudnn9-dev-cuda-13 \
+    tensorrt \
+    python3-libnvinfer \
+    python3-libnvinfer-dev \
+    python3-libnvinfer-dispatch \
+    python3-libnvinfer-lean \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    curl \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    libopenblas-dev \
+    libproj-dev \
+    libsqlite3-dev \
+    libtiff-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    zlib1g-dev \
+    libxext6 \
+    libvips-dev \
+    pkg-config \
+    libjpeg-dev \
+    libpng-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libatlas-base-dev \
+    liblapack-dev \
+    gfortran \
+    libhdf5-dev \
+    libgflags-dev \
+    libgoogle-glog-dev \
+    liblmdb-dev \
+    libleveldb-dev \
+    libsnappy-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    libxml2-dev
+
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    chmod +x cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    ./cmake-${CMAKE_VERSION}-linux-aarch64.sh --prefix=/usr/local --skip-license && \
+    rm cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    printf 'cmake==%s\nninja==%s\n' "${CMAKE_VERSION}" "${NINJA_VERSION}" > /opt/builder-constraints.txt
+
+ENV PIP_CONSTRAINT=/opt/builder-constraints.txt
+
+RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
+    python3 -m pip install --break-system-packages "numpy>=2.0.0,<2.4.0"
+
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64
+
+FROM toolchain AS torch-builder
+
+ARG PYTORCH_VERSION
+ARG PYTORCH_MAX_JOBS
+ARG TORCH_CUDA_ARCH_LIST
+ARG CMAKE_VERSION
+ARG NINJA_VERSION
+ARG TARGETARCH
+
+WORKDIR /build/pytorch
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-torch-${TARGETARCH} \
+    cd pytorch && \
+    python3 -m pip install --break-system-packages -r requirements.txt && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
+    export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
+    export CUDNN_LIB_DIR=/usr/lib/aarch64-linux-gnu CUDNN_INCLUDE_DIR=/usr/include && \
+    export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" && \
+    export USE_MKLDNN=0 USE_OPENMP=0 && \
+    export USE_DISTRIBUTED=0 USE_GLOO=0 USE_MPI=0 USE_TENSORPIPE=0 USE_NCCL=0 && \
+    export BUILD_TEST=0 && \
+    export USE_QNNPACK=0 USE_PYTORCH_QNNPACK=0 USE_XNNPACK=0 USE_NNPACK=0 && \
+    export USE_FBGEMM=0 USE_KINETO=0 USE_CUPTI_SO=0 && \
+    export USE_FLASH_ATTENTION=1 USE_MEM_EFF_ATTENTION=1 && \
+    export USE_MPS=0 USE_ROCM=0 && \
+    export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
+    export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
+    export MAX_JOBS=${PYTORCH_MAX_JOBS} && \
+    export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
+    python3 setup.py bdist_wheel && \
+    cp dist/torch-*.whl /opt/wheels/ && \
+    python3 -m pip install --break-system-packages dist/torch-*.whl
+
+FROM torch-builder AS torchvision-builder
+
+ARG TORCHVISION_VERSION
+ARG TORCH_CUDA_ARCH_LIST
+ARG TARGETARCH
+
+WORKDIR /build/torchvision
+RUN for i in 1 2 3; do \
+        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+    done
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87-sm110-cu132 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-torchvision-${TARGETARCH} \
+    cd vision && \
+    export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" && \
+    export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
+    python3 setup.py bdist_wheel && \
+    cp dist/torchvision-*.whl /opt/wheels/ && \
+    python3 -m pip install --break-system-packages dist/torchvision-*.whl && \
+    torchvision_image="$(find /usr/local/lib/python3.12/dist-packages/torchvision \
+        -type f -name 'image.so' -print -quit)" && \
+    test -n "${torchvision_image}" && \
+    readelf -d "${torchvision_image}" | grep -q 'Shared library: \[libnvjpeg.so.13\]'
+
+FROM toolchain AS ort-builder
+
+ARG ONNXRUNTIME_VERSION
+ARG ORT_BUILD_PARALLEL
+ARG ORT_CUDA_ARCHITECTURES
+ARG CMAKE_VERSION
+ARG NINJA_VERSION
+ARG TARGETARCH
+
+WORKDIR /build/onnxruntime
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
+RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm87-sm110-cu132 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-ort-${TARGETARCH} \
+    cd onnxruntime && \
+    python3 -m pip install --break-system-packages -r requirements-dev.txt && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
+    ./build.sh --config Release --update --build --parallel ${ORT_BUILD_PARALLEL} \
+        --build_wheel \
+        --allow_running_as_root \
+        --compile_no_warning_as_error \
+        --use_cuda \
+        --cuda_home /usr/local/cuda \
+        --cudnn_home /usr \
+        --use_tensorrt \
+        --tensorrt_home /usr \
+        --skip_tests \
+        --cmake_extra_defines \
+            CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            CMAKE_CUDA_ARCHITECTURES="${ORT_CUDA_ARCHITECTURES}" \
+            onnxruntime_BUILD_UNIT_TESTS=OFF && \
+    cp build/Linux/Release/dist/onnxruntime_gpu*.whl /opt/wheels/ && \
+    python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl && \
+    ort_cuda_provider="$(find /usr/local/lib/python3.12/dist-packages \
+        -type f -name 'libonnxruntime_providers_cuda.so' -print -quit)" && \
+    test -n "${ort_cuda_provider}" && \
+    cuobjdump --list-elf "${ort_cuda_provider}" | grep -q 'sm_87' && \
+    cuobjdump --list-elf "${ort_cuda_provider}" | grep -q 'sm_110'
+
+# FlashAttention is cloned in its own layer and compiled with the build tree on a
+# cache mount so an interrupted build resumes instead of restarting from zero.
+FROM torch-builder AS flash-attn-builder
+
+ARG FLASH_ATTN_REF
+ARG FLASH_ATTN_MAX_JOBS
+ARG FLASH_ATTN_CUDA_ARCHS
+ARG TARGETARCH
+
+WORKDIR /build/flash-attention
+RUN --mount=type=bind,source=docker/patches/flash-attention-sm87.patch,target=/tmp/flash-attention-sm87.patch,ro \
+    git clone https://github.com/Dao-AILab/flash-attention.git flash-attention && \
+    cd flash-attention && \
+    git checkout ${FLASH_ATTN_REF} && \
+    git apply /tmp/flash-attention-sm87.patch && \
+    git submodule update --init --recursive
+RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-flash-attn-${TARGETARCH} \
+    cd flash-attention && \
+    export FLASH_ATTENTION_FORCE_BUILD=TRUE && \
+    export FLASH_ATTN_CUDA_ARCHS="${FLASH_ATTN_CUDA_ARCHS}" && \
+    export MAX_JOBS=${FLASH_ATTN_MAX_JOBS} NVCC_THREADS=1 && \
+    python3 -m pip wheel --no-build-isolation --no-deps \
+        --wheel-dir /opt/wheels . && \
+    python3 -m pip install --break-system-packages --no-deps \
+        /opt/wheels/flash_attn-*.whl && \
+    flash_extension="$(find /usr/local/lib/python3.12/dist-packages -type f \
+        -name 'flash_attn_2_cuda*.so' -print -quit)" && \
+    test -n "${flash_extension}" && \
+    cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_87' && \
+    cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_110'
+
+FROM toolchain AS triton-fetcher
+
+ARG TRITON_VERSION
+ARG TRITON_WHEEL_SHA256
+ARG TARGETARCH
+
+WORKDIR /build/triton
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-triton-${TARGETARCH} \
+    set -eux; \
+    mkdir -p /tmp/triton-wheels; \
+    python3 -m pip download --no-cache-dir \
+        --no-deps \
+        --only-binary=:all: \
+        --dest /tmp/triton-wheels \
+        "triton==${TRITON_VERSION}"; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    printf '%s  %s\n' "${TRITON_WHEEL_SHA256}" "$1" | sha256sum -c -; \
+    cp "$1" /opt/wheels/; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"
+
+FROM toolchain AS pycuda-builder
+
+ARG TARGETARCH
+
+WORKDIR /build/pycuda
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-pycuda-${TARGETARCH} \
+    python3 -m pip wheel --no-deps --wheel-dir /opt/wheels \
+    "pycuda>=2025.0.0,<2026.0.0"
+
+FROM scratch AS wheels
+
+COPY --from=torchvision-builder /opt/wheels /opt/wheels
+COPY --from=ort-builder /opt/wheels /opt/wheels
+COPY --from=flash-attn-builder /opt/wheels /opt/wheels
+COPY --from=triton-fetcher /opt/wheels /opt/wheels
+COPY --from=pycuda-builder /opt/wheels /opt/wheels
+COPY --from=toolchain /usr/local/cuda/bin/ptxas /opt/cuda/bin/ptxas
+COPY --from=toolchain /usr/local/cuda/nvvm/libdevice /opt/cuda/nvvm/libdevice
+COPY --from=toolchain /usr/share/doc/cuda-nvcc-13-2/copyright /opt/cuda/licenses/cuda-ptxas
+
+LABEL org.opencontainers.image.description="Roboflow Jetson 7.2 prebuilt framework wheels (PyTorch, torchvision, ONNX Runtime, FlashAttention, Triton, pycuda) + ptxas export"
