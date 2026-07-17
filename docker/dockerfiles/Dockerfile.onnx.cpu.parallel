@@ -56,6 +56,9 @@ RUN apt-get update && apt-get install -y redis
 FROM scratch
 COPY --from=base / /
 
+COPY inference_models /build/inference_models
+RUN pip3 install --no-cache-dir --no-deps '/build/inference_models[torch-cpu,onnx-cpu]' && rm -rf /build/inference_models
+
 WORKDIR /app/
 COPY inference inference
 COPY inference_sdk inference_sdk

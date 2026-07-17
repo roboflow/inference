@@ -52,7 +52,7 @@ tmptmp
 # (READMEs are kept: pyproject `readme = "README.md"` is read at build time.)
 **/tests/
 **/docs/
-**/examples/
+inference_models/examples/
 **/dockerfiles/
 inference_models/development/
 mkdocs.yml

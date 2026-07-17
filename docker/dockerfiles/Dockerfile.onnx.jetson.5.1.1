@@ -91,9 +91,14 @@ RUN make create_inference_cli_whl PYTHON=python3.12
 RUN python -m pip install dist/inference_cli*.whl
 
 # Installed (not copied into /app) so the project dirs never shadow the packages on import.
+# NOTE: inference_models must install WITH its dependencies (pycocotools et al. are base deps
+# not provided by this image's requirements files); the already-installed torch satisfies
+# the torch constraint, so it is left untouched.
+COPY inference_models /build/inference_models
 COPY inference_model_manager /build/inference_model_manager
 COPY inference_server /build/inference_server
-RUN python -m pip install --no-cache-dir /build/inference_model_manager /build/inference_server && rm -rf /build
+RUN python -m pip install --no-cache-dir '/build/inference_models[torch-cu124,onnx-cu12]' && \
+    python -m pip install --no-cache-dir /build/inference_model_manager /build/inference_server && rm -rf /build
 
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \

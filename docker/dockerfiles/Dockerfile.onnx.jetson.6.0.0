@@ -245,7 +245,8 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
         "setuptools<=75.5.0"
-RUN python -m pip install ./inference_model_manager ./inference_server
+RUN python -m pip install --no-deps ./inference_models && \
+    python -m pip install ./inference_model_manager ./inference_server
 
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned

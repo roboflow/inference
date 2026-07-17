@@ -2,9 +2,6 @@ name: Codeflash Optimization
 permissions:
   contents: read
 on:
-  pull_request:
-    paths:
-      - inference/**
   workflow_dispatch:
 
 concurrency:
@@ -40,5 +37,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt -r requirements/requirements.code_analysis.txt -r requirements/requirements.cli.txt -r requirements/requirements.test.integration.txt
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: ⚡️Codeflash Optimization
         run: codeflash --benchmark

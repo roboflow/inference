@@ -40,6 +40,7 @@ RUN pip3 install \
     && rm -rf ~/.cache/pip
 
 FROM scratch
+ARG TARGETPLATFORM
 COPY --from=base / /
 
 WORKDIR /app
@@ -49,9 +50,14 @@ COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 
 # Installed (not copied into /app) so the project dirs never shadow the packages on import.
+# NOTE: inference_models must install WITH its dependencies (its base deps are not provided
+# by this image's requirements files); the CPU wheel index keeps torch CPU-only.
+COPY inference_models /build/inference_models
 COPY inference_model_manager /build/inference_model_manager
 COPY inference_server /build/inference_server
-RUN pip3 install --no-cache-dir /build/inference_model_manager /build/inference_server && rm -rf /build
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then IM_EXTRAS="torch-cpu"; else IM_EXTRAS="torch-cpu,onnx-cpu"; fi && \
+    pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu "/build/inference_models[${IM_EXTRAS}]" && \
+    pip3 install --no-cache-dir /build/inference_model_manager /build/inference_server && rm -rf /build
 
 COPY docker/config/cpu_http.py cpu_http.py
 COPY docker/config/mmp_supervisor.py mmp_supervisor.py

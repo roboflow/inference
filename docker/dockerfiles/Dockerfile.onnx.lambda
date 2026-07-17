@@ -17,6 +17,7 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.vino.txt \
     requirements/requirements.easyocr.txt \
     ./
+COPY inference_models inference_models
 
 RUN dnf makecache -y && dnf install -y \
     libSM \
@@ -32,6 +33,7 @@ RUN dnf makecache -y && dnf install -y \
     cargo \
     && dnf clean all \
   && if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi \
+  && if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then IM_EXTRAS="torch-cpu"; else IM_EXTRAS="torch-cpu,onnx-cpu"; fi \
   && /var/lang/bin/python3.12 -m pip install --upgrade pip && rm -rf ~/.cache/pip \
   && pip3 install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
@@ -46,6 +48,7 @@ RUN dnf makecache -y && dnf install -y \
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     -r requirements.easyocr.txt \
+    "./inference_models[${IM_EXTRAS}]" \
     mangum \
     "setuptools<=75.5.0" \
     --upgrade \

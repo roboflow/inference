@@ -81,6 +81,7 @@ jobs:
                       -r requirements/requirements.http.txt \
                       -r requirements/requirements.cli.txt
 
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu './inference_models[torch-cpu,onnx-cpu]'
           pip install -e .
         working-directory: ./inference_repo
 

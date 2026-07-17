@@ -53,6 +53,9 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     cargo \
     && rm -rf /var/lib/apt/lists/*
 
+COPY inference_models /build/inference_models
+RUN pip3 install --no-cache-dir --no-deps '/build/inference_models[torch-cu124,onnx-cu12]' && rm -rf /build/inference_models
+
 COPY inference inference
 COPY docker/config/udp_stream_config.py udp_stream_config.py
 
