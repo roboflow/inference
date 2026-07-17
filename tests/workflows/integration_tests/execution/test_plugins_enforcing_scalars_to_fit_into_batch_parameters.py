@@ -4,12 +4,34 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import AssumptionError
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the classification block emits native
+# inference_models.ClassificationPrediction objects instead of sv-shaped dicts, so the
+# numpy-shaped `e["top"]` subscript below fails. The numpy assertions run only with the
+# flag off; an equivalent *_tensor_native test asserts the same facts against the native
+# classification carrier with the flag on.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="classification output; native under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
 
 WORKFLOW_IMAGE_PRODUCER_SINGLE_IMAGE_SIMD_CONSUMER = {
     "version": "1.1",
@@ -4436,6 +4458,7 @@ WORKFLOW_WITH_INPUTS_DERIVED_NESTED_DIMS_AND_EMERGED_NESTED_DIMS = {
 }
 
 
+@_NUMPY_ONLY
 @mock.patch.object(blocks_loader, "get_plugin_modules")
 def test_workflow_with_input_derived_dims_and_emergent_dims(
     get_plugin_modules_mock: MagicMock,
@@ -4481,6 +4504,144 @@ def test_workflow_with_input_derived_dims_and_emergent_dims(
     assert result[0]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
     assert [
         e["top"] if e is not None else None for e in result[0]["breds_classification"]
+    ] == ["116.Parson_russell_terrier", None]
+    assert len(result[1]["collapsed_input"]) == 2
+    assert np.allclose(result[1]["collapsed_input"][0].numpy_image, dogs_image)
+    assert np.allclose(result[1]["collapsed_input"][1].numpy_image, crowd_image)
+    assert np.allclose(result[1]["input_image"].numpy_image, crowd_image)
+    assert result[1]["shapes"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[1]["collapsed_output"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[1]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
+    assert result[1]["breds_classification"] == []
+
+
+@_TENSOR_ONLY
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_input_derived_dims_and_emergent_dims_tensor_native(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_INPUTS_DERIVED_NESTED_DIMS_AND_EMERGED_NESTED_DIMS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    assert (
+        len(result) == 2
+    ), "Two inputs provided, their dimensions survived to the output, hence 2 outputs expected"
+    assert len(result[0]["collapsed_input"]) == 2
+    assert np.allclose(result[0]["collapsed_input"][0].numpy_image, dogs_image)
+    assert np.allclose(result[0]["collapsed_input"][1].numpy_image, crowd_image)
+    assert np.allclose(result[0]["input_image"].numpy_image, dogs_image)
+    assert result[0]["shapes"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[0]["collapsed_output"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[0]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
+    # Under the tensor flag, breds_classification entries are native
+    # ClassificationPrediction objects (with None slots where EachSecondPass gated out
+    # the crop). The top class name lives at images_metadata[0][CLASS_NAMES_KEY] indexed
+    # by the top class id; the native subscript reproduces the same expected literals.
+    assert [
+        (
+            p.images_metadata[0][CLASS_NAMES_KEY][int(p.class_id.reshape(-1)[0])]
+            if p is not None
+            else None
+        )
+        for p in result[0]["breds_classification"]
+    ] == ["116.Parson_russell_terrier", None]
+    assert len(result[1]["collapsed_input"]) == 2
+    assert np.allclose(result[1]["collapsed_input"][0].numpy_image, dogs_image)
+    assert np.allclose(result[1]["collapsed_input"][1].numpy_image, crowd_image)
+    assert np.allclose(result[1]["input_image"].numpy_image, crowd_image)
+    assert result[1]["shapes"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[1]["collapsed_output"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[1]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
+    assert result[1]["breds_classification"] == []
+
+
+@_TENSOR_ONLY
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_input_derived_dims_and_emergent_dims_with_tensor_input(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as test_workflow_with_input_derived_dims_and_emergent_dims_tensor_native, but the
+    # images arrive ALREADY materialised as CHW RGB device tensors (is_tensor_materialised()
+    # == True), so the model blocks run their on-device tensor path.
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_INPUTS_DERIVED_NESTED_DIMS_AND_EMERGED_NESTED_DIMS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [
+                numpy_image_as_tensor(dogs_image),
+                numpy_image_as_tensor(crowd_image),
+            ],
+        }
+    )
+
+    # then
+    assert (
+        len(result) == 2
+    ), "Two inputs provided, their dimensions survived to the output, hence 2 outputs expected"
+    assert len(result[0]["collapsed_input"]) == 2
+    assert np.allclose(result[0]["collapsed_input"][0].numpy_image, dogs_image)
+    assert np.allclose(result[0]["collapsed_input"][1].numpy_image, crowd_image)
+    assert np.allclose(result[0]["input_image"].numpy_image, dogs_image)
+    assert result[0]["shapes"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[0]["collapsed_output"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[0]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
+    # Under the tensor flag, breds_classification entries are native
+    # ClassificationPrediction objects (with None slots where EachSecondPass gated out
+    # the crop). The top class name lives at images_metadata[0][CLASS_NAMES_KEY] indexed
+    # by the top class id; the native subscript reproduces the same expected literals.
+    assert [
+        (
+            p.images_metadata[0][CLASS_NAMES_KEY][int(p.class_id.reshape(-1)[0])]
+            if p is not None
+            else None
+        )
+        for p in result[0]["breds_classification"]
     ] == ["116.Parson_russell_terrier", None]
     assert len(result[1]["collapsed_input"]) == 2
     assert np.allclose(result[1]["collapsed_input"][0].numpy_image, dogs_image)

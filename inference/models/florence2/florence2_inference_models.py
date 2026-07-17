@@ -1,5 +1,6 @@
-from typing import Any, List
+from typing import Any, List, Union
 
+import numpy as np
 import torch
 
 from inference.core.entities.responses import (
@@ -48,6 +49,23 @@ class InferenceModelsFlorence2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[str]:
+        kwargs = self.map_inference_kwargs(kwargs)
+        # Derive the Florence task token from the leading `<TASK>` marker of the
+        # prompt. NOTE: `"...".split(">")[0] + ">"` always ends with ">", so the
+        # previous `if not task: task = None` guard was dead code and is removed.
+        # For a plain-text prompt (no `<TASK>` token) this yields a non-Florence
+        # key, but `post_process_generation` still wraps the answer under that key
+        # and the caller (Florence2 block) unwraps the single key, so the output
+        # matches the numpy sibling (whose `postprocess` derives the key the same
+        # way). This mirrors `postprocess` below; keep them in lockstep.
+        task = kwargs.get("prompt", "").split(">")[0] + ">"
+        return self._model.prompt(images=images, task=task, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         pre_processing_overrides = PreProcessingOverrides(

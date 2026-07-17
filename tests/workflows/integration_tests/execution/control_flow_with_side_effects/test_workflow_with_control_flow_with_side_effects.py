@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -19,10 +20,14 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
     DetectionsStitchBlockV1,
+)
+from inference.core.workflows.core_steps.fusion.detections_stitch.v1_tensor import (
+    DetectionsStitchBlockV1 as DetectionsStitchBlockV1Tensor,
 )
 from inference.core.workflows.errors import (
     ControlFlowDefinitionError,
@@ -30,6 +35,23 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference_models.models.base.object_detection import Detections as NativeDetections
+
+# Model-based workflow tests mock inference at the ModelManager seam. Under
+# ENABLE_TENSOR_DATA_REPRESENTATION the OD block routes through
+# `run_tensor_native_inference` / `get_class_names` (not `infer_from_request_sync`),
+# so the numpy-mocked tests skip when the flag is on and a `*_tensor_native` parity
+# test (skipped when the flag is off) drives the same scenario through the native
+# mock harness (`_run_workflow_tensor_native`).
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="numpy ModelManager mock (infer_from_request_sync); the OD block is "
+    "native under ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
 
 _WORKFLOW_DEFINITIONS_DIR = Path(__file__).resolve().parent / "workflow_definitions"
 
@@ -229,493 +251,575 @@ def _run_workflow(
             )
 
 
+def _make_person_detections_native(k: int) -> NativeDetections:
+    """Native equivalent of `_make_person_prediction` x k: a `Detections` with k
+    person boxes (class_id 0, confidence 0.9). The OD tensor block attaches the
+    workflow image lineage / detection ids itself, so this is left raw."""
+    if k == 0:
+        xyxy = torch.zeros((0, 4), dtype=torch.float32)
+    else:
+        xyxy = torch.tensor([[75.0, 75.0, 125.0, 125.0]] * k, dtype=torch.float32)
+    return NativeDetections(
+        xyxy=xyxy,
+        class_id=torch.zeros((k,), dtype=torch.long),
+        confidence=torch.full((k,), 0.9, dtype=torch.float32),
+    )
+
+
+def make_mock_tensor_native_detections_per_model(
+    model_id_to_counts: Dict[str, List[int]],
+):
+    """Tensor-native analogue of `make_mock_detection_responses_per_model`: a side
+    effect for `ModelManager.run_tensor_native_inference` returning one native
+    `Detections` per image, with the configured number of person boxes."""
+    model_id_index: Dict[str, int] = {mid: 0 for mid in model_id_to_counts}
+
+    def mock_fn(model_id: str, images, **kwargs) -> List[NativeDetections]:
+        if model_id not in model_id_to_counts:
+            raise ValueError(
+                f"Mock received unknown model_id={model_id!r}. "
+                f"Known: {list(model_id_to_counts)}."
+            )
+        counts = model_id_to_counts[model_id]
+        n = len(images)
+        start = model_id_index[model_id]
+        end = start + n
+        if end > len(counts):
+            raise ValueError(
+                f"Mock for model_id={model_id!r} expected at least {end} counts "
+                f"but only {len(counts)} defined. Check detection_counts for this scenario."
+            )
+        chunk = counts[start:end]
+        model_id_index[model_id] = end
+        return [_make_person_detections_native(k) for k in chunk]
+
+    return mock_fn
+
+
+def _run_workflow_tensor_native(
+    workflow_definition: dict,
+    runtime_parameters: dict,
+    model_manager,
+    detection_counts_per_model: Dict[str, List[int]],
+):
+    """Mirror of `_run_workflow` for ENABLE_TENSOR_DATA_REPRESENTATION. The tensor OD
+    block runs inference via `ModelManager.run_tensor_native_inference` and reads class
+    names via `get_class_names` (instead of `infer_from_request_sync`), so those are the
+    seams mocked here; `add_model` stays a no-op as in the numpy harness."""
+    init_params = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=init_params,
+        max_concurrent_steps=1,
+    )
+
+    mock_fn = make_mock_tensor_native_detections_per_model(detection_counts_per_model)
+
+    with patch.object(ModelManager, "add_model"):
+        with patch.object(ModelManager, "get_class_names", return_value=["person"]):
+            with patch.object(
+                ModelManager,
+                "run_tensor_native_inference",
+                side_effect=mock_fn,
+            ):
+                return engine.run(runtime_parameters=runtime_parameters)
+
+
+_SIDE_EFFECT_ARGNAMES = (
+    "image_gen_fn, names, detection_counts_per_model, enable_email, workflow_name, "
+    "expected_call_count, expected_receiver_email, expected_subject, "
+    "expected_message_parameters, expected_result"
+)
+
+# Shared scenario table for the side-effect control-flow test, consumed by both the
+# @_NUMPY_ONLY and @_TENSOR_ONLY variants so they stay in lockstep.
+_SIDE_EFFECT_SCENARIOS = [
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_email_message_params",
+        2,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"num_detections": 2},
+            {"num_detections": 1},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "without_email_message_params",
+        2,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {},
+            {},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_image_names_and_email_message_params",
+        2,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"num_detections": 2, "name": "img1"},
+            {"num_detections": 1, "name": "img3"},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_image_names_and_without_email_message_params",
+        2,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"name": "img1"},
+            {"name": "img3"},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "sliced_image_with_email_message_params",
+        3,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"num_detections": 1},
+            {"num_detections": 1},
+            {"num_detections": 1},
+        ),
+        (
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                ]
+            },
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    None,
+                    None,
+                ]
+            },
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "sliced_image_without_email_message_params",
+        3,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {},
+            {},
+            {},
+        ),
+        (
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                ]
+            },
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    None,
+                    None,
+                ]
+            },
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "sliced_image_with_email_message_params_and_area_size_step",
+        3,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"num_detections": 1, "area_converted": 2500},
+            {"num_detections": 1, "area_converted": 2500},
+            {"num_detections": 1, "area_converted": 2500},
+        ),
+        (
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                ]
+            },
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    None,
+                    None,
+                ]
+            },
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "sliced_image_without_email_message_params_and_area_size_step",
+        3,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"area_converted": 2500},
+            {"area_converted": 2500},
+            {"area_converted": 2500},
+        ),
+        (
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                ]
+            },
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    None,
+                    None,
+                ]
+            },
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_email_gate_and_with_email_message_params",
+        2,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"num_detections": 2},
+            {"num_detections": 1},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_email_gate_and_without_email_message_params",
+        2,
+        "noreply@example.com",
+        "Detections found",
+        (
+            {},
+            {},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        False,
+        "with_email_gate_and_without_email_message_params",
+        0,
+        "noreply@example.com",
+        "Detections found",
+        ({},),
+        (
+            {"email_message": None},
+            {"email_message": None},
+            {"email_message": None},
+            {"email_message": None},
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "with_detection_collapse_right_after_slice",  # after the dim collapse we are dim=1
+        4,  # In this scenario the continue_if step counts the number of slices for each image, so 4 calls to the email step
+        "noreply@example.com",
+        "Detections found",
+        (
+            {"num_slices": 4},
+            {"num_slices": 4},
+            {"num_slices": 4},
+            {"num_slices": 8},
+        ),
+        (  # In this scenario the email step is called 4 times, once for each image, as each image has at least one slice
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "with_detection_collapse_right_after_slice_with_agg_operation",
+        2,  # The continue-if correctly checks the number of detections for each image (given slices of that image)
+        "noreply@example.com",
+        "Detections found",
+        (  # The operations of counting the detection are done after receiving the params, so here we get the slices
+            {"num_slices": 4},
+            {"num_slices": 8},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _sliced_4_images,
+        SLICED_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
+        2,  # The continue-if correctly checks the number of detections for each image (given slices of that image)
+        "noreply@example.com",
+        "Detections found",
+        (
+            {},
+            {},
+        ),
+        (
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_detection_collapse_right_after_detect_with_agg_operation",
+        1,  # The continue-if correctly checks the total number of detections in the batch
+        "noreply@example.com",
+        "Detections found",
+        (  # The operations of counting the detection are done after receiving the params, so here we get the size of the batch
+            {"num_batch_detections": 4},
+        ),
+        ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
+        1,  # The continue-if correctly checks the total number of detections in the batch
+        "noreply@example.com",
+        "Detections found",
+        ({},),
+        ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        True,
+        "with_detection_collapse_after_continue_if",
+        1,  # We aggregated the detection lists after continue_if
+        "noreply@example.com",
+        "Detections found",
+        ({"num_batch_filtered_detections": 2},),  # Only two images had detections
+        ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": [3, 0, 1, 2]},
+        True,
+        "with_two_continue_if",
+        1,
+        "noreply@example.com",
+        "Detections found",
+        ({},),
+        (
+            {"email_message": None},
+            {"email_message": None},
+            {"email_message": None},
+            {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+        ),
+    ),
+    (
+        _sliced_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": SLICED_DETECTION_COUNTS},
+        True,
+        "with_two_continue_if_different_control_flow_lineage",
+        3,  # The deepest control-flow-lineage is used, thus we are masking up to the slice level
+        "noreply@example.com",
+        "Detections found",
+        (
+            {},
+            {},
+            {},
+        ),
+        (
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                ]
+            },
+            {"email_message": [None, None, None, None]},
+            {
+                "email_message": [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    None,
+                    None,
+                ]
+            },
+        ),
+    ),
+]
+
+_SIDE_EFFECT_IDS = [
+    "with_email_message_params",
+    "without_email_message_params",
+    "with_image_names_and_email_message_params",
+    "without_image_names_and_email_message_params",
+    "sliced_image_with_email_message_params",
+    "sliced_image_without_email_message_params",
+    "sliced_image_with_email_message_params_and_area_size_step",
+    "sliced_image_without_email_message_params_and_area_size_step",
+    "with_email_gate_and_with_email_message_params",
+    "with_email_gate_and_without_email_message_params",
+    "with_email_gate_and_without_email_message_params_and_email_disabled",
+    "with_detection_collapse_right_after_slice",
+    "with_detection_collapse_right_after_slice_with_agg_operation",
+    "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
+    "with_detection_collapse_right_after_detect_with_agg_operation",
+    "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
+    "with_detection_collapse_after_continue_if",
+    "with_two_continue_if",
+    "with_two_continue_if_different_control_flow_lineage",
+]
+
+
 @patch(
     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
 )
 @pytest.mark.parametrize(
-    "image_gen_fn,\
-    names,\
-    detection_counts_per_model,\
-    enable_email,\
-    workflow_name,\
-    expected_call_count,\
-    expected_receiver_email,\
-    expected_subject,\
-    expected_message_parameters,\
-    expected_result",
-    [
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_email_message_params",
-            2,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"num_detections": 2},
-                {"num_detections": 1},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "without_email_message_params",
-            2,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {},
-                {},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_image_names_and_email_message_params",
-            2,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"num_detections": 2, "name": "img1"},
-                {"num_detections": 1, "name": "img3"},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_image_names_and_without_email_message_params",
-            2,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"name": "img1"},
-                {"name": "img3"},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "sliced_image_with_email_message_params",
-            3,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"num_detections": 1},
-                {"num_detections": 1},
-                {"num_detections": 1},
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                    ]
-                },
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        None,
-                        None,
-                    ]
-                },
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "sliced_image_without_email_message_params",
-            3,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {},
-                {},
-                {},
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                    ]
-                },
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        None,
-                        None,
-                    ]
-                },
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "sliced_image_with_email_message_params_and_area_size_step",
-            3,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"num_detections": 1, "area_converted": 2500},
-                {"num_detections": 1, "area_converted": 2500},
-                {"num_detections": 1, "area_converted": 2500},
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                    ]
-                },
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        None,
-                        None,
-                    ]
-                },
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "sliced_image_without_email_message_params_and_area_size_step",
-            3,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"area_converted": 2500},
-                {"area_converted": 2500},
-                {"area_converted": 2500},
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                    ]
-                },
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        None,
-                        None,
-                    ]
-                },
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_email_gate_and_with_email_message_params",
-            2,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"num_detections": 2},
-                {"num_detections": 1},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_email_gate_and_without_email_message_params",
-            2,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {},
-                {},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            False,
-            "with_email_gate_and_without_email_message_params",
-            0,
-            "noreply@example.com",
-            "Detections found",
-            ({},),
-            (
-                {"email_message": None},
-                {"email_message": None},
-                {"email_message": None},
-                {"email_message": None},
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "with_detection_collapse_right_after_slice",  # after the dim collapse we are dim=1
-            4,  # In this scenario the continue_if step counts the number of slices for each image, so 4 calls to the email step
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"num_slices": 4},
-                {"num_slices": 4},
-                {"num_slices": 4},
-                {"num_slices": 8},
-            ),
-            (  # In this scenario the email step is called 4 times, once for each image, as each image has at least one slice
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "with_detection_collapse_right_after_slice_with_agg_operation",
-            2,  # The continue-if correctly checks the number of detections for each image (given slices of that image)
-            "noreply@example.com",
-            "Detections found",
-            (  # The operations of counting the detection are done after receiving the params, so here we get the slices
-                {"num_slices": 4},
-                {"num_slices": 8},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
-            2,  # The continue-if correctly checks the number of detections for each image (given slices of that image)
-            "noreply@example.com",
-            "Detections found",
-            (
-                {},
-                {},
-            ),
-            (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_detection_collapse_right_after_detect_with_agg_operation",
-            1,  # The continue-if correctly checks the total number of detections in the batch
-            "noreply@example.com",
-            "Detections found",
-            (  # The operations of counting the detection are done after receiving the params, so here we get the size of the batch
-                {"num_batch_detections": 4},
-            ),
-            ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
-            1,  # The continue-if correctly checks the total number of detections in the batch
-            "noreply@example.com",
-            "Detections found",
-            ({},),
-            ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            True,
-            "with_detection_collapse_after_continue_if",
-            1,  # We aggregated the detection lists after continue_if
-            "noreply@example.com",
-            "Detections found",
-            ({"num_batch_filtered_detections": 2},),  # Only two images had detections
-            ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": [3, 0, 1, 2]},
-            True,
-            "with_two_continue_if",
-            1,
-            "noreply@example.com",
-            "Detections found",
-            ({},),
-            (
-                {"email_message": None},
-                {"email_message": None},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
-        ),
-        (
-            _sliced_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS},
-            True,
-            "with_two_continue_if_different_control_flow_lineage",
-            3,  # The deepest control-flow-lineage is used, thus we are masking up to the slice level
-            "noreply@example.com",
-            "Detections found",
-            (
-                {},
-                {},
-                {},
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                    ]
-                },
-                {"email_message": [None, None, None, None]},
-                {
-                    "email_message": [
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
-                        None,
-                        None,
-                    ]
-                },
-            ),
-        ),
-    ],
-    ids=[
-        "with_email_message_params",
-        "without_email_message_params",
-        "with_image_names_and_email_message_params",
-        "without_image_names_and_email_message_params",
-        "sliced_image_with_email_message_params",
-        "sliced_image_without_email_message_params",
-        "sliced_image_with_email_message_params_and_area_size_step",
-        "sliced_image_without_email_message_params_and_area_size_step",
-        "with_email_gate_and_with_email_message_params",
-        "with_email_gate_and_without_email_message_params",
-        "with_email_gate_and_without_email_message_params_and_email_disabled",
-        "with_detection_collapse_right_after_slice",
-        "with_detection_collapse_right_after_slice_with_agg_operation",
-        "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
-        "with_detection_collapse_right_after_detect_with_agg_operation",
-        "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
-        "with_detection_collapse_after_continue_if",
-        "with_two_continue_if",
-        "with_two_continue_if_different_control_flow_lineage",
-    ],
+    _SIDE_EFFECT_ARGNAMES, _SIDE_EFFECT_SCENARIOS, ids=_SIDE_EFFECT_IDS
 )
+@_NUMPY_ONLY
 def test_properly_running_side_effect_step_and_returning_results_in_different_data_lineage_control_lineage_scenarios(
     send_email_mock,
     image_gen_fn: callable,
@@ -774,6 +878,86 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
 
             if param_name == "area_converted":
                 assert actual["area_converted"] == param_value
+                continue
+
+            assert actual == param_value
+
+    assert len(result) == len(expected_result)
+    for i, result in enumerate(result):
+        assert result.get("email_message") == expected_result[i].get("email_message")
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
+)
+@pytest.mark.parametrize(
+    _SIDE_EFFECT_ARGNAMES, _SIDE_EFFECT_SCENARIOS, ids=_SIDE_EFFECT_IDS
+)
+@_TENSOR_ONLY
+def test_properly_running_side_effect_step_and_returning_results_in_different_data_lineage_control_lineage_scenarios_tensor_native(
+    send_email_mock,
+    image_gen_fn: callable,
+    names: List[str],
+    detection_counts_per_model: Dict[str, List[int]],
+    enable_email: bool,
+    workflow_name: str,
+    expected_call_count: int,
+    expected_receiver_email: str,
+    expected_subject: str,
+    expected_message_parameters: tuple,
+    expected_result: tuple,
+    model_manager,
+) -> None:
+    send_email_mock.return_value = (False, "Notification sent successfully")
+    workflow_definition = _load_workflow_definition(workflow_name)
+
+    runtime_parameters = {"image": image_gen_fn()}
+    inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
+    if "names" in inputs:
+        runtime_parameters["names"] = names
+    if "enable_email" in inputs:
+        runtime_parameters["enable_email"] = enable_email
+
+    result = _run_workflow_tensor_native(
+        workflow_definition,
+        runtime_parameters,
+        model_manager,
+        detection_counts_per_model=detection_counts_per_model,
+    )
+
+    assert send_email_mock.call_count == expected_call_count
+    for i, call in enumerate(send_email_mock.call_args_list):
+        assert call.kwargs["receiver_email"] == [expected_receiver_email]
+        assert call.kwargs["subject"] == expected_subject
+
+        expected_params = expected_message_parameters[i]
+        assert len(call.kwargs["message_parameters"]) == len(expected_params)
+
+        for param_name, param_value in expected_params.items():
+            actual = call.kwargs["message_parameters"][param_name]
+
+            if param_name == "num_detections":
+                # native parity: intermediate detections are inference_models.Detections
+                assert isinstance(actual, NativeDetections)
+                assert len(actual) == param_value
+                continue
+
+            if param_name in [
+                "num_slices",
+                "num_batch_detections",
+                "num_batch_filtered_detections",
+            ]:
+                assert isinstance(actual, list)
+                assert len(actual) == param_value
+                continue
+
+            if param_name == "area_converted":
+                # native parity: area lands per-box in bboxes_metadata, not in a
+                # subscriptable sv.Detections `.data` field
+                assert isinstance(actual, NativeDetections)
+                assert [m["area_converted"] for m in actual.bboxes_metadata] == [
+                    param_value
+                ] * len(actual)
                 continue
 
             assert actual == param_value
@@ -1007,58 +1191,59 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
         assert result[i]["result"] == expect_result[i]
 
 
-@pytest.mark.parametrize(
-    "image_gen_fn,\
-    names,\
-    detection_counts_per_model,\
-    workflow_name,\
-    expected_results,\
-    expected_num_files,\
-    expected_columns,\
-    expected_num_rows,\
-    expected_names,\
-    expected_num_detections",
-    [
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            "with_csv_sink_and_with_detection_input",
-            [
-                {"save_message": None},
-                {"save_message": None},
-                {"save_message": None},
-                {"save_message": "Data saved successfully"},
-            ],
-            1,
-            ["num_detections", "name", "timestamp"],
-            2,
-            ["img1", "img3"],
-            [2, 1],
-        ),
-        (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
-            "with_csv_sink_and_without_detection_input",
-            [
-                {"save_message": None},
-                {"save_message": None},
-                {"save_message": None},
-                {"save_message": "Data saved successfully"},
-            ],
-            1,
-            ["name", "timestamp"],
-            2,
-            ["img1", "img3"],
-            [2, 1],
-        ),
-    ],
-    ids=[
-        "with_csv_sink_and_with_detection_input",
-        "with_csv_sink_and_without_detection_input",
-    ],
+_CSV_SINK_ARGNAMES = (
+    "image_gen_fn, names, detection_counts_per_model, workflow_name, expected_results, "
+    "expected_num_files, expected_columns, expected_num_rows, expected_names, "
+    "expected_num_detections"
 )
+
+# Shared scenario table for the csv-sink control-flow test, consumed by both the
+# @_NUMPY_ONLY and @_TENSOR_ONLY variants.
+_CSV_SINK_SCENARIOS = [
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        "with_csv_sink_and_with_detection_input",
+        [
+            {"save_message": None},
+            {"save_message": None},
+            {"save_message": None},
+            {"save_message": "Data saved successfully"},
+        ],
+        1,
+        ["num_detections", "name", "timestamp"],
+        2,
+        ["img1", "img3"],
+        [2, 1],
+    ),
+    (
+        _batch_4_images,
+        BATCH_4_IMAGE_NAMES,
+        {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
+        "with_csv_sink_and_without_detection_input",
+        [
+            {"save_message": None},
+            {"save_message": None},
+            {"save_message": None},
+            {"save_message": "Data saved successfully"},
+        ],
+        1,
+        ["name", "timestamp"],
+        2,
+        ["img1", "img3"],
+        [2, 1],
+    ),
+]
+
+_CSV_SINK_IDS = [
+    "with_csv_sink_and_with_detection_input",
+    "with_csv_sink_and_without_detection_input",
+]
+
+
+@pytest.mark.parametrize(_CSV_SINK_ARGNAMES, _CSV_SINK_SCENARIOS, ids=_CSV_SINK_IDS)
+@_NUMPY_ONLY
 def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
     image_gen_fn: callable,
     names: List[str],
@@ -1085,6 +1270,54 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
         runtime_parameters["names"] = names
 
     result = _run_workflow(
+        workflow_definition,
+        runtime_parameters,
+        model_manager,
+        detection_counts_per_model=detection_counts_per_model,
+    )
+    assert result == expected_results
+
+    csv_files = glob(os.path.join(empty_directory, "detection_log_*.csv"))
+    assert len(csv_files) == expected_num_files
+    df = pd.read_csv(csv_files[0])
+
+    assert set(df.columns) == set(expected_columns)
+    assert len(df) == expected_num_rows
+
+    if "num_detections" in expected_columns:
+        assert df["num_detections"].tolist() == expected_num_detections
+    if "name" in expected_columns:
+        assert df["name"].tolist() == expected_names
+
+
+@pytest.mark.parametrize(_CSV_SINK_ARGNAMES, _CSV_SINK_SCENARIOS, ids=_CSV_SINK_IDS)
+@_TENSOR_ONLY
+def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input_tensor_native(
+    image_gen_fn: callable,
+    names: List[str],
+    detection_counts_per_model: Dict[str, List[int]],
+    workflow_name: str,
+    expected_results: List[dict],
+    expected_num_files: int,
+    expected_columns: List[str],
+    expected_num_rows: int,
+    expected_names: List[str],
+    expected_num_detections: List[int],
+    model_manager,
+    empty_directory,
+) -> None:
+    workflow_definition = _load_workflow_definition(workflow_name)
+
+    runtime_parameters = {
+        "image": image_gen_fn(),
+        "output_directory": empty_directory,
+    }
+
+    inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
+    if "names" in inputs:
+        runtime_parameters["names"] = names
+
+    result = _run_workflow_tensor_native(
         workflow_definition,
         runtime_parameters,
         model_manager,
@@ -1132,6 +1365,7 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
         "with_two_continue_if_data_lineage_present",
     ],
 )
+@_NUMPY_ONLY
 def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls(
     image_gen_fn: callable,
     detection_counts_per_model: Dict[str, List[int]],
@@ -1170,6 +1404,80 @@ def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls(
         )
 
         if isinstance(item["stitched_predictions"], sv.Detections):
+            assert (
+                len(item["stitched_predictions"])
+                == expected_results[i]["stitched_predictions"][1]
+            )
+
+
+@pytest.mark.parametrize(
+    "image_gen_fn,\
+    detection_counts_per_model,\
+    workflow_name,\
+    expected_call_count, \
+    expected_results",
+    [
+        (
+            _sliced_4_images,
+            {
+                "yolov8n-640": SLICED_DETECTION_COUNTS,
+                "yolov8s-640": BATCH_4_DETECTION_COUNTS,
+            },
+            "with_two_continue_if_data_lineage_present",
+            2,
+            [
+                {"stitched_predictions": (type(None),)},
+                {"stitched_predictions": (NativeDetections, 2)},
+                {"stitched_predictions": (type(None),)},
+                {"stitched_predictions": (NativeDetections, 1)},
+            ],
+        ),
+    ],
+    ids=[
+        "with_two_continue_if_data_lineage_present",
+    ],
+)
+@_TENSOR_ONLY
+def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls_tensor_native(
+    image_gen_fn: callable,
+    detection_counts_per_model: Dict[str, List[int]],
+    workflow_name: str,
+    expected_call_count: int,
+    expected_results: List[dict],
+    model_manager,
+) -> None:
+    workflow_definition = _load_workflow_definition(workflow_name)
+    runtime_parameters = {"image": image_gen_fn()}
+
+    stitch_run_call_count = []
+    # Under the flag the workflow loads the tensor-native stitch block, so the
+    # call-count probe must patch that class, not the numpy one.
+    real_run = DetectionsStitchBlockV1Tensor.run
+
+    def counting_run(self, *args, **kwargs):
+        stitch_run_call_count.append(1)
+        return real_run(self, *args, **kwargs)
+
+    with patch.object(DetectionsStitchBlockV1Tensor, "run", counting_run):
+        result = _run_workflow_tensor_native(
+            workflow_definition,
+            runtime_parameters,
+            model_manager,
+            detection_counts_per_model=detection_counts_per_model,
+        )
+
+    assert len(stitch_run_call_count) == expected_call_count, (
+        f"DetectionsStitchBlockV1.run should be called {expected_call_count} times, "
+        f"was {len(stitch_run_call_count)}"
+    )
+    assert len(result) == len(expected_results)
+    for i, item in enumerate(result):
+        assert isinstance(
+            item["stitched_predictions"],
+            expected_results[i]["stitched_predictions"][0],
+        )
+
+        if isinstance(item["stitched_predictions"], NativeDetections):
             assert (
                 len(item["stitched_predictions"])
                 == expected_results[i]["stitched_predictions"][1]

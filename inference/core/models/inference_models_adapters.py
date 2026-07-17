@@ -207,6 +207,16 @@ class InferenceModelsObjectDetectionAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -399,6 +409,29 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         if callable(supports_stream_pipeline):
             return bool(supports_stream_pipeline())
         return bool(supports_stream_pipeline)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[InstanceDetections]:
+        enforce_dense_masks = (
+            False
+            if GCP_SERVERLESS
+            else kwargs.get("enforce_dense_masks_in_inference_models", False)
+        )
+        if not enforce_dense_masks and "rle" not in self._model.supported_mask_formats:
+            raise PostProcessingError(
+                "RLE masks are required on the tensor-native instance-segmentation "
+                "path (enforce_dense_masks_in_inference_models is False) but the loaded "
+                f"model only supports mask formats {self._model.supported_mask_formats}. "
+                "Either use a model that supports 'rle' or set "
+                "enforce_dense_masks_in_inference_models=True to receive dense masks."
+            )
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -1045,6 +1078,17 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+        self.key_points_classes = list(self._model.key_points_classes)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -1258,6 +1302,16 @@ class InferenceModelsClassificationAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -1290,7 +1344,7 @@ class InferenceModelsClassificationAdapter(Model):
 
     def postprocess(
         self,
-        predictions: Tuple[List[KeyPoints], Optional[List[Detections]]],
+        predictions: torch.Tensor,
         returned_metadata: List[Tuple[int, int]],
         **kwargs,
     ) -> Union[
@@ -1592,6 +1646,16 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
     def class_map(self):
         # match segment.roboflow.com
         return {str(k): v for k, v in enumerate(self.class_names)}
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[SemanticSegmentationResult]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"

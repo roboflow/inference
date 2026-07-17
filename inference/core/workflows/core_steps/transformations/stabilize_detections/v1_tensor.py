@@ -1,0 +1,520 @@
+from collections import deque
+from typing import Deque, Dict, List, Literal, Optional, Set, Tuple, Type, Union
+
+import numpy as np
+import torch
+from pydantic import ConfigDict, Field
+
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.core_steps.common.tensor_native import (
+    take_detections_by_indices,
+)
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
+    INTEGER_KIND,
+    Selector,
+)
+from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    BlockResult,
+    RuntimeRestriction,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+
+OUTPUT_KEY: str = "tracked_detections"
+LONG_DESCRIPTION = """
+Apply smoothing algorithms to reduce noise and flickering in tracked detections across video frames by using Kalman filtering to predict object velocities, exponential moving average to smooth bounding box positions, and gap filling to restore temporarily missing detections for improved tracking stability and smoother visualization workflows.
+
+## How This Block Works
+
+This block stabilizes tracked detections by reducing jitter, smoothing positions, and filling gaps when objects temporarily disappear from detection. The block:
+
+1. Receives tracked detection predictions with unique tracker IDs and an image with embedded video metadata
+2. Extracts video metadata from the image:
+   - Accesses video_metadata to get video_identifier
+   - Uses video_identifier to maintain separate stabilization state for different videos
+3. Validates that detections have tracker IDs (required for tracking object movement across frames)
+4. Initializes or retrieves stabilization state for the video:
+   - Maintains a cache of last known detections for each tracker_id per video
+   - Creates or retrieves a Kalman filter for velocity prediction per video
+   - Stores separate state for each video using video_identifier
+5. Measures object velocities for existing tracks:
+   - Calculates velocity by comparing current frame bounding box centers to previous frame centers
+   - Computes displacement (change in position) for objects present in both current and previous frames
+   - Velocity measurements are used to update the Kalman filter
+6. Updates Kalman filter with velocity measurements:
+   - Uses Kalman filtering to predict smoothed velocities based on historical measurements
+   - Maintains a sliding window of velocity measurements (controlled by smoothing_window_size)
+   - Applies exponential moving average within the Kalman filter to smooth velocity estimates
+   - Filters out noise from detection inaccuracies and frame-to-frame variations
+7. Smooths bounding boxes for objects present in current frame:
+   - Applies exponential moving average smoothing to bounding box coordinates
+   - Combines previous frame position with current frame position using bbox_smoothing_coefficient
+   - Formula: smoothed_bbox = alpha * current_bbox + (1 - alpha) * previous_bbox
+   - Reduces jitter and flickering from detection variations
+8. Predicts positions for missing detections:
+   - Uses Kalman filter predicted velocities to estimate positions of objects that disappeared
+   - Applies predicted velocity to last known bounding box position
+   - Fills gaps by restoring detections that were temporarily missing from current frame
+   - Smooths predicted positions using exponential moving average
+9. Manages tracking state:
+   - Updates cache with current frame detections for next frame calculations
+   - Removes tracking entries for objects that have been missing longer than smoothing_window_size frames
+   - Maintains separate state per video_identifier
+10. Merges and returns stabilized detections:
+    - Combines smoothed detections (from current frame) and predicted detections (for missing objects)
+    - Outputs stabilized detection objects with reduced noise and filled gaps
+    - All detections maintain their tracker IDs for consistent tracking
+
+The block uses two complementary smoothing techniques: **Kalman filtering** for velocity prediction (estimating how fast objects are moving) and **exponential moving average** for position smoothing (reducing bounding box jitter). The Kalman filter maintains a history of velocity measurements and uses statistical estimation to predict future velocities while filtering out noise. The exponential moving average smooths bounding box coordinates by blending current and previous positions. Gap filling uses predicted velocities to restore detections that temporarily disappear, helping maintain track continuity. Note: This block may produce short-lived bounding boxes for unstable trackers, as it attempts to fill gaps even when objects are inconsistently detected.
+
+## Common Use Cases
+
+- **Video Visualization**: Reduce flickering and jitter in video annotations for smoother visualizations (e.g., smooth bounding box movements, reduce annotation noise, improve video visualization quality), enabling stable video visualization workflows
+- **Tracking Stability**: Improve tracking stability when detections are noisy or inconsistent (e.g., stabilize noisy detections, reduce tracking jitter, improve tracking continuity), enabling stable tracking workflows
+- **Temporary Occlusion Handling**: Fill gaps when objects are temporarily occluded or missing from detections (e.g., maintain tracks during brief occlusions, fill detection gaps, preserve tracking continuity), enabling occlusion handling workflows
+- **Real-Time Monitoring**: Improve visual quality in real-time monitoring applications (e.g., smooth live video annotations, reduce flickering in monitoring displays, improve real-time visualization), enabling stable real-time monitoring workflows
+- **Analytics Accuracy**: Reduce noise in analytics calculations that depend on stable detection positions (e.g., improve position-based analytics, reduce noise in measurements, stabilize movement calculations), enabling accurate analytics workflows
+- **Quality Control**: Improve detection quality for downstream processing (e.g., smooth detections before analysis, reduce noise for better processing, stabilize inputs for other blocks), enabling quality improvement workflows
+
+## Connecting to Other Blocks
+
+This block receives tracked detections and an image, and produces stabilized tracked_detections:
+
+- **After Byte Tracker blocks** to stabilize tracked detections (e.g., smooth tracked object positions, reduce tracking jitter, fill tracking gaps), enabling tracking-stabilization workflows
+- **After object detection or instance segmentation blocks** with tracking enabled to stabilize detections (e.g., smooth detection positions, reduce detection noise, improve tracking stability), enabling detection-stabilization workflows
+- **Before visualization blocks** to display stabilized detections (e.g., visualize smooth bounding boxes, display stable annotations, show gap-filled detections), enabling stable visualization workflows
+- **Before analytics blocks** to provide stable inputs for analysis (e.g., analyze stabilized positions, process smooth movement data, work with gap-filled detections), enabling stable analytics workflows
+- **Before velocity or path analysis blocks** to improve measurement accuracy (e.g., calculate velocities from stable positions, analyze paths from smooth trajectories, measure from gap-filled detections), enabling accurate measurement workflows
+- **In video processing pipelines** where detection stability is required for downstream processing (e.g., stabilize detections in processing chains, improve quality for analysis, reduce noise in pipelines), enabling stable video processing workflows
+
+## Requirements
+
+This block requires tracked detections with tracker_id information (detections must come from a tracking block like Byte Tracker). The image's video_metadata should include video_identifier to maintain separate stabilization state for different videos. The block maintains persistent stabilization state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For optimal stabilization, detections should be provided consistently across frames with valid tracker IDs. The smoothing_window_size controls how many historical velocity measurements are used for Kalman filtering and how long missing detections are retained. The bbox_smoothing_coefficient (0-1) controls the balance between current and previous positions - lower values provide more smoothing but slower response to changes, higher values provide less smoothing but faster response.
+
+Tensor-native note: this block consumes and produces `inference_models` dataclasses. The per-box `tracker_id` is read from `bboxes_metadata[i]["tracker_id"]` (there is no `.tracker_id` attribute on the native types). Smoothing / Kalman prediction run on numpy scalars extracted from the `xyxy` tensors; the smoothed boxes are written back into per-tracker single-row native slices (preserving `bboxes_metadata` and masks for instance segmentation), then concatenated back into a single native prediction.
+"""
+
+
+class BlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Detections Stabilizer",
+            "version": "v1",
+            "short_description": "Apply a smoothing algorithm to reduce noise and flickering across video frames.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "transformation",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "fas fa-waveform-lines",
+                "blockPriority": 4,
+            },
+        }
+    )
+    type: Literal["roboflow_core/stabilize_detections@v1"]
+    image: Selector(kind=[IMAGE_KIND]) = Field(
+        description="Image with embedded video metadata. The video_metadata contains video_identifier to maintain separate stabilization state for different videos. Required for persistent state management across frames.",
+    )
+    detections: Selector(
+        kind=[
+            TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        ]
+    ) = Field(  # type: ignore
+        description="Tracked object detection or instance segmentation predictions. Must include tracker_id information from a tracking block. The block applies Kalman filtering for velocity prediction, exponential moving average for position smoothing, and gap filling for missing detections. Output detections are stabilized with reduced noise and jitter.",
+        examples=["$steps.object_detection_model.predictions"],
+    )
+    smoothing_window_size: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=3,
+        description="Size of the sliding window for velocity smoothing in Kalman filter, controlling how many historical velocity measurements are used. Also determines how long missing detections are retained before removal. Larger values provide more smoothing but slower adaptation to changes. Smaller values provide less smoothing but faster adaptation. Detections missing for longer than this number of frames are removed from tracking state. Typical range: 3-10 frames.",
+        examples=[3, 5, 10, "$inputs.smoothing_window_size"],
+    )
+    bbox_smoothing_coefficient: Union[Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+        default=0.2,
+        description="Exponential moving average coefficient (alpha) for bounding box position smoothing, range 0.0-1.0. Controls the blend between current and previous bounding box positions: smoothed_bbox = alpha * current + (1-alpha) * previous. Lower values (closer to 0) provide more smoothing - slower response to changes, less jitter. Higher values (closer to 1) provide less smoothing - faster response to changes, more jitter. Default 0.2 balances smoothness and responsiveness. Typical range: 0.1-0.5.",
+        examples=[0.2, 0.1, 0.5, "$inputs.bbox_smoothing_coefficient"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name=OUTPUT_KEY,
+                kind=[
+                    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
+            ),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
+
+
+NativeDetections = Union[Detections, InstanceDetections]
+
+
+class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
+    def __init__(self):
+        # Cache of last-known single-row native detections per tracker_id per video.
+        self._batch_of_last_known_detections: Dict[
+            str, Dict[Union[int, str], NativeDetections]
+        ] = {}
+        # Parallel cache of each cached slice's xyxy as a (4,) numpy array, kept
+        # in lockstep with ``_batch_of_last_known_detections``, so the Kalman /
+        # smoothing loops don't re-issue a device->host copy per cached
+        # detection every frame.
+        self._batch_of_last_known_xyxy: Dict[str, Dict[Union[int, str], np.ndarray]] = (
+            {}
+        )
+        self._batch_of_kalman_filters: Dict[Union[int, str], VelocityKalmanFilter] = {}
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        image: WorkflowImageData,
+        detections: NativeDetections,
+        smoothing_window_size: int,
+        bbox_smoothing_coefficient: float,
+    ) -> BlockResult:
+        metadata = image.video_metadata
+        num_detections = int(detections.xyxy.shape[0])
+        bboxes_metadata = detections.bboxes_metadata
+        tracker_ids = [
+            (
+                (bboxes_metadata[i] or {}).get("tracker_id")
+                if bboxes_metadata is not None
+                else None
+            )
+            for i in range(num_detections)
+        ]
+        if num_detections > 0 and any(tracker_id is None for tracker_id in tracker_ids):
+            raise ValueError(
+                f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
+            )
+
+        device = detections.xyxy.device
+        # Per-row xyxy materialised to host once so the numpy Kalman / smoothing
+        # helpers stay device-agnostic.
+        xyxy_rows = detections.xyxy.detach().to("cpu").numpy().astype(float)
+
+        cached_detections = self._batch_of_last_known_detections.setdefault(
+            metadata.video_identifier, {}
+        )
+        cached_xyxy = self._batch_of_last_known_xyxy.setdefault(
+            metadata.video_identifier, {}
+        )
+        kalman_filter = self._batch_of_kalman_filters.setdefault(
+            metadata.video_identifier,
+            VelocityKalmanFilter(smoothing_window_size=smoothing_window_size),
+        )
+
+        measured_velocities = {}
+        for i, tracker_id in enumerate(tracker_ids):
+            if tracker_id not in cached_detections:
+                continue
+            x1, y1, x2, y2 = xyxy_rows[i]
+            this_frame_center_xy = [x1 + abs(x2 - x1), y1 + abs(y2 - y1)]
+            px1, py1, px2, py2 = cached_xyxy[tracker_id]
+            prev_frame_center_xy = [px1 + abs(px2 - px1), py1 + abs(py2 - py1)]
+            measured_velocities[tracker_id] = (
+                this_frame_center_xy[0] - prev_frame_center_xy[0],
+                this_frame_center_xy[1] - prev_frame_center_xy[1],
+            )
+        predicted_velocities = kalman_filter.update(measurements=measured_velocities)
+
+        # Single-row native slices keyed by tracker_id, in input order, with the
+        # current-frame box smoothed against the previous-frame box when known.
+        predicted_detections: Dict[Union[int, str], NativeDetections] = {}
+        for i, tracker_id in enumerate(tracker_ids):
+            curr_frame_detection = take_detections_by_indices(detections, [i])
+            if tracker_id in cached_detections:
+                prev_frame_xyxy = np.asarray(cached_xyxy[tracker_id])
+                curr_frame_xyxy = xyxy_rows[i]
+                smoothed = smooth_xyxy(
+                    prev_xyxy=prev_frame_xyxy,
+                    curr_xyxy=curr_frame_xyxy,
+                    alpha=bbox_smoothing_coefficient,
+                )
+                _set_row_xyxy(curr_frame_detection, smoothed, device=device)
+                predicted_detections[tracker_id] = curr_frame_detection
+            else:
+                predicted_detections[tracker_id] = curr_frame_detection
+            # Cache the unsmoothed current detection for next frame's velocity /
+            # gap-fill measurements.
+            cached_detections[tracker_id] = take_detections_by_indices(detections, [i])
+            cached_xyxy[tracker_id] = np.asarray(xyxy_rows[i], dtype=float).reshape(-1)[
+                :4
+            ]
+
+        for tracker_id, predicted_velocity in predicted_velocities.items():
+            if tracker_id in predicted_detections:
+                continue
+            prev_frame_detection = cached_detections[tracker_id]
+            prev_frame_xyxy = np.asarray(cached_xyxy[tracker_id])
+            curr_frame_xyxy = np.array(
+                [
+                    prev_frame_xyxy
+                    + np.array([predicted_velocity, predicted_velocity]).flatten()
+                ]
+            )
+            smoothed = smooth_xyxy(
+                prev_xyxy=prev_frame_xyxy,
+                curr_xyxy=curr_frame_xyxy,
+                alpha=bbox_smoothing_coefficient,
+            )
+            _set_row_xyxy(prev_frame_detection, smoothed, device=device)
+            predicted_detections[tracker_id] = prev_frame_detection
+            # The cached slice was mutated in place to the smoothed/predicted box;
+            # keep the numpy xyxy cache in lockstep so next frame reads the same
+            # box without another device->host copy.
+            cached_xyxy[tracker_id] = np.asarray(smoothed, dtype=float).reshape(-1)[:4]
+
+        for tracker_id in list(cached_detections.keys()):
+            if (
+                tracker_id not in kalman_filter.tracked_vectors
+                and tracker_id not in predicted_detections
+            ):
+                del cached_detections[tracker_id]
+                cached_xyxy.pop(tracker_id, None)
+
+        merged_detections = _merge_native_detections(
+            list(predicted_detections.values()),
+            empty_template=detections,
+            device=device,
+        )
+        return {OUTPUT_KEY: merged_detections}
+
+
+def _row_xyxy(detection: NativeDetections) -> Tuple[float, float, float, float]:
+    """Return the single (and only) box of a one-row native detection as four
+    python floats."""
+    row = detection.xyxy[0].detach().to("cpu").numpy().astype(float)
+    return float(row[0]), float(row[1]), float(row[2]), float(row[3])
+
+
+def _set_row_xyxy(
+    detection: NativeDetections,
+    xyxy: np.ndarray,
+    device: torch.device,
+) -> None:
+    """Overwrite the single box of a one-row native detection in place, keeping
+    the tensor on ``device`` with the existing dtype."""
+    flat = np.asarray(xyxy, dtype=float).reshape(-1)[:4]
+    detection.xyxy = torch.as_tensor(
+        flat, dtype=detection.xyxy.dtype, device=device
+    ).reshape(1, 4)
+
+
+def _merge_native_detections(
+    detections_list: List[NativeDetections],
+    empty_template: NativeDetections,
+    device: torch.device,
+) -> NativeDetections:
+    """Concatenate single-row native detections back into one prediction:
+    xyxy / class_id / confidence are concatenated, ``bboxes_metadata`` lists are
+    joined (preserving each box's ``tracker_id`` and ``detection_id``), and
+    masks are concatenated (dense torch stack or RLE ``masks`` list).
+    ``image_metadata`` (carrying the ``class_names`` map needed by the
+    serialiser) is taken from the current input."""
+    if not detections_list:
+        return _empty_like(empty_template, device=device)
+
+    xyxy = torch.cat([d.xyxy for d in detections_list], dim=0)
+    class_id = torch.cat([d.class_id for d in detections_list], dim=0)
+    confidence = torch.cat([d.confidence for d in detections_list], dim=0)
+
+    bboxes_metadata: List[dict] = []
+    for d in detections_list:
+        if d.bboxes_metadata is not None:
+            bboxes_metadata.extend(d.bboxes_metadata)
+        else:
+            bboxes_metadata.append({})
+
+    image_metadata = empty_template.image_metadata
+
+    if isinstance(empty_template, InstanceDetections):
+        mask = _merge_native_masks(detections_list)
+        return InstanceDetections(
+            xyxy=xyxy,
+            class_id=class_id,
+            confidence=confidence,
+            mask=mask,
+            image_metadata=image_metadata,
+            bboxes_metadata=bboxes_metadata if bboxes_metadata else None,
+        )
+    return Detections(
+        xyxy=xyxy,
+        class_id=class_id,
+        confidence=confidence,
+        image_metadata=image_metadata,
+        bboxes_metadata=bboxes_metadata if bboxes_metadata else None,
+    )
+
+
+def _merge_native_masks(
+    detections_list: List[NativeDetections],
+) -> Union[torch.Tensor, InstancesRLEMasks]:
+    """Concatenate the per-instance masks of single-row InstanceDetections."""
+    first_mask = detections_list[0].mask
+    if isinstance(first_mask, InstancesRLEMasks):
+        merged_masks: List[bytes] = []
+        for d in detections_list:
+            merged_masks.extend(d.mask.masks)
+        return InstancesRLEMasks(
+            image_size=first_mask.image_size,
+            masks=merged_masks,
+        )
+    return torch.cat([d.mask for d in detections_list], dim=0)
+
+
+def _empty_like(
+    template: NativeDetections,
+    device: torch.device,
+) -> NativeDetections:
+    """Empty merged result preserving the template's shape / image_metadata.
+
+    Carries over the ``class_names`` map so the serialiser still resolves names.
+    """
+    image_metadata = template.image_metadata
+    if image_metadata is None:
+        image_metadata = {CLASS_NAMES_KEY: {}}
+    xyxy = torch.zeros((0, 4), dtype=torch.float32, device=device)
+    class_id = torch.zeros((0,), dtype=torch.long, device=device)
+    confidence = torch.zeros((0,), dtype=torch.float32, device=device)
+    if isinstance(template, InstanceDetections):
+        if isinstance(template.mask, InstancesRLEMasks):
+            empty_mask: Union[torch.Tensor, InstancesRLEMasks] = InstancesRLEMasks(
+                image_size=template.mask.image_size,
+                masks=[],
+            )
+        else:
+            empty_mask = torch.zeros(
+                (0,) + tuple(template.mask.shape[1:]),
+                dtype=template.mask.dtype,
+                device=device,
+            )
+        return InstanceDetections(
+            xyxy=xyxy,
+            class_id=class_id,
+            confidence=confidence,
+            mask=empty_mask,
+            image_metadata=image_metadata,
+            bboxes_metadata=None,
+        )
+    return Detections(
+        xyxy=xyxy,
+        class_id=class_id,
+        confidence=confidence,
+        image_metadata=image_metadata,
+        bboxes_metadata=None,
+    )
+
+
+def smooth_xyxy(prev_xyxy: np.ndarray, curr_xyxy: np.ndarray, alpha=0.2) -> np.ndarray:
+    smoothed_xyxy = alpha * curr_xyxy + (1 - alpha) * prev_xyxy
+
+    return smoothed_xyxy
+
+
+class VelocityKalmanFilter:
+    def __init__(self, smoothing_window_size: int):
+        self.time_step = 1
+        self.smoothing_window_size = smoothing_window_size
+        self.state_transition_matrix = np.array([[1, 0], [0, 1]])
+        self.process_noise_covariance = np.eye(2) * 0.001
+        self.measurement_noise_covariance = np.eye(2) * 0.01
+        self.tracked_vectors: Dict[
+            Union[int, str],
+            Dict[
+                Literal["velocity", "error_covariance", "history"],
+                Union[np.ndarray, Deque[float, float]],
+            ],
+        ] = {}
+
+    def predict(self) -> Dict[Union[int, str], np.ndarray]:
+        predictions: Dict[Union[int, str], np.ndarray] = {}
+        for tracker_id, data in self.tracked_vectors.items():
+            data["velocity"] = np.dot(self.state_transition_matrix, data["velocity"])
+            data["error_covariance"] = (
+                np.dot(
+                    np.dot(self.state_transition_matrix, data["error_covariance"]),
+                    self.state_transition_matrix.T,
+                )
+                + self.process_noise_covariance
+            )
+            predictions[tracker_id] = data["velocity"]
+        return predictions
+
+    def update(
+        self, measurements: Dict[Union[int, str], Tuple[float, float]]
+    ) -> Dict[Union[int, str], np.ndarray]:
+        updated_vector_ids: Set[Union[int, str]] = set()
+        for tracker_id, velocity in measurements.items():
+            updated_vector_ids.add(tracker_id)
+            if tracker_id in self.tracked_vectors:
+                measurement = np.array(velocity).reshape(2, 1)
+                tracked_vector = self.tracked_vectors[tracker_id]
+                tracked_vector["history"].appendleft(measurement)
+                smoothed_measurement = np.mean(tracked_vector["history"], axis=0)
+                measurement_residual = smoothed_measurement - tracked_vector["velocity"]
+                residual_covariance = (
+                    tracked_vector["error_covariance"]
+                    + self.measurement_noise_covariance
+                )
+                kalman_gain = np.dot(
+                    tracked_vector["error_covariance"],
+                    np.linalg.inv(residual_covariance),
+                )
+                tracked_vector["velocity"] = tracked_vector["velocity"] + np.dot(
+                    kalman_gain, measurement_residual
+                )
+                tracked_vector["error_covariance"] = tracked_vector[
+                    "error_covariance"
+                ] - np.dot(kalman_gain, tracked_vector["error_covariance"])
+            else:
+                self.tracked_vectors[tracker_id] = {
+                    "velocity": np.array([[velocity[0]], [velocity[1]]]),
+                    "error_covariance": np.eye(2),
+                    "history": deque(
+                        [np.array([[velocity[0]], [velocity[1]]])],
+                        maxlen=self.smoothing_window_size,
+                    ),
+                }
+
+        predicted_velocities = self.predict()
+
+        for tracker_id in set(self.tracked_vectors.keys()) - updated_vector_ids:
+            if self.tracked_vectors[tracker_id]["history"]:
+                self.tracked_vectors[tracker_id]["history"].popleft()
+            if not self.tracked_vectors[tracker_id]["history"]:
+                del self.tracked_vectors[tracker_id]
+
+        return predicted_velocities

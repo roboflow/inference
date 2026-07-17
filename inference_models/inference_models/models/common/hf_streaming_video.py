@@ -313,6 +313,11 @@ class HFStreamingVideoBase(HFVideoModelBase):
 
 def _ensure_numpy_image(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     if isinstance(image, torch.Tensor):
+        # Workflow tensor images are channels-first (CHW); the HF processor expects
+        # channels-last (HWC). Permute before the host transfer so the processor
+        # receives a correctly-shaped image.
+        if image.ndim == 3 and image.shape[0] in (1, 3, 4):
+            image = image.permute(1, 2, 0)
         return image.detach().cpu().numpy()
     return image
 

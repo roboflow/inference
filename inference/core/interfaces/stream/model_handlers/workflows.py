@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+import torch
+
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -90,7 +93,16 @@ class WorkflowRunner:
         ]
         workflows_parameters[self._image_input_name] = [
             {
-                "type": "numpy_object",
+                # GPU-tensor decoding is best-effort under the tensor flag
+                # (the cv2 CPU fallback emits numpy frames, and sources may
+                # mix within one batch), so each frame declares its actual
+                # payload type instead of a fixed flag-derived one.
+                "type": (
+                    "tensor"
+                    if ENABLE_TENSOR_DATA_REPRESENTATION
+                    and isinstance(video_frame.image, torch.Tensor)
+                    else "numpy_object"
+                ),
                 "value": video_frame.image,
                 "video_metadata": video_metadata,
             }

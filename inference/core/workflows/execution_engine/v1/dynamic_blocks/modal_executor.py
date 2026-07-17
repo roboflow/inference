@@ -179,6 +179,67 @@ def _serialise_image_for_webexec(image: Any) -> dict:
     return result
 
 
+def _raise_on_unconverted_tensor_native_value(obj: Any) -> None:
+    """Defense-in-depth for the Modal wire (tensor pivot, D2-REVISED / Step 7).
+
+    Under ``ENABLE_TENSOR_DATA_REPRESENTATION`` the dynamic-block representation
+    boundary converts ``legacy_compatibility`` inputs BEFORE remote execution and
+    ``tensor_native`` is compile-blocked on modal, so no native
+    ``inference_models`` object (nor a bare ``torch.Tensor``) should ever reach
+    this serializer. If one does, the generic ``__dict__`` fallback would
+    silently stringify it on the wire — raise loudly instead. Provably inert
+    when the flag is off (guard first; natives cannot exist flag-off anyway),
+    keeping flag-off behavior byte-identical. Lazy imports mirror this file's
+    style; the modules are already in ``sys.modules`` on any code path that
+    reaches Modal serialization (the block scaffolding imports the boundary).
+    """
+    # The boundary module's import-time constant is the established patch point
+    # for tests; reading it through the module keeps the two arms in lockstep.
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        representation_boundary,
+    )
+
+    if not representation_boundary._TENSOR_REPRESENTATION_ACTIVE:
+        return
+    import torch
+
+    from inference_models.models.base.classification import (
+        ClassificationPrediction,
+        MultiLabelClassificationPrediction,
+    )
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+    from inference_models.models.base.keypoints_detection import KeyPoints
+    from inference_models.models.base.object_detection import Detections
+
+    if not isinstance(
+        obj,
+        (
+            Detections,
+            InstanceDetections,
+            KeyPoints,
+            ClassificationPrediction,
+            MultiLabelClassificationPrediction,
+            torch.Tensor,
+        ),
+    ):
+        return
+    offending_type = type(obj)
+    raise representation_boundary.RepresentationBoundaryError(
+        public_message=(
+            f"A native tensor object of type "
+            f"`{offending_type.__module__}.{offending_type.__qualname__}` reached the "
+            f"Modal wire serializer unconverted. The representation boundary converts "
+            f"`legacy_compatibility` inputs before remote execution (and "
+            f"`tensor_native` is not executable over modal), so this indicates the "
+            f"value bypassed the boundary. Declare the input's kind on the dynamic "
+            f"block so the boundary can convert it — refusing to fall back to generic "
+            f"object serialization, which would silently corrupt the value on the wire."
+        ),
+        context="workflow_execution | modal_executor | input_serialization",
+        offending_type=offending_type,
+    )
+
+
 def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
     from datetime import datetime
 
@@ -201,6 +262,10 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
                     "shape": obj.shape,
                 }
             elif hasattr(obj, "__dict__"):
+                # Native tensor objects also carry __dict__ — refuse to
+                # stringify them (see the helper's docstring); arbitrary
+                # non-native objects keep the pre-existing generic contract.
+                _raise_on_unconverted_tensor_native_value(obj)
                 return {
                     "_type": "object",
                     "class": obj.__class__.__name__,

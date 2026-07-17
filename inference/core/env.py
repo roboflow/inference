@@ -668,7 +668,9 @@ PREDICTIONS_QUEUE_SIZE = int(
     os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512)
 )
 RESTART_ATTEMPT_DELAY = int(os.getenv("INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", 1))
-DEFAULT_BUFFER_SIZE = int(os.getenv("VIDEO_SOURCE_BUFFER_SIZE", "64"))
+# DEFAULT_BUFFER_SIZE (VIDEO_SOURCE_BUFFER_SIZE) is defined further down - its
+# default depends on ENABLE_TENSOR_DATA_REPRESENTATION, which is not parsed yet
+# at this point of the module.
 DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE = float(
     os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE", "0.1")
 )
@@ -1166,3 +1168,63 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
         )
 else:
     DISABLED_INFERENCE_MODELS_BACKENDS = set()
+
+ENABLE_TENSOR_DATA_REPRESENTATION = (
+    str2bool(os.getenv("ENABLE_TENSOR_DATA_REPRESENTATION", "False"))
+    and USE_INFERENCE_MODELS
+)
+
+
+WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
+    "WORKFLOWS_IMAGE_TENSOR_DEVICE"
+)
+# `torch` is an OPTIONAL dependency: the slim `inference-core` artifact ships
+# without it, and `import inference.core.env` must succeed when torch is ABSENT.
+# Only the tensor-native path (ENABLE_TENSOR_DATA_REPRESENTATION on) needs a torch
+# device, so both the import and the device materialisation are deferred behind
+# the flag AND guarded on torch's presence — this code never touches torch when
+# the flag is off or torch is missing. Every consumer of this value is a
+# tensor-only (flag-on) code path, so leaving it ``None`` off-flag is safe.
+WORKFLOWS_IMAGE_TENSOR_DEVICE = None
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    try:
+        import torch
+
+        if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
+            WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = (
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
+        WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)
+    except ImportError:
+        # Flag on but torch not installed: keep env import working; the tensor
+        # path surfaces a targeted error when it actually tries to use a device.
+        pass
+
+# VideoSource decode-buffer depth. 64 buffered frames is a sane host-RAM
+# default, but under ENABLE_TENSOR_DATA_REPRESENTATION the hardware decoders
+# emit CLONED GPU tensors (dgpu/jetson producers), so every buffered 1080p RGB
+# frame holds ~6 MB of VRAM (~25 MB at 4K): a 64-deep queue costs ~0.4 GB per
+# 1080p stream (~1.6 GB at 4K) before any model allocates, multiplied across
+# sources. Default to a shallow queue when the flag is on; an explicit
+# VIDEO_SOURCE_BUFFER_SIZE always wins.
+DEFAULT_BUFFER_SIZE = int(
+    os.getenv(
+        "VIDEO_SOURCE_BUFFER_SIZE",
+        "8" if ENABLE_TENSOR_DATA_REPRESENTATION else "64",
+    )
+)
+
+# Instance-mask carrier for the tensor-native SAM video-tracker blocks
+# ("rle" = compact COCO RLE, "dense" = boolean torch tensors). This is an
+# execution-level flag, NOT a block manifest field (manifests stay identical
+# across the flag swap); GCP_SERVERLESS forces "rle" at run time regardless.
+WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION = (
+    os.getenv("WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION", "rle").strip().lower()
+)
+if WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION not in {"rle", "dense"}:
+    warnings.warn(
+        "Invalid value of `WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION` variable: "
+        f"{WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION!r} - allowed values are 'rle' "
+        "and 'dense'. Falling back to 'rle'."
+    )
+    WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION = "rle"

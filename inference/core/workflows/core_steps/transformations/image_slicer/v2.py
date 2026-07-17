@@ -177,6 +177,18 @@ class ImageSlicerBlockV2(WorkflowBlock):
         overlap_ratio_width: float,
         overlap_ratio_height: float,
     ) -> BlockResult:
+        # When a GPU/device tensor image is already materialised, slice the tensor
+        # (a zero-copy view) and emit tensor-backed crops so the per-slice
+        # tensor-native model reads them without a full-frame device->host round
+        # trip. Otherwise keep the numpy/cv2 path unchanged.
+        if image.is_tensor_materialised():
+            return self._run_tensor(
+                image=image,
+                slice_width=slice_width,
+                slice_height=slice_height,
+                overlap_ratio_width=overlap_ratio_width,
+                overlap_ratio_height=overlap_ratio_height,
+            )
         image_numpy = image.numpy_image
         resolution_wh = (image_numpy.shape[1], image_numpy.shape[0])
         offsets = generate_offsets(
@@ -193,6 +205,42 @@ class ImageSlicerBlockV2(WorkflowBlock):
                     origin_image_data=image,
                     crop_identifier=f"image_slicer.{uuid4()}",
                     cropped_image=crop_numpy,
+                    offset_x=x_min,
+                    offset_y=y_min,
+                )
+                slices.append({"slices": cropped_image})
+            else:
+                slices.append({"slices": None})
+        return slices
+
+    def _run_tensor(
+        self,
+        image: WorkflowImageData,
+        slice_width: int,
+        slice_height: int,
+        overlap_ratio_width: float,
+        overlap_ratio_height: float,
+    ) -> BlockResult:
+        # tensor_image is CHW; resolution is (W, H) read off the tensor shape so the
+        # whole frame is never transferred to host just to compute offsets.
+        tensor = image.tensor_image
+        resolution_wh = (int(tensor.shape[2]), int(tensor.shape[1]))
+        offsets = generate_offsets(
+            resolution_wh=resolution_wh,
+            slice_wh=(slice_width, slice_height),
+            overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
+        )
+        slices = []
+        for offset in offsets:
+            x_min, y_min, x_max, y_max = (int(v) for v in offset)
+            # tensor[..., y0:y1, x0:x1] is a zero-copy view on-device; make it
+            # contiguous so the crop WorkflowImageData carries a dense device buffer.
+            crop_tensor = tensor[:, y_min:y_max, x_min:x_max]
+            if crop_tensor.numel():
+                cropped_image = WorkflowImageData.create_crop_from_tensor(
+                    origin_image_data=image,
+                    crop_identifier=f"image_slicer.{uuid4()}",
+                    cropped_tensor_image=crop_tensor.contiguous(),
                     offset_x=x_min,
                     offset_y=y_min,
                 )

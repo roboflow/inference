@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, 
 
 import numpy as np
 import supervision as sv
-from supervision.config import CLASS_NAME_DATA_FIELD
+from supervision.config import CLASS_NAME_DATA_FIELD, ORIENTED_BOX_COORDINATES
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -306,6 +306,13 @@ def sv_detections_to_root_coordinates(
         detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
             detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] + polygon_shift
         )
+    if ORIENTED_BOX_COORDINATES in detections_copy.data:
+        # crop localization subtracts the crop origin from the OBB corners
+        # (dynamic_crop), so root conversion must add it back - same as xyxy,
+        # keypoints and polygons above
+        detections_copy.data[ORIENTED_BOX_COORDINATES] = detections_copy.data[
+            ORIENTED_BOX_COORDINATES
+        ] + np.asarray([shift_x, shift_y])
     if detections_copy.mask is not None:
         origin_mask_base = np.full((origin_height, origin_width), False)
         new_anchored_masks = np.array(

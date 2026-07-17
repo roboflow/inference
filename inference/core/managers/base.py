@@ -1,7 +1,7 @@
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -437,6 +437,24 @@ class ModelManager:
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
         return model.infer_from_request(request)
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        with start_span(
+            "model.infer",
+            {
+                "model.id": model_id,
+                "model.infer.caller": "run_tensor_native_inference",
+            },
+        ):
+            try:
+                t_infer_start = time.perf_counter()
+                model = self._get_model_reference(model_id=model_id)
+                result = model.run_tensor_native_inference(**kwargs)
+                record_inference(model_id, time.perf_counter() - t_infer_start)
+                return result
+            except Exception as error:
+                record_error(error)
+                raise
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs

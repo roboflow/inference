@@ -1,11 +1,14 @@
 import numpy as np
+import pytest
 import supervision as sv
+import torch
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     ClassificationPrediction,
     InferenceResponseImage,
 )
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     OperationsChain,
 )
@@ -15,9 +18,26 @@ from inference.core.workflows.core_steps.formatters.property_definition.v1 impor
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
     AREA_KEY_IN_SV_DETECTIONS,
+    CLASS_NAMES_KEY,
+)
+from inference_models import ClassificationPrediction as NativeClassificationPrediction
+from inference_models.models.base.object_detection import Detections as NativeDetections
+
+# PropertyDefinitionBlockV1 runs UQL operation chains internally, which are
+# native-only under ENABLE_TENSOR_DATA_REPRESENTATION - hence the flag-opposed
+# _NUMPY_ONLY / _TENSOR_ONLY split below.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="dict / sv.Detections input; the UQL chain inside the block is native-only "
+    "under ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block() -> None:
     # given
     data = ClassificationInferenceResponse(
@@ -57,6 +77,7 @@ def test_property_extraction_block() -> None:
     assert result == {"output": "cat-mutated"}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_center() -> None:
     # given
     detections = sv.Detections(
@@ -81,6 +102,7 @@ def test_property_extraction_block_with_center() -> None:
     assert result == {"output": [[20, 30], [40, 50]]}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_top_left() -> None:
     # given
     detections = sv.Detections(
@@ -105,6 +127,7 @@ def test_property_extraction_block_with_top_left() -> None:
     assert result == {"output": [[10, 20], [30, 40]]}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_top_right() -> None:
     # given
     detections = sv.Detections(
@@ -129,6 +152,7 @@ def test_property_extraction_block_with_top_right() -> None:
     assert result == {"output": [[30, 20], [50, 40]]}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_bottom_left() -> None:
     # given
     detections = sv.Detections(
@@ -153,6 +177,7 @@ def test_property_extraction_block_with_bottom_left() -> None:
     assert result == {"output": [[10, 40], [30, 60]]}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_bottom_right() -> None:
     # given
     detections = sv.Detections(
@@ -177,6 +202,7 @@ def test_property_extraction_block_with_bottom_right() -> None:
     assert result == {"output": [[30, 40], [50, 60]]}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_area_px() -> None:
     # given
     detections = sv.Detections(
@@ -204,6 +230,7 @@ def test_property_extraction_block_with_area_px() -> None:
     assert result == {"output": [400.0, 1000.0]}
 
 
+@_NUMPY_ONLY
 def test_property_extraction_block_with_area_converted() -> None:
     # given
     detections = sv.Detections(
@@ -213,6 +240,212 @@ def test_property_extraction_block_with_area_converted() -> None:
         data={
             AREA_CONVERTED_KEY_IN_SV_DETECTIONS: np.array([4.0, 10.0], dtype=np.float32)
         },
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {
+                    "type": "DetectionsPropertyExtract",
+                    "property_name": AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+                }
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [4.0, 10.0]}
+
+
+# ---------------------------------------------------------------------------
+# Tensor-native variants (run only under ENABLE_TENSOR_DATA_REPRESENTATION)
+# ---------------------------------------------------------------------------
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_tensor_native() -> None:
+    # given
+    data = NativeClassificationPrediction(
+        class_id=torch.tensor([0], dtype=torch.long),
+        confidence=torch.tensor([[0.6, 0.4]], dtype=torch.float32),
+        images_metadata=[{CLASS_NAMES_KEY: {0: "cat", 1: "dog"}}],
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {
+                    "type": "ClassificationPropertyExtract",
+                    "property_name": "top_class",
+                },
+                {
+                    "type": "LookupTable",
+                    "lookup_table": {"cat": "cat-mutated"},
+                },
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=data, operations=operations)
+
+    # then
+    assert result == {"output": "cat-mutated"}
+
+
+def _native_detections_for_property_extraction() -> NativeDetections:
+    return NativeDetections(
+        xyxy=torch.tensor([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=torch.float32),
+        class_id=torch.tensor([0, 1], dtype=torch.long),
+        confidence=torch.tensor([0.6, 0.4], dtype=torch.float32),
+    )
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_center_tensor_native() -> None:
+    # given
+    detections = _native_detections_for_property_extraction()
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "center"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then - anchor coords are rounded ints
+    assert result == {"output": [[20, 30], [40, 50]]}
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_top_left_tensor_native() -> None:
+    # given
+    detections = _native_detections_for_property_extraction()
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "top_left"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[10, 20], [30, 40]]}
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_top_right_tensor_native() -> None:
+    # given
+    detections = _native_detections_for_property_extraction()
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "top_right"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[30, 20], [50, 40]]}
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_bottom_left_tensor_native() -> None:
+    # given
+    detections = _native_detections_for_property_extraction()
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "bottom_left"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[10, 40], [30, 60]]}
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_bottom_right_tensor_native() -> None:
+    # given
+    detections = _native_detections_for_property_extraction()
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "bottom_right"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[30, 40], [50, 60]]}
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_area_px_tensor_native() -> None:
+    # given - non-geometric per-box scalars are read from bboxes_metadata
+    detections = NativeDetections(
+        xyxy=torch.tensor([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=torch.float32),
+        class_id=torch.tensor([0, 1], dtype=torch.long),
+        confidence=torch.tensor([0.6, 0.4], dtype=torch.float32),
+        bboxes_metadata=[
+            {AREA_KEY_IN_SV_DETECTIONS: 400.0},
+            {AREA_KEY_IN_SV_DETECTIONS: 1000.0},
+        ],
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {
+                    "type": "DetectionsPropertyExtract",
+                    "property_name": AREA_KEY_IN_SV_DETECTIONS,
+                }
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [400.0, 1000.0]}
+
+
+@_TENSOR_ONLY
+def test_property_extraction_block_with_area_converted_tensor_native() -> None:
+    # given - non-geometric per-box scalars are read from bboxes_metadata
+    detections = NativeDetections(
+        xyxy=torch.tensor([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=torch.float32),
+        class_id=torch.tensor([0, 1], dtype=torch.long),
+        confidence=torch.tensor([0.6, 0.4], dtype=torch.float32),
+        bboxes_metadata=[
+            {AREA_CONVERTED_KEY_IN_SV_DETECTIONS: 4.0},
+            {AREA_CONVERTED_KEY_IN_SV_DETECTIONS: 10.0},
+        ],
     )
     operations = OperationsChain.model_validate(
         {

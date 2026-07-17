@@ -1,13 +1,38 @@
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.classification import ClassificationPrediction
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the CLIP block emits the embedding as the
+# tensor-native EMBEDDING kind (a torch.Tensor) instead of a numpy array / list.
+# `ExecutionEngine.run` does not serialise outputs (serialize_results defaults to
+# False), so the raw torch.Tensor reaches the test. Calling np.mean/np.max/np.min/
+# np.std directly on a torch.Tensor raises TypeError. The numeric content is
+# identical to the numpy baseline; the *_tensor_native sibling asserts the same
+# statistics after converting the tensor to numpy.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="embedding output is a torch.Tensor under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 CLIP_WORKFLOW = {
@@ -296,6 +321,7 @@ CLIP_TEXT_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 def test_clip_text_embedding_model(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
@@ -336,6 +362,54 @@ def test_clip_text_embedding_model(
     ), "Expected embedding to have a value similar to during testing"
     assert (
         pytest.approx(np.std(result[0]["text_embeddings"]), 0.0001) == 0.39733439
+    ), "Expected embedding to have a value similar to during testing"
+
+
+@_TENSOR_ONLY
+def test_clip_text_embedding_model_tensor_native(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CLIP_TEXT_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"prompt": "Foo Bar"})
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output"
+    assert set(result[0].keys()) == {
+        "text_embeddings",
+    }, "Expected all declared outputs to be delivered"
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION the embedding is a tensor-native
+    # EMBEDDING (a torch.Tensor). It serialises to List[float] at the API boundary;
+    # here we convert to numpy and assert the same statistics as the numpy baseline.
+    text_embeddings = np.asarray(result[0]["text_embeddings"].detach().cpu())
+    assert (
+        len(text_embeddings) == 1024
+    ), "Expected text embedding to be of dimension 1024 for RN50 model"
+    assert (
+        pytest.approx(np.mean(text_embeddings), 0.0001) == -0.016772
+    ), "Expected embedding to have a value similar to during testing"
+    assert (
+        pytest.approx(np.max(text_embeddings), 0.0001) == 1.65736556
+    ), "Expected embedding to have a value similar to during testing"
+    assert (
+        pytest.approx(np.min(text_embeddings), 0.0001) == -10.109556
+    ), "Expected embedding to have a value similar to during testing"
+    assert (
+        pytest.approx(np.std(text_embeddings), 0.0001) == 0.39733439
     ), "Expected embedding to have a value similar to during testing"
 
 
@@ -464,6 +538,7 @@ WORKFLOW_WITH_CLIP_COMPARISON_V2 = {
 }
 
 
+@_NUMPY_ONLY
 def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_input(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
@@ -558,6 +633,234 @@ def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_inp
     ), "Expected least similar class to be extracted properly"
     assert (
         result[1]["clip_output"]["classification_predictions"]["top"] == "crowd"
+    ), "Expected classifier output to be shaped correctly"
+    assert (
+        result[1]["class_name"] == "crowd"
+    ), "Expected property definition step to cooperate nicely with clip output"
+
+
+@_TENSOR_ONLY
+def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_input_tensor_native(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLIP_COMPARISON_V2,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [license_plate_image, crowd_image],
+            "reference": ["car", "crowd"],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
+        "clip_output",
+        "class_name",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "clip_output",
+        "class_name",
+    }, "Expected all declared outputs to be delivered"
+    assert np.allclose(
+        result[0]["clip_output"]["similarities"],
+        [0.23334351181983948, 0.17259158194065094],
+        atol=1e-2,
+    ), "Expected predicted similarities to match values verified at test creation"
+    assert (
+        abs(
+            result[0]["clip_output"]["similarities"][0]
+            - result[0]["clip_output"]["max_similarity"]
+        )
+        < 1e-2
+    ), "Expected max similarity to be correct"
+    assert (
+        abs(
+            result[0]["clip_output"]["similarities"][1]
+            - result[0]["clip_output"]["min_similarity"]
+        )
+        < 1e-2
+    ), "Expected max similarity to be correct"
+    assert (
+        result[0]["clip_output"]["most_similar_class"] == "car"
+    ), "Expected most similar class to be extracted properly"
+    assert (
+        result[0]["clip_output"]["least_similar_class"] == "crowd"
+    ), "Expected least similar class to be extracted properly"
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION clip_comparison@v2_tensor places a native
+    # ClassificationPrediction at clip_output["classification_predictions"]; the top class
+    # name lives at images_metadata[0][CLASS_NAMES_KEY] (plural, indexed) keyed by the top
+    # class id (pred.class_id) rather than under a ["top"] subscript.
+    pred_0 = result[0]["clip_output"]["classification_predictions"]
+    assert isinstance(pred_0, ClassificationPrediction)
+    assert (
+        pred_0.images_metadata[0][CLASS_NAMES_KEY][int(pred_0.class_id.reshape(-1)[0])]
+        == "car"
+    ), "Expected classifier output to be shaped correctly"
+    assert (
+        result[0]["class_name"] == "car"
+    ), "Expected property definition step to cooperate nicely with clip output"
+    assert np.allclose(
+        result[1]["clip_output"]["similarities"],
+        [0.18426208198070526, 0.207647442817688],
+        atol=1e-2,
+    ), "Expected predicted similarities to match values verified at test creation"
+    assert (
+        abs(
+            result[1]["clip_output"]["similarities"][1]
+            - result[1]["clip_output"]["max_similarity"]
+        )
+        < 1e-5
+    ), "Expected max similarity to be correct"
+    assert (
+        abs(
+            result[1]["clip_output"]["similarities"][0]
+            - result[1]["clip_output"]["min_similarity"]
+        )
+        < 1e-5
+    ), "Expected max similarity to be correct"
+    assert (
+        result[1]["clip_output"]["most_similar_class"] == "crowd"
+    ), "Expected most similar class to be extracted properly"
+    assert (
+        result[1]["clip_output"]["least_similar_class"] == "car"
+    ), "Expected least similar class to be extracted properly"
+    pred_1 = result[1]["clip_output"]["classification_predictions"]
+    assert isinstance(pred_1, ClassificationPrediction)
+    assert (
+        pred_1.images_metadata[0][CLASS_NAMES_KEY][int(pred_1.class_id.reshape(-1)[0])]
+        == "crowd"
+    ), "Expected classifier output to be shaped correctly"
+    assert (
+        result[1]["class_name"] == "crowd"
+    ), "Expected property definition step to cooperate nicely with clip output"
+
+
+@_TENSOR_ONLY
+def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_input_with_tensor_input(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # Same as the *_tensor_native variant, but both images arrive ALREADY materialised as
+    # CHW RGB device tensors (is_tensor_materialised() == True), so the CLIP block runs its
+    # on-device tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLIP_COMPARISON_V2,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the fixtures as pre-materialised tensors
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [
+                numpy_image_as_tensor(license_plate_image),
+                numpy_image_as_tensor(crowd_image),
+            ],
+            "reference": ["car", "crowd"],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
+        "clip_output",
+        "class_name",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "clip_output",
+        "class_name",
+    }, "Expected all declared outputs to be delivered"
+    assert np.allclose(
+        result[0]["clip_output"]["similarities"],
+        [0.23334351181983948, 0.17259158194065094],
+        atol=1e-2,
+    ), "Expected predicted similarities to match values verified at test creation"
+    assert (
+        abs(
+            result[0]["clip_output"]["similarities"][0]
+            - result[0]["clip_output"]["max_similarity"]
+        )
+        < 1e-2
+    ), "Expected max similarity to be correct"
+    assert (
+        abs(
+            result[0]["clip_output"]["similarities"][1]
+            - result[0]["clip_output"]["min_similarity"]
+        )
+        < 1e-2
+    ), "Expected max similarity to be correct"
+    assert (
+        result[0]["clip_output"]["most_similar_class"] == "car"
+    ), "Expected most similar class to be extracted properly"
+    assert (
+        result[0]["clip_output"]["least_similar_class"] == "crowd"
+    ), "Expected least similar class to be extracted properly"
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION clip_comparison@v2_tensor places a native
+    # ClassificationPrediction at clip_output["classification_predictions"]; the top class
+    # name lives at images_metadata[0][CLASS_NAMES_KEY] (plural, indexed) keyed by the top
+    # class id (pred.class_id) rather than under a ["top"] subscript.
+    pred_0 = result[0]["clip_output"]["classification_predictions"]
+    assert isinstance(pred_0, ClassificationPrediction)
+    assert (
+        pred_0.images_metadata[0][CLASS_NAMES_KEY][int(pred_0.class_id.reshape(-1)[0])]
+        == "car"
+    ), "Expected classifier output to be shaped correctly"
+    assert (
+        result[0]["class_name"] == "car"
+    ), "Expected property definition step to cooperate nicely with clip output"
+    assert np.allclose(
+        result[1]["clip_output"]["similarities"],
+        [0.18426208198070526, 0.207647442817688],
+        atol=1e-2,
+    ), "Expected predicted similarities to match values verified at test creation"
+    assert (
+        abs(
+            result[1]["clip_output"]["similarities"][1]
+            - result[1]["clip_output"]["max_similarity"]
+        )
+        < 1e-5
+    ), "Expected max similarity to be correct"
+    assert (
+        abs(
+            result[1]["clip_output"]["similarities"][0]
+            - result[1]["clip_output"]["min_similarity"]
+        )
+        < 1e-5
+    ), "Expected max similarity to be correct"
+    assert (
+        result[1]["clip_output"]["most_similar_class"] == "crowd"
+    ), "Expected most similar class to be extracted properly"
+    assert (
+        result[1]["clip_output"]["least_similar_class"] == "car"
+    ), "Expected least similar class to be extracted properly"
+    pred_1 = result[1]["clip_output"]["classification_predictions"]
+    assert isinstance(pred_1, ClassificationPrediction)
+    assert (
+        pred_1.images_metadata[0][CLASS_NAMES_KEY][int(pred_1.class_id.reshape(-1)[0])]
+        == "crowd"
     ), "Expected classifier output to be shaped correctly"
     assert (
         result[1]["class_name"] == "crowd"

@@ -4,7 +4,11 @@ from uuid import UUID
 import numpy as np
 import pytest
 
-from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    USE_INFERENCE_MODELS,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
@@ -540,6 +544,22 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS = {
 }
 
 
+def _class_names_of_prediction(prediction) -> list:
+    """Representation-agnostic class-name extraction: raw engine outputs are
+    sv.Detections flag-off and native inference_models Detections flag-on (the
+    declared-kind OUT boundary converts them by design)."""
+    import supervision as sv
+
+    if isinstance(prediction, sv.Detections):
+        return prediction["class_name"].tolist()
+    per_box = prediction.bboxes_metadata or [{} for _ in range(len(prediction))]
+    mapping = (prediction.image_metadata or {}).get("class_names", {})
+    return [
+        str(box.get("class", mapping.get(int(class_id))))
+        for box, class_id in zip(per_box, prediction.class_id.detach().cpu().tolist())
+    ]
+
+
 def test_workflow_with_custom_python_block_operating_cross_dimensions(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -575,13 +595,13 @@ def test_workflow_with_custom_python_block_operating_cross_dimensions(
     }, "Expected all declared outputs to be delivered"
     assert len(result[1]["associated_detections"]) == 12
     class_names_first_image_crops = [
-        e["class_name"].tolist() for e in result[0]["associated_detections"]
+        _class_names_of_prediction(e) for e in result[0]["associated_detections"]
     ]
     for class_names in class_names_first_image_crops:
         assert len(class_names) == 1, "Expected single bbox to be associated"
     assert len(class_names_first_image_crops) == 2, "Expected 2 crops for first image"
     class_names_second_image_crops = [
-        e["class_name"].tolist() for e in result[1]["associated_detections"]
+        _class_names_of_prediction(e) for e in result[1]["associated_detections"]
     ]
     for class_names in class_names_second_image_crops:
         assert len(class_names) == 1, "Expected single bbox to be associated"
@@ -1050,3 +1070,581 @@ def test_workflow_with_custom_python_block_when_code_does_not_define_declared_in
             init_parameters=workflow_init_parameters,
             max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
         )
+
+
+FUNCTION_TO_FILTER_AND_PROBE = """
+def run(self, predictions: sv.Detections) -> BlockResult:
+    got_sv = isinstance(predictions, sv.Detections)
+    filtered = predictions[predictions.confidence > 0.6]
+    _ = filtered.xyxy.copy()  # numpy-style access, the documented legacy contract
+    return {"filtered": filtered, "got_sv": got_sv}
+"""
+
+WORKFLOW_WITH_BOTH_BOUNDARIES_AND_TENSOR_CONSUMER = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "FilterProbe",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                        "selector_data_kind": {
+                            "step_output": ["object_detection_prediction"]
+                        },
+                    },
+                },
+                "outputs": {
+                    "filtered": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["object_detection_prediction"],
+                    },
+                    "got_sv": {"type": "DynamicOutputDefinition", "kind": []},
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_FILTER_AND_PROBE,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "FilterProbe",
+            "name": "filter_probe",
+            "predictions": "$steps.model.predictions",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "count",
+            "data": "$steps.filter_probe.filtered",
+            "operations": [{"type": "SequenceLength"}],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "filtered",
+            "selector": "$steps.filter_probe.filtered",
+        },
+        {"type": "JsonField", "name": "count", "selector": "$steps.count.output"},
+        {
+            "type": "JsonField",
+            "name": "got_sv",
+            "selector": "$steps.filter_probe.got_sv",
+        },
+    ],
+}
+
+
+def test_workflow_with_custom_python_block_between_model_and_tensor_consumer(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Both boundaries in one workflow: model producer -> legacy custom block
+    (default knob; must see sv.Detections and use the numpy contract) ->
+    downstream UQL consumer (native ops under the flag) -> serialized output.
+    The hardcoded expectations hold in BOTH flag directions, which is the
+    integration-level parity statement (byte-parity is proven at the unit
+    layer's round-trip tests)."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BOTH_BOUNDARIES_AND_TENSOR_CONSUMER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    assert result[0]["got_sv"] is True, "User code must receive sv.Detections"
+    assert result[0]["count"] == 1, "Expected exactly one detection above 0.6"
+    serialized = result[0]["filtered"]["predictions"]
+    assert len(serialized) == 1
+    assert serialized[0]["class"] == "dog"
+    assert abs(serialized[0]["confidence"] - 0.856) < 0.1
+    assert {
+        "x",
+        "y",
+        "width",
+        "height",
+        "confidence",
+        "class",
+        "class_id",
+        "detection_id",
+    } <= set(serialized[0].keys())
+
+
+FUNCTION_RETURNING_BARE_TENSOR = """
+def run(self, predictions) -> BlockResult:
+    import torch
+    return {"weird": torch.zeros(3)}
+"""
+
+WORKFLOW_WITH_BARE_TENSOR_WILDCARD_OUTPUT = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "BareTensorBlock",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {"weird": {"type": "DynamicOutputDefinition", "kind": []}},
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_RETURNING_BARE_TENSOR,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "BareTensorBlock",
+            "name": "bad_block",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {"type": "JsonField", "name": "weird", "selector": "$steps.bad_block.weird"},
+    ],
+}
+
+
+def test_workflow_with_custom_python_block_returning_bare_tensor_via_wildcard(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """OUT-direction wildcard semantics: a bare torch.Tensor returned through a
+    wildcard output PASSES THROUGH in both flag directions — on the OUT side a
+    tensor is a native-representation value (the `tensor` kind's runtime type),
+    so the boundary forwards it untouched. The loud-error contract for bare
+    tensors applies to the IN direction (legacy user code cannot operate on
+    them) and is covered by the representation-boundary unit tests."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BARE_TENSOR_WILDCARD_OUTPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"image": [dogs_image]})
+
+    # then
+    import torch
+
+    assert isinstance(result[0]["weird"], torch.Tensor)
+    assert result[0]["weird"].shape == (3,)
+
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason=(
+        "tensor_native dynamic blocks compile only under "
+        "ENABLE_TENSOR_DATA_REPRESENTATION (the flag-off compile-time error is "
+        "unit-tested in test_block_assembler.py)"
+    ),
+)
+
+FUNCTION_MINTING_NATIVE_DETECTIONS = """
+def run(self, image) -> BlockResult:
+    detections = Detections(
+        xyxy=torch.tensor(
+            [[10.0, 10.0, 60.0, 60.0]], device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        class_id=torch.tensor([0], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        confidence=torch.tensor([0.9], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+    )
+    detections = attach_native_detection_metadata(
+        detections=detections,
+        image=image,
+        class_names={0: "widget"},
+        prediction_type="object-detection",
+    )
+    return {"predictions": detections}
+"""
+
+WORKFLOW_WITH_TENSOR_NATIVE_MINTING_BLOCK = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "NativeMinter",
+                "tensor_compatibility": "tensor_native",
+                "inputs": {
+                    "image": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_image"],
+                    },
+                },
+                "outputs": {
+                    "predictions": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["object_detection_prediction"],
+                    },
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_MINTING_NATIVE_DETECTIONS,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "NativeMinter",
+            "name": "minter",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.minter.predictions",
+        },
+    ],
+}
+
+
+@_TENSOR_ONLY
+def test_workflow_with_tensor_native_custom_block_minting_native_detections(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """tensor_native authoring surface: the extended IMPORTS_LINES must resolve in
+    the generated module namespace (torch, Detections,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE, attach_native_detection_metadata), and the
+    minted output must satisfy the tensor serializer's hard requirements
+    (class_names map + per-box detection_id) end-to-end."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_TENSOR_NATIVE_MINTING_BLOCK,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    serialized = result[0]["predictions"]["predictions"]
+    assert len(serialized) == 1
+    assert serialized[0]["class"] == "widget"
+    assert serialized[0]["class_id"] == 0
+    assert abs(serialized[0]["confidence"] - 0.9) < 1e-6
+    assert serialized[0]["x"] == 35.0 and serialized[0]["y"] == 35.0
+    assert serialized[0]["width"] == 50.0 and serialized[0]["height"] == 50.0
+    assert len(serialized[0]["detection_id"]) > 0
+
+
+FUNCTION_PROBING_NATIVE_PASSTHROUGH = """
+def run(self, predictions) -> BlockResult:
+    got_native = isinstance(predictions, Detections)
+    xyxy_is_tensor = isinstance(predictions.xyxy, torch.Tensor)
+    return {
+        "got_native": got_native,
+        "xyxy_is_tensor": xyxy_is_tensor,
+        "passthrough": predictions,
+    }
+"""
+
+WORKFLOW_WITH_TENSOR_NATIVE_PROBING_BLOCK = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "NativeProbe",
+                "tensor_compatibility": "tensor_native",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                        "selector_data_kind": {
+                            "step_output": ["object_detection_prediction"]
+                        },
+                    },
+                },
+                "outputs": {
+                    "got_native": {"type": "DynamicOutputDefinition", "kind": []},
+                    "xyxy_is_tensor": {"type": "DynamicOutputDefinition", "kind": []},
+                    "passthrough": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["object_detection_prediction"],
+                    },
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_PROBING_NATIVE_PASSTHROUGH,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "NativeProbe",
+            "name": "probe",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "got_native",
+            "selector": "$steps.probe.got_native",
+        },
+        {
+            "type": "JsonField",
+            "name": "xyxy_is_tensor",
+            "selector": "$steps.probe.xyxy_is_tensor",
+        },
+        {
+            "type": "JsonField",
+            "name": "passthrough",
+            "selector": "$steps.probe.passthrough",
+        },
+    ],
+}
+
+
+@_TENSOR_ONLY
+def test_workflow_with_tensor_native_custom_block_receiving_native_predictions(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """tensor_native pass-through: user code receives the NATIVE prediction from a
+    model step (no boundary conversion in either direction) and can return it
+    for downstream serialization."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_TENSOR_NATIVE_PROBING_BLOCK,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    assert result[0]["got_native"] is True, "User code must receive native Detections"
+    assert result[0]["xyxy_is_tensor"] is True, "Native xyxy must stay a torch.Tensor"
+    serialized = result[0]["passthrough"]["predictions"]
+    assert len(serialized) >= 1
+    assert {"x", "y", "width", "height", "confidence", "class", "detection_id"} <= set(
+        serialized[0].keys()
+    )
+
+
+FUNCTION_PASSING_PREDICTIONS_THROUGH = """
+def run(self, predictions) -> BlockResult:
+    return {"passthrough": predictions}
+"""
+
+WORKFLOW_WITH_WILDCARD_PREDICTIONS_OUTPUT = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "WildcardPassthrough",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {
+                    "passthrough": {"type": "DynamicOutputDefinition", "kind": []}
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_PASSING_PREDICTIONS_THROUGH,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "WildcardPassthrough",
+            "name": "passer",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "forwarded",
+            "selector": "$steps.passer.passthrough",
+        },
+    ],
+}
+
+
+def test_workflow_with_custom_python_block_wildcard_predictions_output_serialization(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Step-6 closure: predictions routed through a custom block's WILDCARD
+    output must serialize to the standard predictions dict at workflow outputs.
+    Flag-on: the OUT boundary converts the returned sv to native and the
+    flag-swapped tensor `serialize_wildcard_kind` emits the standard dict;
+    flag-off: the numpy wildcard sv arm does — identical assertions in both
+    directions are the parity statement."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_WILDCARD_PREDICTIONS_OUTPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    forwarded = result[0]["forwarded"]
+    assert isinstance(forwarded, dict), "Wildcard output must serialize to a dict"
+    serialized = forwarded["predictions"]
+    assert len(serialized) == 2, "Expected the two dogs the model detects"
+    assert {prediction["class"] for prediction in serialized} == {"dog"}
+    assert {
+        "x",
+        "y",
+        "width",
+        "height",
+        "confidence",
+        "class",
+        "class_id",
+        "detection_id",
+    } <= set(serialized[0].keys())
+
+
+def test_workflow_with_custom_python_block_bare_tensor_wildcard_output_serialization(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Step-6 closure of the gap the engine-level bare-tensor test left open:
+    with serialize_results=True, a bare torch.Tensor through a wildcard output
+    now serializes to the JSON-safe nested list under the flag (the tensor
+    wildcard serialiser mirrors the `tensor` kind) instead of crashing HTTP
+    encoding. Flag-off keeps the numpy wildcard contract verbatim: raw
+    passthrough (pre-existing behavior, deliberately unchanged)."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BARE_TENSOR_WILDCARD_OUTPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    import torch
+
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        assert result[0]["weird"] == [0.0, 0.0, 0.0]
+    else:
+        assert isinstance(result[0]["weird"], torch.Tensor)

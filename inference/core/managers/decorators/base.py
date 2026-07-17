@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -142,6 +142,9 @@ class ModelManagerDecorator(ModelManager):
         return self.model_manager.infer_only(
             model_id, request, img_in, img_dims, batch_size
         )
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        return self.model_manager.run_tensor_native_inference(model_id, **kwargs)
 
     def preprocess(self, model_id: str, request: InferenceRequest):
         """Processes the preprocessing part of a request.

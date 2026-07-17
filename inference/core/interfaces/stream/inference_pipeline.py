@@ -19,6 +19,7 @@ from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
     DISABLE_PREPROC_AUTO_ORIENT,
     ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     ENABLE_WORKFLOWS_PROFILING,
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
@@ -698,6 +699,7 @@ class InferencePipeline:
             batch_collection_timeout=batch_collection_timeout,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
+            allow_tensor_frames=ENABLE_TENSOR_DATA_REPRESENTATION,
         )
 
     @classmethod
@@ -718,6 +720,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
+        allow_tensor_frames: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -814,6 +817,7 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             desired_source_fps=desired_source_fps,
             decoding_buffer_size=decoding_buffer_size,
+            allow_tensor_frames=allow_tensor_frames,
         )
         watchdog.register_video_sources(video_sources=video_sources)
         try:
@@ -1117,7 +1121,15 @@ class InferencePipeline:
         video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
     ) -> None:
         try:
-            self._on_prediction(predictions, video_frames)
+            # Frames are handed to the sink AS-IS: under
+            # ENABLE_TENSOR_DATA_REPRESENTATION that is the original on-device
+            # tensor frame (no per-frame device-to-host materialisation here).
+            # Pixel-consuming sinks materialise at their own boundary via
+            # stream.utils.materialise_video_frame_for_sink.
+            self._on_prediction(
+                predictions,
+                video_frames,
+            )
         except Exception as error:
             payload = {
                 "error_type": error.__class__.__name__,

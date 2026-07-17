@@ -29,6 +29,11 @@ class KeyPoints:
         None  # if given, per-instance object confidence (instances, )
     )
 
+    def __len__(self) -> int:
+        # number of skeleton instances (xy is (instances, instance_key_points, 2));
+        # NOT the per-instance keypoint count (that would be xy.shape[1]).
+        return int(self.xy.shape[0])
+
     def to_supervision(self) -> sv.KeyPoints:
         """Convert keypoints to Supervision KeyPoints format.
 

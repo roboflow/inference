@@ -1,0 +1,298 @@
+# syntax=docker/dockerfile:1.7
+ARG JETSON_MEDIA_IMAGE=jetson-media
+ARG JETSON_WHEELS_IMAGE=jetson-wheels
+
+FROM ${JETSON_WHEELS_IMAGE} AS jetson-wheels-base
+
+FROM ubuntu:24.04 AS nvidia-repository-key
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-server-key-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-server-key-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
+    curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+        -o /nvidia-jetson.asc
+
+FROM ${JETSON_MEDIA_IMAGE} AS jetson-runtime-base
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG L4T_REPOSITORY=r39.2
+ARG TARGETARCH
+
+WORKDIR /app
+
+COPY --from=nvidia-repository-key /nvidia-jetson.asc /usr/share/keyrings/nvidia-jetson.asc
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-server-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-server-runtime-${TARGETARCH} \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/common ${L4T_REPOSITORY} main" > /etc/apt/sources.list.d/nvidia-jetson.list && \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/som ${L4T_REPOSITORY} main" >> /etc/apt/sources.list.d/nvidia-jetson.list && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        cuda-nvrtc-13-2 \
+        gcc \
+        libatlas3-base \
+        libatomic1 \
+        libcublas-13-2 \
+        libcudnn9-cuda-13 \
+        libcufft-13-2 \
+        libcufile-13-2 \
+        libcudla-13-2 \
+        libcuobjclient-13-2 \
+        libcurand-13-2 \
+        libcusolver-13-2 \
+        libcusparse-13-2 \
+        libexpat1 \
+        libgomp1 \
+        libnvfatbin-13-2 \
+        libnvjitlink-13-2 \
+        libopenblas0 \
+        libpcre3 \
+        libproj25 \
+        libsm6 \
+        libsqlite3-0 \
+        libvips42 \
+        python3.12-dev \
+        python3-libnvinfer \
+        python3-libnvinfer-dispatch \
+        python3-libnvinfer-lean \
+        tensorrt-libs && \
+    rm -f \
+        /etc/apt/sources.list.d/nvidia-jetson.list \
+        /usr/share/keyrings/nvidia-jetson.asc
+
+FROM ubuntu:24.04 AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTORCH_VERSION=2.10.0
+ARG TORCHVISION_VERSION=0.25.0
+ARG TARGETARCH
+ENV LANG=en_US.UTF-8
+
+WORKDIR /build
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-onnx-server-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-onnx-server-builder-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    git \
+    python3-dev \
+    python3-pip \
+    python3-venv
+
+RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
+    ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+COPY --from=jetson-wheels-base /opt/wheels /opt/wheels
+
+# The framework wheels are compiled in Dockerfile.wheels.jetson.7.2.0; the version
+# ARGs above must match its output or resolution would silently fall back to PyPI.
+RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}*.whl && test -e "$1" && \
+    set -- /opt/wheels/torchvision-${TORCHVISION_VERSION}*.whl && test -e "$1" && \
+    set -- /opt/wheels/onnxruntime_gpu-*.whl && test -e "$1" && \
+    set -- /opt/wheels/flash_attn-*.whl && test -e "$1" && \
+    set -- /opt/wheels/triton-*.whl && test -e "$1" && \
+    set -- /opt/wheels/pycuda-*.whl && test -e "$1"
+
+WORKDIR /build/reqs
+COPY requirements/_requirements.txt \
+     requirements/requirements.cli.txt \
+     requirements/requirements.http.txt \
+     requirements/requirements.clip.txt \
+     requirements/requirements.transformers.txt \
+     requirements/requirements.sam.txt \
+     requirements/requirements.groundingdino.txt \
+     requirements/requirements.yolo_world.txt \
+     requirements/requirements.doctr.txt \
+     requirements/requirements.sdk.http.txt \
+     requirements/requirements.easyocr.txt \
+     requirements/requirements.jetson.txt \
+     ./
+
+RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
+    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
+    uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
+    --find-links /opt/wheels \
+    --override /tmp/overrides.txt \
+    -r _requirements.txt \
+    -r requirements.cli.txt \
+    -r requirements.http.txt \
+    -r requirements.clip.txt \
+    -r requirements.transformers.txt \
+    -r requirements.sam.txt \
+    -r requirements.groundingdino.txt \
+    -r requirements.yolo_world.txt \
+    -r requirements.doctr.txt \
+    -r requirements.sdk.http.txt \
+    -r requirements.easyocr.txt \
+    -r requirements.jetson.txt \
+    /opt/wheels/flash_attn-*.whl \
+    /opt/wheels/onnxruntime_gpu-*.whl \
+    /opt/wheels/pycuda-*.whl \
+    /opt/wheels/triton-*.whl \
+    "setuptools<=75.5.0" \
+    "transformers>=4.57.3,<5.9.0" \
+    packaging \
+    && rm -rf ~/.cache/uv /tmp/overrides.txt
+
+WORKDIR /build/inference
+COPY . .
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel && \
+    python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
+    python -m pip install --break-system-packages \
+        dist/inference_core*.whl \
+        dist/inference_cli*.whl \
+        dist/inference_sdk*.whl \
+        "setuptools<=75.5.0" && \
+    cp dist/*.whl /opt/wheels/ && \
+    find /usr/local/lib/python3.12/dist-packages -type d \
+        \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
+        -prune -exec rm -rf {} +
+
+RUN cd /usr/local/lib/python3.12/dist-packages && \
+    find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* ipykernel* || true && \
+    rm -rf onnx/backend/test onnx/test || true && \
+    rm -rf scipy/*/tests pandas/tests || true && \
+    rm -rf */examples */benchmarks */docs || true && \
+    rm -rf skimage/data || true
+
+RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
+    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
+    uv pip install --target /opt/python-runtime \
+        --index-strategy unsafe-best-match \
+        --find-links /opt/wheels \
+        --override /tmp/runtime-overrides.txt \
+        -r /build/reqs/_requirements.txt \
+        -r /build/reqs/requirements.cli.txt \
+        -r /build/reqs/requirements.http.txt \
+        -r /build/reqs/requirements.clip.txt \
+        -r /build/reqs/requirements.transformers.txt \
+        -r /build/reqs/requirements.sam.txt \
+        -r /build/reqs/requirements.groundingdino.txt \
+        -r /build/reqs/requirements.yolo_world.txt \
+        -r /build/reqs/requirements.doctr.txt \
+        -r /build/reqs/requirements.sdk.http.txt \
+        -r /build/reqs/requirements.easyocr.txt \
+        -r /build/reqs/requirements.jetson.txt \
+        /opt/wheels/flash_attn-*.whl \
+        /opt/wheels/onnxruntime_gpu-*.whl \
+        /opt/wheels/pycuda-*.whl \
+        /opt/wheels/torch-*.whl \
+        /opt/wheels/torchvision-*.whl \
+        /opt/wheels/triton-*.whl \
+        "setuptools<=75.5.0" \
+        "transformers>=4.57.3,<5.9.0" \
+        packaging && \
+    python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
+        /opt/wheels/inference_gpu-*.whl && \
+    find /opt/python-runtime -type d \
+        \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
+        -prune -exec rm -rf {} + && \
+    find /opt/python-runtime -type d -name __pycache__ -prune -exec rm -rf {} + && \
+    rm -rf \
+        /opt/python-runtime/debugpy* \
+        /opt/python-runtime/ipykernel* \
+        /opt/python-runtime/ipython* \
+        /opt/python-runtime/jupyter_* \
+        /opt/python-runtime/jupyterlab* \
+        /opt/python-runtime/notebook* \
+        /opt/python-runtime/ninja \
+        /opt/python-runtime/ninja-*.dist-info \
+        /opt/python-runtime/onnx/backend/test \
+        /opt/python-runtime/onnx/test \
+        /opt/python-runtime/pandas/tests \
+        /opt/python-runtime/scipy/*/tests \
+        /opt/python-runtime/skimage/data \
+        /opt/python-runtime/bin/ninja \
+        /opt/python-runtime/triton/backends/nvidia/bin/ptxas \
+        /opt/python-runtime/triton/backends/nvidia/bin/ptxas-blackwell \
+        /tmp/runtime-overrides.txt \
+        /root/.cache/uv && \
+    test -x /opt/python-runtime/bin/inference && \
+    du -sh /opt/python-runtime /opt/wheels
+
+FROM jetson-runtime-base AS runtime
+
+COPY --from=jetson-wheels-base /opt/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
+COPY --from=jetson-wheels-base /opt/cuda/nvvm/libdevice /usr/local/cuda/nvvm/libdevice
+COPY --from=jetson-wheels-base /opt/cuda/licenses/cuda-ptxas /usr/local/share/licenses/cuda-ptxas
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:/opt/opencv/lib:/opt/gstreamer/lib:/opt/ffmpeg/lib:/opt/cuda-runtime/lib:/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/nvidia
+
+RUN ldconfig
+
+COPY --from=builder /opt/python-runtime /usr/local/lib/python3.12/dist-packages
+
+ENV PYTHONPATH=/opt/opencv/python:/usr/local/lib/python3.12/dist-packages:/usr/lib/python3.12/dist-packages
+
+COPY --from=builder /opt/python-runtime/bin/inference /usr/local/bin/inference
+
+COPY inference inference
+COPY inference_cli inference_cli
+COPY inference_sdk inference_sdk
+COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
+
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas \
+    TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+    VERSION_CHECK_MODE=once \
+    CORE_MODEL_SAM2_ENABLED=True \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \
+    ORT_TENSORRT_MAX_WORKSPACE_SIZE=4294967296 \
+    ORT_TENSORRT_BUILDER_OPTIMIZATION_LEVEL=5 \
+    OPENBLAS_CORETYPE=ARMV8 \
+    GST_PLUGIN_PATH_1_0=/usr/lib/aarch64-linux-gnu/gstreamer-1.0 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    DISABLE_WORKFLOW_ENDPOINTS=false \
+    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
+    USE_INFERENCE_EXP_MODELS=False \
+    RUNNING_ON_JETSON=True \
+    L4T_VERSION=39.2.0
+
+RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
+    --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
+    --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
+    --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
+    --mount=type=bind,source=docker/scripts/verify_jetson_server_runtime.sh,target=/tmp/verify_jetson_server_runtime,ro \
+    sh /tmp/verify_ffmpeg && \
+    sh /tmp/verify_gstreamer && \
+    OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
+    VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false sh /tmp/verify_media_runtime && \
+    sh /tmp/verify_jetson_server_runtime && \
+    rm -rf /root/.cache/gstreamer-1.0
+
+LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (PyTorch from source, numpy 2.x)"
+
+EXPOSE 9001
+
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.workflows.errors import (
@@ -46,6 +47,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     DynamicOutputDefinition,
     ManifestDescription,
     SelectorType,
+    TensorCompatibility,
     ValueType,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
@@ -114,6 +116,9 @@ def create_dynamic_block_specification(
     api_key: Optional[str] = None,
     skip_class_eval: Optional[bool] = False,
 ) -> BlockSpecification:
+    ensure_tensor_compatibility_supported(
+        manifest_description=dynamic_block_definition.manifest,
+    )
     unique_identifier = str(uuid4())
     block_manifest = assembly_dynamic_block_manifest(
         unique_identifier=unique_identifier,
@@ -127,6 +132,7 @@ def create_dynamic_block_specification(
         python_code=dynamic_block_definition.code,
         api_key=api_key,
         skip_class_eval=skip_class_eval,
+        manifest_description=dynamic_block_definition.manifest,
     )
     return BlockSpecification(
         block_source=BLOCK_SOURCE,
@@ -134,6 +140,38 @@ def create_dynamic_block_specification(
         block_class=block_class,
         manifest_class=block_manifest,
     )
+
+
+def ensure_tensor_compatibility_supported(
+    manifest_description: ManifestDescription,
+) -> None:
+    """D4 of the tensor_compatibility plan: `tensor_native` blocks fail fast at
+    compile time when the server cannot honor the declared contract — their
+    tensor-expecting user code would break mid-run anyway."""
+    if (
+        manifest_description.tensor_compatibility
+        is not TensorCompatibility.TENSOR_NATIVE
+    ):
+        return
+    # Deliberate precedence: with flag-off AND modal both misconfigured, the flag
+    # error fires alone — enabling the flag is the prerequisite that makes the
+    # modal limitation relevant at all.
+    if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        raise DynamicBlockError(
+            public_message=f"Dynamic block `{manifest_description.block_type}` declares "
+            f"`tensor_compatibility=tensor_native`, but this server runs the numpy data "
+            f"representation. Use `legacy_compatibility` (the default) or enable "
+            f"`ENABLE_TENSOR_DATA_REPRESENTATION` on the server.",
+            context="workflow_compilation | dynamic_blocks_compilation",
+        )
+    if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
+        raise DynamicBlockError(
+            public_message=f"Dynamic block `{manifest_description.block_type}` declares "
+            f"`tensor_compatibility=tensor_native`, which is not yet supported for remote "
+            f"(modal) custom Python execution. Use `legacy_compatibility` or run custom "
+            f"Python code locally.",
+            context="workflow_compilation | dynamic_blocks_compilation",
+        )
 
 
 def assembly_dynamic_block_manifest(

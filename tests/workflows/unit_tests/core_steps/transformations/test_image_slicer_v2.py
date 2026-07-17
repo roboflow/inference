@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import torch
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
@@ -194,6 +195,81 @@ def test_running_block() -> None:
     ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=312, left_top_y=156, origin_width=512, origin_height=256
     ), "Expected 9th crop to have the following coordinates regarding root"
+
+
+def test_running_block_when_tensor_image_given_keeps_crops_on_device() -> None:
+    # given - a tensor-backed image (CHW RGB) must be sliced without forcing a
+    # full-frame device->host copy, and each crop must stay tensor-backed.
+    tensor_image = torch.arange(3 * 256 * 512, dtype=torch.uint8).reshape(3, 256, 512)
+    image = WorkflowImageData(
+        tensor_image=tensor_image,
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    assert image.is_tensor_materialised()
+    block = ImageSlicerBlockV2()
+
+    # when
+    result = block.run(
+        image=image,
+        slice_width=200,
+        slice_height=100,
+        overlap_ratio_width=0.1,
+        overlap_ratio_height=0.2,
+    )
+
+    # then
+    assert len(result) == 9, "Expected exactly 9 crops"
+    # the parent frame must not have been materialised to host by the slicer
+    assert (
+        image._numpy_image is None
+    ), "Expected parent frame to remain on device (no host round-trip)"
+
+    expected_root_coordinates = [
+        OriginCoordinatesSystem(
+            left_top_x=0, left_top_y=0, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=180, left_top_y=0, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=312, left_top_y=0, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=0, left_top_y=80, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=180, left_top_y=80, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=312, left_top_y=80, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=0, left_top_y=156, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=180, left_top_y=156, origin_width=512, origin_height=256
+        ),
+        OriginCoordinatesSystem(
+            left_top_x=312, left_top_y=156, origin_width=512, origin_height=256
+        ),
+    ]
+    for i, expected_coordinates in enumerate(expected_root_coordinates):
+        crop = result[i]["slices"]
+        assert crop.parent_metadata.parent_id.startswith(
+            "image_slicer."
+        ), f"Expected parent to be set properly for {i}th crop"
+        # crop must stay tensor-backed - no eager host materialisation
+        assert crop.is_tensor_materialised(), f"{i}th crop lost its tensor image"
+        assert crop._numpy_image is None, f"{i}th crop was materialised to host"
+        assert crop.tensor_image.shape == (3, 100, 200)
+        assert crop.numpy_image.shape == (100, 200, 3)
+        assert (
+            crop.workflow_root_ancestor_metadata.origin_coordinates
+            == expected_coordinates
+        ), f"Expected {i}th crop to have the correct coordinates regarding root"
+
+    # zero-copy content correctness: the first crop equals the source tensor slice
+    assert torch.equal(result[0]["slices"].tensor_image, tensor_image[:, 0:100, 0:200])
 
 
 def test_running_block_when_slice_size_exceed_image_size() -> None:

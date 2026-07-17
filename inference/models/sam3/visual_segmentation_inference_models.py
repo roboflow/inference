@@ -1,7 +1,7 @@
 import copy
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -42,6 +42,7 @@ from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsInMemoryCache,
     Sam3LowResolutionMasksInMemoryCache,
 )
+from inference_models.models.sam3.entities import SAM3ImageEmbeddings, SAM3Prediction
 from inference_models.models.sam3.sam3_torch import SAM3Torch
 
 if DEVICE is None:
@@ -102,6 +103,13 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self, action: Literal["embed", "segment"], **kwargs
+    ) -> List[Union[SAM3ImageEmbeddings, SAM3Prediction]]:
+        if action == "embed":
+            return self._model.embed_images(**kwargs)
+        return self._model.segment_with_visual_prompts(**kwargs)
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
