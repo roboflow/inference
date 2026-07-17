@@ -96,6 +96,7 @@ jobs:
                       -r requirements/requirements.sdk.http.txt \
                       -r requirements/requirements.sdk.webrtc.txt \
                       -r requirements/requirements.test.unit.txt
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
 
       - name: 🧪 E2E Tests - WebRTC SDK (real server)
         timeout-minutes: 15
