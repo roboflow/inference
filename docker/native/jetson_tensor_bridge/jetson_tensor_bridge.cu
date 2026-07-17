@@ -656,9 +656,13 @@ RfTensorContext* convert_sample_to_tensor(
     {
         auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
         diagnostics->memory_type = static_cast<int32_t>(surface->memType);
+        // nvv4l2decoder's single-surface GStreamer buffers on Thor carry a
+        // valid surfaceList[0] while leaving numFilled at zero.  `numFilled`
+        // is batch bookkeeping, not a validity requirement for this
+        // unbatched appsink handoff; rejecting it turns a usable NVMM frame
+        // into a false CPU-fallback-worthy failure.
         if (surface->memType != NVBUF_MEM_SURFACE_ARRAY ||
-            surface->surfaceList == nullptr || surface->batchSize == 0 ||
-            surface->numFilled == 0) {
+            surface->surfaceList == nullptr || surface->batchSize == 0) {
             write_error(
                 error,
                 error_capacity,
