@@ -629,6 +629,11 @@ class MMPClient:
             # result means the worker is finished and the slot is readable; do
             # not discard it just because the client also went away.
             return infer_task.result()
+        if fut.done() and not fut.cancelled():
+            # The wait_for wrapper can lag the underlying future by a
+            # scheduling step (always on 3.10); a resolved result still wins
+            # over disconnect.
+            return fut.result()
         raise ClientDisconnected()
 
     def _spawn_bg(self, coro) -> None:
