@@ -8,6 +8,7 @@ Run it manually inside a Jetson image, e.g.:
 """
 
 import gc
+import os
 import subprocess
 import tempfile
 import threading
@@ -216,6 +217,62 @@ def _validate_interrupt_unblocks_pull() -> None:
     pipeline.close()
 
 
+def _validate_live_rtsp_source(url: str) -> None:
+    """Validate the production RTSP -> NVDEC -> CUDA-tensor path.
+
+    This is deliberately opt-in because it needs a reachable camera.  It is
+    stronger than a gst-launch smoke test: it exercises the Python producer,
+    native NVMM bridge, and DLPack handoff used by VideoSource in production.
+    """
+
+    raw_minimum_frames = os.getenv("ROBOFLOW_JETSON_TEST_RTSP_MINIMUM_FRAMES", "10")
+    try:
+        minimum_frames = int(raw_minimum_frames)
+    except ValueError as error:
+        raise ValueError(
+            "ROBOFLOW_JETSON_TEST_RTSP_MINIMUM_FRAMES must be an integer"
+        ) from error
+    if minimum_frames < 1:
+        raise ValueError(
+            "ROBOFLOW_JETSON_TEST_RTSP_MINIMUM_FRAMES must be at least one"
+        )
+
+    producer = JetsonVideoFrameProducer(url, output_tensor=True)
+    try:
+        properties = producer.discover_source_properties()
+        assert properties.width > 0 and properties.height > 0
+
+        tensors: List[torch.Tensor] = []
+        while len(tensors) < minimum_frames:
+            success, tensor = producer.retrieve()
+            assert success and tensor is not None
+            assert tensor.is_cuda
+            assert tensor.dtype == torch.uint8
+            assert tuple(tensor.shape) == (
+                3,
+                properties.height,
+                properties.width,
+            )
+            tensors.append(tensor)
+            if len(tensors) < minimum_frames:
+                assert producer.grab()
+
+        assert producer._native_pipeline.has_factory("nvv4l2decoder")
+        stats = producer.tensor_bridge_stats
+        assert stats["frames"] >= minimum_frames
+        assert stats["nvmm_frames"] >= minimum_frames
+        assert stats["host_pixel_maps"] == 0
+        assert stats["host_to_device_copies"] == 0
+        assert stats["device_to_host_copies"] == 0
+        assert stats["array_flatten_copies"] == 0
+        print(
+            "RTSP_TENSOR_PROBE_OK "
+            f"frames={minimum_frames} size={properties.width}x{properties.height}"
+        )
+    finally:
+        producer.release()
+
+
 def main() -> None:
     assert torch.cuda.is_available()
     with tempfile.TemporaryDirectory() as directory:
@@ -240,6 +297,10 @@ def main() -> None:
         _validate_repeated_grab_advances(changing_h264_path)
         _validate_threaded_retrieve(h264_path)
         _validate_interrupt_unblocks_pull()
+
+    rtsp_url = os.getenv("ROBOFLOW_JETSON_TEST_RTSP_URL")
+    if rtsp_url:
+        _validate_live_rtsp_source(rtsp_url)
 
 
 if __name__ == "__main__":

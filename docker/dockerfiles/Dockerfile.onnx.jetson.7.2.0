@@ -479,9 +479,11 @@ COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+COPY docker/scripts/verify_jetson_tensor_runtime.py /usr/local/bin/verify_jetson_tensor_runtime
 COPY docker/scripts/verify_tensor_tracking_runtime.py /usr/local/bin/verify_tensor_tracking_runtime
 RUN chmod +x \
     /usr/local/bin/run_uvicorn.sh \
+    /usr/local/bin/verify_jetson_tensor_runtime \
     /usr/local/bin/verify_tensor_tracking_runtime
 
 ENV CUDA_HOME=/usr/local/cuda \
