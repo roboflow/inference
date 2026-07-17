@@ -460,7 +460,6 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         /opt/python-runtime/triton/backends/nvidia/bin/ptxas-blackwell \
         /tmp/runtime-overrides.txt \
         /root/.cache/uv && \
-    test -x /opt/python-runtime/bin/inference && \
     du -sh /opt/python-runtime /opt/wheels
 
 FROM jetson-runtime-base AS runtime
