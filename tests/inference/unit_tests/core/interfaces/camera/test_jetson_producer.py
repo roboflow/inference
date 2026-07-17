@@ -179,7 +179,7 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "protocols=tcp latency=200 ! queue ! "
     )
     assert (
-        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
+        "rtph264depay ! h264parse ! nvv4l2decoder !" in pipeline
     )
     assert "uridecodebin" not in pipeline
     assert "nvvidconv" not in pipeline

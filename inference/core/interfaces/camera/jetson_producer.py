@@ -254,7 +254,10 @@ def build_gstreamer_pipeline(
         # - no nvvidconv: the decoder's NV12 NVMM output goes straight to the
         #   appsink and the bridge converts NV12->RGB CHW in CUDA, removing the
         #   per-frame VIC pass and its extra buffer pool;
-        # - enable-max-performance keeps the decoder clocks pinned;
+        # - decoder performance is controlled by the Jetson power mode.  Do
+        #   not set nvv4l2decoder's historical ``enable-max-performance``
+        #   property here: it is absent on the Thor/JP7.2 plugin and makes a
+        #   static pipeline fail to parse before it can receive a frame;
         # - the appsink never accumulates (the bridge's new-sample callback
         #   drains it on the streaming thread), so a small non-dropping queue
         #   is enough.
@@ -266,7 +269,7 @@ def build_gstreamer_pipeline(
             f"{tls_validation_flags} ! "
             "queue ! "
             f"rtp{codec}depay ! {codec}parse ! "
-            "nvv4l2decoder enable-max-performance=1 ! "
+            "nvv4l2decoder ! "
             "video/x-raw(memory:NVMM),format=NV12 ! "
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
             "wait-on-eos=false"
