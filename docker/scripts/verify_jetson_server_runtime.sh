@@ -90,7 +90,6 @@ assert "sm_110" in arch_flags, arch_flags
 providers = set(onnxruntime.get_available_providers())
 assert {"CUDAExecutionProvider", "TensorrtExecutionProvider"}.issubset(providers)
 
-assert cv2.cuda.getCudaEnabledDeviceCount() >= 0
 assert flash_attn.__version__
 assert tensorrt.__version__
 assert torch.__version__
