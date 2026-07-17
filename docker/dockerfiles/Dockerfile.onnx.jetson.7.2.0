@@ -482,7 +482,7 @@ COPY --from=builder /opt/python-runtime /usr/local/lib/python3.12/dist-packages
 
 ENV PYTHONPATH=/opt/opencv/python:/usr/local/lib/python3.12/dist-packages:/usr/lib/python3.12/dist-packages
 
-COPY --from=builder /opt/python-runtime/bin/inference /usr/local/bin/inference
+COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
 COPY inference inference
 COPY inference_cli inference_cli
