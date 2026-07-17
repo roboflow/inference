@@ -656,20 +656,25 @@ RfTensorContext* convert_sample_to_tensor(
     {
         auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
         diagnostics->memory_type = static_cast<int32_t>(surface->memType);
-        // nvv4l2decoder's single-surface GStreamer buffers on Thor carry a
-        // valid surfaceList[0] while leaving numFilled at zero.  `numFilled`
-        // is batch bookkeeping, not a validity requirement for this
-        // unbatched appsink handoff; rejecting it turns a usable NVMM frame
-        // into a false CPU-fallback-worthy failure.
-        if (surface->memType != NVBUF_MEM_SURFACE_ARRAY ||
+        // A traditional Jetson decoder exports an NVRM surface array, which
+        // reaches CUDA through EGL. Thor's OpenRM decoder instead exports a
+        // CUDA-device surface: its dataPtr is already a CUDA-addressable,
+        // pitched image. Both are GPU-native and neither should fall back to
+        // a CPU frame path.
+        const bool direct_cuda_surface =
+            surface->memType == NVBUF_MEM_CUDA_DEVICE;
+        if ((surface->memType != NVBUF_MEM_SURFACE_ARRAY &&
+             !direct_cuda_surface) ||
             surface->surfaceList == nullptr || surface->batchSize == 0) {
             write_error(
                 error,
                 error_capacity,
-                "Frame is not a valid NvBufSurface SURFACE_ARRAY "
-                "(memType=%d expected=%d surfaceList=%p batchSize=%u numFilled=%u)",
+                "Frame is not a supported GPU NvBufSurface "
+                "(memType=%d surfaceArray=%d cudaDevice=%d surfaceList=%p "
+                "batchSize=%u numFilled=%u)",
                 static_cast<int>(surface->memType),
                 static_cast<int>(NVBUF_MEM_SURFACE_ARRAY),
+                static_cast<int>(NVBUF_MEM_CUDA_DEVICE),
                 static_cast<void*>(surface->surfaceList),
                 surface->batchSize,
                 surface->numFilled);
@@ -686,6 +691,106 @@ RfTensorContext* convert_sample_to_tensor(
                 "NvBufSurface format is unsupported (format=%d, expected RGBA "
                 "or an NV12 variant)",
                 static_cast<int>(surface_format));
+            goto cleanup;
+        }
+        if (direct_cuda_surface) {
+            const NvBufSurfaceParams& params = surface->surfaceList[0];
+            const auto* source = static_cast<const uint8_t*>(params.dataPtr);
+            const size_t source_pitch = params.pitch;
+            if (source == nullptr || source_pitch == 0) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device surface has no pitched data pointer "
+                    "(data=%p pitch=%zu)",
+                    static_cast<const void*>(source),
+                    source_pitch);
+                goto cleanup;
+            }
+            if (!is_rgba &&
+                (params.planeParams.num_planes < 2 ||
+                 params.planeParams.offset[1] == 0)) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device NV12 surface has invalid plane metadata "
+                    "(planes=%u uvOffset=%u)",
+                    params.planeParams.num_planes,
+                    params.planeParams.offset[1]);
+                goto cleanup;
+            }
+
+            tensor = new (std::nothrow) RfTensorContext();
+            if (tensor == nullptr) {
+                write_error(error, error_capacity, "Could not allocate tensor state");
+                goto cleanup;
+            }
+            tensor->device_id = handle->device_id;
+            tensor->pool = handle->tensor_pool;
+            tensor->managed.manager_ctx = tensor;
+            tensor->managed.deleter = delete_managed_tensor;
+            const size_t output_size =
+                static_cast<size_t>(frame_info.width) * frame_info.height * 3;
+            tensor->allocation =
+                handle->tensor_pool->acquire(output_size, &tensor->pooled);
+            if (tensor->allocation == nullptr) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA tensor allocation failed for %zu bytes",
+                    output_size);
+                goto cleanup;
+            }
+
+            const dim3 threads(32, 8);
+            const dim3 blocks(
+                (frame_info.width + threads.x - 1) / threads.x,
+                (frame_info.height + threads.y - 1) / threads.y);
+            if (is_rgba) {
+                const ChannelMap rgba_channels{0, 1, 2};
+                rgba_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    source,
+                    source_pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    rgba_channels);
+            } else {
+                nv12_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    source,
+                    source + params.planeParams.offset[1],
+                    source_pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    yuv_coeffs);
+            }
+            cudaError_t cuda_status = cudaGetLastError();
+            if (cuda_status == cudaSuccess) {
+                cuda_status = cudaStreamSynchronize(handle->stream);
+            }
+            if (cuda_status != cudaSuccess) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device frame conversion failed: %s",
+                    cudaGetErrorString(cuda_status));
+                goto cleanup;
+            }
+
+            tensor->shape[0] = 3;
+            tensor->shape[1] = frame_info.height;
+            tensor->shape[2] = frame_info.width;
+            tensor->managed.dl_tensor.data = tensor->allocation;
+            tensor->managed.dl_tensor.device = {kDLCUDA, handle->device_id};
+            tensor->managed.dl_tensor.ndim = 3;
+            tensor->managed.dl_tensor.dtype = {kDLUInt, 8, 1};
+            tensor->managed.dl_tensor.shape = tensor->shape;
+            tensor->managed.dl_tensor.strides = nullptr;
+            tensor->managed.dl_tensor.byte_offset = 0;
+            *frame_info_out = frame_info;
+            result = tensor;
+            tensor = nullptr;
             goto cleanup;
         }
         if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
