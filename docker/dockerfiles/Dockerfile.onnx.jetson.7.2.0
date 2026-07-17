@@ -514,11 +514,17 @@ ENV CUDA_HOME=/usr/local/cuda \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=39.2.0
 
+# Depot has no Jetson driver, EGL display, or mounted CUDA runtime. The
+# build-time registry below is restricted to portable plugins; NVIDIA's system
+# plugins are deliberately discovered only at runtime on the target Jetson.
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
     --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
     --mount=type=bind,source=docker/scripts/verify_jetson_server_runtime.sh,target=/tmp/verify_jetson_server_runtime,ro \
+    export GST_PLUGIN_PATH_1_0= \
+        GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
+        GST_REGISTRY=/tmp/roboflow-gstreamer-registry.bin && \
     sh /tmp/verify_ffmpeg && \
     sh /tmp/verify_gstreamer && \
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
