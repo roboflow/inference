@@ -83,6 +83,18 @@ def test_torch_mask_selection_copies_metadata_dicts() -> None:
     assert "tracker_id" not in detections.bboxes_metadata[0]
 
 
+def test_torch_mask_selection_accepts_model_detections_without_tracker_id() -> None:
+    """Model output predating the tracking field is filtered before tracking."""
+    detections = _detections()
+    if hasattr(detections, "tracker_id"):
+        delattr(detections, "tracker_id")
+
+    result = take_prediction_by_mask(detections, torch.tensor([True, False, True]))
+
+    assert torch.equal(result.class_id, torch.tensor([0, 2]))
+    assert getattr(result, "tracker_id", None) is None
+
+
 def test_torch_mask_identity_aliases_tensors() -> None:
     # given
     detections = _instance_detections()

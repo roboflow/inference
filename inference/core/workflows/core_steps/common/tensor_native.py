@@ -167,6 +167,12 @@ def _take_detections(
         bboxes_metadata = [
             dict(detections.bboxes_metadata[i]) for i in selection.host_indices()
         ]
+    # ``tracker_id`` was added to the tensor-native detection contract after
+    # early ``inference_models`` releases.  Model blocks legitimately emit
+    # those older objects before a tracker has ever touched them, so selection
+    # (for example class filtering directly after detection) must treat the
+    # absent field exactly like ``None``.
+    tracker_id = getattr(detections, "tracker_id", None)
     if isinstance(detections, InstanceDetections):
         mask_field = detections.mask
         if isinstance(mask_field, InstancesRLEMasks):
@@ -176,31 +182,29 @@ def _take_detections(
             )
         else:
             new_mask = selection.select_tensor(mask_field)
-        return InstanceDetections(
+        result = InstanceDetections(
             xyxy=selection.select_tensor(detections.xyxy),
             class_id=selection.select_tensor(detections.class_id),
             confidence=selection.select_tensor(detections.confidence),
             mask=new_mask,
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
-            tracker_id=(
-                None
-                if detections.tracker_id is None
-                else selection.select_tensor(detections.tracker_id)
-            ),
         )
-    return Detections(
-        xyxy=selection.select_tensor(detections.xyxy),
-        class_id=selection.select_tensor(detections.class_id),
-        confidence=selection.select_tensor(detections.confidence),
-        image_metadata=detections.image_metadata,
-        bboxes_metadata=bboxes_metadata,
-        tracker_id=(
-            None
-            if detections.tracker_id is None
-            else selection.select_tensor(detections.tracker_id)
-        ),
-    )
+    else:
+        result = Detections(
+            xyxy=selection.select_tensor(detections.xyxy),
+            class_id=selection.select_tensor(detections.class_id),
+            confidence=selection.select_tensor(detections.confidence),
+            image_metadata=detections.image_metadata,
+            bboxes_metadata=bboxes_metadata,
+        )
+    # Older inference-models constructors do not accept ``tracker_id``. It is
+    # valid mutable state, so attach it only after construction when the input
+    # already carries tracking IDs. Trackers set it themselves after selection
+    # for fresh model outputs.
+    if tracker_id is not None:
+        result.tracker_id = selection.select_tensor(tracker_id)
+    return result
 
 
 def _take_key_points(
