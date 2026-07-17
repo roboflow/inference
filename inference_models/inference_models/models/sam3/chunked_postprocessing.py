@@ -12,19 +12,21 @@ two serving-hostile behaviors (measured in development/sam3_debug/FINDINGS.md):
 
 This subclass fixes both without modifying the pinned package:
 
-- the detection cap is folded into the threshold `keep` mask inside
-  `_process_boxes_and_labels`, so boxes, scores, labels AND masks are
-  truncated to the top `max_dets_per_img` detections BEFORE interpolation
-  (the parent's late topk remains as a no-op safety net);
+- the detection cap is folded into the `keep` selection inside
+  `_process_boxes_and_labels` (applied even when thresholding is disabled),
+  so boxes, scores, labels AND masks are truncated to the top
+  `max_dets_per_img` detections BEFORE interpolation; capped survivors are
+  score-descending, matching the ordering of the parent's late topk (which
+  remains as a no-op safety net);
 - mask interpolation + RLE encoding run in fixed-size chunks
   (`SAM3_MASK_PROCESSING_CHUNK_SIZE`, default 8), so neither device ever
   holds the full k x H x W float32 batch, and the GPU->CPU fallback is
   bounded to one chunk.
 
-Note one intentional behavior difference: with the early cap, surviving
-detections keep model-query order instead of the score-sorted order the
-parent's late topk produced; callers (concept adapter) threshold/NMS
-independently of order.
+`keep` is a list of index tensors rather than the parent's boolean mask:
+uncapped selection is index-of-nonzero in query order (identical output to
+the parent), capped selection is topk order (identical to the parent's
+late sort).
 """
 
 import os
@@ -74,18 +76,24 @@ class ChunkedPostProcessImage(PostProcessImage):
             boxes = boxes.cpu()
 
         keep = None
-        if self.detection_threshold > 0:
-            keep = scores > self.detection_threshold
-            if self.max_dets_per_img > 0:
-                for i in range(len(keep)):
-                    kept_indices = keep[i].nonzero(as_tuple=False).squeeze(1)
-                    if kept_indices.numel() > self.max_dets_per_img:
-                        top = torch.topk(
-                            scores[i][kept_indices], self.max_dets_per_img
-                        ).indices
-                        capped = torch.zeros_like(keep[i])
-                        capped[kept_indices[top]] = True
-                        keep[i] = capped
+        if self.detection_threshold > 0 or self.max_dets_per_img > 0:
+            if self.detection_threshold > 0:
+                candidates = scores > self.detection_threshold
+            else:
+                # cap requested with thresholding disabled: every query is a
+                # candidate, the top-k fold below still bounds the pipeline
+                candidates = torch.ones_like(scores, dtype=torch.bool)
+            keep = []
+            for i in range(len(candidates)):
+                kept_indices = candidates[i].nonzero(as_tuple=False).squeeze(1)
+                if 0 < self.max_dets_per_img < kept_indices.numel():
+                    # topk returns score-descending order — same ordering the
+                    # parent's late topk produced, kept for output parity
+                    top = torch.topk(
+                        scores[i][kept_indices], self.max_dets_per_img
+                    ).indices
+                    kept_indices = kept_indices[top]
+                keep.append(kept_indices)
             assert len(keep) == len(boxes) == len(scores) == len(labels)
             boxes = [b[k.to(b.device)] for b, k in zip(boxes, keep)]
             scores = [s[k.to(s.device)] for s, k in zip(scores, keep)]
