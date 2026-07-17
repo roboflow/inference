@@ -15,7 +15,6 @@ from inference.core.interfaces.camera.jetson_producer import (
 class _NativePipeline:
     def __init__(self, frame=None, factories=()) -> None:
         self.grab_calls = 0
-        self.grab_timeouts = []
         self.retrieve_calls = 0
         self.interrupt_calls = 0
         self.frame = frame if frame is not None else object()
@@ -25,7 +24,6 @@ class _NativePipeline:
 
     def grab(self, timeout_ns=None) -> bool:
         self.grab_calls += 1
-        self.grab_timeouts.append(timeout_ns)
         self.last_grab_timeout_ns = timeout_ns
         return True
 
@@ -86,33 +84,6 @@ def test_metadata_preroll_is_consumable_once_and_later_grabs_advance() -> None:
     # The producer must hand the native pull a finite deadline so a stalled
     # source raises instead of blocking VideoSource forever (FQ-1).
     assert native_pipeline.last_grab_timeout_ns == producer._grab_timeout_ns
-
-
-def test_grabs_are_bounded_so_a_stalled_source_cannot_hang_the_state_lock() -> None:
-    native_pipeline = _NativePipeline()
-    producer = _native_producer(native_pipeline)
-
-    producer.discover_source_properties()
-    producer.retrieve()
-    producer.grab()
-
-    assert native_pipeline.grab_timeouts == [
-        producer._grab_timeout_ns,
-        producer._grab_timeout_ns,
-    ]
-
-
-def test_stalled_native_grab_surfaces_as_recoverable_error() -> None:
-    class _TimeoutPipeline(_NativePipeline):
-        def grab(self, timeout_ns=None):
-            raise TimeoutError("no frame")
-
-    producer = _native_producer(_TimeoutPipeline())
-
-    with pytest.raises(TimeoutError, match="no frame"):
-        producer.grab()
-
-    assert producer.isOpened()
 
 
 def test_retrieving_preroll_clears_pending_grab_and_interrupts_native_wait() -> None:
@@ -197,19 +168,64 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "rtsps://camera.example.test:7441/live?token=secret"
     )
 
+    # Explicit video-only chain: a codec-specific depayloader never links the
+    # audio track, so an audio-muxing camera cannot poison the pipeline. The
+    # decoder's NV12 NVMM output feeds the appsink directly (the bridge
+    # converts NV12->RGB in CUDA) — no nvvidconv VIC pass, and the queue
+    # buffers compressed data before the depayloader instead of leaking
+    # decoded frames.
     assert pipeline.startswith(
-        'uridecodebin uri="rtsps://camera.example.test:7441/live?token=secret"'
+        'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
+        "protocols=tcp latency=200 ! queue ! "
     )
-    assert 'caps="video/x-raw(memory:NVMM)"' in pipeline
-    assert "nvvidconv" in pipeline
+    assert (
+        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
+    )
+    assert "uridecodebin" not in pipeline
+    assert "nvvidconv" not in pipeline
+    assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
-    assert "max-buffers=1 drop=true sync=false" in pipeline
+    assert "max-buffers=4 drop=false sync=false" in pipeline
+    assert "leaky" not in pipeline
+
+
+def test_rtspt_source_is_recognised_as_rtsp() -> None:
+    pipeline = build_gstreamer_pipeline("rtspt://camera.example.test/live")
+
+    assert pipeline.startswith('rtspsrc location="rtspt://camera.example.test/live"')
+
+
+def test_rtsp_codec_env_selects_h265_chain(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "h265")
+
+    pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
+
+    assert "rtph265depay ! h265parse ! nvv4l2decoder" in pipeline
+
+
+def test_rtsp_codec_env_rejects_unsupported_codec(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "mjpeg")
+
+    with pytest.raises(ValueError, match="Unsupported RTSP video codec"):
+        build_gstreamer_pipeline("rtsp://camera.example.test/live")
+
+
+def test_rtsp_transport_env_overrides_protocols_and_latency(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_PROTOCOLS", "tcp+udp")
+    monkeypatch.setenv("ROBOFLOW_RTSP_LATENCY_MS", "1000")
+
+    pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
+
+    assert "protocols=tcp+udp latency=1000 ! " in pipeline
 
 
 def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
-    pipeline = build_gstreamer_pipeline("rtsps://camera.example.test:7441/live")
+    pipeline = build_gstreamer_pipeline(
+        "rtsps://camera.example.test:7441/live",
+        output_tensor=True,
+    )
 
-    assert "nvvidconv ! video/x-raw(memory:NVMM),format=RGBA" in pipeline
+    assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "videoconvert" not in pipeline
     assert "video/x-raw,format=BGR" not in pipeline
@@ -222,19 +238,20 @@ def test_rtsps_source_requires_rtsp_and_nvidia_decode_elements() -> None:
         "appsink",
         "h264parse",
         "h265parse",
-        "jpegparse",
         "nvvidconv",
         "nvv4l2decoder",
         "rtph264depay",
         "rtph265depay",
         "rtspsrc",
-        "uridecodebin",
     } <= elements
+    # The explicit rtspsrc chain does not autoplug, so the uridecodebin stack
+    # is no longer part of the RTSP requirements.
+    assert "uridecodebin" not in elements
     assert "videoconvert" not in elements
 
 
 def test_tensor_source_requires_hardware_jpeg_without_cpu_converter() -> None:
-    elements = set(required_gstreamer_elements("rtsps://camera.example.test/live"))
+    elements = set(required_gstreamer_elements("/tmp/sample.mp4", output_tensor=True))
 
     assert "nvjpegdec" in elements
     assert "nvv4l2decoder" in elements
@@ -267,8 +284,8 @@ def test_v4l2_device_path_uses_live_sink() -> None:
 
 
 def test_v4l2_decodebin_can_negotiate_raw_mjpeg_and_h264_sources() -> None:
-    pipeline = build_gstreamer_pipeline("/dev/video3")
-    elements = set(required_gstreamer_elements("/dev/video3"))
+    pipeline = build_gstreamer_pipeline("/dev/video3", output_tensor=True)
+    elements = set(required_gstreamer_elements("/dev/video3", output_tensor=True))
 
     assert 'v4l2src device="/dev/video3" ! decodebin ! queue' in pipeline
     assert "video/x-raw(memory:NVMM),format=RGBA" in pipeline

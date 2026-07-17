@@ -638,6 +638,11 @@ WORKDIR /app
 # EGL/GLES drivers come from the host's tegra-egl mount at container start.
 # libgl1 (glvnd desktop-GL loader) provides libGL.so.1, linked by the Qt5 libs
 # bundled inside the opencv-python wheel (manylinux forbids vendoring libGL).
+# kmod (lsmod/modprobe) is shelled out to by the host-injected NV BSP
+# v4l2/GStreamer libs to check the codec kernel modules; without it every
+# nvv4l2decoder plugin load spams "sh: 1: lsmod: not found" and the module
+# check degrades. The media.jetson.7.2.0 image installs it for the same reason
+# (verify_media_runtime.sh requires lsmod whenever BSP plugins are baked).
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
@@ -658,6 +663,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libpng16-16 \
     libexpat1 \
     curl \
+    kmod \
     libasound2 \
     libdrm2 \
     libegl1 \
@@ -799,11 +805,22 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 RUN python3 -c "import cv2, numpy; print(cv2.__version__); print(numpy.__version__)"
 
+# The Jetson tensor bridge is built and verified in its builder stage, but this
+# final stage only COPYs it in — assert it actually landed (a bridge-less image
+# silently degrades HW video decode to the cv2 CPU path at runtime) and that
+# every linked dependency resolves in THIS stage. libcuda.so.1 is excluded from
+# the ldd check: the NVIDIA container runtime injects it at container start, so
+# it is legitimately absent at build time.
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     sh /tmp/verify_ffmpeg && \
     sh /tmp/verify_gstreamer && \
     python3 -c "import cv2, numpy; assert cv2.__version__.startswith('4.12.'); assert numpy.__version__.startswith('2.')" && \
+    test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 && \
+    missing="$(ldd /opt/roboflow/lib/libroboflow_jetson_tensor.so.1 | awk '/not found/ { print $1 }' | grep -v -x libcuda.so.1 || true)" && \
+    test -z "${missing}" && \
+    command -v lsmod >/dev/null && \
+    command -v modprobe >/dev/null && \
     rm -rf /root/.cache/gstreamer-1.0
 
 # Environment variables

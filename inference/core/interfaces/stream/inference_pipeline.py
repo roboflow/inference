@@ -1,14 +1,11 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 from datetime import datetime
 from enum import Enum
 from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
-
-import numpy as np
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
@@ -1124,9 +1121,14 @@ class InferencePipeline:
         video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
     ) -> None:
         try:
+            # Frames are handed to the sink AS-IS: under
+            # ENABLE_TENSOR_DATA_REPRESENTATION that is the original on-device
+            # tensor frame (no per-frame device-to-host materialisation here).
+            # Pixel-consuming sinks materialise at their own boundary via
+            # stream.utils.materialise_video_frame_for_sink.
             self._on_prediction(
                 predictions,
-                _materialise_video_frames_for_sink(video_frames),
+                video_frames,
             )
         except Exception as error:
             payload = {
@@ -1156,42 +1158,6 @@ class InferencePipeline:
             batch_collection_timeout=self._batch_collection_timeout,
             should_stop=lambda: self._stop,
         )
-
-
-def _materialise_video_frames_for_sink(
-    video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
-) -> Union[VideoFrame, List[Optional[VideoFrame]]]:
-    if isinstance(video_frames, list):
-        return [
-            _materialise_video_frame_for_sink(video_frame)
-            for video_frame in video_frames
-        ]
-    return _materialise_video_frame_for_sink(video_frames)
-
-
-def _materialise_video_frame_for_sink(
-    video_frame: Optional[VideoFrame],
-) -> Optional[VideoFrame]:
-    if video_frame is None or isinstance(video_frame.image, np.ndarray):
-        return video_frame
-
-    tensor_image = video_frame.image.detach().cpu()
-    if tensor_image.ndim == 3 and tensor_image.shape[0] == 1:
-        tensor_image = tensor_image[0]
-    if tensor_image.ndim == 2:
-        # cv2-based sinks expect 3-channel BGR frames, so grayscale is
-        # broadcast across the channels.
-        numpy_image = tensor_image.unsqueeze(-1).repeat(1, 1, 3).numpy()
-    elif tensor_image.ndim == 3 and tensor_image.shape[0] in {3, 4}:
-        channel_order = [2, 1, 0]
-        if tensor_image.shape[0] == 4:
-            channel_order.append(3)
-        # Single copy: advanced indexing on the HWC view materialises a
-        # contiguous BGR(A) array directly.
-        numpy_image = tensor_image.permute(1, 2, 0)[..., channel_order].numpy()
-    else:
-        raise ValueError("Tensor video frames must use HW, 1CHW, 3CHW, or 4CHW layout")
-    return replace(video_frame, image=numpy_image)
 
 
 def send_inference_pipeline_status_update(
