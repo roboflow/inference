@@ -529,7 +529,7 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     sh /tmp/verify_gstreamer && \
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
     VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false sh /tmp/verify_media_runtime && \
-    sh -x /tmp/verify_jetson_server_runtime && \
+    sh /tmp/verify_jetson_server_runtime && \
     rm -rf /root/.cache/gstreamer-1.0
 
 LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (PyTorch from source, numpy 2.x)"

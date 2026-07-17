@@ -19,7 +19,12 @@ DISABLE_VERSION_CHECK=true inference --help >/dev/null
 torchvision_image="$(
     python3 -c 'from torchvision._internally_replaced_utils import _get_extension_path; print(_get_extension_path("image"))'
 )"
-ldd "${torchvision_image}" | grep -q 'libnvjpeg.so.13'
+# The CUDA runtime is injected by the NVIDIA container runtime on the target
+# Jetson, so ldd is not meaningful in Depot's headless build sandbox. Verify
+# the extension's declared ELF dependency instead; the live device probe then
+# validates the dependency can actually be loaded and exercised.
+readelf -d "${torchvision_image}" |
+    grep -Fq 'Shared library: [libnvjpeg.so.13]'
 
 for command_name in \
     c++ \
