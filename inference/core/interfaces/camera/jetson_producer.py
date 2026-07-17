@@ -42,6 +42,10 @@ def _resolve_grab_timeout_ns() -> int:
 _RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
 _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+# TLS validation is deliberately opt-in.  Some private camera deployments use
+# a self-signed RTSPS certificate; setting this to 0 asks rtspsrc to accept it.
+# The secure GStreamer default remains in force when the variable is absent.
+_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR = "ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
 _RTSP_VIDEO_CODECS = ("h264", "h265")
@@ -255,9 +259,11 @@ def build_gstreamer_pipeline(
         #   drains it on the streaming thread), so a small non-dropping queue
         #   is enough.
         codec = _rtsp_video_codec()
+        tls_validation_flags = _rtsp_tls_validation_flags()
         return (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
-            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
+            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
+            f"{tls_validation_flags} ! "
             "queue ! "
             f"rtp{codec}depay ! {codec}parse ! "
             "nvv4l2decoder enable-max-performance=1 ! "
@@ -299,6 +305,30 @@ def _rtsp_latency_ms() -> int:
     except ValueError:
         return _DEFAULT_RTSP_LATENCY_MS
     return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
+def _rtsp_tls_validation_flags() -> str:
+    """Return an explicit rtspsrc TLS-validation setting when requested.
+
+    ``0`` disables certificate validation for cameras with private/self-signed
+    certificates. Keeping this unset by default avoids weakening RTSPS
+    validation for normal deployments.
+    """
+
+    raw = os.getenv(_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
+    if raw is None or not raw.strip():
+        return ""
+    try:
+        flags = int(raw)
+    except ValueError as error:
+        raise ValueError(
+            f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
+        ) from error
+    if flags < 0:
+        raise ValueError(
+            f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
+        )
+    return f" tls-validation-flags={flags}"
 
 
 def _build_sink(is_live: bool) -> str:

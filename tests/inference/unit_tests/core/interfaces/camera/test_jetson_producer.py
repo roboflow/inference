@@ -219,6 +219,25 @@ def test_rtsp_transport_env_overrides_protocols_and_latency(monkeypatch) -> None
     assert "protocols=tcp+udp latency=1000 ! " in pipeline
 
 
+def test_rtsp_tls_validation_flags_are_opt_in(monkeypatch) -> None:
+    secure_pipeline = build_gstreamer_pipeline("rtsps://camera.example.test/live")
+    assert "tls-validation-flags" not in secure_pipeline
+
+    monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", "0")
+    self_signed_pipeline = build_gstreamer_pipeline(
+        "rtsps://camera.example.test/live"
+    )
+    assert "tls-validation-flags=0 ! " in self_signed_pipeline
+
+
+@pytest.mark.parametrize("value", ("nope", "-1"))
+def test_rtsp_tls_validation_flags_reject_invalid_values(monkeypatch, value) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", value)
+
+    with pytest.raises(ValueError, match="TLS_VALIDATION_FLAGS"):
+        build_gstreamer_pipeline("rtsps://camera.example.test/live")
+
+
 def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
     pipeline = build_gstreamer_pipeline(
         "rtsps://camera.example.test:7441/live",
