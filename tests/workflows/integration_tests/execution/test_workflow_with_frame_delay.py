@@ -23,14 +23,14 @@ TIME_TRAVEL_WORKFLOW = {
             ],
         },
         {
-            "type": "roboflow_core/time_travel@v1",
+            "type": "roboflow_core/frame_delay@v1",
             "name": "past",
             "image": "$inputs.image",
             "data": "$steps.frame_value.output",
             "offset": -1,
         },
         {
-            "type": "roboflow_core/time_travel@v1",
+            "type": "roboflow_core/frame_delay@v1",
             "name": "past_two",
             "image": "$inputs.image",
             "data": "$steps.frame_value.output",
@@ -77,7 +77,7 @@ def _frame_input(frame_number: int) -> dict:
     }
 
 
-def test_workflow_with_time_travel_past_offsets(
+def test_workflow_with_frame_delay_past_offsets(
     model_manager: ModelManager,
 ) -> None:
     # given - a workflow with two past time-travel steps (-1 and -2), reused across a

@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.fusion.time_travel.v1 import (
+from inference.core.workflows.core_steps.fusion.frame_delay.v1 import (
     BUFFER_MARGIN,
     BlockManifest,
-    TimeTravelBlockV1,
+    FrameDelayBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
@@ -34,7 +34,7 @@ def _image(frame_number: int, video_id: str = "vid_1") -> WorkflowImageData:
 
 def test_past_offset_returns_previous_value() -> None:
     # given
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
 
     # when - feed a monotonic frame sequence, offset -2 (two frames ago)
     results = [block.run(image=_image(n), data=f"det-{n}", offset=-2) for n in range(5)]
@@ -53,7 +53,7 @@ def test_past_offset_returns_previous_value() -> None:
 
 def test_past_offset_missing_default_value() -> None:
     # given
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
 
     # when
     result = block.run(image=_image(0), data="det-0", offset=-1, default_value="NA")
@@ -65,7 +65,7 @@ def test_past_offset_missing_default_value() -> None:
 
 def test_zero_offset_returns_current_value() -> None:
     # given
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
 
     # when
     result = block.run(image=_image(3), data="det-3", offset=0)
@@ -78,7 +78,7 @@ def test_zero_offset_returns_current_value() -> None:
 
 def test_positive_offset_rejected_at_runtime() -> None:
     # given
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
 
     # when / then - future look-ahead is not supported
     with pytest.raises(ValueError):
@@ -89,7 +89,7 @@ def test_positive_offset_rejected_by_manifest() -> None:
     # when / then - a literal positive offset fails validation up-front
     with pytest.raises(ValidationError):
         BlockManifest(
-            type="roboflow_core/time_travel@v1",
+            type="roboflow_core/frame_delay@v1",
             image="$inputs.image",
             data="$steps.model.predictions",
             offset=10,
@@ -98,7 +98,7 @@ def test_positive_offset_rejected_by_manifest() -> None:
 
 def test_state_is_isolated_per_video_identifier() -> None:
     # given
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
 
     # when - interleave two streams with the same frame numbers
     block.run(image=_image(0, video_id="a"), data="a-0", offset=-1)
@@ -113,7 +113,7 @@ def test_state_is_isolated_per_video_identifier() -> None:
 
 def test_buffer_is_bounded() -> None:
     # given
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
     offset = -3
 
     # when - process many frames
@@ -127,7 +127,7 @@ def test_buffer_is_bounded() -> None:
 
 def test_state_persists_across_runs() -> None:
     # given - the per-video buffer must survive across run() calls on the same instance
-    block = TimeTravelBlockV1()
+    block = FrameDelayBlockV1()
 
     # when
     block.run(image=_image(0), data="det-0", offset=-1)

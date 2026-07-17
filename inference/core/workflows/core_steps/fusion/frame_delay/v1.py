@@ -81,7 +81,7 @@ delaying the entire workflow output, which is not possible on synchronous runtim
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Time Travel",
+            "name": "Frame Delay",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -93,7 +93,14 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/time_travel@v1", "TimeTravel"]
+    # The legacy `time_travel@v1` / `TimeTravel` identifiers are kept as aliases so
+    # workflows saved before the rename keep resolving to this block.
+    type: Literal[
+        "roboflow_core/frame_delay@v1",
+        "FrameDelay",
+        "roboflow_core/time_travel@v1",
+        "TimeTravel",
+    ]
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image",
         description="The image / video frame providing the video metadata "
@@ -110,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ],
     ) = Field(
-        description="The value to time-shift. Can be detections, numbers, strings, "
+        description="The value to delay. Can be detections, numbers, strings, "
         "images, or any other workflow output.",
         examples=[
             "$steps.object_detection_model.predictions",
@@ -136,7 +143,7 @@ class BlockManifest(WorkflowBlockManifest):
         # validated in `run()`; only literal integers can be checked here.
         if isinstance(value, int) and value > 0:
             raise ValueError(
-                "Time Travel only supports past offsets: `offset` must be <= 0 "
+                "Frame Delay only supports past offsets: `offset` must be <= 0 "
                 f"(got {value})."
             )
         return value
@@ -161,7 +168,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class TimeTravelBlockV1(WorkflowBlock):
+class FrameDelayBlockV1(WorkflowBlock):
     def __init__(self):
         self._buffers: Dict[str, "OrderedDict[int, Any]"] = {}
         self._offset: int = 0
@@ -180,7 +187,7 @@ class TimeTravelBlockV1(WorkflowBlock):
         offset = int(offset)
         if offset > 0:
             raise ValueError(
-                "Time Travel only supports past offsets: `offset` must be <= 0 "
+                "Frame Delay only supports past offsets: `offset` must be <= 0 "
                 f"(got {offset})."
             )
         self._offset = offset

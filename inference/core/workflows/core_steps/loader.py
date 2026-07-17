@@ -185,8 +185,8 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     VLMAsDetectorBlockV2,
 )
 from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
-from inference.core.workflows.core_steps.fusion.time_travel.v1 import (
-    TimeTravelBlockV1,
+from inference.core.workflows.core_steps.fusion.frame_delay.v1 import (
+    FrameDelayBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
@@ -842,7 +842,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
-        TimeTravelBlockV1,
+        FrameDelayBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
