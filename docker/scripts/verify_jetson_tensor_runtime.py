@@ -272,6 +272,30 @@ def _validate_live_rtsp_source(url: str) -> None:
     finally:
         producer.release()
 
+    # Production arrives through VideoSource, not by constructing the producer
+    # directly.  Assert that first-frame discovery did not silently replace the
+    # Jetson implementation with the OpenCV fallback.
+    from inference.core.interfaces.camera.video_source import VideoSource
+
+    video_source = VideoSource.init(video_reference=url, allow_tensor_frames=True)
+    try:
+        video_source.start()
+        assert isinstance(video_source._video, JetsonVideoFrameProducer)
+        deadline = time.monotonic() + 30.0
+        frame = None
+        while time.monotonic() < deadline:
+            if video_source._video.grab():
+                success, frame = video_source._video.retrieve()
+                if success and frame is not None:
+                    break
+            time.sleep(0.1)
+        assert frame is not None
+        assert isinstance(frame, torch.Tensor)
+        assert frame.is_cuda
+        print("RTSP_VIDEO_SOURCE_TENSOR_PROBE_OK")
+    finally:
+        video_source.terminate()
+
 
 def main() -> None:
     assert torch.cuda.is_available()
