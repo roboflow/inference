@@ -31,10 +31,10 @@ TIME_TRAVEL_WORKFLOW = {
         },
         {
             "type": "roboflow_core/time_travel@v1",
-            "name": "future",
+            "name": "past_two",
             "image": "$inputs.image",
             "data": "$steps.frame_value.output",
-            "offset": 2,
+            "offset": -2,
         },
     ],
     "outputs": [
@@ -51,13 +51,13 @@ TIME_TRAVEL_WORKFLOW = {
         },
         {
             "type": "JsonField",
-            "name": "future_output",
-            "selector": "$steps.future.output",
+            "name": "past_two_output",
+            "selector": "$steps.past_two.output",
         },
         {
             "type": "JsonField",
-            "name": "future_ref",
-            "selector": "$steps.future.reference_frame_number",
+            "name": "past_two_ref",
+            "selector": "$steps.past_two.reference_frame_number",
         },
     ],
 }
@@ -77,11 +77,11 @@ def _frame_input(frame_number: int) -> dict:
     }
 
 
-def test_workflow_with_time_travel_past_and_future_offsets(
+def test_workflow_with_time_travel_past_offsets(
     model_manager: ModelManager,
 ) -> None:
-    # given - a workflow with a past (-1) and a future (+2) time-travel step, reused
-    # across a sequence of frames (block state persists between engine.run() calls).
+    # given - a workflow with two past time-travel steps (-1 and -2), reused across a
+    # sequence of frames (block state persists between engine.run() calls).
     execution_engine = ExecutionEngine.init(
         workflow_definition=TIME_TRAVEL_WORKFLOW,
         init_parameters={
@@ -110,7 +110,10 @@ def test_workflow_with_time_travel_past_and_future_offsets(
     assert results[2]["past_output"] == 1
     assert results[3]["past_output"] == 2
 
-    # future offset (+2) returns the current value aligned to frame N-2
+    # then - offset (-2) references the value two frames earlier; aligned to frame N
+    assert results[0]["past_two_output"] is None
+    assert results[1]["past_two_output"] is None
+    assert results[2]["past_two_output"] == 0
+    assert results[3]["past_two_output"] == 1
     for n in range(4):
-        assert results[n]["future_output"] == n
-        assert results[n]["future_ref"] == n - 2
+        assert results[n]["past_two_ref"] == n

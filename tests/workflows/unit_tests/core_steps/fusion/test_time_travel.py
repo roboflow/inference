@@ -1,10 +1,12 @@
 import datetime
 
 import numpy as np
+import pytest
+from pydantic import ValidationError
 
-import inference.core.workflows.core_steps.fusion.time_travel.v1 as time_travel_v1
 from inference.core.workflows.core_steps.fusion.time_travel.v1 import (
     BUFFER_MARGIN,
+    BlockManifest,
     TimeTravelBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -61,51 +63,7 @@ def test_past_offset_missing_default_value() -> None:
     assert result["is_available"] is False
 
 
-def test_future_offset_returns_current_value(monkeypatch) -> None:
-    # given - value behavior is independent of the (opt-in) stream-pipeline flag.
-    monkeypatch.setattr(time_travel_v1, "STREAM_LOOKAHEAD_ENABLED", False)
-    block = TimeTravelBlockV1()
-
-    # when
-    result = block.run(image=_image(7), data="det-7", offset=10)
-
-    # then - from the emitted frame (7 - 10) perspective, "+10 ahead" is the current
-    # frame, whose value is already known.
-    assert result["output"] == "det-7"
-    assert result["is_available"] is True
-    assert result["reference_frame_number"] == 7 - 10
-
-
-def test_future_lookahead_disabled_by_default() -> None:
-    # given - default (flag off): the runner must not be turned into a pipelined
-    # runner, so synchronous consumers (WebRTC/webexec, HTTP) keep working.
-    block = TimeTravelBlockV1()
-
-    # when
-    block.run(image=_image(7), data="det-7", offset=10)
-
-    # then
-    assert time_travel_v1.STREAM_LOOKAHEAD_ENABLED is False
-    assert block.can_activate_stream_pipeline() is False
-    assert block.is_stream_pipelined() is False
-    assert block.stream_pipeline_depth() == 0
-
-
-def test_future_lookahead_declares_depth_when_enabled(monkeypatch) -> None:
-    # given - opt-in flag on (InferencePipeline video path only).
-    monkeypatch.setattr(time_travel_v1, "STREAM_LOOKAHEAD_ENABLED", True)
-    block = TimeTravelBlockV1()
-
-    # when
-    block.run(image=_image(7), data="det-7", offset=10)
-
-    # then
-    assert block.can_activate_stream_pipeline() is True
-    assert block.is_stream_pipelined() is True
-    assert block.stream_pipeline_depth() == 10
-
-
-def test_zero_offset_returns_current_value_without_delay() -> None:
+def test_zero_offset_returns_current_value() -> None:
     # given
     block = TimeTravelBlockV1()
 
@@ -116,8 +74,26 @@ def test_zero_offset_returns_current_value_without_delay() -> None:
     assert result["output"] == "det-3"
     assert result["is_available"] is True
     assert result["reference_frame_number"] == 3
-    assert block.is_stream_pipelined() is False
-    assert block.stream_pipeline_depth() == 0
+
+
+def test_positive_offset_rejected_at_runtime() -> None:
+    # given
+    block = TimeTravelBlockV1()
+
+    # when / then - future look-ahead is not supported
+    with pytest.raises(ValueError):
+        block.run(image=_image(7), data="det-7", offset=10)
+
+
+def test_positive_offset_rejected_by_manifest() -> None:
+    # when / then - a literal positive offset fails validation up-front
+    with pytest.raises(ValidationError):
+        BlockManifest(
+            type="roboflow_core/time_travel@v1",
+            image="$inputs.image",
+            data="$steps.model.predictions",
+            offset=10,
+        )
 
 
 def test_state_is_isolated_per_video_identifier() -> None:
@@ -149,30 +125,14 @@ def test_buffer_is_bounded() -> None:
     assert len(buffer) <= abs(offset) + BUFFER_MARGIN + 1
 
 
-def test_flush_and_close_contract() -> None:
-    # given
-    block = TimeTravelBlockV1()
-    block.run(image=_image(0), data="det-0", offset=5)
-
-    # then - drain emits nothing (trailing frames have no future)
-    assert block.flush_stream_pipeline_outputs() == []
-    # close must NOT wipe persistent state: it is called after every non-deferred
-    # run_workflow, and buffers have to survive across frames.
-    block.close_stream_pipeline()
-    assert block._buffers != {}
-
-
-def test_state_persists_across_runs_after_close() -> None:
-    # given - simulates the standalone ExecutionEngine.run() path, where
-    # close_stream_pipeline() is invoked after each run.
+def test_state_persists_across_runs() -> None:
+    # given - the per-video buffer must survive across run() calls on the same instance
     block = TimeTravelBlockV1()
 
     # when
     block.run(image=_image(0), data="det-0", offset=-1)
-    block.close_stream_pipeline()
     result = block.run(image=_image(1), data="det-1", offset=-1)
-    block.close_stream_pipeline()
 
-    # then - frame 0 is still available to frame 1 despite the close between runs
+    # then - frame 0 is still available to frame 1
     assert result["output"] == "det-0"
     assert result["is_available"] is True
