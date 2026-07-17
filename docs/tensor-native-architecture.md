@@ -174,3 +174,62 @@ and avoids an extra VIC conversion/buffer pool. The native bridges expose
 timeouts, interruption, pipeline-factory checks, and counters for host pixel
 maps, host/device copies, and CUDA synchronization so the zero-copy claim is
 testable rather than aspirational.
+
+## Comparison with upstream Supervision and Trackers
+
+```mermaid
+flowchart LR
+    subgraph upstream["Upstream path — CPU-oriented"]
+        ud["Model output"] --> un["NumPy Detections"]
+        un --> ug["NumPy geometry / NMS"]
+        ug --> ut["One Python tracker per stream\nNumPy Kalman + SciPy assignment"]
+        ut --> uo["Python / NumPy results"]
+    end
+
+    subgraph forks["Superiorvision + Tracktors — tensor-native"]
+        fd["Model CUDA tensors"] --> ft["Tensor Detections"]
+        ft --> fg["Torch geometry / NMS"]
+        fg --> fb["One batched CUDA transaction\nTriton Kalman + GPU assignment"]
+        fb --> fo["CUDA tensors + compatible proxies"]
+    end
+
+    classDef upstream fill:#5a3b17,color:#fff,stroke:#e7a73d,stroke-width:2px;
+    classDef fork fill:#173b5e,color:#fff,stroke:#46a2da,stroke-width:2px;
+    class ud,un,ug,ut,uo upstream;
+    class fd,ft,fg,fb,fo fork;
+```
+
+| Concern | Supervision / Trackers | Superiorvision / Tracktors |
+| --- | --- | --- |
+| Public surface | Baseline APIs | Compatible `supervision` and `trackers` namespaces, result shapes, lifecycle semantics, and tracker IDs |
+| Numeric representation | NumPy arrays and Python objects | `torch.Tensor` remains on its existing device; CUDA is the production target |
+| Box/overlap work | NumPy implementation | Tensor views and vectorized Torch kernels for Inference-used geometry, NMS/NMM, zones, and CompactMask |
+| Association | CPU SciPy/NumPy-style scalar tracking path | Segmented GPU association; exact assignment contract retained |
+| Kalman state | Individual tracker/tracklet state | Persistent CUDA arena with batched Triton predict and update kernels |
+| Multi-camera execution | Scheduler calls one tracker update per stream | One persistent `CUDABatchExecutor` batches compatible streams while preserving input/result order |
+| Input from hardware decode | Typically reaches NumPy/CPU image interfaces | GStreamer/NVMM or CUDAMemory → native bridge → DLPack → CUDA `torch.Tensor` |
+| Deliberate CPU boundaries | The normal execution substrate | Drawing/OpenCV/Pillow, JSON/CSV and external serialization, strings, dataset/video I/O, and ragged object metadata |
+
+This is not a claim that every upstream utility has been rewritten. The scope is
+the Inference-used paths: numeric detections, geometry, NMS/NMM, ByteTrack and
+other exposed trackers, zones/analytics, CompactMask, and hardware video
+ingestion. Dataset utilities, some metrics, KeyPoints NMS, drawing, and other
+CPU-facing helpers remain deliberately out of the hot path or require further
+migration before they can be called tensor-native.
+
+### Performance-comparison rule
+
+```mermaid
+flowchart TB
+    same["Identical decoded frames and detections"]
+    same --> cpu["Trackers baseline\nCPU / NumPy detections\nper-stream updates"]
+    same --> cuda["Tracktors\nalready-resident CUDA tensors\none batched executor call"]
+    cpu --> metrics["Report p50 / p95 latency\naggregate FPS and exact output parity"]
+    cuda --> metrics
+```
+
+That measures the production benefit being built: Tracktors should not be
+penalized for a synthetic GPU→CPU→GPU detour that Inference no longer performs.
+At the same time, the tracker sequence outputs and active Kalman state are
+checked against the scalar baseline so the speedup never trades away tracking
+semantics.
