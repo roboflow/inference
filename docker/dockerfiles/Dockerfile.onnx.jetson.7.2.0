@@ -426,6 +426,17 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         packaging && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \
+    # Some optional application dependencies still name the upstream projects.
+    # Replace their import trees *and* metadata after resolution so the runtime
+    # can only import our tensor-native forks under the compatible namespaces.
+    rm -rf \
+        /opt/python-runtime/supervision \
+        /opt/python-runtime/supervision-*.dist-info \
+        /opt/python-runtime/trackers \
+        /opt/python-runtime/trackers-*.dist-info && \
+    python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
+        /opt/wheels/superiorvision-*.whl \
+        /opt/wheels/tracktors-*.whl && \
     find /opt/python-runtime -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
