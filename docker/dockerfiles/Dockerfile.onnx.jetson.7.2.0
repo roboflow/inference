@@ -426,16 +426,6 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         packaging && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \
-    # Keep the final runtime on the exact Jetson-compiled framework wheels.
-    # ``uv`` resolves the broad application graph above, but equal-version
-    # PyPI wheels must never replace these CUDA/Thor-specific artifacts.
-    python3 -m pip install --no-deps --target /opt/python-runtime --upgrade --force-reinstall \
-        /opt/wheels/torch-*.whl \
-        /opt/wheels/torchvision-*.whl \
-        /opt/wheels/onnxruntime_gpu-*.whl \
-        /opt/wheels/flash_attn-*.whl \
-        /opt/wheels/triton-*.whl \
-        /opt/wheels/pycuda-*.whl && \
     find /opt/python-runtime -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
