@@ -454,6 +454,12 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
 
 FROM jetson-runtime-base AS runtime
 
+# Ubuntu 24.04's Python 3.12 development package exposes the versioned helper
+# only.  The runtime verification and third-party extension builds use the
+# conventional unversioned command, so provide it without pulling in the
+# forbidden meta ``python3-dev`` package.
+RUN ln -sf /usr/bin/python3.12-config /usr/local/bin/python3-config
+
 COPY --from=builder /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
 COPY --from=builder /usr/local/cuda/nvvm/libdevice /usr/local/cuda/nvvm/libdevice
 COPY --from=builder /usr/share/doc/cuda-nvcc-13-2/copyright /usr/local/share/licenses/cuda-ptxas
