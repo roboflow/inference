@@ -21,7 +21,7 @@ ARG TRITON_WHEEL_SHA256=9497f2e696ee368862a181a90b2dcc03ca978cc4f602abd67c7d8102
 ARG ONNXRUNTIME_VERSION=1.24.2
 ARG PYTORCH_MAX_JOBS=12
 ARG ORT_BUILD_PARALLEL=8
-ARG FLASH_ATTN_MAX_JOBS=2
+ARG FLASH_ATTN_MAX_JOBS=8
 ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
 ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
 ARG FLASH_ATTN_CUDA_ARCHS=87;110
@@ -235,7 +235,7 @@ RUN --mount=type=bind,source=docker/patches/flash-attention-sm87.patch,target=/t
     git checkout ${FLASH_ATTN_REF} && \
     git apply /tmp/flash-attention-sm87.patch && \
     git submodule update --init --recursive
-RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132 \
+RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132-jobs${FLASH_ATTN_MAX_JOBS} \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-flash-attn-${TARGETARCH} \
     cd flash-attention && \
     export FLASH_ATTENTION_FORCE_BUILD=TRUE && \

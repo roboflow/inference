@@ -6,6 +6,10 @@ variable "JETSON_WHEELS_TAGS" {
   default = "roboflow/roboflow-inference-wheels-jetson-7.2.0:local"
 }
 
+variable "JETSON_WHEELS_IMAGE" {
+  default = "roboflow/roboflow-inference-wheels-jetson-7.2.0:1.4.0-torch213"
+}
+
 target "jetson-media-jp72" {
   context    = "."
   dockerfile = "docker/dockerfiles/Dockerfile.media.jetson.7.2.0"
@@ -65,7 +69,7 @@ target "jetson-server-jp72" {
   dockerfile = "docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0"
   contexts = {
     jetson-media  = "target:jetson-media-jp72"
-    jetson-wheels = "target:jetson-wheels-jp72"
+    jetson-wheels = "docker-image://${JETSON_WHEELS_IMAGE}"
   }
   platforms = ["linux/arm64"]
   tags      = split(",", JETSON_SERVER_TAGS)
