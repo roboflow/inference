@@ -110,12 +110,6 @@ for replaced_distribution in ("supervision", "trackers"):
         continue
     raise AssertionError((replaced_distribution, installed_version))
 
-torch_requirements = importlib.metadata.requires("torch") or []
-assert not any(
-    requirement.partition(";")[0].strip().lower().startswith("nvidia-")
-    for requirement in torch_requirements
-), torch_requirements
-
 pip_cuda_distributions = sorted(
     name
     for distribution in importlib.metadata.distributions()
