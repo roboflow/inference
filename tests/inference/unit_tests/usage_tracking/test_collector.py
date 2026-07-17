@@ -10,6 +10,7 @@ from inference.core.version import __version__ as inference_version
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
+    send_usage_payload,
     sha256_hash,
     zip_usage_payloads,
 )
@@ -1205,3 +1206,257 @@ def test_external_source_info_not_persisted_into_resource_details(
         usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
     )
     assert "source_info" not in resource_details
+
+
+def test_record_usage_separates_concurrent_streams_by_stream_session_id(
+    usage_collector_with_mocked_threads,
+):
+    """Two pipelines sharing an API key and a workflow must not aggregate into
+    one usage entry: stream billing counts concurrent stream session ids, so
+    collapsing them under-counts a device's cameras.
+    """
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake"
+    resource_id = "workflow-1"
+
+    token = stream_session_id.set("stream-a")
+    try:
+        collector.record_usage(
+            source="rtsp://camera-1",
+            category="workflows",
+            frames=2,
+            api_key=api_key,
+            resource_id=resource_id,
+            fps=10,
+        )
+        stream_session_id.set("stream-b")
+        collector.record_usage(
+            source="rtsp://camera-2",
+            category="workflows",
+            frames=3,
+            api_key=api_key,
+            resource_id=resource_id,
+            fps=10,
+        )
+    finally:
+        stream_session_id.reset(token)
+
+    usage = collector._usage[api_key]
+    assert f"workflows:{resource_id}:stream-a" in usage
+    assert f"workflows:{resource_id}:stream-b" in usage
+    assert f"workflows:{resource_id}" not in usage
+    entry_a = usage[f"workflows:{resource_id}:stream-a"]
+    entry_b = usage[f"workflows:{resource_id}:stream-b"]
+    assert entry_a["stream_session_id"] == "stream-a"
+    assert entry_b["stream_session_id"] == "stream-b"
+    assert entry_a["processed_frames"] == 2
+    assert entry_b["processed_frames"] == 3
+
+
+def test_record_usage_without_stream_session_id_keeps_legacy_key(
+    usage_collector_with_mocked_threads,
+):
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    collector = usage_collector_with_mocked_threads
+    assert stream_session_id.get() is None
+
+    collector.record_usage(
+        source="img.jpg",
+        category="workflows",
+        frames=1,
+        api_key="fake",
+        resource_id="workflow-1",
+    )
+
+    usage = collector._usage["fake"]
+    assert "workflows:workflow-1" in usage
+    assert "stream_session_id" not in usage["workflows:workflow-1"]
+
+
+def test_stream_session_id_does_not_leak_across_threads():
+    from threading import Thread
+
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    seen_in_thread = []
+
+    def pipeline_thread():
+        stream_session_id.set("thread-local-stream")
+        seen_in_thread.append(stream_session_id.get())
+
+    thread = Thread(target=pipeline_thread)
+    thread.start()
+    thread.join()
+
+    assert seen_in_thread == ["thread-local-stream"]
+    assert stream_session_id.get() is None
+
+
+def test_zip_usage_payloads_keeps_stream_sessions_separate():
+    def make_payload(key, ssid, frames, ts):
+        return {
+            "fake_api1_hash": {
+                key: {
+                    "api_key_hash": "fake_api1_hash",
+                    "resource_id": "workflow-1",
+                    "stream_session_id": ssid,
+                    "exec_session_id": "session-1",
+                    "timestamp_start": ts,
+                    "timestamp_stop": ts + 1,
+                    "processed_frames": frames,
+                    "fps": 10,
+                    "source_duration": frames / 10,
+                    "execution_duration": 1,
+                }
+            }
+        }
+
+    dumped_usage_payloads = [
+        make_payload(
+            "workflows:workflow-1:stream-a", "stream-a", 2, 1721032989934855000
+        ),
+        make_payload(
+            "workflows:workflow-1:stream-b", "stream-b", 3, 1721032989934856000
+        ),
+        make_payload(
+            "workflows:workflow-1:stream-a", "stream-a", 5, 1721032989934857000
+        ),
+    ]
+
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+
+    merged = {}
+    for payload in zipped_usage_payloads:
+        for resource_payloads in payload.values():
+            for key, resource_usage in resource_payloads.items():
+                assert key not in merged
+                merged[key] = resource_usage
+    assert merged["workflows:workflow-1:stream-a"]["processed_frames"] == 7
+    assert merged["workflows:workflow-1:stream-a"]["stream_session_id"] == "stream-a"
+    assert merged["workflows:workflow-1:stream-b"]["processed_frames"] == 3
+    assert merged["workflows:workflow-1:stream-b"]["stream_session_id"] == "stream-b"
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
+    post_mock,
+):
+    def make_payload(key, stream_id, frames):
+        return {
+            "fake_hash": {
+                key: {
+                    "api_key_hash": "fake_hash",
+                    "resource_id": "workflow-1",
+                    "stream_session_id": stream_id,
+                    "exec_session_id": "process-session",
+                    "processed_frames": frames,
+                    "fps": 10,
+                    "source_duration": frames / 10,
+                    "execution_duration": 1,
+                }
+            }
+        }
+
+    payloads = zip_usage_payloads(
+        usage_payloads=[
+            make_payload("workflows:workflow-1:stream-a", "stream-a", 2),
+            make_payload("workflows:workflow-1:stream-b", "stream-b", 3),
+        ]
+    )
+    assert len(payloads) == 1
+    post_mock.return_value.status_code = 200
+
+    failed_hashes = send_usage_payload(
+        payload=payloads[0],
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    assert failed_hashes == set()
+    post_mock.assert_called_once()
+    outbound_rows = post_mock.call_args.kwargs["json"]
+    assert {row["exec_session_id"] for row in outbound_rows} == {
+        "stream-a",
+        "stream-b",
+    }
+    assert all("stream_session_id" not in row for row in outbound_rows)
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_leaves_legacy_exec_session_ids(
+    post_mock,
+):
+    payload = {
+        "fake_hash": {
+            "workflows:legacy": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "legacy",
+                "exec_session_id": "process-session",
+                "processed_frames": 3,
+                "source_duration": 0.3,
+            },
+            "workflows:tagged:stream-a": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "tagged",
+                "stream_session_id": "stream-a",
+                "exec_session_id": "process-session",
+                "processed_frames": 2,
+                "source_duration": 0.2,
+            },
+        }
+    }
+    post_mock.return_value.status_code = 200
+
+    failed_hashes = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    assert failed_hashes == set()
+    outbound_rows = post_mock.call_args.kwargs["json"]
+    assert {row["resource_id"]: row["exec_session_id"] for row in outbound_rows} == {
+        "legacy": "process-session",
+        "tagged": "stream-a",
+    }
+    assert all("stream_session_id" not in row for row in outbound_rows)
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_retry_sends_identical_rows(post_mock):
+    payload = {
+        "fake_hash": {
+            "workflows:workflow-1:stream-a": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "workflow-1",
+                "stream_session_id": "stream-a",
+                "exec_session_id": "process-session",
+                "processed_frames": 3,
+                "source_duration": 0.3,
+            }
+        }
+    }
+    failed_response = mock.MagicMock(status_code=500)
+    successful_response = mock.MagicMock(status_code=200)
+    post_mock.side_effect = [failed_response, successful_response]
+
+    first_result = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+    second_result = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    assert first_result == {"fake_hash"}
+    assert second_result == set()
+    assert (
+        post_mock.call_args_list[0].kwargs["json"]
+        == post_mock.call_args_list[1].kwargs["json"]
+    )
