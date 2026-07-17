@@ -281,20 +281,20 @@ def _validate_live_rtsp_source(url: str) -> None:
     try:
         video_source.start()
         assert isinstance(video_source._video, JetsonVideoFrameProducer)
-        deadline = time.monotonic() + 30.0
-        frame = None
-        while time.monotonic() < deadline:
-            if video_source._video.grab():
-                success, frame = video_source._video.retrieve()
-                if success and frame is not None:
-                    break
-            time.sleep(0.1)
-        assert frame is not None
-        assert isinstance(frame, torch.Tensor)
-        assert frame.is_cuda
+        # VideoSource owns its producer on a dedicated consumer thread.  Read
+        # from its public queue rather than grabbing the producer concurrently:
+        # direct producer calls race the consumer and can legitimately observe
+        # an empty latest-frame slot.
+        video_frame = video_source.read_frame(timeout=30.0)
+        assert video_frame is not None
+        assert isinstance(video_frame.image, torch.Tensor)
+        assert video_frame.image.is_cuda
         print("RTSP_VIDEO_SOURCE_TENSOR_PROBE_OK")
     finally:
-        video_source.terminate()
+        video_source.terminate(
+            wait_on_frames_consumption=False,
+            purge_frames_buffer=True,
+        )
 
 
 def main() -> None:
