@@ -73,6 +73,7 @@ import cv2
 import flash_attn
 import importlib.metadata
 import importlib.util
+from pathlib import Path
 import onnxruntime
 import supervision
 import tensorrt
@@ -110,16 +111,13 @@ for replaced_distribution in ("supervision", "trackers"):
         continue
     raise AssertionError((replaced_distribution, installed_version))
 
-pip_cuda_distributions = sorted(
-    name
-    for distribution in importlib.metadata.distributions()
-    if (name := distribution.metadata.get("Name"))
-    and (
-        name.lower().startswith("nvidia-")
-        or name.lower() in {"cuda-bindings", "cuda-toolkit"}
-    )
-)
-assert not pip_cuda_distributions, pip_cuda_distributions
+# PyTorch's generic aarch64 wheel carries CUDA user-space components below the
+# Python runtime.  In particular, NCCL must be image-bundled: the host is only
+# allowed to supply the driver/device interface via nvidia-container-runtime.
+nccl_spec = importlib.util.find_spec("nvidia.nccl")
+assert nccl_spec is not None and nccl_spec.submodule_search_locations, nccl_spec
+nccl_directory = Path(next(iter(nccl_spec.submodule_search_locations))) / "lib"
+assert any(nccl_directory.glob("libnccl.so*")), nccl_directory
 
 for module in (
     "build",

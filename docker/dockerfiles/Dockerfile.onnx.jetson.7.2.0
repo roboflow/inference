@@ -437,14 +437,9 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/superiorvision-*.whl \
         /opt/wheels/tracktors-*.whl && \
-    # PyTorch's generic wheel metadata pulls pip CUDA packages during broad
-    # resolution. Jetson supplies the matching CUDA stack as system packages,
-    # so remove those duplicate Python distributions before composing runtime.
-    rm -rf \
-        /opt/python-runtime/nvidia \
-        /opt/python-runtime/nvidia_*.dist-info \
-        /opt/python-runtime/cuda_* \
-        /opt/python-runtime/cuda_*.dist-info && \
+    # Keep PyTorch's CUDA user-space wheels (including NCCL) in the image.
+    # The host provides only the driver/device interface through the NVIDIA
+    # container runtime; the image must not depend on host CUDA libraries.
     find /opt/python-runtime -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
