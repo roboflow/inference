@@ -666,7 +666,13 @@ RfTensorContext* convert_sample_to_tensor(
             write_error(
                 error,
                 error_capacity,
-                "Frame is not a populated NvBufSurface SURFACE_ARRAY");
+                "Frame is not a valid NvBufSurface SURFACE_ARRAY "
+                "(memType=%d expected=%d surfaceList=%p batchSize=%u numFilled=%u)",
+                static_cast<int>(surface->memType),
+                static_cast<int>(NVBUF_MEM_SURFACE_ARRAY),
+                static_cast<void*>(surface->surfaceList),
+                surface->batchSize,
+                surface->numFilled);
             goto cleanup;
         }
         const NvBufSurfaceColorFormat surface_format =
