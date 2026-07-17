@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import struct
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -98,7 +99,7 @@ class TestAdmissionGate:
         mmp._gpu_free_mb = lambda: 800.0
         mmp._vram_meta_cache["m"] = 1500
         mmp._models["old"] = ModelState(loaded=True)
-        mmp._model_access["old"] = 1.0
+        mmp._model_access["old"] = time.monotonic() - 1000.0
         mmp._vram_meta_cache["old"] = 1000
         decision, victims, deficit = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "evict"
@@ -110,14 +111,14 @@ class TestEvictionCoordination:
     def test_pick_candidate_excludes_unloading(self):
         mmp = _bare_mmp()
         mmp._models["a"] = ModelState(loaded=True)
-        mmp._model_access["a"] = 1.0
+        mmp._model_access["a"] = time.monotonic() - 1000.0
         mmp._unloading.add("a")
         assert mmp._pick_eviction_candidate() is None
 
     def test_evict_marks_victim_before_drain(self):
         mmp = _bare_mmp()
         mmp._models["a"] = ModelState(loaded=True)
-        mmp._model_access["a"] = 1.0
+        mmp._model_access["a"] = time.monotonic() - 1000.0
         mmp._backends["a"] = object()
         seen = {}
 
