@@ -29,6 +29,12 @@ target "jetson-wheels-jp72" {
 # Component stages of the wheels image, grouped by dependency chain so CI can
 # fan the compiles out to separate builders; they meet in the shared project
 # cache and jetson-wheels-jp72 assembles the result.
+target "jetson-wheels-torch-jp72" {
+  inherits = ["jetson-wheels-jp72"]
+  target   = "torch-builder"
+  tags     = []
+}
+
 target "jetson-wheels-torchvision-jp72" {
   inherits = ["jetson-wheels-jp72"]
   target   = "torchvision-builder"

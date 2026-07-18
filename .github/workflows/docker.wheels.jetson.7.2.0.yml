@@ -32,18 +32,11 @@ env:
   BASE_IMAGE: "roboflow/roboflow-inference-wheels-jetson-7.2.0"
 
 jobs:
-  # The expensive compiles fan out to separate Depot builders; each populates the
-  # shared project cache, and the assemble job below cache-hits all of them.
+  # Build the dependency graph as actual parallel Actions steps. Depot shares the
+  # project cache between invocations, so child stages reuse Torch rather than
+  # compiling it again on their dedicated 64-core builders.
   components:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: torch-stack
-            targets: jetson-wheels-torch-stack-jp72
-          - name: ort-stack
-            targets: jetson-wheels-ort-stack-jp72
-    name: Build ${{ matrix.name }}
+    name: Build JP7.2 framework wheel components
     runs-on:
       labels: depot-ubuntu-24.04-64
       group: public-depot
@@ -56,12 +49,51 @@ jobs:
         uses: actions/checkout@v6
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-      - name: Build component
+      - name: Build Torch
+        id: torch
+        background: true
         uses: depot/bake-action@v1
         with:
           files: ./docker/docker-bake.jetson.7.2.0.hcl
-          targets: ${{ matrix.targets }}
+          targets: jetson-wheels-torch-jp72
           project: v1xzfwkc4b
+
+      - parallel:
+          - name: Build ONNX Runtime
+            uses: depot/bake-action@v1
+            with:
+              files: ./docker/docker-bake.jetson.7.2.0.hcl
+              targets: jetson-wheels-ort-jp72
+              project: v1xzfwkc4b
+          - name: Fetch Triton
+            uses: depot/bake-action@v1
+            with:
+              files: ./docker/docker-bake.jetson.7.2.0.hcl
+              targets: jetson-wheels-triton-jp72
+              project: v1xzfwkc4b
+          - name: Build PyCUDA
+            uses: depot/bake-action@v1
+            with:
+              files: ./docker/docker-bake.jetson.7.2.0.hcl
+              targets: jetson-wheels-pycuda-jp72
+              project: v1xzfwkc4b
+
+      - name: Wait for Torch
+        wait: torch
+
+      - parallel:
+          - name: Build torchvision
+            uses: depot/bake-action@v1
+            with:
+              files: ./docker/docker-bake.jetson.7.2.0.hcl
+              targets: jetson-wheels-torchvision-jp72
+              project: v1xzfwkc4b
+          - name: Build FlashAttention
+            uses: depot/bake-action@v1
+            with:
+              files: ./docker/docker-bake.jetson.7.2.0.hcl
+              targets: jetson-wheels-flash-attn-jp72
+              project: v1xzfwkc4b
 
   assemble:
     name: Assemble wheels image
