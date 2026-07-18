@@ -26,9 +26,9 @@ target "jetson-wheels-jp72" {
   tags       = split(",", JETSON_WHEELS_TAGS)
 }
 
-# Component stages of the wheels image, grouped by dependency chain so CI can
-# fan the compiles out to separate builders; they meet in the shared project
-# cache and jetson-wheels-jp72 assembles the result.
+# Component stages of the wheels image. CI calls these stages independently to
+# populate Depot's shared project cache before jetson-wheels-jp72 assembles the
+# publishable wheel bundle.
 target "jetson-wheels-torch-jp72" {
   inherits = ["jetson-wheels-jp72"]
   target   = "torch-builder"
@@ -63,14 +63,6 @@ target "jetson-wheels-pycuda-jp72" {
   inherits = ["jetson-wheels-jp72"]
   target   = "pycuda-builder"
   tags     = []
-}
-
-group "jetson-wheels-torch-stack-jp72" {
-  targets = ["jetson-wheels-torchvision-jp72", "jetson-wheels-flash-attn-jp72"]
-}
-
-group "jetson-wheels-ort-stack-jp72" {
-  targets = ["jetson-wheels-ort-jp72", "jetson-wheels-triton-jp72", "jetson-wheels-pycuda-jp72"]
 }
 
 target "jetson-server-jp72" {
