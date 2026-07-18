@@ -45,7 +45,7 @@ jobs:
             targets: jetson-wheels-ort-stack-jp72
     name: Build ${{ matrix.name }}
     runs-on:
-      labels: depot-ubuntu-24.04-4
+      labels: depot-ubuntu-24.04-64
       group: public-depot
     timeout-minutes: 1440
     permissions:
