@@ -178,6 +178,13 @@ RUN if [ "${USE_PREBUILT_WHEELS}" = "1" ]; then \
         /opt/wheels/pycuda-*.whl; \
     fi
 
+# Refuse a wheel bundle unless its primary CUDA runtime supports both JP7.2
+# targets. This catches a stale/miscompiled torch wheel before it becomes a
+# server image that works on Thor but fails on Orin.
+RUN if [ "${USE_PREBUILT_WHEELS}" = "1" ]; then \
+      python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"'; \
+    fi
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
@@ -189,7 +196,7 @@ WORKDIR /build/pytorch
 RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then \
       git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch; \
     fi
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111 \
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111-verified-v2 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
     if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \

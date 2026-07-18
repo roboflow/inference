@@ -133,9 +133,12 @@ ARG TARGETARCH
 
 WORKDIR /build/pytorch
 RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111 \
+# A previous wheel bundle retained a stale CMake configuration and silently
+# omitted sm_87. Start this architecture-changing build with a clean tree.
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111-verified-v2 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-torch-${TARGETARCH} \
     cd pytorch && \
+    rm -rf build/* && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
     test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
     test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
@@ -155,7 +158,8 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 setup.py bdist_wheel && \
     cp dist/torch-*.whl /opt/wheels/ && \
-    python3 -m pip install --break-system-packages dist/torch-*.whl
+    python3 -m pip install --break-system-packages dist/torch-*.whl && \
+    python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"'
 
 FROM torch-builder AS torchvision-builder
 
