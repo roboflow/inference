@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- SAM3 concept-segmentation postprocessing no longer scales its memory working set with
+  detection count × image resolution. `ChunkedPostProcessImage` applies the detection cap
+  before mask interpolation and upscales/encodes masks in fixed-size slices
+  (`INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE`, default 8), eliminating a measured
+  +14 GiB host-RAM transient (GPU-OOM CPU fallback) and reducing CUDA peak ~2.8x on
+  many-instance images. Outputs are bit-identical to the previous implementation.
+
+### Added
+
+- `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
+  interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
+  for COCO RLE at original resolution).
+
 ## `0.31.0`
 
 ### Fixed

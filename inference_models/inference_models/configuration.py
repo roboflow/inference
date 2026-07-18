@@ -71,6 +71,17 @@ AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
 SAM3_IMAGE_SIZE = get_integer_from_env(variable_name="SAM3_IMAGE_SIZE", default=1008)
+INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE", default=8
+)
+if INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
     variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
     default=30.0,

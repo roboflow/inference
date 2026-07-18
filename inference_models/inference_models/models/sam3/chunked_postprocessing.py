@@ -19,7 +19,7 @@ This subclass fixes both without modifying the pinned package:
   score-descending, matching the ordering of the parent's late topk (which
   remains as a no-op safety net);
 - mask interpolation + RLE encoding run in fixed-size chunks
-  (`SAM3_MASK_PROCESSING_CHUNK_SIZE`, default 8), so neither device ever
+  (`INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE`, default 8), so neither device ever
   holds the full k x H x W float32 batch, and the GPU->CPU fallback is
   bounded to one chunk.
 
@@ -29,15 +29,15 @@ the parent), capped selection is topk order (identical to the parent's
 late sort).
 """
 
-import os
-
 import torch
 from sam3.eval.postprocessors import PostProcessImage
 from sam3.model import box_ops
 from sam3.model.data_misc import interpolate
 from sam3.train.masks_ops import robust_rle_encode
 
-SAM3_MASK_PROCESSING_CHUNK_SIZE = int(os.getenv("SAM3_MASK_PROCESSING_CHUNK_SIZE", "8"))
+from inference_models.configuration import (
+    INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE,
+)
 
 
 class ChunkedPostProcessImage(PostProcessImage):
@@ -45,7 +45,7 @@ class ChunkedPostProcessImage(PostProcessImage):
     def __init__(
         self,
         *args,
-        mask_chunk_size: int = SAM3_MASK_PROCESSING_CHUNK_SIZE,
+        mask_chunk_size: int = INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)

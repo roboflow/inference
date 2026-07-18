@@ -603,6 +603,9 @@ SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+# Cap on detections returned per prompt by /sam3/concept_segment; -1 = uncapped.
+# Applied before mask interpolation (see inference_models ChunkedPostProcessImage).
+SAM3_MAX_DETECTIONS = int(os.getenv("SAM3_MAX_DETECTIONS", -1))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
 SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = str2bool(
     os.getenv("SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", True)

@@ -539,7 +539,7 @@ class SAM3Torch:
         if mask_format not in ("dense", "rle"):
             raise ModelInputError(
                 message=f"Unsupported mask_format: {mask_format}. Use 'dense' or 'rle'.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         images_list = maybe_wrap_in_list(images)
         if images_list is None:
