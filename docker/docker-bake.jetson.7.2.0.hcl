@@ -10,7 +10,7 @@ variable "JETSON_WHEELS_IMAGE" {
   # Keep the server coupled to the immutable Torch 2.13 wheel bundle.  Torch
   # 2.13 pins Triton 3.7.1, so the older torch213 bundle (which contains 3.6)
   # is intentionally not a valid server input.
-  default = "roboflow/roboflow-inference-wheels-jetson-7.2.0:1.4.0-mvp-torch213-v2"
+  default = "roboflow/roboflow-inference-wheels-jetson-7.2.0:1.4.0-mvp-torch213-v3"
 }
 
 target "jetson-media-jp72" {
