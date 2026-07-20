@@ -217,4 +217,5 @@ inference_testing
 *.rrd
 
 openspec*/
-opsx/
+opsx/.venv-cosmos3/
+checkpoints/
