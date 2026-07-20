@@ -193,6 +193,18 @@ ARG CMAKE_VERSION
 ARG NINJA_VERSION
 ARG TARGETARCH
 
+# CUDA 13.2's SBSA CCCL package ships an invalid globally-qualified explicit
+# specialization in device_transform.cuh. GCC rejects it when ONNX Runtime
+# includes CUB under C++20. Scope the guarded workaround to this stage so the
+# expensive Torch and Flash Attention caches remain reusable.
+RUN cccl_header=/usr/local/cuda/targets/sbsa-linux/include/cccl/cub/device/device_transform.cuh && \
+    test -f "${cccl_header}" && \
+    if grep -q 'struct ::cuda::proclaims_copyable_arguments' "${cccl_header}"; then \
+      sed -i 's/struct ::cuda::proclaims_copyable_arguments/struct cuda::proclaims_copyable_arguments/' "${cccl_header}"; \
+    fi && \
+    grep -q 'struct cuda::proclaims_copyable_arguments' "${cccl_header}" && \
+    ! grep -q 'struct ::cuda::proclaims_copyable_arguments' "${cccl_header}"
+
 WORKDIR /build/onnxruntime
 RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
 RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm87-sm110-cu132 \
