@@ -13,6 +13,7 @@ The `inference-models` library supports a wide range of computer vision models a
 - **OCR & Document Parsing**: Extract text and structure from documents
 - **Interactive Segmentation**: Interactive and automatic segmentation
 - **Vision-Language Models**: Multi-modal understanding and generation
+- **Image Editing**: Instruction-based generative image editing
 - **Depth Estimation**: Predict depth maps from images
 - **Specialized**: Gaze detection, face detection, and more
 
@@ -110,6 +111,12 @@ The `inference-models` library supports a wide range of computer vision models a
 | [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
 | [Gemma 4](gemma4.md) | `hugging-face` | Gemma License | N/A                           | ✅ | ❌  |
+
+### Image Editing
+
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [Qwen-Image-Edit](qwen-image-edit.md) | `hugging-face` | Apache 2.0 | N/A | ✅ | ❌ |
 
 ### Depth Estimation
 

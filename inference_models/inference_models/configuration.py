@@ -254,6 +254,66 @@ INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS",
     default=True,
 )
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS",
+    default=28,
+)
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE",
+    default=5.0,
+)
+# When enabled, the lightx2v Qwen-Image-Lightning LoRA is fused into the base
+# Qwen-Image-Edit pipeline. This is a step-distillation LoRA: it lets the model
+# produce results in a handful of diffusion steps with guidance disabled, making
+# the (otherwise very heavy) model usable on consumer GPUs.
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA",
+    default=False,
+)
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS",
+    default=4,
+)
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE",
+    default=1.0,
+)
+# When the Lightning LoRA is active, inputs larger than this many megapixels are
+# downscaled before inference. Image size dominates VRAM/latency for diffusion,
+# so a small cap is what makes the model survive on consumer GPUs.
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS",
+    default=0.35,
+)
+# How the diffusers pipeline is placed on the device: "model" keeps one
+# sub-model on the GPU at a time (default), "sequential" offloads at the
+# submodule level (much lower VRAM, slower — needed for the full base model on
+# <=24GB cards), "none" keeps the whole pipeline resident on the device.
+QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME = "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD"
+DEFAULT_QWEN_IMAGE_EDIT_CPU_OFFLOAD = "model"
+ALLOWED_QWEN_IMAGE_EDIT_CPU_OFFLOAD_MODES = {"model", "sequential", "none"}
+
+
+def parse_qwen_image_edit_cpu_offload(value: Optional[str]) -> str:
+    """Parse and validate the Qwen-Image-Edit CPU-offload mode."""
+    if value is None:
+        return DEFAULT_QWEN_IMAGE_EDIT_CPU_OFFLOAD
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED_QWEN_IMAGE_EDIT_CPU_OFFLOAD_MODES:
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME}` "
+                f"to be one of {sorted(ALLOWED_QWEN_IMAGE_EDIT_CPU_OFFLOAD_MODES)} "
+                f"but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return normalized
+
+
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD = parse_qwen_image_edit_cpu_offload(
+    os.getenv(QWEN_IMAGE_EDIT_CPU_OFFLOAD_ENV_NAME)
+)
 INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
     default=512,
