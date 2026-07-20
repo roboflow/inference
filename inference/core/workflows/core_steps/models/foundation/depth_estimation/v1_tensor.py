@@ -159,8 +159,6 @@ def _depth_to_visualization(
     origin_image: WorkflowImageData,
     normalized_depth: torch.Tensor,
 ) -> WorkflowImageData:
-    # The colored depth map is an image output, so it has to land on the host as
-    # a uint8 RGB raster anyway - mirror the numpy adapter's viridis colouring.
     depth_for_viz = (normalized_depth * 255.0).to(torch.uint8).detach().cpu().numpy()
     cmap = plt.get_cmap("viridis")
     colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
@@ -239,8 +237,6 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 base64_image=result.get("image", ""),
             )
 
-            # Remote returns the depth map as a nested JSON list; bring it back
-            # into the tensor-native representation (torch.Tensor).
             normalized_depth = torch.as_tensor(
                 result.get("normalized_depth", []), dtype=torch.float32
             )
@@ -265,9 +261,6 @@ class DepthEstimationBlockV1(WorkflowBlock):
 
         predictions = []
         for single_image in images:
-            # Tensor-native local path: the depth adapter's
-            # run_tensor_native_inference returns a list of raw depth maps as
-            # torch.Tensor kept on-device (no numpy round-trip).
             if single_image.is_tensor_materialised():
                 model_image, image_color_format = single_image.tensor_image, "rgb"
             else:
@@ -282,11 +275,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
             depth_max = depth_map.max()
             if depth_max == depth_min:
                 raise ValueError("Depth map has no variation (min equals max)")
-            # Normalise to [0, 1] in torch - this stays the block's output.
             normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
-            # Pin the output tensor to the agreed workflow tensor device so the
-            # LOCAL path matches the REMOTE path's device contract (the remote
-            # path builds a CPU tensor; here we follow WORKFLOWS_IMAGE_TENSOR_DEVICE).
             normalized_depth = normalized_depth.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
             image_output = _depth_to_visualization(
                 origin_image=single_image,

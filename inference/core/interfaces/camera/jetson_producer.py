@@ -1,22 +1,12 @@
-"""GPU-native ``VideoFrameProducer`` for NVIDIA Jetson, backed by ``jetson_utils`` (NVDEC).
+"""Jetson video capture with NVIDIA GStreamer and CUDA tensor output."""
 
-Decodes through the Jetson hardware decoder and yields each frame as a ``torch.Tensor``
-on CUDA. ``jetson_utils`` ships with JetPack and is **not** pip-installable on a generic
-image, so every import of it is *local* (inside ``__init__`` / methods) — importing this
-module is always safe; only instantiation requires the dependency. Probe availability via
-``inference.core.interfaces.camera.discoverability.check_jetson_utils()``.
-
-Experimental scope (per the design discussion — deliberately narrow):
-- frames are ``.clone()``-ed out of the decoder surface so the consumer owns the memory
-  (the next ``Capture()`` may recycle the underlying surface);
-- color order / tensor layout / device placement are left to the consumer to handle.
-
-NOTE: exact ``jetson_utils`` call shapes vary across JetPack versions — verify against
-the version installed on your device.
-"""
-
-import time
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+import ctypes
+import ctypes.util
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
+from urllib.parse import unquote, urlparse
 
 from inference.core.interfaces.camera.entities import (
     FrameImage,
@@ -24,158 +14,508 @@ from inference.core.interfaces.camera.entities import (
     VideoFrameProducer,
 )
 
-if TYPE_CHECKING:
-    import torch
+_GST_RANK_PRIMARY = 256
+_NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
+# A live/RTSP source that yields no frame within this window is treated as
+# stalled: the native grab() raises TimeoutError instead of blocking forever, so
+# VideoSource surfaces an error (reconnect / cv2 fallback) rather than deadlock
+# on its state-change lock. Applies to first-frame discovery and steady-state
+# consumption alike. Tune per deployment via the env var below; the value must
+# be validated on-device against real RTSP connect + keyframe latency.
+_DEFAULT_GRAB_TIMEOUT_NS = 15_000_000_000
+_GRAB_TIMEOUT_ENV_VAR = "ROBOFLOW_JETSON_GRAB_TIMEOUT_SECONDS"
 
 
-# uint8 RGB, HWC — the cudaImage layout we wrap zero-copy into a torch tensor.
-_DEFAULT_CAPTURE_FORMAT = "rgb8"
-_DEFAULT_CAPTURE_TIMEOUT_MS = 1000
-# Total wall-clock budget for the FIRST frame. jetson_utils starts the GStreamer
-# pipeline lazily on the first Capture(), so startup captures can time out a few
-# times before the decoder yields a buffer — we keep retrying within this budget
-# rather than mistaking those transient timeouts for end-of-stream.
-_DEFAULT_STARTUP_TIMEOUT_MS = 10000
+def _resolve_grab_timeout_ns() -> int:
+    raw = os.getenv(_GRAB_TIMEOUT_ENV_VAR)
+    if raw is None:
+        return _DEFAULT_GRAB_TIMEOUT_NS
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return _DEFAULT_GRAB_TIMEOUT_NS
+    if seconds <= 0:
+        return _DEFAULT_GRAB_TIMEOUT_NS
+    return int(seconds * 1_000_000_000)
+
+
+_RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
+_RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
+_RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+_DEFAULT_RTSP_PROTOCOLS = "tcp"
+_DEFAULT_RTSP_LATENCY_MS = 200
+_RTSP_VIDEO_CODECS = ("h264", "h265")
+
+_COMMON_ELEMENTS = (
+    "appsink",
+    "nvvidconv",
+    "queue",
+)
+_URI_DECODE_ELEMENTS = (
+    "decodebin",
+    "h264parse",
+    "h265parse",
+    "jpegparse",
+    "nvjpegdec",
+    "nvv4l2decoder",
+    "uridecodebin",
+)
+_RTSP_ELEMENTS = (
+    "rtph264depay",
+    "rtph265depay",
+    "rtspsrc",
+)
+_SOFTWARE_DECODER_ELEMENTS = (
+    "avdec_h264",
+    "avdec_h265",
+    "avdec_mjpeg",
+    "jpegdec",
+    "libde265dec",
+    "openh264dec",
+)
+_FILE_DEMUXERS = {
+    ".avi": "avidemux",
+    ".m4v": "qtdemux",
+    ".mkv": "matroskademux",
+    ".mov": "qtdemux",
+    ".mp4": "qtdemux",
+    ".webm": "matroskademux",
+}
+
+
+def probe_gstreamer_elements(
+    elements: Iterable[str], *, boost_ranks: bool = False
+) -> Tuple[bool, str]:
+    """Verify the required GStreamer element factories exist.
+
+    When ``boost_ranks`` is True (only at producer BUILD time, not during availability
+    probing) the NVIDIA HW decoders (``nvv4l2decoder``/``nvjpegdec``) are ranked above
+    software decoders so ``decodebin``/``uridecodebin`` auto-selects them. Keeping the
+    boost OFF during probing means merely discovering this backend no longer perturbs
+    decoder selection process-wide for unrelated paths (e.g. a later cv2-GStreamer
+    decode) - the boost is applied only when a Jetson pipeline is actually built."""
+
+    library_name = ctypes.util.find_library("gstreamer-1.0")
+    if not library_name:
+        library_name = "libgstreamer-1.0.so.0"
+    try:
+        gst = ctypes.CDLL(library_name)
+    except OSError as error:
+        return False, f"could not load {library_name}: {error}"
+
+    gst.gst_init_check.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    gst.gst_init_check.restype = ctypes.c_int
+    gst.gst_element_factory_find.argtypes = [ctypes.c_char_p]
+    gst.gst_element_factory_find.restype = ctypes.c_void_p
+    gst.gst_plugin_feature_set_rank.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    gst.gst_plugin_feature_set_rank.restype = None
+    gst.gst_object_unref.argtypes = [ctypes.c_void_p]
+    gst.gst_object_unref.restype = None
+
+    error = ctypes.c_void_p()
+    if not gst.gst_init_check(None, None, ctypes.byref(error)):
+        return False, "GStreamer initialisation failed"
+
+    factories = {}
+    missing = []
+    for name in sorted(set(elements)):
+        factory = gst.gst_element_factory_find(name.encode("utf-8"))
+        if not factory:
+            missing.append(name)
+        else:
+            factories[name] = factory
+    try:
+        if missing:
+            return False, f"missing GStreamer elements: {', '.join(missing)}"
+
+        if boost_ranks:
+            for decoder_name in ("nvv4l2decoder", "nvjpegdec"):
+                decoder = factories.get(decoder_name)
+                if decoder:
+                    gst.gst_plugin_feature_set_rank(decoder, _NVIDIA_DECODER_RANK)
+        return True, "ok"
+    finally:
+        for factory in factories.values():
+            gst.gst_object_unref(factory)
+
+
+def required_gstreamer_elements(
+    video: Optional[Union[str, int]] = None,
+    *,
+    output_tensor: bool = False,
+) -> Sequence[str]:
+    """Return the element set needed by a source, or the common baseline."""
+
+    elements = list(_COMMON_ELEMENTS)
+    if video is None:
+        return tuple(elements + list(_URI_DECODE_ELEMENTS))
+    if _is_csi_source(video):
+        return tuple(elements + ["nvarguscamerasrc"])
+    if _is_v4l2_source(video):
+        return tuple(
+            elements
+            + [
+                "decodebin",
+                "h264parse",
+                "h265parse",
+                "jpegparse",
+                "nvjpegdec",
+                "nvv4l2decoder",
+                "v4l2src",
+            ]
+        )
+    if _is_rtsp_source(video):
+        # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
+        # (no uridecodebin autoplugging), so only those elements are required.
+        return tuple(
+            elements
+            + ["h264parse", "h265parse", "nvv4l2decoder"]
+            + list(_RTSP_ELEMENTS)
+        )
+    elements.extend(_URI_DECODE_ELEMENTS)
+    local_file_path = _local_file_path(video)
+    if local_file_path is not None:
+        demuxer = _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
+        if demuxer is not None:
+            elements.append(demuxer)
+    return tuple(elements)
+
+
+def build_gstreamer_pipeline(
+    video: Union[str, int],
+    *,
+    output_tensor: bool = False,
+) -> str:
+    """Build a Jetson GStreamer pipeline ending in an NVMM appsink."""
+
+    is_live = _is_live_source(video)
+    sink = _build_sink(is_live=is_live)
+    if _is_csi_source(video):
+        sensor_id = _csi_sensor_id(video)
+        return (
+            f"nvarguscamerasrc sensor-id={sensor_id} ! "
+            "video/x-raw(memory:NVMM),format=NV12 ! "
+            f"{sink}"
+        )
+    if _is_v4l2_source(video):
+        device = _v4l2_device(video)
+        return (
+            f'v4l2src device="{_quote_gstreamer_value(device)}" ! '
+            f"decodebin ! {sink}"
+        )
+
+    if _is_rtsp_source(video):
+        # Explicit video-only chain (the jetson-utils shape) instead of
+        # uridecodebin: autoplugging an RTSP source decodes EVERY track, and a
+        # camera that muxes audio (e.g. A-Law) poisons the bus with a
+        # missing-decoder error — fatal at startup when it races preroll, and a
+        # mid-run grab() failure otherwise. A codec-specific depayloader only
+        # ever links the video stream, so the audio track is never plugged.
+        # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
+        # and a NAT-free path that containers typically lack, and a failed UDP
+        # SETUP can make cameras drop the whole control connection.
+        #
+        # Further jetson-utils parity (v4 bridge):
+        # - the queue buffers COMPRESSED data before the depayloader (cheap,
+        #   non-leaky) instead of leaking decoded NVMM frames after the decoder;
+        # - no nvvidconv: the decoder's NV12 NVMM output goes straight to the
+        #   appsink and the bridge converts NV12->RGB CHW in CUDA, removing the
+        #   per-frame VIC pass and its extra buffer pool;
+        # - enable-max-performance keeps the decoder clocks pinned;
+        # - the appsink never accumulates (the bridge's new-sample callback
+        #   drains it on the streaming thread), so a small non-dropping queue
+        #   is enough.
+        codec = _rtsp_video_codec()
+        return (
+            f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
+            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
+            "queue ! "
+            f"rtp{codec}depay ! {codec}parse ! "
+            "nvv4l2decoder enable-max-performance=1 ! "
+            "video/x-raw(memory:NVMM),format=NV12 ! "
+            "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
+            "wait-on-eos=false"
+        )
+
+    uri = _source_uri(video)
+    return (
+        f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
+        'caps="video/x-raw(memory:NVMM)" ! '
+        f"{sink}"
+    )
+
+
+def _rtsp_video_codec() -> str:
+    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
+    if codec not in _RTSP_VIDEO_CODECS:
+        raise ValueError(
+            f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
+            f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
+        )
+    return codec
+
+
+def _rtsp_protocols() -> str:
+    return os.getenv(_RTSP_PROTOCOLS_ENV_VAR, _DEFAULT_RTSP_PROTOCOLS).strip() or (
+        _DEFAULT_RTSP_PROTOCOLS
+    )
+
+
+def _rtsp_latency_ms() -> int:
+    raw = os.getenv(_RTSP_LATENCY_ENV_VAR)
+    if raw is None:
+        return _DEFAULT_RTSP_LATENCY_MS
+    try:
+        latency = int(raw)
+    except ValueError:
+        return _DEFAULT_RTSP_LATENCY_MS
+    return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
+def _build_sink(is_live: bool) -> str:
+    queue_options = (
+        "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
+        if is_live
+        else "max-size-buffers=4 max-size-bytes=0 max-size-time=0"
+    )
+    appsink_options = (
+        "max-buffers=1 drop=true sync=false"
+        if is_live
+        else "max-buffers=4 drop=false sync=false"
+    )
+    return (
+        f"queue {queue_options} ! "
+        "nvvidconv ! video/x-raw(memory:NVMM),format=RGBA ! "
+        f"appsink name=rf_tensor_sink {appsink_options} wait-on-eos=false"
+    )
 
 
 class JetsonVideoFrameProducer(VideoFrameProducer):
-    """``VideoFrameProducer`` backed by Jetson NVDEC via ``jetson_utils.videoSource``."""
+    """Decode Jetson file/camera/RTSP sources with NVIDIA GStreamer elements."""
 
     def __init__(
         self,
-        video: str,
+        video: Union[str, int],
         *,
-        capture_format: str = _DEFAULT_CAPTURE_FORMAT,
-        capture_timeout_ms: int = _DEFAULT_CAPTURE_TIMEOUT_MS,
-        startup_timeout_ms: int = _DEFAULT_STARTUP_TIMEOUT_MS,
-        argv: Optional[List[str]] = None,
+        output_tensor: bool = True,
+        tensor_device: str = "cuda",
+        pin_host_memory: bool = True,
     ):
-        # Local import: jetson_utils only exists on JetPack. Failing here (not at module
-        # import time) keeps this module importable on machines without the Jetson stack.
-        try:
-            from jetson_utils import videoSource
-        except (
-            Exception
-        ) as error:  # noqa: BLE001 - any import failure means "unavailable"
-            raise ImportError(
-                "JetsonVideoFrameProducer requires `jetson_utils` (ships with JetPack; not "
-                "pip-installable). Probe via "
-                "inference.core.interfaces.camera.discoverability.check_jetson_utils()."
-            ) from error
+        gst_ok, gst_reason = probe_gstreamer_elements(
+            required_gstreamer_elements(video, output_tensor=True),
+            boost_ranks=True,
+        )
+        if not gst_ok:
+            raise RuntimeError(gst_reason)
 
         self._source_ref = video
-        self._capture_format = capture_format
-        self._capture_timeout_ms = capture_timeout_ms
-        self._startup_timeout_ms = startup_timeout_ms
-        # jetson_utils.videoSource auto-selects the right backend from the URI scheme:
-        # a file path / file:// -> NVDEC file decode, rtsp:// -> NVDEC RTSP, /dev/video* ->
-        # V4L2, csi:// -> CSI camera. argv carries extra CLI-style options (codec, size...).
-        self._source = videoSource(video, argv or [])
-        # cudaImage captured in grab() and consumed in retrieve() (jetson_utils has no
-        # grab/retrieve split — Capture() does both).
-        self._last_capture = None
-        # Lifecycle flags. We track these ourselves instead of leaning on
-        # IsStreaming() (see isOpened()): `_started` flips on the first decoded
-        # frame, `_eos` on a genuine end-of-stream, `_closed` on release().
-        self._started = False
-        self._eos = False
+        self._output_tensor = output_tensor
+        self._pipeline = build_gstreamer_pipeline(video, output_tensor=True)
+        self._decoder_validated = not _source_requires_decoder(video)
+        self._prerolled_frame_pending = False
+        self._cached_source_properties: Optional[SourceProperties] = None
+        self._grab_timeout_ns = _resolve_grab_timeout_ns()
+        del pin_host_memory
+
+        import torch
+
+        from inference.core.interfaces.camera.jetson_tensor_bridge import (
+            NativeJetsonTensorPipeline,
+            jetson_tensor_bridge_available,
+        )
+
+        device = torch.device(tensor_device)
+        if device.type != "cuda" or not torch.cuda.is_available():
+            raise RuntimeError("Jetson decoding requires an available CUDA device")
+        device_id = (
+            torch.cuda.current_device() if device.index is None else device.index
+        )
+        bridge_ok, bridge_reason = jetson_tensor_bridge_available()
+        if not bridge_ok:
+            raise RuntimeError(bridge_reason)
+        self._native_pipeline = NativeJetsonTensorPipeline(
+            self._pipeline, device_id=device_id
+        )
         self._closed = False
+        self._eos = False
+
+    @property
+    def pipeline(self) -> str:
+        """Pipeline string exposed for diagnostics and on-device tests."""
+
+        return self._pipeline
 
     def isOpened(self) -> bool:
-        # Deliberately NOT `self._source.IsStreaming()`. jetson_utils starts the
-        # GStreamer pipeline lazily on the first Capture(), so IsStreaming() is False
-        # *before* the first frame (and again after EOS). VideoSource calls isOpened()
-        # as a connection gate and as the consume-loop guard *before* the first grab(),
-        # so delegating to IsStreaming() makes every file source look closed. Track
-        # lifecycle ourselves: open from construction until EOS or release().
         return not self._closed and not self._eos
 
     def grab(self) -> bool:
         if self._closed or self._eos:
             return False
-        # The first few captures during pipeline startup can time out before the
-        # decoder produces a buffer ("gstDecoder::Capture() -- a timeout occurred").
-        # Treat those as transient and keep retrying within a startup budget; a
-        # Capture failure only means end-of-stream once the source has actually
-        # streamed and then stopped (or the budget is exhausted without a frame).
-        deadline = time.monotonic() + (self._startup_timeout_ms / 1000.0)
-        while True:
-            image = self._capture()
-            if image is not None:
-                self._started = True
-                self._last_capture = image
-                return True
-            streaming = bool(self._source.IsStreaming())
-            if self._started and not streaming:
-                # Streamed before, now stopped -> genuine end of stream.
-                self._eos = True
-                self._last_capture = None
-                return False
-            if time.monotonic() >= deadline:
-                # Startup never produced a frame, or the source stalled past the
-                # budget -> wind the pipeline down instead of spinning forever.
-                self._eos = True
-                self._last_capture = None
-                return False
-            # Pipeline still negotiating startup, or a momentary buffer stall while
-            # IsStreaming() is still true -> retry.
-
-    def _capture(self):
-        try:
-            return self._source.Capture(
-                format=self._capture_format,
-                timeout=self._capture_timeout_ms,
-            )
-        except Exception:  # noqa: BLE001 - some jetson_utils versions raise on timeout
-            return None
+        if self._prerolled_frame_pending:
+            self._prerolled_frame_pending = False
+            return True
+        grabbed = self._native_pipeline.grab(timeout_ns=self._grab_timeout_ns)
+        if grabbed and not self._decoder_validated:
+            self._validate_hardware_decoder()
+        if not grabbed:
+            self._eos = True
+        return grabbed
 
     def retrieve(self) -> Tuple[bool, Optional[FrameImage]]:
-        import torch
-
-        image = self._last_capture
-        self._last_capture = None
-        if image is None:
+        if self._closed or self._eos:
             return False, None
-        # cudaImage exposes __cuda_array_interface__ -> zero-copy view on CUDA.
-        tensor = torch.as_tensor(image, device="cuda")
-        # clone() so the consumer owns the memory independently of the decoder's surface
-        # pool (the next Capture() may overwrite/recycle the underlying buffer).
-        return True, tensor.clone()
+        self._prerolled_frame_pending = False
+        rgb_tensor = self._native_pipeline.retrieve()
+        if self._output_tensor:
+            return True, rgb_tensor
+        return True, _rgb_tensor_to_bgr_numpy(rgb_tensor)
 
     def initialize_source_properties(self, properties: Dict[str, float]) -> None:
-        # No-op: jetson_utils fixes capture options at videoSource construction (pass them
-        # through `argv`). Present to satisfy the VideoFrameProducer contract.
         return None
 
     def discover_source_properties(self) -> SourceProperties:
-        width = int(self._source.GetWidth())
-        height = int(self._source.GetHeight())
-        fps = float(self._source.GetFrameRate())
-        is_file = _looks_like_local_file(self._source_ref)
-        return SourceProperties(
+        if self._cached_source_properties is not None:
+            return self._cached_source_properties
+        if not self.grab():
+            raise RuntimeError("Jetson pipeline did not produce source metadata")
+        self._prerolled_frame_pending = True
+        frame_info = self._native_pipeline.frame_info()
+        width = frame_info.width
+        height = frame_info.height
+        fps = (
+            frame_info.fps_numerator / frame_info.fps_denominator
+            if frame_info.fps_denominator > 0
+            else 0.0
+        )
+        total_frames = (
+            int(frame_info.duration_ns * fps / 1_000_000_000)
+            if frame_info.duration_ns > 0 and fps > 0
+            else 0
+        )
+        local_path = _local_file_path(self._source_ref)
+        is_file = local_path is not None
+        timestamp_created = None
+        if is_file and fps > 0 and total_frames > 0 and os.path.isfile(local_path):
+            file_length_seconds = total_frames / fps
+            last_modified = datetime.fromtimestamp(os.path.getmtime(local_path))
+            timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
+        properties = SourceProperties(
             width=width,
             height=height,
-            # jetson_utils does not expose a reliable frame count for live sources;
-            # 0 == unknown. is_file is derived from the URI rather than the count.
-            total_frames=0,
+            total_frames=total_frames,
             is_file=is_file,
             fps=fps,
             is_reconnectable=not is_file,
-            timestamp_created=None,
+            timestamp_created=timestamp_created,
         )
+        self._cached_source_properties = properties
+        return properties
+
+    def interrupt(self) -> None:
+        if self._closed or self._eos:
+            return
+        self._eos = True
+        self._native_pipeline.interrupt()
 
     def release(self) -> None:
+        if self._closed:
+            return
         self._closed = True
-        self._last_capture = None
-        try:
-            self._source.Close()
-        except Exception:  # noqa: BLE001 - best-effort teardown
-            pass
+        self._prerolled_frame_pending = False
+        self._native_pipeline.close()
+
+    @property
+    def tensor_bridge_stats(self) -> Dict[str, int]:
+        return self._native_pipeline.stats()
+
+    def _validate_hardware_decoder(self) -> None:
+        if any(
+            self._native_pipeline.has_factory(factory)
+            for factory in ("nvv4l2decoder", "nvjpegdec")
+        ):
+            self._decoder_validated = True
+            return
+        software_decoders = [
+            factory
+            for factory in _SOFTWARE_DECODER_ELEMENTS
+            if self._native_pipeline.has_factory(factory)
+        ]
+        if software_decoders:
+            raise RuntimeError(
+                "Jetson pipeline instantiated software decoders: "
+                + ", ".join(software_decoders)
+            )
+        if _is_v4l2_source(self._source_ref):
+            self._decoder_validated = True
+            return
+        raise RuntimeError("Jetson pipeline did not instantiate an NVIDIA decoder")
 
 
-def _looks_like_local_file(uri: str) -> bool:
-    import os
+def _source_uri(video: Union[str, int]) -> str:
+    local_path = _local_file_path(video)
+    if local_path is not None:
+        return Path(local_path).resolve().as_uri()
+    return str(video)
 
-    if "://" in uri:
-        return uri.startswith("file://")
-    return os.path.exists(uri)
+
+def _local_file_path(video: Union[str, int]) -> Optional[str]:
+    if not isinstance(video, str):
+        return None
+    if video.startswith("file://"):
+        parsed = urlparse(video)
+        return unquote(parsed.path)
+    if "://" in video:
+        return None
+    return video
+
+
+def _is_rtsp_source(video: Union[str, int]) -> bool:
+    # rtspt:// / rtspst:// are rtspsrc's force-TCP variants of rtsp:// / rtsps://.
+    return isinstance(video, str) and video.lower().startswith(
+        ("rtsp://", "rtsps://", "rtspt://", "rtspst://")
+    )
+
+
+def _is_csi_source(video: Union[str, int]) -> bool:
+    return isinstance(video, str) and video.lower().startswith("csi://")
+
+
+def _csi_sensor_id(video: Union[str, int]) -> int:
+    try:
+        return int(str(video).split("://", 1)[1] or 0)
+    except ValueError as error:
+        raise ValueError(f"Invalid CSI source reference: {video!r}") from error
+
+
+def _is_v4l2_source(video: Union[str, int]) -> bool:
+    return isinstance(video, int) or (
+        isinstance(video, str) and video.startswith("/dev/video")
+    )
+
+
+def _v4l2_device(video: Union[str, int]) -> str:
+    return f"/dev/video{video}" if isinstance(video, int) else video
+
+
+def _is_live_source(video: Union[str, int]) -> bool:
+    return (
+        _is_csi_source(video)
+        or _is_v4l2_source(video)
+        or _local_file_path(video) is None
+    )
+
+
+def _source_requires_decoder(video: Union[str, int]) -> bool:
+    return not _is_csi_source(video)
+
+
+def _rgb_tensor_to_bgr_numpy(rgb_tensor):
+    return rgb_tensor.permute(1, 2, 0).flip(-1).contiguous().cpu().numpy()
+
+
+def _quote_gstreamer_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')

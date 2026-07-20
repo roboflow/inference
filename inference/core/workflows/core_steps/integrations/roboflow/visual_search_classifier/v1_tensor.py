@@ -66,6 +66,8 @@ from inference.core.workflows.core_steps.integrations.roboflow.visual_search_cla
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_KEY,
+    CLASSIFICATION_STYLE_MODEL,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -516,6 +518,8 @@ def _build_image_metadata(
 ) -> dict:
     return {
         CLASS_NAMES_KEY: class_names,
+        # Lane 1b: explicit style tag the serialiser reads to pick the flag-OFF shape.
+        CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_MODEL,
         PREDICTION_TYPE_KEY: "classification",
         IMAGE_DIMENSIONS_KEY: [height, width],
         INFERENCE_ID_KEY: inference_id,

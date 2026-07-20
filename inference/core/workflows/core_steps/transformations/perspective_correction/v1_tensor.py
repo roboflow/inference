@@ -11,8 +11,12 @@ The perspective-matrix math (``cv.getPerspectiveTransform`` / ``cv.perspectiveTr
 re-used verbatim from the numpy sibling - only the bits that touched ``sv.Detections``
 are re-implemented natively:
 
-- ``get_anchors_coordinates`` (numpy ``extend_perspective_polygon``) -> ``_native_anchor``
-  computes the same anchor point from the box ``xyxy``.
+- ``get_anchors_coordinates`` (numpy ``extend_perspective_polygon``) ->
+  ``_native_anchor_coordinate`` computes the same anchor point from the box ``xyxy``.
+  ``CENTER_OF_MASS`` is the exception (it is the mask centroid, not derivable from
+  ``xyxy``): it is resolved from the decoded masks via ``_center_of_mass_coordinates``,
+  which delegates to supervision so the centroid matches numpy byte-for-byte and
+  object-detection input (no mask) raises the same ``ValueError``.
 - ``.mask`` / ``.xyxy`` / ``detection[...]`` / ``sv.Detections.merge`` (numpy
   ``correct_detections``) -> ``_correct_native_detections`` reads ``xyxy`` / decoded
   masks / per-box keypoints off the native dataclasses, applies the same transform, and
@@ -466,13 +470,19 @@ def _native_anchor_coordinate(
     box read directly off the native ``xyxy`` (shape ``(4,)`` as ``[x1, y1, x2, y2]``).
     Only the anchors that ``extend_perspective_polygon`` requests are required:
     the four corners and the four edge mid-points used for the ``ALL`` mode and the
-    standard ``sv.Position`` extension positions."""
+    standard ``sv.Position`` extension positions.
+
+    ``sv.Position.CENTER_OF_MASS`` is intentionally NOT handled here: it is the mask
+    centroid, not derivable from ``xyxy`` alone. It is resolved upstream from the
+    decoded masks (``_center_of_mass_coordinates``) and injected via
+    ``center_of_mass_xy`` in ``extend_perspective_polygon`` - so a CENTER_OF_MASS
+    request never reaches this xyxy-only mapping. Leaving it out makes an accidental
+    call fail loudly (KeyError) instead of silently substituting the box centre."""
     x1, y1, x2, y2 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
     center_x = (x1 + x2) / 2
     center_y = (y1 + y2) / 2
     mapping = {
         sv.Position.CENTER: (center_x, center_y),
-        sv.Position.CENTER_OF_MASS: (center_x, center_y),
         sv.Position.TOP_LEFT: (x1, y1),
         sv.Position.TOP_CENTER: (center_x, y1),
         sv.Position.TOP_RIGHT: (x2, y1),
@@ -485,10 +495,71 @@ def _native_anchor_coordinate(
     return mapping[anchor]
 
 
+def _center_of_mass_coordinates(
+    detections: Union[Detections, InstanceDetections],
+) -> np.ndarray:
+    """Native replica of numpy v1's ``det.get_anchors_coordinates(CENTER_OF_MASS)[0]``
+    used by ``extend_perspective_polygon``: the (integer-truncated) mask centroid per
+    instance, in source-frame pixel coordinates. Returns shape ``(N, 2)``.
+
+    Parity: the centroid is computed by supervision's own
+    ``get_anchors_coordinates(CENTER_OF_MASS)`` (i.e. ``calculate_masks_centroids``)
+    on the decoded mask, so it matches numpy v1 byte-for-byte - the same ``+0.5``
+    pixel offset and ``.astype(int)`` truncation. Object-detection input (no mask)
+    reproduces supervision's exact ``ValueError`` rather than silently falling back to
+    the box centre, matching flag-off (numpy v1 raises there).
+
+    Materialisation cost: the box centre in the old code was free (xyxy only). The
+    mask centroid is not - the segmentation mask has to be decoded to a dense
+    ``(H, W)`` array per instance. Masks are decoded one instance at a time (via
+    ``instance_mask_to_numpy``, the same convention as the rest of this block) so the
+    full ``(N, H, W)`` stack is never materialised at once; peak extra cost is one
+    dense image-resolution mask. This only runs when
+    ``extend_perspective_polygon_by_detections_anchor == CENTER_OF_MASS`` (a rare
+    config), so it is off the default path.
+    """
+    xyxy_numpy = _native_detections_xyxy_numpy(detections)
+    if not isinstance(detections, InstanceDetections) or detections.mask is None:
+        # Object detection (or masks stripped): numpy v1 delegates to supervision and
+        # raises here. Delegate too so the flag-on error is identical (message
+        # included) to flag-off - this call raises and never returns.
+        return sv.Detections(xyxy=xyxy_numpy).get_anchors_coordinates(
+            sv.Position.CENTER_OF_MASS
+        )
+    number_of_detections = xyxy_numpy.shape[0]
+    centroids = np.empty((number_of_detections, 2), dtype=int)
+    for index in range(number_of_detections):
+        mask = instance_mask_to_numpy(detections, index)  # (H, W) bool
+        centroids[index] = sv.Detections(
+            xyxy=xyxy_numpy[index][np.newaxis, :],
+            mask=mask[np.newaxis, :, :],
+        ).get_anchors_coordinates(sv.Position.CENTER_OF_MASS)[0]
+    return centroids
+
+
+def _extension_anchor_point(
+    box: np.ndarray,
+    index: int,
+    bbox_position: sv.Position,
+    center_of_mass_xy: Optional[np.ndarray],
+) -> Tuple[float, float]:
+    """Resolve the extension anchor point for detection ``index``. All positions are
+    derivable from ``xyxy`` except ``CENTER_OF_MASS``, whose per-instance mask centroid
+    is precomputed upstream (``_center_of_mass_coordinates``) and passed in via
+    ``center_of_mass_xy``."""
+    if bbox_position == sv.Position.CENTER_OF_MASS:
+        # center_of_mass_xy is guaranteed non-None here: the caller only reaches
+        # CENTER_OF_MASS after computing it (and raising for OD input).
+        x, y = center_of_mass_xy[index]
+        return float(x), float(y)
+    return _native_anchor_coordinate(box, bbox_position)
+
+
 def extend_perspective_polygon(
     polygon: List[np.ndarray],
     detections_xyxy: np.ndarray,
     bbox_position: Union[sv.Position, Literal[ALL_POSITIONS]],
+    center_of_mass_xy: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, float, float, float, float]:
     if not bbox_position:
         return polygon
@@ -517,7 +588,9 @@ def extend_perspective_polygon(
             points.append(_native_anchor_coordinate(box, sv.Position.BOTTOM_LEFT))
             points.append(_native_anchor_coordinate(box, sv.Position.TOP_LEFT))
         else:
-            points.append(_native_anchor_coordinate(box, bbox_position))
+            points.append(
+                _extension_anchor_point(box, i, bbox_position, center_of_mass_xy)
+            )
         for x, y in points:
             if (
                 cv.pointPolygonTest(
@@ -556,7 +629,9 @@ def extend_perspective_polygon(
             points.append(_native_anchor_coordinate(box, sv.Position.BOTTOM_RIGHT))
             points.append(_native_anchor_coordinate(box, sv.Position.TOP_RIGHT))
         else:
-            points.append(_native_anchor_coordinate(box, bbox_position))
+            points.append(
+                _extension_anchor_point(box, i, bbox_position, center_of_mass_xy)
+            )
         for x, y in points:
             if (
                 cv.pointPolygonTest(
@@ -595,7 +670,9 @@ def extend_perspective_polygon(
             points.append(_native_anchor_coordinate(box, sv.Position.BOTTOM_RIGHT))
             points.append(_native_anchor_coordinate(box, sv.Position.BOTTOM_LEFT))
         else:
-            points.append(_native_anchor_coordinate(box, bbox_position))
+            points.append(
+                _extension_anchor_point(box, i, bbox_position, center_of_mass_xy)
+            )
         for x, y in points:
             if (
                 cv.pointPolygonTest(
@@ -634,7 +711,9 @@ def extend_perspective_polygon(
             points.append(_native_anchor_coordinate(box, sv.Position.TOP_RIGHT))
             points.append(_native_anchor_coordinate(box, sv.Position.TOP_LEFT))
         else:
-            points.append(_native_anchor_coordinate(box, bbox_position))
+            points.append(
+                _extension_anchor_point(box, i, bbox_position, center_of_mass_xy)
+            )
         for x, y in points:
             if (
                 cv.pointPolygonTest(
@@ -689,6 +768,7 @@ def generate_transformation_matrix(
     transformed_rect_height: int,
     detections_xyxy: Optional[np.ndarray] = None,
     detections_anchor: Optional[Union[sv.Position, Literal[ALL_POSITIONS]]] = None,
+    center_of_mass_xy: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, float, float]:
     polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
         polygon=src_polygon
@@ -719,6 +799,7 @@ def generate_transformation_matrix(
                 if detections_anchor != ALL_POSITIONS
                 else detections_anchor
             ),
+            center_of_mass_xy=center_of_mass_xy,
         )
     extended_width = extended_width * transformed_rect_width / max(original_width, 1)
     extended_height = (
@@ -1046,7 +1127,10 @@ def _warp_key_points_tensor(
 ) -> KeyPoints:
     """Warp the standalone ``KeyPoints.xy`` tensor (shape ``(instances, K, 2)``) through
     the perspective transform so downstream tensor-native consumers of the tuple stay
-    consistent with the bbox component. ``class_id`` / ``confidence`` are unchanged."""
+    consistent with the bbox component. Only ``xy`` is warped; ``class_id`` /
+    ``confidence`` / ``covariance`` / ``detection_confidence`` are carried through
+    unchanged - numpy v1 warps only the keypoint coordinates and leaves the covariance
+    and per-instance detection confidence untouched, so this must too (byte parity)."""
     if key_points.xy.numel() == 0:
         return key_points
     device = key_points.xy.device
@@ -1065,6 +1149,8 @@ def _warp_key_points_tensor(
         confidence=key_points.confidence,
         image_metadata=key_points.image_metadata,
         key_points_metadata=key_points.key_points_metadata,
+        covariance=key_points.covariance,
+        detection_confidence=key_points.detection_confidence,
     )
 
 
@@ -1140,6 +1226,23 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     if bbox_detections is not None
                     else None
                 )
+                # CENTER_OF_MASS is the only extension anchor not derivable from
+                # ``xyxy``: it is the mask centroid. Resolve it from the (source-frame)
+                # native masks here, where the native detections are still in scope, and
+                # pass the (N, 2) centroids down. Only computed when the anchor is
+                # actually CENTER_OF_MASS and there are detections to extend by - mirrors
+                # numpy v1, which raises for object-detection input (no mask).
+                center_of_mass_xy = None
+                if (
+                    bbox_detections is not None
+                    and detections_xyxy is not None
+                    and detections_xyxy.shape[0] > 0
+                    and extend_perspective_polygon_by_detections_anchor
+                    and extend_perspective_polygon_by_detections_anchor != ALL_POSITIONS
+                    and sv.Position(extend_perspective_polygon_by_detections_anchor)
+                    == sv.Position.CENTER_OF_MASS
+                ):
+                    center_of_mass_xy = _center_of_mass_coordinates(bbox_detections)
                 self.perspective_transformers.append(
                     generate_transformation_matrix(
                         src_polygon=polygon,
@@ -1147,6 +1250,7 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                         transformed_rect_width=width,
                         transformed_rect_height=height,
                         detections_anchor=extend_perspective_polygon_by_detections_anchor,
+                        center_of_mass_xy=center_of_mass_xy,
                     )
                 )
 

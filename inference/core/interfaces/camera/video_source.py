@@ -195,19 +195,19 @@ def _is_test_pattern_reference(video: Union[str, int]) -> bool:
     )
 
 
-def _build_default_producer(stream_reference: Union[str, int]) -> VideoFrameProducer:
+def _build_default_producer(
+    stream_reference: Union[str, int],
+    *,
+    output_tensor: bool = False,
+) -> VideoFrameProducer:
     """Pick the decoder for a plain (non-callable, non-test-pattern) source reference.
 
-    When ``ENABLE_TENSOR_DATA_REPRESENTATION`` is on we attempt a hardware GPU-tensor
-    decoder (Jetson / dGPU NVDEC, discovered and verified at runtime), and fall back to
-    the cv2 CPU pathway when none is installed/usable or its construction fails. The flag
-    being off preserves the legacy behaviour exactly. The selection is always logged.
+    When ``ENABLE_TENSOR_DATA_REPRESENTATION`` is on, hardware decoders are discovered
+    and verified at runtime. ``output_tensor`` selects the representation requested by
+    the consumer. Construction failures fall back to the general cv2 decoder.
     """
     if not ENABLE_TENSOR_DATA_REPRESENTATION:
-        logger.debug(
-            "ENABLE_TENSOR_DATA_REPRESENTATION is off; using cv2 CPU decoder for source "
-            f"reference: {stream_reference}"
-        )
+        logger.debug("Using cv2 decoder for source " f"reference: {stream_reference}")
         return CV2VideoFrameProducer(stream_reference)
     # Local import: the discoverability layer pulls optional GPU-decode deps lazily.
     from inference.core.interfaces.camera.discoverability import (
@@ -217,27 +217,33 @@ def _build_default_producer(stream_reference: Union[str, int]) -> VideoFrameProd
 
     producer = None
     try:
-        producer = build_hw_producer(str(stream_reference))
+        producer = build_hw_producer(
+            stream_reference,
+            output_tensor=output_tensor,
+        )
     except (
         Exception
     ) as error:  # noqa: BLE001 - decoder selection must never break startup
         logger.warning(
-            "ENABLE_TENSOR_DATA_REPRESENTATION is on, but initialising a hardware "
-            f"GPU-tensor decoder for source reference {stream_reference} raised: "
+            "Initialising a hardware decoder for source reference "
+            f"{stream_reference} raised: "
             f"{error!r}. Falling back to the cv2 CPU decoder."
         )
     if producer is not None:
         logger.info(
-            "ENABLE_TENSOR_DATA_REPRESENTATION is on; selected hardware GPU-tensor decoder "
+            "Selected hardware decoder "
             f"'{type(producer).__name__}' for source reference: {stream_reference}"
         )
         return producer
     probe_reasons = {
         name: availability.reason
-        for name, availability in available_producers().items()
+        for name, availability in available_producers(
+            video=stream_reference,
+            require_cuda_tensor=output_tensor,
+        ).items()
     }
     logger.warning(
-        "ENABLE_TENSOR_DATA_REPRESENTATION is on, but no hardware GPU-tensor decoder is "
+        "No hardware decoder is "
         f"usable for source reference {stream_reference} (probes: {probe_reasons}). "
         "Falling back to the cv2 CPU decoder."
     )
@@ -260,6 +266,7 @@ class VideoSource:
         video_source_properties: Optional[Dict[str, float]] = None,
         source_id: Optional[int] = None,
         desired_fps: Optional[Union[float, int]] = None,
+        allow_tensor_frames: bool = False,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -392,6 +399,7 @@ class VideoSource:
             video_consumer=video_consumer,
             video_source_properties=video_source_properties,
             source_id=source_id,
+            allow_tensor_frames=allow_tensor_frames,
         )
 
     def __init__(
@@ -403,6 +411,7 @@ class VideoSource:
         video_consumer: "VideoConsumer",
         video_source_properties: Optional[Dict[str, float]],
         source_id: Optional[int],
+        allow_tensor_frames: bool = False,
     ):
         self._stream_reference = stream_reference
         self._video: Optional[VideoFrameProducer] = None
@@ -418,6 +427,7 @@ class VideoSource:
         self._state_change_lock = Lock()
         self._video_source_properties = video_source_properties or {}
         self._source_id = source_id
+        self._allow_tensor_frames = allow_tensor_frames
         self._last_frame_timestamp: int = time.time_ns()
         self._fps: Optional[float] = None
         self._is_file: Optional[bool] = None
@@ -659,6 +669,7 @@ class VideoSource:
 
     def _start(self) -> None:
         self._change_state(target_state=StreamState.INITIALISING)
+        uses_default_producer = False
         try:
             if callable(self._stream_reference):
                 self._video = self._stream_reference()
@@ -669,14 +680,26 @@ class VideoSource:
 
                 self._video = TestPatternStreamProducer()
             else:
-                self._video = _build_default_producer(self._stream_reference)
-            if not self._video.isOpened():
-                self._change_state(target_state=StreamState.ERROR)
-                raise SourceConnectionError(
-                    f"Cannot connect to video source under reference: {self._stream_reference}"
+                uses_default_producer = True
+                self._video = _build_default_producer(
+                    self._stream_reference,
+                    output_tensor=self._allow_tensor_frames,
                 )
-            self._video.initialize_source_properties(self._video_source_properties)
-            self._source_properties = self._video.discover_source_properties()
+            try:
+                self._initialise_selected_video()
+            except Exception as hardware_error:
+                if not uses_default_producer or isinstance(
+                    self._video, CV2VideoFrameProducer
+                ):
+                    raise
+                self._release_video()
+                logger.warning(
+                    "Hardware video source initialisation failed for "
+                    f"{self._stream_reference}: {hardware_error!r}. "
+                    "Falling back to the cv2 decoder."
+                )
+                self._video = CV2VideoFrameProducer(self._stream_reference)
+                self._initialise_selected_video()
             self._video_consumer.reset(source_properties=self._source_properties)
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
@@ -690,7 +713,33 @@ class VideoSource:
             # discovery fails) leaves the source in ERROR, not INITIALISING, so
             # recovery (which keys off ERROR) fires. Re-raise for the caller.
             self._change_state(target_state=StreamState.ERROR)
+            self._release_video()
             raise
+
+    def _initialise_selected_video(self) -> None:
+        if not self._video.isOpened():
+            raise SourceConnectionError(
+                f"Cannot connect to video source under reference: {self._stream_reference}"
+            )
+        self._video.initialize_source_properties(self._video_source_properties)
+        self._source_properties = self._video.discover_source_properties()
+
+    def _interrupt_video(self) -> None:
+        interrupt = getattr(self._video, "interrupt", None)
+        if not callable(interrupt):
+            return
+        try:
+            interrupt()
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"Could not interrupt video source: {error}")
+
+    def _release_video(self) -> None:
+        if self._video is None:
+            return
+        try:
+            self._video.release()
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"Could not release video source: {error}")
 
     def _terminate(
         self, wait_on_frames_consumption: bool, purge_frames_buffer: bool
@@ -702,6 +751,7 @@ class VideoSource:
         if purge_frames_buffer:
             _ = get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
         if self._stream_consumption_thread is not None:
+            self._interrupt_video()
             self._stream_consumption_thread.join()
         if wait_on_frames_consumption:
             self._frames_buffer.join()
@@ -763,7 +813,7 @@ class VideoSource:
                 if not success:
                     break
             self._frames_buffer.put(POISON_PILL)
-            self._video.release()
+            self._release_video()
             self._change_state(target_state=StreamState.ENDED)
             send_video_source_status_update(
                 severity=UpdateSeverity.INFO,
@@ -774,6 +824,7 @@ class VideoSource:
             logger.info(f"Video consumption finished")
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
+            self._release_video()
             # Emit a poison pill so a consumer blocked on read_frame gets
             # end-of-stream instead of timing out forever; ERROR is
             # restart-eligible, so reconnection fires.

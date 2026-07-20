@@ -332,9 +332,6 @@ def test_calculate_least_squares_polygon_with_midpoint_fraction():
 
 
 def test_dynamic_zones_tensor_native_stores_scaled_polygon_in_bboxes_metadata():
-    # Mirrors the numpy behavior change from PR #2614: the per-box
-    # POLYGON_KEY_IN_SV_DETECTIONS payload must carry the SCALED polygon
-    # (assignment happens after scale_polygon), not the pre-scale one.
     pytest.importorskip("torch")
     pytest.importorskip("inference_models")
     import torch
@@ -394,11 +391,8 @@ def test_dynamic_zones_tensor_native_stores_scaled_polygon_in_bboxes_metadata():
 
 
 def test_dynamic_zones_tensor_native_serialized_polygon_payload_matches_numpy():
-    # End-to-end parity: the same segmentation input through the numpy block +
-    # numpy serializer and through the tensor sibling + tensor serializer must
-    # produce identical prediction dicts - in particular the declared-polygon
-    # response field must not be nested one extra level (a (1, V, 2) payload
-    # bypasses the serializer's declared-polygon fast path and nests the field).
+    # a (1, V, 2) per-box polygon payload would bypass the serializer's
+    # declared-polygon fast path and nest the response field one extra level
     pytest.importorskip("torch")
     pytest.importorskip("inference_models")
     import torch

@@ -1,13 +1,10 @@
 """
-Tensor-native sibling of `common/deserializers.py`. Same public function
-names; loader swaps the import based on `ENABLE_TENSOR_DATA_REPRESENTATION`.
-
-Per the plan's locked decision [ITERATE 4.A], the numpy file is left
-untouched. Functions here add tensor-aware code paths and delegate to
-the numpy implementations for everything else.
+Tensor-native sibling of `common/deserializers.py`. The loader selects this module
+when `ENABLE_TENSOR_DATA_REPRESENTATION` is enabled. Functions here add tensor-aware
+code paths and delegate other inputs to the NumPy implementations.
 """
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
@@ -26,8 +23,15 @@ from inference.core.workflows.core_steps.common.tensor_native import (
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_KEY,
+    CLASSIFICATION_STYLE_MODEL,
+    IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
     PARENT_ID_KEY,
     PARENT_ORIGIN_KEY,
+    PREDICTION_TYPE_KEY,
     RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
     ROOT_PARENT_ID_KEY,
     ROOT_PARENT_ORIGIN_KEY,
@@ -36,6 +40,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,
+)
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
@@ -52,12 +60,9 @@ _CHANNEL_AXIS_SIZES = (1, 3, 4)
 def _ensure_chw_layout(image: torch.Tensor) -> torch.Tensor:
     """Normalise a single-image tensor to the `WorkflowImageData` CHW contract.
 
-    `WorkflowImageData.tensor_image` is defined as CHW (RGB), but some producers
-    hand us a channels-last HWC tensor — e.g. the Jetson NVDEC producer wraps the
-    `jetson_utils` cudaImage (HWC `rgb8`) zero-copy. Stored as-is, the model
-    survives (its preprocessing auto-permutes channels-last input), but
-    `numpy_image` blindly does `permute(1, 2, 0)` and produces a `(W, C, H)`
-    canvas, which breaks every CHW-assuming consumer (annotators, shape reads).
+    `WorkflowImageData.tensor_image` uses CHW RGB. Producers may provide a
+    channels-last HWC tensor, which is normalised before constructing the workflow
+    image container.
 
     Detect channels-last with the same heuristic the model preprocessing uses
     (`pre_processing.py`: channels not at the front but present at the back) and
@@ -400,8 +405,265 @@ def _origin_coordinates_from_serialized(
     )
 
 
+def deserialize_native_embedding_kind(parameter: str, value: Any) -> torch.Tensor:
+    """Tensor-native deserialiser for the embedding kind.
+
+    The numpy branch registers no deserialiser for embeddings, so a serialised
+    embedding (a JSON ``List[float]`` — the inverse of ``serialise_native_embedding``,
+    which emits ``value.detach().cpu().tolist()``) would reach a tensor consumer as a
+    plain ``list`` and break on ``.shape`` / ``torch.dot`` (e.g. ``cosine_similarity``).
+    This rebuilds a 1-D ``torch.Tensor`` on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``.
+    """
+    return _tensor_from_serialized(parameter=parameter, value=value)
+
+
+def deserialize_native_tensor_kind(parameter: str, value: Any) -> torch.Tensor:
+    """Tensor-native deserialiser for the tensor kind.
+
+    Inverse of ``serialise_native_tensor`` (``value.detach().cpu().tolist()``); rebuilds
+    a (possibly N-D) ``torch.Tensor`` from the serialised nested-list JSON so tensor
+    consumers receive a real tensor rather than a nested ``list``. Same tensor device as
+    the producers (``WORKFLOWS_IMAGE_TENSOR_DEVICE``).
+    """
+    return _tensor_from_serialized(parameter=parameter, value=value)
+
+
+def _tensor_from_serialized(parameter: str, value: Any) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        return value.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+    if not isinstance(value, (list, tuple)):
+        raise RuntimeInputError(
+            public_message=(
+                f"Detected runtime parameter `{parameter}` declared to hold an "
+                f"embedding / tensor value, but found {type(value)}; expected a JSON "
+                f"list of numbers (optionally nested) or a torch.Tensor."
+            ),
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return torch.as_tensor(
+            value, dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+    except (ValueError, TypeError) as error:
+        raise RuntimeInputError(
+            public_message=(
+                f"Detected runtime parameter `{parameter}` declared to hold an "
+                f"embedding / tensor value, but its list could not be converted to a "
+                f"torch.Tensor: {error}"
+            ),
+            context="workflow_execution | runtime_input_validation",
+        ) from error
+
+
+def deserialize_native_classification_prediction_kind(
+    parameter: str,
+    value: Any,
+) -> Union[ClassificationPrediction, MultiLabelClassificationPrediction]:
+    """Tensor-native sibling of the numpy ``deserialize_classification_prediction_kind``.
+
+    The numpy path returns the classification dict unchanged; on the tensor branch every
+    consumer (e.g. the UQL ``*_tensor_native`` classification extractors) expects a native
+    ``inference_models.ClassificationPrediction`` (single-label) or
+    ``MultiLabelClassificationPrediction`` (multi-label). This rebuilds the native object
+    from the serialised classification dict — the same shape
+    ``serialise_native_classification`` emits — so a round-trip is byte-faithful for a
+    canonical model-emitted prediction (see the module-level caveat below).
+
+    Single-label (``top``/``confidence`` present): a dense ``confidence`` vector
+    ``(1, num_classes)`` indexed by ``class_id`` is rebuilt from ``predictions`` and the
+    top-1 ``class_id`` is recovered from ``top``. Multi-label (``predicted_classes``
+    present): a dense ``confidence`` vector ``(num_classes,)`` plus the predicted
+    ``class_ids`` are rebuilt from the ``predictions`` map. Both carry the
+    ``class_id -> name`` map and image lineage on the metadata (``CLASS_NAMES_KEY`` etc.)
+    that the serializer and consumers read.
+
+    BYTE-PARITY CAVEAT: perfect ``serialise(deserialize(x)) == x`` identity only holds for
+    a canonical model-emitted classification prediction — the full class distribution with
+    contiguous 0-based ``class_id`` values, already sorted desc and rounded. Owner-2's
+    ``serialise_native_classification`` re-enumerates the whole confidence vector, re-sorts
+    desc and re-rounds; a sparse / top-K / out-of-list (``class_id == -1``) / non-contiguous
+    input cannot be represented losslessly in the native (dense, index==class_id) structure
+    and will normalise rather than preserve. Flagged in the owner report.
+    """
+    if isinstance(
+        value, (ClassificationPrediction, MultiLabelClassificationPrediction)
+    ):
+        return value
+    value = _validate_classification_dict(parameter=parameter, value=value)
+    if "predicted_classes" in value:
+        return _build_multi_label_prediction(value=value)
+    return _build_single_label_prediction(value=value)
+
+
+def _validate_classification_dict(parameter: str, value: Any) -> dict:
+    if not isinstance(value, dict):
+        raise RuntimeInputError(
+            public_message=(
+                f"Detected runtime parameter `{parameter}` declared to hold a "
+                f"classification prediction, but found {type(value)}; expected a dict."
+            ),
+            context="workflow_execution | runtime_input_validation",
+        )
+    if "image" not in value or "predictions" not in value:
+        raise RuntimeInputError(
+            public_message=(
+                f"Detected runtime parameter `{parameter}` declared to hold a "
+                f"classification prediction, but the dict misses required keys "
+                f"('image', 'predictions')."
+            ),
+            context="workflow_execution | runtime_input_validation",
+        )
+    if "predicted_classes" not in value and (
+        "top" not in value or "confidence" not in value
+    ):
+        raise RuntimeInputError(
+            public_message=(
+                f"Detected runtime parameter `{parameter}` declared to hold a "
+                f"classification prediction, but the value misses prediction details "
+                f"(neither 'predicted_classes' nor 'top'/'confidence' present)."
+            ),
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def _dense_confidence_vector(
+    class_id_to_confidence: Dict[int, float],
+) -> List[float]:
+    """Build a dense confidence list indexed by ``class_id``.
+
+    Length is ``max(class_id) + 1`` for the canonical contiguous 0-based case; class ids
+    outside ``[0, length)`` (e.g. an out-of-list ``-1``) cannot be positioned and are
+    dropped from the dense vector (their name still lives in ``CLASS_NAMES_KEY``).
+    """
+    if not class_id_to_confidence:
+        return []
+    highest_class_id = max(class_id_to_confidence)
+    length = highest_class_id + 1 if highest_class_id >= 0 else 0
+    vector = [0.0] * length
+    for class_id, confidence in class_id_to_confidence.items():
+        if 0 <= class_id < length:
+            vector[class_id] = confidence
+    return vector
+
+
+def _build_classification_image_metadata(
+    value: dict,
+    class_names_mapping: Dict[int, str],
+) -> dict:
+    """Assemble the per-image ``image_metadata`` that the serializer and the UQL
+    ``*_tensor_native`` classification extractors read back."""
+    metadata: dict = {CLASS_NAMES_KEY: class_names_mapping}
+    # Lane 1b: deserialised predictions follow the canonical model contract (decision
+    # 1a), so tag them "model" rather than relying on which incidental keys survived.
+    metadata[CLASSIFICATION_STYLE_KEY] = CLASSIFICATION_STYLE_MODEL
+    image = value.get("image") or {}
+    height, width = image.get("height"), image.get("width")
+    if height is not None and width is not None:
+        metadata[IMAGE_DIMENSIONS_KEY] = [int(height), int(width)]
+    for key in (
+        INFERENCE_ID_KEY,
+        "time",
+        PREDICTION_TYPE_KEY,
+        PARENT_ID_KEY,
+        ROOT_PARENT_ID_KEY,
+    ):
+        if value.get(key) is not None:
+            metadata[key] = value[key]
+    return metadata
+
+
+def _build_single_label_prediction(value: dict) -> ClassificationPrediction:
+    predictions = value["predictions"]
+    if not isinstance(predictions, list):
+        raise RuntimeInputError(
+            public_message=(
+                "Detected a single-label classification prediction (with 'top'), but "
+                "'predictions' is not a list of per-class entries."
+            ),
+            context="workflow_execution | runtime_input_validation",
+        )
+    class_names_mapping: Dict[int, str] = {}
+    class_id_to_confidence: Dict[int, float] = {}
+    for entry in predictions:
+        class_id = int(entry["class_id"])
+        class_names_mapping[class_id] = str(entry[CLASS_NAME_KEY])
+        class_id_to_confidence[class_id] = float(entry["confidence"])
+    top_name = value.get("top")
+    top_class_id = next(
+        (
+            class_id
+            for class_id, name in class_names_mapping.items()
+            if name == top_name
+        ),
+        None,
+    )
+    if top_class_id is None:
+        top_class_id = (
+            max(class_id_to_confidence, key=class_id_to_confidence.get)
+            if class_id_to_confidence
+            else 0
+        )
+    confidence_vector = _dense_confidence_vector(class_id_to_confidence)
+    image_metadata = _build_classification_image_metadata(
+        value=value, class_names_mapping=class_names_mapping
+    )
+    return ClassificationPrediction(
+        class_id=torch.tensor(
+            [top_class_id], dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        confidence=torch.tensor(
+            [confidence_vector],
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ),
+        images_metadata=[image_metadata],
+    )
+
+
+def _build_multi_label_prediction(value: dict) -> MultiLabelClassificationPrediction:
+    predictions = value["predictions"]
+    if not isinstance(predictions, dict):
+        raise RuntimeInputError(
+            public_message=(
+                "Detected a multi-label classification prediction (with "
+                "'predicted_classes'), but 'predictions' is not a name->entry map."
+            ),
+            context="workflow_execution | runtime_input_validation",
+        )
+    class_names_mapping: Dict[int, str] = {}
+    class_id_to_confidence: Dict[int, float] = {}
+    name_to_class_id: Dict[str, int] = {}
+    for name, entry in predictions.items():
+        class_id = int(entry["class_id"])
+        class_names_mapping[class_id] = str(name)
+        class_id_to_confidence[class_id] = float(entry["confidence"])
+        name_to_class_id[str(name)] = class_id
+    predicted_class_ids = [
+        name_to_class_id[str(name)]
+        for name in value.get("predicted_classes", [])
+        if str(name) in name_to_class_id
+    ]
+    confidence_vector = _dense_confidence_vector(class_id_to_confidence)
+    image_metadata = _build_classification_image_metadata(
+        value=value, class_names_mapping=class_names_mapping
+    )
+    return MultiLabelClassificationPrediction(
+        class_ids=torch.tensor(
+            predicted_class_ids, dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        confidence=torch.tensor(
+            confidence_vector, dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        image_metadata=image_metadata,
+    )
+
+
 __all__ = [
     "deserialize_image_kind",
     "deserialize_detections_kind",
     "deserialize_rle_detections_kind",
+    "deserialize_native_classification_prediction_kind",
+    "deserialize_native_embedding_kind",
+    "deserialize_native_tensor_kind",
 ]

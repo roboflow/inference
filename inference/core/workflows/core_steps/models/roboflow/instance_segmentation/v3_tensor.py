@@ -17,11 +17,13 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
   attaches the producer contract (``image_metadata[class_names]`` + per-box
   ``detection_id``) the tensor serialiser requires, via
   ``attach_native_detection_metadata`` (it preserves masks + per-box metadata).
-- REMOTE: standard inference instance-seg prediction dicts (RLE masks, since the
-  block requests ``response_mask_format="rle"``) are rebuilt into a native
-  ``InstanceDetections`` via the in-file
+- REMOTE: standard inference instance-seg prediction dicts are rebuilt into a
+  native ``InstanceDetections`` via the in-file
   ``_native_instance_detections_from_inference_predictions`` converter (never
-  ``sv.Detections``).
+  ``sv.Detections``). The block requests ``response_mask_format="rle"`` and carries
+  RLE masks when the server honours it; it degrades gracefully to a dense mask
+  rasterised from polygon ``points`` when the server ignores that parameter
+  (older/alternative servers), matching the numpy flag-OFF polygon path.
 
 This block creates ONLY this file; it reuses the already-registered tensor
 serialiser for ``instance_segmentation_prediction`` /
@@ -34,6 +36,8 @@ kinds.
 import uuid
 from typing import Dict, List, Literal, Optional, Type, Union
 
+import numpy as np
+import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
@@ -59,6 +63,7 @@ from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     INFERENCE_ID_KEY,
+    POLYGON_KEY,
     WIDTH_KEY,
     X_KEY,
     Y_KEY,
@@ -559,6 +564,32 @@ def _extract_rle_mask(prediction: dict) -> Optional[dict]:
     return None
 
 
+def _extract_polygon_points(prediction: dict) -> Optional[List[dict]]:
+    """Pull the polygon ``points`` ([{"x": .., "y": ..}, ...]) from a standard
+    inference instance-seg prediction dict that carries a polygon mask instead of
+    RLE. Returns ``None`` when the key is absent or the polygon is degenerate
+    (< 3 points) - mirroring supervision's ``Detections.from_inference`` / the numpy
+    ``filter_out_invalid_polygons``, which drop such instances entirely."""
+    points = prediction.get(POLYGON_KEY)
+    if points is not None and len(points) >= 3:
+        return points
+    return None
+
+
+def _polygon_points_to_dense_mask(
+    points: List[dict], height: int, width: int
+) -> np.ndarray:
+    """Rasterise polygon ``points`` into a dense boolean ``(H, W)`` mask,
+    byte-identically to supervision's ``polygon_to_mask`` as used by
+    ``Detections.from_inference`` (the numpy REMOTE path): vertices are integer
+    *truncated* (``dtype=int``, NOT rounded), filled with ``cv2.fillPoly`` onto a
+    zero ``uint8`` canvas, then cast to ``bool``. Keeping the exact rasterisation
+    means the serialiser's mask->polygon re-contouring (``mask_to_polygon``, shared
+    verbatim with the numpy serialiser) reproduces the numpy ``points`` output."""
+    polygon = np.array([[point[X_KEY], point[Y_KEY]] for point in points], dtype=int)
+    return sv.polygon_to_mask(polygon, resolution_wh=(width, height)).astype(bool)
+
+
 def _native_instance_detections_from_inference_predictions(
     image: WorkflowImageData,
     predictions: List[dict],
@@ -570,27 +601,52 @@ def _native_instance_detections_from_inference_predictions(
     """REMOTE-path converter: build a native ``InstanceDetections`` from standard
     inference instance-segmentation prediction dicts.
 
-    Mirrors ``v4_tensor.py``'s RLE-response converter: the block requests
-    ``response_mask_format="rle"`` so each prediction carries an RLE-encoded COCO
-    mask (``{"size": [H, W], "counts": "<utf-8>"}``) under ``rle`` / ``rle_mask``.
-    Counts come back as a utf-8 string over the wire and are normalised to bytes
-    (what ``pycocotools`` / the serialiser's RLE decode path expect). Boxes are
-    converted from center form to corner ``xyxy``. The ``class_id -> name`` map
-    (required by the tensor serialiser) and per-box ``detection_id`` are built here
-    too.
+    The block requests ``response_mask_format="rle"`` so a current inference server
+    returns an RLE-encoded COCO mask (``{"size": [H, W], "counts": "<utf-8>"}``)
+    under ``rle`` / ``rle_mask``; those are carried as ``InstancesRLEMasks`` (counts
+    normalised from a utf-8 string to bytes, what ``pycocotools`` / the serialiser's
+    RLE decode path expect). To stay compatible with servers that ignore that
+    request parameter and return polygon ``points`` instead (older/alternative
+    inference servers), the converter degrades gracefully: when the response is not
+    fully RLE-backed it rebuilds the masks from the polygon ``points`` into a dense
+    ``torch.bool`` ``(N, H, W)`` carrier - the same masks the numpy flag-OFF REMOTE
+    path builds via ``sv.Detections.from_inference`` - so the serialised ``points``
+    output matches numpy's (the serialiser re-contours the dense mask with the same
+    ``mask_to_polygon``). Boxes are converted from center form to corner ``xyxy``.
+    The ``class_id -> name`` map (required by the tensor serialiser) and per-box
+    ``detection_id`` are built here too.
 
-    When a prediction omits its ``class`` key, the class name is backfilled from
+    Degenerate (< 3-point) polygons are dropped exactly like the numpy path
+    (``filter_out_invalid_polygons`` / supervision's ``from_inference``). When a
+    prediction omits its ``class`` key, the class name is backfilled from
     ``model_class_names`` (the model's ``get_class_names`` map) so the tensor
     serialiser does not hard-raise on an unmapped ``class_id``.
     """
     height, width = image._read_shape_without_materialization()
+    # Prefer the RLE masks the block requests; fall back to dense polygon masks when
+    # the response is not fully RLE-backed (server ignored `response_mask_format`).
+    # `all([])` is True, so an empty response keeps the empty-RLE carrier unchanged.
+    use_rle = all(
+        _extract_rle_mask(prediction) is not None for prediction in predictions
+    )
+    if use_rle:
+        kept_predictions = predictions
+    else:
+        # Drop degenerate polygons up front so the surviving box arrays and masks
+        # stay aligned (matches the numpy path's instance drop).
+        kept_predictions = [
+            prediction
+            for prediction in predictions
+            if _extract_polygon_points(prediction) is not None
+        ]
     xyxy: List[List[float]] = []
     class_id: List[int] = []
     confidence: List[float] = []
     rle_counts: List[bytes] = []
+    dense_masks: List[np.ndarray] = []
     bboxes_metadata: List[dict] = []
     derived_class_names: Dict[int, str] = {}
-    for prediction in predictions:
+    for prediction in kept_predictions:
         center_x = float(prediction[X_KEY])
         center_y = float(prediction[Y_KEY])
         box_width = float(prediction[WIDTH_KEY])
@@ -612,19 +668,24 @@ def _native_instance_detections_from_inference_predictions(
             derived_class_names[prediction_class_id] = model_class_names[
                 prediction_class_id
             ]
-        mask = _extract_rle_mask(prediction)
-        if mask is None:
-            raise ValueError(
-                "Tensor-native instance segmentation REMOTE path expected an "
-                "RLE-encoded mask in the inference response (block requests "
-                "`response_mask_format='rle'`), but none was found on a prediction."
+        if use_rle:
+            mask = _extract_rle_mask(prediction)
+            raw_counts = mask["counts"]
+            # Normalise to bytes: pycocotools (used by the serialiser's RLE decode)
+            # expects byte counts; the remote rle response carries them as utf-8 strings.
+            rle_counts.append(
+                raw_counts.encode("utf-8")
+                if isinstance(raw_counts, str)
+                else raw_counts
             )
-        raw_counts = mask["counts"]
-        # Normalise to bytes: pycocotools (used by the serialiser's RLE decode)
-        # expects byte counts; the remote rle response carries them as utf-8 strings.
-        rle_counts.append(
-            raw_counts.encode("utf-8") if isinstance(raw_counts, str) else raw_counts
-        )
+        else:
+            dense_masks.append(
+                _polygon_points_to_dense_mask(
+                    points=_extract_polygon_points(prediction),
+                    height=height,
+                    width=width,
+                )
+            )
         bboxes_metadata.append(
             {DETECTION_ID_KEY: str(prediction.get(DETECTION_ID_KEY) or uuid.uuid4())}
         )
@@ -635,13 +696,24 @@ def _native_instance_detections_from_inference_predictions(
         prediction_type=prediction_type,
         inference_id=inference_id,
     )
+    if use_rle:
+        mask_carrier: Union[torch.Tensor, InstancesRLEMasks] = InstancesRLEMasks(
+            image_size=(height, width), masks=rle_counts
+        )
+    elif dense_masks:
+        mask_carrier = torch.as_tensor(
+            np.stack(dense_masks), dtype=torch.bool, device=device
+        )
+    else:
+        # No surviving polygons: an empty dense carrier the serialiser handles.
+        mask_carrier = torch.zeros((0, height, width), dtype=torch.bool, device=device)
     return InstanceDetections(
         xyxy=torch.as_tensor(xyxy, dtype=torch.float32, device=device).reshape(-1, 4),
         class_id=torch.as_tensor(class_id, dtype=torch.long, device=device).reshape(-1),
         confidence=torch.as_tensor(
             confidence, dtype=torch.float32, device=device
         ).reshape(-1),
-        mask=InstancesRLEMasks(image_size=(height, width), masks=rle_counts),
+        mask=mask_carrier,
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata if number_of_detections > 0 else None,
     )

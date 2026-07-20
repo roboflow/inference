@@ -4,7 +4,11 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS, ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    USE_INFERENCE_MODELS,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
@@ -132,7 +136,8 @@ def test_sam2_workflow_when_minimal_valid_input_provided(
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         assert result[0]["predictions"].mask.image_size == (427, 640)
         assert (
-            result[0]["predictions"].image_metadata["prediction_type"] == "instance-segmentation"
+            result[0]["predictions"].image_metadata["prediction_type"]
+            == "instance-segmentation"
         )
     else:
         assert result[0]["predictions"].mask.shape[1:] == (
@@ -140,7 +145,8 @@ def test_sam2_workflow_when_minimal_valid_input_provided(
             640,
         )  # many masks in multi polygon mode
         assert (
-            result[0]["predictions"].data["prediction_type"][0] == "instance-segmentation"
+            result[0]["predictions"].data["prediction_type"][0]
+            == "instance-segmentation"
         )
 
 
@@ -271,11 +277,15 @@ def test_grounded_sam2_workflow(
                 for c_id in result[0]["sam_predictions"].class_id
             ]
             assert class_names == ["dog", "dog"]
-            assert result[0]["sam_predictions"].image_metadata["parent_id"] == "image.[0]"
+            assert (
+                result[0]["sam_predictions"].image_metadata["parent_id"] == "image.[0]"
+            )
         else:
             assert np.allclose(
                 result[0]["sam_predictions"].xyxy,
-                np.array([[321, 223, 582, 405], [370, 208, 371, 209], [226, 73, 378, 381]]),
+                np.array(
+                    [[321, 223, 582, 405], [370, 208, 371, 209], [226, 73, 378, 381]]
+                ),
                 atol=1e-1,
             ), "Expected bboxes to be the same as measured while test creation"
             assert np.allclose(

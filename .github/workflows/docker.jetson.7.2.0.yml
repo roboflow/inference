@@ -1,4 +1,4 @@
-name: Build and Push Jetson 7.1.0 Container
+name: Build and Push Jetson 7.2.0 Container
 permissions:
   contents: read
 on:
@@ -18,15 +18,15 @@ on:
         default: ""
 
 env:
-  VERSION: "0.0.0" # Default version, will be overwritten
-  BASE_IMAGE: "roboflow/roboflow-inference-server-jetson-7.1.0"
+  VERSION: "0.0.0"
+  BASE_IMAGE: "roboflow/roboflow-inference-server-jetson-7.2.0"
 
 jobs:
   docker:
     runs-on:
       labels: depot-ubuntu-24.04-4
       group: public-depot
-    timeout-minutes: 360
+    timeout-minutes: 1440
     permissions:
       id-token: write
       contents: read
@@ -51,11 +51,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-      - name: Build and Push
-        uses: depot/build-push-action@v1
+      - name: Build image
+        uses: depot/bake-action@v1
+        env:
+          JETSON_SERVER_TAGS: ${{ steps.tags.outputs.image_tags }}
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          files: ./docker/docker-bake.jetson.7.2.0.hcl
+          targets: jetson-server-jp72
           project: v1xzfwkc4b
-          tags: ${{ steps.tags.outputs.image_tags }}
-          platforms: linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.7.1.0
+          push: ${{ github.event_name == 'release' || inputs.force_push }}
+          save: ${{ github.event_name != 'release' && !inputs.force_push }}
+          save-tag: ${{ github.event_name != 'release' && !inputs.force_push && format('server-jp72-{0}', github.sha) || '' }}

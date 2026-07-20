@@ -1,11 +1,7 @@
 """
-Tensor-native sibling of ``detections_to_parent_coordinates_non_batch.py``.
-
-Operates on native ``inference_models.Detections``: writes ``parent_id`` /
-``parent_coordinates`` / ``parent_dimensions`` per-box into ``bboxes_metadata``
-(the native equivalent of the numpy block's sv ``.data`` item-assignment), using
-the SAME key strings. The ``BlockManifest`` is reused verbatim from the numpy
-module so the ``type`` Literal and I/O contract are identical.
+Tensor-native sibling of ``detections_to_parent_coordinates_non_batch.py``: writes
+``parent_id`` / ``parent_coordinates`` / ``parent_dimensions`` per-box into
+``bboxes_metadata`` (the native counterpart of sv ``.data``).
 
 This is just example, test implementation, please do not assume it being fully functional.
 """
@@ -21,13 +17,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_non_batch import (
-    BlockManifest,
-)
+from inference_models.models.base.object_detection import Detections
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_batch_tensor import (
     _write_parent_metadata_native,
 )
-from inference_models.models.base.object_detection import Detections
+from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_non_batch import (
+    BlockManifest,
+)
 
 
 class DetectionsToParentCoordinatesNonBatchBlock(WorkflowBlock):

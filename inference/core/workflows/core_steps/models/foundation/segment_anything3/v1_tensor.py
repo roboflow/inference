@@ -31,7 +31,6 @@ from pydantic import ConfigDict, Field
 from inference.core.env import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
-    GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -129,11 +128,6 @@ class BlockManifest(WorkflowBlockManifest):
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
     )
-    mask_representation: Literal["rle", "dense"] = Field(
-        default="rle",
-        description="Carrier for instance masks. RLE (compact) by default; forced to "
-        "'rle' on GCP_SERVERLESS regardless of this value.",
-    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -213,10 +207,12 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         model_id: str,
         class_names: Optional[Union[List[str], str]],
         threshold: float,
-        mask_representation: Literal["rle", "dense"],
     ) -> BlockResult:
-        if GCP_SERVERLESS:
-            mask_representation = "rle"
+        # RLE mask output is enforced ALWAYS on the tensor path. The numpy SAM3 v1
+        # sibling exposes no mask-format field, so neither does this manifest; the
+        # shared internal helpers (with SAM2/v2/v3) still take a `mask_representation`
+        # argument, so it is pinned to "rle" here.
+        mask_representation = "rle"
         class_names = _normalize_class_names(class_names)
         if SAM3_EXEC_MODE == "remote":
             return self.run_via_request(

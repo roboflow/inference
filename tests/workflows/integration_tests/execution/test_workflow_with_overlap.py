@@ -39,9 +39,8 @@ def _native_class_names(predictions) -> list:
     resolution the overlap block performs), mirroring sv `.data["class_name"]`."""
     class_names_map = (predictions.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
     class_id = predictions.class_id.detach().to("cpu").numpy()
-    return [
-        class_names_map.get(int(cid), f"class_{int(cid)}") for cid in class_id
-    ]
+    return [class_names_map.get(int(cid), f"class_{int(cid)}") for cid in class_id]
+
 
 # check both overlap types
 OVERLAP_WORKFLOW = {

@@ -10,6 +10,8 @@ from pydantic import ConfigDict, Field
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_FORMATTER,
+    CLASSIFICATION_STYLE_KEY,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -263,16 +265,15 @@ def parse_multi_class_classification_results(
 ) -> dict:
     try:
         class2id_mapping = create_classes_index(classes=classes)
-        height, width = image.numpy_image.shape[:2]
+        height, width = image._read_shape_without_materialization()
         top_class = results["class_name"]
         confidences = {top_class: scale_confidence(results["confidence"])}
         # The native ClassificationPrediction carries a dense confidence vector
-        # indexed by class_id plus a class_id -> class_name map in image metadata
-        # (mirroring how numpy built the `predictions` list / `top` / `confidence`).
+        # indexed by class_id plus a class_id -> class_name map in image metadata.
         if top_class not in class2id_mapping:
-            # Out-of-list top class: numpy assigned class_id=-1, but tensor-native
-            # class_id values must be non-negative dense indices into the
-            # confidence vector and class_names map, so it is appended at the end.
+            # Out-of-list top class is appended at the end: class_id values must
+            # be non-negative dense indices into the confidence vector and
+            # class_names map.
             class2id_mapping[top_class] = len(class2id_mapping)
         class_names = {
             class_id: class_name for class_name, class_id in class2id_mapping.items()
@@ -284,6 +285,8 @@ def parse_multi_class_classification_results(
         top_class_id = class2id_mapping[top_class]
         image_metadata = {
             CLASS_NAMES_KEY: class_names,
+            # Lane 1b: explicit style tag -> serialiser reproduces the vlm formatter shape.
+            CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_FORMATTER,
             PREDICTION_TYPE_KEY: "classification",
             IMAGE_DIMENSIONS_KEY: [height, width],
             INFERENCE_ID_KEY: inference_id,
@@ -323,14 +326,13 @@ def parse_multi_label_classification_results(
 ) -> dict:
     try:
         class2id_mapping = create_classes_index(classes=classes)
-        height, width = image.numpy_image.shape[:2]
+        height, width = image._read_shape_without_materialization()
         predicted_classes_confidences = {}
         for prediction in results["predicted_classes"]:
             if prediction["class"] not in class2id_mapping:
-                # Out-of-list class: numpy assigned class_id=-1, but tensor-native
-                # class_id values must be non-negative dense indices into the
-                # confidence vector and class_names map, so it is appended at the
-                # end.
+                # Out-of-list class is appended at the end: class_id values must
+                # be non-negative dense indices into the confidence vector and
+                # class_names map.
                 class2id_mapping[prediction["class"]] = len(class2id_mapping)
             if prediction["class"] in predicted_classes_confidences:
                 old_confidence = predicted_classes_confidences[prediction["class"]]
@@ -344,8 +346,7 @@ def parse_multi_label_classification_results(
                 )
         # The native MultiLabelClassificationPrediction carries a dense sigmoid
         # confidence vector indexed by class_id, the ids of the above-threshold
-        # (predicted) classes, and a class_id -> class_name map in image metadata
-        # (mirroring how numpy built the `predictions` dict / `predicted_classes`).
+        # (predicted) classes, and a class_id -> class_name map in image metadata.
         class_names = {
             class_id: class_name for class_name, class_id in class2id_mapping.items()
         }
@@ -361,6 +362,8 @@ def parse_multi_label_classification_results(
         ]
         image_metadata = {
             CLASS_NAMES_KEY: class_names,
+            # Lane 1b: explicit style tag -> serialiser reproduces the vlm formatter shape.
+            CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_FORMATTER,
             PREDICTION_TYPE_KEY: "classification",
             IMAGE_DIMENSIONS_KEY: [height, width],
             INFERENCE_ID_KEY: inference_id,

@@ -4564,9 +4564,11 @@ def test_workflow_with_input_derived_dims_and_emergent_dims_tensor_native(
     # the crop). The top class name lives at images_metadata[0][CLASS_NAMES_KEY] indexed
     # by the top class id; the native subscript reproduces the same expected literals.
     assert [
-        p.images_metadata[0][CLASS_NAMES_KEY][int(p.class_id.reshape(-1)[0])]
-        if p is not None
-        else None
+        (
+            p.images_metadata[0][CLASS_NAMES_KEY][int(p.class_id.reshape(-1)[0])]
+            if p is not None
+            else None
+        )
         for p in result[0]["breds_classification"]
     ] == ["116.Parson_russell_terrier", None]
     assert len(result[1]["collapsed_input"]) == 2
@@ -4634,9 +4636,11 @@ def test_workflow_with_input_derived_dims_and_emergent_dims_with_tensor_input(
     # the crop). The top class name lives at images_metadata[0][CLASS_NAMES_KEY] indexed
     # by the top class id; the native subscript reproduces the same expected literals.
     assert [
-        p.images_metadata[0][CLASS_NAMES_KEY][int(p.class_id.reshape(-1)[0])]
-        if p is not None
-        else None
+        (
+            p.images_metadata[0][CLASS_NAMES_KEY][int(p.class_id.reshape(-1)[0])]
+            if p is not None
+            else None
+        )
         for p in result[0]["breds_classification"]
     ] == ["116.Parson_russell_terrier", None]
     assert len(result[1]["collapsed_input"]) == 2

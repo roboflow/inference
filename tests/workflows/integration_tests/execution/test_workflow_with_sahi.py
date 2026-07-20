@@ -813,9 +813,9 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
     # infer_from_request path; the two backends agree on detection count and class but
     # box coordinates differ by ~2px, so the cross-backend tolerance is slightly looser
     # than the same-backend numpy test (atol=2).
-    assert detections_obtained_directly_xyxy.shape == workflow_result_xyxy.shape, (
-        "Expected the same number of SAHI detections across backends"
-    )
+    assert (
+        detections_obtained_directly_xyxy.shape == workflow_result_xyxy.shape
+    ), "Expected the same number of SAHI detections across backends"
     assert np.allclose(
         detections_obtained_directly_xyxy,
         workflow_result_xyxy,
@@ -836,7 +836,9 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
     ), "Expected confidences to be the same for workflow SAHI and direct SAHI"
     detections_obtained_directly_class_id = detections_obtained_directly.class_id.copy()
     detections_obtained_directly_class_id.sort(axis=0)
-    workflow_result_class_id = workflow_predictions.class_id.detach().cpu().numpy().copy()
+    workflow_result_class_id = (
+        workflow_predictions.class_id.detach().cpu().numpy().copy()
+    )
     workflow_result_class_id.sort(axis=0)
     assert np.all(
         detections_obtained_directly_class_id == workflow_result_class_id
@@ -922,9 +924,9 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_with_te
     # infer_from_request path; the two backends agree on detection count and class but
     # box coordinates differ by ~2px, so the cross-backend tolerance is slightly looser
     # than the same-backend numpy test (atol=2).
-    assert detections_obtained_directly_xyxy.shape == workflow_result_xyxy.shape, (
-        "Expected the same number of SAHI detections across backends"
-    )
+    assert (
+        detections_obtained_directly_xyxy.shape == workflow_result_xyxy.shape
+    ), "Expected the same number of SAHI detections across backends"
     assert np.allclose(
         detections_obtained_directly_xyxy,
         workflow_result_xyxy,
@@ -945,7 +947,9 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_with_te
     ), "Expected confidences to be the same for workflow SAHI and direct SAHI"
     detections_obtained_directly_class_id = detections_obtained_directly.class_id.copy()
     detections_obtained_directly_class_id.sort(axis=0)
-    workflow_result_class_id = workflow_predictions.class_id.detach().cpu().numpy().copy()
+    workflow_result_class_id = (
+        workflow_predictions.class_id.detach().cpu().numpy().copy()
+    )
     workflow_result_class_id.sort(axis=0)
     assert np.all(
         detections_obtained_directly_class_id == workflow_result_class_id

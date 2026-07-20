@@ -24,19 +24,21 @@ unchanged. (The serialiser turns each RLE instance into a polygon list - that is
 the standard tensor-native instance-segmentation serialisation; see the loader
 delta in this module's docstring tail.)
 
-BACKGROUND / IGNORE (data-driven; NOT a hardcoded id 0):
-Semantic-segmentation model packages are guaranteed (``inference_models``'
-``validate_class_names``) to contain a ``background`` class by name, but it is NOT
-guaranteed to be id 0 - its id is the index of ``background`` (case-insensitive)
-in the model's class names / class_map. We therefore exclude:
-  * the class id whose name is ``background`` (resolved from the class-name list
-    for LOCAL, or from the response ``class_map`` for REMOTE), and
-  * the ignore index ``255`` - the adapter wraps the ``-1`` "no class" sentinel to
-    ``255`` and caps at 256 classes, so 255 may appear in the grid with no class
-    name and must never become a detection.
-This rule is fully data-driven (keyed off the model's own class names), so models
-whose background is not at index 0 are handled correctly - unlike numpy
-``v2.py``, which hardcodes ``cid != 0``.
+BACKGROUND / IGNORE (numpy parity - D3: drop ONLY class id 0):
+Numpy ``v2.py`` (line 292) filters the present class ids with ``if cid != 0`` and
+keeps every other id as a detection - INCLUDING the ``255`` ignore/no-class
+sentinel, which becomes a ``'255'`` detection named ``class_map.get('255', '255')``.
+The flag-ON emitted-detection SET must match flag-OFF exactly (D3), so this sibling
+replicates that filter verbatim: exclude id 0 only, keep everything else (255
+included), and name any id missing from the class map ``str(class_id)``.
+
+NOTE: this deliberately drops the earlier data-driven "background-by-name + 255"
+exclusion. That rule was arguably more correct (it dropped ``background`` by name
+even when not at id 0, and never emitted the 255 sentinel), but it diverged from
+the numpy block's emitted set. D3 chooses byte-parity: drop id 0, keep 255.
+Confidence VALUES may still differ (numpy quantises through a uint8/255 PNG mask,
+the tensor path keeps full-precision float means) - that precision delta is accepted
+under D3 and is NOT reconciled here.
 
 LOADER DELTAS (return-only - do NOT apply here):
 
@@ -131,14 +133,12 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "semantic-segmentation"
 
-# Conventional name (case-insensitive) of the class that must not become a
-# detection. inference_models' `validate_class_names` guarantees it is present in
-# every semantic-segmentation package, but NOT necessarily at id 0.
-BACKGROUND_CLASS_NAME = "background"
-
-# `-1` ("no class") sentinel wrapped by the adapter to 255 (it caps at 256
-# classes). It can appear in the grid with no class name; never a detection.
-IGNORE_CLASS_ID = 255
+# D3 (numpy parity): numpy `v1.py:231` / `v2.py:292` drop ONLY class id 0
+# (`if cid != 0`) and keep every other present id as a detection — including the
+# 255 ignore/no-class sentinel. The flag-ON emitted set must match numpy exactly,
+# so id 0 is the single excluded id. (This intentionally does NOT do the
+# data-driven background-by-name / 255 exclusion; see the module docstring.)
+BACKGROUND_CLASS_ID = 0
 
 # `image_metadata` key under which the dense per-pixel confidence map is carried
 # for numpy parity (numpy `v2.py` stores `conf_array` on the sv.Detections under
@@ -184,16 +184,19 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/roboflow_semantic_segmentation_model@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    # TODO: add "best" option once model eval supports semantic segmentation.
     confidence_mode: Union[
-        Literal["default", "custom"],
+        Literal["best", "default", "custom"],
         Selector(kind=[STRING_KIND]),
     ] = Field(
-        default="default",
+        default="best",
         description="How confidence thresholds are determined.",
         json_schema_extra={
             "always_visible": True,
             "values_metadata": {
+                "best": {
+                    "name": "Best (Recommended)",
+                    "description": "Use F1-optimal thresholds from model evaluation.",
+                },
                 "default": {
                     "name": "Default",
                     "description": "Use the model's built-in default threshold.",
@@ -298,7 +301,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        confidence: Union[None, float, Literal["default"]],
+        confidence: Union[None, float, Literal["best", "default"]],
     ) -> BlockResult:
         # Feed the representation already materialised on the images to avoid forcing a
         # numpy->device conversion: GPU tensors (RGB) only when every image in the batch
@@ -322,7 +325,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         # `class_map` ({str(idx): name}).
         class_names = list(self._model_manager.get_class_names(model_id))
         class_names_map = _class_names_map(class_names)
-        excluded_ids = _excluded_class_ids(class_names_map)
+        excluded_ids = _excluded_class_ids()
         results: List[dict] = []
         for image, segmentation in zip(images, segmentation_results):
             inference_id = str(uuid.uuid4())
@@ -347,7 +350,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        confidence: Union[None, float, Literal["default"]],
+        confidence: Union[None, float, Literal["best", "default"]],
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -406,15 +409,11 @@ def _class_names_map(class_names: List[str]) -> Dict[int, str]:
     return {index: name for index, name in enumerate(class_names)}
 
 
-def _excluded_class_ids(class_names_map: Dict[int, str]) -> set:
-    """Data-driven set of class ids that must never become detections: the
-    ``background`` class (by name, case-insensitive - NOT a hardcoded id 0) plus
-    the ``255`` ignore/no-class sentinel."""
-    excluded = {IGNORE_CLASS_ID}
-    for class_id, class_name in class_names_map.items():
-        if str(class_name).lower() == BACKGROUND_CLASS_NAME:
-            excluded.add(int(class_id))
-    return excluded
+def _excluded_class_ids() -> set:
+    """Class ids that must never become detections. To match numpy exactly (D3),
+    this is ONLY id 0: numpy ``v1.py``/``v2.py`` filter ``cid != 0`` and keep every
+    other present id — the 255 ignore sentinel included."""
+    return {BACKGROUND_CLASS_ID}
 
 
 def _empty_instance_detections(
@@ -523,11 +522,10 @@ def _build_instance_detections_from_segmentation(
     for class_id in present_ids:
         if class_id in excluded_ids:
             continue
-        class_name = class_names_map.get(class_id)
-        if class_name is None:
-            # id present in the grid but absent from the class map (e.g. an
-            # unexpected sentinel) - cannot serialise a class name, so skip.
-            continue
+        # numpy names any present id via `class_map.get(str(cid), str(cid))`; ids
+        # absent from the class map (e.g. the 255 sentinel) fall back to str(id)
+        # and are STILL emitted — matching numpy, which never skips on name.
+        class_name = class_names_map.get(class_id, str(class_id))
         binary_mask = segmentation_map == class_id
         bbox = _bbox_from_binary_mask(binary_mask)
         if bbox is None:
@@ -594,7 +592,7 @@ def _build_instance_detections_from_inference_response(
     height, width = int(mask_array.shape[0]), int(mask_array.shape[1])
     conf_array = _decode_b64_grayscale_png(conf_mask_b64)
 
-    excluded_ids = _excluded_class_ids(class_names_map)
+    excluded_ids = _excluded_class_ids()
     xyxy: List[List[float]] = []
     class_ids: List[int] = []
     confidences: List[float] = []

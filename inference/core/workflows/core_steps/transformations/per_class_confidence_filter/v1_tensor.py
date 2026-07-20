@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import torch
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -160,9 +161,8 @@ def filter_detections_by_class_confidence(
 ) -> TensorNativePrediction:
     if prediction is None:
         return prediction
-    # The keypoint-detection kind is a (KeyPoints, Optional[Detections]) tuple; the
-    # bbox confidences live on the Detections component. Standalone Detections /
-    # InstanceDetections carry confidence directly.
+    # The keypoint kind is a (KeyPoints, Optional[Detections]) tuple; the bbox
+    # confidences live on the Detections component.
     if isinstance(prediction, tuple):
         _, detections = prediction
     else:
@@ -175,12 +175,16 @@ def filter_detections_by_class_confidence(
     class_names = _resolve_class_names(detections)
     thresholds = {str(k): float(v) for k, v in (class_thresholds or {}).items()}
     default = float(default_threshold)
-    keep: List[bool] = []
-    for i in range(int(confidences.shape[0])):
-        class_name = class_names[i] if i < len(class_names) else None
-        threshold = thresholds.get(str(class_name), default)
-        keep.append(float(confidences[i]) >= threshold)
-    if all(keep):
+    # Per-row thresholds are host data (class names live in image_metadata):
+    # built in one host pass, shipped in one H2D transfer, compared on-device.
+    per_row_thresholds = [
+        thresholds.get(str(class_names[i] if i < len(class_names) else None), default)
+        for i in range(int(confidences.shape[0]))
+    ]
+    keep = confidences >= torch.as_tensor(
+        per_row_thresholds, dtype=confidences.dtype, device=confidences.device
+    )
+    if bool(keep.all()):
         return prediction
     return take_prediction_by_mask(prediction, keep)
 
@@ -188,9 +192,9 @@ def filter_detections_by_class_confidence(
 def _resolve_class_names(
     detections: TensorNativeDetections,
 ) -> List[Optional[str]]:
-    """Per-box class NAME for each detection, preferring the canonical
-    ``image_metadata[CLASS_NAMES_KEY]`` (class_id -> name) map and falling back
-    to ``bboxes_metadata[i]["class"]`` when the map is absent or lacks the id."""
+    """Per-box class name, preferring the ``image_metadata[CLASS_NAMES_KEY]``
+    (class_id -> name) map and falling back to ``bboxes_metadata[i]["class"]``
+    when the map is absent or lacks the id."""
     number_of_detections = int(detections.confidence.shape[0])
     name_by_class_id: Dict[int, str] = {}
     if detections.image_metadata:

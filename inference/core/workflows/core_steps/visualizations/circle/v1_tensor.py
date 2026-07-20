@@ -150,7 +150,11 @@ class CircleVisualizationBlockV1(ColorableVisualizationBlock):
         color_axis: Optional[str],
         thickness: Optional[int],
     ) -> BlockResult:
-        predictions = to_supervision_for_annotation(predictions)
+        # sv.CircleAnnotator draws from `xyxy` only and never reads `.mask`;
+        # skip the device->host dense-mask materialisation.
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
@@ -158,8 +162,13 @@ class CircleVisualizationBlockV1(ColorableVisualizationBlock):
             color_axis,
             thickness,
         )
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             detections=predictions,
         )
         return {

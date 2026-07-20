@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
+from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_key_points,
     instance_mask_to_numpy,
@@ -157,6 +158,23 @@ class BlockManifest(WorkflowBlockManifest):
         ge=0.0,
     )
 
+    raise_on_class_name_conflict: bool = Field(
+        default=False,
+        title="Raise On Class Name Conflict",
+        description=(
+            "Controls how a class_id that maps to DIFFERENT class names across the "
+            "child predictions is handled. Tensor-native predictions carry a single "
+            "class_id->name map per image, so two children that reuse the same "
+            "class_id for different classes (e.g. crop A uses id 0 for 'car', crop B "
+            "uses id 0 for 'person') collide when their maps are unioned. When False "
+            "(default), the later child's name wins and a warning is logged, matching "
+            "the historical permissive behaviour. When True, a real collision (same "
+            "class_id, different names) raises an error instead of silently "
+            "mislabeling rolled-up detections."
+        ),
+        examples=[False, True],
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -192,6 +210,7 @@ class DetectionsListRollUpBlockV1(WorkflowBlock):
         confidence_strategy: str = "max",
         overlap_threshold: float = 0.0,
         keypoint_merge_threshold: float = 10.0,
+        raise_on_class_name_conflict: bool = False,
     ) -> BlockResult:
 
         detections, zones = merge_crop_predictions(
@@ -200,6 +219,7 @@ class DetectionsListRollUpBlockV1(WorkflowBlock):
             confidence_strategy,
             overlap_threshold,
             keypoint_merge_threshold,
+            raise_on_class_name_conflict=raise_on_class_name_conflict,
         )
 
         return {"rolled_up_detections": detections, "crop_zones": zones}
@@ -216,6 +236,35 @@ def _native_box_metadata(prediction) -> List[dict]:
         dict(box_metadata) if box_metadata is not None else {}
         for box_metadata in bboxes_metadata
     ]
+
+
+def _handle_class_name_conflict(
+    class_id: int,
+    existing_name: str,
+    new_name: str,
+    raise_on_class_name_conflict: bool,
+) -> None:
+    # A class_id that resolves to DIFFERENT names across child predictions cannot
+    # be represented by the single class_id->name map that tensor-native
+    # predictions carry. The numpy block stored a per-row class_name string and
+    # stayed correct; here the union has to pick one. Permissive (default): keep
+    # the later value and warn — byte-identical output to the historical last-wins
+    # behaviour. Strict: raise instead of silently mislabeling every row with this
+    # class_id.
+    message = (
+        f"Conflicting class names for class_id={class_id} while rolling up "
+        f"tensor-native detections: existing '{existing_name}' vs incoming "
+        f"'{new_name}'."
+    )
+    if raise_on_class_name_conflict:
+        raise ValueError(
+            f"{message} Disable 'raise_on_class_name_conflict' to fall back to the "
+            f"permissive behaviour (keep the later value and continue)."
+        )
+    logger.warning(
+        f"{message} Keeping the later value ('{new_name}'); enable "
+        f"'raise_on_class_name_conflict' to raise on conflict instead."
+    )
 
 
 def _merge_keypoint_detections(
@@ -343,6 +392,7 @@ def merge_crop_predictions(
     confidence_strategy: str = "max",
     overlap_threshold: float = 0.0,
     keypoint_merge_threshold: float = 10.0,
+    raise_on_class_name_conflict: bool = False,
 ) -> Tuple:
     """
     Merge predictions from multiple crops back to parent image coordinates.
@@ -418,7 +468,16 @@ def merge_crop_predictions(
         child_class_names = image_metadata.get(CLASS_NAMES_KEY)
         if child_class_names:
             for class_id_key, class_name in child_class_names.items():
-                merged_class_names[int(class_id_key)] = class_name
+                class_id_int = int(class_id_key)
+                existing_name = merged_class_names.get(class_id_int)
+                if existing_name is not None and existing_name != class_name:
+                    _handle_class_name_conflict(
+                        class_id=class_id_int,
+                        existing_name=existing_name,
+                        new_name=class_name,
+                        raise_on_class_name_conflict=raise_on_class_name_conflict,
+                    )
+                merged_class_names[class_id_int] = class_name
 
     # Build crop zones list - one zone per crop/child prediction
     crop_zones = []

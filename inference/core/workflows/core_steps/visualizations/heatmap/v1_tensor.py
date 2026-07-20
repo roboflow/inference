@@ -274,7 +274,13 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
         ignore_stationary: bool = True,
         motion_threshold: int = 25,
     ) -> BlockResult:
-        predictions = to_supervision_for_annotation(predictions)
+        # sv.HeatMapAnnotator accumulates heat at box anchor points
+        # (get_anchors_coordinates); this block's `position` excludes
+        # CENTER_OF_MASS, so no path reads `.mask`. Skip the device->host
+        # dense-mask materialisation.
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         self._cleanup_history()
         detections_to_plot = predictions
         video_id = metadata.video_identifier if metadata else "default_video"
@@ -330,8 +336,13 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
             top_hue,
             low_hue,
         )
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             detections=detections_to_plot,
         )
         return {

@@ -3,7 +3,18 @@ import statistics
 from collections import Counter
 from enum import Enum
 from functools import lru_cache
-from typing import Dict, Generator, List, Literal, Optional, Set, Tuple, Type, Union
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 from uuid import uuid4
 
 import numpy as np
@@ -12,6 +23,7 @@ import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     take_prediction_by_indices,
@@ -218,6 +230,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Aggregation mode for merging segmentation masks of overlapping detections. 'union' combines all masks into the largest possible area (most inclusive), 'intersection' takes only the overlapping region (most conservative), 'max' selects the largest mask, 'min' selects the smallest mask. This mode applies only to instance segmentation detections with masks; bounding box detections use detections_merge_coordinates_aggregation instead.",
         examples=["union", "intersection"],
     )
+    raise_on_class_name_conflict: bool = Field(
+        default=False,
+        description="Controls how a class_id that maps to DIFFERENT class names across the merged prediction sources is handled. Tensor-native predictions carry a single class_id->name map per image, so two sources that reuse the same class_id for different classes (e.g. model A uses id 0 for 'car', model B uses id 0 for 'person') collide when their maps are unioned. When False (default), the later source's name wins and a warning is logged, matching the historical permissive behaviour. When True, a real collision (same class_id, different names) raises an error instead of silently mislabeling detections.",
+        examples=[False, True],
+    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -266,6 +283,7 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
         detections_merge_confidence_aggregation: AggregationMode,
         detections_merge_coordinates_aggregation: AggregationMode,
         detections_merge_mask_aggregation: MaskAggregationMode,
+        raise_on_class_name_conflict: bool = False,
     ) -> BlockResult:
         if len(predictions_batches) < 1:
             raise ValueError(
@@ -293,6 +311,7 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
                 detections_merge_confidence_aggregation=detections_merge_confidence_aggregation,
                 detections_merge_coordinates_aggregation=detections_merge_coordinates_aggregation,
                 detections_merge_mask_aggregation=detections_merge_mask_aggregation,
+                raise_on_class_name_conflict=raise_on_class_name_conflict,
             )
             results.append(
                 {
@@ -359,8 +378,37 @@ def _empty_native_detections(device: Optional[torch.device] = None) -> Detection
     )
 
 
+def _handle_class_name_conflict(
+    class_id: int,
+    existing_name: str,
+    new_name: str,
+    raise_on_class_name_conflict: bool,
+) -> None:
+    # A class_id that resolves to DIFFERENT names across sources cannot be
+    # represented by the single class_id->name map that tensor-native predictions
+    # carry. The numpy block stored a per-row class_name string and stayed correct;
+    # here the union has to pick one. Permissive (default): keep the later value
+    # and warn — byte-identical output to the historical last-wins behaviour.
+    # Strict: raise instead of silently mislabeling every row with this class_id.
+    message = (
+        f"Conflicting class names for class_id={class_id} while merging "
+        f"tensor-native detections: existing '{existing_name}' vs incoming "
+        f"'{new_name}'."
+    )
+    if raise_on_class_name_conflict:
+        raise ValueError(
+            f"{message} Disable 'raise_on_class_name_conflict' to fall back to the "
+            f"permissive behaviour (keep the later value and continue)."
+        )
+    logger.warning(
+        f"{message} Keeping the later value ('{new_name}'); enable "
+        f"'raise_on_class_name_conflict' to raise on conflict instead."
+    )
+
+
 def _concat_metadata(
     detections_list: List[TensorNativeDetections],
+    raise_on_class_name_conflict: bool = False,
 ) -> Tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, Optional[dict], Optional[List[dict]]
 ]:
@@ -380,7 +428,16 @@ def _concat_metadata(
         source_class_names = d.image_metadata.get(CLASS_NAMES_KEY)
         if source_class_names:
             for class_id_key, class_name in source_class_names.items():
-                merged_class_names[int(class_id_key)] = class_name
+                class_id_int = int(class_id_key)
+                existing_name = merged_class_names.get(class_id_int)
+                if existing_name is not None and existing_name != class_name:
+                    _handle_class_name_conflict(
+                        class_id=class_id_int,
+                        existing_name=existing_name,
+                        new_name=class_name,
+                        raise_on_class_name_conflict=raise_on_class_name_conflict,
+                    )
+                merged_class_names[class_id_int] = class_name
     if image_metadata is not None and merged_class_names:
         image_metadata = dict(image_metadata)
         image_metadata[CLASS_NAMES_KEY] = merged_class_names
@@ -400,6 +457,7 @@ def _concat_metadata(
 
 def _merge_native_detections(
     detections_list: List[TensorNativeDetections],
+    raise_on_class_name_conflict: bool = False,
 ) -> TensorNativeDetections:
     # Native counterpart of sv.Detections.merge(list): concatenate several
     # predictions into one native object. When any source carries a mask the
@@ -411,7 +469,8 @@ def _merge_native_detections(
     if not detections_list:
         return _empty_native_detections()
     xyxy, class_id, confidence, image_metadata, bboxes_metadata = _concat_metadata(
-        detections_list
+        detections_list,
+        raise_on_class_name_conflict=raise_on_class_name_conflict,
     )
     has_masks = any(
         isinstance(d, InstanceDetections) and d.mask is not None
@@ -439,7 +498,11 @@ def _merge_native_detections(
         else:
             for _ in range(len(d)):
                 mask_rows.append(np.zeros((mask_height, mask_width), dtype=bool))
-    mask = torch.from_numpy(np.stack(mask_rows, axis=0)).to(torch.bool)
+    # Keep the padded mask on the same device as the merged xyxy/class_id/
+    # confidence (they come from the input predictions' device); a CPU mask here
+    # would build a mixed-device InstanceDetections that later fails to
+    # concatenate with CUDA/MPS model predictions.
+    mask = torch.from_numpy(np.stack(mask_rows, axis=0)).to(torch.bool).to(xyxy.device)
     return InstanceDetections(
         xyxy=xyxy,
         class_id=class_id,
@@ -504,40 +567,122 @@ def get_detections_from_different_sources_with_max_overlap(
     iou_threshold: float,
     class_aware: bool,
     detections_already_considered: Set[str],
+    detection_global_index: int,
+    iou_matrix: np.ndarray,
+    class_names: List[str],
+    detection_ids: List[Any],
 ) -> Dict[int, Tuple[TensorNativeDetections, float]]:
-    current_max_overlap = {}
-    for other_source, other_detection in enumerate_detections(
+    # IoU and class name are read from the once-computed host structures (see
+    # `_precompute_pair_data`) keyed by the detections' global index, rather than
+    # calling `calculate_iou` / `_resolve_class_name` per pair (each of which used
+    # to trigger device syncs). The greedy per-source max-overlap bookkeeping,
+    # iteration order, and tie behaviour are preserved exactly; single-row
+    # predictions are materialised only for the surviving winners, not per pair.
+    current_max_overlap: Dict[int, Tuple[int, float]] = {}
+    detection_class_name = class_names[detection_global_index]
+    for (
+        other_source,
+        other_global_index,
+        other_local_index,
+    ) in enumerate_detection_indices(
         detections_from_sources=detections_from_sources,
         excluded_source_id=source,
     ):
-        if _resolve_detection_id(other_detection) in detections_already_considered:
+        if detection_ids[other_global_index] in detections_already_considered:
             continue
-        if class_aware and _resolve_class_name(detection) != _resolve_class_name(
-            other_detection
-        ):
+        if class_aware and detection_class_name != class_names[other_global_index]:
             continue
-        iou_value = calculate_iou(
-            detection_a=detection,
-            detection_b=other_detection,
-        )
+        iou_value = float(iou_matrix[detection_global_index, other_global_index])
         if iou_value <= iou_threshold:
             continue
         if current_max_overlap.get(other_source) is None:
-            current_max_overlap[other_source] = (other_detection, iou_value)
+            current_max_overlap[other_source] = (other_local_index, iou_value)
         if current_max_overlap[other_source][1] < iou_value:
-            current_max_overlap[other_source] = (other_detection, iou_value)
-    return current_max_overlap
+            current_max_overlap[other_source] = (other_local_index, iou_value)
+    return {
+        other_source: (
+            take_prediction_by_indices(
+                detections_from_sources[other_source], [local_index]
+            ),
+            iou_value,
+        )
+        for other_source, (local_index, iou_value) in current_max_overlap.items()
+    }
+
+
+def enumerate_detection_indices(
+    detections_from_sources: List[TensorNativeDetections],
+    excluded_source_id: Optional[int] = None,
+) -> Generator[Tuple[int, int, int], None, None]:
+    # Yields (source_id, global_index, local_index) WITHOUT materialising a
+    # single-row prediction per detection - the O(N^2) matching loop only needs
+    # indices into the precomputed host structures. `global_index` is the
+    # absolute position in the source-ordered concatenation (excluded sources
+    # still advance the offset) so it indexes `iou_matrix` / `class_names` /
+    # `detection_ids` consistently regardless of `excluded_source_id`.
+    global_offset = 0
+    for source_id, detections in enumerate(detections_from_sources):
+        n = len(detections)
+        if excluded_source_id == source_id:
+            global_offset += n
+            continue
+        for i in range(n):
+            yield source_id, global_offset + i, i
+        global_offset += n
 
 
 def enumerate_detections(
     detections_from_sources: List[TensorNativeDetections],
     excluded_source_id: Optional[int] = None,
-) -> Generator[Tuple[int, TensorNativeDetections], None, None]:
-    for source_id, detections in enumerate(detections_from_sources):
-        if excluded_source_id == source_id:
+) -> Generator[Tuple[int, int, TensorNativeDetections], None, None]:
+    for source_id, global_index, local_index in enumerate_detection_indices(
+        detections_from_sources=detections_from_sources,
+        excluded_source_id=excluded_source_id,
+    ):
+        yield source_id, global_index, take_prediction_by_indices(
+            detections_from_sources[source_id], [local_index]
+        )
+
+
+def _precompute_pair_data(
+    detections_from_sources: List[TensorNativeDetections],
+) -> Tuple[np.ndarray, List[str], List[Any]]:
+    """One host download per tensor field per source, then a single vectorised
+    IoU matrix over every detection. `global index` = position in the
+    source-ordered concatenation of all detections.
+
+    - `iou_matrix[a, b]` is bit-identical to `calculate_iou(row_a, row_b)`: the
+      same `sv.box_iou_batch` arithmetic (float32 internally), computed per cell
+      independently, and the `nan_to_num` mirrors calculate_iou's
+      `if math.isnan(iou): iou = 0` guard.
+    - `class_names[g]` mirrors `_resolve_class_name` (each source's own
+      `image_metadata` class-names map, `f"class_{id}"` fallback).
+    - `detection_ids[g]` mirrors `_resolve_detection_id` (reads
+      `bboxes_metadata`; KeyError-compatible when a reached row lacks metadata).
+    """
+    xyxy_arrays: List[np.ndarray] = []
+    class_names: List[str] = []
+    detection_ids: List[Any] = []
+    for detections in detections_from_sources:
+        n = len(detections)
+        if n == 0:
             continue
-        for i in range(len(detections)):
-            yield source_id, take_prediction_by_indices(detections, [i])
+        xyxy_arrays.append(_xyxy_as_numpy(detections))
+        class_id = detections.class_id.detach().to("cpu").numpy()
+        class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+        class_names.extend(
+            class_names_map.get(int(c), f"class_{int(c)}") for c in class_id
+        )
+        bboxes_metadata = detections.bboxes_metadata
+        for i in range(n):
+            row_metadata = bboxes_metadata[i] if bboxes_metadata is not None else {}
+            detection_ids.append(row_metadata[DETECTION_ID_KEY])
+    if xyxy_arrays:
+        all_xyxy = np.concatenate(xyxy_arrays, axis=0)
+        iou_matrix = np.nan_to_num(sv.box_iou_batch(all_xyxy, all_xyxy))
+    else:
+        iou_matrix = np.zeros((0, 0), dtype=np.float32)
+    return iou_matrix, class_names, detection_ids
 
 
 def calculate_iou(
@@ -565,6 +710,7 @@ def agree_on_consensus_for_all_detections_sources(
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
     detections_merge_mask_aggregation: MaskAggregationMode,
+    raise_on_class_name_conflict: bool = False,
 ) -> Tuple[str, bool, Dict[str, float], TensorNativeDetections]:
     if does_not_detect_objects_in_any_source(
         detections_from_sources=detections_from_sources
@@ -588,9 +734,14 @@ def agree_on_consensus_for_all_detections_sources(
         predictions=detections_from_sources,
         classes_to_consider=classes_to_consider,
     )
+    # One host download per tensor field per source + one vectorised IoU matrix,
+    # replacing the per-pair `calculate_iou` / `_resolve_class_name` device syncs.
+    iou_matrix, class_names, detection_ids = _precompute_pair_data(
+        detections_from_sources
+    )
     detections_already_considered = set()
     consensus_detections = []
-    for source_id, detection in enumerate_detections(
+    for source_id, detection_global_index, detection in enumerate_detections(
         detections_from_sources=detections_from_sources
     ):
         (
@@ -608,9 +759,17 @@ def agree_on_consensus_for_all_detections_sources(
             detections_merge_coordinates_aggregation=detections_merge_coordinates_aggregation,
             detections_merge_mask_aggregation=detections_merge_mask_aggregation,
             detections_already_considered=detections_already_considered,
+            detection_global_index=detection_global_index,
+            iou_matrix=iou_matrix,
+            class_names=class_names,
+            detection_ids=detection_ids,
+            raise_on_class_name_conflict=raise_on_class_name_conflict,
         )
         consensus_detections += consensus_detections_update
-    consensus_detections = _merge_native_detections(consensus_detections)
+    consensus_detections = _merge_native_detections(
+        consensus_detections,
+        raise_on_class_name_conflict=raise_on_class_name_conflict,
+    )
     (
         object_present,
         presence_confidence,
@@ -640,6 +799,11 @@ def get_consensus_for_single_detection(
     detections_merge_coordinates_aggregation: AggregationMode,
     detections_merge_mask_aggregation: MaskAggregationMode,
     detections_already_considered: Set[str],
+    detection_global_index: int,
+    iou_matrix: np.ndarray,
+    class_names: List[str],
+    detection_ids: List[Any],
+    raise_on_class_name_conflict: bool = False,
 ) -> Tuple[List[TensorNativeDetections], Set[str]]:
     if (
         len(detection)
@@ -655,6 +819,10 @@ def get_consensus_for_single_detection(
             iou_threshold=iou_threshold,
             class_aware=class_aware,
             detections_already_considered=detections_already_considered,
+            detection_global_index=detection_global_index,
+            iou_matrix=iou_matrix,
+            class_names=class_names,
+            detection_ids=detection_ids,
         )
     )
 
@@ -700,6 +868,7 @@ def get_consensus_for_single_detection(
         confidence_aggregation_mode=detections_merge_confidence_aggregation,
         boxes_aggregation_mode=detections_merge_coordinates_aggregation,
         mask_aggregation_mode=detections_merge_mask_aggregation,
+        raise_on_class_name_conflict=raise_on_class_name_conflict,
     )
     if float(merged_detection.confidence[0]) < confidence:
         # Returning empty list of detections
@@ -781,6 +950,7 @@ def merge_detections(
     confidence_aggregation_mode: AggregationMode,
     boxes_aggregation_mode: AggregationMode,
     mask_aggregation_mode: MaskAggregationMode,
+    raise_on_class_name_conflict: bool = False,
 ) -> TensorNativeDetections:
     # `detections` is the native group of overlapping detections (one single-row
     # prediction per voting source). `masks` is the parallel list of numpy masks
@@ -788,7 +958,8 @@ def merge_detections(
     # The aggregation group only needs xyxy / class_id / confidence / metadata
     # (masks come from the `masks` argument), so it is concatenated mask-free.
     group_xyxy, group_class_id, group_confidence, group_metadata, _ = _concat_metadata(
-        detections
+        detections,
+        raise_on_class_name_conflict=raise_on_class_name_conflict,
     )
     group = Detections(
         xyxy=group_xyxy,

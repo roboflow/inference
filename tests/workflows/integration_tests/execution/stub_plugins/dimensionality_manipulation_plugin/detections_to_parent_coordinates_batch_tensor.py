@@ -1,13 +1,7 @@
 """
-Tensor-native sibling of ``detections_to_parent_coordinates_batch.py``.
-
-Operates on native ``inference_models.Detections`` (xyxy/class_id/confidence are
-torch tensors; per-box state lives in ``bboxes_metadata`` — the native equivalent
-of sv ``.data``). The numpy block writes ``parent_id`` / ``parent_coordinates`` /
-``parent_dimensions`` via sv ``.data`` item-assignment; here we write the SAME key
-strings (``PARENT_ID_KEY`` / ``PARENT_COORDINATES_KEY`` / ``PARENT_DIMENSIONS_KEY``)
-into each per-box ``bboxes_metadata`` dict instead. The ``BlockManifest`` (the
-``type`` Literal + I/O contract) is reused verbatim from the numpy module.
+Tensor-native sibling of ``detections_to_parent_coordinates_batch.py``: writes
+``parent_id`` / ``parent_coordinates`` / ``parent_dimensions`` per-box into
+``bboxes_metadata`` (the native counterpart of sv ``.data``).
 
 This is just example, test implementation, please do not assume it being fully functional.
 """
@@ -31,10 +25,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 from tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin.detections_to_parent_coordinates_batch import (
     BlockManifest,
 )
-from inference_models.models.base.object_detection import Detections
 
 
 def _write_parent_metadata_native(
@@ -42,8 +36,8 @@ def _write_parent_metadata_native(
     parent_id: str,
     parent_coordinates,
 ) -> Detections:
-    """Return a COPY of the native prediction with parent lineage written per-box
-    into ``bboxes_metadata`` (mirroring the numpy block's sv ``.data`` writes)."""
+    """Return a copy of the prediction with parent lineage written per-box
+    into ``bboxes_metadata``."""
     prediction_copy = _copy_detections(prediction)
     number_of_boxes = len(prediction_copy)
     bboxes_metadata = prediction_copy.bboxes_metadata

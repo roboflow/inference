@@ -95,7 +95,9 @@ def _make_native_detections(
     name_to_id: dict[str, int] = {}
     for name in class_names:
         name_to_id.setdefault(name, len(name_to_id))
-    class_id = torch.tensor([name_to_id[name] for name in class_names], dtype=torch.int64)
+    class_id = torch.tensor(
+        [name_to_id[name] for name in class_names], dtype=torch.int64
+    )
     name_by_class_id = {class_id: name for name, class_id in name_to_id.items()}
     return NativeDetections(
         xyxy=torch.tensor([[0, 0, 10, 10]] * n, dtype=torch.float32),

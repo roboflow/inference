@@ -17,9 +17,7 @@ from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference_models.models.base.object_detection import (
-    Detections as NativeDetections,
-)
+from inference_models.models.base.object_detection import Detections as NativeDetections
 from tests.workflows.integration_tests.execution.tensor_input_utils import (
     numpy_image_as_tensor,
 )

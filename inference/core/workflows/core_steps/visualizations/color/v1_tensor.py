@@ -151,7 +151,11 @@ class ColorVisualizationBlockV1(ColorableVisualizationBlock):
         color_axis: Optional[str],
         opacity: Optional[float],
     ) -> BlockResult:
-        predictions = to_supervision_for_annotation(predictions)
+        # sv.ColorAnnotator fills the `xyxy` box rectangle and never reads
+        # `.mask`; skip the device->host dense-mask materialisation.
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
@@ -159,8 +163,13 @@ class ColorVisualizationBlockV1(ColorableVisualizationBlock):
             color_axis,
             opacity,
         )
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             detections=predictions,
         )
         return {

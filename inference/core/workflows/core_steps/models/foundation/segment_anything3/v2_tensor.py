@@ -32,7 +32,6 @@ from inference.core.entities.requests.sam3 import Sam3Prompt
 from inference.core.env import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
-    GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -171,11 +170,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
         examples=[0.5, 0.9],
     )
-    mask_representation: Literal["rle", "dense"] = Field(
-        default="rle",
-        description="Carrier for instance masks. RLE (compact) by default; forced to "
-        "'rle' on GCP_SERVERLESS regardless of this value.",
-    )
 
     @field_validator("nms_iou_threshold")
     @classmethod
@@ -277,10 +271,12 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         per_class_confidence: Optional[List[float]],
         apply_nms: bool,
         nms_iou_threshold: float,
-        mask_representation: Literal["rle", "dense"],
     ) -> BlockResult:
-        if GCP_SERVERLESS:
-            mask_representation = "rle"
+        # RLE mask output is enforced ALWAYS on the tensor path. The numpy SAM3 v2
+        # sibling exposes no mask-format field, so neither does this manifest; the
+        # shared internal helpers (with SAM2/v1/v3) still take a `mask_representation`
+        # argument, so it is pinned to "rle" here.
+        mask_representation = "rle"
         class_names = _normalize_class_names(class_names)
         if SAM3_EXEC_MODE == "remote":
             return self.run_via_request(

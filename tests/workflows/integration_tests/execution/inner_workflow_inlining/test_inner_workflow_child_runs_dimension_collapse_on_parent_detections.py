@@ -330,9 +330,7 @@ def test_inlined_child_dimension_collapse_matches_flat_workflow_tensor_native(
     for call in run_mock.call_args_list:
         model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
         assert model_id == "yolov8n-640"
-        imgs = call.kwargs.get(
-            "images", call.args[1] if len(call.args) > 1 else None
-        )
+        imgs = call.kwargs.get("images", call.args[1] if len(call.args) > 1 else None)
         assert imgs is not None and len(imgs) == 1
 
     # Native Detections has no value __eq__; assert the values on BOTH runs instead of
@@ -368,9 +366,7 @@ def test_inlined_child_dimension_collapse_matches_flat_workflow_runtime_image_li
     for call in run_mock.call_args_list:
         model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
         assert model_id == "yolov8n-640"
-        imgs = call.kwargs.get(
-            "images", call.args[1] if len(call.args) > 1 else None
-        )
+        imgs = call.kwargs.get("images", call.args[1] if len(call.args) > 1 else None)
         assert imgs is not None and len(imgs) == 2
 
     # Native Detections has no value __eq__; assert the values on BOTH runs instead of

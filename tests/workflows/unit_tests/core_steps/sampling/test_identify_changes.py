@@ -71,12 +71,8 @@ def test_identify_changes_zero_variance_is_not_outlier() -> None:
     identify_changes_block = IdentifyChangesBlockV1()
     embedding = np.array([0.1, -0.4, 0.3, 0.9, -0.2])
 
-    # when - the second sample is scored against freshly initialised
-    # cosine-similarity statistics (std is the literal 0), so the zero-std
-    # guard must yield the deterministic non-outlier result instead of
-    # dividing by zero and emitting NaN downstream; two runs keep the check
-    # platform-exact (accumulating more steps re-introduces float rounding
-    # noise into std, which made the assertions flake across architectures)
+    # when - second run scores against fresh statistics (std == 0), hitting the
+    # zero-std guard; exactly two runs keeps std platform-exact (more steps flake)
     inputs = {**default_inputs, "warmup": 1}
     for _ in range(2):
         result = identify_changes_block.run(**inputs, embedding=embedding)
@@ -98,7 +94,7 @@ def test_identify_changes_tensor_sibling_zero_variance_is_not_outlier() -> None:
     identify_changes_block = IdentifyChangesTensorBlockV1()
     embedding = torch.tensor([0.1, -0.4, 0.3, 0.9, -0.2])
 
-    # when - same deterministic zero-std guard scenario as the numpy sibling
+    # when - two runs against fresh statistics (std == 0) hit the zero-std guard
     inputs = {**default_inputs, "warmup": 1}
     for _ in range(2):
         result = identify_changes_block.run(**inputs, embedding=embedding)

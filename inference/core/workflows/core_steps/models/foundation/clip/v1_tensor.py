@@ -155,9 +155,6 @@ class ClipModelBlockV1(WorkflowBlock):
         data: Union[WorkflowImageData, str],
         version: str,
     ) -> BlockResult:
-        # Tensor-native local path: the CLIP core model runs through the
-        # inference_models adapter's run_tensor_native_inference, which returns a
-        # torch.Tensor embedding kept on-device (no JSON / numpy round-trip).
         clip_model_id = f"clip/{version}"
         self._model_manager.add_model(
             clip_model_id,
@@ -169,8 +166,7 @@ class ClipModelBlockV1(WorkflowBlock):
 
             cached_value = text_cache.get(hash_key)
             if cached_value is not None:
-                # Cache holds a CPU tensor (so the process-wide LRU never pins GPU
-                # memory); honour the embedding device policy on read.
+                # Cache holds CPU tensors so the process-wide LRU never pins GPU memory.
                 return {"embedding": cached_value.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)}
 
             embeddings = self._model_manager.run_tensor_native_inference(
@@ -224,10 +220,7 @@ class ClipModelBlockV1(WorkflowBlock):
                 clip_version=version,
             )
 
-        # Remote returns a JSON embedding (List[float]); convert to the
-        # tensor-native embedding representation (torch.Tensor) on the pinned
-        # embedding device so LOCAL/REMOTE outputs share a device for downstream
-        # cosine math.
+        # Remote returns the embedding as a JSON List[float].
         return {
             "embedding": torch.tensor(
                 result["embeddings"][0], device=WORKFLOWS_IMAGE_TENSOR_DEVICE

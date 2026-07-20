@@ -179,10 +179,6 @@ class ClipComparisonBlockV2(WorkflowBlock):
         classes: List[str],
         version: str,
     ) -> BlockResult:
-        # Tensor-native local path: embed image (tensor_image) and classes through
-        # the CLIP adapter's run_tensor_native_inference (torch, on-device), then
-        # compute the cosine similarities in torch. The class embedding is shared
-        # across the image batch.
         clip_model_id = f"clip/{version}"
         self._model_manager.add_model(
             clip_model_id,
@@ -272,12 +268,19 @@ class ClipComparisonBlockV2(WorkflowBlock):
             most_similar_class_name = classes[max_similarity_id]
             least_similar_class_name = classes[min_similarity_id]
             image_height, image_width = image._read_shape_without_materialization()
-            # Tensor-native classification prediction: per-class cosine scores
-            # become the confidence distribution; class names live in metadata.
+            # `confidence` carries per-class cosine scores, not softmax probabilities.
             classification_predictions = ClassificationPrediction(
                 class_id=torch.tensor([int(max_similarity_id)]),
                 confidence=torch.tensor([similarities], dtype=torch.float32),
                 images_metadata=[
+                    # Lane 1b NOTE: intentionally NOT stamped with CLASSIFICATION_STYLE_KEY.
+                    # clip_comparison v2's flag-OFF `classification_predictions` is a
+                    # bespoke dict ({predictions, top, confidence, parent_id}) that matches
+                    # NEITHER the serialiser's "model" nor "formatter" shape (both add
+                    # `image`/`inference_id`; model also sorts/rounds/filters + prediction_type).
+                    # This is a PRE-EXISTING byte-parity gap, not a lane-1b regression, so the
+                    # prediction is left on the fallback heuristic (-> formatter, unchanged from
+                    # before lane 1b). Byte-parity for clip_comparison needs its own decision.
                     {
                         CLASS_NAMES_KEY: {
                             class_id: class_name

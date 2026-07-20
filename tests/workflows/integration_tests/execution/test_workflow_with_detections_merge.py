@@ -175,7 +175,9 @@ def test_detections_merge_workflow_tensor_native(
     # Check that the merged detection carries the required fields on the native
     # carrier: class name lives in image_metadata[CLASS_NAMES_KEY]; detection_id is a
     # per-box entry in bboxes_metadata (the native equivalents of sv.Detections.data).
-    assert CLASS_NAMES_KEY in merged.image_metadata, "Should have class_names in metadata"
+    assert (
+        CLASS_NAMES_KEY in merged.image_metadata
+    ), "Should have class_names in metadata"
     assert (
         "merged_detection" in merged.image_metadata[CLASS_NAMES_KEY].values()
     ), "Merged detection should carry the merged class name"
@@ -240,7 +242,9 @@ def test_detections_merge_workflow_with_tensor_input(
         merged, NativeDetections
     ), "Output must be instance of native inference_models.Detections"
     assert merged.xyxy.shape[0] == 1, "Should have exactly one merged detection"
-    assert CLASS_NAMES_KEY in merged.image_metadata, "Should have class_names in metadata"
+    assert (
+        CLASS_NAMES_KEY in merged.image_metadata
+    ), "Should have class_names in metadata"
     assert (
         "merged_detection" in merged.image_metadata[CLASS_NAMES_KEY].values()
     ), "Merged detection should carry the merged class name"

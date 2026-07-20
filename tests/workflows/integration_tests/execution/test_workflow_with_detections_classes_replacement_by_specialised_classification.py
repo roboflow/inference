@@ -42,6 +42,7 @@ def _native_class_names(predictions) -> list:
     class_id = predictions.class_id.detach().to("cpu").numpy()
     return [class_names_map.get(int(cid), f"class_{int(cid)}") for cid in class_id]
 
+
 DETECTION_CLASSES_REPLACEMENT_WORKFLOW = {
     "version": "1.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],

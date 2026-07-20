@@ -172,7 +172,11 @@ class EllipseVisualizationBlockV1(ColorableVisualizationBlock):
         start_angle: Optional[int],
         end_angle: Optional[int],
     ) -> BlockResult:
-        predictions = to_supervision_for_annotation(predictions)
+        # sv.EllipseAnnotator draws from `xyxy` only and never reads `.mask`;
+        # skip the device->host dense-mask materialisation.
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
@@ -182,8 +186,13 @@ class EllipseVisualizationBlockV1(ColorableVisualizationBlock):
             start_angle,
             end_angle,
         )
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             detections=predictions,
         )
         return {

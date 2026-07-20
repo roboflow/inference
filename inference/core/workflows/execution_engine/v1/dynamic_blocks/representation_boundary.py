@@ -82,8 +82,8 @@ from inference_models.models.common.rle_utils import (
     torch_mask_to_coco_rle,
 )
 
-# Resolved once at import time, mirroring the pivot's load-time-swap philosophy.
-# The boundary is a strict identity when the flag is off.
+# Resolved once at import time; the boundary is a strict identity when the flag
+# is off.
 _TENSOR_REPRESENTATION_ACTIVE: bool = ENABLE_TENSOR_DATA_REPRESENTATION
 
 # The sv.Detections.data column carrying the class-name string (supervision's own
@@ -431,10 +431,10 @@ def _sniff_convert_to_legacy(
             remediation="Declare the input's kind or switch the block to "
             "`tensor_compatibility=tensor_native`.",
         )
-    # D3 fallthrough — INTENTIONAL representation-invariant passthrough. Anything
-    # not caught above (arbitrary objects, pydantic models, NamedTuples, ...) is
-    # assumed representation-agnostic and shipped as-is; the loud-error net covers
-    # only the tensor-only shapes we can positively identify (native dataclasses,
+    # INTENTIONAL representation-invariant passthrough. Anything not caught above
+    # (arbitrary objects, pydantic models, NamedTuples, ...) is assumed
+    # representation-agnostic and shipped as-is; the loud-error net covers only
+    # the tensor-only shapes we can positively identify (native dataclasses,
     # bare tensors, bare KeyPoints).
     return value
 
@@ -487,7 +487,7 @@ def native_detections_to_sv(
 
     * ``data['class_name']`` resolved effective-name / override-first — per-box
       ``bboxes_metadata['class']`` when present, else the
-      ``image_metadata['class_names']`` map (the serializer's C1 rule),
+      ``image_metadata['class_names']`` map (the tensor serializer's rule),
     * per-box ``detection_id`` minted (uuid4) when missing — mirroring the numpy
       deserializer, never an empty string,
     * lineage broadcast into ``.data`` exactly as
@@ -716,7 +716,7 @@ def _attach_padded_keypoint_columns(
 
 
 # --------------------------------------------------------------------------- #
-# OUT boundary: legacy -> native over the returned BlockResult (Step 3)       #
+# OUT boundary: legacy -> native over the returned BlockResult                #
 # --------------------------------------------------------------------------- #
 
 # Same literal the classification tensor blocks attach; the tensor serializer
@@ -995,8 +995,7 @@ def _sniff_convert_to_native(value: Any, block_name: str, value_name: str) -> An
     else ``Detections``); already-native objects pass through; a bare
     ``sv.KeyPoints`` fails loudly (mirror of the IN-side bare-``KeyPoints``
     rule); EVERYTHING else - dicts included (a classification dict through a
-    wildcard output stays a dict, the plan's documented limitation) - is
-    representation-invariant."""
+    wildcard output stays a dict) - is representation-invariant."""
     if isinstance(value, sv.Detections):
         if _sv_detections_carry_keypoint_payload(value):
             return sv_detections_to_native_key_point_prediction(sv_detections=value)
@@ -1072,8 +1071,8 @@ def sv_detections_to_native(
     *,
     prefer_rle: bool = False,
 ) -> Union[Detections, InstanceDetections]:
-    """Direct ``sv.Detections`` -> native converter (the plan's main new
-    primitive; no dict round-trip, dense masks preserved).
+    """Direct ``sv.Detections`` -> native converter (no dict round-trip, dense
+    masks preserved).
 
     Inverts ``native_detections_to_sv`` exactly:
 
@@ -1292,8 +1291,8 @@ def _rebuild_mask_carrier_from_sv(
     dense = np.asarray(sv_detections.mask)
     if dense.dtype != np.bool_:
         # Both carriers require bool; copy ONLY when the dtype actually differs
-        # (sv masks are typically bool already — the old unconditional astype
-        # duplicated the full (N, H, W) stack every call).
+        # (sv masks are typically bool already, and an unconditional astype would
+        # duplicate the full (N, H, W) stack).
         dense = dense.astype(bool)
     if prefer_rle:
         if detections_number == 0:
@@ -1320,10 +1319,9 @@ def classification_dict_to_native(
     """Rebuild a native classification prediction from the legacy in-memory dict.
 
     The confidence vector is reconstructed SPARSE — zeros for classes absent
-    from the (already thresholded) dict — the plan's explicitly documented
-    approximation. Single-label vs multi-label is discriminated by the legacy
-    dict shape (``predictions`` list + ``top`` vs ``predictions`` dict +
-    ``predicted_classes``)."""
+    from the (already thresholded) dict. Single-label vs multi-label is
+    discriminated by the legacy dict shape (``predictions`` list + ``top`` vs
+    ``predictions`` dict + ``predicted_classes``)."""
     predictions_field = prediction.get("predictions")
     if "predicted_classes" in prediction and isinstance(predictions_field, dict):
         return _multi_label_dict_to_native(prediction=prediction)
@@ -1356,8 +1354,7 @@ def _classification_metadata_from_dict(prediction: dict, class_names: dict) -> d
         value = prediction.get(key)
         if value is not None:
             metadata[key] = str(value)
-    # `time` round-trips when the dict carries it (the tensor serializer emits
-    # it between inference_id and image — see the amended plan).
+    # `time` round-trips when the dict carries it (the tensor serializer emits it).
     if prediction.get("time") is not None:
         metadata["time"] = float(prediction["time"])
     return metadata
@@ -1397,8 +1394,7 @@ def _single_label_dict_to_native(prediction: dict) -> ClassificationPrediction:
     # Re-attaching the smallest listed confidence as the serializer threshold
     # keeps the gap-filled zero classes out of re-serialization, so the
     # round-tripped dict matches the input (edge: a listed 0.0-confidence entry
-    # means no threshold can be attached and gap classes reappear — the same
-    # documented P2 edge as the visual-search classifier).
+    # means no threshold can be attached and gap classes reappear).
     positive_confidences = [c for c in entry_confidences.values() if c > 0.0]
     if entry_confidences and len(positive_confidences) == len(entry_confidences):
         metadata[CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY] = min(positive_confidences)
