@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -86,6 +86,10 @@ delaying the entire workflow output, which is not possible on synchronous runtim
 - State persists for the lifetime of the workflow and resets on restart.
 - Values are unavailable (returning `default_value`) until enough frames have been
   processed to reach the requested `|offset|` depth.
+- When `offset` is wired to a runtime selector, the buffer is sized to the largest
+  `|offset|` seen so far on the stream, so alternating between shallow and deep
+  offsets keeps the deep history available. Increasing the offset mid-stream makes
+  deeper frames available only once enough new frames have been buffered.
 """
 
 
@@ -195,6 +199,10 @@ class FrameDelayBlockV1(WorkflowBlock):
         # Ordered least- to most-recently-seen video, so that buffers belonging to
         # streams that have ended can be evicted.
         self._buffers: "OrderedDict[str, OrderedDict[int, Any]]" = OrderedDict()
+        # Largest |offset| observed per video. `offset` may be a runtime selector that
+        # changes between frames, and eviction must retain enough history for the
+        # deepest lookup requested so far, not merely the current call's offset.
+        self._max_abs_offsets: Dict[str, int] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -219,11 +227,16 @@ class FrameDelayBlockV1(WorkflowBlock):
             # numbering can be resolved against the new one, and keeping it would
             # defeat eviction, whose cutoff is relative to the newest frame.
             buffer.clear()
+            self._max_abs_offsets[video_id] = 0
+        max_abs_offset = max(self._max_abs_offsets.get(video_id, 0), abs(offset))
+        self._max_abs_offsets[video_id] = max_abs_offset
         buffer[frame_number] = data
         target_frame = frame_number + offset
         is_available = target_frame in buffer
         value = buffer[target_frame] if is_available else default_value
-        self._evict(buffer=buffer, newest_frame=frame_number, offset=offset)
+        self._evict(
+            buffer=buffer, newest_frame=frame_number, max_abs_offset=max_abs_offset
+        )
         return {
             OUTPUT_KEY: value,
             IS_AVAILABLE_KEY: is_available,
@@ -237,16 +250,18 @@ class FrameDelayBlockV1(WorkflowBlock):
         self._buffers[video_id] = buffer
         self._buffers.move_to_end(video_id)
         while len(self._buffers) > MAX_TRACKED_VIDEOS:
-            self._buffers.popitem(last=False)
+            evicted_video_id, _ = self._buffers.popitem(last=False)
+            self._max_abs_offsets.pop(evicted_video_id, None)
         return buffer
 
     def _evict(
-        self, buffer: "OrderedDict[int, Any]", newest_frame: int, offset: int
+        self, buffer: "OrderedDict[int, Any]", newest_frame: int, max_abs_offset: int
     ) -> None:
-        # Retain exactly the frames the lookup can reach: `newest_frame + offset` up to
-        # `newest_frame`. Older frames are never addressable, since the lookup is an
-        # exact frame-number match, so holding them only costs memory.
-        cutoff = newest_frame - abs(offset)
+        # Retain exactly the frames a lookup can still reach. `offset` may vary between
+        # frames when wired to a runtime selector, so the window is sized by the
+        # largest |offset| seen on this stream rather than the current call's value;
+        # frames older than that are never addressable and only cost memory.
+        cutoff = newest_frame - max_abs_offset
         while buffer:
             oldest_frame = next(iter(buffer))
             if oldest_frame >= cutoff:

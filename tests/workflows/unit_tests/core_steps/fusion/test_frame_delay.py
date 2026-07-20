@@ -127,7 +127,33 @@ def test_buffer_is_bounded() -> None:
     assert sorted(buffer) == [496, 497, 498, 499]
 
 
-def test_offset_below_maximum_rejected_at_runtime() -> None:
+def test_dynamic_offset_shrinking_then_growing_keeps_history() -> None:
+    # given - offset is a runtime selector that varies between frames
+    block = FrameDelayBlockV1()
+    for n in range(1, 101):
+        block.run(image=_image(n), data=f"det-{n}", offset=-100)
+
+    # when - a single shallow lookup must not discard the deep history
+    block.run(image=_image(101), data="det-101", offset=-1)
+    result = block.run(image=_image(102), data="det-102", offset=-100)
+
+    # then - frame 2 was buffered under offset -100 and must still be reachable
+    assert result["is_available"] is True
+    assert result["output"] == "det-2"
+
+
+def test_frame_number_restart_resets_offset_history() -> None:
+    # given - a stream that used a deep offset before reconnecting
+    block = FrameDelayBlockV1()
+    for n in range(100):
+        block.run(image=_image(n), data=f"old-{n}", offset=-100)
+
+    # when - the stream restarts and only shallow offsets are used afterwards
+    for n in range(10):
+        block.run(image=_image(n), data=f"new-{n}", offset=-1)
+
+    # then - the buffer is sized for the new offset, not the pre-restart one
+    assert sorted(block._buffers["vid_1"]) == [8, 9]
     # given
     block = FrameDelayBlockV1()
 
