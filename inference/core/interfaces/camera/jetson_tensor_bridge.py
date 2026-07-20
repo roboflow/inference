@@ -23,6 +23,10 @@ class _FrameInfo(ctypes.Structure):
         ("fps_numerator", ctypes.c_int32),
         ("fps_denominator", ctypes.c_int32),
         ("duration_ns", ctypes.c_int64),
+        ("pts_ns", ctypes.c_int64),
+        ("dts_ns", ctypes.c_int64),
+        ("arrival_monotonic_ns", ctypes.c_int64),
+        ("arrival_wall_time_ns", ctypes.c_int64),
     ]
 
 
@@ -50,6 +54,10 @@ class JetsonFrameInfo:
     fps_numerator: int
     fps_denominator: int
     duration_ns: int
+    pts_ns: int
+    dts_ns: int
+    arrival_monotonic_ns: int
+    arrival_wall_time_ns: int
 
 
 def jetson_tensor_bridge_available() -> Tuple[bool, str]:
@@ -58,9 +66,9 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
-    # v4 = streaming-thread conversion + tensor handoff; the RfBridgeStats ABI
-    # gained frames_dropped_by_consumer, so older .so versions must be refused.
-    if version != b"4":
+    # v5 = frame-specific source and arrival timing in RfFrameInfo. Older
+    # libraries have a shorter ctypes ABI and cannot safely serve this wrapper.
+    if version != b"5":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
@@ -176,6 +184,10 @@ class NativeJetsonTensorPipeline:
             fps_numerator=info.fps_numerator,
             fps_denominator=info.fps_denominator,
             duration_ns=info.duration_ns,
+            pts_ns=info.pts_ns,
+            dts_ns=info.dts_ns,
+            arrival_monotonic_ns=info.arrival_monotonic_ns,
+            arrival_wall_time_ns=info.arrival_wall_time_ns,
         )
 
     def has_factory(self, factory_name: str) -> bool:

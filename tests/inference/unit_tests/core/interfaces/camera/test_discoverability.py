@@ -15,14 +15,18 @@ from inference.core.interfaces.camera.discoverability import (
 
 @patch("platform.system", return_value="Linux")
 @patch("platform.machine", return_value="aarch64")
-def test_jetson_routes_gstreamer_for_streams_and_cv2_for_files(
+def test_jetson_routes_tensor_files_to_gstreamer_and_numpy_files_to_cv2(
     machine_mock,
     system_mock,
 ) -> None:
     # Streams / cameras -> Jetson HW GStreamer.
     assert _resolution_order(prefer=None, video="rtsp://cam/stream") == [JETSON]
-    # Local files -> no HW producer selected (cv2 CPU decode, tensorised lazily).
-    assert _resolution_order(prefer=None, video="sample.mp4") == []
+    # Tensor local files use the lossless Jetson tensor bridge.
+    assert _resolution_order(prefer=None, video="sample.mp4", output_tensor=True) == [
+        JETSON
+    ]
+    # Numpy local files retain the cv2 CPU fallback.
+    assert _resolution_order(prefer=None, video="sample.mp4", output_tensor=False) == []
 
 
 @patch("platform.system", return_value="Linux")

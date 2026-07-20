@@ -195,7 +195,7 @@ def build_hw_producer(
         video=video,
         require_cuda_tensor=output_tensor,
     )
-    for name in _resolution_order(prefer, video):
+    for name in _resolution_order(prefer, video, output_tensor=output_tensor):
         if not checks[name].available:
             continue
         if name in (GSTREAMER_CUDA, DGPU):
@@ -249,17 +249,19 @@ def build_hw_producer(
 
 
 def _resolution_order(
-    prefer: Optional[str], video: Optional[Union[str, int]] = None
+    prefer: Optional[str],
+    video: Optional[Union[str, int]] = None,
+    *,
+    output_tensor: bool = True,
 ) -> List[str]:
     """Source-type-aware producer routing (per the media-decode plan).
 
     An explicit ``prefer`` always wins, with the remaining backends kept as
     fallbacks. Otherwise the backend is chosen from (platform, source type):
 
-    - **Jetson** (aarch64 Linux): GStreamer for live/stream/camera sources; local
-      FILES are left to the cv2 CPU decoder (this returns ``[]`` -> ``build_hw_producer``
-      yields ``None`` -> opencv decode, lazily promoted to a tensor by
-      ``WorkflowImageData``). The Jetson HW GStreamer path is reserved for streams.
+    - **Jetson** (aarch64 Linux): GStreamer for live/stream/camera sources and for
+      local files when CUDA tensor output is requested. Numpy file consumers retain
+      the cv2 CPU decoder fallback.
     - **dGPU / x86**: GStreamer for live/stream sources; PyNvVideoCodec (``dgpu``) for
       local FILES (its ``SimpleDecoder`` is seekable-file only).
 
@@ -273,8 +275,9 @@ def _resolution_order(
 
     is_file = _is_file_source(video)
     if platform.machine() == "aarch64" and platform.system() == "Linux":
-        # Jetson: streams -> GStreamer; local files -> cv2 (no HW producer selected).
-        return [] if is_file else [JETSON]
+        # Jetson files are lossless in the tensor bridge. Keep the established
+        # cv2 route for CPU/Numpy callers, which do not benefit from CUDA output.
+        return [JETSON] if output_tensor or not is_file else []
     # dGPU / x86: streams -> GStreamer; local files -> PyNvVideoCodec.
     return [DGPU] if is_file else [GSTREAMER_CUDA]
 

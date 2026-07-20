@@ -17,6 +17,7 @@ from inference.core.interfaces.camera.entities import (
     VideoFrame,
 )
 from inference.core.interfaces.camera.exceptions import (
+    EndOfStreamError,
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
@@ -1616,3 +1617,78 @@ def test_consume_video_emits_poison_pill_on_consume_error() -> None:
     assert source._state is StreamState.ERROR
     with pytest.raises(EndOfStreamError):
         source.read_frame(timeout=0.0)
+
+
+def test_termination_does_not_block_behind_a_full_frames_buffer() -> None:
+    """Ensure shutdown can complete when a file-mode queue has no reader."""
+    source = VideoSource.init(video_reference="dummy", buffer_size=1)
+    buffered_frame = object()
+    source._frames_buffer.put(buffered_frame)
+    source._state = StreamState.TERMINATING
+    source._termination_requested.set()
+    source._video = MagicMock()
+    source._video.isOpened.return_value = False
+
+    source._consume_video()
+
+    assert source._state is StreamState.ENDED
+    assert source._frames_buffer.get_nowait() is buffered_frame
+    source._frames_buffer.task_done()
+    with pytest.raises(EndOfStreamError):
+        source.read_frame(timeout=0.0)
+
+
+def test_decode_video_frame_stops_waiting_when_termination_is_requested() -> None:
+    """Ensure a blocked WAIT-mode producer observes shutdown promptly."""
+    buffer = Queue(maxsize=1)
+    buffer.put(object())
+    termination_requested = Event()
+    termination_requested.set()
+    video = MagicMock()
+    video.retrieve.return_value = (True, np.zeros((1, 1, 3), dtype=np.uint8))
+
+    accepted = decode_video_frame_to_buffer(
+        frame_timestamp=datetime.now(),
+        frame_id=1,
+        video=video,
+        buffer=buffer,
+        decoding_pace_monitor=sv.FPSMonitor(),
+        source_id=None,
+        termination_requested=termination_requested,
+    )
+
+    assert not accepted
+    assert buffer.qsize() == 1
+
+
+def test_video_consumer_uses_timestamp_reported_by_frame_producer() -> None:
+    """Propagate source PTS timing instead of the pre-grab wall clock."""
+
+    source_timestamp = datetime(2026, 7, 20, 12, 34, 56)
+    source_properties = assembly_dummy_source_properties(is_file=False, fps=30.0)
+    video = MagicMock()
+    video.grab.return_value = True
+    video.retrieve.return_value = (True, np.zeros((1, 1, 3), dtype=np.uint8))
+    video.discover_source_properties.return_value = source_properties
+    video.frame_timestamp.return_value = source_timestamp
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.WAIT,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    consumer.reset(source_properties=source_properties)
+    buffer = Queue()
+
+    accepted = consumer.consume_frame(
+        video=video,
+        declared_source_fps=30.0,
+        is_source_video_file=False,
+        buffer=buffer,
+        frames_buffering_allowed=True,
+    )
+
+    assert accepted
+    assert buffer.get_nowait().frame_timestamp == source_timestamp

@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <time.h>
 #include <vector>
 
 namespace {
@@ -78,6 +79,16 @@ struct RfFrameInfo {
     int32_t fps_numerator;
     int32_t fps_denominator;
     int64_t duration_ns;
+    // Timing belongs to the tensor context, not pipeline-global state: a live
+    // latest-wins handoff can replace a queued sample before grab() observes
+    // it. -1 means GStreamer did not provide that clock value.
+    int64_t pts_ns;
+    int64_t dts_ns;
+    // These anchors are captured at appsink delivery. PTS/DTS are stream
+    // clocks, whereas the anchors allow consumers to measure arrival latency
+    // and correlate a source clock to local monotonic/wall time.
+    int64_t arrival_monotonic_ns;
+    int64_t arrival_wall_time_ns;
 };
 
 struct RfBridgeStats {
@@ -193,6 +204,7 @@ struct RfTensorContext {
     // that closes while this tensor is still alive.
     std::shared_ptr<RfBufferPool> pool;
     bool pooled = false;
+    RfFrameInfo frame_info{};
     DLManagedTensor managed{};
 };
 
@@ -217,8 +229,13 @@ struct RfJetsonPipeline {
     std::atomic<bool> eos{false};
     bool conversion_failed = false;
     char conversion_error[1024] = {0};
-    RfFrameInfo last_frame_info{};
-    bool frame_info_valid = false;
+    // The advertised source properties are established from the first frame.
+    // If later caps disagree, fail recoverably instead of returning tensors
+    // whose dimensions no longer match cached workflow metadata.
+    RfFrameInfo negotiated_frame_info{};
+    bool negotiated_frame_info_valid = false;
+    bool caps_changed = false;
+    char caps_change_error[1024] = {0};
 };
 
 using NvBufSurfaceMapEglImageFn = int (*)(NvBufSurface*, int);
@@ -512,6 +529,24 @@ bool read_sample_info(GstSample* sample, RfFrameInfo* info) {
     if (sample == nullptr || info == nullptr) {
         return false;
     }
+    *info = {};
+    info->pts_ns = -1;
+    info->dts_ns = -1;
+    timespec monotonic_time{};
+    timespec wall_time{};
+    if (clock_gettime(CLOCK_MONOTONIC, &monotonic_time) == 0) {
+        info->arrival_monotonic_ns =
+            static_cast<int64_t>(monotonic_time.tv_sec) * GST_SECOND +
+            monotonic_time.tv_nsec;
+    } else {
+        info->arrival_monotonic_ns = -1;
+    }
+    if (clock_gettime(CLOCK_REALTIME, &wall_time) == 0) {
+        info->arrival_wall_time_ns =
+            static_cast<int64_t>(wall_time.tv_sec) * GST_SECOND + wall_time.tv_nsec;
+    } else {
+        info->arrival_wall_time_ns = -1;
+    }
     GstCaps* caps = gst_sample_get_caps(sample);
     if (caps == nullptr || gst_caps_is_empty(caps)) {
         return false;
@@ -531,7 +566,26 @@ bool read_sample_info(GstSample* sample, RfFrameInfo* info) {
     info->height = static_cast<uint32_t>(height);
     info->fps_numerator = numerator;
     info->fps_denominator = denominator > 0 ? denominator : 1;
+    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    if (buffer != nullptr) {
+        const GstClockTime pts = GST_BUFFER_PTS(buffer);
+        const GstClockTime dts = GST_BUFFER_DTS(buffer);
+        if (pts != GST_CLOCK_TIME_NONE) {
+            info->pts_ns = static_cast<int64_t>(pts);
+        }
+        if (dts != GST_CLOCK_TIME_NONE) {
+            info->dts_ns = static_cast<int64_t>(dts);
+        }
+    }
     return true;
+}
+
+bool frame_caps_changed(const RfFrameInfo& previous, const RfFrameInfo& current) {
+    // Some sources first negotiate an unknown 0/1 framerate and later refine
+    // it without changing the actual image layout. Dimensions are the unsafe
+    // change because cached workflow metadata and tensor shape then disagree;
+    // frame-specific FPS remains available to callers without forcing a reset.
+    return previous.width != current.width || previous.height != current.height;
 }
 
 bool read_bus_error(
@@ -793,6 +847,7 @@ RfTensorContext* convert_sample_to_tensor(
             tensor->managed.dl_tensor.shape = tensor->shape;
             tensor->managed.dl_tensor.strides = nullptr;
             tensor->managed.dl_tensor.byte_offset = 0;
+            tensor->frame_info = frame_info;
             *frame_info_out = frame_info;
             result = tensor;
             tensor = nullptr;
@@ -972,6 +1027,7 @@ RfTensorContext* convert_sample_to_tensor(
         tensor->managed.dl_tensor.shape = tensor->shape;
         tensor->managed.dl_tensor.strides = nullptr;
         tensor->managed.dl_tensor.byte_offset = 0;
+        tensor->frame_info = frame_info;
         *frame_info_out = frame_info;
         result = tensor;
         tensor = nullptr;
@@ -1029,32 +1085,49 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
                 "%s",
                 error);
         } else {
-            // Conversion accounting is complete before a lossless file source
-            // potentially waits for FIFO space, keeping the counters coherent
-            // even when stats are sampled while the callback is backpressured.
-            handle->stats.frames += 1;
-            handle->stats.conversion_kernels += 1;
-            handle->stats.nvmm_frames += 1;
-            if (handle->latest_only && !handle->ready_tensors.empty()) {
-                // Live sources keep latency bounded by replacing the frame
-                // that the consumer has not collected yet.
-                delete_managed_tensor(&handle->ready_tensors.back()->managed);
-                handle->ready_tensors.pop_back();
-                handle->stats.frames_dropped_by_consumer += 1;
-            } else if (!handle->latest_only) {
-                handle->handoff_space.wait(lock, [handle]() {
-                    return handle->ready_tensors.size() <
-                               kJetsonTensorHandoffBuffers ||
-                           handle->interrupted.load(std::memory_order_acquire);
-                });
-                if (handle->interrupted.load(std::memory_order_acquire)) {
-                    delete_managed_tensor(&tensor->managed);
-                    return GST_FLOW_FLUSHING;
+            if (!handle->negotiated_frame_info_valid) {
+                handle->negotiated_frame_info = frame_info;
+                handle->negotiated_frame_info_valid = true;
+            } else if (frame_caps_changed(
+                           handle->negotiated_frame_info, frame_info)) {
+                std::snprintf(
+                    handle->caps_change_error,
+                    sizeof(handle->caps_change_error),
+                    "Jetson source dimensions changed from %ux%u to %ux%u; "
+                    "restart the source to refresh workflow metadata",
+                    handle->negotiated_frame_info.width,
+                    handle->negotiated_frame_info.height,
+                    frame_info.width,
+                    frame_info.height);
+                handle->caps_changed = true;
+                delete_managed_tensor(&tensor->managed);
+            } else {
+                // Conversion accounting is complete before a lossless file
+                // source potentially waits for FIFO space, keeping the
+                // counters coherent even when stats are sampled while the
+                // callback is backpressured.
+                handle->stats.frames += 1;
+                handle->stats.conversion_kernels += 1;
+                handle->stats.nvmm_frames += 1;
+                if (handle->latest_only && !handle->ready_tensors.empty()) {
+                    // Live sources keep latency bounded by replacing the frame
+                    // that the consumer has not collected yet.
+                    delete_managed_tensor(&handle->ready_tensors.back()->managed);
+                    handle->ready_tensors.pop_back();
+                    handle->stats.frames_dropped_by_consumer += 1;
+                } else if (!handle->latest_only) {
+                    handle->handoff_space.wait(lock, [handle]() {
+                        return handle->ready_tensors.size() <
+                                   kJetsonTensorHandoffBuffers ||
+                               handle->interrupted.load(std::memory_order_acquire);
+                    });
+                    if (handle->interrupted.load(std::memory_order_acquire)) {
+                        delete_managed_tensor(&tensor->managed);
+                        return GST_FLOW_FLUSHING;
+                    }
                 }
+                handle->ready_tensors.push_back(tensor);
             }
-            handle->ready_tensors.push_back(tensor);
-            handle->last_frame_info = frame_info;
-            handle->frame_info_valid = true;
         }
     }
     handle->frame_ready.notify_all();
@@ -1085,10 +1158,9 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
-    // v4: streaming-thread conversion + source-aware tensor handoff, direct
-    // NV12 path, and frames_dropped_by_consumer in RfBridgeStats. The bounded
-    // file FIFO is an internal behavior fix and does not alter this ABI.
-    return "4";
+    // v5: frame info carries the selected tensor's source-clock and local
+    // arrival timing, so v4 consumers must not interpret the larger ABI.
+    return "5";
 }
 
 __attribute__((visibility("default")))
@@ -1250,6 +1322,7 @@ int rf_jetson_pipeline_grab(
         std::unique_lock<std::mutex> lock(handle->mutex);
         const auto frame_or_terminal = [handle]() {
             return !handle->ready_tensors.empty() || handle->conversion_failed ||
+                   handle->caps_changed ||
                    handle->interrupted.load(std::memory_order_acquire) ||
                    handle->eos.load(std::memory_order_acquire);
         };
@@ -1263,6 +1336,11 @@ int rf_jetson_pipeline_grab(
         if (handle->conversion_failed) {
             write_error(error, error_capacity, "%s", handle->conversion_error);
             handle->conversion_failed = false;
+            return -1;
+        }
+        if (handle->caps_changed) {
+            write_error(error, error_capacity, "%s", handle->caps_change_error);
+            handle->caps_changed = false;
             return -1;
         }
         if (handle->grabbed_tensor != nullptr) {
@@ -1305,11 +1383,11 @@ int rf_jetson_pipeline_get_frame_info(
         return -1;
     }
     std::lock_guard<std::mutex> lock(handle->mutex);
-    if (!handle->frame_info_valid) {
-        write_error(error, error_capacity, "Frame caps do not contain dimensions");
+    if (handle->grabbed_tensor == nullptr) {
+        write_error(error, error_capacity, "No grabbed frame is available");
         return -1;
     }
-    *info = handle->last_frame_info;
+    *info = handle->grabbed_tensor->frame_info;
     gint64 duration = GST_CLOCK_TIME_NONE;
     if (gst_element_query_duration(handle->pipeline, GST_FORMAT_TIME, &duration)) {
         info->duration_ns = duration;

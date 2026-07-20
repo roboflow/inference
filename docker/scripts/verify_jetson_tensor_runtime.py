@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -156,6 +157,20 @@ def _prepare_h26x_fixture(
     )
 
 
+def _prepare_bundled_fixture(path: Path, fixture_env: str) -> None:
+    """Copy a configured or image-bundled specialized media fixture."""
+
+    configured_fixture = os.getenv(fixture_env)
+    source = (
+        Path(configured_fixture)
+        if configured_fixture
+        else (_BUNDLED_FIXTURE_DIRECTORY / path.name)
+    )
+    if not source.is_file():
+        raise RuntimeError(f"Required media fixture does not exist: {source}")
+    shutil.copyfile(source, path)
+
+
 def _create_jpeg(path: Path) -> None:
     """Create a JPEG fixture without requiring a hardware encoder."""
 
@@ -195,9 +210,11 @@ def _validate_source(path: Path, minimum_frames: int) -> None:
     assert channel_means[0] > channel_means[2] + 80
     first_snapshot = first.clone()
     tensors: List[torch.Tensor] = [first]
+    frame_timestamps = [producer.frame_timestamp()]
     tensor = None
 
     while len(tensors) < 5 and producer.grab():
+        frame_timestamps.append(producer.frame_timestamp())
         success, tensor = producer.retrieve()
         assert success and tensor is not None
         assert tensor.is_cuda
@@ -205,6 +222,8 @@ def _validate_source(path: Path, minimum_frames: int) -> None:
         tensors.append(tensor)
 
     assert len(tensors) >= minimum_frames
+    assert all(isinstance(timestamp, datetime) for timestamp in frame_timestamps)
+    assert frame_timestamps == sorted(frame_timestamps)
     stats = producer.tensor_bridge_stats
     assert stats["frames"] >= len(tensors)
     assert stats["descriptor_maps"] == stats["frames"]
@@ -263,6 +282,27 @@ def _validate_repeated_grab_advances(path: Path) -> None:
     assert success and frame_after_second_grab is not None
     assert torch.equal(frame_after_second_grab, second_frame)
     producer.release()
+
+
+def _validate_dimension_change_requires_reconnect(path: Path) -> None:
+    """Reject renegotiated dimensions before stale source metadata is emitted."""
+
+    producer = JetsonVideoFrameProducer(str(path), output_tensor=True)
+    try:
+        properties = producer.discover_source_properties()
+        assert (properties.width, properties.height) == (320, 180)
+        success, tensor = producer.retrieve()
+        assert success and tuple(tensor.shape) == (3, 180, 320)
+        try:
+            while producer.grab():
+                success, tensor = producer.retrieve()
+                assert success and tuple(tensor.shape) == (3, 180, 320)
+        except RuntimeError as error:
+            assert "dimensions changed" in str(error)
+        else:
+            raise AssertionError("Dynamic dimensions did not request a source restart")
+    finally:
+        producer.release()
 
 
 def _validate_threaded_retrieve(path: Path) -> None:
@@ -392,6 +432,7 @@ def _validate_live_rtsp_source(url: str) -> None:
         assert video_frame is not None
         assert isinstance(video_frame.image, torch.Tensor)
         assert video_frame.image.is_cuda
+        assert abs((datetime.now() - video_frame.frame_timestamp).total_seconds()) < 30
         print("RTSP_VIDEO_SOURCE_TENSOR_PROBE_OK")
     finally:
         video_source.terminate(
@@ -408,6 +449,7 @@ def main() -> None:
         h265_path = root / "test.h265"
         jpeg_path = root / "test.jpg"
         changing_h264_path = root / "changing.h264"
+        resolution_change_path = root / "resolution-change.h264"
         _prepare_h26x_fixture(
             h264_path,
             encoder="nvv4l2h264enc",
@@ -429,6 +471,10 @@ def main() -> None:
             pattern="blink",
             fixture_env="ROBOFLOW_JETSON_TEST_CHANGING_H264_FIXTURE",
         )
+        _prepare_bundled_fixture(
+            resolution_change_path,
+            "ROBOFLOW_JETSON_TEST_RESOLUTION_CHANGE_FIXTURE",
+        )
         _create_jpeg(jpeg_path)
         _validate_source(h264_path, minimum_frames=5)
         _validate_numpy_source(h264_path)
@@ -436,6 +482,7 @@ def main() -> None:
         _validate_source(h265_path, minimum_frames=5)
         _validate_source(jpeg_path, minimum_frames=1)
         _validate_repeated_grab_advances(changing_h264_path)
+        _validate_dimension_change_requires_reconnect(resolution_change_path)
         _validate_interrupt_unblocks_pull()
 
     rtsp_url = os.getenv("ROBOFLOW_JETSON_TEST_RTSP_URL")
