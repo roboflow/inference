@@ -5,7 +5,8 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.fusion.frame_delay.v1 import (
-    BUFFER_MARGIN,
+    MAX_OFFSET,
+    MAX_TRACKED_VIDEOS,
     BlockManifest,
     FrameDelayBlockV1,
 )
@@ -120,9 +121,69 @@ def test_buffer_is_bounded() -> None:
     for n in range(500):
         block.run(image=_image(n), data=f"det-{n}", offset=offset)
 
-    # then - only the retention window is kept in memory
+    # then - only the addressable window is kept in memory, nothing older
     buffer = block._buffers["vid_1"]
-    assert len(buffer) <= abs(offset) + BUFFER_MARGIN + 1
+    assert len(buffer) == abs(offset) + 1
+    assert sorted(buffer) == [496, 497, 498, 499]
+
+
+def test_offset_below_maximum_rejected_at_runtime() -> None:
+    # given
+    block = FrameDelayBlockV1()
+
+    # when / then - an unbounded delay would retain unbounded memory
+    with pytest.raises(ValueError):
+        block.run(image=_image(0), data="det-0", offset=-(MAX_OFFSET + 1))
+
+
+def test_offset_below_maximum_rejected_by_manifest() -> None:
+    # when / then
+    with pytest.raises(ValidationError):
+        BlockManifest(
+            type="roboflow_core/frame_delay@v1",
+            image="$inputs.image",
+            data="$steps.model.predictions",
+            offset=-(MAX_OFFSET + 1),
+        )
+
+
+def test_maximum_offset_accepted() -> None:
+    # given
+    block = FrameDelayBlockV1()
+
+    # when - the boundary value itself is valid
+    result = block.run(image=_image(0), data="det-0", offset=-MAX_OFFSET)
+
+    # then
+    assert result["is_available"] is False
+
+
+def test_buffer_is_cleared_when_frame_numbers_restart() -> None:
+    # given - a stream that reconnects and restarts its frame numbering
+    block = FrameDelayBlockV1()
+    for n in range(1000, 1010):
+        block.run(image=_image(n), data=f"old-{n}", offset=-1)
+
+    # when
+    result = block.run(image=_image(0), data="new-0", offset=-1)
+
+    # then - stale high-numbered frames are gone rather than pinned forever
+    assert result["is_available"] is False
+    assert list(block._buffers["vid_1"]) == [0]
+
+
+def test_inactive_video_buffers_are_evicted() -> None:
+    # given
+    block = FrameDelayBlockV1()
+
+    # when - more streams pass through than the tracking limit allows
+    for stream in range(MAX_TRACKED_VIDEOS + 5):
+        block.run(image=_image(0, video_id=f"vid_{stream}"), data="det-0", offset=-1)
+
+    # then - the oldest streams are dropped, the most recent are retained
+    assert len(block._buffers) == MAX_TRACKED_VIDEOS
+    assert "vid_0" not in block._buffers
+    assert f"vid_{MAX_TRACKED_VIDEOS + 4}" in block._buffers
 
 
 def test_state_persists_across_runs() -> None:

@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -31,10 +31,15 @@ OUTPUT_KEY = "output"
 IS_AVAILABLE_KEY = "is_available"
 REFERENCE_FRAME_KEY = "reference_frame_number"
 
-# Extra frames to retain in the per-video buffer beyond the strict lookup window,
-# guarding against small frame-number gaps (e.g. dropped frames) when resolving
-# past offsets.
-BUFFER_MARGIN = 64
+# Largest supported |offset|. Buffered frames are retained in process memory, so a
+# large offset applied to an image stream is expensive: at 1080p a single BGR frame is
+# ~6 MB, so |offset| = 256 holds ~1.6 GB per stream.
+MAX_OFFSET = 256
+
+# Upper bound on the number of concurrently tracked `video_identifier` values. Streams
+# are evicted least-recently-used first so that ended streams cannot retain their
+# buffers for the lifetime of the workflow.
+MAX_TRACKED_VIDEOS = 16
 
 SHORT_DESCRIPTION = (
     "Reference a value from an earlier frame of the same video stream "
@@ -69,13 +74,32 @@ delaying the entire workflow output, which is not possible on synchronous runtim
 ## Requirements and Limitations
 
 - `offset` must be `<= 0`. Positive offsets are rejected.
+- `|offset|` may not exceed 256. Each buffered frame is held in memory, so delaying an
+  image stream by a large offset is costly (~6 MB per frame at 1080p, ~25 MB at 4K).
+  Prefer delaying a small derived value over a full image where possible.
 - Past offsets work in every execution context; no output delay is introduced.
 - State is kept in process memory keyed by `video_identifier`; it degrades on
   stateless/multi-replica remote HTTP runtimes.
+- At most 16 streams are tracked concurrently; the least recently seen stream's buffer
+  is discarded beyond that.
+- A stream whose `frame_number` restarts (e.g. on reconnect) has its buffer cleared.
 - State persists for the lifetime of the workflow and resets on restart.
 - Values are unavailable (returning `default_value`) until enough frames have been
   processed to reach the requested `|offset|` depth.
 """
+
+
+def _validate_offset(offset: int) -> None:
+    if offset > 0:
+        raise ValueError(
+            "Frame Delay only supports past offsets: `offset` must be <= 0 "
+            f"(got {offset})."
+        )
+    if offset < -MAX_OFFSET:
+        raise ValueError(
+            f"Frame Delay supports an `offset` no smaller than -{MAX_OFFSET}, since "
+            f"every buffered frame is retained in memory (got {offset})."
+        )
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -126,7 +150,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     offset: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         description="Relative frame offset into the past. Must be <= 0: e.g. -1 is the "
-        "previous frame, -10 is ten frames ago, 0 is the current frame.",
+        "previous frame, -10 is ten frames ago, 0 is the current frame. "
+        f"Limited to -{MAX_OFFSET}, since every buffered frame is held in memory.",
         examples=[-1, -5, -10, "$inputs.offset"],
     )
     default_value: Optional[Union[bool, int, float, str]] = Field(
@@ -138,14 +163,11 @@ class BlockManifest(WorkflowBlockManifest):
 
     @field_validator("offset")
     @classmethod
-    def _offset_must_be_non_positive(cls, value: Any) -> Any:
+    def _offset_must_be_in_range(cls, value: Any) -> Any:
         # Selectors (e.g. "$inputs.offset") are strings resolved at runtime and are
         # validated in `run()`; only literal integers can be checked here.
-        if isinstance(value, int) and value > 0:
-            raise ValueError(
-                "Frame Delay only supports past offsets: `offset` must be <= 0 "
-                f"(got {value})."
-            )
+        if isinstance(value, int):
+            _validate_offset(value)
         return value
 
     @classmethod
@@ -170,8 +192,9 @@ class BlockManifest(WorkflowBlockManifest):
 
 class FrameDelayBlockV1(WorkflowBlock):
     def __init__(self):
-        self._buffers: Dict[str, "OrderedDict[int, Any]"] = {}
-        self._offset: int = 0
+        # Ordered least- to most-recently-seen video, so that buffers belonging to
+        # streams that have ended can be evicted.
+        self._buffers: "OrderedDict[str, OrderedDict[int, Any]]" = OrderedDict()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -185,32 +208,45 @@ class FrameDelayBlockV1(WorkflowBlock):
         default_value: Optional[Union[bool, int, float, str]] = None,
     ) -> BlockResult:
         offset = int(offset)
-        if offset > 0:
-            raise ValueError(
-                "Frame Delay only supports past offsets: `offset` must be <= 0 "
-                f"(got {offset})."
-            )
-        self._offset = offset
+        _validate_offset(offset)
         metadata = image.video_metadata
         video_id = metadata.video_identifier or "default"
         frame_number = metadata.frame_number
-        buffer = self._buffers.setdefault(video_id, OrderedDict())
+        buffer = self._track_video(video_id=video_id)
+        if buffer and frame_number < next(reversed(buffer)):
+            # Frame numbers went backwards, so this is a different stream reusing the
+            # identifier (e.g. a reconnect). Nothing buffered under the previous
+            # numbering can be resolved against the new one, and keeping it would
+            # defeat eviction, whose cutoff is relative to the newest frame.
+            buffer.clear()
         buffer[frame_number] = data
         target_frame = frame_number + offset
         is_available = target_frame in buffer
         value = buffer[target_frame] if is_available else default_value
-        self._evict(buffer=buffer, newest_frame=frame_number)
+        self._evict(buffer=buffer, newest_frame=frame_number, offset=offset)
         return {
             OUTPUT_KEY: value,
             IS_AVAILABLE_KEY: is_available,
             REFERENCE_FRAME_KEY: frame_number,
         }
 
-    def _evict(self, buffer: "OrderedDict[int, Any]", newest_frame: int) -> None:
-        # Retain |offset| frames of history plus a margin for small frame-number gaps
-        # (e.g. dropped frames); drop everything older to keep memory bounded.
-        window = abs(self._offset) + BUFFER_MARGIN
-        cutoff = newest_frame - window
+    def _track_video(self, video_id: str) -> "OrderedDict[int, Any]":
+        buffer = self._buffers.get(video_id)
+        if buffer is None:
+            buffer = OrderedDict()
+        self._buffers[video_id] = buffer
+        self._buffers.move_to_end(video_id)
+        while len(self._buffers) > MAX_TRACKED_VIDEOS:
+            self._buffers.popitem(last=False)
+        return buffer
+
+    def _evict(
+        self, buffer: "OrderedDict[int, Any]", newest_frame: int, offset: int
+    ) -> None:
+        # Retain exactly the frames the lookup can reach: `newest_frame + offset` up to
+        # `newest_frame`. Older frames are never addressable, since the lookup is an
+        # exact frame-number match, so holding them only costs memory.
+        cutoff = newest_frame - abs(offset)
         while buffer:
             oldest_frame = next(iter(buffer))
             if oldest_frame >= cutoff:
