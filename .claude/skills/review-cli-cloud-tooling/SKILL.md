@@ -36,7 +36,7 @@ Two distinct cloud surfaces live here — do not conflate them:
 - Magic number hardcoded in `api_operations` instead of an `os.getenv`-backed constant in `config.py`.
 - Filesystem path handling: manual `"/"` split (#1051), glob missing the `*` wildcard (#1157), or non-deterministic/unlabeled aggregation (#891).
 - `isinstance` vs `issubclass` misuse in exception-type checks (#354).
-- Missing companions: version bump, tests, CI deps, docs, swagger (see Standards).
+- Missing companions: tests, CI deps, docs, swagger (see Standards).
 - Removal that leaves a dead export/command behind (#1211).
 
 **NIT**:
@@ -44,7 +44,7 @@ Two distinct cloud surfaces live here — do not conflate them:
 - Missing `help=` string on a new option.
 
 ### Not blocking
-- A functional CLI change with no `inference/core/version.py` bump can be dismissed by the contributor in a comment — parallel changes may share the release, and the bump is often coordinated at release time. Flag it, don't block.
+- Do NOT ask for an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs; the bump is coordinated at release time.
 - `inference_cli/version.py` `__version__` is auto-adjusted by the PyPI-build CI action — do NOT ask for a manual bump there.
 - The `cloud` app (SkyPilot) deliberately uses `str` options, single-char shorts, and a bare `except Exception` → exit-1 envelope with no `debug_mode`. Do NOT demand the `rf-cloud` conventions on `cloud.py`/`cloud_adapter.py` — it is a separate, older surface.
 - Speed/latency evidence for benchmark changes is verifiable via the PR description, not the diff.
@@ -76,7 +76,7 @@ Two distinct cloud surfaces live here — do not conflate them:
 **Enterprise extension isolation.** `inference_cli/lib/enterprise/**` ships its own `LICENSE.txt`, is mounted as the `enterprise` typer app, and its heavy/optional TRT deps (under `enterprise/inference_compiler/`) must be import-guarded so the base CLI still imports. (#2186, #1679.)
 
 ## Required companions
-- **Version bump** — most CLI PRs bump `inference/core/version.py` `__version__`. Flag if absent, but dismissible (see Not blocking). Ignore `inference_cli/version.py` (CI-managed).
+- **Versioning** — no `inference/core/version.py` bump is required (release-time concern, see Not blocking). Ignore `inference_cli/version.py` (CI-managed).
 - **Tests** — logic changes need unit tests under `tests/inference_cli/unit_tests/lib/...` mirroring the source tree; user-visible changes update integration tests under `tests/inference_cli/integration_tests/`. (#891 updated both.)
 - **CI deps** — new runtime imports must be covered by the unit-test CI install list; `inference` is an optional dep, so new deps typically belong in `requirements/requirements.cli.txt`.
 - **Docs** — user-facing command/option changes update `docs/inference_helpers/cli_commands/{benchmark,cloud,workflows,infer,server}.md`. Batch-processing API swagger is exposed externally - tag @Erol444.
@@ -90,11 +90,10 @@ Two distinct cloud surfaces live here — do not conflate them:
 - `inference_cli/lib/roboflow_cloud/{common,config,errors,core}.py` — shared HTTP/retry/config/error taxonomy + `rf_cloud_app`.
 - `inference_cli/lib/roboflow_cloud/{data_staging,batch_processing}/{core,api_operations,entities}.py` — `rf-cloud` commands + wire schemas.
 - `inference_cli/lib/enterprise/inference_compiler/**` — TRT compiler extension (own LICENSE).
-- `inference/core/version.py` — the `__version__` bumped by CLI PRs.
 - Tests: `tests/inference_cli/{unit_tests,integration_tests}/**`. Docs: `docs/inference_helpers/cli_commands/**`.
 
 ## Reference PRs
-- [#2399](https://github.com/roboflow/inference/pull/2399) — feature: Asset Library metadata threaded entity→api_op→core; version bump + CI deps.
+- [#2399](https://github.com/roboflow/inference/pull/2399) — feature: Asset Library metadata threaded entity→api_op→core; CI deps.
 - [#2062](https://github.com/roboflow/inference/pull/2062) — feature: selectable `InferenceBackend` enum for batch processing (+ swagger).
 - [#2143](https://github.com/roboflow/inference/pull/2143) — feature: add job name to batch jobs (+ swagger).
 - [#1950](https://github.com/roboflow/inference/pull/1950) — feature: env-configurable `ROBOFLOW_API_REQUEST_TIMEOUT` in `config.py`.

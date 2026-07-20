@@ -19,7 +19,7 @@ OUT of scope (defer): library/business logic under `inference/`, `inference_mode
 ## Review checklist
 
 **BLOCK**
-- Version changed anywhere → confirm ALL of `inference/core/version.py` (`__version__`), `inference_models/pyproject.toml` (`version`), `inference_models/uv.lock`, and the 4 `inference-models~=` requirement pins move together; RC suffix consistent everywhere (#2341).
+- Release PR (`inference/core/version.py` `__version__` changed) → confirm ALL of `inference_models/pyproject.toml` (`version`), `inference_models/uv.lock`, and the 4 `inference-models~=` requirement pins move together; RC suffix consistent everywhere (#2341). The reverse does NOT hold: an `inference_models` version bump alone does not require an `inference/core/version.py` bump (the package versions independently).
 - `inference-models` pin bumped in one requirements file but not all 4 (`requirements.{cpu,gpu,vino,jetson}.txt`), or the `# keep in sync` comment deleted (#2341, #2144).
 - `inference_models/pyproject.toml` deps changed with no regenerated `inference_models/uv.lock` in the same PR (#2301).
 - New/edited workflow missing top-level `permissions:` (least privilege) (#1242, #1484).
@@ -48,6 +48,7 @@ OUT of scope (defer): library/business logic under `inference/`, `inference_mode
 - Adding an upper bound to a dependency proactively is a normal maintainer move, not a regression — don't demand a linked failure for every bound.
 - Cosmetic reordering / comment rewording that preserves behavior.
 - A version bump PR that touches many files is expected; the release template legitimately spans version.py + pyproject + uv.lock + 4 requirements files.
+- Do NOT demand an `inference/core/version.py` bump on non-release PRs — inference releases are versioned separately; the lock-step checks above apply only when a version actually changes in the diff.
 
 ## Standards
 
