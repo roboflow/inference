@@ -359,8 +359,16 @@ RUN set -eux; \
     test -e "$1"; \
     printf '%s  %s\n' "${TRACKTORS_WHEEL_SHA256}" "$1" | sha256sum -c -
 
-RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
-    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
+RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torch_wheel="$1" && \
+    set -- /opt/wheels/torchvision-${TORCHVISION_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torchvision_wheel="$1" && \
+    printf 'torch @ file://%s\n' "${torch_wheel}" > /tmp/overrides.txt && \
+    printf 'torchvision @ file://%s\n' "${torchvision_wheel}" >> /tmp/overrides.txt && \
     echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/overrides.txt && \
     echo "tracktors==${TRACKTORS_VERSION}" >> /tmp/overrides.txt && \
     uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
@@ -424,8 +432,16 @@ RUN cd /usr/local/lib/python3.12/dist-packages && \
     rm -rf */examples */benchmarks */docs || true && \
     rm -rf skimage/data || true
 
-RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
-    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
+RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torch_wheel="$1" && \
+    set -- /opt/wheels/torchvision-${TORCHVISION_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torchvision_wheel="$1" && \
+    printf 'torch @ file://%s\n' "${torch_wheel}" > /tmp/runtime-overrides.txt && \
+    printf 'torchvision @ file://%s\n' "${torchvision_wheel}" >> /tmp/runtime-overrides.txt && \
     echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
     echo "tracktors==${TRACKTORS_VERSION}" >> /tmp/runtime-overrides.txt && \
     uv pip install --target /opt/python-runtime \
@@ -466,6 +482,27 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
     python3 -m pip install --no-deps --target /opt/python-runtime \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl && \
+    # The index Torch candidate pulled 2.9 GB of duplicate CUDA libraries.
+    # Our pinned wheel is built against the JP7.2 libraries installed above,
+    # and NCCL/CUPTI are disabled, so retain nvidia-ml-py but remove the unused
+    # split CUDA payloads before this layer is committed.
+    rm -rf \
+        /opt/python-runtime/nvidia \
+        /opt/python-runtime/nvidia_cublas-*.dist-info \
+        /opt/python-runtime/nvidia_cuda_cupti-*.dist-info \
+        /opt/python-runtime/nvidia_cuda_nvrtc-*.dist-info \
+        /opt/python-runtime/nvidia_cuda_runtime-*.dist-info \
+        /opt/python-runtime/nvidia_cudnn_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_cufft-*.dist-info \
+        /opt/python-runtime/nvidia_cufile-*.dist-info \
+        /opt/python-runtime/nvidia_curand-*.dist-info \
+        /opt/python-runtime/nvidia_cusolver-*.dist-info \
+        /opt/python-runtime/nvidia_cusparse-*.dist-info \
+        /opt/python-runtime/nvidia_cusparselt_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_nccl_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_nvjitlink-*.dist-info \
+        /opt/python-runtime/nvidia_nvshmem_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_nvtx-*.dist-info && \
     PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \

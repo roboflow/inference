@@ -73,7 +73,6 @@ import cv2
 import flash_attn
 import importlib.metadata
 import importlib.util
-from pathlib import Path
 import onnxruntime
 import supervision
 import tensorrt
@@ -111,13 +110,31 @@ for replaced_distribution in ("supervision", "trackers"):
         continue
     raise AssertionError((replaced_distribution, installed_version))
 
-# PyTorch's generic aarch64 wheel carries CUDA user-space components below the
-# Python runtime.  In particular, NCCL must be image-bundled: the host is only
-# allowed to supply the driver/device interface via nvidia-container-runtime.
-nccl_spec = importlib.util.find_spec("nvidia.nccl")
-assert nccl_spec is not None and nccl_spec.submodule_search_locations, nccl_spec
-nccl_directory = Path(next(iter(nccl_spec.submodule_search_locations))) / "lib"
-assert any(nccl_directory.glob("libnccl.so*")), nccl_directory
+# The custom Torch wheel links to the JP7.2 CUDA libraries installed by APT.
+# Keep those libraries in the image, but reject the duplicate split-CUDA
+# payloads that an equally-versioned upstream Torch candidate would introduce.
+for redundant_distribution in (
+    "nvidia-cublas",
+    "nvidia-cuda-cupti",
+    "nvidia-cuda-nvrtc",
+    "nvidia-cuda-runtime",
+    "nvidia-cudnn-cu13",
+    "nvidia-cufft",
+    "nvidia-cufile",
+    "nvidia-curand",
+    "nvidia-cusolver",
+    "nvidia-cusparse",
+    "nvidia-cusparselt-cu13",
+    "nvidia-nccl-cu13",
+    "nvidia-nvjitlink",
+    "nvidia-nvshmem-cu13",
+    "nvidia-nvtx",
+):
+    try:
+        redundant_version = importlib.metadata.version(redundant_distribution)
+    except importlib.metadata.PackageNotFoundError:
+        continue
+    raise AssertionError((redundant_distribution, redundant_version))
 
 for module in (
     "build",
