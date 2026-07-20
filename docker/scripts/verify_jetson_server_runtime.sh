@@ -84,9 +84,9 @@ import trackers
 from torchvision import io as torchvision_io
 
 arch_flags = set(torch._C._cuda_getArchFlags().split())
-# JetPack 7.2 is our Thor image; the corresponding PyTorch 2.13 wheel is
-# explicitly compiled for Blackwell's sm_110 target. Orin remains on JP6.
-assert "sm_110" in arch_flags, arch_flags
+# The JP7.2 server image is shared by Orin and Thor, so the bundled PyTorch
+# wheel must retain both architecture targets after dependency resolution.
+assert {"sm_87", "sm_110"} <= arch_flags, arch_flags
 
 providers = set(onnxruntime.get_available_providers())
 assert {"CUDAExecutionProvider", "TensorrtExecutionProvider"}.issubset(providers)

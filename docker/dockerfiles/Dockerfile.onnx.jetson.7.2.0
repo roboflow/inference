@@ -386,8 +386,15 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     /opt/wheels/triton-*.whl \
     "setuptools>=77.0.3,<82" \
     "transformers>=4.57.3,<5.9.0" \
-    packaging \
-    && rm -rf ~/.cache/uv /tmp/overrides.txt
+    packaging && \
+    # Requirements also name torch==2.13.0. Reinstall from the wheel bundle
+    # after resolution so an equally-versioned index wheel cannot replace our
+    # SM87/SM110 build when unsafe-best-match considers every configured index.
+    python3 -m pip install --break-system-packages --no-deps --force-reinstall \
+        /opt/wheels/torch-*.whl \
+        /opt/wheels/torchvision-*.whl && \
+    python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
+    rm -rf ~/.cache/uv /tmp/overrides.txt
 
 WORKDIR /build/inference
 COPY . .
@@ -448,6 +455,18 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         "setuptools>=77.0.3" \
         "transformers>=4.57.3,<5.9.0" \
         packaging && \
+    rm -rf \
+        /opt/python-runtime/functorch \
+        /opt/python-runtime/torch \
+        /opt/python-runtime/torch-*.dist-info \
+        /opt/python-runtime/torchgen \
+        /opt/python-runtime/torchvision \
+        /opt/python-runtime/torchvision-*.dist-info \
+        /opt/python-runtime/torchvision.libs && \
+    python3 -m pip install --no-deps --target /opt/python-runtime \
+        /opt/wheels/torch-*.whl \
+        /opt/wheels/torchvision-*.whl && \
+    PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \
     # Some optional application dependencies still name the upstream projects.
