@@ -27,6 +27,9 @@ from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.torch import torchscript_global_lock
+from inference_models.models.sam3.chunked_postprocessing import (
+    ChunkedPostProcessImage,
+)
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsCache,
     Sam3ImageEmbeddingsCacheNullObject,
@@ -529,8 +532,15 @@ class SAM3Torch:
         images: Union[np.ndarray, List[np.ndarray]],
         prompts: List[Dict],
         output_prob_thresh: float = 0.5,
+        max_detections: int = -1,
+        mask_format: str = "dense",
         **kwargs,
     ) -> List[Dict]:
+        if mask_format not in ("dense", "rle"):
+            raise ModelInputError(
+                message=f"Unsupported mask_format: {mask_format}. Use 'dense' or 'rle'.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         images_list = maybe_wrap_in_list(images)
         if images_list is None:
             raise ModelInputError(
@@ -583,12 +593,12 @@ class SAM3Torch:
 
                     output = self._model(batch)
 
-                    post = PostProcessImage(
-                        max_dets_per_img=-1,
+                    post = ChunkedPostProcessImage(
+                        max_dets_per_img=int(max_detections),
                         iou_type="segm",
                         use_original_sizes_box=True,
                         use_original_sizes_mask=True,
-                        convert_mask_to_rle=False,
+                        convert_mask_to_rle=mask_format == "rle",
                         detection_threshold=float(output_prob_thresh),
                         to_cpu=True,
                     )
@@ -596,15 +606,20 @@ class SAM3Torch:
 
             image_results = []
             for idx, coco_id in enumerate(prompt_ids):
-                masks = processed[coco_id].get("masks")
                 scores = processed[coco_id].get("scores", [])
 
-                if masks is not None:
-                    if hasattr(masks, "detach"):
-                        masks = masks.detach().cpu().numpy()
-                    masks = np.array(masks)
+                if mask_format == "rle":
+                    # COCO RLE dicts, already encoded per-mask by the
+                    # postprocessor — dense full-res masks never materialize
+                    masks = processed[coco_id].get("masks_rle") or []
                 else:
-                    masks = np.zeros((0, h, w), dtype=np.uint8)
+                    masks = processed[coco_id].get("masks")
+                    if masks is not None:
+                        if hasattr(masks, "detach"):
+                            masks = masks.detach().cpu().numpy()
+                        masks = np.array(masks)
+                    else:
+                        masks = np.zeros((0, h, w), dtype=np.uint8)
 
                 image_results.append(
                     {
