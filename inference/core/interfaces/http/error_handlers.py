@@ -75,8 +75,11 @@ from inference.core.workflows.errors import (
     WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
-    InnerWorkflowCompositionError,
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowInvalidStepEntryError,
+    InnerWorkflowNestingDepthError,
     InnerWorkflowParameterBindingsError,
+    InnerWorkflowTotalCountError,
 )
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -249,7 +252,10 @@ def with_route_exceptions(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
-            InnerWorkflowCompositionError,
+            InnerWorkflowCompositionCycleError,
+            InnerWorkflowInvalidStepEntryError,
+            InnerWorkflowNestingDepthError,
+            InnerWorkflowTotalCountError,
             InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
@@ -725,7 +731,10 @@ def with_route_exceptions_async(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
-            InnerWorkflowCompositionError,
+            InnerWorkflowCompositionCycleError,
+            InnerWorkflowInvalidStepEntryError,
+            InnerWorkflowNestingDepthError,
+            InnerWorkflowTotalCountError,
             InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
