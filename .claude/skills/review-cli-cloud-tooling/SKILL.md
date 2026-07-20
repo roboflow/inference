@@ -80,7 +80,7 @@ Two distinct cloud surfaces live here — do not conflate them:
 - **Tests** — logic changes need unit tests under `tests/inference_cli/unit_tests/lib/...` mirroring the source tree; user-visible changes update integration tests under `tests/inference_cli/integration_tests/`. (#891 updated both.)
 - **CI deps** — new runtime imports must be covered by the unit-test CI install list; `inference` is an optional dep, so new deps typically belong in `requirements/requirements.cli.txt`.
 - **Docs** — user-facing command/option changes update `docs/inference_helpers/cli_commands/{benchmark,cloud,workflows,infer,server}.md`. Batch-processing API swagger is exposed externally - tag @Erol444.
-- **Enterprise / inference_models** — inference-compiler PRs (#2186) also touch `inference_models/pyproject.toml`, `inference_models/docs/changelog.md`, and weights-provider code — verify they move together.
+- **Enterprise / inference_models** — inference-compiler PRs (#2186) also touch weights-provider code and must add user-facing changes under `## Unreleased` in `inference_models/docs/changelog.md`; apply `review-inference-models-pkg` to any `pyproject.toml` dependency changes, but do not ask the contributor for a version bump.
 
 ## Key files & entry points
 - `inference_cli/main.py` — root Typer `app` + `--version` callback; mounts `server`/`cloud`/`benchmark`/`workflows`/`rf-cloud`/`enterprise` sub-apps.

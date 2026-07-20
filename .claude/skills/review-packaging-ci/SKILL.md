@@ -67,9 +67,9 @@ OUT of scope (defer): library/business logic under `inference/`, `inference_mode
 
 ## Required companions
 Block the PR if a change lacks its companion:
-- **Release PR** ("Release X.Y.Z") → bump `inference/core/version.py` `__version__` AND `inference_models/pyproject.toml` `version` AND `inference_models/uv.lock` AND all 4 `inference-models~=` pins. RC→final drops the `rc` suffix in every place (#2341).
+- **Release PR** ("Release X.Y.Z") → bump `inference/core/version.py` `__version__` AND `inference_models/pyproject.toml` `version` AND `inference_models/uv.lock` AND all 4 `inference-models~=` pins, then amend `inference_models/docs/changelog.md` by replacing `## Unreleased` with the released version heading and adding a fresh `## Unreleased` section. RC→final drops the `rc` suffix in every place (#2341).
 - **`inference-models` bump anywhere** → the other 3 requirements files + `pyproject.toml` + `uv.lock`. Never one-of-four (#2341).
-- **`inference_models/pyproject.toml` dep add/bump** → regenerated `inference_models/uv.lock` in the same PR (#2301) + an `inference_models/docs/changelog.md` entry under the new `## \`X.Y.Z\`` header for user-facing changes.
+- **`inference_models/pyproject.toml` dep add/bump** → regenerated `inference_models/uv.lock` in the same PR (#2301) + an `inference_models/docs/changelog.md` entry under `## Unreleased` for user-facing changes.
 - **New Docker image target** → its `.github/workflows/docker.<name>.yml` + Dockerfile + (if published) publish script + `permissions:`. Removing a target removes all of these (#2149).
 - **New PyPI wheel / requirements group** → wire into `.release/pypi/*.setup.py` and/or `Makefile:create_wheels` and the relevant `test_package_install_*.yml`.
 - **New runtime dep** → correct `requirements/*.txt` AND every Dockerfile target that uses it (system libs via `apt/dnf`, e.g. `libvips` #1209, `rustc` #975).

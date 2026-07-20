@@ -66,7 +66,7 @@ These hold regardless of category — the per-category references only add nuanc
 - [ ] Producing/moving detections: parent-coordinate metadata attached.
 - [ ] Stateful block: state keyed by `video_identifier` + evicted; `get_restrictions()` declared; `NotImplementedError` on `StepExecutionMode.REMOTE` if remote is incoherent.
 - [ ] Unit test under `tests/workflows/unit_tests/core_steps/...` + integration test under `tests/workflows/integration_tests/execution/...`.
-- [ ] Bump `EXECUTION_ENGINE_V1_VERSION` + `docs/workflows/execution_engine_changelog.md` ONLY if the EE itself changed (no `inference/core/version.py` bump — that is handled at release time).
+- [ ] If the EE itself changed, add its user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`; maintainers bump the EE version at release time.
 - [ ] Do NOT hand-write `docs/workflows/blocks/<block>.md` — it is generated from manifest field descriptions.
 
 Reviewer's checklist for block PRs: `review-workflows-blocks`.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
+`### Removed` subsections as appropriate.
+
+---
+
 ## `0.31.0`
 
 ### Fixed

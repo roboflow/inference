@@ -59,7 +59,7 @@ Block a functional change that lacks these (canonical rules above; conditions he
 - **Loader registration** — new block in `load_blocks()`; new kind in `load_kinds()` + `types.py`; new serializable data-kind in `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`, all in `loader.py` (#2362, #804).
 - **Tests** — unit test always; integration test for new or output-changing blocks (#2362, #718).
 - **`__init__.py`** — in every new/nested block package (#2351, #830).
-- **EE version + changelog** — ONLY when the block forces an EE behavior change: bump `EXECUTION_ENGINE_V1_VERSION` (`execution_engine/v1/core.py`) + entry in `docs/workflows/execution_engine_changelog.md` (#2527).
+- **EE changelog** — ONLY when the block forces an EE behavior change: add an entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`; maintainers bump `EXECUTION_ENGINE_V1_VERSION` at release time.
 
 ## Key files & entry points
 - `inference/core/workflows/core_steps/loader.py` — `load_blocks()`, `load_kinds()`, `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`, `REGISTERED_INITIALIZERS`.
