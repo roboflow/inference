@@ -211,22 +211,51 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
     )
 
     # The video-only RTP capsfilter keeps an audio track from ever reaching
-    # decodebin, while decodebin selects the matching H.264/H.265 chain from
+    # parsebin, while parsebin selects the matching H.264/H.265 chain from
     # the video RTP caps. The decoder's NV12 NVMM output feeds the appsink
     # directly (the bridge converts NV12->RGB in CUDA) — no nvvidconv VIC pass.
     assert pipeline.startswith(
         'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
-        "protocols=tcp latency=50 drop-on-latency=true ! "
+        "protocols=tcp latency=50 drop-on-latency=true teardown-timeout=0 ! "
         "application/x-rtp,media=video ! "
         "queue max-size-buffers=64 max-size-bytes=0 max-size-time=50000000 ! "
     )
-    assert "decodebin name=rf_rtsp_video_decode !" in pipeline
+    assert "parsebin name=rf_rtsp_video_parse ! nvv4l2decoder !" in pipeline
     assert "uridecodebin" not in pipeline
     assert "nvvidconv" not in pipeline
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "max-buffers=1 drop=true sync=false" in pipeline
     assert "leaky" not in pipeline
+
+
+def test_rtsps_sdes_source_decrypts_before_codec_autoplugging() -> None:
+    """Route explicitly requested SRTP through native SDES key handling."""
+
+    video = "rtsps://camera.example.test/live?enableSrtp"
+
+    pipeline = build_gstreamer_pipeline(video)
+    elements = set(required_gstreamer_elements(video))
+
+    assert (
+        "capssetter name=rf_srtp_caps caps=application/x-srtp "
+        "join=false replace=false ! srtpdec ! "
+        "parsebin name=rf_rtsp_video_parse ! nvv4l2decoder !"
+    ) in pipeline
+    assert {"capssetter", "srtpdec"} <= elements
+
+
+@pytest.mark.parametrize("value", ("0", "false", "no", "off"))
+def test_rtsps_sdes_source_can_explicitly_disable_srtp(value: str) -> None:
+    """Treat false-like enableSrtp query values as clear RTP media."""
+
+    video = f"rtsps://camera.example.test/live?enableSrtp={value}"
+
+    pipeline = build_gstreamer_pipeline(video)
+    elements = set(required_gstreamer_elements(video))
+
+    assert "rf_srtp_caps" not in pipeline
+    assert "srtpdec" not in elements
 
 
 def test_rtspt_source_is_recognised_as_rtsp() -> None:
@@ -251,7 +280,7 @@ def test_rtsp_codec_override_requires_only_selected_parser(monkeypatch) -> None:
     elements = set(required_gstreamer_elements("rtsp://camera.example.test/live"))
 
     assert {"rtspsrc", "rtph265depay", "h265parse", "nvv4l2decoder"} <= elements
-    assert "decodebin" not in elements
+    assert "parsebin" not in elements
     assert "rtph264depay" not in elements
 
 
@@ -268,7 +297,10 @@ def test_rtsp_transport_env_overrides_protocols_and_latency(monkeypatch) -> None
 
     pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
 
-    assert "protocols=tcp+udp latency=1000 drop-on-latency=true ! " in pipeline
+    expected_transport = (
+        "protocols=tcp+udp latency=1000 drop-on-latency=true teardown-timeout=0 ! "
+    )
+    assert expected_transport in pipeline
 
 
 def test_rtsp_tls_validation_flags_are_opt_in(monkeypatch) -> None:
@@ -305,10 +337,10 @@ def test_rtsps_source_requires_rtsp_and_nvidia_decode_elements() -> None:
 
     assert {
         "appsink",
-        "decodebin",
         "h264parse",
         "h265parse",
         "nvv4l2decoder",
+        "parsebin",
         "rtph264depay",
         "rtph265depay",
         "rtspsrc",

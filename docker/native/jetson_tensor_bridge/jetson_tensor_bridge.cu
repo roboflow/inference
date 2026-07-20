@@ -10,6 +10,7 @@
 #include <nvbufsurface.h>
 #pragma pop_macro("__noinline__")
 
+#include <algorithm>
 #include <cstdarg>
 #include <atomic>
 #include <chrono>
@@ -21,12 +22,14 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <string>
 #include <time.h>
 #include <vector>
 
 namespace {
 
 constexpr const char* kSinkName = "rf_tensor_sink";
+constexpr const char* kSrtpCapsElementName = "rf_srtp_caps";
 constexpr const char* kNvmmCapsFeature = "memory:NVMM";
 // Upper bound on device buffers the per-pipeline tensor pool recycles. The
 // steady state holds only the frames a consumer keeps in flight (typically
@@ -236,7 +239,174 @@ struct RfJetsonPipeline {
     bool negotiated_frame_info_valid = false;
     bool caps_changed = false;
     char caps_change_error[1024] = {0};
+    GstPad* srtp_probe_pad = nullptr;
+    gulong srtp_probe_id = 0;
 };
+
+void signal_pipeline_error(RfJetsonPipeline* handle, const char* message) {
+    std::lock_guard<std::mutex> lock(handle->mutex);
+    handle->conversion_failed = true;
+    std::snprintf(
+        handle->conversion_error,
+        sizeof(handle->conversion_error),
+        "%s",
+        message);
+    handle->frame_ready.notify_all();
+}
+
+GstPadProbeReturn configure_sdes_srtp_caps(
+    GstPad* pad,
+    GstPadProbeInfo* info,
+    gpointer user_data) {
+    auto* handle = static_cast<RfJetsonPipeline*>(user_data);
+    if ((GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM) == 0) {
+        return GST_PAD_PROBE_OK;
+    }
+    GstEvent* event = GST_PAD_PROBE_INFO_EVENT(info);
+    if (event == nullptr || GST_EVENT_TYPE(event) != GST_EVENT_CAPS) {
+        return GST_PAD_PROBE_OK;
+    }
+    GstCaps* input_caps = nullptr;
+    gst_event_parse_caps(event, &input_caps);
+    if (input_caps == nullptr || gst_caps_is_empty(input_caps) ||
+        gst_caps_is_any(input_caps)) {
+        signal_pipeline_error(handle, "SRTP stream caps are missing");
+        return GST_PAD_PROBE_DROP;
+    }
+    const GstStructure* input = gst_caps_get_structure(input_caps, 0);
+    const char* media = gst_structure_get_string(input, "media");
+    const char* encoding = gst_structure_get_string(input, "encoding-name");
+    const bool supported_media =
+        media != nullptr && std::strcmp(media, "video") == 0 &&
+        encoding != nullptr &&
+        (std::strcmp(encoding, "H264") == 0 ||
+         std::strcmp(encoding, "H265") == 0);
+    if (!supported_media) {
+        signal_pipeline_error(handle, "SRTP caps do not describe H.264/H.265 video");
+        return GST_PAD_PROBE_DROP;
+    }
+    const char* crypto = gst_structure_get_string(input, "a-crypto");
+    constexpr const char* kCryptoSuite = "AES_CM_128_HMAC_SHA1_80";
+    constexpr const char* kInlinePrefix = "inline:";
+    const char* tag_end = crypto == nullptr ? nullptr : std::strchr(crypto, ' ');
+    bool valid_tag = tag_end != nullptr && tag_end != crypto;
+    for (const char* cursor = crypto; valid_tag && cursor < tag_end; ++cursor) {
+        valid_tag = *cursor >= '0' && *cursor <= '9';
+    }
+    const char* suite_start = tag_end;
+    while (suite_start != nullptr && *suite_start == ' ') {
+        ++suite_start;
+    }
+    const char* suite_end =
+        suite_start == nullptr ? nullptr : std::strchr(suite_start, ' ');
+    const bool supported_suite =
+        suite_end != nullptr &&
+        static_cast<size_t>(suite_end - suite_start) == std::strlen(kCryptoSuite) &&
+        std::strncmp(suite_start, kCryptoSuite, std::strlen(kCryptoSuite)) == 0;
+    const char* key_start = suite_end;
+    while (key_start != nullptr && *key_start == ' ') {
+        ++key_start;
+    }
+    if (!valid_tag || !supported_suite || key_start == nullptr ||
+        std::strncmp(key_start, kInlinePrefix, std::strlen(kInlinePrefix)) != 0) {
+        signal_pipeline_error(
+            handle,
+            "SRTP stream does not advertise supported SDES AES-128/HMAC-SHA1-80");
+        return GST_PAD_PROBE_DROP;
+    }
+    key_start += std::strlen(kInlinePrefix);
+    const size_t encoded_length = std::strcspn(key_start, "| \t\r\n");
+    bool valid_base64 = encoded_length == 40;
+    for (size_t index = 0; valid_base64 && index < encoded_length; ++index) {
+        const char value = key_start[index];
+        valid_base64 = (value >= 'A' && value <= 'Z') ||
+                       (value >= 'a' && value <= 'z') ||
+                       (value >= '0' && value <= '9') || value == '+' || value == '/';
+    }
+    if (!valid_base64) {
+        signal_pipeline_error(handle, "SRTP SDES key is not valid base64");
+        return GST_PAD_PROBE_DROP;
+    }
+    const char* suffix = key_start + encoded_length;
+    if (*suffix == '|') {
+        signal_pipeline_error(
+            handle,
+            "SRTP SDES lifetime and MKI parameters are not supported");
+        return GST_PAD_PROBE_DROP;
+    }
+    while (*suffix == ' ' || *suffix == '\t' || *suffix == '\r' ||
+           *suffix == '\n') {
+        ++suffix;
+    }
+    if (*suffix != '\0') {
+        signal_pipeline_error(
+            handle,
+            "SRTP SDES session parameters are not supported");
+        return GST_PAD_PROBE_DROP;
+    }
+    std::string encoded_key(key_start, encoded_length);
+    gsize key_length = 0;
+    guchar* key_bytes = g_base64_decode(encoded_key.c_str(), &key_length);
+    std::fill(encoded_key.begin(), encoded_key.end(), '\0');
+    constexpr gsize kAes128MasterKeyAndSaltBytes = 30;
+    if (key_bytes == nullptr || key_length != kAes128MasterKeyAndSaltBytes) {
+        if (key_bytes != nullptr) {
+            std::fill_n(key_bytes, key_length, 0);
+        }
+        g_free(key_bytes);
+        signal_pipeline_error(handle, "SRTP SDES key has an invalid length");
+        return GST_PAD_PROBE_DROP;
+    }
+    GstBuffer* key_buffer = gst_buffer_new_allocate(nullptr, key_length, nullptr);
+    if (key_buffer == nullptr ||
+        gst_buffer_fill(key_buffer, 0, key_bytes, key_length) != key_length) {
+        std::fill_n(key_bytes, key_length, 0);
+        g_free(key_bytes);
+        if (key_buffer != nullptr) {
+            gst_buffer_unref(key_buffer);
+        }
+        signal_pipeline_error(handle, "Could not allocate SRTP key buffer");
+        return GST_PAD_PROBE_DROP;
+    }
+    std::fill_n(key_bytes, key_length, 0);
+    g_free(key_bytes);
+
+    GstCaps* secure_caps = gst_caps_copy(input_caps);
+    for (guint index = 0; index < gst_caps_get_size(secure_caps); ++index) {
+        GstStructure* structure = gst_caps_get_structure(secure_caps, index);
+        gst_structure_set_name(structure, "application/x-srtp");
+        gst_structure_remove_field(structure, "a-crypto");
+        gst_structure_set(
+            structure,
+            "srtp-key",
+            GST_TYPE_BUFFER,
+            key_buffer,
+            "srtp-cipher",
+            G_TYPE_STRING,
+            "aes-128-icm",
+            "srtp-auth",
+            G_TYPE_STRING,
+            "hmac-sha1-80",
+            "srtcp-cipher",
+            G_TYPE_STRING,
+            "aes-128-icm",
+            "srtcp-auth",
+            G_TYPE_STRING,
+            "hmac-sha1-80",
+            nullptr);
+    }
+    GstEvent* secure_event = gst_event_new_caps(secure_caps);
+    gst_caps_unref(secure_caps);
+    gst_buffer_unref(key_buffer);
+    if (secure_event == nullptr) {
+        signal_pipeline_error(handle, "Could not create secure RTP caps event");
+        return GST_PAD_PROBE_DROP;
+    }
+    gst_event_unref(event);
+    GST_PAD_PROBE_INFO_DATA(info) = secure_event;
+    (void)pad;
+    return GST_PAD_PROBE_OK;
+}
 
 using NvBufSurfaceMapEglImageFn = int (*)(NvBufSurface*, int);
 using NvBufSurfaceUnMapEglImageFn = int (*)(NvBufSurface*, int);
@@ -1279,6 +1449,34 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         delete handle;
         return nullptr;
     }
+    GstElement* srtp_caps_element =
+        gst_bin_get_by_name(GST_BIN(pipeline), kSrtpCapsElementName);
+    if (srtp_caps_element != nullptr) {
+        GstPad* source_pad =
+            gst_element_get_static_pad(srtp_caps_element, "src");
+        const gulong probe_id = source_pad == nullptr
+            ? 0
+            : gst_pad_add_probe(
+                  source_pad,
+                  GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+                  configure_sdes_srtp_caps,
+                  handle,
+                  nullptr);
+        gst_object_unref(srtp_caps_element);
+        if (probe_id == 0) {
+            write_error(error, error_capacity, "Could not configure SRTP caps probe");
+            if (source_pad != nullptr) {
+                gst_object_unref(source_pad);
+            }
+            cudaStreamDestroy(handle->stream);
+            gst_object_unref(sink_element);
+            gst_object_unref(pipeline);
+            delete handle;
+            return nullptr;
+        }
+        handle->srtp_probe_pad = source_pad;
+        handle->srtp_probe_id = probe_id;
+    }
     // Consume frames via appsink callbacks on the GStreamer streaming thread.
     // Each sample is converted and released before the tensor handoff; live
     // sources stay latest-wins, while files backpressure at the bounded FIFO.
@@ -1296,6 +1494,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         // running task threads; GStreamer refuses to dispose a non-NULL
         // pipeline, so reset it before dropping the reference.
         gst_element_set_state(pipeline, GST_STATE_NULL);
+        if (handle->srtp_probe_pad != nullptr) {
+            gst_pad_remove_probe(handle->srtp_probe_pad, handle->srtp_probe_id);
+            gst_object_unref(handle->srtp_probe_pad);
+        }
         cudaStreamDestroy(handle->stream);
         gst_object_unref(sink_element);
         gst_object_unref(pipeline);
@@ -1485,6 +1687,12 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
         return;
     }
     rf_jetson_pipeline_interrupt(handle);
+    if (handle->srtp_probe_pad != nullptr) {
+        gst_pad_remove_probe(handle->srtp_probe_pad, handle->srtp_probe_id);
+        gst_object_unref(handle->srtp_probe_pad);
+        handle->srtp_probe_pad = nullptr;
+        handle->srtp_probe_id = 0;
+    }
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
         if (handle->grabbed_tensor != nullptr) {

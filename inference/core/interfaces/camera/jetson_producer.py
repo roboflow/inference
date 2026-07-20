@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from inference.core.interfaces.camera.entities import (
     FrameImage,
@@ -66,10 +66,12 @@ _URI_DECODE_ELEMENTS = (
     "uridecodebin",
 )
 _RTSP_ELEMENTS = (
+    "parsebin",
     "rtph264depay",
     "rtph265depay",
     "rtspsrc",
 )
+_SRTP_ELEMENTS = ("capssetter", "srtpdec")
 _SOFTWARE_DECODER_ELEMENTS = (
     "avdec_h264",
     "avdec_h265",
@@ -201,14 +203,16 @@ def required_gstreamer_elements(
         )
     if _is_rtsp_source(video):
         # The video-only RTP capsfilter prevents an audio track from reaching
-        # decodebin. decodebin then selects the H.264 or H.265 depay/parser
+        # parsebin. parsebin then selects the H.264 or H.265 depay/parser
         # chain from the RTP caps, without needing a source-specific codec
         # setting. The explicit codec override remains available for cameras
         # with broken SDP metadata.
         codec_override = _rtsp_video_codec_override()
+        srtp_elements = list(_SRTP_ELEMENTS) if _rtsp_uses_srtp(video) else []
         if codec_override is not None:
             return tuple(
                 elements
+                + srtp_elements
                 + [
                     f"rtp{codec_override}depay",
                     f"{codec_override}parse",
@@ -218,7 +222,8 @@ def required_gstreamer_elements(
             )
         return tuple(
             elements
-            + ["decodebin", "h264parse", "h265parse", "nvv4l2decoder"]
+            + srtp_elements
+            + ["h264parse", "h265parse", "nvv4l2decoder"]
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_NVVIDCONV_ELEMENTS)
@@ -256,8 +261,8 @@ def build_gstreamer_pipeline(
         )
 
     if _is_rtsp_source(video):
-        # A video-only RTP capsfilter keeps audio tracks away from decodebin,
-        # while leaving decodebin free to select the H.264 or H.265 depay/parser
+        # A video-only RTP capsfilter keeps audio tracks away from parsebin,
+        # while leaving parsebin free to select the H.264 or H.265 depay/parser
         # chain from the camera's RTP caps. This has the codec flexibility of
         # autoplugging without uridecodebin's habit of trying every RTSP track.
         # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
@@ -284,12 +289,23 @@ def build_gstreamer_pipeline(
         source = (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
-            f" drop-on-latency=true{tls_validation_flags} ! "
+            " drop-on-latency=true teardown-timeout=0"
+            f"{tls_validation_flags} ! "
             "application/x-rtp,media=video ! "
             f"queue {_BOUNDED_QUEUE_OPTIONS} ! "
         )
+        if _rtsp_uses_srtp(video):
+            # UniFi and other SDES endpoints advertise the master key through
+            # the RTP caps' a-crypto field. The native bridge rewrites the
+            # named capssetter's CAPS event before srtpdec sees the first
+            # packet; key material never crosses Python or appears in the
+            # launch string.
+            source += (
+                "capssetter name=rf_srtp_caps caps=application/x-srtp "
+                "join=false replace=false ! srtpdec ! "
+            )
         if codec is None:
-            decoder = "decodebin name=rf_rtsp_video_decode ! "
+            decoder = "parsebin name=rf_rtsp_video_parse ! nvv4l2decoder ! "
         else:
             decoder = f"rtp{codec}depay ! {codec}parse ! nvv4l2decoder ! "
         return (
@@ -319,6 +335,18 @@ def _rtsp_video_codec_override() -> Optional[str]:
             f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
         )
     return codec
+
+
+def _rtsp_uses_srtp(video: Union[str, int]) -> bool:
+    """Return whether an RTSP URL explicitly requests encrypted RTP media."""
+
+    if not isinstance(video, str):
+        return False
+    for key, value in parse_qsl(urlparse(video).query, keep_blank_values=True):
+        if key.lower() != "enablesrtp":
+            continue
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return False
 
 
 def _rtsp_protocols() -> str:
