@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import torch
-from PIL import Image as PILImage
 
 from inference_models.models.sam3.entities import SAM3ImageEmbeddings
 
@@ -213,8 +212,15 @@ def test_forward_image_embeddings_runs_single_batched_encoder_forward(
     # given
     model = sam3_torch_module.SAM3Torch.__new__(sam3_torch_module.SAM3Torch)
     model._model = MagicMock()
+    model._device = torch.device("cpu")
+    model._model.backbone.forward_image.return_value = _example_batch_state(
+        batch_size=2
+    )["backbone_out"]
+    decoder = model._model.inst_interactive_predictor.model.sam_mask_decoder
+    decoder.conv_s0.side_effect = lambda t: t
+    decoder.conv_s1.side_effect = lambda t: t
     processor = MagicMock()
-    processor.set_image_batch.return_value = _example_batch_state(batch_size=2)
+    processor.transform.side_effect = lambda t: torch.zeros(3, 8, 8)
 
     # when
     with patch.object(sam3_torch_module, "Sam3Processor", return_value=processor):
@@ -227,12 +233,14 @@ def test_forward_image_embeddings_runs_single_batched_encoder_forward(
             original_sizes=[(8, 12), (16, 20)],
         )
 
-    # then - one batched encoder forward, no per-image calls
-    processor.set_image_batch.assert_called_once()
+    # then - one stacked backbone forward, no per-image processor calls
+    model._model.backbone.forward_image.assert_called_once()
+    stacked = model._model.backbone.forward_image.call_args.args[0]
+    assert stacked.shape[0] == 2
     processor.set_image.assert_not_called()
-    batch_arg = processor.set_image_batch.call_args.args[0]
-    assert len(batch_arg) == 2
-    assert all(isinstance(image, PILImage.Image) for image in batch_arg)
+    processor.set_image_batch.assert_not_called()
+    decoder.conv_s0.assert_called_once()
+    decoder.conv_s1.assert_called_once()
     assert [r.image_hash for r in result] == ["hash-1", "hash-2"]
     assert result[0].image_size_hw == (8, 12)
     assert result[1].image_size_hw == (16, 20)

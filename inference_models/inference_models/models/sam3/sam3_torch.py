@@ -7,6 +7,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, TypeVar, Union
 import numpy as np
 import torch
 from PIL import Image
+from torchvision.transforms import v2
 from sam3 import build_sam3_image_model
 from sam3.eval.postprocessors import PostProcessImage
 from sam3.model.sam3_image_processor import Sam3Processor
@@ -275,14 +276,40 @@ class SAM3Torch:
         image_hashes: List[str],
         original_sizes: List[Tuple[int, int]],
     ) -> List[SAM3ImageEmbeddings]:
-        pil_images = [
-            Image.fromarray(_normalize_to_hwc_uint8(image)) for image in images
+        # Batched re-implementation of Sam3Processor.set_image_batch that keeps
+        # the zero-copy numpy -> tensor path (set_image_batch requires PIL
+        # inputs, and the extra CPU copies cost ~8% per image).
+        processor = Sam3Processor(self._model)
+        image_tensors = [
+            v2.functional.to_image(
+                torch.from_numpy(_normalize_to_hwc_uint8(image)).permute(2, 0, 1)
+            ).to(self._device)
+            for image in images
         ]
 
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            processor = Sam3Processor(self._model)
-            batch_state = processor.set_image_batch(pil_images)
+            img_batch = torch.stack(
+                [processor.transform(tensor) for tensor in image_tensors], dim=0
+            )
+            backbone_out = self._model.backbone.forward_image(img_batch)
+            inst_predictor = self._model.inst_interactive_predictor
+            sam2_backbone_out = backbone_out.get("sam2_backbone_out")
+            if inst_predictor is not None and sam2_backbone_out is not None:
+                # Mirror set_image: precompute the projected level 0/1 features
+                # so predict_inst does not rerun them on every click.
+                mask_decoder = inst_predictor.model.sam_mask_decoder
+                sam2_backbone_out["backbone_fpn"][0] = mask_decoder.conv_s0(
+                    sam2_backbone_out["backbone_fpn"][0]
+                )
+                sam2_backbone_out["backbone_fpn"][1] = mask_decoder.conv_s1(
+                    sam2_backbone_out["backbone_fpn"][1]
+                )
 
+        batch_state = {
+            "original_heights": [height for height, _ in original_sizes],
+            "original_widths": [width for _, width in original_sizes],
+            "backbone_out": backbone_out,
+        }
         return [
             SAM3ImageEmbeddings(
                 image_hash=image_hash,
