@@ -20,6 +20,12 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 - NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
   image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
   standard VLM contract. The generative world-model tower ships separately.
+- NVIDIA Cosmos AnomalyGen (`cosmos-anomalygen`, new task `image-generation`, backend
+  `custom`): mask-conditioned defect inpainting via `generate(image, mask,
+  anomaly_type, ...)`, mirroring the upstream SDG generation-entry contract
+  (guidance / num_steps / seed / crop-and-paste) so JSONL-driven pipelines map one
+  entry to one call. Runtime ships inside the model package, like the Cosmos 3 Edge
+  generator.
 - NVIDIA Cosmos 3 Edge generator (`cosmos-3-edge-world`, task `world-model`, backend
   `custom`): image-to-video (`generate_video`), forward dynamics (`start_rollout` +
   `forward_dynamics` with explicit session-state threading), and inverse dynamics

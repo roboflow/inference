@@ -24,6 +24,7 @@ GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 WORLD_MODEL_TASK = "world-model"
+IMAGE_GENERATION_TASK = "image-generation"
 
 
 @dataclass(frozen=True)
@@ -302,6 +303,10 @@ REGISTERED_MODELS: Dict[
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",
         class_name="Cosmos3EdgeWorldModel",
+    ),
+    ("cosmos-anomalygen", IMAGE_GENERATION_TASK, BackendType.CUSTOM): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos_anomalygen",
+        class_name="CosmosAnomalyGen",
     ),
     ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",

@@ -241,6 +241,9 @@ from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
 from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
     Cosmos3EdgeBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.cosmos_anomalygen.v1 import (
+    CosmosAnomalyGenBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
     DepthEstimationBlockV1,
 )
@@ -1013,6 +1016,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
         Cosmos3EdgeBlockV1,
+        CosmosAnomalyGenBlockV1,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
