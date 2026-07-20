@@ -1,6 +1,6 @@
 ---
 name: review-legacy-models-registries
-description: Load when a PR touches inference/models/** (legacy ORT/HF models, models/utils.py ROBOFLOW_MODEL_TYPES + get_roboflow_model, models/aliases.py), inference/core/models/** (base.py, roboflow.py CLASS_MAP parsing, *_base.py, stubs.py, inference_models_adapters.py), or inference/core/registries/** (get_model_type, GENERIC_MODELS). Diff signals: new ROBOFLOW_MODEL_TYPES key, resolve_roboflow_model_alias, _session_lock/_state_lock, ort_session.run, USE_INFERENCE_MODELS, no version.py bump.
+description: Load when a PR touches inference/models/** (legacy ORT/HF models, models/utils.py ROBOFLOW_MODEL_TYPES + get_roboflow_model, models/aliases.py), inference/core/models/** (base.py, roboflow.py CLASS_MAP parsing, *_base.py, stubs.py, inference_models_adapters.py), or inference/core/registries/** (get_model_type, GENERIC_MODELS). Diff signals: new ROBOFLOW_MODEL_TYPES key, resolve_roboflow_model_alias, _session_lock/_state_lock, ort_session.run, USE_INFERENCE_MODELS.
 ---
 
 # Reviewing legacy-models-registries changes
@@ -16,7 +16,6 @@ OUT of scope (defer to other skills): Workflows blocks, HTTP API handlers (`infe
 ## Review checklist
 Severity-tagged. Each item points at its canonical rule in **Standards** below.
 
-- **BLOCK** — behavioral change with no `__version__` bump in `inference/core/version.py`. (S1)
 - **BLOCK** — new model missing any leg of the wiring triple: env flag (`env.py`) + guarded `ROBOFLOW_MODEL_TYPES` entry (`utils.py`) + registry recognition (`GENERIC_MODELS` or API task type). (S3)
 - **BLOCK** — a served `(task, variant)` has no `ROBOFLOW_MODEL_TYPES` key → `ModelNotRecognisedError`. (S3)
 - **BLOCK** — a raw `model_id` reaches chunking / auth / weight fetch without `resolve_roboflow_model_alias` first. (S2)
@@ -34,7 +33,7 @@ Severity-tagged. Each item points at its canonical rule in **Standards** below.
 - **NIT** — HF/transformer artifact download not guarded by `FileLock`. (S13)
 
 ### Not blocking
-- Do NOT demand a version bump for pure comment/docstring/test-only edits, or for a change that is itself the version bump.
+- Do NOT demand an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs.
 - Do NOT demand the full wiring triple when the PR only edits an existing model's internals (no new `(task, variant)`).
 - Do NOT demand a new adapter when the touched model has no `inference_models` backend.
 - Do NOT block on `Optional`-vs-default when the field is genuinely nullable in the response contract and callers do not use `exclude_none`.
@@ -46,7 +45,6 @@ Severity-tagged. Each item points at its canonical rule in **Standards** below.
 
 **Registry / id resolution.** `inference/core/registries/roboflow.py::get_model_type(model_id, api_key)` returns `(task_type, model_type)` by: resolving aliases, `GENERIC_MODELS` (whole `model_id` then `dataset_id`), `_get_local_model_type` (local `inference_models` dirs), stub versions, then the Roboflow API. The tuple keys into `ROBOFLOW_MODEL_TYPES` (`inference/models/utils.py`) to pick a class.
 
-- **S1 — Version bump is mandatory on any behavioral change.** Bump `__version__` in `inference/core/version.py` (every reference bugfix/feature PR does this — #1920, #495, #225, #1036, #1848, #2105, #2270).
 - **S2 — Alias resolution first.** Call `resolve_roboflow_model_alias(model_id)` (`inference/models/aliases.py`) before `get_model_id_chunks`, before obtaining chunks/weights, and before auth checks (missing before chunk-fetch in `_check_if_api_key_has_access_to_model` broke aliased-model authorization, #1226; pattern established in both model and registry layers, #193).
 - **S3 — New model wiring is a triple.** (a) env enablement flag in `inference/core/env.py` (e.g. `QWEN_3_5_ENABLED`, `CORE_MODEL_*_ENABLED`, #2105); (b) guarded import + `ROBOFLOW_MODEL_TYPES` entry in `inference/models/utils.py`; (c) registry recognition via `GENERIC_MODELS` or API task type. A registry key must exist for every served variant name (missing bare `("object-detection","rfdetr")` / `("instance-segmentation","rfdetr")` keys yielded `ModelNotRecognisedError` even though the inference-models backend served the variant, #2128). Optional/deprecated imports (Gaze) must be wrapped in try/except emitting a `warnings.warn(category=ModelDependencyMissing)`, or a crash at import breaks the whole `utils.py` load in slim images (#2338).
 - **S4 — `get_model_type` never returns `None`.** Unknowns fall back via `MODEL_TYPE_DEFAULTS` (`inference/core/roboflow_api.py`); `_ensure_model_supported_on_this_deployment` still gates. A silent `None` surfaces downstream as `ModelArtefactError`.
@@ -61,7 +59,6 @@ Severity-tagged. Each item points at its canonical rule in **Standards** below.
 - **S13 — Logging is lazy and low-noise; downloads are race-safe.** Use `logger.debug` for per-inference logs (OWLv2 moved INFO→DEBUG, #1793) and `%`-style lazy args, not f-strings, in hot paths (#1578). Guard HF/transformer artifact downloads with `FileLock` to avoid worker races (#1578).
 
 ## Required companions
-- **`inference/core/version.py`** — bump `__version__` on any behavioral change.
 - **`inference/core/env.py`** — env flag for any new model or global toggle (`*_ENABLED`, `DISABLED_INFERENCE_MODELS_BACKENDS`).
 - **`inference/models/utils.py`** — new `(task, variant)` → class mapping, guarded by the enablement flag and try/except, plus the `USE_INFERENCE_MODELS` adapter swap when a backend exists.
 - **`GENERIC_MODELS` in `inference/core/registries/roboflow.py`** — for foundation/core models keyed by whole `model_id` or `dataset_id`.
@@ -76,7 +73,7 @@ Severity-tagged. Each item points at its canonical rule in **Standards** below.
 - `inference/core/models/inference_models_adapters.py` — `InferenceModels{ObjectDetection,InstanceSegmentation,KeyPointsDetection,Classification,SemanticSegmentation}Adapter`.
 - `inference/models/aliases.py` — `resolve_roboflow_model_alias`, `REGISTERED_ALIASES`.
 - `inference/core/models/{object_detection,instance_segmentation,keypoints_detection,classification,semantic_segmentation}_base.py`, `stubs.py`.
-- `inference/core/env.py` (flags), `inference/core/version.py`, `inference/core/roboflow_api.py` (`MODEL_TYPE_DEFAULTS`).
+- `inference/core/env.py` (flags), `inference/core/roboflow_api.py` (`MODEL_TYPE_DEFAULTS`).
 
 ## Reference PRs
 - [#2105](https://github.com/roboflow/inference/pull/2105) — redirect versionless model auth/metadata to new registry via `USE_INFERENCE_MODELS`.

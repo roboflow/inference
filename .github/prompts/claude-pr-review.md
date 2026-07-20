@@ -430,7 +430,9 @@ Severity:
 - **Critical** - likely production breakage, data loss, or security exposure.
 - **High** - significant bug or contract break under realistic usage.
 - **High** - clearly required version bump omitted for a breaking or
-  release-bound change.
+  release-bound change (`inference_models/pyproject.toml` version or
+  `EXECUTION_ENGINE_V1_VERSION` only — never `inference/core/version.py`,
+  which is bumped separately at release time and must not be demanded on PRs).
 - **Medium** - meaningful risk or maintainability issue worth addressing before
   merge.
 - **Medium** - missing docs, changelog, or release-note updates for user-visible

@@ -35,7 +35,7 @@ Severity-tagged. Verify each against the linked Standard before raising.
 ### Not blocking
 - Comment/type-only refactors, formatting, and pure test/doc mirroring with **no** behavior change do NOT require a version bump or changelog (explicit exemption in `.cursor/rules/execution-engine-version-changelog.mdc`).
 - A pure bug fix to a scenario already covered by an integration test does not require a *new* test file — an assertion added to the existing scenario is fine.
-- An `inference/core/version.py` `__version__` bump is only required when the change ships as a release; a standalone EE change can defer it (do not demand it on every EE PR).
+- Never demand an `inference/core/version.py` `__version__` bump — inference releases are versioned separately (the EE version + changelog, per Standards, is the required companion here).
 - Do not demand `flush_stream_pipeline` mirroring on the ABC — it is intentionally not part of `BaseExecutionEngine` (see Public engine API).
 
 ## Standards
