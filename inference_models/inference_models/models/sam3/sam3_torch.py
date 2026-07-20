@@ -2,7 +2,7 @@ import hashlib
 import json
 from copy import copy, deepcopy
 from threading import Lock, RLock
-from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -275,24 +275,24 @@ class SAM3Torch:
         image_hashes: List[str],
         original_sizes: List[Tuple[int, int]],
     ) -> List[SAM3ImageEmbeddings]:
-        result_embeddings = []
+        pil_images = [
+            Image.fromarray(_normalize_to_hwc_uint8(image)) for image in images
+        ]
 
-        for image, image_hash, size in zip(images, image_hashes, original_sizes):
-            np_image = _normalize_to_hwc_uint8(image)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            processor = Sam3Processor(self._model)
+            batch_state = processor.set_image_batch(pil_images)
 
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                processor = Sam3Processor(self._model)
-                state = processor.set_image(torch.from_numpy(np_image).permute(2, 0, 1))
-
-            result_embeddings.append(
-                SAM3ImageEmbeddings(
-                    image_hash=image_hash,
-                    image_size_hw=size,
-                    embeddings=state,
-                )
+        return [
+            SAM3ImageEmbeddings(
+                image_hash=image_hash,
+                image_size_hw=size,
+                embeddings=state,
             )
-
-        return result_embeddings
+            for image_hash, size, state in zip(
+                image_hashes, original_sizes, split_batch_state(batch_state)
+            )
+        ]
 
     def segment_with_visual_prompts(
         self,
@@ -708,6 +708,34 @@ def equalize_batch_size(
             )
 
     return point_coordinates, point_labels, boxes, mask_input
+
+
+def split_batch_state(batch_state: Dict) -> List[Dict]:
+    """Split a `Sam3Processor.set_image_batch` state into per-image states
+    matching the shape produced by `set_image`, as expected by `predict_inst`
+    and the per-image embeddings cache."""
+    return [
+        {
+            "original_height": height,
+            "original_width": width,
+            "backbone_out": _slice_batch_dim(batch_state["backbone_out"], idx),
+        }
+        for idx, (height, width) in enumerate(
+            zip(batch_state["original_heights"], batch_state["original_widths"])
+        )
+    ]
+
+
+def _slice_batch_dim(obj: Any, index: int) -> Any:
+    if isinstance(obj, torch.Tensor):
+        return obj[index : index + 1]
+    if isinstance(obj, dict):
+        return {key: _slice_batch_dim(value, index) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_slice_batch_dim(value, index) for value in obj]
+    if isinstance(obj, tuple):
+        return tuple(_slice_batch_dim(value, index) for value in obj)
+    return obj
 
 
 def _normalize_to_hwc_uint8(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:

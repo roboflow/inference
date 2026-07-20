@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import torch
+from PIL import Image as PILImage
 
 from inference_models.models.sam3.entities import SAM3ImageEmbeddings
 
@@ -139,3 +140,102 @@ def test_predict_for_single_image_selects_best_proposal_per_prompt(
 
     # then - proposal scores per prompt are [0.5, 0.9, 0.7], the best is kept
     assert torch.allclose(prediction.scores, torch.tensor([0.9, 0.9]).double())
+
+
+def _example_batch_state(batch_size: int = 2) -> dict:
+    return {
+        "original_heights": [8, 16][:batch_size],
+        "original_widths": [12, 20][:batch_size],
+        "backbone_out": {
+            "vision_features": torch.randn(batch_size, 3, 4, 4),
+            "vision_pos_enc": [torch.randn(batch_size, 3, 4, 4)],
+            "backbone_fpn": [
+                torch.randn(batch_size, 3, 8, 8),
+                torch.randn(batch_size, 3, 4, 4),
+            ],
+            "sam2_backbone_out": {
+                "vision_features": torch.randn(batch_size, 3, 4, 4),
+                "vision_pos_enc": [torch.randn(batch_size, 3, 4, 4)],
+                "backbone_fpn": [torch.randn(batch_size, 3, 8, 8)],
+            },
+        },
+    }
+
+
+def test_split_batch_state_slices_nested_tensors_per_image(
+    sam3_torch_module: ModuleType,
+) -> None:
+    # given
+    batch_state = _example_batch_state(batch_size=2)
+
+    # when
+    states = sam3_torch_module.split_batch_state(batch_state)
+
+    # then
+    assert len(states) == 2
+    assert states[0]["original_height"] == 8
+    assert states[0]["original_width"] == 12
+    assert states[1]["original_height"] == 16
+    assert states[1]["original_width"] == 20
+    backbone = batch_state["backbone_out"]
+    assert torch.equal(
+        states[1]["backbone_out"]["vision_features"],
+        backbone["vision_features"][1:2],
+    )
+    assert torch.equal(
+        states[0]["backbone_out"]["backbone_fpn"][1],
+        backbone["backbone_fpn"][1][0:1],
+    )
+    assert torch.equal(
+        states[1]["backbone_out"]["sam2_backbone_out"]["vision_pos_enc"][0],
+        backbone["sam2_backbone_out"]["vision_pos_enc"][0][1:2],
+    )
+
+
+def test_split_batch_state_preserves_none_sam2_backbone(
+    sam3_torch_module: ModuleType,
+) -> None:
+    # given
+    batch_state = _example_batch_state(batch_size=2)
+    batch_state["backbone_out"]["sam2_backbone_out"] = None
+
+    # when
+    states = sam3_torch_module.split_batch_state(batch_state)
+
+    # then
+    assert states[0]["backbone_out"]["sam2_backbone_out"] is None
+    assert states[1]["backbone_out"]["sam2_backbone_out"] is None
+
+
+def test_forward_image_embeddings_runs_single_batched_encoder_forward(
+    sam3_torch_module: ModuleType,
+) -> None:
+    # given
+    model = sam3_torch_module.SAM3Torch.__new__(sam3_torch_module.SAM3Torch)
+    model._model = MagicMock()
+    processor = MagicMock()
+    processor.set_image_batch.return_value = _example_batch_state(batch_size=2)
+
+    # when
+    with patch.object(sam3_torch_module, "Sam3Processor", return_value=processor):
+        result = model._forward_image_embeddings(
+            images=[
+                np.zeros((8, 12, 3), dtype=np.uint8),
+                np.zeros((16, 20, 3), dtype=np.uint8),
+            ],
+            image_hashes=["hash-1", "hash-2"],
+            original_sizes=[(8, 12), (16, 20)],
+        )
+
+    # then - one batched encoder forward, no per-image calls
+    processor.set_image_batch.assert_called_once()
+    processor.set_image.assert_not_called()
+    batch_arg = processor.set_image_batch.call_args.args[0]
+    assert len(batch_arg) == 2
+    assert all(isinstance(image, PILImage.Image) for image in batch_arg)
+    assert [r.image_hash for r in result] == ["hash-1", "hash-2"]
+    assert result[0].image_size_hw == (8, 12)
+    assert result[1].image_size_hw == (16, 20)
+    assert result[0].embeddings["original_height"] == 8
+    assert result[1].embeddings["original_width"] == 20
+    assert result[0].embeddings["backbone_out"]["vision_features"].shape[0] == 1
