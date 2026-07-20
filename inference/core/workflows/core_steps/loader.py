@@ -238,6 +238,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
     DepthEstimationBlockV1,
 )
@@ -325,9 +328,6 @@ from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
-    Cosmos3EdgeBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,

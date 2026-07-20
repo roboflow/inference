@@ -504,7 +504,10 @@ try:
         )
 
         cosmos3_models = {
-            ("text-image-pairs", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            (
+                "text-image-pairs",
+                "cosmos-3-edge",
+            ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
