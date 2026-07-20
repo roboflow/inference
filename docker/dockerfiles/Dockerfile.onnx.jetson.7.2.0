@@ -167,7 +167,9 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 ENV PIP_CONSTRAINT=/opt/builder-constraints.txt
 
 RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
-    python3 -m pip install --break-system-packages "numpy>=2.0.0,<2.4.0"
+    python3 -m pip install --break-system-packages \
+        "numpy>=2.0.0,<2.4.0" \
+        "typing_extensions>=4.10"
 
 RUN if [ "${USE_PREBUILT_WHEELS}" = "1" ]; then \
       python3 -m pip install --break-system-packages --no-deps \
