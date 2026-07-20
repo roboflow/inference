@@ -212,8 +212,8 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
 
     # The video-only RTP capsfilter keeps an audio track from ever reaching
     # parsebin, while parsebin selects the matching H.264/H.265 chain from
-    # the video RTP caps. The decoder's NV12 NVMM output feeds the appsink
-    # directly (the bridge converts NV12->RGB in CUDA) — no nvvidconv VIC pass.
+    # the video RTP caps. A leaky queue drops only complete decoded frames
+    # before the bridge converts NV12->RGB in CUDA — no nvvidconv VIC pass.
     assert pipeline.startswith(
         'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
         "protocols=tcp latency=50 drop-on-latency=true teardown-timeout=0 ! "
@@ -226,7 +226,7 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "max-buffers=1 drop=true sync=false" in pipeline
-    assert "leaky" not in pipeline
+    assert pipeline.count("leaky=downstream") == 1
 
 
 def test_rtsps_sdes_source_decrypts_before_codec_autoplugging() -> None:
@@ -327,6 +327,11 @@ def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
     )
 
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
+    assert (
+        "video/x-raw(memory:NVMM),format=NV12 ! "
+        "queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 "
+        "leaky=downstream ! appsink name=rf_tensor_sink"
+    ) in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "videoconvert" not in pipeline
     assert "video/x-raw,format=BGR" not in pipeline

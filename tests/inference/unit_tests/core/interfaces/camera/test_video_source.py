@@ -126,6 +126,49 @@ def test_tensor_enabled_source_requests_tensor_producer() -> None:
 
 
 @pytest.mark.timeout(90)
+def test_live_native_latest_handoff_avoids_duplicate_adaptive_dropping() -> None:
+    properties = SourceProperties(
+        width=320,
+        height=180,
+        total_frames=0,
+        is_file=False,
+        fps=30.0,
+    )
+
+    class ImmediateEosLatestFrameProducer:
+        has_native_latest_frame_handoff = True
+
+        def __init__(self) -> None:
+            self.opened = True
+
+        def isOpened(self) -> bool:
+            return self.opened
+
+        def initialize_source_properties(self, properties) -> None:
+            return None
+
+        def discover_source_properties(self) -> SourceProperties:
+            return properties
+
+        def grab(self) -> bool:
+            self.opened = False
+            return False
+
+        def release(self) -> None:
+            self.opened = False
+
+    source = VideoSource.init(video_reference=lambda: ImmediateEosLatestFrameProducer())
+    source.start()
+    source._stream_consumption_thread.join(timeout=1.0)
+
+    assert (
+        source.describe_source().buffer_filling_strategy
+        is BufferFillingStrategy.DROP_OLDEST
+    )
+    assert not source._stream_consumption_thread.is_alive()
+
+
+@pytest.mark.timeout(90)
 def test_async_hardware_initialisation_failure_releases_and_uses_cv2() -> None:
     properties = SourceProperties(
         width=320,

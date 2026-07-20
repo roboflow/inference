@@ -50,6 +50,9 @@ _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 50
 _RTSP_VIDEO_CODECS = ("h264", "h265")
 _BOUNDED_QUEUE_OPTIONS = "max-size-buffers=64 max-size-bytes=0 max-size-time=50000000"
+_LATEST_DECODED_FRAME_QUEUE_OPTIONS = (
+    "max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream"
+)
 
 _COMMON_ELEMENTS = (
     "appsink",
@@ -281,9 +284,13 @@ def build_gstreamer_pipeline(
         #   not set nvv4l2decoder's historical ``enable-max-performance``
         #   property here: it is absent on the Thor/JP7.2 plugin and makes a
         #   static pipeline fail to parse before it can receive a frame;
+        # - a one-frame leaky queue after NVDEC lets decoding continue while a
+        #   full-resolution CUDA conversion is in flight. Surplus complete
+        #   decoded frames are dropped before conversion rather than wasting
+        #   GPU bandwidth or backpressuring the compressed RTP path;
         # - the appsink never accumulates (the bridge's new-sample callback
-        #   drains it on the streaming thread); drop=true explicitly selects
-        #   the bridge's latest-frame handoff for this live source.
+        #   drains it on the queue's streaming thread); drop=true explicitly
+        #   selects the bridge's latest-frame handoff for this live source.
         codec = _rtsp_video_codec_override()
         tls_validation_flags = _rtsp_tls_validation_flags()
         source = (
@@ -310,6 +317,7 @@ def build_gstreamer_pipeline(
             decoder = f"rtp{codec}depay ! {codec}parse ! nvv4l2decoder ! "
         return (
             source + decoder + "video/x-raw(memory:NVMM),format=NV12 ! "
+            f"queue {_LATEST_DECODED_FRAME_QUEUE_OPTIONS} ! "
             "appsink name=rf_tensor_sink max-buffers=1 drop=true sync=false "
             "wait-on-eos=false"
         )
@@ -471,6 +479,12 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         """Pipeline string exposed for diagnostics and on-device tests."""
 
         return self._pipeline
+
+    @property
+    def has_native_latest_frame_handoff(self) -> bool:
+        """Report that live native frames use a latest-wins handoff slot."""
+
+        return True
 
     def isOpened(self) -> bool:
         return not self._closed and not self._eos

@@ -92,6 +92,12 @@ class SourceProperties:
 
 
 class VideoFrameProducer:
+    @property
+    def has_native_latest_frame_handoff(self) -> bool:
+        """Whether live frames are already reduced to the latest frame natively."""
+
+        return False
+
     def grab(self) -> bool:
         raise NotImplementedError
 

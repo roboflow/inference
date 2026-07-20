@@ -533,6 +533,7 @@ ENV CUDA_HOME=/usr/local/cuda \
     NUM_WORKERS=1 \
     HOST=0.0.0.0 \
     PORT=9001 \
+    ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider \
     ORT_TENSORRT_FP16_ENABLE=1 \
     ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
     ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \

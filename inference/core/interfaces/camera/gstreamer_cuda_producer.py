@@ -276,6 +276,12 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     def pipeline(self) -> str:
         return self._pipeline_description
 
+    @property
+    def has_native_latest_frame_handoff(self) -> bool:
+        """Report that live native frames use a latest-wins handoff slot."""
+
+        return True
+
     def isOpened(self) -> bool:
         return not self._closed and not self._eos
 

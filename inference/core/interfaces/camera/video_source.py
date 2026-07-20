@@ -709,7 +709,12 @@ class VideoSource:
                 )
                 self._video = CV2VideoFrameProducer(self._stream_reference)
                 self._initialise_selected_video()
-            self._video_consumer.reset(source_properties=self._source_properties)
+            self._video_consumer.reset(
+                source_properties=self._source_properties,
+                has_native_latest_frame_handoff=getattr(
+                    self._video, "has_native_latest_frame_handoff", False
+                ),
+            )
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
             else:
@@ -990,11 +995,19 @@ class VideoConsumer:
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
         return self._buffer_filling_strategy
 
-    def reset(self, source_properties: SourceProperties) -> None:
+    def reset(
+        self,
+        source_properties: SourceProperties,
+        has_native_latest_frame_handoff: bool = False,
+    ) -> None:
+        """Reset pacing state and select defaults for the source's handoff model."""
+
         if source_properties.is_file:
             self._set_file_mode_buffering_strategies()
         else:
-            self._set_stream_mode_buffering_strategies()
+            self._set_stream_mode_buffering_strategies(
+                has_native_latest_frame_handoff=has_native_latest_frame_handoff
+            )
         self._reader_pace_monitor.reset()
         self.reset_stream_consumption_pace()
         self._decoding_pace_monitor.reset()
@@ -1076,9 +1089,18 @@ class VideoConsumer:
         if self._buffer_filling_strategy is None:
             self._buffer_filling_strategy = BufferFillingStrategy.WAIT
 
-    def _set_stream_mode_buffering_strategies(self) -> None:
+    def _set_stream_mode_buffering_strategies(
+        self, has_native_latest_frame_handoff: bool = False
+    ) -> None:
+        """Select a live-stream fill policy without duplicating native dropping."""
+
         if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+            if has_native_latest_frame_handoff:
+                self._buffer_filling_strategy = BufferFillingStrategy.DROP_OLDEST
+            else:
+                self._buffer_filling_strategy = (
+                    BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+                )
 
     def _video_fps_should_be_sub_sampled(self) -> bool:
         if self._desired_fps is None:
