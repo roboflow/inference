@@ -229,6 +229,7 @@ each topic skill whose signal the PR exhibits (confirm via the skill's
 | calls an external / platform API, changes an SDK↔server contract, or adds fallback / auto-conversion | `review-topic-external-contract-and-silent-fallback` |
 | touches auth / api-key / workspace-tenant scoping / permissions / secrets | `review-topic-auth-and-tenant-security` |
 | ingests external / user input — a URL / file path / uploaded image, `torch.load` / pickle / weights load, or zip/tar extraction (SSRF, path traversal, unsafe deserialization, decompression bombs) | `review-topic-input-boundary-security` |
+| adds/modifies an outbound HTTP call, builds a URL from `API_BASE_URL` / `HOSTED_*_URL` / a `*.roboflow.com` host, adds an endpoint-URL env var or setting, constructs an `InferenceHTTPClient`, or touches `wrap_url` / `SECURE_GATEWAY` | `review-topic-secure-gateway-url-wrapping` |
 | **(every PR)** — verify changed behavior is covered by a real CI test, tests are isolated, selectors exercised | `review-topic-test-hygiene` |
 
 Load a skill when in doubt — skills are additive guidance, not gates. Apply only
@@ -429,7 +430,9 @@ Severity:
 - **Critical** - likely production breakage, data loss, or security exposure.
 - **High** - significant bug or contract break under realistic usage.
 - **High** - clearly required version bump omitted for a breaking or
-  release-bound change.
+  release-bound change (`inference_models/pyproject.toml` version or
+  `EXECUTION_ENGINE_V1_VERSION` only — never `inference/core/version.py`,
+  which is bumped separately at release time and must not be demanded on PRs).
 - **Medium** - meaningful risk or maintainability issue worth addressing before
   merge.
 - **Medium** - missing docs, changelog, or release-note updates for user-visible

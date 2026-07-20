@@ -42,6 +42,9 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1 import (
+    AutoRotateOnEdgesBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
     BackgroundSubtractionBlockV1,
 )
@@ -200,6 +203,7 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.frame_delay.v1 import FrameDelayBlockV1
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
     OverlapAnalysisBlockV1,
@@ -839,6 +843,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
+        FrameDelayBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
@@ -892,6 +897,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
+        AutoRotateOnEdgesBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         HeatmapVisualizationBlockV1,

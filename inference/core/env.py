@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
 from inference.core.warnings import (
+    InferenceConfigurationWarning,
     InferenceDeprecationWarning,
     InferenceModelsStackMissing,
     ModelDependencyMissing,
@@ -24,6 +25,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
     warnings.simplefilter("ignore", InferenceModelsStackMissing)
+    warnings.simplefilter("ignore", InferenceConfigurationWarning)
 
 IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
     os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
@@ -469,6 +471,11 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
         DeprecationWarning,
         stacklevel=1,
     )
+if SECURE_GATEWAY:
+    # The version check pings api.github.com, which is unreachable behind a
+    # secure gateway - with the default VERSION_CHECK_MODE=once it runs
+    # synchronously at import and can stall startup until the TCP timeout.
+    DISABLE_VERSION_CHECK = True
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
@@ -603,6 +610,9 @@ SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+# Cap on detections returned per prompt by /sam3/concept_segment; -1 = uncapped.
+# Applied before mask interpolation (see inference_models ChunkedPostProcessImage).
+SAM3_MAX_DETECTIONS = int(os.getenv("SAM3_MAX_DETECTIONS", -1))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
 SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = str2bool(
     os.getenv("SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", True)
@@ -739,8 +749,29 @@ HOSTED_CORE_MODEL_URL = os.getenv(
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
-WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
-WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
+    "WORKFLOWS_STEP_EXECUTION_MODE", "local"
+).lower()
+WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
+if (
+    SECURE_GATEWAY
+    and WORKFLOWS_STEP_EXECUTION_MODE == "remote"
+    and WORKFLOWS_REMOTE_API_TARGET == "hosted"
+):
+    # Remote step execution against hosted Roboflow inference endpoints
+    # (detect/outline/segment/classify/infer.roboflow.com) bypasses the secure
+    # gateway - the SDK client cannot route through the /proxy endpoint. Fall
+    # back to local execution instead of dead-ending every remote step.
+    warnings.warn(
+        "WORKFLOWS_STEP_EXECUTION_MODE=remote with WORKFLOWS_REMOTE_API_TARGET=hosted "
+        "is not supported behind SECURE_GATEWAY - hosted Roboflow inference endpoints "
+        "are not reachable through the gateway proxy. Forcing local step execution. "
+        "Use WORKFLOWS_REMOTE_API_TARGET=self-hosted (with LOCAL_INFERENCE_API_URL "
+        "pointing at a server inside the gateway perimeter) to keep remote execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WORKFLOWS_STEP_EXECUTION_MODE = "local"
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
 WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
     os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH", "4")
