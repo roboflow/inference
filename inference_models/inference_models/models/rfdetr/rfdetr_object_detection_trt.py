@@ -44,6 +44,9 @@ from inference_models.models.optimization.contracts import (
     OptimizationMetadata,
     OptimizationStage,
 )
+from inference_models.models.optimization.fallback_warnings import (
+    FallbackWarningTracker,
+)
 from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -319,6 +322,7 @@ class RFDetrForObjectDetectionTRT(
             allow_compatibility_fallback=(requested_plan.allow_compatibility_fallback),
         )
         self._lock = threading.Lock()
+        self._request_fallback_warnings = FallbackWarningTracker()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._preprocess_readiness = PreprocessReadinessTracker()
         if self.preprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
@@ -432,7 +436,12 @@ class RFDetrForObjectDetectionTRT(
             allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
         self._thread_local_storage.last_preprocessor_selection = selection.to_dict()
-        if selection.used_fallback:
+        if selection.used_fallback and self._request_fallback_warnings.claim(
+            stage=OptimizationStage.PREPROCESS,
+            requested_id=selection.requested_id,
+            effective_id=selection.effective_id,
+            reason=selection.fallback_reason,
+        ):
             LOGGER.warning(
                 "RF-DETR request preprocessor fallback requested=%s effective=%s "
                 "reason=%s",
@@ -559,7 +568,12 @@ class RFDetrForObjectDetectionTRT(
             self._thread_local_storage.last_postprocessor_selection = (
                 selection.to_dict()
             )
-            if selection.used_fallback:
+            if selection.used_fallback and self._request_fallback_warnings.claim(
+                stage=OptimizationStage.POSTPROCESS,
+                requested_id=selection.requested_id,
+                effective_id=selection.effective_id,
+                reason=selection.fallback_reason,
+            ):
                 LOGGER.warning(
                     "RF-DETR request postprocessor fallback requested=%s "
                     "effective=%s reason=%s",

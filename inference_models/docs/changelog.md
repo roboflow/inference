@@ -13,7 +13,10 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
   use the declared `base` implementation unless strict selection is requested through
   an explicit execution plan. The selected implementations can be controlled with an
   `RFDetrExecutionPlan` or the `INFERENCE_MODELS_RFDETR_PREPROCESSOR` and
-  `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` environment variables.
+  `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` environment variables. No-op preprocessing
+  override containers used by the inference server remain on the optimized path;
+  active overrides use the declared fallback. Repeated occurrences of the same
+  request-level fallback warning are logged only once per model instance.
 - **Breaking change for direct RF-DETR TensorRT stage calls:** the default optimized
   preprocessing path may return a CUDA tensor whose completion is tracked by the model
   instance and consumed by its `forward()` method without a host synchronization. Normal

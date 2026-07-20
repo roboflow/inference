@@ -190,7 +190,9 @@ def test_model_compatibility_reports_non_stretch_resize() -> None:
     assert any(reason.startswith("resize_mode=") for reason in compatibility.reasons)
 
 
-def test_request_compatibility_reports_overrides_and_heterogeneous_shapes() -> None:
+def test_request_compatibility_reports_active_overrides_and_heterogeneous_shapes() -> (
+    None
+):
     compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
         images=[
             np.zeros((8, 9, 3), dtype=np.uint8),
@@ -200,11 +202,53 @@ def test_request_compatibility_reports_overrides_and_heterogeneous_shapes() -> N
     )
 
     assert not compatibility.supported
-    assert "pre-processing overrides" in compatibility.reasons
+    assert "active pre-processing overrides" in compatibility.reasons
     assert any(
         reason.startswith("heterogeneous source dimensions")
         for reason in compatibility.reasons
     )
+
+
+def test_request_compatibility_accepts_no_op_overrides(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        True,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=PreProcessingOverrides(),
+    )
+
+    assert compatibility.supported
+
+
+@pytest.mark.parametrize(
+    "pre_processing_overrides",
+    [
+        PreProcessingOverrides(disable_contrast_enhancement=True),
+        PreProcessingOverrides(disable_grayscale=True),
+        PreProcessingOverrides(disable_static_crop=True),
+    ],
+)
+def test_request_compatibility_rejects_each_active_override(
+    monkeypatch,
+    pre_processing_overrides: PreProcessingOverrides,
+) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        True,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=pre_processing_overrides,
+    )
+
+    assert not compatibility.supported
+    assert "active pre-processing overrides" in compatibility.reasons
 
 
 def test_supported_uint8_request_is_compatible_when_triton_is_available(

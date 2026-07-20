@@ -253,6 +253,7 @@ need to know which preprocessor produced its input.
 |---|---|
 | `models/optimization/contracts.py` | Reusable metadata, compatibility, runtime context, and base stage protocol |
 | `models/optimization/execution_plan.py` | Reusable immutable execution-plan representation |
+| `models/optimization/fallback_warnings.py` | Thread-safe per-model de-duplication of request fallback warnings |
 | `models/optimization/ids.py` | Conventional `base` and `auto` implementation IDs |
 | `models/optimization/registry.py` | Strict explicit and conservative automatic resolution |
 | `models/optimization/torch_readiness.py` | Generic one-shot state handoff tied to exact tensor identity |

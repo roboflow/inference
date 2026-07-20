@@ -479,8 +479,14 @@ class UniversalFastPreprocessRuntime:
             Compatibility result with every unsupported request characteristic.
         """
         unsupported = []
-        if pre_processing_overrides is not None:
-            unsupported.append("pre-processing overrides")
+        if pre_processing_overrides is not None and any(
+            (
+                pre_processing_overrides.disable_contrast_enhancement,
+                pre_processing_overrides.disable_grayscale,
+                pre_processing_overrides.disable_static_crop,
+            )
+        ):
+            unsupported.append("active pre-processing overrides")
 
         raw_items = _raw_batch_items(images)
         if not raw_items:
