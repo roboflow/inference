@@ -612,19 +612,26 @@ class OWLv2HF(
         max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
         unload_after_use: bool = True,
     ) -> ImageEmbeddings:
+        # Resolve the hash and consult the cache BEFORE materializing pixels:
+        # for URL/base64 references the hash comes from the reference itself,
+        # so a cache hit must not pay the download + decode of the image.
         if isinstance(image, LazyImageWrapper):
             image_hash = image.get_hash()
-            image_instance = image.as_numpy()
-            if unload_after_use:
-                image.unload_image()
         else:
             image_hash = compute_image_hash(image=image)
-            image_instance = image
         cached_embeddings = self._owlv2_images_embeddings_cache.retrieve_embeddings(
             key=image_hash
         )
         if cached_embeddings:
+            if isinstance(image, LazyImageWrapper) and unload_after_use:
+                image.unload_image()
             return cached_embeddings
+        if isinstance(image, LazyImageWrapper):
+            image_instance = image.as_numpy()
+            if unload_after_use:
+                image.unload_image()
+        else:
+            image_instance = image
         pixel_values, image_dimensions = self.pre_process(image_instance)
         device_type = self._device.type
         with self._lock:
