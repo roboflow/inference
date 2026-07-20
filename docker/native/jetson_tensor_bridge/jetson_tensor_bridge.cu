@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -31,6 +32,10 @@ constexpr const char* kNvmmCapsFeature = "memory:NVMM";
 // one or two); this cap only bounds a slow or bursty consumer. Buffers are
 // allocated lazily on demand, so a small cap costs nothing until it is hit.
 constexpr size_t kJetsonTensorPoolBuffers = 8;
+// File sources must preserve ordering and every decoded frame. Bound their
+// device handoff queue and backpressure the streaming callback once it fills;
+// live sources continue to use a single latest-wins slot.
+constexpr size_t kJetsonTensorHandoffBuffers = 4;
 
 enum DLDeviceType : int32_t {
     kDLCUDA = 2,
@@ -200,15 +205,15 @@ struct RfJetsonPipeline {
     RfBridgeStats stats{};
     std::atomic<bool> interrupted{false};
     std::mutex mutex;
-    // Streaming-thread handoff (the jetson-utils consume model): the appsink
-    // new-sample callback converts each frame on the GStreamer streaming
-    // thread, releases the GStreamer buffer immediately (the decoder pool is
-    // never held hostage by a slow consumer), and publishes the finished CUDA
-    // tensor here. grab() waits on `frame_ready`; retrieve() takes the tensor.
-    // A newer frame replaces an uncollected one (latest-wins, like appsink
-    // drop=true, but the drop happens AFTER decode so nothing stalls).
+    // Streaming-thread handoff (the jetson-utils consume model): live sources
+    // publish into a latest-wins slot, while file sources use a bounded FIFO
+    // and backpressure the callback. This keeps live latency bounded without
+    // violating the lossless, ordered semantics expected when reading files.
     std::condition_variable frame_ready;
-    RfTensorContext* ready_tensor = nullptr;
+    std::condition_variable handoff_space;
+    std::deque<RfTensorContext*> ready_tensors;
+    RfTensorContext* grabbed_tensor = nullptr;
+    bool latest_only = true;
     std::atomic<bool> eos{false};
     bool conversion_failed = false;
     char conversion_error[1024] = {0};
@@ -1011,7 +1016,7 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
         handle, sample, &frame_info, &diagnostics, error, sizeof(error));
     gst_sample_unref(sample);
     {
-        std::lock_guard<std::mutex> lock(handle->mutex);
+        std::unique_lock<std::mutex> lock(handle->mutex);
         handle->stats.descriptor_maps += 1;
         handle->stats.last_nvbuf_memory_type = diagnostics.memory_type;
         handle->stats.last_egl_frame_type = diagnostics.frame_type;
@@ -1024,18 +1029,32 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
                 "%s",
                 error);
         } else {
-            if (handle->ready_tensor != nullptr) {
-                // Latest-wins: the consumer never collected the previous
-                // frame. Its buffer goes straight back to the pool.
-                delete_managed_tensor(&handle->ready_tensor->managed);
-                handle->stats.frames_dropped_by_consumer += 1;
-            }
-            handle->ready_tensor = tensor;
-            handle->last_frame_info = frame_info;
-            handle->frame_info_valid = true;
+            // Conversion accounting is complete before a lossless file source
+            // potentially waits for FIFO space, keeping the counters coherent
+            // even when stats are sampled while the callback is backpressured.
             handle->stats.frames += 1;
             handle->stats.conversion_kernels += 1;
             handle->stats.nvmm_frames += 1;
+            if (handle->latest_only && !handle->ready_tensors.empty()) {
+                // Live sources keep latency bounded by replacing the frame
+                // that the consumer has not collected yet.
+                delete_managed_tensor(&handle->ready_tensors.back()->managed);
+                handle->ready_tensors.pop_back();
+                handle->stats.frames_dropped_by_consumer += 1;
+            } else if (!handle->latest_only) {
+                handle->handoff_space.wait(lock, [handle]() {
+                    return handle->ready_tensors.size() <
+                               kJetsonTensorHandoffBuffers ||
+                           handle->interrupted.load(std::memory_order_acquire);
+                });
+                if (handle->interrupted.load(std::memory_order_acquire)) {
+                    delete_managed_tensor(&tensor->managed);
+                    return GST_FLOW_FLUSHING;
+                }
+            }
+            handle->ready_tensors.push_back(tensor);
+            handle->last_frame_info = frame_info;
+            handle->frame_info_valid = true;
         }
     }
     handle->frame_ready.notify_all();
@@ -1066,9 +1085,9 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
-    // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
-    // model), direct NV12 path, frames_dropped_by_consumer added to
-    // RfBridgeStats (ABI change — python mirror must match).
+    // v4: streaming-thread conversion + source-aware tensor handoff, direct
+    // NV12 path, and frames_dropped_by_consumer in RfBridgeStats. The bounded
+    // file FIFO is an internal behavior fix and does not alter this ABI.
     return "4";
 }
 
@@ -1163,6 +1182,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
     handle->pipeline = pipeline;
     handle->sink = GST_APP_SINK(sink_element);
     handle->device_id = device_id;
+    // Python marks live pipelines with appsink drop=true. The callback drains
+    // appsink immediately, so this property acts as the explicit handoff-mode
+    // signal rather than allowing GStreamer itself to discard queued samples.
+    handle->latest_only = gst_app_sink_get_drop(handle->sink);
     handle->tensor_pool =
         std::make_shared<RfBufferPool>(device_id, kJetsonTensorPoolBuffers);
     if (handle->tensor_pool == nullptr) {
@@ -1184,10 +1207,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         delete handle;
         return nullptr;
     }
-    // Consume frames via appsink callbacks on the GStreamer streaming thread
-    // (jetson-utils model): each sample is converted and released immediately,
-    // so a slow consumer can never pin the decoder's capture pool or force
-    // drops upstream. Must be installed before the PLAYING transition.
+    // Consume frames via appsink callbacks on the GStreamer streaming thread.
+    // Each sample is converted and released before the tensor handoff; live
+    // sources stay latest-wins, while files backpressure at the bounded FIFO.
+    // Must be installed before the PLAYING transition.
     GstAppSinkCallbacks sink_callbacks{};
     sink_callbacks.eos = handle_appsink_eos;
     sink_callbacks.new_preroll = handle_new_preroll;
@@ -1226,7 +1249,7 @@ int rf_jetson_pipeline_grab(
     {
         std::unique_lock<std::mutex> lock(handle->mutex);
         const auto frame_or_terminal = [handle]() {
-            return handle->ready_tensor != nullptr || handle->conversion_failed ||
+            return !handle->ready_tensors.empty() || handle->conversion_failed ||
                    handle->interrupted.load(std::memory_order_acquire) ||
                    handle->eos.load(std::memory_order_acquire);
         };
@@ -1242,7 +1265,15 @@ int rf_jetson_pipeline_grab(
             handle->conversion_failed = false;
             return -1;
         }
-        if (handle->ready_tensor != nullptr) {
+        if (handle->grabbed_tensor != nullptr) {
+            delete_managed_tensor(&handle->grabbed_tensor->managed);
+            handle->grabbed_tensor = nullptr;
+            handle->stats.frames_dropped_by_consumer += 1;
+        }
+        if (!handle->ready_tensors.empty()) {
+            handle->grabbed_tensor = handle->ready_tensors.front();
+            handle->ready_tensors.pop_front();
+            handle->handoff_space.notify_one();
             return 1;
         }
     }
@@ -1309,15 +1340,15 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
         return nullptr;
     }
     std::lock_guard<std::mutex> lock(handle->mutex);
-    if (handle->ready_tensor == nullptr) {
+    if (handle->grabbed_tensor == nullptr) {
         write_error(error, error_capacity, "No grabbed frame is available");
         return nullptr;
     }
     // The tensor was fully converted on the streaming thread; hand it over.
     // No CUDA call happens on the consumer thread (the DLPack deleter binds
     // the device itself when the consumer eventually drops the tensor).
-    RfTensorContext* tensor = handle->ready_tensor;
-    handle->ready_tensor = nullptr;
+    RfTensorContext* tensor = handle->grabbed_tensor;
+    handle->grabbed_tensor = nullptr;
     return &tensor->managed;
 }
 
@@ -1345,9 +1376,17 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
     if (handle == nullptr) {
         return -1;
     }
-    handle->interrupted.store(true, std::memory_order_release);
+    {
+        // Publish cancellation under the same mutex used by both condition
+        // variables. This closes the predicate-check/park window and ensures
+        // neither a grab nor a backpressured file callback can miss the wake.
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        handle->interrupted.store(true, std::memory_order_release);
+    }
     // Wake a grab() parked on the handoff slot so interrupt is prompt.
     handle->frame_ready.notify_all();
+    // A lossless file callback may be waiting for FIFO capacity.
+    handle->handoff_space.notify_all();
     if (handle->sink != nullptr) {
         gst_app_sink_set_drop(handle->sink, TRUE);
         GstSample* queued_sample = nullptr;
@@ -1370,12 +1409,13 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
     rf_jetson_pipeline_interrupt(handle);
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
-        if (handle->ready_tensor != nullptr) {
-            // interrupt() already reached GST_STATE_NULL, so the streaming
-            // thread is joined and no further callback can repopulate the
-            // slot; return the uncollected frame's buffer to the pool.
-            delete_managed_tensor(&handle->ready_tensor->managed);
-            handle->ready_tensor = nullptr;
+        if (handle->grabbed_tensor != nullptr) {
+            delete_managed_tensor(&handle->grabbed_tensor->managed);
+            handle->grabbed_tensor = nullptr;
+        }
+        while (!handle->ready_tensors.empty()) {
+            delete_managed_tensor(&handle->ready_tensors.front()->managed);
+            handle->ready_tensors.pop_front();
         }
         if (handle->sink != nullptr) {
             gst_app_sink_set_drop(handle->sink, TRUE);

@@ -259,8 +259,8 @@ def build_gstreamer_pipeline(
         #   property here: it is absent on the Thor/JP7.2 plugin and makes a
         #   static pipeline fail to parse before it can receive a frame;
         # - the appsink never accumulates (the bridge's new-sample callback
-        #   drains it on the streaming thread), so a small non-dropping queue
-        #   is enough.
+        #   drains it on the streaming thread); drop=true explicitly selects
+        #   the bridge's latest-frame handoff for this live source.
         codec = _rtsp_video_codec()
         tls_validation_flags = _rtsp_tls_validation_flags()
         return (
@@ -271,7 +271,7 @@ def build_gstreamer_pipeline(
             f"rtp{codec}depay ! {codec}parse ! "
             "nvv4l2decoder ! "
             "video/x-raw(memory:NVMM),format=NV12 ! "
-            "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
+            "appsink name=rf_tensor_sink max-buffers=1 drop=true sync=false "
             "wait-on-eos=false"
         )
 

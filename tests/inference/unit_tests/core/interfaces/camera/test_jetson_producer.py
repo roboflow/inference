@@ -185,7 +185,7 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
     assert "nvvidconv" not in pipeline
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
-    assert "max-buffers=4 drop=false sync=false" in pipeline
+    assert "max-buffers=1 drop=true sync=false" in pipeline
     assert "leaky" not in pipeline
 
 

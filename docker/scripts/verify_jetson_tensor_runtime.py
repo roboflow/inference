@@ -9,6 +9,7 @@ Run it manually inside a Jetson image, e.g.:
 
 import gc
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -24,8 +25,12 @@ from inference.core.interfaces.camera.jetson_tensor_bridge import (
     NativeJetsonTensorPipeline,
 )
 
+_BUNDLED_FIXTURE_DIRECTORY = Path("/opt/roboflow/test-fixtures")
+
 
 def _run_gstreamer(*arguments: str) -> None:
+    """Run one deterministic GStreamer fixture pipeline."""
+
     subprocess.run(
         ["gst-launch-1.0", "-q", *arguments],
         check=True,
@@ -33,28 +38,129 @@ def _run_gstreamer(*arguments: str) -> None:
     )
 
 
-def _create_h26x(path: Path, encoder: str, parser: str, pattern: str = "red") -> None:
-    _run_gstreamer(
+def _gstreamer_element_available(element: str) -> bool:
+    """Return whether the active GStreamer registry exposes an element."""
+
+    result = subprocess.run(
+        ["gst-inspect-1.0", element],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=10,
+    )
+    return result.returncode == 0
+
+
+def _nvenc_available(encoder: str) -> bool:
+    """Return whether the device and GStreamer element support Jetson NVENC."""
+
+    return Path("/dev/v4l2-nvenc").exists() and _gstreamer_element_available(encoder)
+
+
+def _create_h26x(
+    path: Path,
+    *,
+    encoder: str,
+    parser: str,
+    pattern: str,
+    hardware: bool,
+) -> None:
+    """Create a short H.26x fixture with the selected GStreamer encoder."""
+
+    arguments = [
         "videotestsrc",
         "num-buffers=8",
         f"pattern={pattern}",
         "!",
         "video/x-raw,format=I420,width=320,height=180,framerate=30/1",
         "!",
-        "nvvidconv",
-        "!",
-        "video/x-raw(memory:NVMM),format=NV12",
-        "!",
-        encoder,
-        "!",
-        parser,
-        "!",
-        "filesink",
-        f"location={path}",
+    ]
+    if hardware:
+        arguments.extend(
+            [
+                "nvvidconv",
+                "!",
+                "video/x-raw(memory:NVMM),format=NV12",
+                "!",
+            ]
+        )
+    arguments.append(encoder)
+    if encoder == "x264enc":
+        arguments.extend(["speed-preset=ultrafast", "tune=zerolatency"])
+    elif encoder == "x265enc":
+        arguments.append("speed-preset=ultrafast")
+    arguments.extend(["!", parser, "!", "filesink", f"location={path}"])
+    _run_gstreamer(*arguments)
+
+
+def _software_encoder(parser: str) -> str | None:
+    """Choose an available CPU encoder for the requested elementary stream."""
+
+    candidates = {
+        "h264parse": ("x264enc", "openh264enc", "avenc_h264"),
+        "h265parse": ("x265enc", "avenc_hevc"),
+    }
+    for encoder in candidates[parser]:
+        if _gstreamer_element_available(encoder):
+            return encoder
+    return None
+
+
+def _prepare_h26x_fixture(
+    path: Path,
+    *,
+    encoder: str,
+    parser: str,
+    pattern: str,
+    fixture_env: str,
+) -> None:
+    """Prepare a fixture through external, hardware, CPU, or bundled sources."""
+
+    configured_fixture = os.getenv(fixture_env)
+    if configured_fixture:
+        fixture_path = Path(configured_fixture)
+        if not fixture_path.is_file():
+            raise RuntimeError(
+                f"Configured fixture {fixture_env} does not exist: {fixture_path}"
+            )
+        shutil.copyfile(fixture_path, path)
+        return
+    if _nvenc_available(encoder):
+        _create_h26x(
+            path,
+            encoder=encoder,
+            parser=parser,
+            pattern=pattern,
+            hardware=True,
+        )
+        return
+    software_encoder = _software_encoder(parser)
+    if software_encoder is not None:
+        print(f"FALLBACK {path.suffix} fixture encoding to CPU {software_encoder}")
+        _create_h26x(
+            path,
+            encoder=software_encoder,
+            parser=parser,
+            pattern=pattern,
+            hardware=False,
+        )
+        return
+    bundled_fixture = _BUNDLED_FIXTURE_DIRECTORY / path.name
+    if bundled_fixture.is_file():
+        print(f"FALLBACK {path.suffix} fixture to bundled CPU-encoded media")
+        shutil.copyfile(bundled_fixture, path)
+        return
+    raise RuntimeError(
+        f"No encoder or bundled fixture is available for {path.suffix}; "
+        f"provide a fixture with {fixture_env}"
     )
 
 
 def _create_jpeg(path: Path) -> None:
+    """Create a JPEG fixture without requiring a hardware encoder."""
+
+    if not _gstreamer_element_available("jpegenc"):
+        raise RuntimeError("GStreamer jpegenc is required for the JPEG fixture")
     _run_gstreamer(
         "videotestsrc",
         "num-buffers=1",
@@ -62,11 +168,7 @@ def _create_jpeg(path: Path) -> None:
         "!",
         "video/x-raw,format=I420,width=320,height=180,framerate=1/1",
         "!",
-        "nvvidconv",
-        "!",
-        "video/x-raw(memory:NVMM),format=I420",
-        "!",
-        "nvjpegenc",
+        "jpegenc",
         "!",
         "filesink",
         f"location={path}",
@@ -104,14 +206,15 @@ def _validate_source(path: Path, minimum_frames: int) -> None:
 
     assert len(tensors) >= minimum_frames
     stats = producer.tensor_bridge_stats
-    assert stats["frames"] == len(tensors)
-    assert stats["descriptor_maps"] == len(tensors)
+    assert stats["frames"] >= len(tensors)
+    assert stats["descriptor_maps"] == stats["frames"]
     assert stats["host_pixel_maps"] == 0
     assert stats["host_to_device_copies"] == 0
     assert stats["device_to_host_copies"] == 0
     assert stats["array_flatten_copies"] == 0
-    assert stats["conversion_kernels"] == len(tensors)
-    assert stats["nvmm_frames"] == len(tensors)
+    assert stats["conversion_kernels"] == stats["frames"]
+    assert stats["nvmm_frames"] == stats["frames"]
+    assert stats["frames_dropped_by_consumer"] == 0
 
     producer.release()
     assert torch.equal(first, first_snapshot)
@@ -305,21 +408,34 @@ def main() -> None:
         h265_path = root / "test.h265"
         jpeg_path = root / "test.jpg"
         changing_h264_path = root / "changing.h264"
-        _create_h26x(h264_path, "nvv4l2h264enc", "h264parse")
-        _create_h26x(h265_path, "nvv4l2h265enc", "h265parse")
-        _create_h26x(
+        _prepare_h26x_fixture(
+            h264_path,
+            encoder="nvv4l2h264enc",
+            parser="h264parse",
+            pattern="red",
+            fixture_env="ROBOFLOW_JETSON_TEST_H264_FIXTURE",
+        )
+        _prepare_h26x_fixture(
+            h265_path,
+            encoder="nvv4l2h265enc",
+            parser="h265parse",
+            pattern="red",
+            fixture_env="ROBOFLOW_JETSON_TEST_H265_FIXTURE",
+        )
+        _prepare_h26x_fixture(
             changing_h264_path,
-            "nvv4l2h264enc",
-            "h264parse",
-            pattern="ball",
+            encoder="nvv4l2h264enc",
+            parser="h264parse",
+            pattern="blink",
+            fixture_env="ROBOFLOW_JETSON_TEST_CHANGING_H264_FIXTURE",
         )
         _create_jpeg(jpeg_path)
         _validate_source(h264_path, minimum_frames=5)
+        _validate_numpy_source(h264_path)
+        _validate_threaded_retrieve(h264_path)
         _validate_source(h265_path, minimum_frames=5)
         _validate_source(jpeg_path, minimum_frames=1)
-        _validate_numpy_source(h264_path)
         _validate_repeated_grab_advances(changing_h264_path)
-        _validate_threaded_retrieve(h264_path)
         _validate_interrupt_unblocks_pull()
 
     rtsp_url = os.getenv("ROBOFLOW_JETSON_TEST_RTSP_URL")
