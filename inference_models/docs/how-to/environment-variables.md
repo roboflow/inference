@@ -491,7 +491,10 @@ model = AutoModel.from_pretrained(
 ```
 
 This flag is intentionally separate from the execution plan. Its default is `False`,
-which keeps the optimized event-based handoff without host synchronization.
+which keeps the optimized event-based handoff without host synchronization. This is a
+compatibility-sensitive change for callers that previously treated `pre_process()` and
+`forward()` as independent TensorRT stages: those callers must now pass
+`independent_stage_execution=True`. Normal `model(...)` inference is unaffected.
 
 The plan also reserves independently selectable buffer-strategy, scheduler, and engine
 plugin stages. Those stages currently accept only `base`. When supplied, an explicit

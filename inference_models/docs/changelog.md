@@ -6,6 +6,23 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 `### Removed` subsections as appropriate.
 
 ---
+### Changed
+
+- RF-DETR TensorRT object detection now selects `triton-universal-v1`
+  preprocessing and `triton-fused-v1` postprocessing by default. Incompatible requests
+  use the declared `base` implementation unless strict selection is requested through
+  an explicit execution plan. The selected implementations can be controlled with an
+  `RFDetrExecutionPlan` or the `INFERENCE_MODELS_RFDETR_PREPROCESSOR` and
+  `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` environment variables.
+- **Breaking change for direct RF-DETR TensorRT stage calls:** the default optimized
+  preprocessing path may return a CUDA tensor whose completion is tracked by the model
+  instance and consumed by its `forward()` method without a host synchronization. Normal
+  `model(...)` inference is unaffected. Callers that invoke `pre_process()` and
+  `forward()` as independent stages—including callers that transfer the preprocessed
+  tensor between model instances or execution contexts—must construct the model with
+  `independent_stage_execution=True`. This makes `pre_process()` synchronize before it
+  returns and removes the cross-call readiness dependency.
+
 ### Fixed
 
 - SAM3 concept-segmentation postprocessing no longer scales its memory working set with
@@ -17,6 +34,9 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ### Added
 
+- Composable RF-DETR TensorRT execution plans, implementation contracts and registries,
+  compatibility-aware implementation selection, and runtime metadata reporting the
+  requested and effective preprocessing and postprocessing implementations.
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).

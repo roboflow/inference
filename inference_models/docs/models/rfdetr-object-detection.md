@@ -92,6 +92,35 @@ annotated_image = bounding_box_annotator.annotate(image, detections)
 cv2.imwrite("annotated.jpg", annotated_image)
 ```
 
+### Calling TensorRT stages independently
+
+The TensorRT backend normally keeps optimized preprocessing asynchronous. Its
+`pre_process()` and `forward()` methods coordinate through readiness state owned by the
+model instance, avoiding a host synchronization in the normal `model(...)` path.
+
+If your application calls `pre_process()`, `forward()`, and `post_process()` separately,
+initialize the model with `independent_stage_execution=True`:
+
+```python
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained(
+    "rfdetr-base",
+    backend="trt",
+    independent_stage_execution=True,
+)
+
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
+predictions = model.post_process(raw_predictions, metadata)
+```
+
+With this flag enabled, `pre_process()` synchronizes its CUDA producer before returning,
+so the returned tensor can be passed to `forward()` independently and does not depend on
+readiness state retained by the model. The synchronization can reduce throughput, so
+leave the default (`False`) in place when using `model(...)` or when immediately passing
+the exact tensor returned by `pre_process()` to the same model instance's `forward()`.
+
 ## Trained RF-DETR Outside Roboflow? Use with `inference-models`
 
 RF-DETR offers a **seamless training-to-deployment workflow** that makes it incredibly easy to go from training to production.
