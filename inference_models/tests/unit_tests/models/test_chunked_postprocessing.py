@@ -82,16 +82,20 @@ def test_rle_masks_match_parent():
         assert _rle_counts(p) == _rle_counts(o)
 
 
-def test_cap_returns_topk_by_score_in_parent_late_topk_order():
+def test_cap_selects_parent_topk_set():
+    # boolean keep cannot carry ordering, so capped output retains query
+    # order; the SET must equal what the parent's late topk would select,
+    # with masks/boxes aligned to their scores
     outputs = _synthetic_outputs()
     parent = _build(PostProcessImage)(outputs, _sizes(), _sizes())
     ours = _build(ChunkedPostProcessImage, max_dets_per_img=3)(
         outputs, _sizes(), _sizes()
     )
     expected_scores, expected_idx = torch.topk(parent[0]["scores"], 3)
-    assert torch.equal(ours[0]["scores"], expected_scores)
-    assert torch.equal(ours[0]["masks"], parent[0]["masks"][expected_idx])
-    assert torch.equal(ours[0]["boxes"], parent[0]["boxes"][expected_idx])
+    order = torch.argsort(ours[0]["scores"], descending=True)
+    assert torch.equal(ours[0]["scores"][order], expected_scores)
+    assert torch.equal(ours[0]["masks"][order], parent[0]["masks"][expected_idx])
+    assert torch.equal(ours[0]["boxes"][order], parent[0]["boxes"][expected_idx])
 
 
 def test_cap_applies_with_thresholding_disabled():
@@ -103,11 +107,28 @@ def test_cap_applies_with_thresholding_disabled():
     )(outputs, _sizes(), _sizes())
     assert ours[0]["scores"].shape[0] == 4
     assert ours[0]["masks"].shape[0] == 4
-    # score-descending, and equal to the global top-4 over all queries
+    # the selected SET equals the global top-4 over all queries
     all_scores = _build(PostProcessImage, detection_threshold=-1.0)(
         outputs, _sizes(), _sizes()
     )[0]["scores"]
-    assert torch.equal(ours[0]["scores"], torch.topk(all_scores, 4).values)
+    assert torch.equal(
+        torch.sort(ours[0]["scores"], descending=True).values,
+        torch.topk(all_scores, 4).values,
+    )
+
+
+def test_keep_is_boolean_mask():
+    # parent-interface adherence (PR #2670 maintainer review): keep must be
+    # the boolean mask type the parent's code paths expect
+    outputs = _synthetic_outputs()
+    post = _build(ChunkedPostProcessImage, max_dets_per_img=3)
+    _, _, _, keep = post._process_boxes_and_labels(
+        _sizes(), None, outputs["pred_boxes"], outputs["pred_logits"].sigmoid()
+    )
+    assert keep is not None
+    assert keep.dtype == torch.bool
+    assert keep.shape == (B, Q)
+    assert int(keep.sum()) == 3
 
 
 def test_zero_detections_shapes():
