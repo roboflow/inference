@@ -6,6 +6,9 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 `### Removed` subsections as appropriate.
 
 ---
+
+## `0.32.0`
+
 ### Changed
 
 - RF-DETR TensorRT object detection now selects `triton-universal-v1`
@@ -43,6 +46,8 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).
+
+---
 
 ## `0.31.0`
 
