@@ -14,9 +14,10 @@ variable "JETSON_WHEELS_IMAGE" {
 }
 
 variable "JETSON_MEDIA_IMAGE" {
-  # Reuse the on-device validated JP7.2 media runtime instead of recompiling
-  # GStreamer, FFmpeg, OpenCV, and the native tensor bridge in every server build.
-  default = "roboflow/roboflow-inference-server-jetson-7.2.0:1.4.0-runtime-srtp-final@sha256:5b475bd02d5dbaea81bcfa500dbd5ed7aca1079dd13fd6106651061d8dbd6a25"
+  # Keep the server coupled to the immutable JP7.2 media-only runtime. This
+  # contains FFmpeg, GStreamer, OpenCV, and the native SM87/SM110 tensor bridge
+  # without inheriting application or Python layers from an older server image.
+  default = "roboflow/roboflow-inference-media-jetson-7.2.0:1.4.0-mvp-media-srtp-v1@sha256:1429079bdbdae770ea37a41bc8d3675c93370004752b2720ed6a50f41b5a39da"
 }
 
 target "jetson-media-jp72" {
