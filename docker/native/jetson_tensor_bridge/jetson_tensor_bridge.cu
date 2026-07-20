@@ -1088,8 +1088,8 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
             if (!handle->negotiated_frame_info_valid) {
                 handle->negotiated_frame_info = frame_info;
                 handle->negotiated_frame_info_valid = true;
-            } else if (frame_caps_changed(
-                           handle->negotiated_frame_info, frame_info)) {
+            }
+            if (frame_caps_changed(handle->negotiated_frame_info, frame_info)) {
                 std::snprintf(
                     handle->caps_change_error,
                     sizeof(handle->caps_change_error),

@@ -123,6 +123,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-on
     build-essential \
     cmake \
     ninja-build \
+    patch \
     git \
     curl \
     python3-dev \
@@ -238,17 +239,19 @@ RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=
     readelf -d "${torchvision_image}" | grep -q 'Shared library: \[libnvjpeg.so.13\]'; fi
 
 WORKDIR /build/onnxruntime
-# CUDA 13.2's SBSA CCCL package has an invalid globally-qualified
-# specialization which GCC rejects when ONNX Runtime includes CUB. Keep the
-# fallback compiler path guarded; prebuilt-wheel server builds remain a no-op.
+# CUDA 13.2's SBSA CCCL package places explicit specializations at global
+# scope with an invalid leading ``::`` qualification. GCC rejects them when
+# ONNX Runtime includes CUB under C++20. Apply the same committed two-header
+# patch as the wheel builder, guarded so prebuilt-wheel server builds remain a
+# no-op.
+COPY docker/patches/cuda-13.2-cccl-gcc.patch /tmp/cuda-13.2-cccl-gcc.patch
 RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then \
-      cccl_header=/usr/local/cuda/targets/sbsa-linux/include/cccl/cub/device/device_transform.cuh; \
-      test -f "${cccl_header}"; \
-      if grep -q 'struct ::cuda::proclaims_copyable_arguments' "${cccl_header}"; then \
-        sed -i 's/struct ::cuda::proclaims_copyable_arguments/struct cuda::proclaims_copyable_arguments/' "${cccl_header}"; \
-      fi; \
-      grep -q 'struct cuda::proclaims_copyable_arguments' "${cccl_header}"; \
-      ! grep -q 'struct ::cuda::proclaims_copyable_arguments' "${cccl_header}"; \
+      cccl_root=/usr/local/cuda/targets/sbsa-linux/include/cccl; \
+      patch --directory="${cccl_root}" --strip=1 < /tmp/cuda-13.2-cccl-gcc.patch; \
+      grep -q '^namespace cuda$' "${cccl_root}/cub/device/device_transform.cuh"; \
+      ! grep -R -q 'struct ::cuda::proclaims_copyable_arguments' \
+        "${cccl_root}/cub/device/device_transform.cuh" \
+        "${cccl_root}/cub/device/dispatch/tuning/tuning_transform.cuh"; \
     fi
 RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then \
       git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git; \
