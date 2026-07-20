@@ -63,8 +63,7 @@ Severity tags: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** =
 ## Required companions
 Block a functional change unless it carries these (condition → required file):
 
-- **Any functional change** → version bump in `inference_models/pyproject.toml` AND a `docs/changelog.md` entry under a new `` ## `{version}` `` heading with `Added`/`Fixed`/`Changed`.
-- **Change reaches the server** → bump `inference/core/version.py` (`__version__`) too (as in #2260).
+- **Any functional change** → version bump in `inference_models/pyproject.toml` AND a `docs/changelog.md` entry under a new `` ## `{version}` `` heading with `Added`/`Fixed`/`Changed`. (No `inference/core/version.py` bump — inference releases are versioned separately.)
 - **`pyproject.toml` deps changed** → `inference_models/uv.lock` regenerated (`uv sync`); shared server deps also mirrored into `requirements/*.txt` (#2047, #2449 security bumps, #2415/#2510 dep updates).
 - **New error class** → `docs/errors/<page>.md` section + `help_url` anchor.
 - **New model** → `REGISTERED_MODELS` entry + `docs/models/<model>.md` + a license file for the model-family dir, listed in `docs/models/index.md`.

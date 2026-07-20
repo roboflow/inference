@@ -9,7 +9,7 @@ description: Review guidance for PRs touching inference/core/interfaces/http/** 
 Trigger this skill when a PR touches any of:
 - `inference/core/interfaces/http/**` — `http_api.py` (the FastAPI app factory `HttpInterface`, all route registrations, middleware wiring, serverless auth), `error_handlers.py`, `orjson_utils.py`, `dependencies.py`, `request_metrics.py`, `uvicorn_config.py`, `middlewares/{cors,gzip}.py`, `builder/routes.py`, `handlers/workflows.py`.
 - `inference_cli/server.py` — the `inference server start|status|stop` typer CLI.
-- Companion touch-points this surface owns the contract for: a new exception in `inference/core/exceptions.py` that needs an HTTP mapping; the status-code map in `inference/core/roboflow_api.py`; header constants in `inference/core/constants.py` / `request_metrics.py`; a route-gating env flag in `inference/core/env.py`; `inference/core/version.py`.
+- Companion touch-points this surface owns the contract for: a new exception in `inference/core/exceptions.py` that needs an HTTP mapping; the status-code map in `inference/core/roboflow_api.py`; header constants in `inference/core/constants.py` / `request_metrics.py`; a route-gating env flag in `inference/core/env.py`.
 
 OUT of scope (other skills own these): Workflows execution-engine internals, model implementations under `inference/models/`, stream-manager/pipeline internals, `inference_sdk` client. Only review the HTTP *surface* of those. Serverless/tenant auth semantics are co-owned with `review-topic-auth-and-tenant-security` — that skill owns the fail-open rule; this skill enforces that every route on the surface declares its auth story.
 
@@ -29,14 +29,13 @@ Severity-tagged. Resolve BLOCK before merge; raise FLAG; NIT is optional.
 - **FLAG** — A new response header is added to the CORS `expose_headers` list in the `PathAwareCORSMiddleware` block of `http_api.py`, and its constant lives in `constants.py` / `request_metrics.py`.
 - **FLAG** — Request body/stream is read exactly once, via `parse_body_content_for_legacy_request_handler` in `dependencies.py` (#1518).
 - **FLAG** — External numeric inputs (`confidence`, `usage_fps`, `frames`) are guarded before arithmetic: clamp order is correct for percentage-vs-fraction inputs (#1746), and non-numeric values are rejected with `isinstance(x, numbers.Number)` (#795).
-- **FLAG** — Behavior changes bump `inference/core/version.py` `__version__`.
 - **FLAG** — Tests added/updated under `tests/inference/unit_tests/core/interfaces/http/` for the new status / field / header / branch.
 - **NIT** — Exception log level matches severity: `logger.warning(...)` for client-caused/expected (402, missing key), `logger.exception(...)` for server faults; every caught exception is logged, not silently swallowed (#1104).
 - **NIT** — CLI options follow `Annotated[..., typer.Option("--x/--no-x", help=...)]` and are threaded into `start_inference_container(...)` (#1024).
 - **NIT** — Endpoint/CLI changes update `docs/api.md` / `docs/server_configuration/` / `docs/inference_helpers/`.
 
 ### Not blocking
-- Do NOT demand a version bump for pure-refactor / comment / test-only diffs that don't change behavior.
+- Do NOT demand an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs.
 - Do NOT demand CORS `expose_headers` changes for headers that are internal-only or never returned cross-origin.
 - Do NOT demand a new env flag for routes that are already unconditionally serverless-excluded and carry no perf/rollout risk.
 - Response-header aggregation, Prometheus/GPU metrics endpoints, and serializer swaps are recurring revert magnets (#2222, #721, #724, #190) — ask for justification + tests, but a well-tested change here is not automatically a BLOCK.
@@ -61,7 +60,7 @@ One canonical statement per rule. The checklist above references these.
 - `inference/core/interfaces/http/dependencies.py` — `parse_body_content_for_legacy_request_handler` (legacy body/multipart parsing).
 - `inference/core/interfaces/http/builder/routes.py` — builder UI routes (path safety, Firestore-shaped responses).
 - `inference/core/interfaces/http/middlewares/{cors,gzip}.py`, `request_metrics.py`, `uvicorn_config.py`.
-- `inference/core/exceptions.py`, `inference/core/env.py`, `inference/core/version.py`, `inference/core/constants.py`, `inference/core/roboflow_api.py` (`DEFAULT_ERROR_HANDLERS`).
+- `inference/core/exceptions.py`, `inference/core/env.py`, `inference/core/constants.py`, `inference/core/roboflow_api.py` (`DEFAULT_ERROR_HANDLERS`).
 - `inference_cli/server.py` — CLI. Tests: `tests/inference/unit_tests/core/interfaces/http/`.
 
 ## Reference PRs

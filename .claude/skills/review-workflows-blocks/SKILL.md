@@ -17,19 +17,19 @@ Severity: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** = opti
 
 1. **BLOCK — Output contract**: enumerate `describe_outputs()` keys; confirm EVERY `run()`/helper return dict (happy, empty, error, zero-area) carries exactly those keys (#2346).
 2. **BLOCK — Versioning discipline**: bug-fix patches the existing `vN.py`; behavior change / new inputs-outputs goes in a NEW `vN.py`. Confirm no shipped `type` identifier or legacy alias was removed or repurposed.
-3. **BLOCK — Version bump** in `inference/core/version.py` (`__version__`) for any functional change.
-4. **BLOCK — Loader wiring**: new block imported into `load_blocks()`; new kind into `load_kinds()` + defined in `types.py` with `*_KIND_DOCS`; serializable data-kind into `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`.
-5. **BLOCK — `__init__.py`** exists in every new/nested block package (guarded by `test_init_files.py`).
-6. **BLOCK — `sv.Detections.data` density**: any new data key holds dense N-d numpy arrays (no `dtype="object"` ragged) and has serializer/deserializer parity if it must round-trip.
-7. **FLAG — Tests**: unit test under `tests/workflows/unit_tests/core_steps/{category}/`; integration test under `tests/workflows/integration_tests/execution/test_workflow_with_*_block.py` for new or output-changing blocks.
-8. **FLAG — EE compatibility**: `get_execution_engine_compatibility()` reflects features used. If the PR bumps `EXECUTION_ENGINE_V1_VERSION`, require a changelog entry + version-assert test updates; a plain block change touching that version is a red flag.
-9. **FLAG — Cross-block kinds**: output kinds upstream ⊆ input kinds accepted downstream (esp. detections/segmentation/keypoint interplay).
-10. **FLAG — Model-version changes** update defaults/enums (not silent deletion) and keep old identifiers loadable.
-11. **FLAG — Batch handling** for model/foundation blocks: `run` iterates `Batch[...]` correctly and declares `get_parameters_accepting_batches()`.
-12. **FLAG — UQL correctness over speed**: be skeptical of micro-optimizations to `common/query_language/**` ops that change behavior (#1112/#1161/#1162 were reverted).
-13. **NIT — Field metadata**: new inputs have `title`/`description`/`examples`; `default=` correct (no stray `default=None` on required fields); `json_schema_extra` (`relevant_for`, `always_visible`) sensible.
+3. **BLOCK — Loader wiring**: new block imported into `load_blocks()`; new kind into `load_kinds()` + defined in `types.py` with `*_KIND_DOCS`; serializable data-kind into `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`.
+4. **BLOCK — `__init__.py`** exists in every new/nested block package (guarded by `test_init_files.py`).
+5. **BLOCK — `sv.Detections.data` density**: any new data key holds dense N-d numpy arrays (no `dtype="object"` ragged) and has serializer/deserializer parity if it must round-trip.
+6. **FLAG — Tests**: unit test under `tests/workflows/unit_tests/core_steps/{category}/`; integration test under `tests/workflows/integration_tests/execution/test_workflow_with_*_block.py` for new or output-changing blocks.
+7. **FLAG — EE compatibility**: `get_execution_engine_compatibility()` reflects features used. If the PR bumps `EXECUTION_ENGINE_V1_VERSION`, require a changelog entry + version-assert test updates; a plain block change touching that version is a red flag.
+8. **FLAG — Cross-block kinds**: output kinds upstream ⊆ input kinds accepted downstream (esp. detections/segmentation/keypoint interplay).
+9. **FLAG — Model-version changes** update defaults/enums (not silent deletion) and keep old identifiers loadable.
+10. **FLAG — Batch handling** for model/foundation blocks: `run` iterates `Batch[...]` correctly and declares `get_parameters_accepting_batches()`.
+11. **FLAG — UQL correctness over speed**: be skeptical of micro-optimizations to `common/query_language/**` ops that change behavior (#1112/#1161/#1162 were reverted).
+12. **NIT — Field metadata**: new inputs have `title`/`description`/`examples`; `default=` correct (no stray `default=None` on required fields); `json_schema_extra` (`relevant_for`, `always_visible`) sensible.
 
 ### Not blocking
+- Do NOT demand an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs.
 - Do NOT demand a new `vN.py` for a pure in-place bug-fix; surgical patches to a shipped version are correct (#2346, #1339, #1368).
 - Do NOT demand `EXECUTION_ENGINE_V1_VERSION` / changelog changes on an ordinary block PR — most block changes never touch the EE version.
 - Do NOT demand serializer/deserializer entries for a data key that is purely intra-block and never crosses the wire.
@@ -56,7 +56,6 @@ The one canonical statement of each rule. Past regressions are cited inline; see
 
 ## Required companions
 Block a functional change that lacks these (canonical rules above; conditions here):
-- **Version bump** — `__version__` in `inference/core/version.py`, on essentially every functional block change (#2351, #2384, #1596).
 - **Loader registration** — new block in `load_blocks()`; new kind in `load_kinds()` + `types.py`; new serializable data-kind in `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`, all in `loader.py` (#2362, #804).
 - **Tests** — unit test always; integration test for new or output-changing blocks (#2362, #718).
 - **`__init__.py`** — in every new/nested block package (#2351, #830).
@@ -70,7 +69,6 @@ Block a functional change that lacks these (canonical rules above; conditions he
 - `inference/core/workflows/execution_engine/entities/types.py` — `Kind` definitions + `*_KIND_DOCS`.
 - `inference/core/workflows/execution_engine/entities/base.py` — `WorkflowImageData`, `Batch`, `OutputDefinition`.
 - `inference/core/workflows/prototypes/block.py` — `WorkflowBlock`, `WorkflowBlockManifest`, `BlockResult`.
-- `inference/core/version.py` — `__version__` (bump gate).
 - `inference/core/workflows/execution_engine/v1/core.py` — `EXECUTION_ENGINE_V1_VERSION`.
 - Docs: `docs/workflows/create_workflow_block.md`, `versioning.md`, `blocks_bundling.md`, `execution_engine_changelog.md`.
 - Tests: `tests/workflows/unit_tests/core_steps/**`, `tests/workflows/integration_tests/execution/**`, `test_init_files.py`.
@@ -80,7 +78,7 @@ Block a functional change that lacks these (canonical rules above; conditions he
 - [#2346](https://github.com/roboflow/inference/pull/2346) — missing declared output key on empty branch (output-contract).
 - [#2170](https://github.com/roboflow/inference/pull/2170) — object-dtype ragged keypoint arrays break supervision.
 - [#1368](https://github.com/roboflow/inference/pull/1368) — `sv.Detections.data` must hold numpy arrays + serializer parity.
-- [#2384](https://github.com/roboflow/inference/pull/2384) — backward-compat input field added in-place to v1/v2/v3 + version bump.
+- [#2384](https://github.com/roboflow/inference/pull/2384) — backward-compat input field added in-place to v1/v2/v3 with defaults.
 - [#804](https://github.com/roboflow/inference/pull/804) — new `INFERENCE_ID_KIND` across blocks (kinds discipline).
 - [#565](https://github.com/roboflow/inference/pull/565) — Workflows block versioning foundation.
 - [#2351](https://github.com/roboflow/inference/pull/2351) — missing `__init__.py` (packaging/docs).
