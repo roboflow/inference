@@ -16,9 +16,12 @@ Contract expected by Cosmos3EdgeWorldModel (all images RGB numpy arrays):
 - rollout(session, actions, num_frames) -> ([frames], session)
 - infer_actions(frames) -> {actions, action_space, fps, metadata}
 
-Forward/inverse dynamics need the action-conditioning path
-(`Cosmos3OmniPipeline`'s `action=` input); wiring for it is not implemented in
-this reference module yet and the corresponding methods raise.
+Forward/inverse dynamics ride the pipeline's action-conditioning path
+(`CosmosActionCondition`): forward dynamics conditions each chunk on the last
+generated frame of the previous chunk (carried in the session dict), inverse
+dynamics infers the action sequence connecting the frames of an observation
+video. `action_space` maps to the pipeline's embodiment `domain_name`
+(e.g. "umi", "av", "droid_lerobot").
 """
 
 from typing import List, Optional
@@ -73,28 +76,109 @@ class Cosmos3GeneratorRuntime:
             output_type="np",
             enable_safety_check=False,
         )
-        video = np.asarray(result.video)
-        if video.dtype != np.uint8:
-            video = (np.clip(video, 0.0, 1.0) * 255).astype(np.uint8)
-        return [frame for frame in video]
+        return [frame for frame in _to_uint8(result.video)]
 
-    def encode_context(self, frames: List[np.ndarray]):
-        raise NotImplementedError(
-            "Forward dynamics is not wired in the reference runtime yet - it "
-            "requires the action-conditioning inputs of Cosmos3OmniPipeline."
+    def encode_context(
+        self,
+        frames: List[np.ndarray],
+        prompt: Optional[str] = None,
+        view_point: str = "ego_view",
+        resolution_tier: int = 256,
+        **kwargs,
+    ) -> dict:
+        # The session carries the frame each subsequent chunk conditions on,
+        # plus the generation context that stays fixed across the rollout.
+        return {
+            "conditioning_frame": np.asarray(frames[-1]),
+            "prompt": prompt,
+            "view_point": view_point,
+            "resolution_tier": resolution_tier,
+        }
+
+    def rollout(
+        self,
+        session: dict,
+        actions: np.ndarray,
+        num_frames: int,
+        action_space: str = "umi",
+        seed: Optional[int] = None,
+        num_inference_steps: int = 35,
+        **kwargs,
+    ):
+        from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import (
+            CosmosActionCondition,
+        )
+        from PIL import Image
+
+        condition = CosmosActionCondition(
+            mode="forward_dynamics",
+            chunk_size=len(actions),
+            domain_name=action_space,
+            resolution_tier=session["resolution_tier"],
+            raw_actions=torch.as_tensor(np.asarray(actions), dtype=torch.float32),
+            image=Image.fromarray(session["conditioning_frame"]),
+            view_point=session["view_point"],
+        )
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=self._device).manual_seed(seed)
+        result = self._pipeline(
+            prompt=session.get("prompt") or "",
+            action=condition,
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+            output_type="np",
+            enable_safety_check=False,
+        )
+        video = _to_uint8(result.video)
+        updated_session = dict(session)
+        updated_session["conditioning_frame"] = video[-1]
+        return [frame for frame in video], updated_session
+
+    def infer_actions(
+        self,
+        frames: List[np.ndarray],
+        action_space: str = "umi",
+        view_point: str = "ego_view",
+        resolution_tier: int = 256,
+        fps: float = 20.0,
+        num_inference_steps: int = 35,
+        **kwargs,
+    ) -> dict:
+        from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import (
+            CosmosActionCondition,
         )
 
-    def rollout(self, session, actions: np.ndarray, num_frames: int):
-        raise NotImplementedError(
-            "Forward dynamics is not wired in the reference runtime yet - it "
-            "requires the action-conditioning inputs of Cosmos3OmniPipeline."
+        condition = CosmosActionCondition(
+            mode="inverse_dynamics",
+            chunk_size=max(1, len(frames) - 1),
+            domain_name=action_space,
+            resolution_tier=resolution_tier,
+            video=[np.asarray(frame) for frame in frames],
+            view_point=view_point,
         )
+        result = self._pipeline(
+            prompt="",
+            action=condition,
+            num_inference_steps=num_inference_steps,
+            output_type="np",
+            enable_safety_check=False,
+        )
+        chunks = [chunk.float().cpu().numpy() for chunk in (result.action or [])]
+        actions = np.concatenate(chunks, axis=0) if chunks else np.zeros((0, 0))
+        return {
+            "actions": actions,
+            "action_space": action_space,
+            "fps": fps,
+            "metadata": {"view_point": view_point, "num_chunks": len(chunks)},
+        }
 
-    def infer_actions(self, frames: List[np.ndarray]) -> dict:
-        raise NotImplementedError(
-            "Inverse dynamics is not wired in the reference runtime yet - it "
-            "requires the action decoding path of Cosmos3OmniPipeline."
-        )
+
+def _to_uint8(video) -> np.ndarray:
+    video = np.asarray(video)
+    if video.dtype != np.uint8:
+        video = (np.clip(video, 0.0, 1.0) * 255).astype(np.uint8)
+    return video
 
 
 def _resolve_resolution(resolution: int):

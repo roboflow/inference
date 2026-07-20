@@ -107,6 +107,7 @@ class Cosmos3EdgeWorldModel:
         self,
         frames: List[np.ndarray],
         input_color_format: ColorFormat = None,
+        **session_options,
     ) -> dict:
         context = _as_rgb_frames(frames, input_color_format=input_color_format)
         if not context:
@@ -115,7 +116,7 @@ class Cosmos3EdgeWorldModel:
                 help_url="https://inference-models.roboflow.com/errors/models-input/#modelinputerror",
             )
         with self._lock:
-            session = self._runtime.encode_context(frames=context)
+            session = self._runtime.encode_context(frames=context, **session_options)
         return {SESSION_KEY: session}
 
     def forward_dynamics(
@@ -133,6 +134,8 @@ class Cosmos3EdgeWorldModel:
                 session=session,
                 actions=actions.actions,
                 num_frames=num_frames,
+                action_space=actions.action_space,
+                **kwargs,
             )
         frames = [_rgb_to_bgr(frame) for frame in generated]
         return Cosmos3Rollout(
@@ -145,6 +148,7 @@ class Cosmos3EdgeWorldModel:
     def inverse_dynamics(
         self,
         frames: List[np.ndarray],
+        action_space: str,
         input_color_format: ColorFormat = None,
         **kwargs,
     ) -> Cosmos3ActionTrajectory:
@@ -155,7 +159,9 @@ class Cosmos3EdgeWorldModel:
                 help_url="https://inference-models.roboflow.com/errors/models-input/#modelinputerror",
             )
         with self._lock:
-            result = self._runtime.infer_actions(frames=observation)
+            result = self._runtime.infer_actions(
+                frames=observation, action_space=action_space, **kwargs
+            )
         return Cosmos3ActionTrajectory(
             actions=np.asarray(result["actions"]),
             action_space=result["action_space"],

@@ -75,6 +75,10 @@ def test_forward_dynamics_threads_session_state() -> None:
     assert state == {SESSION_KEY: "session-0"}
     assert model._runtime.rollout.call_args.kwargs["session"] == "session-0"
     assert model._runtime.rollout.call_args.kwargs["num_frames"] == 5
+    assert (
+        model._runtime.rollout.call_args.kwargs["action_space"]
+        == "droid_joint_velocity"
+    )
     assert rollout.state_dict == {SESSION_KEY: "session-1"}
     assert len(rollout.frames) == 5
     assert rollout.fps == 15.0
@@ -96,7 +100,14 @@ def test_inverse_dynamics_wraps_runtime_result() -> None:
         "metadata": {"source": "test"},
     }
 
-    trajectory = model.inverse_dynamics(frames=_rgb_frames(3))
+    trajectory = model.inverse_dynamics(
+        frames=_rgb_frames(3), action_space="droid_joint_velocity"
+    )
+
+    assert (
+        model._runtime.infer_actions.call_args.kwargs["action_space"]
+        == "droid_joint_velocity"
+    )
 
     assert trajectory.actions.shape == (3, 7)
     assert trajectory.action_space == "droid_joint_velocity"
