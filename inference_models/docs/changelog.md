@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
+`### Removed` subsections as appropriate.
+
+---
 ### Fixed
 
 - SAM3 concept-segmentation postprocessing no longer scales its memory working set with
