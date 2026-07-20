@@ -10,16 +10,19 @@ from inference_models.errors import ModelRuntimeError
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.optimization.ids import (
-    RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_ENV_NAME,
-    RFDETR_PREPROCESSOR_BASE,
+    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_ENV_NAME,
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 
 
 @dataclass(frozen=True)
 class RFDetrExecutionPlan(InferenceExecutionPlan):
     """Independent implementation selections for the RF-DETR inference path."""
+
+    preprocessor_id: str = RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    postprocessor_id: str = RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
 
     @classmethod
     def resolve(
@@ -45,11 +48,11 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
             plan = cls(
                 preprocessor_id=os.getenv(
                     RFDETR_PREPROCESSOR_ENV_NAME,
-                    RFDETR_PREPROCESSOR_BASE,
+                    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
                 ),
                 postprocessor_id=os.getenv(
                     RFDETR_POSTPROCESSOR_ENV_NAME,
-                    RFDETR_POSTPROCESSOR_BASE,
+                    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
                 ),
             )
 

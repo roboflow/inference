@@ -207,9 +207,47 @@ def test_request_compatibility_reports_overrides_and_heterogeneous_shapes() -> N
     )
 
 
-def test_supported_request_is_compatible() -> None:
+def test_supported_uint8_request_is_compatible_when_triton_is_available(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        True,
+    )
     compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
         images=np.zeros((2, 8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert compatibility.supported
+
+
+def test_uint8_request_reports_missing_triton(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        False,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert not compatibility.supported
+    assert "Triton is not installed for uint8 preprocessing" in compatibility.reasons
+
+
+def test_float_request_remains_compatible_without_triton(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        False,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=torch.zeros((3, 8, 9), dtype=torch.float32),
         pre_processing_overrides=None,
     )
 

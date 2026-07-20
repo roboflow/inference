@@ -499,6 +499,8 @@ class UniversalFastPreprocessRuntime:
             unsupported.append("mixed uint8 and floating tensor semantics")
         if len(set(shapes)) > 1:
             unsupported.append(f"heterogeneous source dimensions: {shapes}")
+        if "uint8" in kinds and not TRITON_AVAILABLE:
+            unsupported.append("Triton is not installed for uint8 preprocessing")
         if unsupported:
             result = CompatibilityResult.incompatible(*unsupported)
         else:

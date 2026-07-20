@@ -80,6 +80,30 @@ def test_fused_postprocessor_reports_request_incompatibility_without_cuda() -> N
     assert "boxes and logits must be CUDA tensors" in compatibility.reasons
 
 
+def test_fused_postprocessor_reports_missing_triton(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_object_detection_postprocess."
+        "TRITON_AVAILABLE",
+        False,
+    )
+    postprocessor = FusedObjectDetectionPostprocessor.__new__(
+        FusedObjectDetectionPostprocessor
+    )
+    postprocessor._device = torch.device("cuda:0")
+
+    compatibility = postprocessor.check_request_compatibility(
+        bboxes=torch.zeros((1, 2, 4)),
+        logits=torch.zeros((1, 2, 3)),
+        pre_processing_meta=[_metadata()],
+        threshold=0.5,
+        num_classes=3,
+        classes_re_mapping=None,
+    )
+
+    assert not compatibility.supported
+    assert "Triton is not installed" in compatibility.reasons
+
+
 def test_fused_postprocessor_direct_call_remains_strict_for_incompatibility() -> None:
     postprocessor = FusedObjectDetectionPostprocessor.__new__(
         FusedObjectDetectionPostprocessor

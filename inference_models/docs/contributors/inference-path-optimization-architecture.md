@@ -138,7 +138,7 @@ flowchart TD
     load["AutoModel.from_pretrained(...)"] --> init["RFDetrForObjectDetectionTRT.__init__"]
     init --> explicit{"Explicit RFDetrExecutionPlan?"}
     explicit -->|yes| use_plan["Use plan<br/>do not read selection environment"]
-    explicit -->|no| precedence["Resolve each stage<br/>environment → base"]
+    explicit -->|no| precedence["Resolve each stage<br/>environment → optimized default"]
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
 
@@ -176,7 +176,11 @@ arguments:
 | `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` | postprocessing | `triton-fused-v1` |
 
 An explicit plan has the clearest provenance and takes precedence over environment
-variables. Environment values are read only when no plan is supplied.
+variables. Environment values are read only when no plan is supplied. When neither an
+explicit plan nor environment overrides are present, RF-DETR selects
+`triton-universal-v1` preprocessing and `triton-fused-v1` postprocessing. A declared
+contract mismatch or unavailable Triton dependency follows the implementation's
+`base` fallback before execution.
 
 ### Per-request execution
 

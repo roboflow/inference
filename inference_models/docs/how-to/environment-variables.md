@@ -430,7 +430,7 @@ See [Inference-Path Optimization Architecture](../contributors/inference-path-op
 for the selection model and the complete RF-DETR execution flow.
 
 **`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
-Default: `base`
+Default: `triton-universal-v1`
 
 Supported values: `base`, `auto`, `threaded-exact-v1`, `triton-universal-v1`.
 
@@ -448,7 +448,7 @@ export INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS="4"
 ```
 
 **`INFERENCE_MODELS_RFDETR_POSTPROCESSOR`**
-Default: `base`
+Default: `triton-fused-v1`
 
 Supported values: `base`, `auto`, `triton-fused-v1`.
 
@@ -505,6 +505,11 @@ This policy applies consistently to preprocessing and postprocessing. Set
 `allow_compatibility_fallback=False` in an explicit plan to require the selected
 implementation or an error. Compilation, CUDA, allocation, and other execution
 failures are never converted into fallbacks.
+
+When Triton is unavailable, uint8 universal preprocessing and fused postprocessing
+declare a compatibility miss and use their `base` fallback. Floating-point tensor
+preprocessing remains eligible for `triton-universal-v1` because that input path uses
+Torch operations and does not require Triton kernels.
 
 #### Roboflow Instant
 

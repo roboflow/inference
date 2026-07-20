@@ -353,6 +353,8 @@ class FusedObjectDetectionPostprocessor:
             Compatibility result with every unsupported input characteristic.
         """
         unsupported = []
+        if not TRITON_AVAILABLE:
+            unsupported.append("Triton is not installed")
         if not bboxes.is_cuda or not logits.is_cuda:
             unsupported.append("boxes and logits must be CUDA tensors")
         if bboxes.device != logits.device or bboxes.device != self._device:

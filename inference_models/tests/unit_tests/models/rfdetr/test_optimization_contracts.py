@@ -147,20 +147,32 @@ def _network_input() -> NetworkInputDefinition:
     )
 
 
-def test_execution_plan_reads_environment(monkeypatch) -> None:
+def test_execution_plan_defaults_to_optimized_implementations(monkeypatch) -> None:
+    monkeypatch.delenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR", raising=False)
+    monkeypatch.delenv("INFERENCE_MODELS_RFDETR_POSTPROCESSOR", raising=False)
+
+    default_plan = RFDetrExecutionPlan()
+    resolved_plan = RFDetrExecutionPlan.resolve()
+
+    for plan in (default_plan, resolved_plan):
+        assert plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+        assert plan.postprocessor_id == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+
+
+def test_execution_plan_reads_environment_overrides(monkeypatch) -> None:
     monkeypatch.setenv(
         "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
-        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        RFDETR_PREPROCESSOR_BASE,
     )
     monkeypatch.setenv(
         "INFERENCE_MODELS_RFDETR_POSTPROCESSOR",
-        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+        RFDETR_POSTPROCESSOR_BASE,
     )
 
     plan = RFDetrExecutionPlan.resolve()
 
-    assert plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
-    assert plan.postprocessor_id == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    assert plan.preprocessor_id == RFDETR_PREPROCESSOR_BASE
+    assert plan.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
 
 
 def test_explicit_plan_ignores_environment(monkeypatch) -> None:
