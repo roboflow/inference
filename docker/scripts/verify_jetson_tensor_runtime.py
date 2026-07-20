@@ -127,14 +127,25 @@ def _prepare_h26x_fixture(
         shutil.copyfile(fixture_path, path)
         return
     if _nvenc_available(encoder):
-        _create_h26x(
-            path,
-            encoder=encoder,
-            parser=parser,
-            pattern=pattern,
-            hardware=True,
-        )
-        return
+        try:
+            _create_h26x(
+                path,
+                encoder=encoder,
+                parser=parser,
+                pattern=pattern,
+                hardware=True,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            # A mounted NVENC node and registered factory do not guarantee the
+            # encoder can allocate a hardware session. Fixture generation is
+            # only preparation for the decode test, so preserve that test by
+            # continuing through the CPU/bundled fallback chain.
+            path.unlink(missing_ok=True)
+            print(
+                f"FALLBACK {path.suffix} fixture encoding after NVENC failure: {error}"
+            )
+        else:
+            return
     software_encoder = _software_encoder(parser)
     if software_encoder is not None:
         print(f"FALLBACK {path.suffix} fixture encoding to CPU {software_encoder}")
