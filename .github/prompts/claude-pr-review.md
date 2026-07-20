@@ -229,6 +229,7 @@ each topic skill whose signal the PR exhibits (confirm via the skill's
 | calls an external / platform API, changes an SDK↔server contract, or adds fallback / auto-conversion | `review-topic-external-contract-and-silent-fallback` |
 | touches auth / api-key / workspace-tenant scoping / permissions / secrets | `review-topic-auth-and-tenant-security` |
 | ingests external / user input — a URL / file path / uploaded image, `torch.load` / pickle / weights load, or zip/tar extraction (SSRF, path traversal, unsafe deserialization, decompression bombs) | `review-topic-input-boundary-security` |
+| adds/modifies an outbound HTTP call, builds a URL from `API_BASE_URL` / `HOSTED_*_URL` / a `*.roboflow.com` host, adds an endpoint-URL env var or setting, constructs an `InferenceHTTPClient`, or touches `wrap_url` / `SECURE_GATEWAY` | `review-topic-secure-gateway-url-wrapping` |
 | **(every PR)** — verify changed behavior is covered by a real CI test, tests are isolated, selectors exercised | `review-topic-test-hygiene` |
 
 Load a skill when in doubt — skills are additive guidance, not gates. Apply only
