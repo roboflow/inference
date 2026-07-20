@@ -1,19 +1,62 @@
+"""
+This is inference-models wrapper for the reasoner tower of NVIDIA Cosmos 3 Edge,
+originally published in https://huggingface.co/nvidia/Cosmos3-Edge
+"""
+
+import re
 from threading import Lock
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers.utils import is_flash_attn_2_available
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
     INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
+    RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
 
 DEFAULT_PROMPT = "Describe what's in this image."
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
+THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL)
+THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
+
+
+def _get_cosmos3_attn_implementation(device: torch.device) -> str:
+    if (
+        is_flash_attn_2_available()
+        and device
+        and "cuda" in str(device)
+        and not RUNNING_ON_JETSON
+    ):
+        try:
+            import flash_attn  # noqa: F401
+
+            if _is_ampere_plus(device=device):
+                return "flash_attention_2"
+            return "eager"
+        except ImportError:
+            pass
+    return "eager"
+
+
+def _is_ampere_plus(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
+
+
+def _resolve_default_dtype(device: torch.device) -> torch.dtype:
+    if device.type == "cuda":
+        if torch.cuda.is_bf16_supported():
+            return torch.bfloat16
+        return torch.float16
+    return torch.float32
 
 
 class Cosmos3EdgeReasoner:
@@ -33,14 +76,19 @@ class Cosmos3EdgeReasoner:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
+        quantization_config: Any = None,
         **kwargs,
     ) -> "Cosmos3EdgeReasoner":
+        dtype = _resolve_default_dtype(device)
+        attn_implementation = _get_cosmos3_attn_implementation(device)
         model = AutoModelForImageTextToText.from_pretrained(
             model_name_or_path,
             device_map=device,
-            dtype=cls.default_dtype,
+            dtype=dtype,
             trust_remote_code=trust_remote_code,
             local_files_only=local_files_only,
+            quantization_config=quantization_config,
+            attn_implementation=attn_implementation,
         ).eval()
         processor = AutoProcessor.from_pretrained(
             model_name_or_path,
@@ -51,13 +99,14 @@ class Cosmos3EdgeReasoner:
 
     def __init__(
         self,
-        model: AutoModelForImageTextToText,
-        processor: AutoProcessor,
+        model,
+        processor,
         device: torch.device,
     ):
         self._model = model
         self._processor = processor
         self._device = device
+        self._torch_dtype = next(model.parameters()).dtype
         self.default_system_prompt = (
             "You are Cosmos, a helpful assistant that understands physical scenes "
             "and answers questions about images and videos."
@@ -69,11 +118,12 @@ class Cosmos3EdgeReasoner:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
+        return_thinking: bool = False,
         **kwargs,
-    ) -> List[str]:
+    ) -> Union[List[str], List[Dict[str, str]]]:
         inputs = self.pre_process_generation(
             images=images, prompt=prompt, input_color_format=input_color_format
         )
@@ -85,6 +135,7 @@ class Cosmos3EdgeReasoner:
         return self.post_process_generation(
             generated_ids=generated_ids,
             skip_special_tokens=skip_special_tokens,
+            return_thinking=return_thinking,
         )
 
     def prompt_video(
@@ -92,11 +143,12 @@ class Cosmos3EdgeReasoner:
         frames: List[np.ndarray],
         prompt: str = None,
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
+        return_thinking: bool = False,
         **kwargs,
-    ) -> str:
+    ) -> Union[str, Dict[str, str]]:
         inputs = self.pre_process_generation(
             images=frames,
             prompt=prompt,
@@ -111,6 +163,7 @@ class Cosmos3EdgeReasoner:
         return self.post_process_generation(
             generated_ids=generated_ids,
             skip_special_tokens=skip_special_tokens,
+            return_thinking=return_thinking,
         )[0]
 
     def pre_process_generation(
@@ -160,7 +213,11 @@ class Cosmos3EdgeReasoner:
             **processor_kwargs,
         )
         return {
-            k: v.to(self._device)
+            k: (
+                v.to(self._device, dtype=self._torch_dtype)
+                if v.is_floating_point()
+                else v.to(self._device)
+            )
             for k, v in model_inputs.items()
             if isinstance(v, torch.Tensor)
         }
@@ -168,35 +225,67 @@ class Cosmos3EdgeReasoner:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
+        if max_new_tokens is None:
+            max_new_tokens = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS
         input_len = inputs["input_ids"].shape[-1]
+        tokenizer = self._processor.tokenizer
+        pad_token_id = (
+            getattr(tokenizer, "pad_token_id", None) or tokenizer.eos_token_id
+        )
         with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=do_sample,
-                pad_token_id=self._processor.tokenizer.pad_token_id,
-                eos_token_id=self._processor.tokenizer.eos_token_id,
-                bos_token_id=self._processor.tokenizer.bos_token_id,
+                pad_token_id=pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
         return generation[:, input_len:]
 
     def post_process_generation(
         self,
         generated_ids: torch.Tensor,
-        skip_special_tokens: bool = False,
+        skip_special_tokens: bool = True,
+        return_thinking: bool = False,
         **kwargs,
-    ) -> List[str]:
+    ) -> Union[List[str], List[Dict[str, str]]]:
         decoded = self._processor.batch_decode(
             generated_ids,
             skip_special_tokens=skip_special_tokens,
         )
-        return [text.replace("assistant\n", "").strip() for text in decoded]
+        result = []
+        for text in decoded:
+            text = text.replace("assistant\n", "")
+            # The chat template opens the reasoning block inside the prompt, so
+            # decoded output carries a bare closing </think>. Restore the
+            # opening tag so thinking and answer parse apart (qwen3_5 pattern).
+            if "</think>" in text and "<think>" not in text:
+                text = "<think>" + text
+            if return_thinking:
+                think_match = THINK_EXTRACT_PATTERN.search(text)
+                if think_match:
+                    thinking = think_match.group(1).strip()
+                    answer = THINK_BLOCK_PATTERN.sub("", text).strip()
+                else:
+                    thinking = text.replace("<think>", "").strip()
+                    answer = ""
+                result.append({"thinking": thinking, "answer": answer})
+            else:
+                result.append(THINK_BLOCK_PATTERN.sub("", text).strip())
+        return result
 
-    def _parse_prompt(self, prompt: Optional[str]) -> tuple:
+    def __call__(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Union[List[str], List[Dict[str, str]]]:
+        return self.prompt(images, **kwargs)
+
+    def _parse_prompt(self, prompt: Optional[str]) -> Tuple[str, str]:
         if prompt is None:
             return DEFAULT_PROMPT, self.default_system_prompt
         split_prompt = prompt.split(SYSTEM_PROMPT_SENTINEL)
