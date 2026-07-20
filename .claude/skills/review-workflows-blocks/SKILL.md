@@ -21,7 +21,7 @@ Severity: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** = opti
 4. **BLOCK — `__init__.py`** exists in every new/nested block package (guarded by `test_init_files.py`).
 5. **BLOCK — `sv.Detections.data` density**: any new data key holds dense N-d numpy arrays (no `dtype="object"` ragged) and has serializer/deserializer parity if it must round-trip.
 6. **FLAG — Tests**: unit test under `tests/workflows/unit_tests/core_steps/{category}/`; integration test under `tests/workflows/integration_tests/execution/test_workflow_with_*_block.py` for new or output-changing blocks.
-7. **FLAG — EE compatibility**: `get_execution_engine_compatibility()` reflects features used. If the PR bumps `EXECUTION_ENGINE_V1_VERSION`, require a changelog entry + version-assert test updates; a plain block change touching that version is a red flag.
+7. **FLAG — EE compatibility**: `get_execution_engine_compatibility()` reflects features used. If the block forces an EE behavior change, require a user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md` and surface the maintainer notice **Execution Engine requires a version bump for release** — never ask the contributor to bump `EXECUTION_ENGINE_V1_VERSION` or update version-assert tests (maintainers must do both in the release PR). A contributor PR touching that constant is a red flag.
 8. **FLAG — Cross-block kinds**: output kinds upstream ⊆ input kinds accepted downstream (esp. detections/segmentation/keypoint interplay).
 9. **FLAG — Model-version changes** update defaults/enums (not silent deletion) and keep old identifiers loadable.
 10. **FLAG — Batch handling** for model/foundation blocks: `run` iterates `Batch[...]` correctly and declares `get_parameters_accepting_batches()`.
@@ -31,7 +31,7 @@ Severity: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** = opti
 ### Not blocking
 - Do NOT demand an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs.
 - Do NOT demand a new `vN.py` for a pure in-place bug-fix; surgical patches to a shipped version are correct (#2346, #1339, #1368).
-- Do NOT demand `EXECUTION_ENGINE_V1_VERSION` / changelog changes on an ordinary block PR — most block changes never touch the EE version.
+- Never demand an `EXECUTION_ENGINE_V1_VERSION` bump from a contributor — maintainers bump it at release. The `## Unreleased` EE changelog entry is required only when the block forces an EE behavior change; most block changes don't.
 - Do NOT demand serializer/deserializer entries for a data key that is purely intra-block and never crosses the wire.
 - Do NOT demand hand-written `docs/workflows/blocks/<block>.md` — those are generated from `Field(description=, examples=)` metadata.
 
@@ -46,7 +46,7 @@ The one canonical statement of each rule. Past regressions are cited inline; see
 - **`sv.Detections.data` must be dense numpy arrays**: object-dtype ragged arrays break supervision indexing / `is_data_equal`; pad to uniform shape (#2170 — keypoints; #1368 — velocity elements must be `np.array`).
 - **Serializer/deserializer parity for round-tripping data keys**: a data key that must survive serialization needs matching entries in `common/serializers.py` + `common/deserializers.py` (#1368 — velocity/speed; #1156 — timestamps).
 - **New input fields keep backward compat**: add with a `default=` and update `describe_outputs()`/`run()`; behavior-changing additions warrant a new version. Question `default=None` on non-optional inputs (#2384 — added in-place across v1/v2/v3 with defaults; #658 — removed wrong `default=None`).
-- **EE compatibility**: `get_execution_engine_compatibility()` declares the minimum EE version the block relies on (e.g. `">=1.3.0,<2.0.0"`); the EE version is a single source of truth in `EXECUTION_ENGINE_V1_VERSION`. Only bump it (+ changelog + version-assert tests) when the block forces an EE behavior change (#2527 — revert rolled back both the block and the EE version and re-asserted it in tests).
+- **EE compatibility**: `get_execution_engine_compatibility()` declares the minimum EE version the block relies on (e.g. `">=1.3.0,<2.0.0"`); the EE version is a single source of truth in `EXECUTION_ENGINE_V1_VERSION`. A block that forces an EE behavior change makes an EE version bump mandatory at release: the contributor adds the `## Unreleased` changelog entry only; maintainers apply the bump + final changelog heading + version-assert test updates in the release PR (#2527 — revert rolled back both the block and the EE version and re-asserted it in tests).
 - **Model-version deprecation**: when a hosted model version is deprecated, update the block default and enum; do not just delete, keep old identifiers loadable (#1668/#1669 — Claude 3.5→4.5; #500 — GPT-4→GPT-4o; #2395 — Gemini default).
 - **Batch handling for model/foundation blocks**: `run` iterates `Batch[...]` and declares `get_parameters_accepting_batches()` (#718 — VLM blocks failed on batch inference).
 - **Segmentation/mask edge cases**: mask→polygon must handle 0/1/degenerate contours (returns `None`, duplicates points); empty masks must serialize (#1339; #697 — SAM2 masks as points/lines).
