@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- NVIDIA Cosmos AnomalyGen (`cosmos-anomalygen`, new task `image-generation`, backend
+  `custom`): mask-conditioned defect inpainting via `generate(image, mask,
+  anomaly_type, ...)`, mirroring the upstream SDG generation-entry contract
+  (guidance / num_steps / seed / crop-and-paste) so JSONL-driven pipelines map one
+  entry to one call. Runtime ships inside the model package, like the Cosmos 3 Edge
+  generator.
+
 ---
 
 ## `0.36.0`
