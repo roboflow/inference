@@ -326,6 +326,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
 )
@@ -1009,6 +1012,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
+        Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,

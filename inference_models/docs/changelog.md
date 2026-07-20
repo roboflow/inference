@@ -17,6 +17,9 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ### Added
 
+- NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
+  image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
+  standard VLM contract. The generative world-model tower ships separately.
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).
