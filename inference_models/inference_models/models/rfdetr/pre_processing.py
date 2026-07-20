@@ -110,14 +110,37 @@ def pre_process_network_input(
                 if isinstance(img, torch.Tensor)
                 else _ensure_hwc_uint8(img)
             )
-            tensor, meta = _pre_process_numpy(
-                image=np_img,
-                image_pre_processing=image_pre_processing,
-                network_input=network_input,
-                target_size=target_size,
-                input_color_mode=input_color_mode,
-                pre_processing_overrides=pre_processing_overrides,
-            )
+            if network_input.resize_mode != ResizeMode.STRETCH_TO:
+                # Only STRETCH_TO is accelerated on the GPU tensor path. Every
+                # other resize mode (letterbox / center-crop / fit and their
+                # static-crop variants) stays on the PIL chain so production
+                # pixels match training. Tensor F.resize is not byte-equivalent
+                # to PIL F.resize, and for modes that carry
+                # dataset_version_resize_dimensions the PIL chain also runs the
+                # two-step resize that sets nonsquare_intermediate_size, which
+                # post-processing needs to map boxes back.
+                tensor, meta = _pre_process_numpy(
+                    image=np_img,
+                    image_pre_processing=image_pre_processing,
+                    network_input=network_input,
+                    target_size=target_size,
+                    input_color_mode=input_color_mode,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
+            else:
+                gpu_img = (
+                    torch.from_numpy(np.ascontiguousarray(np_img))
+                    .to(target_device)
+                    .permute(2, 0, 1)
+                )
+                tensor, meta = _pre_process_tensor(
+                    image=gpu_img,
+                    image_pre_processing=image_pre_processing,
+                    network_input=network_input,
+                    target_size=target_size,
+                    input_color_mode=input_color_mode,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
         else:
             raise TypeError(
                 f"Unsupported image input type for RFDETR pre-processing: {type(img)}"
@@ -255,10 +278,6 @@ def _pre_process_tensor(
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
-    """Float-tensor branch: tensor F.resize matching predict()'s tensor branch.
-    Skips PIL round-trip; assumes input is float CHW (or NCHW with N=1) in
-    [0, 1]. Tensor F.resize bilinear is NOT byte-equivalent to PIL F.resize
-    bilinear — predict() already accepts that on its tensor path."""
     if image.ndim == 3:
         image = image.unsqueeze(0)
     if image.shape[1] not in (1, 3) and image.shape[-1] in (1, 3):
