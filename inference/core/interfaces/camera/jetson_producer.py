@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from inference.core.interfaces.camera.entities import (
     FrameImage,
@@ -62,10 +62,9 @@ _URI_DECODE_ELEMENTS = (
     "uridecodebin",
 )
 _RTSP_ELEMENTS = (
-    "rtph264depay",
-    "rtph265depay",
     "rtspsrc",
 )
+_SRTP_ELEMENTS = ("capssetter", "srtpdec")
 _SOFTWARE_DECODER_ELEMENTS = (
     "avdec_h264",
     "avdec_h265",
@@ -172,9 +171,12 @@ def required_gstreamer_elements(
     if _is_rtsp_source(video):
         # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
         # (no uridecodebin autoplugging), so only those elements are required.
+        codec = _rtsp_video_codec()
+        srtp_elements = list(_SRTP_ELEMENTS) if _rtsp_uses_srtp(video) else []
         return tuple(
             elements
-            + ["h264parse", "h265parse", "nvv4l2decoder"]
+            + srtp_elements
+            + [f"rtp{codec}depay", f"{codec}parse", "nvv4l2decoder"]
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_URI_DECODE_ELEMENTS)
@@ -235,12 +237,27 @@ def build_gstreamer_pipeline(
         tls_validation_flags = _rtsp_tls_validation_flags(
             explicit_flags=rtsp_tls_validation_flags
         )
-        return (
+        source = (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
+            " drop-on-latency=true teardown-timeout=0"
             f"{tls_validation_flags} ! "
+            "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
+        )
+        if _rtsp_uses_srtp(video):
+            # UniFi and other SDES endpoints advertise the master key through
+            # the RTP caps' a-crypto field. The native bridge rewrites the
+            # named capssetter's CAPS event before srtpdec sees the first
+            # packet; key material never crosses Python or appears in the
+            # launch string.
+            source += (
+                "capssetter name=rf_srtp_caps caps=application/x-srtp "
+                "join=false replace=false ! srtpdec ! "
+            )
+        return (
+            source
+            + f"rtp{codec}depay ! {codec}parse ! "
             "nvv4l2decoder enable-max-performance=1 ! "
             "video/x-raw(memory:NVMM),format=NV12 ! "
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
@@ -263,6 +280,18 @@ def _rtsp_video_codec() -> str:
             f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
         )
     return codec
+
+
+def _rtsp_uses_srtp(video: Union[str, int]) -> bool:
+    """Return whether an RTSP URL explicitly requests encrypted RTP media."""
+
+    if not isinstance(video, str):
+        return False
+    for key, value in parse_qsl(urlparse(video).query, keep_blank_values=True):
+        if key.lower() != "enablesrtp":
+            continue
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return False
 
 
 def _rtsp_protocols() -> str:

@@ -92,6 +92,7 @@ meson setup "${GSTREAMER_BUILD_DIR}" "${GSTREAMER_SOURCE_DIR}" \
     -Dgst-plugins-base:videotestsrc=enabled \
     -Dgst-plugins-good:autodetect=enabled \
     -Dgst-plugins-good:avi=enabled \
+    -Dgst-plugins-good:debugutils=enabled \
     -Dgst-plugins-good:flv=enabled \
     -Dgst-plugins-good:isomp4=enabled \
     -Dgst-plugins-good:jpeg=enabled \
