@@ -13,6 +13,12 @@ variable "JETSON_WHEELS_IMAGE" {
   default = "roboflow/roboflow-inference-wheels-jetson-7.2.0:1.4.0-mvp-torch213-v4@sha256:38c7cef8af5f6076c0b17136c5e8982ed23dae22330ceca09f69552385788cba"
 }
 
+variable "JETSON_MEDIA_IMAGE" {
+  # Reuse the on-device validated JP7.2 media runtime instead of recompiling
+  # GStreamer, FFmpeg, OpenCV, and the native tensor bridge in every server build.
+  default = "roboflow/roboflow-inference-server-jetson-7.2.0:1.4.0-runtime-srtp-final@sha256:5b475bd02d5dbaea81bcfa500dbd5ed7aca1079dd13fd6106651061d8dbd6a25"
+}
+
 target "jetson-media-jp72" {
   context    = "."
   dockerfile = "docker/dockerfiles/Dockerfile.media.jetson.7.2.0"
@@ -69,7 +75,7 @@ target "jetson-server-jp72" {
   context    = "."
   dockerfile = "docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0"
   contexts = {
-    jetson-media  = "target:jetson-media-jp72"
+    jetson-media  = "docker-image://${JETSON_MEDIA_IMAGE}"
     jetson-wheels = "docker-image://${JETSON_WHEELS_IMAGE}"
   }
   platforms = ["linux/arm64"]
