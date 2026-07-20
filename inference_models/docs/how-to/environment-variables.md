@@ -683,6 +683,18 @@ export DISABLE_INTERACTIVE_PROGRESS_BARS="true"
 
 ## Advanced Configuration
 
+### SAM3
+
+**`INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE`**
+Number of SAM3 concept-segmentation masks upscaled to original resolution and
+encoded per slice. Bounds postprocessing memory (working set is
+`chunk x H x W` float32 instead of `detections x H x W`). Must be `>= 1`.
+Default: `8`
+
+```bash
+export INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE="8"
+```
+
 ### Input Validation
 
 **`ALLOW_URL_INPUT`**
