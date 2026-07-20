@@ -71,6 +71,38 @@ def test_trt_package_numpy(
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
+def test_trt_independent_public_stages_match_composed_inference(
+    rfdetr_coin_counting_trt_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
+    )
+
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
+        independent_stage_execution=True,
+    )
+    expected = model(coins_counting_image_numpy)
+
+    pre_processed, metadata = model.pre_process(coins_counting_image_numpy)
+    raw_predictions = model.forward(pre_processed)
+    actual = model.post_process(raw_predictions, metadata)
+
+    assert model.optimization_runtime_metadata["independent_stage_execution"] is True
+    assert len(actual) == len(expected)
+    for actual_image, expected_image in zip(actual, expected):
+        torch.testing.assert_close(actual_image.xyxy, expected_image.xyxy)
+        torch.testing.assert_close(actual_image.class_id, expected_image.class_id)
+        torch.testing.assert_close(
+            actual_image.confidence,
+            expected_image.confidence,
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
 def test_trt_package_batch_numpy(
     rfdetr_coin_counting_trt_package: str,
     coins_counting_image_numpy: np.ndarray,

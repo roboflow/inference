@@ -477,6 +477,22 @@ model = AutoModel.from_pretrained(
 )
 ```
 
+Public preprocessing and forward calls use an exact-tensor readiness tracker by
+default, preserving asynchronous preprocessing. A caller that needs each public stage
+to be independent can opt into a synchronized preprocessing boundary:
+
+```python
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    rfdetr_execution_plan=plan,
+    independent_stage_execution=True,
+)
+```
+
+This flag is intentionally separate from the execution plan. Its default is `False`,
+which keeps the optimized event-based handoff without host synchronization.
+
 The plan also reserves independently selectable buffer-strategy, scheduler, and engine
 plugin stages. Those stages currently accept only `base`. When supplied, an explicit
 plan takes precedence and the implementation-selection environment variables are not

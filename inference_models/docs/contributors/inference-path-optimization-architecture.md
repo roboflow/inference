@@ -187,6 +187,8 @@ flowchart TD
     pre_selected{"Selected Preprocessor<br/>compatible with request?"}
     pre_base["base / threaded exact<br/>synchronize before return"]
     pre_triton["Triton universal<br/>record CUDA ready event"]
+    boundary{"independent_stage_execution?"}
+    independent["Synchronize producer<br/>do not register readiness"]
     readiness["PreprocessReadinessTracker<br/>associate readiness with exact tensor"]
     wait["TensorRT inference stream<br/>wait on ready event when present"]
     forward["Protected TensorRT forward"]
@@ -200,8 +202,10 @@ flowchart TD
     inputs --> pre_request --> pre_selected
     pre_selected -->|base or declared fallback| pre_base
     pre_selected -->|compatible triton-universal-v1| pre_triton
-    pre_base --> readiness
-    pre_triton --> readiness
+    pre_base --> boundary
+    pre_triton --> boundary
+    boundary -->|yes| independent --> forward
+    boundary -->|no, default| readiness
     readiness --> wait --> forward --> outputs --> post_request --> post_selected
     post_selected -->|base| post_base
     post_selected -->|triton-fused-v1| post_triton
@@ -213,6 +217,27 @@ flowchart TD
 tensor identity and a weak reference to transfer an optional CUDA event from
 preprocessing to the TensorRT consumer without adding dynamic attributes to framework
 tensors.
+
+By default, optimized preprocessing remains asynchronous and `forward()` consumes the
+tracked event. Callers that require methods without this cross-call readiness state can
+construct the model with `independent_stage_execution=True`. In that mode,
+`pre_process()` synchronizes its producer before returning and does not add a tracker
+entry; `forward()` therefore operates only on the ready tensor supplied by its caller.
+
+```python
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    independent_stage_execution=True,
+)
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
+detections = model.post_process(raw_predictions, metadata)
+```
+
+This is an invocation-boundary policy rather than an implementation choice, so it is
+not part of `InferenceExecutionPlan`. The default remains `False` to preserve the
+optimized asynchronous path.
 
 The preprocessing, inference, and postprocessing streams are reused. Events express
 the GPU dependency at the consumer boundary; the protected TensorRT forward does not

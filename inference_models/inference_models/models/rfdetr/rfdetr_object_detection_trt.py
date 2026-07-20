@@ -122,6 +122,7 @@ class RFDetrForObjectDetectionTRT(
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        independent_stage_execution: bool = False,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         """Load an RF-DETR TensorRT model package.
@@ -138,6 +139,8 @@ class RFDetrForObjectDetectionTRT(
             rfdetr_execution_plan: Explicit composed execution plan. When omitted,
                 RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
+            independent_stage_execution: Whether public preprocessing must return a
+                ready tensor that does not rely on model readiness state in forward.
             **kwargs: Additional loader arguments accepted for API compatibility.
 
         Returns:
@@ -237,6 +240,7 @@ class RFDetrForObjectDetectionTRT(
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             rfdetr_execution_plan=rfdetr_execution_plan,
+            independent_stage_execution=independent_stage_execution,
             recommended_parameters=recommended_parameters,
         )
 
@@ -256,6 +260,7 @@ class RFDetrForObjectDetectionTRT(
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters=None,
+        independent_stage_execution: bool = False,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -268,6 +273,7 @@ class RFDetrForObjectDetectionTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
+        self._independent_stage_execution = independent_stage_execution
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
             max_workers=rfdetr_preprocessor_max_workers
         )
@@ -362,6 +368,7 @@ class RFDetrForObjectDetectionTRT(
         """Return machine-readable selected implementation metadata."""
         metadata = {
             "execution_plan": self.rfdetr_execution_plan.to_dict(),
+            "independent_stage_execution": self._independent_stage_execution,
             "preprocessor": self.preprocessor_implementation_metadata.to_dict(),
             "postprocessor": self.postprocessor_implementation_metadata.to_dict(),
             "model_selection": {
@@ -398,7 +405,9 @@ class RFDetrForObjectDetectionTRT(
             **kwargs: Additional request arguments accepted for API compatibility.
 
         Returns:
-            Preprocessed tensor and per-image transformation metadata.
+            Preprocessed tensor and per-image transformation metadata. In independent
+            stage mode the tensor is ready before return; otherwise its readiness is
+            tracked for this model instance's ``forward()`` method.
 
         Raises:
             ModelRuntimeError: If the selected implementation is incompatible.
@@ -439,13 +448,17 @@ class RFDetrForObjectDetectionTRT(
             result = replace(result, fallback_reason=selection.fallback_reason)
         if result.ready_event is None:
             stream.synchronize()
-        self._preprocess_readiness.record(
-            result.tensor,
-            ready_event=result.ready_event,
-            input_kind=result.input_kind,
-            implementation_id=result.implementation_id,
-            fallback_reason=result.fallback_reason,
-        )
+        elif self._independent_stage_execution:
+            result.ready_event.synchronize()
+
+        if not self._independent_stage_execution:
+            self._preprocess_readiness.record(
+                result.tensor,
+                ready_event=result.ready_event,
+                input_kind=result.input_kind,
+                implementation_id=result.implementation_id,
+                fallback_reason=result.fallback_reason,
+            )
 
         return result.tensor, result.metadata
 
@@ -458,7 +471,8 @@ class RFDetrForObjectDetectionTRT(
         """Execute the protected TensorRT model forward pass.
 
         Args:
-            pre_processed_images: Tensor produced by the preprocessing stage.
+            pre_processed_images: Ready tensor, or the exact tensor returned by this
+                model's tracked asynchronous preprocessing path.
             disable_cuda_graphs: Whether to bypass the configured graph cache.
             **kwargs: Additional request arguments accepted for API compatibility.
 
@@ -468,9 +482,10 @@ class RFDetrForObjectDetectionTRT(
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                readiness = self._preprocess_readiness.consume(pre_processed_images)
-                if readiness is not None and readiness.ready_event is not None:
-                    self._inference_stream.wait_event(readiness.ready_event)
+                if not self._independent_stage_execution:
+                    readiness = self._preprocess_readiness.consume(pre_processed_images)
+                    if readiness is not None and readiness.ready_event is not None:
+                        self._inference_stream.wait_event(readiness.ready_event)
                 detections, labels = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
