@@ -517,9 +517,8 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/superiorvision-*.whl \
         /opt/wheels/tracktors-*.whl && \
-    # Keep PyTorch's CUDA user-space wheels (including NCCL) in the image.
-    # The host provides only the driver/device interface through the NVIDIA
-    # container runtime; the image must not depend on host CUDA libraries.
+    # OpenCV comes from the validated media runtime. Remove Python wheel copies
+    # so every process resolves the same CUDA-enabled implementation.
     find /opt/python-runtime -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
@@ -604,7 +603,6 @@ ENV CUDA_HOME=/usr/local/cuda \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false \
-    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
     USE_INFERENCE_EXP_MODELS=False \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=39.2.0
@@ -627,7 +625,7 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     sh /tmp/verify_jetson_server_runtime && \
     rm -rf /root/.cache/gstreamer-1.0
 
-LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (PyTorch from source, numpy 2.x)"
+LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (validated dual-architecture PyTorch and tensor-native media pipeline)"
 
 EXPOSE 9001
 

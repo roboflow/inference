@@ -154,20 +154,63 @@ def main() -> None:
         for result in (selected, iou_kept, ios_kept):
             assert_detection_is_cuda(result, device)
 
-        tracker = trackers.ByteTrackTracker(
+    cpu_mock.assert_not_called()
+    numpy_mock.assert_not_called()
+
+    tracker_batch = [
+        trackers.ByteTrackTracker(
             minimum_consecutive_frames=1,
             track_activation_threshold=0.7,
             high_conf_det_threshold=0.6,
             minimum_iou_threshold=0.1,
         )
-        first_result = tracker.update(tracker_frame(device, dx=0.0))
-        second_result = tracker.update(tracker_frame(device, dx=1.0))
+        for _ in range(2)
+    ]
+    executor = tracktors.CUDABatchExecutor(max_workers=len(tracker_batch))
+    try:
+        # Initial track creation reconciles stable public Python proxies. Keep
+        # that API boundary explicit, then require the next frame to use the
+        # fused, canonical CUDA path with exactly its audited control exports.
+        bootstrap_results = tracktors.update_batch(
+            tracker_batch,
+            [tracker_frame(device, dx=0.0), tracker_frame(device, dx=0.25)],
+            frames=[None, None],
+            timestamps=[None, None],
+            executor=executor,
+        )
+        steady_results = tracktors.update_batch(
+            tracker_batch,
+            [tracker_frame(device, dx=1.0), tracker_frame(device, dx=1.25)],
+            frames=[None, None],
+            timestamps=[None, None],
+            executor=executor,
+        )
 
-        assert_detection_is_cuda(first_result, device)
-        assert_detection_is_cuda(second_result, device)
+        for result in bootstrap_results + steady_results:
+            assert_detection_is_cuda(result, device)
 
-    cpu_mock.assert_not_called()
-    numpy_mock.assert_not_called()
+        batch_execution = {
+            "whole_frame_batches": executor.bytetrack_whole_frame_batches,
+            "device_plan_batches": executor.bytetrack_device_plan_batches,
+            "resident_count_batches": executor.bytetrack_resident_count_batches,
+            "host_sync_boundaries": executor.bytetrack_host_sync_boundaries,
+            "count_export_boundaries": executor.bytetrack_count_export_boundaries,
+            "packed_batches": executor.packed_batches,
+        }
+        expected_batch_execution = {
+            "whole_frame_batches": 1,
+            "device_plan_batches": 1,
+            "resident_count_batches": 1,
+            "host_sync_boundaries": 1,
+            "count_export_boundaries": 1,
+            "packed_batches": 0,
+        }
+        assert batch_execution == expected_batch_execution, batch_execution
+    finally:
+        executor.close()
+
+    tracker = tracker_batch[0]
+    second_result = steady_results[0]
 
     assert (
         len(tracker.tracks) == 2
@@ -226,6 +269,7 @@ def main() -> None:
                     "iou": len(iou_kept),
                     "ios": len(ios_kept),
                 },
+                "batch_execution": batch_execution,
                 "live_tracks": len(tracker.tracks),
                 "libcublas": cublas_paths,
                 "libcusolver": cusolver_paths,
