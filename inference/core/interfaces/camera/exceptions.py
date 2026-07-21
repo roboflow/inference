@@ -12,3 +12,7 @@ class EndOfStreamError(StreamError):
 
 class SourceConnectionError(StreamError):
     pass
+
+
+class NativeGrabTimeoutError(StreamError):
+    pass

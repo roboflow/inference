@@ -1481,6 +1481,30 @@ def test_workflow_image_data_tensor_from_base64_does_not_cache_numpy() -> None:
     assert np.array_equal(image.numpy_image, numpy_image)
 
 
+def test_workflow_image_data_tensor_from_base64_jpeg_uses_configured_device() -> None:
+    numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
+    encoded_bytes = cv2.imencode(".jpg", numpy_image)[1].tobytes()
+    encoded = base64.b64encode(encoded_bytes).decode("ascii")
+    expected = torch.zeros(
+        (3, 4, 6), dtype=torch.uint8, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        base64_image=encoded,
+    )
+
+    with mock.patch.object(base, "decode_jpeg", return_value=expected) as decode:
+        result = image.tensor_image
+
+    assert result is expected
+    payload = decode.call_args.args[0]
+    assert bytes(payload.tolist()) == encoded_bytes
+    assert decode.call_args.kwargs == {
+        "mode": base.ImageReadMode.RGB,
+        "device": WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    }
+
+
 def test_workflow_image_data_shape_read_fallback_materializes_per_flag() -> None:
     # given - a base64-born image with no in-memory representation yet
     encoded = base64.b64encode(

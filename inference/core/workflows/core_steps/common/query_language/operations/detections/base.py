@@ -729,6 +729,7 @@ def _take_detections(
             mask=_take_mask(detections.mask, indices),
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=_take_tensor_field(detections.tracker_id, index_tensor),
         )
     return Detections(
         xyxy=detections.xyxy[index_tensor],
@@ -736,6 +737,7 @@ def _take_detections(
         confidence=_take_tensor_field(detections.confidence, index_tensor),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=_take_tensor_field(detections.tracker_id, index_tensor),
     )
 
 
@@ -753,6 +755,11 @@ def _copy_detections(detections: TensorNativeDetections) -> TensorNativeDetectio
             mask=mask,
             image_metadata=deepcopy(detections.image_metadata),
             bboxes_metadata=deepcopy(detections.bboxes_metadata),
+            tracker_id=(
+                detections.tracker_id.clone()
+                if detections.tracker_id is not None
+                else None
+            ),
         )
     return Detections(
         xyxy=detections.xyxy.clone(),
@@ -760,12 +767,29 @@ def _copy_detections(detections: TensorNativeDetections) -> TensorNativeDetectio
         confidence=detections.confidence.clone(),
         image_metadata=deepcopy(detections.image_metadata),
         bboxes_metadata=deepcopy(detections.bboxes_metadata),
+        tracker_id=(
+            detections.tracker_id.clone() if detections.tracker_id is not None else None
+        ),
     )
+
+
+def _concatenate_tracker_ids(
+    first: TensorNativeDetections, second: TensorNativeDetections
+) -> Optional[torch.Tensor]:
+    """Concatenate tracker IDs while enforcing the all-or-none merge contract."""
+    first_tracker_id = first.tracker_id
+    second_tracker_id = second.tracker_id
+    if first_tracker_id is None and second_tracker_id is None:
+        return None
+    if first_tracker_id is None or second_tracker_id is None:
+        raise ValueError("All or none of the 'tracker_id' fields must be None")
+    return torch.cat([first_tracker_id, second_tracker_id], dim=0)
 
 
 def _concatenate_detections(
     first: TensorNativeDetections, second: TensorNativeDetections
 ) -> TensorNativeDetections:
+    tracker_id = _concatenate_tracker_ids(first=first, second=second)
     bboxes_metadata = None
     if first.bboxes_metadata is not None or second.bboxes_metadata is not None:
         bboxes_metadata = _bboxes_metadata_list(first) + _bboxes_metadata_list(second)
@@ -792,6 +816,7 @@ def _concatenate_detections(
             mask=mask,
             image_metadata=first.image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=tracker_id,
         )
     return Detections(
         xyxy=torch.cat([first.xyxy, second.xyxy], dim=0),
@@ -799,6 +824,7 @@ def _concatenate_detections(
         confidence=torch.cat([first.confidence, second.confidence], dim=0),
         image_metadata=first.image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=tracker_id,
     )
 
 

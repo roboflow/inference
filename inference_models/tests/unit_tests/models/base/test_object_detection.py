@@ -42,6 +42,40 @@ def test_len_when_multiple_detections() -> None:
     assert len(detections) == 3
 
 
+def test_tracker_ids_remain_tensor_native_until_iteration() -> None:
+    """Tracker IDs stay as tensors while legacy iteration exposes metadata."""
+    tracker_ids = torch.tensor([7, 9], dtype=torch.long)
+    metadata = [{"source": "a"}, {"source": "b"}]
+    detections = Detections(
+        xyxy=torch.zeros((2, 4)),
+        class_id=torch.zeros(2, dtype=torch.long),
+        confidence=torch.ones(2),
+        bboxes_metadata=metadata,
+        tracker_id=tracker_ids,
+    )
+
+    rows = list(detections)
+
+    assert detections.tracker_id is tracker_ids
+    assert rows[0][4] == 7
+    assert rows[1][5]["tracker_id"] == 9
+    assert metadata == [{"source": "a"}, {"source": "b"}]
+
+
+def test_to_supervision_materializes_first_class_tracker_ids() -> None:
+    """The explicit Supervision boundary carries native tracker IDs."""
+    detections = Detections(
+        xyxy=torch.zeros((2, 4)),
+        class_id=torch.zeros(2, dtype=torch.long),
+        confidence=torch.ones(2),
+        tracker_id=torch.tensor([4, 5]),
+    )
+
+    result = detections.to_supervision()
+
+    assert result.tracker_id.tolist() == [4, 5]
+
+
 def test_iter_yields_seven_tuple_in_documented_field_order() -> None:
     # given - class_id and confidence are deliberately distinct in dtype and value so
     # that a silent confidence/class_id swap is caught: the sv-mode 6-tuple yields these
@@ -71,7 +105,9 @@ def test_iter_yields_seven_tuple_in_documented_field_order() -> None:
         assert mask is None  # 1: mask (always None for object detection)
         assert torch.equal(class_id, detections.class_id[i])  # 2: class_id
         assert torch.equal(confidence, detections.confidence[i])  # 3: confidence
-        assert tracker_id == detections.bboxes_metadata[i]["tracker_id"]  # 4: tracker_id
+        assert (
+            tracker_id == detections.bboxes_metadata[i]["tracker_id"]
+        )  # 4: tracker_id
         assert data == detections.bboxes_metadata[i]  # 5: per-detection data dict
         assert metadata == detections.image_metadata  # 6: per-image metadata dict
 

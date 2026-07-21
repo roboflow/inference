@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
 
@@ -422,6 +422,7 @@ class VideoSource:
         self._video_consumer = video_consumer
         self._state = StreamState.NOT_STARTED
         self._playback_allowed = Event()
+        self._termination_requested = Event()
         self._frames_buffering_allowed = True
         self._stream_consumption_thread: Optional[Thread] = None
         self._state_change_lock = Lock()
@@ -610,6 +611,13 @@ class VideoSource:
         Throws:
             * EndOfStreamError: when trying to get the frame from closed source.
         """
+        if (
+            self._state in {StreamState.ENDED, StreamState.ERROR}
+            and self._frames_buffer.empty()
+        ):
+            raise EndOfStreamError(
+                "Attempted to retrieve frame from stream that already ended."
+            )
         if self._is_file is None:
             source_metadata: SourceMetadata = self.describe_source()
             self._is_file = source_metadata.source_properties.is_file
@@ -662,6 +670,7 @@ class VideoSource:
         )
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
+        self._termination_requested = Event()
         self._frames_buffering_allowed = True
         self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
@@ -700,7 +709,12 @@ class VideoSource:
                 )
                 self._video = CV2VideoFrameProducer(self._stream_reference)
                 self._initialise_selected_video()
-            self._video_consumer.reset(source_properties=self._source_properties)
+            self._video_consumer.reset(
+                source_properties=self._source_properties,
+                has_native_latest_frame_handoff=getattr(
+                    self._video, "has_native_latest_frame_handoff", False
+                ),
+            )
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
             else:
@@ -748,6 +762,10 @@ class VideoSource:
             self._resume()
         previous_state = self._state
         self._change_state(target_state=StreamState.TERMINATING)
+        if not wait_on_frames_consumption or purge_frames_buffer:
+            self._termination_requested.set()
+        else:
+            self._termination_requested.clear()
         if purge_frames_buffer:
             _ = get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
         if self._stream_consumption_thread is not None:
@@ -809,10 +827,11 @@ class VideoSource:
                     buffer=self._frames_buffer,
                     frames_buffering_allowed=self._frames_buffering_allowed,
                     source_id=self._source_id,
+                    termination_requested=self._termination_requested,
                 )
                 if not success:
                     break
-            self._frames_buffer.put(POISON_PILL)
+            self._enqueue_poison_pill()
             self._release_video()
             self._change_state(target_state=StreamState.ENDED)
             send_video_source_status_update(
@@ -828,7 +847,7 @@ class VideoSource:
             # Emit a poison pill so a consumer blocked on read_frame gets
             # end-of-stream instead of timing out forever; ERROR is
             # restart-eligible, so reconnection fires.
-            self._frames_buffer.put(POISON_PILL)
+            self._enqueue_poison_pill()
             payload = {
                 "source_id": self._source_id,
                 "error_type": error.__class__.__name__,
@@ -842,6 +861,22 @@ class VideoSource:
                 status_update_handlers=self._status_update_handlers,
             )
             logger.exception("Encountered error in video consumption thread")
+
+    def _enqueue_poison_pill(self) -> None:
+        """Wake readers without letting termination block behind a full frame queue."""
+
+        while not self._termination_requested.is_set():
+            try:
+                self._frames_buffer.put(POISON_PILL, timeout=0.1)
+                return
+            except Full:
+                continue
+        try:
+            self._frames_buffer.put_nowait(POISON_PILL)
+        except Full:
+            # Existing buffered frames remain readable; read_frame() raises EOS
+            # once the terminal source has drained them.
+            return
 
     def _change_state(self, target_state: StreamState) -> None:
         payload = {
@@ -960,11 +995,19 @@ class VideoConsumer:
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
         return self._buffer_filling_strategy
 
-    def reset(self, source_properties: SourceProperties) -> None:
+    def reset(
+        self,
+        source_properties: SourceProperties,
+        has_native_latest_frame_handoff: bool = False,
+    ) -> None:
+        """Reset pacing state and select defaults for the source's handoff model."""
+
         if source_properties.is_file:
             self._set_file_mode_buffering_strategies()
         else:
-            self._set_stream_mode_buffering_strategies()
+            self._set_stream_mode_buffering_strategies(
+                has_native_latest_frame_handoff=has_native_latest_frame_handoff
+            )
         self._reader_pace_monitor.reset()
         self.reset_stream_consumption_pace()
         self._decoding_pace_monitor.reset()
@@ -985,6 +1028,7 @@ class VideoConsumer:
         buffer: Queue,
         frames_buffering_allowed: bool,
         source_id: Optional[int] = None,
+        termination_requested: Optional[Event] = None,
     ) -> bool:
         if self._is_source_video_file is None:
             source_properties = video.discover_source_properties()
@@ -1003,6 +1047,11 @@ class VideoConsumer:
         self._stream_consumption_pace_monitor.tick()
         if not success:
             return False
+        producer_timestamp = getattr(video, "frame_timestamp", None)
+        if callable(producer_timestamp):
+            timestamp = producer_timestamp()
+            if isinstance(timestamp, datetime):
+                frame_timestamp = timestamp
         self._frame_counter += 1
         if self._status_update_handlers:
             send_video_source_status_update(
@@ -1033,15 +1082,25 @@ class VideoConsumer:
             buffer=buffer,
             frames_buffering_allowed=frames_buffering_allowed,
             source_id=source_id,
+            termination_requested=termination_requested,
         )
 
     def _set_file_mode_buffering_strategies(self) -> None:
         if self._buffer_filling_strategy is None:
             self._buffer_filling_strategy = BufferFillingStrategy.WAIT
 
-    def _set_stream_mode_buffering_strategies(self) -> None:
+    def _set_stream_mode_buffering_strategies(
+        self, has_native_latest_frame_handoff: bool = False
+    ) -> None:
+        """Select a live-stream fill policy without duplicating native dropping."""
+
         if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+            if has_native_latest_frame_handoff:
+                self._buffer_filling_strategy = BufferFillingStrategy.DROP_OLDEST
+            else:
+                self._buffer_filling_strategy = (
+                    BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+                )
 
     def _video_fps_should_be_sub_sampled(self) -> bool:
         if self._desired_fps is None:
@@ -1079,6 +1138,7 @@ class VideoConsumer:
         buffer: Queue,
         frames_buffering_allowed: bool,
         source_id: Optional[int],
+        termination_requested: Optional[Event],
     ) -> bool:
         """
         Returns: boolean flag with success status
@@ -1118,6 +1178,7 @@ class VideoConsumer:
                 source_id=source_id,
                 declared_source_fps=declared_source_fps,
                 measured_source_fps=measured_source_fps,
+                termination_requested=termination_requested,
                 comes_from_video_file=is_source_video_file,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
@@ -1127,6 +1188,7 @@ class VideoConsumer:
                 buffer=buffer,
                 source_id=source_id,
                 is_video_file=is_source_video_file,
+                termination_requested=termination_requested,
             )
         send_frame_drop_update(
             frame_timestamp=frame_timestamp,
@@ -1197,6 +1259,7 @@ class VideoConsumer:
         buffer: Queue,
         source_id: Optional[int],
         is_video_file: bool,
+        termination_requested: Optional[Event],
     ) -> bool:
         drop_single_frame_from_buffer(
             buffer=buffer,
@@ -1211,6 +1274,7 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
             comes_from_video_file=is_video_file,
+            termination_requested=termination_requested,
         )
 
 
@@ -1319,6 +1383,7 @@ def decode_video_frame_to_buffer(
     declared_source_fps: Optional[float] = None,
     measured_source_fps: Optional[float] = None,
     comes_from_video_file: Optional[bool] = None,
+    termination_requested: Optional[Event] = None,
 ) -> bool:
     success, image = video.retrieve()
     if not success:
@@ -1333,8 +1398,13 @@ def decode_video_frame_to_buffer(
         source_id=source_id,
         comes_from_video_file=comes_from_video_file,
     )
-    buffer.put(video_frame)
-    return True
+    while termination_requested is None or not termination_requested.is_set():
+        try:
+            buffer.put(video_frame, timeout=0.1)
+            return True
+        except Full:
+            continue
+    return False
 
 
 def get_fps_if_tick_happens_now(fps_monitor: sv.FPSMonitor) -> float:

@@ -8,6 +8,7 @@ module constant (the same technique block_assembler tests use for the env flag)
 so both CI flag directions exercise every case deterministically.
 """
 
+from collections import namedtuple
 from typing import Optional
 from unittest import mock
 from uuid import UUID
@@ -211,7 +212,10 @@ def test_native_detections_to_sv_carries_full_lineage_key_set() -> None:
         converted.xyxy,
         np.array([[10.0, 5.0, 30.0, 15.0], [40.0, 20.0, 55.0, 35.0]], np.float32),
     )
-    assert converted.mask.dtype == bool and converted.mask.shape == (2, CROP_H, CROP_W)
+    assert isinstance(converted.mask, torch.Tensor)
+    assert converted.mask.dtype == torch.bool
+    assert converted.mask.shape == (2, CROP_H, CROP_W)
+    assert torch.equal(converted.mask, torch.from_numpy(_crop_local_dense_masks()))
 
 
 def test_native_detections_to_sv_output_survives_numpy_root_coordinates_shift() -> None:
@@ -292,10 +296,15 @@ def test_native_detections_to_sv_rle_and_dense_carriers_materialise_identically(
     converted_dense = native_detections_to_sv(detections=via_dense)
     converted_rle = native_detections_to_sv(detections=via_rle)
 
-    # then - both carriers land as the SAME dense (N, H, W) bool ndarray
-    assert converted_dense.mask.dtype == bool and converted_rle.mask.dtype == bool
-    assert np.array_equal(converted_dense.mask, converted_rle.mask)
-    assert np.array_equal(converted_dense.mask, dense)
+    # then - both carriers land as the same dense (N, H, W) bool tensor
+    assert isinstance(converted_dense.mask, torch.Tensor)
+    assert isinstance(converted_rle.mask, torch.Tensor)
+    assert converted_dense.mask.dtype == torch.bool
+    assert converted_rle.mask.dtype == torch.bool
+    assert converted_dense.mask.shape == (2, CROP_H, CROP_W)
+    assert converted_rle.mask.shape == (2, CROP_H, CROP_W)
+    assert torch.equal(converted_dense.mask, converted_rle.mask)
+    assert torch.equal(converted_dense.mask, torch.from_numpy(dense))
 
 
 def test_native_detections_to_sv_pads_keypoint_payloads_like_numpy() -> None:
@@ -323,18 +332,39 @@ def test_native_detections_to_sv_pads_keypoint_payloads_like_numpy() -> None:
     # when
     converted = native_detections_to_sv(detections=native)
 
-    # then - proper padded N-d arrays, the add_inference_keypoints_to_sv_detections
-    # convention (ragged object arrays break supervision's is_data_equal)
-    assert converted.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS].shape == (2, 2, 2)
-    assert converted.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS].dtype == np.float32
-    assert np.array_equal(
-        converted.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][0],
-        np.array([[11.0, 6.0], [29.0, 14.0]], dtype=np.float32),
+    # then - numeric payloads are padded tensor columns; class names remain an
+    # object column because strings have no tensor representation
+    xy = converted.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+    confidence = converted.data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
+    class_id = converted.data[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS]
+
+    assert isinstance(xy, torch.Tensor)
+    assert xy.dtype == torch.float32
+    assert xy.shape == (2, 2, 2)
+    torch.testing.assert_close(
+        xy,
+        torch.tensor(
+            [
+                [[11.0, 6.0], [29.0, 14.0]],
+                [[0.0, 0.0], [0.0, 0.0]],
+            ],
+            dtype=torch.float32,
+        ),
     )
-    assert np.array_equal(
-        converted.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][1],
-        np.zeros((2, 2), dtype=np.float32),
+
+    assert isinstance(confidence, torch.Tensor)
+    assert confidence.dtype == torch.float32
+    assert confidence.shape == (2, 2)
+    torch.testing.assert_close(
+        confidence,
+        torch.tensor([[0.875, 0.75], [0.0, 0.0]], dtype=torch.float32),
     )
+
+    assert isinstance(class_id, torch.Tensor)
+    assert class_id.dtype == torch.int64
+    assert class_id.shape == (2, 2)
+    assert torch.equal(class_id, torch.tensor([[0, 1], [0, 0]], dtype=torch.int64))
+
     assert converted.data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS][1].tolist() == [
         "",
         "",
@@ -736,6 +766,28 @@ def test_convert_kwargs_empty_batch_passes_through_preserving_type() -> None:
     assert isinstance(converted, Batch)
     assert len(converted) == 0
     assert list(converted.indices) == []
+
+
+def test_namedtuple_is_preserved_across_both_boundary_walkers() -> None:
+    boundary_value_type = namedtuple("BoundaryValue", ["label", "score"])
+    boundary_value = boundary_value_type(label="ok", score=0.75)
+
+    with _boundary_on:
+        legacy_kwargs = convert_kwargs_to_legacy(
+            kwargs={"value": boundary_value},
+            manifest_description=_manifest(inputs={}),
+            block_name="my_block",
+        )
+        native_result = convert_block_result_to_native(
+            result={"value": boundary_value},
+            manifest_description=_manifest_with_outputs(outputs={}),
+            block_name="my_block",
+        )
+
+    assert type(legacy_kwargs["value"]) is boundary_value_type
+    assert legacy_kwargs["value"] == boundary_value
+    assert type(native_result["value"]) is boundary_value_type
+    assert native_result["value"] == boundary_value
 
 
 # --------------------------------------------------------------------------- #

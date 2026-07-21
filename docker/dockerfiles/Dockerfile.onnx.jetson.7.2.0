@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1.7
 ARG JETSON_MEDIA_IMAGE=jetson-media
-ARG JETSON_WHEELS_IMAGE=jetson-wheels
 
-FROM ${JETSON_WHEELS_IMAGE} AS jetson-wheels-base
+# The Bake target supplies this as an immutable wheels-image context. Keeping
+# framework compilation outside the server build makes the final image build
+# reproducible and lets it consume the separately validated CUDA wheel set.
+FROM jetson-wheels AS prebuilt-wheels
 
 FROM ubuntu:24.04 AS nvidia-repository-key
 
@@ -67,42 +69,263 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-se
 FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTORCH_VERSION=2.10.0
-ARG TORCHVISION_VERSION=0.25.0
+ARG CMAKE_VERSION=4.2.0
+ARG NINJA_VERSION=1.11.1.4
+ARG PYTORCH_VERSION=2.13.0
+ARG TORCHVISION_VERSION=0.28.0
+ARG TRITON_VERSION=3.7.1
+ARG TRITON_WHEEL_SHA256=9497f2e696ee368862a181a90b2dcc03ca978cc4f602abd67c7d81022a6988e1
+ARG SUPERIORVISION_VERSION=0.30.0.dev3
+ARG SUPERIORVISION_WHEEL_SHA256=f78f5585689ed4c6dbc6cfa357deaecce0d3db0fd2bb87ae517395239075a48e
+ARG TRACKTORS_VERSION=2.6.0.dev2
+ARG TRACKTORS_WHEEL_SHA256=4e4d1941431205ca57b9739bae102944a63bce4d312945f04499d78461be780f
+ARG ONNXRUNTIME_VERSION=1.26.0
+ARG PYTORCH_MAX_JOBS=12
+ARG ORT_BUILD_PARALLEL=8
+ARG FLASH_ATTN_MAX_JOBS=8
+ARG USE_PREBUILT_WHEELS=1
+ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
+ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
+ARG FLASH_ATTN_CUDA_ARCHS=87;110
 ARG TARGETARCH
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-onnx-server-builder-${TARGETARCH} \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-onnx-server-builder-${TARGETARCH} \
+RUN mkdir -p /opt/wheels
+COPY --from=prebuilt-wheels /opt/wheels /opt/wheels
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-onnx-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-onnx-builder-${TARGETARCH} \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
-    build-essential \
     ca-certificates \
-    curl \
+    gnupg \
+    wget \
+    && wget -qO - https://repo.download.nvidia.com/jetson/jetson-ota-public.asc | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/common r39.2 main" > /etc/apt/sources.list.d/nvidia-jetson.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/som r39.2 main" >> /etc/apt/sources.list.d/nvidia-jetson.list \
+    && apt-get update -y
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-onnx-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-onnx-builder-${TARGETARCH} \
+    apt-get install -y --no-install-recommends \
+    cuda-toolkit-13-2 \
+    libcudnn9-cuda-13 \
+    libcudnn9-dev-cuda-13 \
+    tensorrt \
+    python3-libnvinfer \
+    python3-libnvinfer-dev \
+    python3-libnvinfer-dispatch \
+    python3-libnvinfer-lean \
+    build-essential \
+    cmake \
+    ninja-build \
+    patch \
     git \
+    curl \
     python3-dev \
     python3-pip \
-    python3-venv
+    python3-venv \
+    libopenblas-dev \
+    libproj-dev \
+    libsqlite3-dev \
+    libtiff-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    zlib1g-dev \
+    libxext6 \
+    libvips-dev \
+    pkg-config \
+    libjpeg-dev \
+    libpng-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libatlas-base-dev \
+    liblapack-dev \
+    gfortran \
+    libhdf5-dev \
+    libgflags-dev \
+    libgoogle-glog-dev \
+    liblmdb-dev \
+    libleveldb-dev \
+    libsnappy-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    libxml2-dev
 
-RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    chmod +x cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    ./cmake-${CMAKE_VERSION}-linux-aarch64.sh --prefix=/usr/local --skip-license && \
+    rm cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    printf 'cmake==%s\nninja==%s\n' "${CMAKE_VERSION}" "${NINJA_VERSION}" > /opt/builder-constraints.txt
+
+ENV PIP_CONSTRAINT=/opt/builder-constraints.txt
+
+RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
+    python3 -m pip install --break-system-packages \
+        "numpy>=2.0.0,<2.4.0" \
+        "typing_extensions>=4.10"
+
+RUN if [ "${USE_PREBUILT_WHEELS}" = "1" ]; then \
+      python3 -m pip install --break-system-packages --no-deps \
+        /opt/wheels/torch-*.whl \
+        /opt/wheels/torchvision-*.whl \
+        /opt/wheels/onnxruntime_gpu-*.whl \
+        /opt/wheels/flash_attn-*.whl \
+        /opt/wheels/triton-*.whl \
+        /opt/wheels/pycuda-*.whl; \
+    fi
+
+# Refuse a wheel bundle unless its primary CUDA runtime supports both JP7.2
+# targets. This catches a stale/miscompiled torch wheel before it becomes a
+# server image that works on Thor but fails on Orin.
+RUN if [ "${USE_PREBUILT_WHEELS}" = "1" ]; then \
+      python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"'; \
+    fi
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-COPY --from=jetson-wheels-base /opt/wheels /opt/wheels
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64
 
-# The framework wheels are compiled in Dockerfile.wheels.jetson.7.2.0; the version
-# ARGs above must match its output or resolution would silently fall back to PyPI.
-RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}*.whl && test -e "$1" && \
-    set -- /opt/wheels/torchvision-${TORCHVISION_VERSION}*.whl && test -e "$1" && \
-    set -- /opt/wheels/onnxruntime_gpu-*.whl && test -e "$1" && \
-    set -- /opt/wheels/flash_attn-*.whl && test -e "$1" && \
-    set -- /opt/wheels/triton-*.whl && test -e "$1" && \
-    set -- /opt/wheels/pycuda-*.whl && test -e "$1"
+WORKDIR /build/pytorch
+RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then \
+      git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch; \
+    fi
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111-verified-v2 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+    if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then cd pytorch && \
+    python3 -m pip install --break-system-packages -r requirements.txt && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
+    export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
+    export CUDNN_LIB_DIR=/usr/lib/aarch64-linux-gnu CUDNN_INCLUDE_DIR=/usr/include && \
+    export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" && \
+    export USE_MKLDNN=0 USE_OPENMP=0 && \
+    export USE_DISTRIBUTED=0 USE_GLOO=0 USE_MPI=0 USE_TENSORPIPE=0 USE_NCCL=0 && \
+    export BUILD_TEST=0 && \
+    export USE_QNNPACK=0 USE_PYTORCH_QNNPACK=0 USE_XNNPACK=0 USE_NNPACK=0 && \
+    export USE_FBGEMM=0 USE_KINETO=0 USE_CUPTI_SO=0 && \
+    export USE_FLASH_ATTENTION=1 USE_MEM_EFF_ATTENTION=1 && \
+    export USE_MPS=0 USE_ROCM=0 && \
+    export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
+    export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
+    export MAX_JOBS=${PYTORCH_MAX_JOBS} && \
+    export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
+    python3 setup.py bdist_wheel && \
+    cp dist/torch-*.whl /opt/wheels/ && \
+    python3 -m pip install --break-system-packages dist/torch-*.whl; fi
+
+WORKDIR /build/torchvision
+RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then for i in 1 2 3; do \
+        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+    done; fi
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87-sm110-cu132 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+    if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then cd vision && \
+    export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" && \
+    export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
+    python3 setup.py bdist_wheel && \
+    cp dist/torchvision-*.whl /opt/wheels/ && \
+    python3 -m pip install --break-system-packages dist/torchvision-*.whl && \
+    torchvision_image="$(find /usr/local/lib/python3.12/dist-packages/torchvision \
+        -type f -name 'image.so' -print -quit)" && \
+    test -n "${torchvision_image}" && \
+    readelf -d "${torchvision_image}" | grep -q 'Shared library: \[libnvjpeg.so.13\]'; fi
+
+WORKDIR /build/onnxruntime
+# CUDA 13.2's SBSA CCCL package places explicit specializations at global
+# scope with an invalid leading ``::`` qualification. GCC rejects them when
+# ONNX Runtime includes CUB under C++20. Apply the same committed two-header
+# patch as the wheel builder, guarded so prebuilt-wheel server builds remain a
+# no-op.
+COPY docker/patches/cuda-13.2-cccl-gcc.patch /tmp/cuda-13.2-cccl-gcc.patch
+RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then \
+      cccl_root=/usr/local/cuda/targets/sbsa-linux/include/cccl; \
+      patch --directory="${cccl_root}" --strip=1 < /tmp/cuda-13.2-cccl-gcc.patch; \
+      grep -q '^namespace cuda$' "${cccl_root}/cub/device/device_transform.cuh"; \
+      ! grep -R -q 'struct ::cuda::proclaims_copyable_arguments' \
+        "${cccl_root}/cub/device/device_transform.cuh" \
+        "${cccl_root}/cub/device/dispatch/tuning/tuning_transform.cuh"; \
+    fi
+RUN if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then \
+      git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git; \
+    fi
+RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm87-sm110-cu132 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+    if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then cd onnxruntime && \
+    python3 -m pip install --break-system-packages -r requirements-dev.txt && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
+    test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
+    ./build.sh --config Release --update --build --parallel ${ORT_BUILD_PARALLEL} \
+        --build_wheel \
+        --allow_running_as_root \
+        --compile_no_warning_as_error \
+        --use_cuda \
+        --cuda_home /usr/local/cuda \
+        --cudnn_home /usr \
+        --use_tensorrt \
+        --tensorrt_home /usr \
+        --skip_tests \
+        --cmake_extra_defines \
+            CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            CMAKE_CUDA_ARCHITECTURES="${ORT_CUDA_ARCHITECTURES}" \
+            onnxruntime_BUILD_UNIT_TESTS=OFF && \
+    cp build/Linux/Release/dist/onnxruntime_gpu*.whl /opt/wheels/ && \
+    python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl && \
+    ort_cuda_provider="$(find /usr/local/lib/python3.12/dist-packages \
+        -type f -name 'libonnxruntime_providers_cuda.so' -print -quit)" && \
+    test -n "${ort_cuda_provider}" && \
+    cuobjdump --list-elf "${ort_cuda_provider}" | grep -q 'sm_87' && \
+    cuobjdump --list-elf "${ort_cuda_provider}" | grep -q 'sm_110'; fi
+
+ARG FLASH_ATTN_REF=2402cb0bed7a2185cb9ddbe88fb998656cf73066
+RUN --mount=type=bind,source=docker/patches/flash-attention-sm87.patch,target=/tmp/flash-attention-sm87.patch,ro \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+    if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then export FLASH_ATTENTION_FORCE_BUILD=TRUE && \
+    export FLASH_ATTN_CUDA_ARCHS="${FLASH_ATTN_CUDA_ARCHS}" && \
+    export MAX_JOBS=${FLASH_ATTN_MAX_JOBS} NVCC_THREADS=1 && \
+    git clone https://github.com/Dao-AILab/flash-attention.git /tmp/flash-attention && \
+    cd /tmp/flash-attention && git checkout ${FLASH_ATTN_REF} && \
+    git apply /tmp/flash-attention-sm87.patch && \
+    git submodule update --init --recursive && \
+    python3 -m pip wheel --no-build-isolation --no-deps \
+        --wheel-dir /opt/wheels . && \
+    python3 -m pip install --break-system-packages --no-deps \
+        /opt/wheels/flash_attn-*.whl && \
+    flash_extension="$(find /usr/local/lib/python3.12/dist-packages -type f \
+        -name 'flash_attn_2_cuda*.so' -print -quit)" && \
+    test -n "${flash_extension}" && \
+    cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_87' && \
+    cuobjdump --list-elf "${flash_extension}" | grep -q 'sm_110' && \
+    cd / && rm -rf /tmp/flash-attention; fi
+
+WORKDIR /build/triton
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-onnx-${TARGETARCH} \
+    if [ "${USE_PREBUILT_WHEELS}" != "1" ]; then set -eux; \
+    mkdir -p /tmp/triton-wheels; \
+    python3 -m pip download --no-cache-dir \
+        --no-deps \
+        --only-binary=:all: \
+        --dest /tmp/triton-wheels \
+        "triton==${TRITON_VERSION}"; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    printf '%s  %s\n' "${TRITON_WHEEL_SHA256}" "$1" | sha256sum -c -; \
+    cp "$1" /opt/wheels/; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"; fi
 
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
@@ -119,8 +342,35 @@ COPY requirements/_requirements.txt \
      requirements/requirements.jetson.txt \
      ./
 
-RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
-    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
+RUN python3 -m pip wheel --no-deps --wheel-dir /opt/wheels \
+    "pycuda>=2025.0.0,<2026.0.0"
+
+RUN set -eux; \
+    python3 -m pip download --no-cache-dir \
+        --no-deps \
+        --only-binary=:all: \
+        --dest /opt/wheels \
+        "superiorvision==${SUPERIORVISION_VERSION}" \
+        "tracktors==${TRACKTORS_VERSION}"; \
+    set -- /opt/wheels/superiorvision-${SUPERIORVISION_VERSION}-*.whl; \
+    test -e "$1"; \
+    printf '%s  %s\n' "${SUPERIORVISION_WHEEL_SHA256}" "$1" | sha256sum -c -; \
+    set -- /opt/wheels/tracktors-${TRACKTORS_VERSION}-*.whl; \
+    test -e "$1"; \
+    printf '%s  %s\n' "${TRACKTORS_WHEEL_SHA256}" "$1" | sha256sum -c -
+
+RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torch_wheel="$1" && \
+    set -- /opt/wheels/torchvision-${TORCHVISION_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torchvision_wheel="$1" && \
+    printf 'torch @ file://%s\n' "${torch_wheel}" > /tmp/overrides.txt && \
+    printf 'torchvision @ file://%s\n' "${torchvision_wheel}" >> /tmp/overrides.txt && \
+    echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/overrides.txt && \
+    echo "tracktors==${TRACKTORS_VERSION}" >> /tmp/overrides.txt && \
     uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --find-links /opt/wheels \
     --override /tmp/overrides.txt \
@@ -139,11 +389,20 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     /opt/wheels/flash_attn-*.whl \
     /opt/wheels/onnxruntime_gpu-*.whl \
     /opt/wheels/pycuda-*.whl \
+    /opt/wheels/superiorvision-*.whl \
+    /opt/wheels/tracktors-*.whl \
     /opt/wheels/triton-*.whl \
-    "setuptools<=75.5.0" \
+    "setuptools>=77.0.3,<82" \
     "transformers>=4.57.3,<5.9.0" \
-    packaging \
-    && rm -rf ~/.cache/uv /tmp/overrides.txt
+    packaging && \
+    # Requirements also name torch==2.13.0. Reinstall from the wheel bundle
+    # after resolution so an equally-versioned index wheel cannot replace our
+    # SM87/SM110 build when unsafe-best-match considers every configured index.
+    python3 -m pip install --break-system-packages --no-deps --force-reinstall \
+        /opt/wheels/torch-*.whl \
+        /opt/wheels/torchvision-*.whl && \
+    python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
+    rm -rf ~/.cache/uv /tmp/overrides.txt
 
 WORKDIR /build/inference
 COPY . .
@@ -159,7 +418,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools<=75.5.0" && \
+        "setuptools>=77.0.3" && \
     cp dist/*.whl /opt/wheels/ && \
     find /usr/local/lib/python3.12/dist-packages -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
@@ -173,8 +432,18 @@ RUN cd /usr/local/lib/python3.12/dist-packages && \
     rm -rf */examples */benchmarks */docs || true && \
     rm -rf skimage/data || true
 
-RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
-    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
+RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torch_wheel="$1" && \
+    set -- /opt/wheels/torchvision-${TORCHVISION_VERSION}-*.whl && \
+    test "$#" -eq 1 && \
+    test -e "$1" && \
+    torchvision_wheel="$1" && \
+    printf 'torch @ file://%s\n' "${torch_wheel}" > /tmp/runtime-overrides.txt && \
+    printf 'torchvision @ file://%s\n' "${torchvision_wheel}" >> /tmp/runtime-overrides.txt && \
+    echo "superiorvision==${SUPERIORVISION_VERSION}" >> /tmp/runtime-overrides.txt && \
+    echo "tracktors==${TRACKTORS_VERSION}" >> /tmp/runtime-overrides.txt && \
     uv pip install --target /opt/python-runtime \
         --index-strategy unsafe-best-match \
         --find-links /opt/wheels \
@@ -194,14 +463,62 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         /opt/wheels/flash_attn-*.whl \
         /opt/wheels/onnxruntime_gpu-*.whl \
         /opt/wheels/pycuda-*.whl \
+        /opt/wheels/superiorvision-*.whl \
+        /opt/wheels/tracktors-*.whl \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl \
         /opt/wheels/triton-*.whl \
-        "setuptools<=75.5.0" \
+        "setuptools>=77.0.3" \
         "transformers>=4.57.3,<5.9.0" \
         packaging && \
+    rm -rf \
+        /opt/python-runtime/functorch \
+        /opt/python-runtime/torch \
+        /opt/python-runtime/torch-*.dist-info \
+        /opt/python-runtime/torchgen \
+        /opt/python-runtime/torchvision \
+        /opt/python-runtime/torchvision-*.dist-info \
+        /opt/python-runtime/torchvision.libs && \
+    python3 -m pip install --no-deps --target /opt/python-runtime \
+        /opt/wheels/torch-*.whl \
+        /opt/wheels/torchvision-*.whl && \
+    # The index Torch candidate pulled 2.9 GB of duplicate CUDA libraries.
+    # Our pinned wheel is built against the JP7.2 libraries installed above,
+    # and NCCL/CUPTI are disabled, so retain nvidia-ml-py but remove the unused
+    # split CUDA payloads before this layer is committed.
+    rm -rf \
+        /opt/python-runtime/nvidia \
+        /opt/python-runtime/nvidia_cublas-*.dist-info \
+        /opt/python-runtime/nvidia_cuda_cupti-*.dist-info \
+        /opt/python-runtime/nvidia_cuda_nvrtc-*.dist-info \
+        /opt/python-runtime/nvidia_cuda_runtime-*.dist-info \
+        /opt/python-runtime/nvidia_cudnn_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_cufft-*.dist-info \
+        /opt/python-runtime/nvidia_cufile-*.dist-info \
+        /opt/python-runtime/nvidia_curand-*.dist-info \
+        /opt/python-runtime/nvidia_cusolver-*.dist-info \
+        /opt/python-runtime/nvidia_cusparse-*.dist-info \
+        /opt/python-runtime/nvidia_cusparselt_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_nccl_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_nvjitlink-*.dist-info \
+        /opt/python-runtime/nvidia_nvshmem_cu13-*.dist-info \
+        /opt/python-runtime/nvidia_nvtx-*.dist-info && \
+    PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \
+    # Some optional application dependencies still name the upstream projects.
+    # Replace their import trees *and* metadata after resolution so the runtime
+    # can only import our tensor-native forks under the compatible namespaces.
+    rm -rf \
+        /opt/python-runtime/supervision \
+        /opt/python-runtime/supervision-*.dist-info \
+        /opt/python-runtime/trackers \
+        /opt/python-runtime/trackers-*.dist-info && \
+    python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
+        /opt/wheels/superiorvision-*.whl \
+        /opt/wheels/tracktors-*.whl && \
+    # OpenCV comes from the validated media runtime. Remove Python wheel copies
+    # so every process resolves the same CUDA-enabled implementation.
     find /opt/python-runtime -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
@@ -225,14 +542,20 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/runtime-overrides.txt && \
         /opt/python-runtime/triton/backends/nvidia/bin/ptxas-blackwell \
         /tmp/runtime-overrides.txt \
         /root/.cache/uv && \
-    test -x /opt/python-runtime/bin/inference && \
     du -sh /opt/python-runtime /opt/wheels
 
 FROM jetson-runtime-base AS runtime
 
-COPY --from=jetson-wheels-base /opt/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
-COPY --from=jetson-wheels-base /opt/cuda/nvvm/libdevice /usr/local/cuda/nvvm/libdevice
-COPY --from=jetson-wheels-base /opt/cuda/licenses/cuda-ptxas /usr/local/share/licenses/cuda-ptxas
+# Ubuntu 24.04's Python 3.12 development package exposes the versioned helper
+# only. The runtime verification, third-party extensions, and generated CLI
+# entry points use conventional unversioned commands, so provide them without
+# pulling in the forbidden meta ``python3-dev`` package.
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/python3.12-config /usr/local/bin/python3-config
+
+COPY --from=builder /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
+COPY --from=builder /usr/local/cuda/nvvm/libdevice /usr/local/cuda/nvvm/libdevice
+COPY --from=builder /usr/share/doc/cuda-nvcc-13-2/copyright /usr/local/share/licenses/cuda-ptxas
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:/opt/opencv/lib:/opt/gstreamer/lib:/opt/ffmpeg/lib:/opt/cuda-runtime/lib:/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/nvidia
 
@@ -242,19 +565,25 @@ COPY --from=builder /opt/python-runtime /usr/local/lib/python3.12/dist-packages
 
 ENV PYTHONPATH=/opt/opencv/python:/usr/local/lib/python3.12/dist-packages:/usr/lib/python3.12/dist-packages
 
-COPY --from=builder /opt/python-runtime/bin/inference /usr/local/bin/inference
+COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
 COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
-RUN chmod +x /usr/local/bin/run_uvicorn.sh
+COPY docker/scripts/verify_jetson_tensor_runtime.py /usr/local/bin/verify_jetson_tensor_runtime
+COPY docker/scripts/verify_tensor_tracking_runtime.py /usr/local/bin/verify_tensor_tracking_runtime
+RUN chmod +x \
+    /usr/local/bin/run_uvicorn.sh \
+    /usr/local/bin/verify_jetson_tensor_runtime \
+    /usr/local/bin/verify_tensor_tracking_runtime
 
 ENV CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:$PATH \
     TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas \
     TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
+    TRITON_CACHE_DIR=/tmp/triton-cache \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
     VERSION_CHECK_MODE=once \
@@ -262,6 +591,7 @@ ENV CUDA_HOME=/usr/local/cuda \
     NUM_WORKERS=1 \
     HOST=0.0.0.0 \
     PORT=9001 \
+    ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider \
     ORT_TENSORRT_FP16_ENABLE=1 \
     ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
     ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \
@@ -274,16 +604,21 @@ ENV CUDA_HOME=/usr/local/cuda \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false \
-    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
     USE_INFERENCE_EXP_MODELS=False \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=39.2.0
 
+# Depot has no Jetson driver, EGL display, or mounted CUDA runtime. The
+# build-time registry below is restricted to portable plugins; NVIDIA's system
+# plugins are deliberately discovered only at runtime on the target Jetson.
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
     --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
     --mount=type=bind,source=docker/scripts/verify_jetson_server_runtime.sh,target=/tmp/verify_jetson_server_runtime,ro \
+    export GST_PLUGIN_PATH_1_0= \
+        GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
+        GST_REGISTRY=/tmp/roboflow-gstreamer-registry.bin && \
     sh /tmp/verify_ffmpeg && \
     sh /tmp/verify_gstreamer && \
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
@@ -291,7 +626,7 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     sh /tmp/verify_jetson_server_runtime && \
     rm -rf /root/.cache/gstreamer-1.0
 
-LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (PyTorch from source, numpy 2.x)"
+LABEL org.opencontainers.image.description="Inference Server - Jetson 7.2.0 (validated dual-architecture PyTorch and tensor-native media pipeline)"
 
 EXPOSE 9001
 

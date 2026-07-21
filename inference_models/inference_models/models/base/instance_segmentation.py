@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import (
     Any,
     Generic,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -10,7 +11,6 @@ from typing import (
     Set,
     Tuple,
     Union,
-    Iterator,
     runtime_checkable,
 )
 
@@ -144,6 +144,7 @@ class InstanceDetections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+    tracker_id: Optional[torch.Tensor] = None  # (n_boxes, ), kept on tensor device
 
     def __len__(self) -> int:
         return int(self.xyxy.shape[0])
@@ -157,7 +158,7 @@ class InstanceDetections:
             of RLE mask: {"size": (h, w), "counts": count}
         - class_id: scalar tensor (0-dim)
         - confidence: scalar tensor (0-dim)
-        - tracker_id: value of `bboxes_metadata[i]["tracker_id"]` or None
+        - tracker_id: Python value from the tensor field or bbox metadata, or None
         - data: per-detection dict (`bboxes_metadata[i]`, `{}` if not set)
         - metadata: per-image dict (`image_metadata`, `{}` if not set)
         """
@@ -167,6 +168,11 @@ class InstanceDetections:
         image_metadata = self.image_metadata or {}
         for index in range(len(self)):
             data = bboxes_metadata[index]
+            tracker_id = data.get("tracker_id")
+            if self.tracker_id is not None:
+                tracker_id = int(self.tracker_id[index].detach().cpu().item())
+                data = dict(data)
+                data["tracker_id"] = tracker_id
             if self.mask is None:
                 selected_mask = None
             elif isinstance(self.mask, InstancesRLEMasks):
@@ -181,7 +187,7 @@ class InstanceDetections:
                 selected_mask,
                 self.class_id[index],
                 self.confidence[index],
-                data.get("tracker_id"),
+                tracker_id,
                 data,
                 image_metadata,
             )
@@ -240,13 +246,15 @@ class InstanceDetections:
             class_id=self.class_id.cpu().numpy(),
             confidence=self.confidence.cpu().numpy(),
             mask=mask,
+            tracker_id=(
+                self.tracker_id.cpu().numpy() if self.tracker_id is not None else None
+            ),
         )
 
 
 class InstanceSegmentationModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
     @classmethod
     @abstractmethod
     def from_pretrained(

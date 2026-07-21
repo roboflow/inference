@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from inference.core.interfaces.camera.entities import VideoFrameProducer
+from inference.core.logger import logger
 
 JETSON = "jetson"
 DGPU = "dgpu"
@@ -21,8 +22,6 @@ class ProducerAvailability:
 
 def check_jetson_gstreamer(
     video: Optional[Union[str, int]] = None,
-    *,
-    require_cuda_tensor: bool = True,
 ) -> ProducerAvailability:
     """Probe the in-repo Jetson GStreamer producer and its required elements."""
 
@@ -35,9 +34,7 @@ def check_jetson_gstreamer(
         return ProducerAvailability(
             JETSON, False, f"Jetson GStreamer producer import failed: {error!r}"
         )
-    gst_ok, gst_reason = probe_gstreamer_elements(
-        required_gstreamer_elements(video, output_tensor=True)
-    )
+    gst_ok, gst_reason = probe_gstreamer_elements(required_gstreamer_elements(video))
     if not gst_ok:
         return ProducerAvailability(JETSON, False, gst_reason)
     try:
@@ -171,9 +168,7 @@ def available_producers(
     gstreamer_cuda_availability = check_gstreamer_cuda(video)
     return {
         GSTREAMER_CUDA: gstreamer_cuda_availability,
-        JETSON: check_jetson_gstreamer(
-            video=video, require_cuda_tensor=require_cuda_tensor
-        ),
+        JETSON: check_jetson_gstreamer(video=video),
         DGPU: dgpu_availability,
     }
 
@@ -200,7 +195,7 @@ def build_hw_producer(
         video=video,
         require_cuda_tensor=output_tensor,
     )
-    for name in _resolution_order(prefer, video):
+    for name in _resolution_order(prefer, video, output_tensor=output_tensor):
         if not checks[name].available:
             continue
         if name in (GSTREAMER_CUDA, DGPU):
@@ -238,23 +233,35 @@ def build_hw_producer(
                 return PyNvVideoCodecFrameProducer(video, **producer_kwargs)
         except (
             Exception
-        ):  # noqa: BLE001 - probe said ok but construction failed; try next
+        ) as error:  # noqa: BLE001 - probe said ok but construction failed; try next
+            # Without this log a hardware-backend failure is invisible: the
+            # probe result still reads "ok" and the source lands on the cv2
+            # CPU path with no trace of why.
+            logger.warning(
+                "Hardware video producer %s failed to construct for %r: %r. "
+                "Trying the next candidate.",
+                name,
+                video,
+                error,
+            )
             continue
     return None
 
 
 def _resolution_order(
-    prefer: Optional[str], video: Optional[Union[str, int]] = None
+    prefer: Optional[str],
+    video: Optional[Union[str, int]] = None,
+    *,
+    output_tensor: bool = True,
 ) -> List[str]:
     """Source-type-aware producer routing (per the media-decode plan).
 
     An explicit ``prefer`` always wins, with the remaining backends kept as
     fallbacks. Otherwise the backend is chosen from (platform, source type):
 
-    - **Jetson** (aarch64 Linux): GStreamer for live/stream/camera sources; local
-      FILES are left to the cv2 CPU decoder (this returns ``[]`` -> ``build_hw_producer``
-      yields ``None`` -> opencv decode, lazily promoted to a tensor by
-      ``WorkflowImageData``). The Jetson HW GStreamer path is reserved for streams.
+    - **Jetson** (aarch64 Linux): GStreamer for live/stream/camera sources and for
+      local files when CUDA tensor output is requested. Numpy file consumers retain
+      the cv2 CPU decoder fallback.
     - **dGPU / x86**: GStreamer for live/stream sources; PyNvVideoCodec (``dgpu``) for
       local FILES (its ``SimpleDecoder`` is seekable-file only).
 
@@ -268,8 +275,9 @@ def _resolution_order(
 
     is_file = _is_file_source(video)
     if platform.machine() == "aarch64" and platform.system() == "Linux":
-        # Jetson: streams -> GStreamer; local files -> cv2 (no HW producer selected).
-        return [] if is_file else [JETSON]
+        # Jetson files are lossless in the tensor bridge. Keep the established
+        # cv2 route for CPU/Numpy callers, which do not benefit from CUDA output.
+        return [JETSON] if output_tensor or not is_file else []
     # dGPU / x86: streams -> GStreamer; local files -> PyNvVideoCodec.
     return [DGPU] if is_file else [GSTREAMER_CUDA]
 

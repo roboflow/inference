@@ -22,6 +22,7 @@ class Detections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+    tracker_id: Optional[torch.Tensor] = None  # (n_boxes, ), kept on tensor device
 
     def __len__(self) -> int:
         return int(self.xyxy.shape[0])
@@ -34,7 +35,7 @@ class Detections:
         - mask: always None for object detection
         - class_id: scalar tensor (0-dim)
         - confidence: scalar tensor (0-dim)
-        - tracker_id: value of `bboxes_metadata[i]["tracker_id"]` or None
+        - tracker_id: Python value from the tensor field or bbox metadata, or None
         - data: per-detection dict (`bboxes_metadata[i]`, `{}` if not set)
         - metadata: per-image dict (`image_metadata`, `{}` if not set)
         """
@@ -44,12 +45,17 @@ class Detections:
         image_metadata = self.image_metadata or {}
         for index in range(len(self)):
             data = bboxes_metadata[index]
+            tracker_id = data.get("tracker_id")
+            if self.tracker_id is not None:
+                tracker_id = int(self.tracker_id[index].detach().cpu().item())
+                data = dict(data)
+                data["tracker_id"] = tracker_id
             yield (
                 self.xyxy[index],
                 None,
                 self.class_id[index],
                 self.confidence[index],
-                data.get("tracker_id"),
+                tracker_id,
                 data,
                 image_metadata,
             )
@@ -100,13 +106,15 @@ class Detections:
             xyxy=self.xyxy.cpu().numpy(),
             class_id=self.class_id.cpu().numpy(),
             confidence=self.confidence.cpu().numpy(),
+            tracker_id=(
+                self.tracker_id.cpu().numpy() if self.tracker_id is not None else None
+            ),
         )
 
 
 class ObjectDetectionModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
     @classmethod
     @abstractmethod
     def from_pretrained(
@@ -162,7 +170,6 @@ class ObjectDetectionModel(
 class OpenVocabularyObjectDetectionModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
     @classmethod
     @abstractmethod
     def from_pretrained(

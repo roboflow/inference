@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 
 from inference.core.interfaces.camera.gstreamer_cuda_producer import (
@@ -13,6 +14,7 @@ from inference.core.interfaces.camera.gstreamer_cuda_producer import (
 class _NativePipeline:
     def __init__(self, frame=None, factories=()) -> None:
         self.grab_calls = 0
+        self.grab_timeouts = []
         self.retrieve_calls = 0
         self.frame = frame if frame is not None else object()
         self.factories = set(factories)
@@ -21,6 +23,7 @@ class _NativePipeline:
 
     def grab(self, timeout_ns=None) -> bool:
         self.grab_calls += 1
+        self.grab_timeouts.append(timeout_ns)
         self.last_grab_timeout_ns = timeout_ns
         return True
 
@@ -87,6 +90,33 @@ def test_retrieving_preroll_requires_next_grab_to_advance_native_pipeline() -> N
     assert native_pipeline.retrieve_calls == 1
     assert producer.grab()
     assert native_pipeline.grab_calls == 2
+
+
+def test_grabs_are_bounded_so_a_stalled_source_cannot_hang_the_state_lock() -> None:
+    native_pipeline = _NativePipeline()
+    producer = _producer(native_pipeline)
+
+    producer.discover_source_properties()
+    producer.retrieve()
+    producer.grab()
+
+    assert native_pipeline.grab_timeouts == [
+        producer._grab_timeout_ns,
+        producer._grab_timeout_ns,
+    ]
+
+
+def test_stalled_native_grab_surfaces_as_recoverable_error() -> None:
+    class _TimeoutPipeline(_NativePipeline):
+        def grab(self, timeout_ns=None):
+            raise TimeoutError("no frame")
+
+    producer = _producer(_TimeoutPipeline())
+
+    with pytest.raises(TimeoutError, match="no frame"):
+        producer.grab()
+
+    assert producer.isOpened()
 
 
 def test_numpy_retrieve_materializes_bgr_hwc_from_native_rgb_tensor() -> None:

@@ -301,7 +301,7 @@ class TimeInZoneBlockV3(WorkflowBlock):
             ts_end = metadata.frame_timestamp.timestamp()
 
         # Transfer box geometry once and reuse it across every cached zone.
-        xyxy_host = detections.xyxy.detach().to("cpu").numpy().astype(float)
+        xyxy_host = detections.xyxy.detach().to("cpu").numpy()
 
         # get trigger for all zones. It is a matrix of shape (len(zones), len(detections))
         polygon_triggers = [
@@ -317,7 +317,7 @@ class TimeInZoneBlockV3(WorkflowBlock):
         surviving_times: Dict[int, float] = {}
         for i, is_in_zone, tracker_id in zip(
             range(n),
-            is_in_any_zone,
+            is_in_any_zone.tolist(),
             tracker_ids,
         ):
             if (

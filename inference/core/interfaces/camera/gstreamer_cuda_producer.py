@@ -78,6 +78,14 @@ _FORBIDDEN_FACTORY_NAMES = (
 )
 
 
+class _GError(ctypes.Structure):
+    _fields_ = [
+        ("domain", ctypes.c_uint32),
+        ("code", ctypes.c_int),
+        ("message", ctypes.c_char_p),
+    ]
+
+
 def _resolve_grab_timeout_ns() -> int:
     raw = os.getenv(_GRAB_TIMEOUT_ENV_VAR)
     if raw is None:
@@ -91,27 +99,15 @@ def _resolve_grab_timeout_ns() -> int:
     return int(seconds * 1_000_000_000)
 
 
-def probe_gstreamer_cuda_elements(
-    elements: Iterable[str], *, boost_ranks: bool = False
-) -> Tuple[bool, str]:
-    """Verify the required GStreamer-CUDA elements exist (including at least one NVIDIA
-    decoder). When ``boost_ranks`` is True (only at producer BUILD time, not during
-    availability probing) the NVIDIA decoders are ranked above software decoders so
-    ``uridecodebin`` auto-selects them; kept OFF during probing so discovery does not
-    perturb decoder selection process-wide for unrelated paths (e.g. a later
-    cv2-GStreamer decode)."""
+def _load_gstreamer_library():
     library_name = ctypes.util.find_library("gstreamer-1.0")
     if not library_name:
         library_name = "libgstreamer-1.0.so.0"
-    try:
-        gst = ctypes.CDLL(library_name)
-    except OSError as error:
-        return False, f"could not load {library_name}: {error}"
-
+    gst = ctypes.CDLL(library_name)
     gst.gst_init_check.argtypes = [
         ctypes.c_void_p,
         ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.POINTER(_GError)),
     ]
     gst.gst_init_check.restype = ctypes.c_int
     gst.gst_element_factory_find.argtypes = [ctypes.c_char_p]
@@ -120,10 +116,41 @@ def probe_gstreamer_cuda_elements(
     gst.gst_plugin_feature_set_rank.restype = None
     gst.gst_object_unref.argtypes = [ctypes.c_void_p]
     gst.gst_object_unref.restype = None
+    gst.g_error_free.argtypes = [ctypes.c_void_p]
+    gst.g_error_free.restype = None
+    return gst
 
-    error = ctypes.c_void_p()
+
+def _init_gstreamer(gst) -> Tuple[bool, str]:
+    error = ctypes.POINTER(_GError)()
     if not gst.gst_init_check(None, None, ctypes.byref(error)):
-        return False, "GStreamer initialisation failed"
+        reason = "GStreamer initialisation failed"
+        if error:
+            if error.contents.message:
+                message = error.contents.message.decode("utf-8", errors="replace")
+                reason = f"{reason}: {message}"
+            gst.g_error_free(error)
+        return False, reason
+    return True, "ok"
+
+
+def probe_gstreamer_cuda_elements(
+    elements: Iterable[str], *, boost_ranks: bool = False
+) -> Tuple[bool, str]:
+    """Verify the required GStreamer-CUDA elements exist.
+
+    Rank NVIDIA decoders above software decoders only when ``boost_ranks`` is
+    explicitly enabled during producer construction. Discovery probes leave
+    process-wide decoder selection untouched.
+    """
+    try:
+        gst = _load_gstreamer_library()
+    except OSError as error:
+        return False, f"could not load GStreamer: {error}"
+
+    initialised, reason = _init_gstreamer(gst)
+    if not initialised:
+        return False, reason
 
     factories = {}
     missing = []
@@ -248,6 +275,12 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     @property
     def pipeline(self) -> str:
         return self._pipeline_description
+
+    @property
+    def has_native_latest_frame_handoff(self) -> bool:
+        """Report that live native frames use a latest-wins handoff slot."""
+
+        return True
 
     def isOpened(self) -> bool:
         return not self._closed and not self._eos

@@ -39,6 +39,7 @@ from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
+    TRACKER_ID_KEY,
     WIDTH_KEY,
     X_KEY,
     Y_KEY,
@@ -55,9 +56,12 @@ KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
 TensorNativePrediction = Union[
     Detections, InstanceDetections, KeyPoints, KeyPointPrediction
 ]
+TensorNativeIndices = Union[Sequence[int], torch.Tensor]
 
 
-def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
+def mask_to_indices(
+    mask: Union[np.ndarray, Sequence[bool], torch.Tensor],
+) -> List[int]:
     """Convert a boolean mask (numpy array, list, or torch tensor) into the list
     of surviving row indices, in ascending order."""
     if isinstance(mask, torch.Tensor):
@@ -89,11 +93,18 @@ class _RowSelection:
         self._total_rows = total_rows
 
     @classmethod
-    def from_indices(cls, indices: Sequence[int], total_rows: int) -> "_RowSelection":
-        indices = [int(index) for index in indices]
-        is_identity = indices == list(range(total_rows))
-        selector = None if is_identity else torch.as_tensor(indices, dtype=torch.long)
-        return cls(selector, indices, is_identity, total_rows)
+    def from_indices(
+        cls, indices: TensorNativeIndices, total_rows: int
+    ) -> "_RowSelection":
+        if isinstance(indices, torch.Tensor):
+            selector = indices.detach().to(dtype=torch.long).reshape(-1)
+            return cls(selector, None, False, total_rows)
+        host_indices = [int(index) for index in indices]
+        is_identity = host_indices == list(range(total_rows))
+        selector = (
+            None if is_identity else torch.as_tensor(host_indices, dtype=torch.long)
+        )
+        return cls(selector, host_indices, is_identity, total_rows)
 
     @classmethod
     def from_mask(
@@ -113,6 +124,7 @@ class _RowSelection:
     def select_tensor(self, field: torch.Tensor) -> torch.Tensor:
         if self.is_identity:
             return field
+        assert self._selector is not None
         if self._selector.device != field.device:
             # Move once, reuse for every subsequent field of this prediction.
             self._selector = self._selector.to(field.device)
@@ -123,13 +135,17 @@ class _RowSelection:
             if self.is_identity:
                 self._host_indices = list(range(self._total_rows))
             else:
+                assert self._selector is not None
                 # The single (lazy) device->host transfer of this selection.
-                self._host_indices = (
-                    torch.nonzero(self._selector, as_tuple=False)
-                    .reshape(-1)
-                    .cpu()
-                    .tolist()
-                )
+                if self._selector.dtype == torch.bool:
+                    self._host_indices = (
+                        torch.nonzero(self._selector, as_tuple=False)
+                        .reshape(-1)
+                        .cpu()
+                        .tolist()
+                    )
+                else:
+                    self._host_indices = self._selector.cpu().tolist()
         return self._host_indices
 
 
@@ -151,6 +167,12 @@ def _take_detections(
         bboxes_metadata = [
             dict(detections.bboxes_metadata[i]) for i in selection.host_indices()
         ]
+    # ``tracker_id`` was added to the tensor-native detection contract after
+    # early ``inference_models`` releases.  Model blocks legitimately emit
+    # those older objects before a tracker has ever touched them, so selection
+    # (for example class filtering directly after detection) must treat the
+    # absent field exactly like ``None``.
+    tracker_id = getattr(detections, "tracker_id", None)
     if isinstance(detections, InstanceDetections):
         mask_field = detections.mask
         if isinstance(mask_field, InstancesRLEMasks):
@@ -160,7 +182,7 @@ def _take_detections(
             )
         else:
             new_mask = selection.select_tensor(mask_field)
-        return InstanceDetections(
+        result = InstanceDetections(
             xyxy=selection.select_tensor(detections.xyxy),
             class_id=selection.select_tensor(detections.class_id),
             confidence=selection.select_tensor(detections.confidence),
@@ -168,13 +190,21 @@ def _take_detections(
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
-    return Detections(
-        xyxy=selection.select_tensor(detections.xyxy),
-        class_id=selection.select_tensor(detections.class_id),
-        confidence=selection.select_tensor(detections.confidence),
-        image_metadata=detections.image_metadata,
-        bboxes_metadata=bboxes_metadata,
-    )
+    else:
+        result = Detections(
+            xyxy=selection.select_tensor(detections.xyxy),
+            class_id=selection.select_tensor(detections.class_id),
+            confidence=selection.select_tensor(detections.confidence),
+            image_metadata=detections.image_metadata,
+            bboxes_metadata=bboxes_metadata,
+        )
+    # Older inference-models constructors do not accept ``tracker_id``. It is
+    # valid mutable state, so attach it only after construction when the input
+    # already carries tracking IDs. Trackers set it themselves after selection
+    # for fresh model outputs.
+    if tracker_id is not None:
+        result.tracker_id = selection.select_tensor(tracker_id)
+    return result
 
 
 def _take_key_points(
@@ -211,18 +241,18 @@ def _take_key_points(
 
 def take_detections_by_indices(
     detections: TensorNativeDetections,
-    indices: Sequence[int],
+    indices: TensorNativeIndices,
 ) -> TensorNativeDetections:
-    """Select rows of a ``Detections`` / ``InstanceDetections`` by index list."""
+    """Select detection rows with Python or device-resident tensor indices."""
     selection = _RowSelection.from_indices(indices, int(detections.xyxy.shape[0]))
     return _take_detections(detections, selection)
 
 
 def take_key_points_by_indices(
     key_points: KeyPoints,
-    indices: Sequence[int],
+    indices: TensorNativeIndices,
 ) -> KeyPoints:
-    """Select instances of a ``KeyPoints`` by index list."""
+    """Select key-point instances with Python or device-resident tensor indices."""
     selection = _RowSelection.from_indices(indices, int(key_points.xy.shape[0]))
     return _take_key_points(key_points, selection)
 
@@ -254,11 +284,13 @@ def _take_prediction(
 
 def take_prediction_by_indices(
     prediction: TensorNativePrediction,
-    indices: Sequence[int],
+    indices: TensorNativeIndices,
 ) -> TensorNativePrediction:
-    """Select a subset of any tensor-native prediction by index list, returning
-    the same shape. For the keypoint-detection tuple, both the ``KeyPoints`` and
-    the bbox ``Detections`` components are sliced consistently."""
+    """Select prediction rows with Python or device-resident tensor indices.
+
+    The prediction shape is preserved, and tuple keypoints and detections are
+    sliced by one shared selection.
+    """
     selection = _RowSelection.from_indices(indices, _prediction_row_count(prediction))
     return _take_prediction(prediction, selection)
 
@@ -508,6 +540,7 @@ def _shift_native_detections_to_root_coordinates(
             ),
             image_metadata=image_metadata,
             bboxes_metadata=bboxes_metadata,
+            tracker_id=detections.tracker_id,
         )
     return Detections(
         xyxy=shifted_xyxy,
@@ -515,6 +548,7 @@ def _shift_native_detections_to_root_coordinates(
         confidence=detections.confidence,
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata,
+        tracker_id=detections.tracker_id,
     )
 
 
@@ -740,6 +774,8 @@ def native_detections_from_inference_predictions(
     xyxy: List[List[float]] = []
     class_id: List[int] = []
     confidence: List[float] = []
+    tracker_ids: List[int] = []
+    all_tracker_ids_present = True
     bboxes_metadata: List[dict] = []
     derived_class_names: Dict[int, str] = {}
     for prediction in predictions:
@@ -758,6 +794,10 @@ def native_detections_from_inference_predictions(
         prediction_class_id = int(prediction.get(CLASS_ID_KEY, 0))
         class_id.append(prediction_class_id)
         confidence.append(float(prediction.get(CONFIDENCE_KEY, 1.0)))
+        tracker_id = prediction.get(TRACKER_ID_KEY)
+        all_tracker_ids_present &= tracker_id is not None
+        if tracker_id is not None:
+            tracker_ids.append(int(tracker_id))
         if CLASS_NAME_KEY in prediction:
             derived_class_names[prediction_class_id] = str(prediction[CLASS_NAME_KEY])
         bboxes_metadata.append(
@@ -781,6 +821,11 @@ def native_detections_from_inference_predictions(
         ).reshape(-1),
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata if number_of_detections > 0 else None,
+        tracker_id=(
+            torch.as_tensor(tracker_ids, dtype=torch.long, device=device).reshape(-1)
+            if all_tracker_ids_present and number_of_detections > 0
+            else None
+        ),
     )
 
 

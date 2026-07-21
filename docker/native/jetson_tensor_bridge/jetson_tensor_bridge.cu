@@ -10,6 +10,7 @@
 #include <nvbufsurface.h>
 #pragma pop_macro("__noinline__")
 
+#include <algorithm>
 #include <cstdarg>
 #include <atomic>
 #include <chrono>
@@ -17,20 +18,28 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <string>
+#include <time.h>
 #include <vector>
 
 namespace {
 
 constexpr const char* kSinkName = "rf_tensor_sink";
+constexpr const char* kSrtpCapsElementName = "rf_srtp_caps";
 constexpr const char* kNvmmCapsFeature = "memory:NVMM";
 // Upper bound on device buffers the per-pipeline tensor pool recycles. The
 // steady state holds only the frames a consumer keeps in flight (typically
 // one or two); this cap only bounds a slow or bursty consumer. Buffers are
 // allocated lazily on demand, so a small cap costs nothing until it is hit.
 constexpr size_t kJetsonTensorPoolBuffers = 8;
+// File sources must preserve ordering and every decoded frame. Bound their
+// device handoff queue and backpressure the streaming callback once it fills;
+// live sources continue to use a single latest-wins slot.
+constexpr size_t kJetsonTensorHandoffBuffers = 4;
 
 enum DLDeviceType : int32_t {
     kDLCUDA = 2,
@@ -73,6 +82,16 @@ struct RfFrameInfo {
     int32_t fps_numerator;
     int32_t fps_denominator;
     int64_t duration_ns;
+    // Timing belongs to the tensor context, not pipeline-global state: a live
+    // latest-wins handoff can replace a queued sample before grab() observes
+    // it. -1 means GStreamer did not provide that clock value.
+    int64_t pts_ns;
+    int64_t dts_ns;
+    // These anchors are captured at appsink delivery. PTS/DTS are stream
+    // clocks, whereas the anchors allow consumers to measure arrival latency
+    // and correlate a source clock to local monotonic/wall time.
+    int64_t arrival_monotonic_ns;
+    int64_t arrival_wall_time_ns;
 };
 
 struct RfBridgeStats {
@@ -188,6 +207,7 @@ struct RfTensorContext {
     // that closes while this tensor is still alive.
     std::shared_ptr<RfBufferPool> pool;
     bool pooled = false;
+    RfFrameInfo frame_info{};
     DLManagedTensor managed{};
 };
 
@@ -200,21 +220,193 @@ struct RfJetsonPipeline {
     RfBridgeStats stats{};
     std::atomic<bool> interrupted{false};
     std::mutex mutex;
-    // Streaming-thread handoff (the jetson-utils consume model): the appsink
-    // new-sample callback converts each frame on the GStreamer streaming
-    // thread, releases the GStreamer buffer immediately (the decoder pool is
-    // never held hostage by a slow consumer), and publishes the finished CUDA
-    // tensor here. grab() waits on `frame_ready`; retrieve() takes the tensor.
-    // A newer frame replaces an uncollected one (latest-wins, like appsink
-    // drop=true, but the drop happens AFTER decode so nothing stalls).
+    // Streaming-thread handoff (the jetson-utils consume model): live sources
+    // publish into a latest-wins slot, while file sources use a bounded FIFO
+    // and backpressure the callback. This keeps live latency bounded without
+    // violating the lossless, ordered semantics expected when reading files.
     std::condition_variable frame_ready;
-    RfTensorContext* ready_tensor = nullptr;
+    std::condition_variable handoff_space;
+    std::deque<RfTensorContext*> ready_tensors;
+    RfTensorContext* grabbed_tensor = nullptr;
+    bool latest_only = true;
     std::atomic<bool> eos{false};
     bool conversion_failed = false;
     char conversion_error[1024] = {0};
-    RfFrameInfo last_frame_info{};
-    bool frame_info_valid = false;
+    // The advertised source properties are established from the first frame.
+    // If later caps disagree, fail recoverably instead of returning tensors
+    // whose dimensions no longer match cached workflow metadata.
+    RfFrameInfo negotiated_frame_info{};
+    bool negotiated_frame_info_valid = false;
+    bool caps_changed = false;
+    char caps_change_error[1024] = {0};
+    GstPad* srtp_probe_pad = nullptr;
+    gulong srtp_probe_id = 0;
 };
+
+void signal_pipeline_error(RfJetsonPipeline* handle, const char* message) {
+    std::lock_guard<std::mutex> lock(handle->mutex);
+    handle->conversion_failed = true;
+    std::snprintf(
+        handle->conversion_error,
+        sizeof(handle->conversion_error),
+        "%s",
+        message);
+    handle->frame_ready.notify_all();
+}
+
+GstPadProbeReturn configure_sdes_srtp_caps(
+    GstPad* pad,
+    GstPadProbeInfo* info,
+    gpointer user_data) {
+    auto* handle = static_cast<RfJetsonPipeline*>(user_data);
+    if ((GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM) == 0) {
+        return GST_PAD_PROBE_OK;
+    }
+    GstEvent* event = GST_PAD_PROBE_INFO_EVENT(info);
+    if (event == nullptr || GST_EVENT_TYPE(event) != GST_EVENT_CAPS) {
+        return GST_PAD_PROBE_OK;
+    }
+    GstCaps* input_caps = nullptr;
+    gst_event_parse_caps(event, &input_caps);
+    if (input_caps == nullptr || gst_caps_is_empty(input_caps) ||
+        gst_caps_is_any(input_caps)) {
+        signal_pipeline_error(handle, "SRTP stream caps are missing");
+        return GST_PAD_PROBE_DROP;
+    }
+    const GstStructure* input = gst_caps_get_structure(input_caps, 0);
+    const char* media = gst_structure_get_string(input, "media");
+    const char* encoding = gst_structure_get_string(input, "encoding-name");
+    const bool supported_media =
+        media != nullptr && std::strcmp(media, "video") == 0 &&
+        encoding != nullptr &&
+        (std::strcmp(encoding, "H264") == 0 ||
+         std::strcmp(encoding, "H265") == 0);
+    if (!supported_media) {
+        signal_pipeline_error(handle, "SRTP caps do not describe H.264/H.265 video");
+        return GST_PAD_PROBE_DROP;
+    }
+    const char* crypto = gst_structure_get_string(input, "a-crypto");
+    constexpr const char* kCryptoSuite = "AES_CM_128_HMAC_SHA1_80";
+    constexpr const char* kInlinePrefix = "inline:";
+    const char* tag_end = crypto == nullptr ? nullptr : std::strchr(crypto, ' ');
+    bool valid_tag = tag_end != nullptr && tag_end != crypto;
+    for (const char* cursor = crypto; valid_tag && cursor < tag_end; ++cursor) {
+        valid_tag = *cursor >= '0' && *cursor <= '9';
+    }
+    const char* suite_start = tag_end;
+    while (suite_start != nullptr && *suite_start == ' ') {
+        ++suite_start;
+    }
+    const char* suite_end =
+        suite_start == nullptr ? nullptr : std::strchr(suite_start, ' ');
+    const bool supported_suite =
+        suite_end != nullptr &&
+        static_cast<size_t>(suite_end - suite_start) == std::strlen(kCryptoSuite) &&
+        std::strncmp(suite_start, kCryptoSuite, std::strlen(kCryptoSuite)) == 0;
+    const char* key_start = suite_end;
+    while (key_start != nullptr && *key_start == ' ') {
+        ++key_start;
+    }
+    if (!valid_tag || !supported_suite || key_start == nullptr ||
+        std::strncmp(key_start, kInlinePrefix, std::strlen(kInlinePrefix)) != 0) {
+        signal_pipeline_error(
+            handle,
+            "SRTP stream does not advertise supported SDES AES-128/HMAC-SHA1-80");
+        return GST_PAD_PROBE_DROP;
+    }
+    key_start += std::strlen(kInlinePrefix);
+    const size_t encoded_length = std::strcspn(key_start, "| \t\r\n");
+    bool valid_base64 = encoded_length == 40;
+    for (size_t index = 0; valid_base64 && index < encoded_length; ++index) {
+        const char value = key_start[index];
+        valid_base64 = (value >= 'A' && value <= 'Z') ||
+                       (value >= 'a' && value <= 'z') ||
+                       (value >= '0' && value <= '9') || value == '+' || value == '/';
+    }
+    if (!valid_base64) {
+        signal_pipeline_error(handle, "SRTP SDES key is not valid base64");
+        return GST_PAD_PROBE_DROP;
+    }
+    const char* suffix = key_start + encoded_length;
+    if (*suffix == '|') {
+        signal_pipeline_error(
+            handle,
+            "SRTP SDES lifetime and MKI parameters are not supported");
+        return GST_PAD_PROBE_DROP;
+    }
+    while (*suffix == ' ' || *suffix == '\t' || *suffix == '\r' ||
+           *suffix == '\n') {
+        ++suffix;
+    }
+    if (*suffix != '\0') {
+        signal_pipeline_error(
+            handle,
+            "SRTP SDES session parameters are not supported");
+        return GST_PAD_PROBE_DROP;
+    }
+    std::string encoded_key(key_start, encoded_length);
+    gsize key_length = 0;
+    guchar* key_bytes = g_base64_decode(encoded_key.c_str(), &key_length);
+    std::fill(encoded_key.begin(), encoded_key.end(), '\0');
+    constexpr gsize kAes128MasterKeyAndSaltBytes = 30;
+    if (key_bytes == nullptr || key_length != kAes128MasterKeyAndSaltBytes) {
+        if (key_bytes != nullptr) {
+            std::fill_n(key_bytes, key_length, 0);
+        }
+        g_free(key_bytes);
+        signal_pipeline_error(handle, "SRTP SDES key has an invalid length");
+        return GST_PAD_PROBE_DROP;
+    }
+    GstBuffer* key_buffer = gst_buffer_new_allocate(nullptr, key_length, nullptr);
+    if (key_buffer == nullptr ||
+        gst_buffer_fill(key_buffer, 0, key_bytes, key_length) != key_length) {
+        std::fill_n(key_bytes, key_length, 0);
+        g_free(key_bytes);
+        if (key_buffer != nullptr) {
+            gst_buffer_unref(key_buffer);
+        }
+        signal_pipeline_error(handle, "Could not allocate SRTP key buffer");
+        return GST_PAD_PROBE_DROP;
+    }
+    std::fill_n(key_bytes, key_length, 0);
+    g_free(key_bytes);
+
+    GstCaps* secure_caps = gst_caps_copy(input_caps);
+    for (guint index = 0; index < gst_caps_get_size(secure_caps); ++index) {
+        GstStructure* structure = gst_caps_get_structure(secure_caps, index);
+        gst_structure_set_name(structure, "application/x-srtp");
+        gst_structure_remove_field(structure, "a-crypto");
+        gst_structure_set(
+            structure,
+            "srtp-key",
+            GST_TYPE_BUFFER,
+            key_buffer,
+            "srtp-cipher",
+            G_TYPE_STRING,
+            "aes-128-icm",
+            "srtp-auth",
+            G_TYPE_STRING,
+            "hmac-sha1-80",
+            "srtcp-cipher",
+            G_TYPE_STRING,
+            "aes-128-icm",
+            "srtcp-auth",
+            G_TYPE_STRING,
+            "hmac-sha1-80",
+            nullptr);
+    }
+    GstEvent* secure_event = gst_event_new_caps(secure_caps);
+    gst_caps_unref(secure_caps);
+    gst_buffer_unref(key_buffer);
+    if (secure_event == nullptr) {
+        signal_pipeline_error(handle, "Could not create secure RTP caps event");
+        return GST_PAD_PROBE_DROP;
+    }
+    gst_event_unref(event);
+    GST_PAD_PROBE_INFO_DATA(info) = secure_event;
+    (void)pad;
+    return GST_PAD_PROBE_OK;
+}
 
 using NvBufSurfaceMapEglImageFn = int (*)(NvBufSurface*, int);
 using NvBufSurfaceUnMapEglImageFn = int (*)(NvBufSurface*, int);
@@ -507,6 +699,24 @@ bool read_sample_info(GstSample* sample, RfFrameInfo* info) {
     if (sample == nullptr || info == nullptr) {
         return false;
     }
+    *info = {};
+    info->pts_ns = -1;
+    info->dts_ns = -1;
+    timespec monotonic_time{};
+    timespec wall_time{};
+    if (clock_gettime(CLOCK_MONOTONIC, &monotonic_time) == 0) {
+        info->arrival_monotonic_ns =
+            static_cast<int64_t>(monotonic_time.tv_sec) * GST_SECOND +
+            monotonic_time.tv_nsec;
+    } else {
+        info->arrival_monotonic_ns = -1;
+    }
+    if (clock_gettime(CLOCK_REALTIME, &wall_time) == 0) {
+        info->arrival_wall_time_ns =
+            static_cast<int64_t>(wall_time.tv_sec) * GST_SECOND + wall_time.tv_nsec;
+    } else {
+        info->arrival_wall_time_ns = -1;
+    }
     GstCaps* caps = gst_sample_get_caps(sample);
     if (caps == nullptr || gst_caps_is_empty(caps)) {
         return false;
@@ -526,7 +736,26 @@ bool read_sample_info(GstSample* sample, RfFrameInfo* info) {
     info->height = static_cast<uint32_t>(height);
     info->fps_numerator = numerator;
     info->fps_denominator = denominator > 0 ? denominator : 1;
+    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    if (buffer != nullptr) {
+        const GstClockTime pts = GST_BUFFER_PTS(buffer);
+        const GstClockTime dts = GST_BUFFER_DTS(buffer);
+        if (pts != GST_CLOCK_TIME_NONE) {
+            info->pts_ns = static_cast<int64_t>(pts);
+        }
+        if (dts != GST_CLOCK_TIME_NONE) {
+            info->dts_ns = static_cast<int64_t>(dts);
+        }
+    }
     return true;
+}
+
+bool frame_caps_changed(const RfFrameInfo& previous, const RfFrameInfo& current) {
+    // Some sources first negotiate an unknown 0/1 framerate and later refine
+    // it without changing the actual image layout. Dimensions are the unsafe
+    // change because cached workflow metadata and tensor shape then disagree;
+    // frame-specific FPS remains available to callers without forcing a reset.
+    return previous.width != current.width || previous.height != current.height;
 }
 
 bool read_bus_error(
@@ -656,13 +885,28 @@ RfTensorContext* convert_sample_to_tensor(
     {
         auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
         diagnostics->memory_type = static_cast<int32_t>(surface->memType);
-        if (surface->memType != NVBUF_MEM_SURFACE_ARRAY ||
-            surface->surfaceList == nullptr || surface->batchSize == 0 ||
-            surface->numFilled == 0) {
+        // A traditional Jetson decoder exports an NVRM surface array, which
+        // reaches CUDA through EGL. Thor's OpenRM decoder instead exports a
+        // CUDA-device surface: its dataPtr is already a CUDA-addressable,
+        // pitched image. Both are GPU-native and neither should fall back to
+        // a CPU frame path.
+        const bool direct_cuda_surface =
+            surface->memType == NVBUF_MEM_CUDA_DEVICE;
+        if ((surface->memType != NVBUF_MEM_SURFACE_ARRAY &&
+             !direct_cuda_surface) ||
+            surface->surfaceList == nullptr || surface->batchSize == 0) {
             write_error(
                 error,
                 error_capacity,
-                "Frame is not a populated NvBufSurface SURFACE_ARRAY");
+                "Frame is not a supported GPU NvBufSurface "
+                "(memType=%d surfaceArray=%d cudaDevice=%d surfaceList=%p "
+                "batchSize=%u numFilled=%u)",
+                static_cast<int>(surface->memType),
+                static_cast<int>(NVBUF_MEM_SURFACE_ARRAY),
+                static_cast<int>(NVBUF_MEM_CUDA_DEVICE),
+                static_cast<void*>(surface->surfaceList),
+                surface->batchSize,
+                surface->numFilled);
             goto cleanup;
         }
         const NvBufSurfaceColorFormat surface_format =
@@ -676,6 +920,107 @@ RfTensorContext* convert_sample_to_tensor(
                 "NvBufSurface format is unsupported (format=%d, expected RGBA "
                 "or an NV12 variant)",
                 static_cast<int>(surface_format));
+            goto cleanup;
+        }
+        if (direct_cuda_surface) {
+            const NvBufSurfaceParams& params = surface->surfaceList[0];
+            const auto* source = static_cast<const uint8_t*>(params.dataPtr);
+            const size_t source_pitch = params.pitch;
+            if (source == nullptr || source_pitch == 0) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device surface has no pitched data pointer "
+                    "(data=%p pitch=%zu)",
+                    static_cast<const void*>(source),
+                    source_pitch);
+                goto cleanup;
+            }
+            if (!is_rgba &&
+                (params.planeParams.num_planes < 2 ||
+                 params.planeParams.offset[1] == 0)) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device NV12 surface has invalid plane metadata "
+                    "(planes=%u uvOffset=%u)",
+                    params.planeParams.num_planes,
+                    params.planeParams.offset[1]);
+                goto cleanup;
+            }
+
+            tensor = new (std::nothrow) RfTensorContext();
+            if (tensor == nullptr) {
+                write_error(error, error_capacity, "Could not allocate tensor state");
+                goto cleanup;
+            }
+            tensor->device_id = handle->device_id;
+            tensor->pool = handle->tensor_pool;
+            tensor->managed.manager_ctx = tensor;
+            tensor->managed.deleter = delete_managed_tensor;
+            const size_t output_size =
+                static_cast<size_t>(frame_info.width) * frame_info.height * 3;
+            tensor->allocation =
+                handle->tensor_pool->acquire(output_size, &tensor->pooled);
+            if (tensor->allocation == nullptr) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA tensor allocation failed for %zu bytes",
+                    output_size);
+                goto cleanup;
+            }
+
+            const dim3 threads(32, 8);
+            const dim3 blocks(
+                (frame_info.width + threads.x - 1) / threads.x,
+                (frame_info.height + threads.y - 1) / threads.y);
+            if (is_rgba) {
+                const ChannelMap rgba_channels{0, 1, 2};
+                rgba_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    source,
+                    source_pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    rgba_channels);
+            } else {
+                nv12_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    source,
+                    source + params.planeParams.offset[1],
+                    source_pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    yuv_coeffs);
+            }
+            cudaError_t cuda_status = cudaGetLastError();
+            if (cuda_status == cudaSuccess) {
+                cuda_status = cudaStreamSynchronize(handle->stream);
+            }
+            if (cuda_status != cudaSuccess) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device frame conversion failed: %s",
+                    cudaGetErrorString(cuda_status));
+                goto cleanup;
+            }
+
+            tensor->shape[0] = 3;
+            tensor->shape[1] = frame_info.height;
+            tensor->shape[2] = frame_info.width;
+            tensor->managed.dl_tensor.data = tensor->allocation;
+            tensor->managed.dl_tensor.device = {kDLCUDA, handle->device_id};
+            tensor->managed.dl_tensor.ndim = 3;
+            tensor->managed.dl_tensor.dtype = {kDLUInt, 8, 1};
+            tensor->managed.dl_tensor.shape = tensor->shape;
+            tensor->managed.dl_tensor.strides = nullptr;
+            tensor->managed.dl_tensor.byte_offset = 0;
+            tensor->frame_info = frame_info;
+            *frame_info_out = frame_info;
+            result = tensor;
+            tensor = nullptr;
             goto cleanup;
         }
         if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
@@ -852,6 +1197,7 @@ RfTensorContext* convert_sample_to_tensor(
         tensor->managed.dl_tensor.shape = tensor->shape;
         tensor->managed.dl_tensor.strides = nullptr;
         tensor->managed.dl_tensor.byte_offset = 0;
+        tensor->frame_info = frame_info;
         *frame_info_out = frame_info;
         result = tensor;
         tensor = nullptr;
@@ -896,7 +1242,7 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
         handle, sample, &frame_info, &diagnostics, error, sizeof(error));
     gst_sample_unref(sample);
     {
-        std::lock_guard<std::mutex> lock(handle->mutex);
+        std::unique_lock<std::mutex> lock(handle->mutex);
         handle->stats.descriptor_maps += 1;
         handle->stats.last_nvbuf_memory_type = diagnostics.memory_type;
         handle->stats.last_egl_frame_type = diagnostics.frame_type;
@@ -909,18 +1255,49 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
                 "%s",
                 error);
         } else {
-            if (handle->ready_tensor != nullptr) {
-                // Latest-wins: the consumer never collected the previous
-                // frame. Its buffer goes straight back to the pool.
-                delete_managed_tensor(&handle->ready_tensor->managed);
-                handle->stats.frames_dropped_by_consumer += 1;
+            if (!handle->negotiated_frame_info_valid) {
+                handle->negotiated_frame_info = frame_info;
+                handle->negotiated_frame_info_valid = true;
             }
-            handle->ready_tensor = tensor;
-            handle->last_frame_info = frame_info;
-            handle->frame_info_valid = true;
-            handle->stats.frames += 1;
-            handle->stats.conversion_kernels += 1;
-            handle->stats.nvmm_frames += 1;
+            if (frame_caps_changed(handle->negotiated_frame_info, frame_info)) {
+                std::snprintf(
+                    handle->caps_change_error,
+                    sizeof(handle->caps_change_error),
+                    "Jetson source dimensions changed from %ux%u to %ux%u; "
+                    "restart the source to refresh workflow metadata",
+                    handle->negotiated_frame_info.width,
+                    handle->negotiated_frame_info.height,
+                    frame_info.width,
+                    frame_info.height);
+                handle->caps_changed = true;
+                delete_managed_tensor(&tensor->managed);
+            } else {
+                // Conversion accounting is complete before a lossless file
+                // source potentially waits for FIFO space, keeping the
+                // counters coherent even when stats are sampled while the
+                // callback is backpressured.
+                handle->stats.frames += 1;
+                handle->stats.conversion_kernels += 1;
+                handle->stats.nvmm_frames += 1;
+                if (handle->latest_only && !handle->ready_tensors.empty()) {
+                    // Live sources keep latency bounded by replacing the frame
+                    // that the consumer has not collected yet.
+                    delete_managed_tensor(&handle->ready_tensors.back()->managed);
+                    handle->ready_tensors.pop_back();
+                    handle->stats.frames_dropped_by_consumer += 1;
+                } else if (!handle->latest_only) {
+                    handle->handoff_space.wait(lock, [handle]() {
+                        return handle->ready_tensors.size() <
+                                   kJetsonTensorHandoffBuffers ||
+                               handle->interrupted.load(std::memory_order_acquire);
+                    });
+                    if (handle->interrupted.load(std::memory_order_acquire)) {
+                        delete_managed_tensor(&tensor->managed);
+                        return GST_FLOW_FLUSHING;
+                    }
+                }
+                handle->ready_tensors.push_back(tensor);
+            }
         }
     }
     handle->frame_ready.notify_all();
@@ -951,10 +1328,9 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
-    // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
-    // model), direct NV12 path, frames_dropped_by_consumer added to
-    // RfBridgeStats (ABI change — python mirror must match).
-    return "4";
+    // v5: frame info carries the selected tensor's source-clock and local
+    // arrival timing, so v4 consumers must not interpret the larger ABI.
+    return "5";
 }
 
 __attribute__((visibility("default")))
@@ -1048,6 +1424,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
     handle->pipeline = pipeline;
     handle->sink = GST_APP_SINK(sink_element);
     handle->device_id = device_id;
+    // Python marks live pipelines with appsink drop=true. The callback drains
+    // appsink immediately, so this property acts as the explicit handoff-mode
+    // signal rather than allowing GStreamer itself to discard queued samples.
+    handle->latest_only = gst_app_sink_get_drop(handle->sink);
     handle->tensor_pool =
         std::make_shared<RfBufferPool>(device_id, kJetsonTensorPoolBuffers);
     if (handle->tensor_pool == nullptr) {
@@ -1069,10 +1449,38 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         delete handle;
         return nullptr;
     }
-    // Consume frames via appsink callbacks on the GStreamer streaming thread
-    // (jetson-utils model): each sample is converted and released immediately,
-    // so a slow consumer can never pin the decoder's capture pool or force
-    // drops upstream. Must be installed before the PLAYING transition.
+    GstElement* srtp_caps_element =
+        gst_bin_get_by_name(GST_BIN(pipeline), kSrtpCapsElementName);
+    if (srtp_caps_element != nullptr) {
+        GstPad* source_pad =
+            gst_element_get_static_pad(srtp_caps_element, "src");
+        const gulong probe_id = source_pad == nullptr
+            ? 0
+            : gst_pad_add_probe(
+                  source_pad,
+                  GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+                  configure_sdes_srtp_caps,
+                  handle,
+                  nullptr);
+        gst_object_unref(srtp_caps_element);
+        if (probe_id == 0) {
+            write_error(error, error_capacity, "Could not configure SRTP caps probe");
+            if (source_pad != nullptr) {
+                gst_object_unref(source_pad);
+            }
+            cudaStreamDestroy(handle->stream);
+            gst_object_unref(sink_element);
+            gst_object_unref(pipeline);
+            delete handle;
+            return nullptr;
+        }
+        handle->srtp_probe_pad = source_pad;
+        handle->srtp_probe_id = probe_id;
+    }
+    // Consume frames via appsink callbacks on the GStreamer streaming thread.
+    // Each sample is converted and released before the tensor handoff; live
+    // sources stay latest-wins, while files backpressure at the bounded FIFO.
+    // Must be installed before the PLAYING transition.
     GstAppSinkCallbacks sink_callbacks{};
     sink_callbacks.eos = handle_appsink_eos;
     sink_callbacks.new_preroll = handle_new_preroll;
@@ -1086,6 +1494,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         // running task threads; GStreamer refuses to dispose a non-NULL
         // pipeline, so reset it before dropping the reference.
         gst_element_set_state(pipeline, GST_STATE_NULL);
+        if (handle->srtp_probe_pad != nullptr) {
+            gst_pad_remove_probe(handle->srtp_probe_pad, handle->srtp_probe_id);
+            gst_object_unref(handle->srtp_probe_pad);
+        }
         cudaStreamDestroy(handle->stream);
         gst_object_unref(sink_element);
         gst_object_unref(pipeline);
@@ -1111,7 +1523,8 @@ int rf_jetson_pipeline_grab(
     {
         std::unique_lock<std::mutex> lock(handle->mutex);
         const auto frame_or_terminal = [handle]() {
-            return handle->ready_tensor != nullptr || handle->conversion_failed ||
+            return !handle->ready_tensors.empty() || handle->conversion_failed ||
+                   handle->caps_changed ||
                    handle->interrupted.load(std::memory_order_acquire) ||
                    handle->eos.load(std::memory_order_acquire);
         };
@@ -1127,7 +1540,20 @@ int rf_jetson_pipeline_grab(
             handle->conversion_failed = false;
             return -1;
         }
-        if (handle->ready_tensor != nullptr) {
+        if (handle->caps_changed) {
+            write_error(error, error_capacity, "%s", handle->caps_change_error);
+            handle->caps_changed = false;
+            return -1;
+        }
+        if (handle->grabbed_tensor != nullptr) {
+            delete_managed_tensor(&handle->grabbed_tensor->managed);
+            handle->grabbed_tensor = nullptr;
+            handle->stats.frames_dropped_by_consumer += 1;
+        }
+        if (!handle->ready_tensors.empty()) {
+            handle->grabbed_tensor = handle->ready_tensors.front();
+            handle->ready_tensors.pop_front();
+            handle->handoff_space.notify_one();
             return 1;
         }
     }
@@ -1159,11 +1585,11 @@ int rf_jetson_pipeline_get_frame_info(
         return -1;
     }
     std::lock_guard<std::mutex> lock(handle->mutex);
-    if (!handle->frame_info_valid) {
-        write_error(error, error_capacity, "Frame caps do not contain dimensions");
+    if (handle->grabbed_tensor == nullptr) {
+        write_error(error, error_capacity, "No grabbed frame is available");
         return -1;
     }
-    *info = handle->last_frame_info;
+    *info = handle->grabbed_tensor->frame_info;
     gint64 duration = GST_CLOCK_TIME_NONE;
     if (gst_element_query_duration(handle->pipeline, GST_FORMAT_TIME, &duration)) {
         info->duration_ns = duration;
@@ -1194,15 +1620,15 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
         return nullptr;
     }
     std::lock_guard<std::mutex> lock(handle->mutex);
-    if (handle->ready_tensor == nullptr) {
+    if (handle->grabbed_tensor == nullptr) {
         write_error(error, error_capacity, "No grabbed frame is available");
         return nullptr;
     }
     // The tensor was fully converted on the streaming thread; hand it over.
     // No CUDA call happens on the consumer thread (the DLPack deleter binds
     // the device itself when the consumer eventually drops the tensor).
-    RfTensorContext* tensor = handle->ready_tensor;
-    handle->ready_tensor = nullptr;
+    RfTensorContext* tensor = handle->grabbed_tensor;
+    handle->grabbed_tensor = nullptr;
     return &tensor->managed;
 }
 
@@ -1230,9 +1656,17 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
     if (handle == nullptr) {
         return -1;
     }
-    handle->interrupted.store(true, std::memory_order_release);
+    {
+        // Publish cancellation under the same mutex used by both condition
+        // variables. This closes the predicate-check/park window and ensures
+        // neither a grab nor a backpressured file callback can miss the wake.
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        handle->interrupted.store(true, std::memory_order_release);
+    }
     // Wake a grab() parked on the handoff slot so interrupt is prompt.
     handle->frame_ready.notify_all();
+    // A lossless file callback may be waiting for FIFO capacity.
+    handle->handoff_space.notify_all();
     if (handle->sink != nullptr) {
         gst_app_sink_set_drop(handle->sink, TRUE);
         GstSample* queued_sample = nullptr;
@@ -1253,14 +1687,21 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
         return;
     }
     rf_jetson_pipeline_interrupt(handle);
+    if (handle->srtp_probe_pad != nullptr) {
+        gst_pad_remove_probe(handle->srtp_probe_pad, handle->srtp_probe_id);
+        gst_object_unref(handle->srtp_probe_pad);
+        handle->srtp_probe_pad = nullptr;
+        handle->srtp_probe_id = 0;
+    }
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
-        if (handle->ready_tensor != nullptr) {
-            // interrupt() already reached GST_STATE_NULL, so the streaming
-            // thread is joined and no further callback can repopulate the
-            // slot; return the uncollected frame's buffer to the pool.
-            delete_managed_tensor(&handle->ready_tensor->managed);
-            handle->ready_tensor = nullptr;
+        if (handle->grabbed_tensor != nullptr) {
+            delete_managed_tensor(&handle->grabbed_tensor->managed);
+            handle->grabbed_tensor = nullptr;
+        }
+        while (!handle->ready_tensors.empty()) {
+            delete_managed_tensor(&handle->ready_tensors.front()->managed);
+            handle->ready_tensors.pop_front();
         }
         if (handle->sink != nullptr) {
             gst_app_sink_set_drop(handle->sink, TRUE);

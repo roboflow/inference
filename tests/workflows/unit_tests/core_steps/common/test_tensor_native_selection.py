@@ -83,6 +83,18 @@ def test_torch_mask_selection_copies_metadata_dicts() -> None:
     assert "tracker_id" not in detections.bboxes_metadata[0]
 
 
+def test_torch_mask_selection_accepts_model_detections_without_tracker_id() -> None:
+    """Model output predating the tracking field is filtered before tracking."""
+    detections = _detections()
+    if hasattr(detections, "tracker_id"):
+        delattr(detections, "tracker_id")
+
+    result = take_prediction_by_mask(detections, torch.tensor([True, False, True]))
+
+    assert torch.equal(result.class_id, torch.tensor([0, 2]))
+    assert getattr(result, "tracker_id", None) is None
+
+
 def test_torch_mask_identity_aliases_tensors() -> None:
     # given
     detections = _instance_detections()
@@ -156,6 +168,16 @@ def test_index_selection_can_reorder_rows() -> None:
     assert [m["detection_id"] for m in result.bboxes_metadata] == ["d2", "d0"]
 
 
+def test_tensor_index_selection_can_reorder_rows() -> None:
+    detections = _instance_detections(rle=True)
+
+    result = take_prediction_by_indices(detections, torch.tensor([2, 0]))
+
+    assert torch.equal(result.class_id, torch.tensor([2, 0]))
+    assert [m["detection_id"] for m in result.bboxes_metadata] == ["d2", "d0"]
+    assert [m["counts"] for m in result.mask.masks] == ["stub-2", "stub-0"]
+
+
 @pytest.mark.skipif(
     not torch.backends.mps.is_available(), reason="device-preservation check needs MPS"
 )
@@ -175,8 +197,14 @@ def test_torch_mask_selection_stays_on_device() -> None:
     result = take_prediction_by_mask(
         on_device, torch.tensor([True, False, True], device=device)
     )
+    reordered = take_prediction_by_indices(
+        on_device, torch.tensor([2, 0], device=device)
+    )
 
     # then - results stay on the device
     assert result.xyxy.device.type == "mps"
     assert result.class_id.device.type == "mps"
     assert [m["detection_id"] for m in result.bboxes_metadata] == ["d0", "d2"]
+    assert reordered.xyxy.device.type == "mps"
+    assert reordered.class_id.cpu().tolist() == [2, 0]
+    assert [m["detection_id"] for m in reordered.bboxes_metadata] == ["d2", "d0"]

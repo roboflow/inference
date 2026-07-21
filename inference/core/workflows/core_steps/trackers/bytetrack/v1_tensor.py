@@ -1,7 +1,7 @@
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
-from trackers import ByteTrackTracker
+from tracktors import ByteTrackTracker
 
 from inference.core.workflows.core_steps.trackers._base_tensor import (
     TRACKER_PREDICTION_KINDS,
@@ -9,6 +9,7 @@ from inference.core.workflows.core_steps.trackers._base_tensor import (
     tracker_describe_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -158,6 +159,10 @@ class ByteTrackManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["image", "detections"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return tracker_describe_outputs()
 
@@ -190,11 +195,18 @@ class ByteTrackBlockV1(TrackerBlockBase):
 
     def run(
         self,
-        image: WorkflowImageData,
+        image: Union[WorkflowImageData, Batch[WorkflowImageData]],
         detections: Union[
             Detections,
             InstanceDetections,
             Tuple[KeyPoints, Optional[Detections]],
+            Batch[
+                Union[
+                    Detections,
+                    InstanceDetections,
+                    Tuple[KeyPoints, Optional[Detections]],
+                ]
+            ],
         ],
         lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
         minimum_iou_threshold: float = DEFAULT_MINIMUM_IOU_THRESHOLD,
@@ -203,7 +215,7 @@ class ByteTrackBlockV1(TrackerBlockBase):
         track_activation_threshold: float = DEFAULT_TRACK_ACTIVATION_THRESHOLD,
         high_conf_det_threshold: float = DEFAULT_HIGH_CONF_DET_THRESHOLD,
     ) -> BlockResult:
-        return self._run_tracker(
+        return self._run_tracker_auto(
             image=image,
             detections=detections,
             instances_cache_size=instances_cache_size,

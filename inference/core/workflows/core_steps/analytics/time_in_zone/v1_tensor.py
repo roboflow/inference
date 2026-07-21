@@ -260,13 +260,13 @@ class TimeInZoneBlockV1(WorkflowBlock):
 
         # Transfer box geometry once and evaluate zone membership with the lean
         # vectorized host implementation.
-        xyxy_host = detections.xyxy.detach().to("cpu").numpy().astype(float)
+        xyxy_host = detections.xyxy.detach().to("cpu").numpy()
         is_in_zone_mask = polygon_zone.trigger(xyxy_host)
         surviving_mask = np.zeros(n, dtype=bool)
         surviving_times: Dict[int, float] = {}
         for i, is_in_zone, tracker_id in zip(
             range(n),
-            is_in_zone_mask,
+            is_in_zone_mask.tolist(),
             tracker_ids,
         ):
             if (

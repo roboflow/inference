@@ -2,7 +2,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
-from trackers import BoTSORTTracker
+from tracktors import BoTSORTTracker
 
 from inference.core import logger
 from inference.core.workflows.core_steps.trackers._base_tensor import (
@@ -12,6 +12,7 @@ from inference.core.workflows.core_steps.trackers._base_tensor import (
     tracker_describe_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -234,6 +235,10 @@ class BoTSORTManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["image", "detections"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return tracker_describe_outputs()
 
@@ -275,23 +280,36 @@ class BoTSORTBlockV1(TrackerBlockBase):
         detections: sv.Detections,
         image: WorkflowImageData,
     ) -> sv.Detections:
-        if not getattr(tracker, "enable_cmc", False):
+        frame = self._tracker_batch_frame(tracker, image)
+        if frame is None:
             return tracker.update(detections)
+        return tracker.update(detections, frame=frame)
+
+    def _tracker_batch_frame(
+        self,
+        tracker: Any,
+        image: WorkflowImageData,
+    ) -> Any | None:
+        """Materialize a frame only when camera-motion compensation needs it."""
+        if not getattr(tracker, "enable_cmc", False):
+            return None
         try:
-            frame = image.numpy_image
+            return image.numpy_image
         except Exception as exc:
             logger.warning(
                 "%s: enable_cmc=True but frame unavailable (%s); running without CMC.",
                 self.__class__.__name__,
                 exc,
             )
-            return tracker.update(detections)
-        return tracker.update(detections, frame=frame)
+            return None
 
     def run(
         self,
-        image: WorkflowImageData,
-        detections: TensorNativeTrackerPrediction,
+        image: Union[WorkflowImageData, Batch[WorkflowImageData]],
+        detections: Union[
+            TensorNativeTrackerPrediction,
+            Batch[TensorNativeTrackerPrediction],
+        ],
         lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
         minimum_iou_threshold_first_assoc: float = DEFAULT_MINIMUM_IOU_THRESHOLD_FIRST_ASSOC,
         minimum_iou_threshold_second_assoc: float = DEFAULT_MINIMUM_IOU_THRESHOLD_SECOND_ASSOC,
@@ -307,7 +325,7 @@ class BoTSORTBlockV1(TrackerBlockBase):
         cmc_downscale: int = DEFAULT_CMC_DOWNSCALE,
         instant_first_frame_activation: bool = DEFAULT_INSTANT_FIRST_FRAME_ACTIVATION,
     ) -> BlockResult:
-        return self._run_tracker(
+        return self._run_tracker_auto(
             image=image,
             detections=detections,
             instances_cache_size=instances_cache_size,

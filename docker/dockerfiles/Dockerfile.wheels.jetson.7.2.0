@@ -14,18 +14,18 @@
 
 ARG CMAKE_VERSION=4.2.0
 ARG NINJA_VERSION=1.11.1.4
-ARG PYTORCH_VERSION=2.10.0
-ARG TORCHVISION_VERSION=0.25.0
-ARG TRITON_VERSION=3.6.0
-ARG TRITON_WHEEL_SHA256=374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4
-ARG ONNXRUNTIME_VERSION=1.24.2
+ARG PYTORCH_VERSION=2.13.0
+ARG TORCHVISION_VERSION=0.28.0
+ARG TRITON_VERSION=3.7.1
+ARG TRITON_WHEEL_SHA256=9497f2e696ee368862a181a90b2dcc03ca978cc4f602abd67c7d81022a6988e1
+ARG ONNXRUNTIME_VERSION=1.26.0
 ARG PYTORCH_MAX_JOBS=12
 ARG ORT_BUILD_PARALLEL=8
-ARG FLASH_ATTN_MAX_JOBS=2
+ARG FLASH_ATTN_MAX_JOBS=8
 ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
 ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
 ARG FLASH_ATTN_CUDA_ARCHS=87;110
-ARG FLASH_ATTN_REF=d16e381f6f8041422bd36f27adaf61fbf8ca872a
+ARG FLASH_ATTN_REF=2402cb0bed7a2185cb9ddbe88fb998656cf73066
 
 FROM ubuntu:24.04 AS toolchain
 
@@ -67,6 +67,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-on
     build-essential \
     cmake \
     ninja-build \
+    patch \
     git \
     curl \
     python3-dev \
@@ -109,7 +110,10 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}
 
 ENV PIP_CONSTRAINT=/opt/builder-constraints.txt
 
-RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
+RUN python3 -m pip install --break-system-packages --ignore-installed \
+        pip \
+        "setuptools>=77,<82" \
+        wheel && \
     python3 -m pip install --break-system-packages \
         "cmake==${CMAKE_VERSION}" \
         "ninja==${NINJA_VERSION}" \
@@ -130,9 +134,12 @@ ARG TARGETARCH
 
 WORKDIR /build/pytorch
 RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111 \
+# A previous wheel bundle retained a stale CMake configuration and silently
+# omitted sm_87. Start this architecture-changing build with a clean tree.
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87-sm110-cu132-cmake420-ninja111-verified-v2 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-torch-${TARGETARCH} \
     cd pytorch && \
+    rm -rf build/* && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
     test "$(python3 -c 'import importlib.metadata as m; print(m.version("cmake"))')" = "${CMAKE_VERSION}" && \
     test "$(python3 -c 'import importlib.metadata as m; print(m.version("ninja"))')" = "${NINJA_VERSION}" && \
@@ -152,7 +159,8 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 setup.py bdist_wheel && \
     cp dist/torch-*.whl /opt/wheels/ && \
-    python3 -m pip install --break-system-packages dist/torch-*.whl
+    python3 -m pip install --break-system-packages dist/torch-*.whl && \
+    python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"'
 
 FROM torch-builder AS torchvision-builder
 
@@ -185,6 +193,18 @@ ARG ORT_CUDA_ARCHITECTURES
 ARG CMAKE_VERSION
 ARG NINJA_VERSION
 ARG TARGETARCH
+
+# CUDA 13.2's SBSA CCCL package places two explicit specializations at global
+# scope with an invalid leading ``::`` qualification. GCC rejects them when
+# ONNX Runtime includes CUB under C++20. Use the namespace form shipped by
+# current NVIDIA CCCL, scoped to this stage so other framework caches survive.
+COPY docker/patches/cuda-13.2-cccl-gcc.patch /tmp/cuda-13.2-cccl-gcc.patch
+RUN cccl_root=/usr/local/cuda/targets/sbsa-linux/include/cccl && \
+    patch --directory="${cccl_root}" --strip=1 < /tmp/cuda-13.2-cccl-gcc.patch && \
+    grep -q '^namespace cuda$' "${cccl_root}/cub/device/device_transform.cuh" && \
+    ! grep -R -q 'struct ::cuda::proclaims_copyable_arguments' \
+        "${cccl_root}/cub/device/device_transform.cuh" \
+        "${cccl_root}/cub/device/dispatch/tuning/tuning_transform.cuh"
 
 WORKDIR /build/onnxruntime
 RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
@@ -232,7 +252,7 @@ RUN --mount=type=bind,source=docker/patches/flash-attention-sm87.patch,target=/t
     git checkout ${FLASH_ATTN_REF} && \
     git apply /tmp/flash-attention-sm87.patch && \
     git submodule update --init --recursive
-RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132 \
+RUN --mount=type=cache,target=/build/flash-attention/flash-attention/build,sharing=locked,id=flash-attn-build-${FLASH_ATTN_REF}-${TARGETARCH}-sm87-sm110-cu132-jobs${FLASH_ATTN_MAX_JOBS} \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-flash-attn-${TARGETARCH} \
     cd flash-attention && \
     export FLASH_ATTENTION_FORCE_BUILD=TRUE && \

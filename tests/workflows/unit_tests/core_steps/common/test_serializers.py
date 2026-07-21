@@ -1077,6 +1077,84 @@ def test_serialise_rle_sv_detections_with_bytes_counts() -> None:
     }
 
 
+def test_serialise_rle_sv_detections_does_not_extract_polygons(monkeypatch) -> None:
+    # given - both a dense mask and the RLE representation are present
+    from inference.core.workflows.core_steps.common import serializers
+
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 4, 4]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.9], dtype=np.float64),
+        mask=np.ones((1, 5, 5), dtype=bool),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["first"]),
+            "image_dimensions": np.array([[5, 5]]),
+            "rle_mask": np.array([{"size": [5, 5], "counts": "encoded"}], dtype=object),
+        },
+    )
+    original_mask = detections.mask
+
+    def fail_on_polygon_extraction(*args, **kwargs):
+        pytest.fail("RLE serialization must not extract a polygon")
+
+    monkeypatch.setattr(serializers, "mask_to_polygon", fail_on_polygon_extraction)
+
+    # when
+    result = serializers.serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert detections.mask is original_mask
+    assert result["predictions"][0]["rle_mask"] == {
+        "size": [5, 5],
+        "counts": "encoded",
+    }
+    assert "points" not in result["predictions"][0]
+
+
+def test_tensor_rle_serializer_does_not_decode_or_extract_polygons(monkeypatch) -> None:
+    # given
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+    from inference_models.models.base.types import InstancesRLEMasks
+    from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+
+    dense_mask = torch.zeros((5, 5), dtype=torch.bool)
+    dense_mask[1:4, 1:4] = True
+    rle = torch_mask_to_coco_rle(dense_mask)
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[1.0, 1.0, 4.0, 4.0]]),
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([0.9]),
+        mask=InstancesRLEMasks(image_size=(5, 5), masks=[rle["counts"]]),
+        image_metadata={"class_names": {1: "cat"}, "image_dimensions": [5, 5]},
+        bboxes_metadata=[{"detection_id": "first"}],
+    )
+
+    def fail_on_mask_decode(*args, **kwargs):
+        pytest.fail("RLE serialization must not decode its mask")
+
+    def fail_on_polygon_extraction(*args, **kwargs):
+        pytest.fail("RLE serialization must not extract a polygon")
+
+    monkeypatch.setattr(
+        serializers_tensor, "coco_rle_masks_to_numpy_mask", fail_on_mask_decode
+    )
+    monkeypatch.setattr(
+        serializers_tensor, "mask_to_polygon", fail_on_polygon_extraction
+    )
+
+    # when
+    result = serializers_tensor.serialise_native_rle_detections(detections)
+
+    # then
+    assert len(result["predictions"]) == 1
+    assert "points" not in result["predictions"][0]
+    assert result["predictions"][0]["rle_mask"]["size"] == [5, 5]
+
+
 def test_serialise_rle_sv_detections_raises_when_no_rle_masks() -> None:
     # given - detections without RLE masks
     detections = sv.Detections(

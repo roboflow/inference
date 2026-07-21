@@ -3,6 +3,7 @@ from copy import deepcopy
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.utils import (
@@ -189,8 +190,9 @@ def test_convert_inference_detections_batch_to_sv_detections() -> None:
     expected_mask = np.zeros((2, 200, 100), dtype=np.bool_)
     expected_mask[0, 80:121, 30:71] = True
     expected_mask[1, 170:191, 70:91] = True
-    assert isinstance(result[0].mask, np.ndarray)
-    assert np.allclose(result[0].mask, expected_mask)
+    assert isinstance(result[0].mask, torch.Tensor)
+    assert result[0].mask.dtype == torch.bool
+    assert torch.equal(result[0].mask, torch.as_tensor(expected_mask))
     assert result[0] == sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
         mask=expected_mask,

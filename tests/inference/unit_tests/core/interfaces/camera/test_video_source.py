@@ -17,6 +17,7 @@ from inference.core.interfaces.camera.entities import (
     VideoFrame,
 )
 from inference.core.interfaces.camera.exceptions import (
+    EndOfStreamError,
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
@@ -54,6 +55,120 @@ def test_default_producer_requests_numpy_frames_for_standard_consumers(
     )
 
 
+@patch("inference.core.interfaces.camera.discoverability.build_hw_producer")
+@patch.object(video_source, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+def test_default_producer_requests_tensor_frames_for_tensor_consumers(
+    build_hw_producer: MagicMock,
+) -> None:
+    producer = MagicMock()
+    build_hw_producer.return_value = producer
+
+    result = _build_default_producer(
+        "rtsps://camera.example.test/live", output_tensor=True
+    )
+
+    assert result is producer
+    build_hw_producer.assert_called_once_with(
+        "rtsps://camera.example.test/live",
+        output_tensor=True,
+    )
+
+
+@pytest.mark.timeout(90)
+def test_tensor_enabled_source_requests_tensor_producer() -> None:
+    # Covers the allow_tensor_frames kwarg hop from VideoSource.init through
+    # _start to _build_default_producer; a dropped kwarg silently degrades
+    # tensor pipelines to the numpy path.
+    properties = SourceProperties(
+        width=320,
+        height=180,
+        total_frames=0,
+        is_file=False,
+        fps=30.0,
+    )
+
+    class ImmediateEosProducer:
+        def __init__(self) -> None:
+            self.opened = True
+
+        def isOpened(self) -> bool:
+            return self.opened
+
+        def initialize_source_properties(self, properties) -> None:
+            return None
+
+        def discover_source_properties(self) -> SourceProperties:
+            return properties
+
+        def grab(self) -> bool:
+            self.opened = False
+            return False
+
+        def release(self) -> None:
+            self.opened = False
+
+    producer = ImmediateEosProducer()
+    with patch.object(
+        video_source, "_build_default_producer", return_value=producer
+    ) as build_mock:
+        source = VideoSource.init(
+            video_reference="rtsp://camera.example.test/live",
+            allow_tensor_frames=True,
+        )
+        source.start()
+        source._stream_consumption_thread.join(timeout=5.0)
+
+    build_mock.assert_called_once_with(
+        "rtsp://camera.example.test/live",
+        output_tensor=True,
+    )
+    assert not source._stream_consumption_thread.is_alive()
+
+
+@pytest.mark.timeout(90)
+def test_live_native_latest_handoff_avoids_duplicate_adaptive_dropping() -> None:
+    properties = SourceProperties(
+        width=320,
+        height=180,
+        total_frames=0,
+        is_file=False,
+        fps=30.0,
+    )
+
+    class ImmediateEosLatestFrameProducer:
+        has_native_latest_frame_handoff = True
+
+        def __init__(self) -> None:
+            self.opened = True
+
+        def isOpened(self) -> bool:
+            return self.opened
+
+        def initialize_source_properties(self, properties) -> None:
+            return None
+
+        def discover_source_properties(self) -> SourceProperties:
+            return properties
+
+        def grab(self) -> bool:
+            self.opened = False
+            return False
+
+        def release(self) -> None:
+            self.opened = False
+
+    source = VideoSource.init(video_reference=lambda: ImmediateEosLatestFrameProducer())
+    source.start()
+    source._stream_consumption_thread.join(timeout=1.0)
+
+    assert (
+        source.describe_source().buffer_filling_strategy
+        is BufferFillingStrategy.DROP_OLDEST
+    )
+    assert not source._stream_consumption_thread.is_alive()
+
+
+@pytest.mark.timeout(90)
 def test_async_hardware_initialisation_failure_releases_and_uses_cv2() -> None:
     properties = SourceProperties(
         width=320,
@@ -100,6 +215,7 @@ def test_async_hardware_initialisation_failure_releases_and_uses_cv2() -> None:
     assert not source._stream_consumption_thread.is_alive()
 
 
+@pytest.mark.timeout(90)
 def test_termination_interrupts_a_producer_blocked_waiting_for_a_frame() -> None:
     entered_grab = Event()
     interrupted = Event()
@@ -143,11 +259,16 @@ def test_termination_interrupts_a_producer_blocked_waiting_for_a_frame() -> None
     producer = BlockingProducer()
     source = VideoSource.init(video_reference=lambda: producer)
     source.start()
-    assert entered_grab.wait(timeout=1.0)
+    try:
+        assert entered_grab.wait(timeout=1.0)
 
-    started = time.monotonic()
-    source.terminate(wait_on_frames_consumption=False)
-    elapsed = time.monotonic() - started
+        started = time.monotonic()
+        source.terminate(wait_on_frames_consumption=False)
+        elapsed = time.monotonic() - started
+    finally:
+        # On assertion failure nothing would ever set the event and the
+        # blocked consumption thread would hang the pytest process at exit.
+        interrupted.set()
 
     assert elapsed < 1.0
     assert producer.interrupt_calls == 1
@@ -1539,3 +1660,78 @@ def test_consume_video_emits_poison_pill_on_consume_error() -> None:
     assert source._state is StreamState.ERROR
     with pytest.raises(EndOfStreamError):
         source.read_frame(timeout=0.0)
+
+
+def test_termination_does_not_block_behind_a_full_frames_buffer() -> None:
+    """Ensure shutdown can complete when a file-mode queue has no reader."""
+    source = VideoSource.init(video_reference="dummy", buffer_size=1)
+    buffered_frame = object()
+    source._frames_buffer.put(buffered_frame)
+    source._state = StreamState.TERMINATING
+    source._termination_requested.set()
+    source._video = MagicMock()
+    source._video.isOpened.return_value = False
+
+    source._consume_video()
+
+    assert source._state is StreamState.ENDED
+    assert source._frames_buffer.get_nowait() is buffered_frame
+    source._frames_buffer.task_done()
+    with pytest.raises(EndOfStreamError):
+        source.read_frame(timeout=0.0)
+
+
+def test_decode_video_frame_stops_waiting_when_termination_is_requested() -> None:
+    """Ensure a blocked WAIT-mode producer observes shutdown promptly."""
+    buffer = Queue(maxsize=1)
+    buffer.put(object())
+    termination_requested = Event()
+    termination_requested.set()
+    video = MagicMock()
+    video.retrieve.return_value = (True, np.zeros((1, 1, 3), dtype=np.uint8))
+
+    accepted = decode_video_frame_to_buffer(
+        frame_timestamp=datetime.now(),
+        frame_id=1,
+        video=video,
+        buffer=buffer,
+        decoding_pace_monitor=sv.FPSMonitor(),
+        source_id=None,
+        termination_requested=termination_requested,
+    )
+
+    assert not accepted
+    assert buffer.qsize() == 1
+
+
+def test_video_consumer_uses_timestamp_reported_by_frame_producer() -> None:
+    """Propagate source PTS timing instead of the pre-grab wall clock."""
+
+    source_timestamp = datetime(2026, 7, 20, 12, 34, 56)
+    source_properties = assembly_dummy_source_properties(is_file=False, fps=30.0)
+    video = MagicMock()
+    video.grab.return_value = True
+    video.retrieve.return_value = (True, np.zeros((1, 1, 3), dtype=np.uint8))
+    video.discover_source_properties.return_value = source_properties
+    video.frame_timestamp.return_value = source_timestamp
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.WAIT,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    consumer.reset(source_properties=source_properties)
+    buffer = Queue()
+
+    accepted = consumer.consume_frame(
+        video=video,
+        declared_source_fps=30.0,
+        is_source_video_file=False,
+        buffer=buffer,
+        frames_buffering_allowed=True,
+    )
+
+    assert accepted
+    assert buffer.get_nowait().frame_timestamp == source_timestamp

@@ -1,3 +1,4 @@
+from copy import copy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
@@ -373,7 +374,13 @@ def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
             "This serializer requires RLE masks to be present."
         )
 
-    result = serialise_sv_detections(detections=detections)
+    # RLE output already carries the final mask representation. Serialize a shallow
+    # mask-free view so the regular polygon serializer neither materializes a
+    # tensor-backed dense mask nor extracts a contour that would immediately be
+    # discarded below. The caller's Detections object remains unchanged.
+    detections_without_dense_masks = copy(detections)
+    detections_without_dense_masks.mask = None
+    result = serialise_sv_detections(detections=detections_without_dense_masks)
 
     for idx, detection_dict in enumerate(result["predictions"]):
         detection_dict.pop(POLYGON_KEY, None)

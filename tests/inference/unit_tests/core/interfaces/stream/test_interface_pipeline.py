@@ -44,6 +44,62 @@ from inference.core.interfaces.stream.sinks import active_learning_sink, multi_s
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 
+def test_workflow_pipeline_reuses_executor_until_pipeline_shutdown(monkeypatch) -> None:
+    """Ensure Workflow steps share the pipeline's long-lived executor."""
+
+    from inference.core.interfaces.stream import (
+        inference_pipeline as inference_pipeline_module,
+    )
+    from inference.core.interfaces.stream.model_handlers import (
+        workflows as workflows_module,
+    )
+    from inference.core.workflows.execution_engine import (
+        core as execution_engine_module,
+    )
+
+    executor = MagicMock()
+    executor_factory = MagicMock(return_value=executor)
+    execution_engine = MagicMock()
+    engine_init = MagicMock(return_value=execution_engine)
+    workflow_runner = MagicMock()
+    workflow_runner_factory = MagicMock(return_value=workflow_runner)
+    on_video_frame = MagicMock()
+    wrap_runner = MagicMock(return_value=on_video_frame)
+    pipeline = MagicMock()
+    init_with_custom_logic = MagicMock(return_value=pipeline)
+    monkeypatch.setattr(
+        inference_pipeline_module, "ThreadPoolExecutor", executor_factory
+    )
+    monkeypatch.setattr(execution_engine_module.ExecutionEngine, "init", engine_init)
+    monkeypatch.setattr(workflows_module, "WorkflowRunner", workflow_runner_factory)
+    monkeypatch.setattr(
+        workflows_module, "wrap_workflow_runner_for_stream_pipeline", wrap_runner
+    )
+    monkeypatch.setattr(
+        InferencePipeline, "init_with_custom_logic", init_with_custom_logic
+    )
+
+    result = InferencePipeline.init_with_workflow(
+        video_reference="video.mp4",
+        workflow_specification={"version": "1.0"},
+        model_manager=MagicMock(),
+        workflows_thread_pool_workers=3,
+    )
+
+    assert result is pipeline
+    executor_factory.assert_called_once_with(max_workers=3)
+    engine_call = engine_init.call_args
+    assert engine_call.kwargs["executor"] is executor
+    assert (
+        engine_call.kwargs["init_parameters"]["workflows_core.thread_pool_executor"]
+        is executor
+    )
+    executor.shutdown.assert_not_called()
+    pipeline_end = init_with_custom_logic.call_args.kwargs["on_pipeline_end"]
+    pipeline_end()
+    executor.shutdown.assert_called_once_with(cancel_futures=True)
+
+
 class VideoSourceStub:
     def __init__(
         self, frames_number: int, is_file: bool, rounds: int = 0, source_id: int = 0

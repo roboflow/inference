@@ -59,7 +59,7 @@ _ORACLE_INDEX_KEY = "__oracle_input_index__"
 def _oracle_track(
     tracker: sv.ByteTrack,
     detections: Union[Detections, InstanceDetections],
-) -> Tuple[Detections, List[int], np.ndarray]:
+) -> Tuple[Detections, List[int], Union[np.ndarray, torch.Tensor]]:
     """The pre-change implementation: D2H, run ByteTrack, re-upload numpy boxes.
 
     Returns the reconstructed plain ``Detections`` (masks dropped, as the old
@@ -91,14 +91,16 @@ def _oracle_track(
         new_bboxes_meta.append(base)
     device = detections.xyxy.device
     out = Detections(
-        xyxy=torch.from_numpy(sv_tracked.xyxy).to(
-            device=device, dtype=detections.xyxy.dtype
+        xyxy=torch.as_tensor(
+            sv_tracked.xyxy, device=device, dtype=detections.xyxy.dtype
         ),
-        class_id=torch.from_numpy(sv_tracked.class_id).to(
-            device=device, dtype=detections.class_id.dtype
+        class_id=torch.as_tensor(
+            sv_tracked.class_id, device=device, dtype=detections.class_id.dtype
         ),
-        confidence=torch.from_numpy(sv_tracked.confidence).to(
-            device=device, dtype=detections.confidence.dtype
+        confidence=torch.as_tensor(
+            sv_tracked.confidence,
+            device=device,
+            dtype=detections.confidence.dtype,
         ),
         image_metadata=detections.image_metadata,
         bboxes_metadata=new_bboxes_meta if new_bboxes_meta else None,

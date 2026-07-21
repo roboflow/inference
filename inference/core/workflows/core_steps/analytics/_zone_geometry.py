@@ -48,6 +48,7 @@ _DEFAULT_LINE_ANCHORS = (
 def _stack_anchor_coordinates(
     xyxy: np.ndarray, anchors: Sequence[sv.Position]
 ) -> np.ndarray:
+    xyxy = np.asarray(xyxy, dtype=np.float32)
     center_x = (xyxy[:, 0] + xyxy[:, 2]) / 2
     center_y = (xyxy[:, 1] + xyxy[:, 3]) / 2
     result = np.empty((len(anchors), len(xyxy), 2), dtype=xyxy.dtype)
@@ -90,6 +91,35 @@ def _stack_anchor_coordinates(
 
 def anchor_coordinates(xyxy: np.ndarray, anchor: sv.Position) -> np.ndarray:
     return _stack_anchor_coordinates(xyxy, (anchor,))[0]
+
+
+def _points_in_polygon(points: np.ndarray, polygon: np.ndarray) -> np.ndarray:
+    """Return point membership for an ``(..., 2)`` array, including boundaries."""
+    point_x, point_y = points[..., 0, None], points[..., 1, None]
+    vertex_x, vertex_y = polygon[:, 0], polygon[:, 1]
+    next_x, next_y = np.roll(vertex_x, -1), np.roll(vertex_y, -1)
+
+    edge_x, edge_y = next_x - vertex_x, next_y - vertex_y
+    offset_x, offset_y = point_x - vertex_x, point_y - vertex_y
+    cross = offset_x * edge_y - offset_y * edge_x
+    edge_length = np.maximum(np.abs(edge_x), np.abs(edge_y))
+    coordinate_scale = np.maximum(
+        np.maximum(np.abs(point_x), np.abs(point_y)),
+        np.maximum(np.abs(vertex_x), np.abs(vertex_y)),
+    )
+    tolerance = np.finfo(points.dtype).eps * (coordinate_scale + 1) * 8
+    on_line = np.abs(cross) <= tolerance * edge_length
+    within_segment = (
+        offset_x * (point_x - next_x) + offset_y * (point_y - next_y)
+    ) <= tolerance
+    on_boundary = np.any(on_line & within_segment, axis=-1)
+
+    crosses_scanline = (vertex_y > point_y) != (next_y > point_y)
+    x_intersection = edge_x * (point_y - vertex_y) / (edge_y + tolerance) + vertex_x
+    inside = np.remainder(
+        np.sum(crosses_scanline & (point_x < x_intersection), axis=-1), 2
+    ).astype(bool)
+    return inside | on_boundary
 
 
 class LeanLineZone:
@@ -205,30 +235,20 @@ class LeanPolygonZone:
         polygon: np.ndarray,
         triggering_anchors: Sequence[sv.Position],
     ) -> None:
-        self.polygon = polygon.astype(int)
+        self.polygon = np.asarray(polygon, dtype=np.float32)
         self.triggering_anchors = tuple(triggering_anchors)
         if not self.triggering_anchors:
             raise ValueError("Triggering anchors cannot be empty.")
 
         self.current_count = 0
-        x_max, y_max = np.max(polygon, axis=0)
-        self.mask = sv.polygon_to_mask(
-            polygon=polygon, resolution_wh=(x_max + 2, y_max + 2)
-        )
 
     def trigger(self, xyxy: np.ndarray) -> np.ndarray:
         if len(xyxy) == 0:
             self.current_count = 0
             return np.array([], dtype=bool)
 
-        all_anchors = np.ceil(
-            _stack_anchor_coordinates(xyxy, self.triggering_anchors)
-        ).astype(int)
-        mask_h, mask_w = self.mask.shape
-        x, y = all_anchors[:, :, 0], all_anchors[:, :, 1]
-        in_bounds = (x >= 0) & (y >= 0) & (x < mask_w) & (y < mask_h)
-        x_safe = np.clip(x, 0, mask_w - 1)
-        y_safe = np.clip(y, 0, mask_h - 1)
-        is_in_zone = np.all(in_bounds & self.mask[y_safe, x_safe], axis=0)
+        xyxy = np.asarray(xyxy, dtype=np.float32)
+        all_anchors = np.round(_stack_anchor_coordinates(xyxy, self.triggering_anchors))
+        is_in_zone = np.all(_points_in_polygon(all_anchors, self.polygon), axis=0)
         self.current_count = int(np.sum(is_in_zone))
         return is_in_zone.astype(bool)

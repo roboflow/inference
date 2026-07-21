@@ -118,6 +118,7 @@ def serialise_sv_detections(
 
 def _serialise_sv_detections(
     detections: TensorNativeDetections,
+    *,
     emit_polygons: Optional[bool] = None,
 ) -> Tuple[dict, List[dict], List[int]]:
     """Shared core for the detection serialisers.
@@ -168,6 +169,11 @@ def _serialise_sv_detections(
     boxes = detections.xyxy.detach().cpu().tolist()
     confidences = detections.confidence.detach().cpu().tolist()
     class_ids = [int(value) for value in detections.class_id.detach().cpu().tolist()]
+    tracker_ids = (
+        detections.tracker_id.detach().cpu().tolist()
+        if detections.tracker_id is not None
+        else None
+    )
     serialized_detections = []
     kept_indices: List[int] = []
     for index in range(detections_number):
@@ -195,8 +201,11 @@ def _serialise_sv_detections(
                         Y_KEY: float(y),
                     }
                 )
-        if data.get("tracker_id") is not None:
-            detection_dict[TRACKER_ID_KEY] = int(data["tracker_id"])
+        tracker_id = (
+            tracker_ids[index] if tracker_ids is not None else data.get("tracker_id")
+        )
+        if tracker_id is not None:
+            detection_dict[TRACKER_ID_KEY] = int(tracker_id)
         # C1: a producer may carry an arbitrary per-box label on the box metadata;
         # prefer it, otherwise fall back to the class_id -> name mapping.
         if CLASS_NAME_KEY in data:

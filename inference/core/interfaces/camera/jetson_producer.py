@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from inference.core.interfaces.camera.entities import (
     FrameImage,
@@ -42,15 +42,23 @@ def _resolve_grab_timeout_ns() -> int:
 _RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
 _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+# TLS validation is deliberately opt-in.  Some private camera deployments use
+# a self-signed RTSPS certificate; setting this to 0 asks rtspsrc to accept it.
+# The secure GStreamer default remains in force when the variable is absent.
+_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR = "ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
-_DEFAULT_RTSP_LATENCY_MS = 200
+_DEFAULT_RTSP_LATENCY_MS = 50
 _RTSP_VIDEO_CODECS = ("h264", "h265")
+_BOUNDED_QUEUE_OPTIONS = "max-size-buffers=64 max-size-bytes=0 max-size-time=50000000"
+_LATEST_DECODED_FRAME_QUEUE_OPTIONS = (
+    "max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream"
+)
 
 _COMMON_ELEMENTS = (
     "appsink",
-    "nvvidconv",
     "queue",
 )
+_NVVIDCONV_ELEMENTS = ("nvvidconv",)
 _URI_DECODE_ELEMENTS = (
     "decodebin",
     "h264parse",
@@ -61,10 +69,12 @@ _URI_DECODE_ELEMENTS = (
     "uridecodebin",
 )
 _RTSP_ELEMENTS = (
+    "parsebin",
     "rtph264depay",
     "rtph265depay",
     "rtspsrc",
 )
+_SRTP_ELEMENTS = ("capssetter", "srtpdec")
 _SOFTWARE_DECODER_ELEMENTS = (
     "avdec_h264",
     "avdec_h265",
@@ -83,30 +93,23 @@ _FILE_DEMUXERS = {
 }
 
 
-def probe_gstreamer_elements(
-    elements: Iterable[str], *, boost_ranks: bool = False
-) -> Tuple[bool, str]:
-    """Verify the required GStreamer element factories exist.
+class _GError(ctypes.Structure):
+    _fields_ = [
+        ("domain", ctypes.c_uint32),
+        ("code", ctypes.c_int),
+        ("message", ctypes.c_char_p),
+    ]
 
-    When ``boost_ranks`` is True (only at producer BUILD time, not during availability
-    probing) the NVIDIA HW decoders (``nvv4l2decoder``/``nvjpegdec``) are ranked above
-    software decoders so ``decodebin``/``uridecodebin`` auto-selects them. Keeping the
-    boost OFF during probing means merely discovering this backend no longer perturbs
-    decoder selection process-wide for unrelated paths (e.g. a later cv2-GStreamer
-    decode) - the boost is applied only when a Jetson pipeline is actually built."""
 
+def _load_gstreamer_library():
     library_name = ctypes.util.find_library("gstreamer-1.0")
     if not library_name:
         library_name = "libgstreamer-1.0.so.0"
-    try:
-        gst = ctypes.CDLL(library_name)
-    except OSError as error:
-        return False, f"could not load {library_name}: {error}"
-
+    gst = ctypes.CDLL(library_name)
     gst.gst_init_check.argtypes = [
         ctypes.c_void_p,
         ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.POINTER(_GError)),
     ]
     gst.gst_init_check.restype = ctypes.c_int
     gst.gst_element_factory_find.argtypes = [ctypes.c_char_p]
@@ -115,10 +118,42 @@ def probe_gstreamer_elements(
     gst.gst_plugin_feature_set_rank.restype = None
     gst.gst_object_unref.argtypes = [ctypes.c_void_p]
     gst.gst_object_unref.restype = None
+    gst.g_error_free.argtypes = [ctypes.c_void_p]
+    gst.g_error_free.restype = None
+    return gst
 
-    error = ctypes.c_void_p()
+
+def _init_gstreamer(gst) -> Tuple[bool, str]:
+    error = ctypes.POINTER(_GError)()
     if not gst.gst_init_check(None, None, ctypes.byref(error)):
-        return False, "GStreamer initialisation failed"
+        reason = "GStreamer initialisation failed"
+        if error:
+            if error.contents.message:
+                message = error.contents.message.decode("utf-8", errors="replace")
+                reason = f"{reason}: {message}"
+            gst.g_error_free(error)
+        return False, reason
+    return True, "ok"
+
+
+def probe_gstreamer_elements(
+    elements: Iterable[str], *, boost_ranks: bool = False
+) -> Tuple[bool, str]:
+    """Verify the required GStreamer element factories exist.
+
+    Rank NVIDIA decoders above software decoders only when ``boost_ranks`` is
+    explicitly enabled during producer construction. Discovery probes leave
+    process-wide decoder selection untouched.
+    """
+
+    try:
+        gst = _load_gstreamer_library()
+    except OSError as error:
+        return False, f"could not load GStreamer: {error}"
+
+    initialised, reason = _init_gstreamer(gst)
+    if not initialised:
+        return False, reason
 
     factories = {}
     missing = []
@@ -152,12 +187,13 @@ def required_gstreamer_elements(
 
     elements = list(_COMMON_ELEMENTS)
     if video is None:
-        return tuple(elements + list(_URI_DECODE_ELEMENTS))
+        return tuple(elements + list(_NVVIDCONV_ELEMENTS) + list(_URI_DECODE_ELEMENTS))
     if _is_csi_source(video):
         return tuple(elements + ["nvarguscamerasrc"])
     if _is_v4l2_source(video):
         return tuple(
             elements
+            + list(_NVVIDCONV_ELEMENTS)
             + [
                 "decodebin",
                 "h264parse",
@@ -169,13 +205,31 @@ def required_gstreamer_elements(
             ]
         )
     if _is_rtsp_source(video):
-        # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
-        # (no uridecodebin autoplugging), so only those elements are required.
+        # The video-only RTP capsfilter prevents an audio track from reaching
+        # parsebin. parsebin then selects the H.264 or H.265 depay/parser
+        # chain from the RTP caps, without needing a source-specific codec
+        # setting. The explicit codec override remains available for cameras
+        # with broken SDP metadata.
+        codec_override = _rtsp_video_codec_override()
+        srtp_elements = list(_SRTP_ELEMENTS) if _rtsp_uses_srtp(video) else []
+        if codec_override is not None:
+            return tuple(
+                elements
+                + srtp_elements
+                + [
+                    f"rtp{codec_override}depay",
+                    f"{codec_override}parse",
+                    "nvv4l2decoder",
+                    "rtspsrc",
+                ]
+            )
         return tuple(
             elements
+            + srtp_elements
             + ["h264parse", "h265parse", "nvv4l2decoder"]
             + list(_RTSP_ELEMENTS)
         )
+    elements.extend(_NVVIDCONV_ELEMENTS)
     elements.extend(_URI_DECODE_ELEMENTS)
     local_file_path = _local_file_path(video)
     if local_file_path is not None:
@@ -204,40 +258,67 @@ def build_gstreamer_pipeline(
     if _is_v4l2_source(video):
         device = _v4l2_device(video)
         return (
-            f'v4l2src device="{_quote_gstreamer_value(device)}" ! '
+            f'v4l2src device="{_quote_gstreamer_value(device)}" do-timestamp=true ! '
+            f"queue {_BOUNDED_QUEUE_OPTIONS} ! "
             f"decodebin ! {sink}"
         )
 
     if _is_rtsp_source(video):
-        # Explicit video-only chain (the jetson-utils shape) instead of
-        # uridecodebin: autoplugging an RTSP source decodes EVERY track, and a
-        # camera that muxes audio (e.g. A-Law) poisons the bus with a
-        # missing-decoder error — fatal at startup when it races preroll, and a
-        # mid-run grab() failure otherwise. A codec-specific depayloader only
-        # ever links the video stream, so the audio track is never plugged.
+        # A video-only RTP capsfilter keeps audio tracks away from parsebin,
+        # while leaving parsebin free to select the H.264 or H.265 depay/parser
+        # chain from the camera's RTP caps. This has the codec flexibility of
+        # autoplugging without uridecodebin's habit of trying every RTSP track.
         # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
         # and a NAT-free path that containers typically lack, and a failed UDP
         # SETUP can make cameras drop the whole control connection.
         #
-        # Further jetson-utils parity (v4 bridge):
-        # - the queue buffers COMPRESSED data before the depayloader (cheap,
-        #   non-leaky) instead of leaking decoded NVMM frames after the decoder;
+        # Further jetson-utils parity (v5 bridge):
+        # - the bounded queue buffers COMPRESSED data before the depayloader.
+        #   It must not leak individual RTP/NAL buffers because that can corrupt
+        #   pictures until the next IDR; rtspsrc's jitterbuffer enforces latency,
+        #   while decoded frames remain latest-wins in the bridge;
         # - no nvvidconv: the decoder's NV12 NVMM output goes straight to the
         #   appsink and the bridge converts NV12->RGB CHW in CUDA, removing the
         #   per-frame VIC pass and its extra buffer pool;
-        # - enable-max-performance keeps the decoder clocks pinned;
+        # - decoder performance is controlled by the Jetson power mode.  Do
+        #   not set nvv4l2decoder's historical ``enable-max-performance``
+        #   property here: it is absent on the Thor/JP7.2 plugin and makes a
+        #   static pipeline fail to parse before it can receive a frame;
+        # - a one-frame leaky queue after NVDEC lets decoding continue while a
+        #   full-resolution CUDA conversion is in flight. Surplus complete
+        #   decoded frames are dropped before conversion rather than wasting
+        #   GPU bandwidth or backpressuring the compressed RTP path;
         # - the appsink never accumulates (the bridge's new-sample callback
-        #   drains it on the streaming thread), so a small non-dropping queue
-        #   is enough.
-        codec = _rtsp_video_codec()
-        return (
+        #   drains it on the queue's streaming thread); drop=true explicitly
+        #   selects the bridge's latest-frame handoff for this live source.
+        codec = _rtsp_video_codec_override()
+        tls_validation_flags = _rtsp_tls_validation_flags()
+        source = (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
-            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
-            "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
-            "nvv4l2decoder enable-max-performance=1 ! "
-            "video/x-raw(memory:NVMM),format=NV12 ! "
-            "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
+            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
+            " drop-on-latency=true teardown-timeout=0"
+            f"{tls_validation_flags} ! "
+            "application/x-rtp,media=video ! "
+            f"queue {_BOUNDED_QUEUE_OPTIONS} ! "
+        )
+        if _rtsp_uses_srtp(video):
+            # UniFi and other SDES endpoints advertise the master key through
+            # the RTP caps' a-crypto field. The native bridge rewrites the
+            # named capssetter's CAPS event before srtpdec sees the first
+            # packet; key material never crosses Python or appears in the
+            # launch string.
+            source += (
+                "capssetter name=rf_srtp_caps caps=application/x-srtp "
+                "join=false replace=false ! srtpdec ! "
+            )
+        if codec is None:
+            decoder = "parsebin name=rf_rtsp_video_parse ! nvv4l2decoder ! "
+        else:
+            decoder = f"rtp{codec}depay ! {codec}parse ! nvv4l2decoder ! "
+        return (
+            source + decoder + "video/x-raw(memory:NVMM),format=NV12 ! "
+            f"queue {_LATEST_DECODED_FRAME_QUEUE_OPTIONS} ! "
+            "appsink name=rf_tensor_sink max-buffers=1 drop=true sync=false "
             "wait-on-eos=false"
         )
 
@@ -249,14 +330,31 @@ def build_gstreamer_pipeline(
     )
 
 
-def _rtsp_video_codec() -> str:
-    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
+def _rtsp_video_codec_override() -> Optional[str]:
+    """Return a validated explicit RTSP codec override, if configured."""
+
+    raw = os.getenv(_RTSP_CODEC_ENV_VAR)
+    if raw is None or not raw.strip():
+        return None
+    codec = raw.strip().lower()
     if codec not in _RTSP_VIDEO_CODECS:
         raise ValueError(
             f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
             f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
         )
     return codec
+
+
+def _rtsp_uses_srtp(video: Union[str, int]) -> bool:
+    """Return whether an RTSP URL explicitly requests encrypted RTP media."""
+
+    if not isinstance(video, str):
+        return False
+    for key, value in parse_qsl(urlparse(video).query, keep_blank_values=True):
+        if key.lower() != "enablesrtp":
+            continue
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return False
 
 
 def _rtsp_protocols() -> str:
@@ -274,6 +372,30 @@ def _rtsp_latency_ms() -> int:
     except ValueError:
         return _DEFAULT_RTSP_LATENCY_MS
     return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
+def _rtsp_tls_validation_flags() -> str:
+    """Return an explicit rtspsrc TLS-validation setting when requested.
+
+    ``0`` disables certificate validation for cameras with private/self-signed
+    certificates. Keeping this unset by default avoids weakening RTSPS
+    validation for normal deployments.
+    """
+
+    raw = os.getenv(_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
+    if raw is None or not raw.strip():
+        return ""
+    try:
+        flags = int(raw)
+    except ValueError as error:
+        raise ValueError(
+            f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
+        ) from error
+    if flags < 0:
+        raise ValueError(
+            f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
+        )
+    return f" tls-validation-flags={flags}"
 
 
 def _build_sink(is_live: bool) -> str:
@@ -318,10 +440,19 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         self._decoder_validated = not _source_requires_decoder(video)
         self._prerolled_frame_pending = False
         self._cached_source_properties: Optional[SourceProperties] = None
+        self._grabbed_frame_info = None
+        self._current_frame_timestamp: Optional[datetime] = None
+        self._file_timestamp_origin: Optional[datetime] = None
+        self._stream_clock_origin_ns: Optional[int] = None
+        self._stream_wall_origin_ns: Optional[int] = None
+        self._last_stream_clock_ns: Optional[int] = None
         self._grab_timeout_ns = _resolve_grab_timeout_ns()
         del pin_host_memory
 
-        import torch
+        try:
+            import torch
+        except Exception as error:  # noqa: BLE001 - optional runtime capability
+            raise ImportError("Jetson tensor decoding requires torch") from error
 
         from inference.core.interfaces.camera.jetson_tensor_bridge import (
             NativeJetsonTensorPipeline,
@@ -349,6 +480,12 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
 
         return self._pipeline
 
+    @property
+    def has_native_latest_frame_handoff(self) -> bool:
+        """Report that live native frames use a latest-wins handoff slot."""
+
+        return True
+
     def isOpened(self) -> bool:
         return not self._closed and not self._eos
 
@@ -359,8 +496,10 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             self._prerolled_frame_pending = False
             return True
         grabbed = self._native_pipeline.grab(timeout_ns=self._grab_timeout_ns)
-        if grabbed and not self._decoder_validated:
-            self._validate_hardware_decoder()
+        if grabbed:
+            if not self._decoder_validated:
+                self._validate_hardware_decoder()
+            self._record_grabbed_frame_info(self._native_pipeline.frame_info())
         if not grabbed:
             self._eos = True
         return grabbed
@@ -383,7 +522,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         if not self.grab():
             raise RuntimeError("Jetson pipeline did not produce source metadata")
         self._prerolled_frame_pending = True
-        frame_info = self._native_pipeline.frame_info()
+        frame_info = self._grabbed_frame_info or self._native_pipeline.frame_info()
         width = frame_info.width
         height = frame_info.height
         fps = (
@@ -403,6 +542,8 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             file_length_seconds = total_frames / fps
             last_modified = datetime.fromtimestamp(os.path.getmtime(local_path))
             timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
+        self._file_timestamp_origin = timestamp_created
+        self._current_frame_timestamp = self._resolve_frame_timestamp(frame_info)
         properties = SourceProperties(
             width=width,
             height=height,
@@ -432,6 +573,11 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
     def tensor_bridge_stats(self) -> Dict[str, int]:
         return self._native_pipeline.stats()
 
+    def frame_timestamp(self) -> Optional[datetime]:
+        """Return timing for the frame selected by the latest successful grab."""
+
+        return self._current_frame_timestamp
+
     def _validate_hardware_decoder(self) -> None:
         if any(
             self._native_pipeline.has_factory(factory)
@@ -453,6 +599,47 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             self._decoder_validated = True
             return
         raise RuntimeError("Jetson pipeline did not instantiate an NVIDIA decoder")
+
+    def _record_grabbed_frame_info(self, frame_info) -> None:
+        """Keep metadata aligned with the exact tensor selected by ``grab``."""
+
+        self._grabbed_frame_info = frame_info
+        self._current_frame_timestamp = self._resolve_frame_timestamp(frame_info)
+
+    def _resolve_frame_timestamp(self, frame_info) -> datetime:
+        """Map GStreamer stream timing onto the wall-clock timestamp API."""
+
+        pts_ns = int(getattr(frame_info, "pts_ns", -1))
+        dts_ns = int(getattr(frame_info, "dts_ns", -1))
+        stream_clock_ns = pts_ns if pts_ns >= 0 else dts_ns
+
+        if self._file_timestamp_origin is not None and stream_clock_ns >= 0:
+            return self._file_timestamp_origin + timedelta(
+                microseconds=stream_clock_ns / 1_000
+            )
+
+        arrival_wall_ns = int(getattr(frame_info, "arrival_wall_time_ns", -1))
+        if stream_clock_ns >= 0 and arrival_wall_ns >= 0:
+            clock_reset = (
+                self._last_stream_clock_ns is not None
+                and stream_clock_ns < self._last_stream_clock_ns
+            )
+            if self._stream_clock_origin_ns is None or clock_reset:
+                self._stream_clock_origin_ns = stream_clock_ns
+                self._stream_wall_origin_ns = arrival_wall_ns
+            self._last_stream_clock_ns = stream_clock_ns
+            wall_origin_ns = self._stream_wall_origin_ns
+            if wall_origin_ns is None:
+                wall_origin_ns = arrival_wall_ns
+            clock_origin_ns = self._stream_clock_origin_ns
+            if clock_origin_ns is None:
+                clock_origin_ns = stream_clock_ns
+            timestamp_ns = wall_origin_ns + (stream_clock_ns - clock_origin_ns)
+            return datetime.fromtimestamp(timestamp_ns / 1_000_000_000)
+
+        if arrival_wall_ns >= 0:
+            return datetime.fromtimestamp(arrival_wall_ns / 1_000_000_000)
+        return datetime.now()
 
 
 def _source_uri(video: Union[str, int]) -> str:
@@ -493,12 +680,33 @@ def _csi_sensor_id(video: Union[str, int]) -> int:
 
 def _is_v4l2_source(video: Union[str, int]) -> bool:
     return isinstance(video, int) or (
-        isinstance(video, str) and video.startswith("/dev/video")
+        isinstance(video, str)
+        and (video.startswith("/dev/video") or video.lower().startswith("v4l2://"))
     )
 
 
 def _v4l2_device(video: Union[str, int]) -> str:
-    return f"/dev/video{video}" if isinstance(video, int) else video
+    """Normalize direct and URI-form V4L2 references to a device path."""
+
+    if isinstance(video, int):
+        if video < 0:
+            raise ValueError(f"Invalid V4L2 device index: {video}")
+        return f"/dev/video{video}"
+
+    if not video.lower().startswith("v4l2://"):
+        return video
+
+    parsed = urlparse(video)
+    device = unquote(parsed.path or parsed.netloc)
+    if device.isdigit():
+        return f"/dev/video{device}"
+    if device.startswith("video") and device[5:].isdigit():
+        return f"/dev/{device}"
+    if device.startswith("/dev/video"):
+        return device
+    raise ValueError(
+        "V4L2 URIs must identify a numeric device or /dev/video path, " f"got {video!r}"
+    )
 
 
 def _is_live_source(video: Union[str, int]) -> bool:

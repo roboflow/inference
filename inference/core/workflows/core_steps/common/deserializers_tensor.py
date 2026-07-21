@@ -214,6 +214,7 @@ def deserialize_rle_detections_kind(
         mask=mask,
         image_metadata=base_detections.image_metadata,
         bboxes_metadata=base_detections.bboxes_metadata,
+        tracker_id=base_detections.tracker_id,
     )
 
 
