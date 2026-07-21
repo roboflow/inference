@@ -29,6 +29,9 @@ from inference.core.interfaces.camera.entities import (
     VideoFrameProducer,
     VideoSourceIdentifier,
 )
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    classify_source_reference,
+)
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     SourceConnectionError,
@@ -355,6 +358,7 @@ class VideoSource:
         source_id: Optional[int],
     ):
         self._stream_reference = stream_reference
+        self._observability_reference = classify_source_reference(stream_reference)
         self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
@@ -580,12 +584,9 @@ class VideoSource:
         return video_frame
 
     def describe_source(self) -> SourceMetadata:
-        serialized_source_reference = self._stream_reference
-        if callable(serialized_source_reference):
-            serialized_source_reference = str(self._stream_reference)
         return SourceMetadata(
             source_properties=self._source_properties,
-            source_reference=serialized_source_reference,
+            source_reference=self._observability_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
             buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,
@@ -622,7 +623,8 @@ class VideoSource:
                 self._video = CV2VideoFrameProducer(self._stream_reference)
             if not self._video.isOpened():
                 raise SourceConnectionError(
-                    f"Cannot connect to video source under reference: {self._stream_reference}"
+                    "Cannot connect to video source under reference: "
+                    f"{self._observability_reference}"
                 )
             self._video.initialize_source_properties(self._video_source_properties)
             self._source_properties = self._video.discover_source_properties()

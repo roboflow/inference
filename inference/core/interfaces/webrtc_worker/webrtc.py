@@ -44,6 +44,9 @@ from inference.core.exceptions import (
     WebRTCConfigurationError,
 )
 from inference.core.interfaces.camera.entities import VideoFrameProducer
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    sanitize_source_reference,
+)
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
@@ -1059,7 +1062,10 @@ async def init_rtc_peer_connection_with_loop(
     if webrtc_request.rtsp_url:
         if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
             webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
-        logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
+        logger.info(
+            "Processing RTSP URL: %s",
+            sanitize_source_reference(webrtc_request.rtsp_url or ""),
+        )
         player = MediaPlayer(
             webrtc_request.rtsp_url,
             format="rtsp",
@@ -1077,7 +1083,10 @@ async def init_rtc_peer_connection_with_loop(
             asyncio.create_task(video_processor.process_frames_data_only())
 
     elif webrtc_request.mjpeg_url:
-        logger.info("Processing MJPEG URL: %s", webrtc_request.mjpeg_url)
+        logger.info(
+            "Processing MJPEG URL: %s",
+            sanitize_source_reference(webrtc_request.mjpeg_url or ""),
+        )
         player = MediaPlayer(webrtc_request.mjpeg_url)
         video_processor.set_track(track=player.video)
 

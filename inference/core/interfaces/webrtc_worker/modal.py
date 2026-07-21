@@ -8,6 +8,9 @@ from queue import Empty
 from typing import Callable, Dict, Optional
 
 from inference.core import logger
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    sanitize_source_reference,
+)
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
@@ -367,7 +370,10 @@ if modal is not None:
             logger.info("stream_output: %s", webrtc_request.stream_output)
             logger.info("data_output: %s", webrtc_request.data_output)
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
-            logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
+            logger.info(
+                "rtsp_url: %s",
+                sanitize_source_reference(webrtc_request.rtsp_url or ""),
+            )
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
