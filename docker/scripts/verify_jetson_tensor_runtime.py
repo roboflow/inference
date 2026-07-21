@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """On-device Jetson tensor-runtime check. No CI job runs this: it needs a
 Jetson with the BSP media stack, torch, and the inference package installed.
 Run it manually inside a Jetson image, e.g.:
