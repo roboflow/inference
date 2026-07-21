@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Type
 from unittest import mock
 from unittest.mock import MagicMock
@@ -2614,6 +2615,261 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
         "some": "some",
         "id": None,
     }, "Expected workflow specification to be retrieved from file"
+
+
+def test_get_workflow_specification_uses_online_cache_after_switching_offline(
+    tmp_path: Path,
+) -> None:
+    """Load an online hashed Workflow cache after switching to offline mode."""
+
+    response = {
+        "workflow": {
+            "config": json.dumps({"specification": {"source": "online-cache"}})
+        }
+    }
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", False),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+        mock.patch.object(roboflow_api, "_get_from_url", return_value=response),
+    ):
+        get_workflow_specification(
+            api_key="online-api-key",
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=MemoryCache(),
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+        mock.patch.object(
+            roboflow_api,
+            "_get_from_url",
+            side_effect=ConnectionError("offline"),
+        ),
+    ):
+        result = get_workflow_specification(
+            api_key=None,
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=MemoryCache(),
+        )
+
+    assert result == {"source": "online-cache", "id": None}
+
+
+def test_offline_workflow_cache_rejects_ambiguous_hashed_entries(
+    tmp_path: Path,
+) -> None:
+    """Reject hashed Workflow caches when no API key disambiguates them."""
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="first-key",
+            response={"workflow": {"config": "first"}},
+        )
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="second-key",
+            response={"workflow": {"config": "second"}},
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    assert result is None
+
+
+def test_offline_workflow_cache_uses_matching_hashed_entry_when_ambiguous(
+    tmp_path: Path,
+) -> None:
+    """Use the hashed cache matching the supplied API key among many entries."""
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="first-key",
+            response={"workflow": {"config": "first"}},
+        )
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="second-key",
+            response={"workflow": {"config": "second"}},
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="second-key",
+        )
+
+    assert result == {"workflow": {"config": "second"}}
+
+
+def test_offline_workflow_cache_prefers_canonical_entry_over_hashed_entry(
+    tmp_path: Path,
+) -> None:
+    """Prefer the canonical offline cache over an older hashed entry."""
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="online-key",
+            response={"workflow": {"config": "stale"}},
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+            response={"workflow": {"config": "canonical"}},
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    assert result == {"workflow": {"config": "canonical"}}
+
+
+def test_offline_workflow_cache_does_not_use_unversioned_hashed_entry(
+    tmp_path: Path,
+) -> None:
+    """Do not satisfy a pinned Workflow version from an unversioned cache."""
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="online-key",
+            response={"workflow": {"config": "unknown-version"}},
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="online-key",
+            workflow_version_id="123",
+        )
+
+    assert result is None
+
+
+def test_offline_workflow_cache_removes_malformed_hashed_entry(
+    tmp_path: Path,
+) -> None:
+    """Remove the selected fallback file when its cached JSON is malformed."""
+    # given
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key="online-key",
+            )
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text("not-json")
+
+    # when
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    # then
+    assert result is None
+    assert not cache_file.exists()
+
+
+def test_workflow_cache_rejects_symlink_outside_cache_root(tmp_path: Path) -> None:
+    """Never read a cache symlink whose resolved target escapes the cache root."""
+    # given
+    cache_root = tmp_path / "cache"
+    outside_file = tmp_path / "outside.json"
+    outside_file.write_text(json.dumps({"secret": True}))
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.symlink_to(outside_file)
+
+        # when
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    # then
+    assert result is None
+    assert outside_file.exists()
 
 
 @mock.patch.object(roboflow_api.requests, "get")
