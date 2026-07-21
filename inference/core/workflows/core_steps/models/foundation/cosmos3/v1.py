@@ -82,7 +82,9 @@ class BlockManifest(WorkflowBlockManifest):
         "scene-description prompt is used, which may affect the desired model behavior.",
         examples=["Is the walkway free of obstacles?", "$inputs.prompt"],
     )
-    model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"]] = Field(
+    model_version: Union[
+        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"]
+    ] = Field(
         default="nvidia/cosmos-3-edge",
         description="The Cosmos 3 Edge model to be used for inference.",
         examples=["nvidia/cosmos-3-edge"],
