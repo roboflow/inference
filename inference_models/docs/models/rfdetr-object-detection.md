@@ -37,6 +37,9 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 
 ## Supported Backends
 
+For the selectable TensorRT preprocessing and postprocessing architecture, see
+[Inference-Path Optimization Architecture](../contributors/inference-path-optimization-architecture.md#current-rf-detr-integration).
+
 | Backend | Extras Required |
 |---------|----------------|
 | `torch` | `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` |
@@ -88,6 +91,33 @@ annotated_image = bounding_box_annotator.annotate(image, detections)
 # Save or display
 cv2.imwrite("annotated.jpg", annotated_image)
 ```
+
+### Calling TensorRT stages independently
+
+The TensorRT backend normally keeps optimized preprocessing asynchronous. Its
+`pre_process()` and `forward()` methods coordinate through readiness state owned by the
+model instance, avoiding a host synchronization in the normal `model(...)` path.
+
+If your application calls `pre_process()`, `forward()`, and `post_process()` separately,
+the default public-stage behavior is safe without additional model configuration:
+
+```python
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained(
+    "rfdetr-base",
+    backend="trt",
+)
+
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
+predictions = model.post_process(raw_predictions, metadata)
+```
+
+Public `pre_process()` synchronizes its CUDA producer before returning, so its tensor can
+be passed to `forward()` independently and does not depend on readiness state retained
+by the model. Composed `model(...)` and `infer()` calls use an internal event-based
+handoff instead, avoiding this host synchronization on the optimized inference path.
 
 ## Trained RF-DETR Outside Roboflow? Use with `inference-models`
 
@@ -158,4 +188,3 @@ cv2.imwrite("annotated.jpg", annotated_image)
 - ✅ **Production-ready** - Leverage all `inference-models` features (multi-backend, caching, optimization)
 
 This seamless workflow eliminates the traditional friction between training and deployment, letting you iterate faster and deploy with confidence.
-

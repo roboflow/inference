@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 import torch
@@ -67,6 +69,43 @@ def test_trt_package_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_independent_public_stages_match_composed_inference(
+    rfdetr_coin_counting_trt_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
+    )
+
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
+    )
+    with patch.object(
+        model._preprocess_readiness,
+        "record",
+        wraps=model._preprocess_readiness.record,
+    ) as record_readiness:
+        expected = model(coins_counting_image_numpy)
+    record_readiness.assert_called_once()
+
+    pre_processed, metadata = model.pre_process(coins_counting_image_numpy)
+    assert model._preprocess_readiness.consume(pre_processed) is None
+    raw_predictions = model.forward(pre_processed)
+    actual = model.post_process(raw_predictions, metadata)
+
+    assert len(actual) == len(expected)
+    for actual_image, expected_image in zip(actual, expected):
+        torch.testing.assert_close(actual_image.xyxy, expected_image.xyxy)
+        torch.testing.assert_close(actual_image.class_id, expected_image.class_id)
+        torch.testing.assert_close(
+            actual_image.confidence,
+            expected_image.confidence,
+        )
 
 
 @pytest.mark.slow
