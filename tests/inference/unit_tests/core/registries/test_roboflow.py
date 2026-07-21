@@ -1,5 +1,6 @@
 import json
 import os.path
+from pathlib import Path
 from typing import Tuple
 from unittest import mock
 from unittest.mock import MagicMock
@@ -276,6 +277,45 @@ def test_get_model_type_when_cache_is_utilised(
         dataset_id="some", version_id="1"
     )
     assert result == ("object-detection", "yolov8n")
+
+
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_offline_cache_auth_is_enabled_does_not_call_api(
+    construct_model_type_cache_path_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    with open(metadata_path, "w") as f:
+        json.dump(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+            f,
+        )
+
+    # when
+    with mock.patch.object(roboflow, "OFFLINE_MODE", True), mock.patch.object(
+        roboflow, "MODELS_CACHE_AUTH_ENABLED", True
+    ), mock.patch.object(
+        roboflow, "_check_if_api_key_has_access_to_model"
+    ) as auth_check_mock, mock.patch.object(
+        roboflow, "get_model_metadata_from_inference_models_registry"
+    ) as registry_api_mock, mock.patch.object(
+        roboflow, "get_roboflow_model_data"
+    ) as model_api_mock, mock.patch.object(
+        roboflow, "get_roboflow_instant_model_data"
+    ) as instant_model_api_mock:
+        result = get_model_type(model_id="some/1", api_key="my_api_key")
+
+    # then
+    assert result == ("object-detection", "yolov8n")
+    auth_check_mock.assert_not_called()
+    registry_api_mock.assert_not_called()
+    model_api_mock.assert_not_called()
+    instant_model_api_mock.assert_not_called()
 
 
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
@@ -845,6 +885,27 @@ def test_roboflow_model_registry_get_model_on_cache_ht(
 # ---------------------------------------------------------------------------
 
 
+def test_compat_cache_finder_supports_released_inference_models(
+    tmp_path: Path,
+) -> None:
+    """The server can scan cache packages before the new helper is released."""
+    from inference_models.models.auto_loaders import model_cache_paths
+
+    model_id = "workspace/project/3"
+    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", str(tmp_path)):
+        package_dir = Path(
+            model_cache_paths.generate_model_package_cache_path(
+                model_id=model_id, package_id="package1"
+            )
+        )
+        package_dir.mkdir(parents=True)
+        (package_dir / "model_config.json").write_text("{}")
+
+        result = roboflow._find_cached_model_package_dir_compat(model_id=model_id)
+
+    assert result == str(package_dir.resolve())
+
+
 def test_get_model_metadata_from_inference_models_cache_when_config_found(
     empty_local_dir: str,
 ) -> None:
@@ -861,13 +922,9 @@ def test_get_model_metadata_from_inference_models_cache_when_config_found(
             },
             f,
         )
-    fake_module = MagicMock()
-    fake_module.find_cached_model_package_dir = MagicMock(return_value=package_dir)
-
     # when
-    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.dict(
-        "sys.modules",
-        {"inference_models.models.auto_loaders.core": fake_module},
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=package_dir
     ):
         result = roboflow._get_model_metadata_from_inference_models_cache(
             model_id="coco/22"
@@ -878,14 +935,9 @@ def test_get_model_metadata_from_inference_models_cache_when_config_found(
 
 
 def test_get_model_metadata_from_inference_models_cache_when_no_package_found() -> None:
-    # given
-    fake_module = MagicMock()
-    fake_module.find_cached_model_package_dir = MagicMock(return_value=None)
-
     # when
-    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.dict(
-        "sys.modules",
-        {"inference_models.models.auto_loaders.core": fake_module},
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=None
     ):
         result = roboflow._get_model_metadata_from_inference_models_cache(
             model_id="coco/22"

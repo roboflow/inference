@@ -21,6 +21,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
     USE_INFERENCE_MODELS,
 )
@@ -48,8 +49,13 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.auto_loaders import core as inference_models_auto_loaders
 from inference_models.models.auto_loaders.core import parse_model_config
 from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
+from inference_models.models.auto_loaders.model_cache_paths import (
+    generate_model_cache_root_for_model_id,
+    generate_models_cache_dir,
+)
 
 # fallback model_type for local `inference_models` packages that do not declare
 # model_architecture in model_config.json.
@@ -89,6 +95,41 @@ _in_process_metadata_cache = LRUCache(capacity=1000)
 FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM3 models are not supported on this deployment. "
     "Please use a workflow or self-host the server."
+)
+
+
+def _find_cached_model_package_dir_compat(model_id: str) -> Optional[str]:
+    """Find a cached package when inference-models predates its public helper."""
+    models_cache_root = os.path.realpath(generate_models_cache_dir())
+    model_cache_root = os.path.realpath(
+        generate_model_cache_root_for_model_id(model_id=model_id)
+    )
+    if not model_cache_root.startswith(models_cache_root + os.sep):
+        return None
+    if not os.path.isdir(model_cache_root):
+        return None
+    try:
+        entries = sorted(os.listdir(model_cache_root))
+    except OSError:
+        return None
+    for entry in entries:
+        if entry.startswith("."):
+            continue
+        package_dir = os.path.realpath(os.path.join(model_cache_root, entry))
+        if not package_dir.startswith(model_cache_root + os.sep):
+            continue
+        config_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
+        if os.path.isdir(package_dir) and os.path.isfile(config_path):
+            return package_dir
+    return None
+
+
+# Runtime images install the latest released inference-models before inference.
+# Remove this fallback once that release includes find_cached_model_package_dir.
+find_cached_model_package_dir = getattr(
+    inference_models_auto_loaders,
+    "find_cached_model_package_dir",
+    _find_cached_model_package_dir_compat,
 )
 
 
@@ -237,7 +278,7 @@ def get_model_type(
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
 
-    if MODELS_CACHE_AUTH_ENABLED:
+    if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
         if not _check_if_api_key_has_access_to_model(
             api_key=api_key,
             model_id=model_id,
@@ -409,12 +450,6 @@ def _get_model_metadata_from_inference_models_cache(
     ``ROBOFLOW_MODEL_TYPES``.
     """
     if not USE_INFERENCE_MODELS:
-        return None
-    try:
-        from inference_models.models.auto_loaders.core import (
-            find_cached_model_package_dir,
-        )
-    except ImportError:
         return None
     cached_dir = find_cached_model_package_dir(model_id=model_id)
     if cached_dir is None:
