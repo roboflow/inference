@@ -513,9 +513,10 @@ try:
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:
     warnings.warn(
-        "Your `inference` configuration does not support the Cosmos 3 Edge model. "
-        "Use pip install 'inference[transformers]' to install missing requirements."
-        "To suppress this warning, set COSMOS3_ENABLED to False.",
+        "Your `inference` configuration does not support the Cosmos 3 model. "
+        "Since inference 1.3.6 was shipped when downstream model dependencies were not released yet, "
+        "we have enabled the model in selected builds only. Installation guide will be provided "
+        "in following releases. To suppress this warning, set COSMOS3_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 

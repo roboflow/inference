@@ -44,11 +44,11 @@ DEFAULT_SYSTEM_PROMPT = (
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Cosmos 3 Edge",
+            "name": "Cosmos 3",
             "version": "v1",
-            "short_description": "Reason about physical scenes with NVIDIA Cosmos 3 Edge.",
+            "short_description": "Reason about physical scenes with NVIDIA Cosmos 3.",
             "long_description": (
-                "This workflow block runs the NVIDIA Cosmos 3 Edge reasoner—a world model "
+                "This workflow block runs the NVIDIA Cosmos 3 reasoner — a world model "
                 "tuned for physical scene understanding—on an image with an optional text "
                 "prompt, and returns a text answer. The model is well suited to questions "
                 "about spatial relations, safety, and what will happen next in a scene."
@@ -82,10 +82,10 @@ class BlockManifest(WorkflowBlockManifest):
         "scene-description prompt is used, which may affect the desired model behavior.",
         examples=["Is the walkway free of obstacles?", "$inputs.prompt"],
     )
-    model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="cosmos-3-edge",
+    model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"]] = Field(
+        default="nvidia/cosmos-3-edge",
         description="The Cosmos 3 Edge model to be used for inference.",
-        examples=["cosmos-3-edge"],
+        examples=["nvidia/cosmos-3-edge"],
     )
     system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,

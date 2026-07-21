@@ -29,6 +29,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     requirements/requirements.easyocr.txt \
     requirements/requirements.modal.txt \
+    requirements/requirements.cosmos.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
@@ -67,6 +68,9 @@ RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
+
+# Instal Cosmos 3 preview (requires override of transformers, since 21.07.2026 it was not released yet).
+RUN python3 -m pip install -r requirements/requirements.cosmos.txt
 
 # Start runtime stage
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
