@@ -125,7 +125,6 @@ class RFDetrForObjectDetectionTRT(
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
-        independent_stage_execution: bool = False,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         """Load an RF-DETR TensorRT model package.
@@ -142,8 +141,6 @@ class RFDetrForObjectDetectionTRT(
             rfdetr_execution_plan: Explicit composed execution plan. When omitted,
                 RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
-            independent_stage_execution: Whether public preprocessing must return a
-                ready tensor that does not rely on model readiness state in forward.
             **kwargs: Additional loader arguments accepted for API compatibility.
 
         Returns:
@@ -243,7 +240,6 @@ class RFDetrForObjectDetectionTRT(
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             rfdetr_execution_plan=rfdetr_execution_plan,
-            independent_stage_execution=independent_stage_execution,
             recommended_parameters=recommended_parameters,
         )
 
@@ -263,7 +259,6 @@ class RFDetrForObjectDetectionTRT(
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters=None,
-        independent_stage_execution: bool = False,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -276,7 +271,6 @@ class RFDetrForObjectDetectionTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
-        self._independent_stage_execution = independent_stage_execution
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
             max_workers=rfdetr_preprocessor_max_workers
         )
@@ -372,7 +366,6 @@ class RFDetrForObjectDetectionTRT(
         """Return machine-readable selected implementation metadata."""
         metadata = {
             "execution_plan": self.rfdetr_execution_plan.to_dict(),
-            "independent_stage_execution": self._independent_stage_execution,
             "preprocessor": self.preprocessor_implementation_metadata.to_dict(),
             "postprocessor": self.postprocessor_implementation_metadata.to_dict(),
             "model_selection": {
@@ -393,11 +386,35 @@ class RFDetrForObjectDetectionTRT(
 
         return metadata
 
+    def infer(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        """Run composed inference with an asynchronous preprocessing handoff.
+
+        Args:
+            images: Single image or image batch represented by arrays or tensors.
+            **kwargs: Inference arguments forwarded through all stages.
+
+        Returns:
+            Per-image object detections.
+        """
+        kwargs.pop("independent_stage_execution", None)
+        pre_processed_images, pre_processing_meta = self.pre_process(
+            images=images,
+            independent_stage_execution=False,
+            **kwargs,
+        )
+        model_results = self.forward(pre_processed_images, **kwargs)
+        return self.post_process(model_results, pre_processing_meta, **kwargs)
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        independent_stage_execution: bool = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         """Preprocess inference inputs using the resolved execution plan.
@@ -406,12 +423,15 @@ class RFDetrForObjectDetectionTRT(
             images: Single image or image batch represented by arrays or tensors.
             input_color_format: Optional caller-supplied color format.
             pre_processing_overrides: Optional request preprocessing overrides.
+            independent_stage_execution: Whether preprocessing must finish before
+                returning. Composed ``infer()`` sets this to ``False`` and transfers
+                readiness to ``forward()`` through the exact returned tensor.
             **kwargs: Additional request arguments accepted for API compatibility.
 
         Returns:
-            Preprocessed tensor and per-image transformation metadata. In independent
-            stage mode the tensor is ready before return; otherwise its readiness is
-            tracked for this model instance's ``forward()`` method.
+            Preprocessed tensor and per-image transformation metadata. By default the
+            tensor is ready before return; otherwise its readiness is tracked for this
+            model instance's ``forward()`` method.
 
         Raises:
             ModelRuntimeError: If the selected implementation is incompatible.
@@ -457,10 +477,10 @@ class RFDetrForObjectDetectionTRT(
             result = replace(result, fallback_reason=selection.fallback_reason)
         if result.ready_event is None:
             stream.synchronize()
-        elif self._independent_stage_execution:
+        elif independent_stage_execution:
             result.ready_event.synchronize()
 
-        if not self._independent_stage_execution:
+        if not independent_stage_execution:
             self._preprocess_readiness.record(
                 result.tensor,
                 ready_event=result.ready_event,
@@ -491,10 +511,9 @@ class RFDetrForObjectDetectionTRT(
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                if not self._independent_stage_execution:
-                    readiness = self._preprocess_readiness.consume(pre_processed_images)
-                    if readiness is not None and readiness.ready_event is not None:
-                        self._inference_stream.wait_event(readiness.ready_event)
+                readiness = self._preprocess_readiness.consume(pre_processed_images)
+                if readiness is not None and readiness.ready_event is not None:
+                    self._inference_stream.wait_event(readiness.ready_event)
                 detections, labels = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,

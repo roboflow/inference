@@ -477,24 +477,23 @@ model = AutoModel.from_pretrained(
 )
 ```
 
-Public preprocessing and forward calls use an exact-tensor readiness tracker by
-default, preserving asynchronous preprocessing. A caller that needs each public stage
-to be independent can opt into a synchronized preprocessing boundary:
+Public preprocessing synchronizes by default, so its result can be consumed by an
+independent `forward()` call without relying on model-owned readiness state:
 
 ```python
 model = AutoModel.from_pretrained(
     "rfdetr-small",
     backend="trt",
     rfdetr_execution_plan=plan,
-    independent_stage_execution=True,
 )
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
 ```
 
-This flag is intentionally separate from the execution plan. Its default is `False`,
-which keeps the optimized event-based handoff without host synchronization. This is a
-compatibility-sensitive change for callers that previously treated `pre_process()` and
-`forward()` as independent TensorRT stages: those callers must now pass
-`independent_stage_execution=True`. Normal `model(...)` inference is unaffected.
+This invocation-boundary policy is intentionally separate from the execution plan.
+Composed `model(...)` and `infer()` calls pass
+`independent_stage_execution=False` to preprocessing internally, record a CUDA event,
+and let `forward()` wait on that event without a host synchronization.
 
 The plan also reserves independently selectable buffer-strategy, scheduler, and engine
 plugin stages. Those stages currently accept only `base`. When supplied, an explicit

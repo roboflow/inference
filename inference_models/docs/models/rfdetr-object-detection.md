@@ -99,7 +99,7 @@ The TensorRT backend normally keeps optimized preprocessing asynchronous. Its
 model instance, avoiding a host synchronization in the normal `model(...)` path.
 
 If your application calls `pre_process()`, `forward()`, and `post_process()` separately,
-initialize the model with `independent_stage_execution=True`:
+the default public-stage behavior is safe without additional model configuration:
 
 ```python
 from inference_models import AutoModel
@@ -107,7 +107,6 @@ from inference_models import AutoModel
 model = AutoModel.from_pretrained(
     "rfdetr-base",
     backend="trt",
-    independent_stage_execution=True,
 )
 
 preprocessed, metadata = model.pre_process(image)
@@ -115,11 +114,10 @@ raw_predictions = model.forward(preprocessed)
 predictions = model.post_process(raw_predictions, metadata)
 ```
 
-With this flag enabled, `pre_process()` synchronizes its CUDA producer before returning,
-so the returned tensor can be passed to `forward()` independently and does not depend on
-readiness state retained by the model. The synchronization can reduce throughput, so
-leave the default (`False`) in place when using `model(...)` or when immediately passing
-the exact tensor returned by `pre_process()` to the same model instance's `forward()`.
+Public `pre_process()` synchronizes its CUDA producer before returning, so its tensor can
+be passed to `forward()` independently and does not depend on readiness state retained
+by the model. Composed `model(...)` and `infer()` calls use an internal event-based
+handoff instead, avoiding this host synchronization on the optimized inference path.
 
 ## Trained RF-DETR Outside Roboflow? Use with `inference-models`
 

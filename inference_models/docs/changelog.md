@@ -20,14 +20,10 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
   override containers used by the inference server remain on the optimized path;
   active overrides use the declared fallback. Repeated occurrences of the same
   request-level fallback warning are logged only once per model instance.
-- **Breaking change for direct RF-DETR TensorRT stage calls:** the default optimized
-  preprocessing path may return a CUDA tensor whose completion is tracked by the model
-  instance and consumed by its `forward()` method without a host synchronization. Normal
-  `model(...)` inference is unaffected. Callers that invoke `pre_process()` and
-  `forward()` as independent stages—including callers that transfer the preprocessed
-  tensor between model instances or execution contexts—must construct the model with
-  `independent_stage_execution=True`. This makes `pre_process()` synchronize before it
-  returns and removes the cross-call readiness dependency.
+- Direct RF-DETR TensorRT stage calls remain backward compatible: public
+  `pre_process()` synchronizes before returning by default, so its output is ready for
+  an independent `forward()` call. Composed `model(...)` and `infer()` calls explicitly
+  use the asynchronous exact-tensor readiness handoff to avoid a host synchronization.
 
 ### Fixed
 

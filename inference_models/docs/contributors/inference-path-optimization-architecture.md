@@ -187,11 +187,12 @@ contract mismatch or unavailable Triton dependency follows the implementation's
 ```mermaid
 flowchart TD
     inputs["Image inputs<br/>NumPy or torch.Tensor<br/>CPU or CUDA"]
+    invocation{"Invocation"}
     pre_request["PreprocessRequest + ExecutionContext"]
     pre_selected{"Selected Preprocessor<br/>compatible with request?"}
     pre_base["base / threaded exact<br/>synchronize before return"]
     pre_triton["Triton universal<br/>record CUDA ready event"]
-    boundary{"independent_stage_execution?"}
+    boundary{"independent_stage_execution?<br/>default: true"}
     independent["Synchronize producer<br/>do not register readiness"]
     readiness["PreprocessReadinessTracker<br/>associate readiness with exact tensor"]
     wait["TensorRT inference stream<br/>wait on ready event when present"]
@@ -203,13 +204,15 @@ flowchart TD
     post_triton["Fused Triton path"]
     detections["list[Detections]"]
 
-    inputs --> pre_request --> pre_selected
+    inputs --> invocation --> pre_request --> pre_selected
     pre_selected -->|base or declared fallback| pre_base
     pre_selected -->|compatible triton-universal-v1| pre_triton
     pre_base --> boundary
     pre_triton --> boundary
-    boundary -->|yes| independent --> forward
-    boundary -->|no, default| readiness
+    invocation -.->|public pre_process: true| boundary
+    invocation -.->|composed infer: false| boundary
+    boundary -->|true| independent --> forward
+    boundary -->|false| readiness
     readiness --> wait --> forward --> outputs --> post_request --> post_selected
     post_selected -->|base| post_base
     post_selected -->|triton-fused-v1| post_triton
@@ -222,17 +225,17 @@ tensor identity and a weak reference to transfer an optional CUDA event from
 preprocessing to the TensorRT consumer without adding dynamic attributes to framework
 tensors.
 
-By default, optimized preprocessing remains asynchronous and `forward()` consumes the
-tracked event. Callers that require methods without this cross-call readiness state can
-construct the model with `independent_stage_execution=True`. In that mode,
-`pre_process()` synchronizes its producer before returning and does not add a tracker
-entry; `forward()` therefore operates only on the ready tensor supplied by its caller.
+Public `pre_process()` calls default to `independent_stage_execution=True`: they
+synchronize their producer before returning and do not add a tracker entry. Composed
+`model(...)` and `infer()` calls explicitly pass `False`, allowing preprocessing to
+return asynchronously after associating its CUDA event with the exact output tensor.
+`forward()` always checks for such an entry and waits on its event when present; an
+independently prepared ready tensor has no entry and proceeds normally.
 
 ```python
 model = AutoModel.from_pretrained(
     "rfdetr-small",
     backend="trt",
-    independent_stage_execution=True,
 )
 preprocessed, metadata = model.pre_process(image)
 raw_predictions = model.forward(preprocessed)
@@ -240,8 +243,8 @@ detections = model.post_process(raw_predictions, metadata)
 ```
 
 This is an invocation-boundary policy rather than an implementation choice, so it is
-not part of `InferenceExecutionPlan`. The default remains `False` to preserve the
-optimized asynchronous path.
+not part of `InferenceExecutionPlan`. Safe standalone behavior is the public default;
+the composed inference path opts into the optimized asynchronous handoff internally.
 
 The preprocessing, inference, and postprocessing streams are reused. Events express
 the GPU dependency at the consumer boundary; the protected TensorRT forward does not
