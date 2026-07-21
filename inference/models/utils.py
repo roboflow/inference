@@ -692,9 +692,11 @@ except:
 
 try:
     if CORE_MODEL_TROCR_ENABLED:
-        from inference.models import TrOCR
+        from inference.models.trocr.trocr_inference_models import (
+            InferenceModelsTrOCRAdapter,
+        )
 
-        ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
+        ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = InferenceModelsTrOCRAdapter
 except:
     warnings.warn(
         "Your `inference` configuration does not support TrOCR model. "
