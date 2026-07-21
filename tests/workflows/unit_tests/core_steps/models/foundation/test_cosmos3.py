@@ -19,7 +19,7 @@ def test_manifest_parses_with_defaults():
     result = BlockManifest.model_validate(BASE)
     assert result.prompt is None
     assert result.system_prompt is None
-    assert result.model_version == "cosmos-3-edge"
+    assert result.model_version == "nvidia/cosmos-3-edge"
 
 
 def test_manifest_accepts_literal_prompts():
