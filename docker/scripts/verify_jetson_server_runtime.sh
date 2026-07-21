@@ -6,6 +6,7 @@ test -f /usr/local/cuda/nvvm/libdevice/libdevice.10.bc
 test -f /usr/local/share/licenses/cuda-ptxas
 test "${TRITON_PTXAS_PATH}" = /usr/local/cuda/bin/ptxas
 test "${TRITON_PTXAS_BLACKWELL_PATH}" = /usr/local/cuda/bin/ptxas
+test "${TRITON_CACHE_DIR}" = /tmp/triton-cache
 test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas
 test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas-blackwell
 test -x /usr/local/bin/inference

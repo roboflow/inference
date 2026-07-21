@@ -583,6 +583,7 @@ ENV CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:$PATH \
     TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas \
     TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
+    TRITON_CACHE_DIR=/tmp/triton-cache \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
     VERSION_CHECK_MODE=once \
