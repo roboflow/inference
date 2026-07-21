@@ -6,6 +6,25 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 `### Removed` subsections as appropriate.
 
 ---
+
+## `0.32.0`
+
+### Changed
+
+- RF-DETR TensorRT object detection now selects `triton-universal-v1`
+  preprocessing and `triton-fused-v1` postprocessing by default. Incompatible requests
+  use the declared `base` implementation unless strict selection is requested through
+  an explicit execution plan. The selected implementations can be controlled with an
+  `RFDetrExecutionPlan` or the `INFERENCE_MODELS_RFDETR_PREPROCESSOR` and
+  `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` environment variables. No-op preprocessing
+  override containers used by the inference server remain on the optimized path;
+  active overrides use the declared fallback. Repeated occurrences of the same
+  request-level fallback warning are logged only once per model instance.
+- Direct RF-DETR TensorRT stage calls remain backward compatible: public
+  `pre_process()` synchronizes before returning by default, so its output is ready for
+  an independent `forward()` call. Composed `model(...)` and `infer()` calls explicitly
+  use the asynchronous exact-tensor readiness handoff to avoid a host synchronization.
+
 ### Fixed
 
 - SAM3 concept-segmentation postprocessing no longer scales its memory working set with
@@ -17,6 +36,9 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ### Added
 
+- Composable RF-DETR TensorRT execution plans, implementation contracts and registries,
+  compatibility-aware implementation selection, and runtime metadata reporting the
+  requested and effective preprocessing and postprocessing implementations.
 - NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
   image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
   standard VLM contract. The generative world-model tower ships separately.
@@ -29,6 +51,8 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).
+
+---
 
 ## `0.31.0`
 

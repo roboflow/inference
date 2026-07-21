@@ -422,6 +422,102 @@ Default: Inherits from `INFERENCE_MODELS_DEFAULT_CONFIDENCE`
 export INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE="0.5"
 ```
 
+The following variables select RF-DETR TensorRT pipeline implementations when a client
+cannot pass backend-specific `from_pretrained` arguments. Explicit arguments take
+precedence over these environment variables.
+
+See [Inference-Path Optimization Architecture](../contributors/inference-path-optimization-architecture.md)
+for the selection model and the complete RF-DETR execution flow.
+
+**`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
+Default: `triton-universal-v1`
+
+Supported values: `base`, `auto`, `threaded-exact-v1`, `triton-universal-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_PREPROCESSOR="triton-universal-v1"
+```
+
+**`INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS`**
+Default: `4`
+
+Controls the bounded worker count used by `threaded-exact-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS="4"
+```
+
+**`INFERENCE_MODELS_RFDETR_POSTPROCESSOR`**
+Default: `triton-fused-v1`
+
+Supported values: `base`, `auto`, `triton-fused-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_POSTPROCESSOR="triton-fused-v1"
+```
+
+Code that can pass backend-specific arguments may instead provide a composed, immutable
+execution plan:
+
+```python
+from inference_models import AutoModel
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
+
+plan = RFDetrExecutionPlan(
+    preprocessor_id="triton-universal-v1",
+    postprocessor_id="triton-fused-v1",
+    allow_compatibility_fallback=True,
+)
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    rfdetr_execution_plan=plan,
+)
+```
+
+Public preprocessing synchronizes by default, so its result can be consumed by an
+independent `forward()` call without relying on model-owned readiness state:
+
+```python
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    rfdetr_execution_plan=plan,
+)
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
+```
+
+This invocation-boundary policy is intentionally separate from the execution plan.
+Composed `model(...)` and `infer()` calls pass
+`independent_stage_execution=False` to preprocessing internally, record a CUDA event,
+and let `forward()` wait on that event without a host synchronization.
+
+The plan also reserves independently selectable buffer-strategy, scheduler, and engine
+plugin stages. Those stages currently accept only `base`. When supplied, an explicit
+plan takes precedence and the implementation-selection environment variables are not
+read.
+
+When a selected optimized stage declares that it cannot preserve a model or request
+contract, RF-DETR uses its declared `base` fallback and records the requested
+implementation, effective implementation, and reason in logs and runtime metadata.
+This policy applies consistently to preprocessing and postprocessing. Set
+`allow_compatibility_fallback=False` in an explicit plan to require the selected
+implementation or an error. Compilation, CUDA, allocation, and other execution
+failures are never converted into fallbacks.
+
+An all-`False` `PreProcessingOverrides` object is a no-op and remains compatible with
+`triton-universal-v1`. Requests with any active preprocessing override use the declared
+`base` fallback. A distinct request-level fallback reason is warned once per model
+instance rather than once per inference.
+
+When Triton is unavailable, uint8 universal preprocessing and fused postprocessing
+declare a compatibility miss and use their `base` fallback. Floating-point tensor
+preprocessing remains eligible for `triton-universal-v1` because that input path uses
+Torch operations and does not require Triton kernels.
+
 #### Roboflow Instant
 
 **`INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE`**
