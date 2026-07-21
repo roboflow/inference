@@ -102,7 +102,15 @@ class SAM3Torch:
             model_name_or_path, "sam_configuration.json"
         )
         if os.path.exists(sam_configuration_path):
-            version = decode_sam_version(config_path=sam_configuration_path)
+            try:
+                version = decode_sam_version(config_path=sam_configuration_path)
+            except (KeyError, ValueError) as error:
+                raise CorruptedModelPackageError(
+                    message="Could not decode sam_configuration.json in SAM3 model package. "
+                    "If you run inference locally, verify the correctness of SAM3 model package. "
+                    "If you see the error running on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                ) from error
             if version not in SUPPORTED_VERSIONS:
                 raise CorruptedModelPackageError(
                     message=f"Detected unsupported version of SAM3 model: {version}. Supported versions: "

@@ -194,3 +194,21 @@ def test_from_pretrained_rejects_unsupported_sam_configuration_version(
             model_name_or_path=str(tmp_path),
             device=torch.device("cpu"),
         )
+
+
+def test_from_pretrained_rejects_malformed_sam_configuration(
+    sam3_torch_module: ModuleType, tmp_path
+) -> None:
+    # given - config present but missing the "version" key
+    from inference_models.errors import CorruptedModelPackageError
+
+    (tmp_path / "weights.pt").touch()
+    (tmp_path / "bpe_simple_vocab_16e6.txt.gz").touch()
+    (tmp_path / "sam_configuration.json").write_text('{"unexpected": "content"}')
+
+    # when / then
+    with pytest.raises(CorruptedModelPackageError):
+        sam3_torch_module.SAM3Torch.from_pretrained(
+            model_name_or_path=str(tmp_path),
+            device=torch.device("cpu"),
+        )
