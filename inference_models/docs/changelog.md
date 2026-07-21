@@ -13,13 +13,19 @@
   (`RetryError`), `AutoModel.from_pretrained(...)` now scans `{INFERENCE_HOME}/models-cache/` for a
   previously cached package of the requested model and loads it locally instead of failing. This
   applies even when `OFFLINE_MODE` is not set.
-- `model_id` is now written into each package's `model_config.json`, so offline scanning can map
-  cache entries back to their canonical model IDs.
+- `model_id` is now written into each package's `model_config.json`; pre-existing configs are
+  upgraded on reuse, and legacy packages can be identified from auto-resolution metadata so
+  offline scanning maps cache entries back to their canonical model IDs.
 - `find_cached_model_package_dir(...)` helper exposed from the auto-loaders module for downstream
   cache introspection.
 - `INFERENCE_HOME` now falls back to `MODEL_CACHE_DIR` (when set) before the `/tmp/cache` default,
   so the `inference` server's mounted cache volume persists both cache layouts regardless of
   module import order.
+
+### Fixed
+
+- Offline mode now permits idempotent access to already-cached downloads and custom local weights
+  providers while continuing to block missing-file downloads and the built-in network provider.
 
 ---
 
@@ -91,6 +97,9 @@
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).
+
+---
+
 ## `0.31.0`
 
 ### Fixed

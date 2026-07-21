@@ -1577,20 +1577,29 @@ def dump_model_config_for_offline_use(
     model_id: Optional[str] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
-    if os.path.exists(config_path):
-        # we kinda trust that what we did previously is right - in case when the file
-        # gets corrupted we may end up in problem - to be verified empirically
-        return None
+    """Persist package metadata and upgrade legacy configs with a model ID."""
     target_file_dir, target_file_name = os.path.split(config_path)
     lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
-    content = {
-        "model_architecture": model_architecture,
-        "task_type": task_type,
-        "backend_type": backend_type,
-    }
-    if model_id is not None:
-        content["model_id"] = model_id
     with FileLock(lock_path, timeout=file_lock_acquire_timeout):
+        if os.path.exists(config_path):
+            if model_id is None:
+                return None
+            try:
+                content = read_json(path=config_path)
+            except (OSError, ValueError):
+                return None
+            if not isinstance(content, dict) or content.get("model_id") is not None:
+                return None
+            content["model_id"] = model_id
+            dump_json(path=config_path, content=content)
+            return None
+        content = {
+            "model_architecture": model_architecture,
+            "task_type": task_type,
+            "backend_type": backend_type,
+        }
+        if model_id is not None:
+            content["model_id"] = model_id
         dump_json(
             path=config_path,
             content=content,

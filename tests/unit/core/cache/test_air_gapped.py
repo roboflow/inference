@@ -317,6 +317,24 @@ def _write_model_config_json(
         json.dump(config, fh)
 
 
+def _write_auto_resolution_cache_entry(
+    cache_dir: str,
+    model_id: str,
+    package_id: str,
+) -> None:
+    """Write metadata that links a legacy package slug to its canonical model ID."""
+    resolution_cache_dir = os.path.join(cache_dir, "auto-resolution-cache")
+    os.makedirs(resolution_cache_dir, exist_ok=True)
+    with open(os.path.join(resolution_cache_dir, "resolution.json"), "w") as file:
+        json.dump(
+            {
+                "model_id": model_id,
+                "model_package_id": package_id,
+            },
+            file,
+        )
+
+
 class TestScanModelConfigJson:
     """model_config.json written by dump_model_config_for_offline_use."""
 
@@ -394,6 +412,45 @@ class TestScanModelConfigJson:
         result = scan_cached_models(cache)
 
         assert len(result) == 0
+
+    def test_uses_resolution_metadata_for_legacy_config(self, tmp_path):
+        """Pre-upgrade configs are listed using their auto-resolution metadata."""
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
+
+        cache = str(tmp_path)
+        model_id = "workspace/my-project/3"
+        package_id = "pkg001"
+        model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        _write_model_config_json(
+            cache,
+            slug_dir=model_slug,
+            package_id=package_id,
+            config={
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnx",
+            },
+        )
+        _write_auto_resolution_cache_entry(
+            cache_dir=cache,
+            model_id=model_id,
+            package_id=package_id,
+        )
+
+        result = scan_cached_models(cache)
+
+        assert result == [
+            {
+                "model_id": model_id,
+                "name": model_id,
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "is_foundation": False,
+            }
+        ]
 
 
 # ---------------------------------------------------------------------------

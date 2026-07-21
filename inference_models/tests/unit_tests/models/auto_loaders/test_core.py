@@ -403,6 +403,7 @@ def test_resolve_recommended_parameters_none_when_both_absent() -> None:
 def test_dump_model_config_for_offline_use_when_file_exists(
     empty_local_dir: str,
 ) -> None:
+    """Existing package metadata remains unchanged without a model ID."""
     # given
     config_path = os.path.join(empty_local_dir, "model_config.json")
     with open(config_path, "w") as f:
@@ -430,9 +431,74 @@ def test_dump_model_config_for_offline_use_when_file_exists(
     on_file_created.assert_not_called()
 
 
+def test_dump_model_config_for_offline_use_upgrades_legacy_config(
+    empty_local_dir: str,
+) -> None:
+    """A cached config created before model IDs were stored is upgraded in place."""
+    # given
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    existing_config = {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+    }
+    with open(config_path, "w") as file:
+        json.dump(existing_config, file)
+    on_file_created = MagicMock()
+
+    # when
+    dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture="ignored",
+        task_type="ignored",
+        backend_type=None,
+        file_lock_acquire_timeout=10,
+        model_id="workspace/project/3",
+        on_file_created=on_file_created,
+    )
+
+    # then
+    with open(config_path) as file:
+        decoded = json.load(file)
+    assert decoded == {**existing_config, "model_id": "workspace/project/3"}
+    on_file_created.assert_not_called()
+
+
+def test_dump_model_config_for_offline_use_preserves_existing_model_id(
+    empty_local_dir: str,
+) -> None:
+    """An existing canonical model ID is never replaced by an alias."""
+    # given
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    existing_config = {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+        "model_id": "workspace/canonical-project/3",
+    }
+    with open(config_path, "w") as file:
+        json.dump(existing_config, file)
+
+    # when
+    dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        file_lock_acquire_timeout=10,
+        model_id="workspace/alias/3",
+    )
+
+    # then
+    with open(config_path) as file:
+        decoded = json.load(file)
+    assert decoded == existing_config
+
+
 def test_dump_model_config_for_offline_use_when_file_does_not_exists(
     empty_local_dir: str,
 ) -> None:
+    """A new package config is written and reported through the callback."""
     # given
     config_path = os.path.join(empty_local_dir, "model_config.json")
     on_file_created = MagicMock()
