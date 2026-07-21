@@ -15,9 +15,11 @@ from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.url_utils import wrap_url
+from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
@@ -919,9 +921,12 @@ def _convert_sv_detections_to_vision_events_format(
             kp_entry = dict(base)
             kp_xy = data.get(KEYPOINTS_XY_KEY_IN_SV_DETECTIONS)
             kp_class_id = data.get(KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS)
+            kp_class_name = data.get(KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS)
             if kp_xy is not None and len(kp_xy) > 0:
+                # Skip trailing padding slots (see common/keypoints.py).
+                kp_count = real_keypoints_count(kp_class_name, total=len(kp_xy))
                 kp_entry["keypoints"] = []
-                for i, (kx, ky) in enumerate(kp_xy):
+                for i, (kx, ky) in enumerate(kp_xy[:kp_count]):
                     kp_id = (
                         int(kp_class_id[i])
                         if kp_class_id is not None and i < len(kp_class_id)

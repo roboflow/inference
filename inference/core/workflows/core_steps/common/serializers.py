@@ -6,6 +6,7 @@ import numpy as np
 import supervision as sv
 
 from inference.core import logger
+from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
@@ -183,13 +184,21 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS]
             kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
             kp_xy = data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+            # Drop the trailing padding slots so we never emit fabricated
+            # keypoints for detections that carry fewer than the batch maximum.
+            kp_count = real_keypoints_count(kp_class_name, total=len(kp_xy))
             detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = []
             for (
                 keypoint_class_id,
                 keypoint_class_name,
                 keypoint_confidence,
                 (x, y),
-            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
+            ) in zip(
+                kp_class_id[:kp_count],
+                kp_class_name[:kp_count],
+                kp_confidence[:kp_count],
+                kp_xy[:kp_count],
+            ):
                 detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE].append(
                     {
                         "class_id": int(keypoint_class_id),
