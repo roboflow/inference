@@ -86,7 +86,10 @@ from inference_models.utils.download import (
 )
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
-from inference_models.weights_providers.core import get_model_from_provider
+from inference_models.weights_providers.core import (
+    get_model_from_provider,
+    model_provider_requires_network,
+)
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     LocalFileArtefactSpecs,
@@ -796,7 +799,9 @@ class AutoModel:
             )
             if model_from_cache:
                 return model_from_cache
-            if OFFLINE_MODE:
+            if OFFLINE_MODE and model_provider_requires_network(
+                provider=weights_provider
+            ):
                 offline_result = attempt_loading_model_from_offline_cache(
                     model_id=model_id_or_path,
                     model_init_kwargs=model_init_kwargs,

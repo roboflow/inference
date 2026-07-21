@@ -36,7 +36,11 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
+from inference_models.weights_providers import core as weights_providers_core
+from inference_models.weights_providers.entities import (
+    ModelMetadata,
+    RecommendedParameters,
+)
 
 
 def test_load_class_from_path_when_valid_python_module_provided(
@@ -926,6 +930,46 @@ def test_from_pretrained_in_offline_mode_raises_when_no_cache(
                 api_key="test-key",
                 use_auto_resolution_cache=False,
             )
+
+
+def test_from_pretrained_uses_custom_local_provider_in_offline_mode() -> None:
+    """The full auto-loader path permits a registered local provider offline."""
+    # given
+    model_id = "local-model"
+    model_metadata = ModelMetadata(
+        model_id=model_id,
+        model_architecture="yolov8",
+        model_packages=[],
+        task_type="object-detection",
+    )
+    local_provider = MagicMock(return_value=model_metadata)
+    expected_model = MagicMock()
+
+    # when
+    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
+        weights_providers_core, "OFFLINE_MODE", True
+    ), mock.patch.dict(
+        weights_providers_core.WEIGHTS_PROVIDERS, {}, clear=True
+    ), mock.patch.object(
+        core, "negotiate_model_packages", return_value=[]
+    ), mock.patch.object(
+        core, "attempt_loading_matching_model_packages", return_value=expected_model
+    ):
+        weights_providers_core.register_model_provider("local", local_provider)
+        result = core.AutoModel.from_pretrained(
+            model_id,
+            weights_provider="local",
+            use_auto_resolution_cache=False,
+        )
+
+    # then
+    assert result is expected_model
+    local_provider.assert_called_once_with(
+        model_id,
+        None,
+        weights_provider_extra_query_params=None,
+        weights_provider_extra_headers=None,
+    )
 
 
 def test_dump_model_config_for_offline_use_persists_model_id(
