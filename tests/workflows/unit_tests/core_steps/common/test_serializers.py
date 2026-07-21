@@ -194,6 +194,45 @@ def test_serialise_sv_detections() -> None:
     }
 
 
+def test_serialise_sv_detections_skips_padded_keypoint_slots() -> None:
+    # given the padded, rectangular (n, max_kps, 2) keypoint layout that
+    # add_inference_keypoints_to_sv_detections produces when detections carry
+    # unequal numbers of keypoints (e.g. after keypoint-confidence filtering or
+    # multi-class skeletons). Detection 0 has 2 real keypoints, detection 1 has
+    # only 1; the remaining slot of detection 1 is empty-named padding.
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10], [20, 20, 30, 30]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.9, 0.8], dtype=np.float64),
+        data={
+            "class_name": np.array(["obj", "obj"]),
+            "detection_id": np.array(["first", "second"]),
+            "keypoints_xy": np.array(
+                [[[1.0, 2.0], [3.0, 4.0]], [[21.0, 22.0], [0.0, 0.0]]],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.9, 0.8], [0.95, 0.0]], dtype=np.float32
+            ),
+            "keypoints_class_id": np.array([[0, 1], [0, 0]], dtype=int),
+            "keypoints_class_name": np.array(
+                [["nose", "eye"], ["nose", ""]], dtype=object
+            ),
+        },
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then the padding slot must not surface as a fabricated keypoint
+    assert len(result["predictions"][0]["keypoints"]) == 2
+    assert len(result["predictions"][1]["keypoints"]) == 1
+    assert result["predictions"][1]["keypoints"][0]["class"] == "nose"
+    for prediction in result["predictions"]:
+        for keypoint in prediction["keypoints"]:
+            assert keypoint["class"] != "", "No empty-named padding keypoint may leak"
+
+
 def test_serialise_image() -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)

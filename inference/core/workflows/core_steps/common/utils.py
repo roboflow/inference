@@ -15,6 +15,9 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
+from inference.core.workflows.core_steps.common.keypoints import (
+    KEYPOINT_PADDING_CLASS_NAME,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
@@ -177,7 +180,9 @@ def add_inference_keypoints_to_sv_detections(
     padded_xy = np.zeros((n, max_kps, 2), dtype=np.float32)
     padded_conf = np.zeros((n, max_kps), dtype=np.float32)
     padded_class_id = np.zeros((n, max_kps), dtype=int)
-    padded_class_name = np.full((n, max_kps), "", dtype=object)
+    # Padding slots carry the empty class name so downstream consumers can tell
+    # them apart from real keypoints (see common/keypoints.py).
+    padded_class_name = np.full((n, max_kps), KEYPOINT_PADDING_CLASS_NAME, dtype=object)
     for i in range(n):
         k = len(keypoints_xy[i])
         if k > 0:
