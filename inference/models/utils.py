@@ -15,6 +15,7 @@ from inference.core.env import (
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
+    COSMOS3_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
     FLORENCE2_ENABLED,
     GLM_OCR_ENABLED,
@@ -491,6 +492,31 @@ except:
         "Your `inference` configuration does not support Qwen3-VL model. "
         "Use pip install 'inference[transformers]' to install missing requirements."
         "To suppress this warning, set QWEN_3_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    # Cosmos 3 Edge has no legacy implementation — it is served exclusively
+    # through the inference_models bridge adapter.
+    if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
+        from inference.models.cosmos3.cosmos3_reasoner_inference_models import (
+            InferenceModelsCosmos3ReasonerAdapter,
+        )
+
+        cosmos3_models = {
+            (
+                "text-image-pairs",
+                "cosmos-3-edge",
+            ): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+        }
+        ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support the Cosmos 3 model. "
+        "Since inference 1.3.6 was shipped when downstream model dependencies were not released yet, "
+        "we have enabled the model in selected builds only. Installation guide will be provided "
+        "in following releases. To suppress this warning, set COSMOS3_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 

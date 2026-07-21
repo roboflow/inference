@@ -39,6 +39,15 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 - Composable RF-DETR TensorRT execution plans, implementation contracts and registries,
   compatibility-aware implementation selection, and runtime metadata reporting the
   requested and effective preprocessing and postprocessing implementations.
+- NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
+  image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
+  standard VLM contract. The generative world-model tower ships separately.
+- NVIDIA Cosmos 3 Edge generator (`cosmos-3-edge-world`, task `world-model`, backend
+  `custom`): image-to-video (`generate_video`), forward dynamics (`start_rollout` +
+  `forward_dynamics` with explicit session-state threading), and inverse dynamics
+  (`inverse_dynamics`). The step-wise robot policy mode is deferred. The denoising
+  runtime ships inside the model package (loaded via `import_class_from_file`), keeping
+  NVIDIA's cosmos stack out of `inference_models` dependencies.
 - `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
   interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
   for COCO RLE at original resolution).
