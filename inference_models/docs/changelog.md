@@ -7,6 +7,13 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ---
 
+## `0.32.1`
+
+### Fixed
+- Patch for security issues 
+
+---
+
 ## `0.32.0`
 
 ### Changed
