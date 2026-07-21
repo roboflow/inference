@@ -971,6 +971,98 @@ def get_workflow_cache_file(
     return result
 
 
+def _find_offline_hashed_workflow_cache_file(
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    api_key: Optional[str],
+    workflow_version_id: Optional[str] = None,
+) -> Optional[str]:
+    """Find a safely attributable cache written before offline mode was enabled.
+
+    Multi-tenant cache filenames contain a workspace/API-key fingerprint, but no
+    Workflow version. An exact fingerprint match is safe when the API key is
+    still configured. Without an API key, a sole hashed entry is usable in an
+    offline single-tenant deployment; multiple entries are ambiguous and must
+    not be selected arbitrarily. Versioned requests never use this legacy cache
+    because its filename cannot prove which version it contains.
+    """
+
+    if (
+        not OFFLINE_MODE
+        or not SINGLE_TENANT_WORKFLOW_CACHE
+        or workflow_version_id is not None
+    ):
+        return None
+
+    cache_file = Path(
+        get_workflow_cache_file(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            api_key=api_key,
+        )
+    )
+    sanitized_workflow_id = sanitize_path_segment(workflow_id)
+    if not cache_file.parent.is_dir():
+        return None
+
+    filename_pattern = re.compile(
+        rf"{re.escape(sanitized_workflow_id)}_[0-9a-f]{{64}}\.json"
+    )
+    candidates = [
+        candidate
+        for candidate in cache_file.parent.iterdir()
+        if candidate.is_file() and filename_pattern.fullmatch(candidate.name)
+    ]
+    if api_key is not None:
+        cache_seed = f"{workspace_id}:{api_key}"
+        # This is a compatibility fingerprint for an existing filename format,
+        # not password storage or an authentication primitive.
+        # codeql[py/weak-sensitive-data-hashing]
+        cache_fingerprint = hashlib.sha256(
+            cache_seed.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()
+        exact_filename = f"{sanitized_workflow_id}_{cache_fingerprint}.json"
+        return next(
+            (
+                str(candidate)
+                for candidate in candidates
+                if candidate.name == exact_filename
+            ),
+            None,
+        )
+    if len(candidates) == 1:
+        return str(candidates[0])
+    if len(candidates) > 1:
+        logger.warning(
+            "Cannot choose among %d hashed offline Workflow cache entries",
+            len(candidates),
+        )
+    return None
+
+
+def _load_workflow_response_file(workflow_cache_file: str) -> Optional[dict]:
+    """Load a Workflow cache file and remove it when its JSON is invalid."""
+
+    workflow_cache_root = Path(MODEL_CACHE_DIR, "workflow").resolve()
+    resolved_cache_file = Path(workflow_cache_file).resolve()
+    try:
+        resolved_cache_file.relative_to(workflow_cache_root)
+    except ValueError:
+        logger.warning("Refusing to read a Workflow cache file outside the cache root")
+        return None
+    if resolved_cache_file.suffix != ".json":
+        return None
+    try:
+        with resolved_cache_file.open("r") as file_handle:
+            return json.load(file_handle)
+    except Exception:
+        try:
+            resolved_cache_file.unlink()
+        except OSError:
+            pass
+        return None
+
+
 def cache_workflow_response(
     workspace_id: WorkspaceID,
     workflow_id: str,
@@ -1019,18 +1111,18 @@ def load_cached_workflow_response(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    if not os.path.exists(workflow_cache_file):
+    if os.path.exists(workflow_cache_file):
+        return _load_workflow_response_file(workflow_cache_file)
+
+    fallback_cache_file = _find_offline_hashed_workflow_cache_file(
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+        api_key=api_key,
+        workflow_version_id=workflow_version_id,
+    )
+    if fallback_cache_file is None:
         return None
-    try:
-        with open(workflow_cache_file, "r") as f:
-            return json.load(f)
-    except Exception:
-        delete_cached_workflow_response_if_exists(
-            workspace_id=workspace_id,
-            workflow_id=workflow_id,
-            api_key=api_key,
-            workflow_version_id=workflow_version_id,
-        )
+    return _load_workflow_response_file(fallback_cache_file)
 
 
 @wrap_roboflow_api_errors()
