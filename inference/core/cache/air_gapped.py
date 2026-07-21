@@ -7,11 +7,14 @@ offline workflow construction.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
+from inference_models.models.auto_loaders.model_cache_paths import (
+    slugify_model_id_to_os_safe_format,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,50 @@ def _has_non_hidden_children(path: str) -> bool:
         return any(not f.startswith(".") for f in os.listdir(path))
     except OSError:
         return False
+
+
+def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
+    """Map legacy package directories to IDs stored in auto-resolution metadata."""
+    resolution_cache_dir = os.path.join(cache_dir, "auto-resolution-cache")
+    if not os.path.isdir(resolution_cache_dir):
+        return {}
+    candidates: Dict[str, Set[str]] = {}
+    try:
+        entries = sorted(os.listdir(resolution_cache_dir))
+    except OSError:
+        return {}
+    models_cache_dir = os.path.realpath(os.path.join(cache_dir, "models-cache"))
+    for entry in entries:
+        if entry.startswith(".") or not entry.endswith(".json"):
+            continue
+        metadata_path = os.path.join(resolution_cache_dir, entry)
+        try:
+            with open(metadata_path, "r") as file:
+                metadata = json.load(file)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        model_id = metadata.get("model_id")
+        cache_model_id = metadata.get("cache_model_id") or model_id
+        package_id = metadata.get("model_package_id")
+        if not all(
+            isinstance(value, str) and value
+            for value in (model_id, cache_model_id, package_id)
+        ):
+            continue
+        model_slug = slugify_model_id_to_os_safe_format(model_id=cache_model_id)
+        package_dir = os.path.realpath(
+            os.path.join(models_cache_dir, model_slug, package_id)
+        )
+        if not package_dir.startswith(models_cache_dir + os.sep):
+            continue
+        candidates.setdefault(package_dir, set()).add(model_id)
+    return {
+        package_dir: next(iter(model_ids))
+        for package_dir, model_ids in candidates.items()
+        if len(model_ids) == 1
+    }
 
 
 def is_model_cached(model_id: str) -> bool:
@@ -119,6 +166,7 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
     seen_ids: set = set()
     if not os.path.isdir(cache_dir):
         return results
+    legacy_model_ids = _load_legacy_model_ids_by_package(cache_dir=cache_dir)
 
     for root, dirs, files in os.walk(cache_dir):
         # Prune top-level directories we know are not model trees.
@@ -134,7 +182,7 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             continue
 
         metadata: Optional[dict] = None
-        use_stored_model_id = False
+        stored_model_id: Optional[str] = None
 
         # Prefer model_config.json when present — it contains the canonical
         # model_id, while the directory name is an opaque slug.
@@ -143,13 +191,11 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             try:
                 with open(config_path, "r") as fh:
                     cfg = json.load(fh)
-                if (
-                    isinstance(cfg, dict)
-                    and cfg.get("task_type")
-                    and cfg.get("model_id")
-                ):
+                if isinstance(cfg, dict) and cfg.get("task_type"):
                     metadata = cfg
-                    use_stored_model_id = True
+                    stored_model_id = cfg.get("model_id")
+                    if stored_model_id is None:
+                        stored_model_id = legacy_model_ids.get(os.path.realpath(root))
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -186,8 +232,10 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
         if not task_type:
             continue
 
-        if use_stored_model_id:
-            model_id = metadata["model_id"]
+        if stored_model_id is not None:
+            model_id = stored_model_id
+        elif has_model_config:
+            continue
         else:
             model_id = os.path.relpath(root, cache_dir)
             # Normalise path separators on Windows.
