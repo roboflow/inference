@@ -11,3 +11,4 @@
 # so this file is intentionally NOT wired into extras_require yet.
 transformers @ git+https://github.com/huggingface/transformers.git@cbf4d720ec734edb77d25452b2790c7e4be2f8d7
 diffusers @ git+https://github.com/huggingface/diffusers.git@86e6dac5360703ddf09fe250db50be667eb93662
+sentencepiece>=0.2.1,<0.3.0
