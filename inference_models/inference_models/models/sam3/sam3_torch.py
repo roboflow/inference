@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os.path
 from copy import copy, deepcopy
 from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
@@ -97,14 +98,13 @@ class SAM3Torch:
             ],
         )
 
-        try:
-            config_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=["sam_configuration.json"],
-            )
-            version = decode_sam_version(
-                config_path=config_content["sam_configuration.json"]
-            )
+        # sam_configuration.json is optional: fine-tuned packages produced by
+        # roboflow-train ship without it, only base packages carry it.
+        sam_configuration_path = os.path.join(
+            model_name_or_path, "sam_configuration.json"
+        )
+        if os.path.exists(sam_configuration_path):
+            version = decode_sam_version(config_path=sam_configuration_path)
             if version not in SUPPORTED_VERSIONS:
                 raise CorruptedModelPackageError(
                     message=f"Detected unsupported version of SAM3 model: {version}. Supported versions: "
@@ -113,8 +113,6 @@ class SAM3Torch:
                     "contact us to get help.",
                     help_url="https://todo",
                 )
-        except KeyError:
-            pass
 
         device_str = "cuda" if device.type == "cuda" else "cpu"
         # build_sam3_image_model runs torch.jit.script on torchvision transforms
