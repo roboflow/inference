@@ -9,9 +9,21 @@ ModelId = str
 ApiKey = Optional[str]
 WeightsProvider = Callable[[ModelId, ApiKey, ...], ModelMetadata]
 
-WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
+_BUILT_IN_NETWORK_WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
     "roboflow": get_roboflow_model,
 }
+WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = (
+    _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS.copy()
+)
+
+
+def model_provider_requires_network(provider: str) -> bool:
+    """Return whether a registered provider is a built-in network handler."""
+    provider_handler = WEIGHTS_PROVIDERS.get(provider)
+    return any(
+        provider_handler is built_in_handler
+        for built_in_handler in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS.values()
+    )
 
 
 def get_model_from_provider(
@@ -82,18 +94,19 @@ def get_model_from_provider(
         - `register_model_provider()`: Register a custom weights provider
         - `AutoModel.from_pretrained()`: Load models using the provider system
     """
-    if OFFLINE_MODE:
-        raise ModelRetrievalError(
-            message=f"Cannot fetch model metadata from provider '{provider}' - "
-            f"OFFLINE_MODE is enabled. All models must be pre-cached locally.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
-        )
     if provider not in WEIGHTS_PROVIDERS:
         raise ModelRetrievalError(
             message=f"Requested model to be retrieved using '{provider}' provider which is not implemented.",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
-    return WEIGHTS_PROVIDERS[provider](model_id, api_key, **kwargs)
+    provider_handler = WEIGHTS_PROVIDERS[provider]
+    if OFFLINE_MODE and model_provider_requires_network(provider=provider):
+        raise ModelRetrievalError(
+            message=f"Cannot fetch model metadata from provider '{provider}' - "
+            f"OFFLINE_MODE is enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
+    return provider_handler(model_id, api_key, **kwargs)
 
 
 def register_model_provider(

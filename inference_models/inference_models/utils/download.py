@@ -204,11 +204,6 @@ def download_files_to_directory(
         - Existing files are skipped automatically
         - Progress bars are disabled if DISABLE_INTERACTIVE_PROGRESS_BARS env var is set
     """
-    if OFFLINE_MODE:
-        raise RuntimeError(
-            "Cannot download files - OFFLINE_MODE is enabled. "
-            "All model weights must be pre-cached locally."
-        )
     if name_after not in {"file_handle", "md5_hash"}:
         raise InvalidParameterError(
             message="Function download_files_to_directory(...) was called with "
@@ -230,6 +225,11 @@ def download_files_to_directory(
     )
     if not files_specs:
         return files_mapping
+    if OFFLINE_MODE:
+        raise RuntimeError(
+            "Cannot download files - OFFLINE_MODE is enabled. "
+            "All model weights must be pre-cached locally."
+        )
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if request_timeout is None:
