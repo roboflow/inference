@@ -31,6 +31,8 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
   `pre_process()` synchronizes before returning by default, so its output is ready for
   an independent `forward()` call. Composed `model(...)` and `infer()` calls explicitly
   use the asynchronous exact-tensor readiness handoff to avoid a host synchronization.
+  The inference-server object-detection adapter also enables this handoff for models
+  that explicitly declare the invocation-level preprocessing parameter.
 
 ### Fixed
 
