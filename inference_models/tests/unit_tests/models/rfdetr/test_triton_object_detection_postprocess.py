@@ -18,6 +18,7 @@ from inference_models.models.rfdetr.optimization.ids import (
 from inference_models.models.rfdetr.triton_object_detection_postprocess import (
     TRITON_AVAILABLE,
     FusedObjectDetectionPostprocessor,
+    _canonical_device,
     _metadata_values,
 )
 
@@ -59,6 +60,22 @@ def test_fused_postprocessor_is_explicitly_selectable() -> None:
 def test_fused_postprocessor_requires_cuda() -> None:
     with pytest.raises(ModelRuntimeError, match="requires a CUDA target"):
         FusedObjectDetectionPostprocessor(torch.device("cpu"))
+
+
+def test_canonical_device_resolves_bare_cuda_to_current_device(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
+
+    assert _canonical_device(torch.device("cuda")) == torch.device("cuda:1")
+    assert _canonical_device(torch.device("cuda:0")) == torch.device("cuda:0")
+    assert _canonical_device(torch.device("cpu")) == torch.device("cpu")
+
+
+def test_fused_postprocessor_canonicalizes_target_device(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
+
+    postprocessor = FusedObjectDetectionPostprocessor(torch.device("cuda"))
+
+    assert postprocessor._device == torch.device("cuda:0")
 
 
 def test_fused_postprocessor_reports_request_incompatibility_without_cuda() -> None:
