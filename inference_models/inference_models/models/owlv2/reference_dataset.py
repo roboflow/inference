@@ -190,7 +190,7 @@ class LazyImageWrapper:
                 reference = canonicalize_url_for_hashing(reference=reference)
             self._image_hash = hash_function(value=reference)
         else:
-            self._image_hash = hash_function(value=self.as_numpy().tobytes())
+            self._image_hash = compute_image_hash(image=self.as_numpy())
         return self._image_hash
 
     def unload_image(self) -> None:
@@ -371,8 +371,15 @@ def _get_from_url(url: str, timeout: int = 5) -> bytes:
 
 def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:
     if isinstance(image, torch.Tensor):
-        image = image.cpu().numpy()
-    return hash_function(value=image.tobytes())
+        image = image.detach().cpu().numpy()
+    if not isinstance(image, np.ndarray):
+        raise ModelInputError(
+            message=f"Cannot compute OWLv2 image hash for input of type {type(image)}.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
+    if not image.flags["C_CONTIGUOUS"]:
+        image = np.ascontiguousarray(image)
+    return hashlib.sha1(memoryview(image).cast("B")).hexdigest()
 
 
 def hash_function(value: Union[str, bytes]) -> str:
