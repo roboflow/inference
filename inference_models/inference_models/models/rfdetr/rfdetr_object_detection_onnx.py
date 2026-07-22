@@ -123,13 +123,6 @@ class RFDetrForObjectDetectionONNX(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
-        classes_re_mapping = None
-        if inference_config.class_names_operations:
-            class_names, classes_re_mapping = prepare_class_remapping(
-                class_names=class_names,
-                class_names_operations=inference_config.class_names_operations,
-                device=device,
-            )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
