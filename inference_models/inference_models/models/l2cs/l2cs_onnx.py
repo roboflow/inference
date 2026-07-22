@@ -88,7 +88,7 @@ class L2CSNetOnnx:
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(session=session, device=device)
-        input_name = session.get_inputs()[0].name if session else None
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
             max_batch_size=max_batch_size,
