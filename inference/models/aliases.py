@@ -101,6 +101,19 @@ YOLO26_SEM_ALIASES = {
     "yolo26x-sem-1024": "yolo26-pretrains/yolo26x-sem",
 }
 
+YOLO26_DEPTH_ALIASES = {
+    "yolov26n-depth-768": "yolo26-pretrains/yolo26n-depth",
+    "yolov26s-depth-768": "yolo26-pretrains/yolo26s-depth",
+    "yolov26m-depth-768": "yolo26-pretrains/yolo26m-depth",
+    "yolov26l-depth-768": "yolo26-pretrains/yolo26l-depth",
+    "yolov26x-depth-768": "yolo26-pretrains/yolo26x-depth",
+    "yolo26n-depth-768": "yolo26-pretrains/yolo26n-depth",
+    "yolo26s-depth-768": "yolo26-pretrains/yolo26s-depth",
+    "yolo26m-depth-768": "yolo26-pretrains/yolo26m-depth",
+    "yolo26l-depth-768": "yolo26-pretrains/yolo26l-depth",
+    "yolo26x-depth-768": "yolo26-pretrains/yolo26x-depth",
+}
+
 YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
@@ -186,6 +199,7 @@ REGISTERED_ALIASES = {
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,
     **YOLO26_SEM_ALIASES,
+    **YOLO26_DEPTH_ALIASES,
 }
 
 
