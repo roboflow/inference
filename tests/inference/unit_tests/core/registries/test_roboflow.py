@@ -349,27 +349,66 @@ def test_get_model_type_when_generic_model_is_utilised(
     assert result == expected_result
 
 
+def test_model_pipelines_enumerate_all_coded_pp_ocr_ids() -> None:
+    # given
+    stage_variants = ("none", "tiny", "small", "medium")
+    expected_combo_ids = {
+        f"pp_ocr/{text_detection}-{text_recognition}"
+        for text_detection in stage_variants
+        for text_recognition in stage_variants
+        if (text_detection, text_recognition) != ("none", "none")
+    }
+    expected_single_token_ids = {"pp_ocr/tiny", "pp_ocr/small", "pp_ocr/medium"}
+
+    # then
+    assert set(roboflow.MODEL_PIPELINES) == (
+        expected_combo_ids | expected_single_token_ids | {"pp_ocr"}
+    )
+    for definition in roboflow.MODEL_PIPELINES.values():
+        assert (definition.task_type, definition.model_type) == ("ocr", "pp_ocr")
+        assert len(definition.downstream_model_ids) > 0
+    assert "pp_ocr/none-none" not in roboflow.MODEL_PIPELINES
+    assert "pp_ocr/none" not in roboflow.MODEL_PIPELINES
+    # pipeline IDs must not leak into GENERIC_MODELS - auth treats them differently
+    assert all(
+        model_id not in roboflow.GENERIC_MODELS for model_id in roboflow.MODEL_PIPELINES
+    )
+
+
 @pytest.mark.parametrize(
-    "model_id",
+    "model_id, expected_downstream",
     [
-        "pp_ocr/small-small",
-        "pp_ocr/tiny-medium",
-        "pp_ocr/none-small",
-        "pp_ocr/medium-none",
+        ("pp_ocr/small-small", ("pp-ocrv6-det/small", "pp-ocrv6-rec/small")),
+        ("pp_ocr/tiny-medium", ("pp-ocrv6-det/tiny", "pp-ocrv6-rec/medium")),
+        ("pp_ocr/none-small", ("pp-ocrv6-rec/small",)),
+        ("pp_ocr/medium-none", ("pp-ocrv6-det/medium",)),
+        ("pp_ocr/tiny", ("pp-ocrv6-det/tiny", "pp-ocrv6-rec/tiny")),
+        ("pp_ocr", ("pp-ocrv6-det/small", "pp-ocrv6-rec/small")),
     ],
 )
-@mock.patch.object(roboflow, "get_roboflow_instant_model_data")
-@mock.patch.object(roboflow, "get_roboflow_model_data")
-@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
-def test_check_api_key_for_pp_ocr_pipeline_does_not_call_remote_api(
-    get_model_metadata_from_inference_models_registry_mock: MagicMock,
-    get_roboflow_model_data_mock: MagicMock,
-    get_roboflow_instant_model_data_mock: MagicMock,
-    model_id: str,
+def test_model_pipelines_map_to_expected_downstream_models(
+    model_id: str, expected_downstream: Tuple[str, ...]
 ) -> None:
-    # given
-    roboflow._check_if_api_key_has_access_to_model.cache_clear()
+    assert (
+        roboflow.MODEL_PIPELINES[model_id].downstream_model_ids == expected_downstream
+    )
 
+
+@pytest.mark.parametrize(
+    "model_id, expected_downstream",
+    [
+        ("pp_ocr/tiny-medium", ("pp-ocrv6-det/tiny", "pp-ocrv6-rec/medium")),
+        ("pp_ocr/none-small", ("pp-ocrv6-rec/small",)),
+        ("pp_ocr/medium-none", ("pp-ocrv6-det/medium",)),
+    ],
+)
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_check_api_key_for_pp_ocr_pipeline_authorizes_downstream_models(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    model_id: str,
+    expected_downstream: Tuple[str, ...],
+) -> None:
     # when
     result = roboflow._check_if_api_key_has_access_to_model(
         api_key=f"my_api_key-{model_id}",
@@ -377,11 +416,69 @@ def test_check_api_key_for_pp_ocr_pipeline_does_not_call_remote_api(
         endpoint_type=ModelEndpointType.CORE_MODEL,
     )
 
-    # then
+    # then - the synthetic pipeline ID itself must never reach the remote registry,
+    # but every downstream stage model must be authorized against it
     assert result is True
-    get_model_metadata_from_inference_models_registry_mock.assert_not_called()
-    get_roboflow_model_data_mock.assert_not_called()
-    get_roboflow_instant_model_data_mock.assert_not_called()
+    checked_model_ids = [
+        call.kwargs["model_id"]
+        for call in get_model_metadata_from_inference_models_registry_mock.call_args_list
+    ]
+    assert checked_model_ids == list(expected_downstream)
+
+
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_check_api_key_for_pp_ocr_pipeline_fails_when_downstream_model_not_authorized(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+) -> None:
+    # given - detection stage authorized, recognition stage not
+    def _registry_response(api_key: str, model_id: str, **kwargs):
+        if model_id == "pp-ocrv6-rec/medium":
+            raise RoboflowAPINotAuthorizedError()
+        return {"taskType": "ocr"}
+
+    get_model_metadata_from_inference_models_registry_mock.side_effect = (
+        _registry_response
+    )
+
+    # when
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="pp_ocr/tiny-medium",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
+
+
+@pytest.mark.parametrize("model_id", ["pp_ocr/small-small", "pp_ocr"])
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
+@mock.patch.object(
+    roboflow,
+    "get_roboflow_instant_model_data",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+@mock.patch.object(
+    roboflow,
+    "get_roboflow_model_data",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+def test_check_api_key_for_pp_ocr_pipeline_not_recognized_without_inference_models(
+    get_roboflow_model_data_mock: MagicMock,
+    get_roboflow_instant_model_data_mock: MagicMock,
+    model_id: str,
+) -> None:
+    # when - with USE_INFERENCE_MODELS disabled, pipeline IDs fall through to the
+    # regular resolution and fail closed there
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id=model_id,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
 
 
 @pytest.mark.parametrize("model_id", ["pp_ocr/none-none", "pp_ocr/huge-small"])
@@ -395,10 +492,7 @@ def test_check_api_key_for_invalid_pp_ocr_pipeline_fails_closed(
     get_model_metadata_from_inference_models_registry_mock: MagicMock,
     model_id: str,
 ) -> None:
-    # given
-    roboflow._check_if_api_key_has_access_to_model.cache_clear()
-
-    # when
+    # when - IDs outside the coded pipeline set are not treated as pipelines
     result = roboflow._check_if_api_key_has_access_to_model(
         api_key=f"my_api_key-{model_id}",
         model_id=model_id,
@@ -415,23 +509,65 @@ def test_check_api_key_for_invalid_pp_ocr_pipeline_fails_closed(
     )
 
 
-def test_generic_models_enumerate_all_valid_pp_ocr_pipelines() -> None:
-    # given
-    stage_variants = ("none", "tiny", "small", "medium")
-
-    # when
-    pp_ocr_pipeline_models = {
-        f"pp_ocr/{text_detection}-{text_recognition}": ("ocr", "pp_ocr")
-        for text_detection in stage_variants
-        for text_recognition in stage_variants
-        if (text_detection, text_recognition) != ("none", "none")
-    }
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(
+    roboflow,
+    "get_model_metadata_from_inference_models_registry",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+def test_check_api_key_does_not_blanket_trust_generic_models(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+) -> None:
+    # when - full-ID GENERIC_MODELS entries (e.g. sam3/sam3_interactive) must still
+    # be authorized remotely; regression guard against trusting GENERIC_MODELS as such
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="sam3/sam3_interactive",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
 
     # then
-    assert len(pp_ocr_pipeline_models) == 15
-    for model_id, expected_model_type in pp_ocr_pipeline_models.items():
-        assert roboflow.GENERIC_MODELS[model_id] == expected_model_type
-    assert "pp_ocr/none-none" not in roboflow.GENERIC_MODELS
+    assert result is False
+    get_model_metadata_from_inference_models_registry_mock.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ["pp_ocr", "pp_ocr/small", "pp_ocr/tiny-medium", "pp_ocr/none-small"],
+)
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_roboflow_instant_model_data")
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_get_model_type_for_pipeline_when_inference_models_enabled(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    get_roboflow_instant_model_data_mock: MagicMock,
+    model_id: str,
+) -> None:
+    # when
+    result = get_model_type(model_id=model_id, api_key="my_api_key")
+
+    # then - pipeline recognition is static and must not call any remote API
+    assert result == ("ocr", "pp_ocr")
+    get_model_metadata_from_inference_models_registry_mock.assert_not_called()
+    get_roboflow_model_data_mock.assert_not_called()
+    get_roboflow_instant_model_data_mock.assert_not_called()
+
+
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_get_model_type_for_pipeline_when_inference_models_disabled(
+    get_roboflow_model_data_mock: MagicMock,
+) -> None:
+    # given - with the flag off, pipeline IDs are not recognized and resolution
+    # falls through to the regular Roboflow API pathway
+    get_roboflow_model_data_mock.side_effect = RoboflowAPINotAuthorizedError()
+
+    # when / then
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        get_model_type(model_id="pp_ocr/small-small", api_key="my_api_key")
+    get_roboflow_model_data_mock.assert_called_once()
 
 
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
