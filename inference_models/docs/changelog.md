@@ -7,6 +7,13 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ---
 
+## `0.32.2`
+
+### Fixed
+- Patch `triton-fused-v1` post-processor to use correctly current device alias for comparison.
+
+---
+
 ## `0.32.1`
 
 ### Fixed
