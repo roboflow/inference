@@ -80,6 +80,10 @@ P = ParamSpec("P")
 
 class UsageCollector:
     _lock = Lock()
+    # Bound how many times a persisted payload whose plaintext API key cannot be
+    # resolved (e.g. after a restart, before the key is re-seen) is re-enqueued,
+    # so such rows do not accumulate in the persistent queue indefinitely.
+    _MAX_UNRESOLVED_RESEND_ATTEMPTS = 5
 
     def __new__(cls, *args, **kwargs):
         with UsageCollector._lock:
@@ -108,6 +112,7 @@ class UsageCollector:
         )
 
         self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
+        self._unresolved_resend_attempts: Dict[APIKeyHash, int] = {}
         self._api_keys_hashing_enabled = True
 
         self._plan_details = PlanDetails(
@@ -575,7 +580,28 @@ class UsageCollector:
                 )
             for api_key_hash in list(payload.keys()):
                 if api_key_hash not in api_keys_hashes_failed:
+                    # Delivered successfully.
                     del payload[api_key_hash]
+                    self._unresolved_resend_attempts.pop(api_key_hash, None)
+                elif api_key_hash in hashes_to_api_keys:
+                    # Transient failure with a known key; keep retrying.
+                    self._unresolved_resend_attempts.pop(api_key_hash, None)
+                else:
+                    # The plaintext API key for this hash is not known (e.g. it
+                    # was never re-seen after a restart), so the payload can
+                    # never be authenticated. Drop it after a bounded number of
+                    # attempts instead of re-enqueuing it forever.
+                    attempts = self._unresolved_resend_attempts.get(api_key_hash, 0) + 1
+                    if attempts >= self._MAX_UNRESOLVED_RESEND_ATTEMPTS:
+                        logger.debug(
+                            "Dropping usage payload; api key hash could not be "
+                            "resolved after %s attempts",
+                            attempts,
+                        )
+                        del payload[api_key_hash]
+                        self._unresolved_resend_attempts.pop(api_key_hash, None)
+                    else:
+                        self._unresolved_resend_attempts[api_key_hash] = attempts
             if payload:
                 logger.debug("Enqueuing back unsent payload")
                 self._enqueue_payload(payload=payload)
