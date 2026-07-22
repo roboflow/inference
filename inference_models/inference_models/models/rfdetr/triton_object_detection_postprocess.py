@@ -161,6 +161,13 @@ class _CachedTensor:
     ready_event: torch.cuda.Event
 
 
+def _canonical_device(device: torch.device) -> torch.device:
+    """Resolve an unindexed CUDA alias to the current concrete CUDA device."""
+    if device.type == "cuda" and device.index is None:
+        return torch.device("cuda", torch.cuda.current_device())
+    return device
+
+
 class FusedObjectDetectionPostprocessor:
     """Batched top-k plus one fused Triton object-detection postprocess."""
 
@@ -176,7 +183,7 @@ class FusedObjectDetectionPostprocessor:
                     "#modelruntimeerror"
                 ),
             )
-        self._device = device
+        self._device = _canonical_device(device)
         self._metadata_cache: OrderedDict[Tuple[Any, ...], _CachedTensor] = (
             OrderedDict()
         )
@@ -357,7 +364,10 @@ class FusedObjectDetectionPostprocessor:
             unsupported.append("Triton is not installed")
         if not bboxes.is_cuda or not logits.is_cuda:
             unsupported.append("boxes and logits must be CUDA tensors")
-        if bboxes.device != logits.device or bboxes.device != self._device:
+        bboxes_device = _canonical_device(bboxes.device)
+        logits_device = _canonical_device(logits.device)
+        target_device = _canonical_device(self._device)
+        if bboxes_device != logits_device or bboxes_device != target_device:
             unsupported.append(
                 "boxes, logits, and target must use the same CUDA device"
             )
@@ -386,7 +396,10 @@ class FusedObjectDetectionPostprocessor:
         if classes_re_mapping is not None:
             if not classes_re_mapping.class_mapping.is_cuda:
                 unsupported.append("class mapping must be a CUDA tensor")
-            if classes_re_mapping.class_mapping.device != self._device:
+            if (
+                _canonical_device(classes_re_mapping.class_mapping.device)
+                != target_device
+            ):
                 unsupported.append("class mapping must use the target CUDA device")
         if unsupported:
             result = CompatibilityResult.incompatible(*unsupported)
