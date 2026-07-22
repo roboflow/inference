@@ -248,6 +248,9 @@ class S3SinkBlockV1(WorkflowBlock):
         self._buffer: List[str] = []
         self._entries_in_buffer: int = 0
         self._current_key: Optional[str] = None
+        self._s3_client: Optional[Any] = None
+        self._bucket_name: Optional[str] = None
+        self._content_type: Optional[str] = None
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -336,15 +339,24 @@ class S3SinkBlockV1(WorkflowBlock):
                 )
                 return {"error_status": True, "message": "Invalid JSON content"}
 
+        # Remember the S3 destination so the buffer can be flushed on rotation or
+        # at teardown, matching the documented append-log behaviour.
+        self._s3_client = s3_client
+        self._bucket_name = bucket_name
+        self._content_type = content_type
+
         needs_rotation = (
             self._current_key is not None
             and self._entries_in_buffer >= max_entries_per_file
         )
-        is_first_entry = self._current_key is None
+        rotation_result: Optional[BlockResult] = None
+        if needs_rotation:
+            # Upload the completed object before starting a fresh one; a
+            # successful flush clears the buffer and current key.
+            rotation_result = self._flush_buffer()
 
-        if needs_rotation or is_first_entry:
-            self._buffer = []
-            self._entries_in_buffer = 0
+        is_first_entry = self._current_key is None
+        if is_first_entry:
             self._current_key = generate_s3_key(
                 s3_prefix=s3_prefix,
                 file_name_prefix=file_name_prefix,
@@ -358,17 +370,48 @@ class S3SinkBlockV1(WorkflowBlock):
         self._buffer.append(content)
         self._entries_in_buffer += 1
 
-        # Always upload the full accumulated buffer so that every run() call
-        # validates credentials and permissions, and errors are surfaced immediately
-        # rather than only when the buffer rotation limit is reached.
+        # Entries are buffered in memory and only uploaded on rotation or at
+        # teardown, so the growing buffer is not re-uploaded on every run().
+        if rotation_result is not None:
+            return rotation_result
+        return {
+            "error_status": False,
+            "message": (
+                f"Buffered entry for s3://{bucket_name}/{self._current_key} "
+                f"({self._entries_in_buffer} entr"
+                f"{'y' if self._entries_in_buffer == 1 else 'ies'} pending upload)"
+            ),
+        }
+
+    def _flush_buffer(self) -> BlockResult:
+        if (
+            not self._buffer
+            or self._current_key is None
+            or self._s3_client is None
+        ):
+            return {"error_status": False, "message": "No buffered data to upload."}
         full_content = "".join(self._buffer)
-        return upload_content_to_s3(
-            s3_client=s3_client,
-            bucket_name=bucket_name,
+        result = upload_content_to_s3(
+            s3_client=self._s3_client,
+            bucket_name=self._bucket_name,
             s3_key=self._current_key,
             content=full_content,
-            content_type=content_type,
+            content_type=self._content_type,
         )
+        if not result["error_status"]:
+            self._buffer = []
+            self._entries_in_buffer = 0
+            self._current_key = None
+        return result
+
+    def __del__(self):
+        # Flush any entries still buffered in memory when the block is destroyed
+        # at workflow teardown, as documented for append-log mode.
+        try:
+            if self._buffer:
+                self._flush_buffer()
+        except Exception as error:
+            logging.warning(f"Failed to flush S3 sink buffer on teardown: {error}")
 
 
 def create_s3_client(
