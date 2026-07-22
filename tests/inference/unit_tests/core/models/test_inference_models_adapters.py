@@ -13,6 +13,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.inference_models_adapters import (
+    InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
     InferenceModelsObjectDetectionAdapter,
     _supports_independent_stage_execution,
@@ -531,3 +532,22 @@ def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="Timed out while waiting for"):
         adapter.flush()
+
+
+def test_depth_estimation_adapter_normalization_matches_depth_anything_convention() -> None:
+    """DepthAnything models serve disparity-style relative depth - larger means
+    closer (see the "Flip to be consistent with V2" step in
+    DepthAnythingV3Torch.forward). The metric-depth adapter must invert while
+    normalizing so metric models are true drop-ins: nearest pixel -> 1.0,
+    farthest -> 0.0."""
+    import numpy as np
+
+    adapter = InferenceModelsDepthEstimationAdapter.__new__(
+        InferenceModelsDepthEstimationAdapter
+    )
+    adapter._model = lambda inputs: [torch.tensor([[1.0, 2.0], [3.0, 4.0]])]
+
+    (result,) = adapter.predict(np.zeros((2, 2, 3), dtype=np.uint8))
+
+    expected = np.array([[1.0, 2 / 3], [1 / 3, 0.0]], dtype=np.float32)
+    assert np.allclose(result["normalized_depth"], expected, atol=1e-6)

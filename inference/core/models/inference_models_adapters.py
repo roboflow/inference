@@ -1778,7 +1778,10 @@ class InferenceModelsDepthEstimationAdapter(Model):
         depth_max = depth_map.max()
         if depth_max == depth_min:
             raise ValueError("Depth map has no variation (min equals max)")
-        normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+        # DepthAnything serves disparity-style values (larger = closer), so
+        # metric depth (larger = farther) is inverted while normalizing to
+        # keep the served convention identical across depth models.
+        normalized_depth = (depth_max - depth_map) / (depth_max - depth_min)
 
         depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
         cmap = plt.get_cmap("viridis")
