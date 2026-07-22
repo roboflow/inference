@@ -1758,9 +1758,7 @@ class InferenceModelsDepthEstimationAdapter(Model):
 
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):
-            raise ValueError(
-                "Depth estimation does not support batched inference."
-            )
+            raise ValueError("Depth estimation does not support batched inference.")
         np_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
