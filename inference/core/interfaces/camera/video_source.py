@@ -29,13 +29,13 @@ from inference.core.interfaces.camera.entities import (
     VideoFrameProducer,
     VideoSourceIdentifier,
 )
-from inference.core.interfaces.camera.source_reference_sanitizer import (
-    classify_source_reference,
-)
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     SourceConnectionError,
     StreamOperationNotAllowedError,
+)
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    classify_source_reference,
 )
 
 VIDEO_SOURCE_CONTEXT = "video_source"

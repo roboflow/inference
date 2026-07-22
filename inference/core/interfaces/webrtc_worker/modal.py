@@ -8,9 +8,6 @@ from queue import Empty
 from typing import Callable, Dict, Optional
 
 from inference.core import logger
-from inference.core.interfaces.camera.source_reference_sanitizer import (
-    sanitize_source_reference,
-)
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
@@ -66,6 +63,9 @@ from inference.core.env import (
 from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+)
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    sanitize_source_reference,
 )
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
