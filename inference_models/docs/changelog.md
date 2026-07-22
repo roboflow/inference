@@ -20,6 +20,21 @@
 
 ---
 
+## `0.32.3`
+
+### Fixed
+- Bump of transitive dependency `gitpython`
+
+---
+
+
+## `0.32.2`
+
+### Fixed
+- Patch `triton-fused-v1` post-processor to use correctly current device alias for comparison.
+
+---
+
 ## `0.32.1`
 
 ### Fixed
@@ -44,6 +59,8 @@
   `pre_process()` synchronizes before returning by default, so its output is ready for
   an independent `forward()` call. Composed `model(...)` and `infer()` calls explicitly
   use the asynchronous exact-tensor readiness handoff to avoid a host synchronization.
+  The inference-server object-detection adapter also enables this handoff for models
+  that explicitly declare the invocation-level preprocessing parameter.
 
 ### Fixed
 

@@ -232,6 +232,12 @@ return asynchronously after associating its CUDA event with the exact output ten
 `forward()` always checks for such an entry and waits on its event when present; an
 independently prepared ready tensor has no entry and proceeds normally.
 
+The inference-server object-detection adapter composes the stages itself instead of
+calling the model's `infer()`. It inspects the loaded model's explicit `pre_process()`
+parameters once during initialization and passes `independent_stage_execution=False`
+only when that parameter is declared. Models that merely accept generic `**kwargs` do
+not receive the control.
+
 ```python
 model = AutoModel.from_pretrained(
     "rfdetr-small",

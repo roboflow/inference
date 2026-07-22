@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.32.1"
+version = "0.32.3"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -42,7 +42,7 @@ dependencies = [
   # transitive-dependencies pinning
   "urllib3>=2.7.0,<3.0.0",
   "pillow>=12.3.0,<13.0.0",
-  "GitPython>=3.1.50,<4.0.0",
+  "GitPython>=3.1.52,<4.0.0",
   "CairoSVG>=2.9.0,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
