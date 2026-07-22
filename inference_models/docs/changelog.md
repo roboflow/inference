@@ -5,6 +5,12 @@
 Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 `### Removed` subsections as appropriate.
 
+### Added
+- YOLO26 depth estimation (Ultralytics 8.4.104 `-depth` pretrains, 768x768) via
+  `YOLO26ForDepthEstimation{Onnx,TorchScript,TRT}` registered under
+  `("yolo26", "depth-estimation", ...)`, with shared
+  `post_process_depth_estimation_map()` letterbox-unwind helper.
+
 ---
 
 ## `0.32.3`

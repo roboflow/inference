@@ -268,6 +268,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_trt",
         class_name="YOLO26ForSemanticSegmentationTRT",
     ),
+    ("yolo26", DEPTH_ESTIMATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_depth_estimation_onnx",
+        class_name="YOLO26ForDepthEstimationOnnx",
+    ),
+    ("yolo26", DEPTH_ESTIMATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_depth_estimation_torch_script",
+        class_name="YOLO26ForDepthEstimationTorchScript",
+    ),
+    ("yolo26", DEPTH_ESTIMATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_depth_estimation_trt",
+        class_name="YOLO26ForDepthEstimationTRT",
+    ),
     ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.yololite.yololite_object_detection_onnx",
