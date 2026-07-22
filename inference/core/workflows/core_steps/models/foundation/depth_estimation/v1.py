@@ -74,6 +74,8 @@ class BlockManifest(WorkflowBlockManifest):
                 "Depth Anything",
                 "Depth Anything V2",
                 "Depth Anything V3",
+                "YOLO26",
+                "YOLO26 Depth",
                 "Hugging Face",
                 "HuggingFace",
             ],
@@ -94,6 +96,11 @@ class BlockManifest(WorkflowBlockManifest):
             "depth-anything-v2/small",
             "depth-anything-v3/small",
             "depth-anything-v3/base",
+            "yolo26n-depth-768",
+            "yolo26s-depth-768",
+            "yolo26m-depth-768",
+            "yolo26l-depth-768",
+            "yolo26x-depth-768",
         ],
         Selector(kind=[STRING_KIND]),
     ] = Field(
@@ -150,6 +157,11 @@ class BlockManifest(WorkflowBlockManifest):
             "depth-anything-v2/small",
             "depth-anything-v3/small",
             "depth-anything-v3/base",
+            "yolo26n-depth-768",
+            "yolo26s-depth-768",
+            "yolo26m-depth-768",
+            "yolo26l-depth-768",
+            "yolo26x-depth-768",
         ]
 
 

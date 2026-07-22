@@ -110,3 +110,42 @@ def test_run_remotely_calls_depth_estimation(
         model_id="depth-anything-v3/small",
         model_id_in_path=True,
     )
+
+
+@pytest.mark.parametrize("size", ["n", "s", "m", "l", "x"])
+def test_manifest_parsing_yolo26_depth_variants(size):
+    data = {
+        "type": "roboflow_core/depth_estimation@v1",
+        "name": "my_depth_step",
+        "images": "$inputs.image",
+        "model_version": f"yolo26{size}-depth-768",
+    }
+    result = BlockManifest.model_validate(data)
+    assert result.model_version == f"yolo26{size}-depth-768"
+
+
+def test_supported_model_variants_include_yolo26_depth():
+    variants = BlockManifest.get_supported_model_variants()
+    # first entry stays the air-gapped cache scanner display name
+    assert variants[0] == "depth-anything-v2/small"
+    for size in ["n", "s", "m", "l", "x"]:
+        assert f"yolo26{size}-depth-768" in variants
+
+
+def test_run_locally_with_yolo26_depth_variant(
+    mock_model_manager, mock_workflow_image_data
+):
+    block = DepthEstimationBlockV1(
+        model_manager=mock_model_manager,
+        api_key="test_key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    result = block.run(
+        images=[mock_workflow_image_data],
+        model_version="yolo26n-depth-768",
+    )
+    assert len(result) == 1
+    mock_model_manager.add_model.assert_called_once_with(
+        model_id="yolo26n-depth-768", api_key="test_key"
+    )
+    mock_model_manager.infer_from_request_sync.assert_called_once()
