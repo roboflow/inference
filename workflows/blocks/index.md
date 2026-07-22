@@ -203,6 +203,21 @@ hide:
 
 
 
+            <a href="cosmos3">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fal fa-atom" > </i>  Cosmos 3</div>
+                <div class="block_description">Reason about physical scenes with NVIDIA Cosmos 3.</div>
+                <!-- <div class="block_license">OPENMDW-1.1</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="qwen_vl">
               <div class="block">
                 
@@ -1772,6 +1787,21 @@ hide:
 
 
 
+            <a href="auto_rotateon_edges">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-compass" > </i>  Auto Rotate on Edges</div>
+                <div class="block_description">Automatically rotate an image so its dominant straight edges become vertical and/or horizontal.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="size_measurement">
               <div class="block">
                 
@@ -2086,6 +2116,21 @@ hide:
                 
                 <div class="block_name"> <i class="far fa-layer-group" > </i>  Buffer</div>
                 <div class="block_description">Returns an array of the last `length` values passed to it.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="frame_delay">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-clock-rotate-left" > </i>  Frame Delay</div>
+                <div class="block_description">Reference a value from an earlier frame of the same video stream (N-k, into the past).</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>

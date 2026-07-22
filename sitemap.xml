@@ -271,6 +271,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;florence2_model&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;cosmos3&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;qwen2.5_vl&#x2f;</loc>
     </url>
     <url>
@@ -601,6 +604,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;camera_focus&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;auto_rotateon_edges&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;size_measurement&#x2f;</loc>
     </url>
     <url>
@@ -662,6 +668,9 @@
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;buffer&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;frame_delay&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;image_stack&#x2f;</loc>

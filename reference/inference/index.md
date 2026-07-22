@@ -250,6 +250,10 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.analytics.detection_event_log.v1
 
+## `core/workflows/core_steps/classical_cv/auto_rotate_on_edges`
+
+::: inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1
+
 ## `core/workflows/core_steps/classical_cv/camera_focus`
 
 ::: inference.core.workflows.core_steps.classical_cv.camera_focus.v1
@@ -751,4 +755,8 @@ Parallel HTTP inference via Celery workers for high-throughput deployments.
 Anonymous usage and telemetry reporting.
 
 ::: inference.usage_tracking.redis_queue
+
+::: inference.usage_tracking.stream_session
+
+::: inference.usage_tracking.utils
 

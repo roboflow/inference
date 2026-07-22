@@ -1837,7 +1837,24 @@
 <p>If true, the batch size will be fixed to the maximum batch size configured for this server.</p>
 <h2 id="secure-gateway">Secure Gateway<a class="headerlink" href="#secure-gateway" title="Permanent link">&para;</a></h2>
 <p><strong>SECURE_GATEWAY</strong>: String (default = None)</p>
-<p>Sets the address of a Roboflow Secure Gateway for air-gapped deployments. All API and model download traffic will be routed through this proxy.</p>
+<p>Sets the address of a Roboflow Secure Gateway for air-gapped deployments. Roboflow API
+and model download traffic is routed through this proxy; traffic that cannot be proxied
+is disabled or rerouted as follows:</p>
+<ul>
+<li>The <code>inference</code> version check (which calls <code>api.github.com</code>) is force-disabled —
+  <code>DISABLE_VERSION_CHECK</code> is set to <code>True</code> even if explicitly configured otherwise.</li>
+<li>If <code>WORKFLOWS_STEP_EXECUTION_MODE=remote</code> is combined with
+  <code>WORKFLOWS_REMOTE_API_TARGET=hosted</code>, step execution falls back to <code>local</code> with a
+  warning — the hosted Roboflow inference endpoints
+  (<code>detect</code>/<code>outline</code>/<code>segment</code>/<code>classify</code>/<code>infer.roboflow.com</code>) cannot be reached through
+  the gateway proxy. To keep remote execution, use
+  <code>WORKFLOWS_REMOTE_API_TARGET=self-hosted</code> <strong>and</strong> point <code>LOCAL_INFERENCE_API_URL</code>
+  (default <code>http://127.0.0.1:9001</code>) at an inference server reachable inside the
+  gateway perimeter.</li>
+<li>Third-party integrations (Google Vision/Gemini direct-key paths, Stability AI, Twilio
+  media upload, webhooks to external hosts) are not proxied and will fail unless the
+  gateway network permits them.</li>
+</ul>
 <p>The legacy <code>LICENSE_SERVER</code> environment variable is still accepted but deprecated.</p>
 <h2 id="maximum-active-models">Maximum Active Models<a class="headerlink" href="#maximum-active-models" title="Permanent link">&para;</a></h2>
 <p><strong>MAX_ACTIVE_MODELS</strong>: Integer (default = 8)</p>
