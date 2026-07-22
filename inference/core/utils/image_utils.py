@@ -481,15 +481,11 @@ def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
             max_redirects=MAX_IMAGE_URL_REDIRECTS,
             validate_redirect=_validate_url_destination,
         )
-    try:
-        response = requests.get(prepared_url, stream=True)
-        api_key_safe_raise_for_status(response=response)
-        return response.content
-    except (RequestException, ConnectionError) as error:
-        raise InputImageLoadError(
-            message=f"Could not load image from url: {prepared_url}. Details: {error}",
-            public_message="Data pointed by URL could not be decoded into image.",
-        )
+    return fetch_url_content_legacy(
+        url=prepared_url,
+        allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
+        max_redirects=MAX_IMAGE_URL_REDIRECTS,
+    )
 
 
 def _ensure_url_input_allowed() -> None:
