@@ -1,6 +1,8 @@
+import asyncio
 import hashlib
 import json
 import sys
+from typing import Optional
 from unittest import mock
 
 import pytest
@@ -14,6 +16,20 @@ from inference.usage_tracking.payload_helpers import (
     sha256_hash,
     zip_usage_payloads,
 )
+
+
+def usage_key(
+    category: str,
+    resource_id: str,
+    *,
+    billable: bool = True,
+    outcome: str = "success",
+    stream_session_id: Optional[str] = None,
+) -> str:
+    key = f"{category}:{resource_id}:billable={str(billable).lower()}:outcome={outcome}"
+    if stream_session_id:
+        key = f"{key}:{stream_session_id}"
+    return key
 
 
 def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
@@ -387,6 +403,46 @@ def test_zip_usage_payloads():
             },
         },
     ]
+
+
+def test_zip_usage_payloads_keeps_billing_and_outcome_buckets_separate():
+    def make_payload(key, billable, error=None):
+        resource_details = {"billable": billable}
+        if error is not None:
+            resource_details["error"] = error
+        return {
+            "fake_api_hash": {
+                key: {
+                    "api_key_hash": "fake_api_hash",
+                    "resource_id": "workspace/model",
+                    "category": "request",
+                    "resource_details": json.dumps(resource_details),
+                    "exec_session_id": "session-1",
+                    "timestamp_start": 1,
+                    "timestamp_stop": 2,
+                    "processed_frames": 1,
+                    "source_duration": 0,
+                    "execution_duration": 0.5,
+                }
+            }
+        }
+
+    billable_key = usage_key("request", "workspace/model")
+    non_billable_key = usage_key("request", "workspace/model", billable=False)
+    error_key = usage_key("request", "workspace/model", billable=False, outcome="error")
+    payloads = zip_usage_payloads(
+        usage_payloads=[
+            make_payload(billable_key, True),
+            make_payload(non_billable_key, False),
+            make_payload(error_key, False, error="request failed"),
+        ]
+    )
+
+    assert len(payloads) == 1
+    merged = payloads[0]["fake_api_hash"]
+    assert set(merged) == {billable_key, non_billable_key, error_key}
+    assert all(row["processed_frames"] == 1 for row in merged.values())
+    assert all(row["execution_duration"] == 0.5 for row in merged.values())
 
 
 def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource_id_was_collected():
@@ -933,14 +989,15 @@ def test_record_malformed_usage(usage_collector_with_mocked_threads):
     # then
     api_key = "fake"
     assert api_key in collector._usage
-    assert "model:None" in collector._usage[api_key]
-    assert collector._usage[api_key]["model:None"]["processed_frames"] == 0
-    assert collector._usage[api_key]["model:None"]["fps"] == 0
-    assert collector._usage[api_key]["model:None"]["source_duration"] == 0
-    assert collector._usage[api_key]["model:None"]["category"] == "model"
-    assert collector._usage[api_key]["model:None"]["resource_id"] == None
-    assert collector._usage[api_key]["model:None"]["resource_details"] == "{}"
-    assert collector._usage[api_key]["model:None"]["api_key_hash"] == api_key
+    key = usage_key("model", "None")
+    assert key in collector._usage[api_key]
+    assert collector._usage[api_key][key]["processed_frames"] == 0
+    assert collector._usage[api_key][key]["fps"] == 0
+    assert collector._usage[api_key][key]["source_duration"] == 0
+    assert collector._usage[api_key][key]["category"] == "model"
+    assert collector._usage[api_key][key]["resource_id"] == None
+    assert collector._usage[api_key][key]["resource_details"] == "{}"
+    assert collector._usage[api_key][key]["api_key_hash"] == api_key
 
 
 def test_update_usage_payload_preserves_billable_on_cache_miss(
@@ -972,10 +1029,146 @@ def test_update_usage_payload_preserves_billable_on_cache_miss(
 
     # then — billable must still be in the serialized resource_details
     api_key_hash = collector._calculate_api_key_hash(api_key=api_key)
-    recorded = collector._usage[api_key_hash][f"model:{resource_id}"]
+    recorded = collector._usage[api_key_hash][usage_key("model", resource_id)]
     parsed = json.loads(recorded["resource_details"])
     assert parsed.get("billable") is True
     assert parsed.get("source") == "workflow-execution"
+
+
+@pytest.mark.parametrize(
+    "billable_order",
+    [
+        (True, False),
+        (False, True),
+    ],
+)
+def test_record_usage_separates_billable_and_non_billable_buckets(
+    usage_collector_with_mocked_threads,
+    billable_order,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "workspace/model"
+
+    for billable in billable_order:
+        collector.record_usage(
+            source="test",
+            category="request",
+            frames=1,
+            api_key=api_key,
+            resource_details={"billable": billable},
+            resource_id=resource_id,
+            execution_duration=0.5,
+        )
+
+    usage = collector._usage[api_key]
+    billable_key = usage_key("request", resource_id, billable=True)
+    non_billable_key = usage_key("request", resource_id, billable=False)
+
+    assert set(usage) == {billable_key, non_billable_key}
+    assert usage[billable_key]["processed_frames"] == 1
+    assert usage[billable_key]["execution_duration"] == 0.5
+    assert json.loads(usage[billable_key]["resource_details"])["billable"] is True
+    assert usage[non_billable_key]["processed_frames"] == 1
+    assert usage[non_billable_key]["execution_duration"] == 0.5
+    assert json.loads(usage[non_billable_key]["resource_details"])["billable"] is False
+
+
+def test_record_usage_separates_success_and_error_buckets(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "workspace/model"
+
+    collector.record_usage(
+        source="test",
+        category="request",
+        api_key=api_key,
+        resource_details={"billable": False},
+        resource_id=resource_id,
+    )
+    collector.record_usage(
+        source="test",
+        category="request",
+        api_key=api_key,
+        resource_details={"billable": False, "error": "request failed"},
+        resource_id=resource_id,
+    )
+
+    usage = collector._usage[api_key]
+    success_key = usage_key("request", resource_id, billable=False)
+    error_key = usage_key("request", resource_id, billable=False, outcome="error")
+
+    assert set(usage) == {success_key, error_key}
+    assert "error" not in json.loads(usage[success_key]["resource_details"])
+    assert json.loads(usage[error_key]["resource_details"])["error"] == (
+        "request failed"
+    )
+
+
+def test_resource_details_cache_separates_billing_partitions(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "workspace/model"
+    collector.record_system_info()
+
+    collector.record_resource_details(
+        category="request",
+        resource_details={"billable": False, "source_info": "non-billable"},
+        resource_id=resource_id,
+        api_key=api_key,
+    )
+    collector.record_resource_details(
+        category="request",
+        resource_details={"billable": True, "source_info": "billable"},
+        resource_id=resource_id,
+        api_key=api_key,
+    )
+
+    # Simulate the non-billable request reading after the billable request wrote
+    # its cache entry. It must still use its own partition and request metadata.
+    collector._update_usage_payload(
+        source="test",
+        category="request",
+        api_key=api_key,
+        resource_details={"billable": False, "source_info": "non-billable"},
+        resource_id=resource_id,
+    )
+
+    assert len(collector._resource_details[api_key]) == 2
+    key = usage_key("request", resource_id, billable=False)
+    details = json.loads(collector._usage[api_key][key]["resource_details"])
+    assert details == {"billable": False, "source_info": "non-billable"}
+
+
+def test_current_request_details_override_cached_values(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "workspace/model"
+    collector.record_system_info()
+    collector.record_resource_details(
+        category="request",
+        resource_details={"billable": True, "source_info": "cached"},
+        resource_id=resource_id,
+        api_key=api_key,
+    )
+
+    collector._update_usage_payload(
+        source="test",
+        category="request",
+        api_key=api_key,
+        resource_details={"billable": True, "source_info": "current"},
+        resource_id=resource_id,
+    )
+
+    key = usage_key("request", resource_id)
+    details = json.loads(collector._usage[api_key][key]["resource_details"])
+    assert details["source_info"] == "current"
 
 
 def test_record_usage_with_exception(usage_collector_with_mocked_threads):
@@ -992,6 +1185,70 @@ def test_record_usage_with_exception(usage_collector_with_mocked_threads):
 
     # then
     assert len(usage_collector._usage) == 1
+    key = usage_key("model", "unknown", billable=False, outcome="error")
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["billable"] is False
+    assert details["error"] == "Exception: test exception"
+
+
+def test_request_exception_overrides_countinference_true(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeRequest:
+        api_key = "test_key"
+        model_id = "workspace/model"
+
+    @usage_collector(category="request")
+    def test_func(request, countinference=True, api_key="test_key"):
+        raise RuntimeError("request failure")
+
+    with pytest.raises(RuntimeError, match="request failure"):
+        test_func(FakeRequest(), countinference=True)
+
+    key = usage_key("request", "workspace/model", billable=False, outcome="error")
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["billable"] is False
+    assert details["error"] == "RuntimeError: request failure"
+
+
+def test_returned_http_error_response_is_non_billable(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class ErrorResponse:
+        status_code = 422
+
+    @usage_collector(category="model")
+    def test_func(api_key="test_key"):
+        return ErrorResponse()
+
+    response = test_func()
+
+    assert response.status_code == 422
+    key = usage_key("model", "unknown", billable=False, outcome="error")
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["billable"] is False
+    assert details["error"] == "HTTPResponseError: response returned status 422"
+
+
+def test_async_exception_is_non_billable(usage_collector_with_mocked_threads):
+    usage_collector = usage_collector_with_mocked_threads
+    usage_collector._async_lock = None
+
+    @usage_collector(category="model")
+    async def test_func(api_key="test_key"):
+        raise RuntimeError("async failure")
+
+    with pytest.raises(RuntimeError, match="async failure"):
+        asyncio.run(test_func())
+
+    key = usage_key("model", "unknown", billable=False, outcome="error")
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["billable"] is False
+    assert details["error"] == "RuntimeError: async failure"
 
 
 def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads):
@@ -1010,11 +1267,12 @@ def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads)
     # then
     assert len(usage_collector._usage) == 1
     assert "test_key" in usage_collector._usage
-    assert "model:unknown" in usage_collector._usage["test_key"]
+    key = usage_key("model", "unknown", billable=False, outcome="error")
+    assert key in usage_collector._usage["test_key"]
     assert (
-        json.loads(
-            usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
-        ).get("error")
+        json.loads(usage_collector._usage["test_key"][key]["resource_details"]).get(
+            "error"
+        )
         == "Exception: test exception"
     )
 
@@ -1124,7 +1382,7 @@ def test_source_info_from_request_object_persisted_into_resource_details(
     infer_from_request(FakeRequest())
 
     # then
-    row = usage_collector._usage["test_key"]["model:unknown"]
+    row = usage_collector._usage["test_key"][usage_key("model", "unknown")]
     resource_details = json.loads(row["resource_details"])
     assert resource_details.get("source_info") == "smartpolySegmentImage"
     # source_info on the request object must NOT leak into roboflow_service_name
@@ -1159,7 +1417,7 @@ def test_env_service_name_preserved_alongside_source_info(
         infer_from_request(FakeRequest())
 
     # then
-    row = usage_collector._usage["test_key"]["model:unknown"]
+    row = usage_collector._usage["test_key"][usage_key("model", "unknown")]
     assert row["roboflow_service_name"] == "async-serverless-gpu"
     assert (
         json.loads(row["resource_details"]).get("source_info")
@@ -1183,7 +1441,9 @@ def test_source_info_nested_in_kwargs_persisted_into_resource_details(
 
     # then
     resource_details = json.loads(
-        usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
+        usage_collector._usage["test_key"][usage_key("model", "unknown")][
+            "resource_details"
+        ]
     )
     assert resource_details.get("source_info") == "autolabelPreview"
 
@@ -1203,7 +1463,9 @@ def test_external_source_info_not_persisted_into_resource_details(
 
     # then
     resource_details = json.loads(
-        usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
+        usage_collector._usage["test_key"][usage_key("model", "unknown")][
+            "resource_details"
+        ]
     )
     assert "source_info" not in resource_details
 
@@ -1244,11 +1506,13 @@ def test_record_usage_separates_concurrent_streams_by_stream_session_id(
         stream_session_id.reset(token)
 
     usage = collector._usage[api_key]
-    assert f"workflows:{resource_id}:stream-a" in usage
-    assert f"workflows:{resource_id}:stream-b" in usage
-    assert f"workflows:{resource_id}" not in usage
-    entry_a = usage[f"workflows:{resource_id}:stream-a"]
-    entry_b = usage[f"workflows:{resource_id}:stream-b"]
+    key_a = usage_key("workflows", resource_id, stream_session_id="stream-a")
+    key_b = usage_key("workflows", resource_id, stream_session_id="stream-b")
+    assert key_a in usage
+    assert key_b in usage
+    assert usage_key("workflows", resource_id) not in usage
+    entry_a = usage[key_a]
+    entry_b = usage[key_b]
     assert entry_a["stream_session_id"] == "stream-a"
     assert entry_b["stream_session_id"] == "stream-b"
     assert entry_a["processed_frames"] == 2
@@ -1272,8 +1536,9 @@ def test_record_usage_without_stream_session_id_keeps_legacy_key(
     )
 
     usage = collector._usage["fake"]
-    assert "workflows:workflow-1" in usage
-    assert "stream_session_id" not in usage["workflows:workflow-1"]
+    key = usage_key("workflows", "workflow-1")
+    assert key in usage
+    assert "stream_session_id" not in usage[key]
 
 
 def test_stream_session_id_does_not_leak_across_threads():
