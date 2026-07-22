@@ -71,13 +71,13 @@ _P_SAM3_VISUAL_PROMPTS = {
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
     "load_from_mask_input_cache": {"type": "bool", "required": False, "default": False},
     "save_to_mask_input_cache": {"type": "bool", "required": False, "default": False},
-    "return_rle": {"type": "bool", "required": False, "default": True},
+    "mask_format": {"type": "str", "required": False, "default": "rle"},
 }
 _P_SAM3_TEXT_PROMPTS = {
     "images": {"type": "image", "required": True},
     "prompts": {"type": "list", "required": True},
     "output_prob_thresh": {"type": "float", "required": False, "default": 0.5},
-    "return_rle": {"type": "bool", "required": False, "default": True},
+    "mask_format": {"type": "str", "required": False, "default": "rle"},
 }
 _P_SAM3_EMBED = {
     "images": {"type": "image", "required": True},

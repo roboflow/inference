@@ -316,9 +316,14 @@ class SAM3Torch:
         load_from_mask_input_cache: bool = False,
         save_to_mask_input_cache: bool = False,
         use_embeddings_cache: bool = True,
-        return_rle: bool = False,
+        mask_format: str = "rle",
         **kwargs,
     ) -> List[Union[SAM3Prediction, Dict]]:
+        if mask_format not in ("dense", "rle"):
+            raise ModelInputError(
+                message=f"Unsupported mask_format: {mask_format}. Use 'dense' or 'rle'.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         if images is None and embeddings is None and image_hashes is None:
             raise ModelInputError(
                 message="Attempted to use SAM3 model segment_with_visual_prompts(...) method not providing valid input - "
@@ -434,7 +439,7 @@ class SAM3Torch:
 
             predictions.append(prediction)
 
-        if return_rle:
+        if mask_format == "rle":
             return [_prediction_to_rle_dict(p) for p in predictions]
         return predictions
 
@@ -537,7 +542,7 @@ class SAM3Torch:
         prompts: List[Dict],
         output_prob_thresh: float = 0.5,
         max_detections: int = -1,
-        mask_format: str = "dense",
+        mask_format: str = "rle",
         **kwargs,
     ) -> List[Dict]:
         if mask_format not in ("dense", "rle"):

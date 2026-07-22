@@ -132,6 +132,11 @@ class RFDetrForInstanceSegmentationOnnx(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
+        device = align_device_with_onnx_session(session=session, device=device)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(
@@ -139,11 +144,6 @@ class RFDetrForInstanceSegmentationOnnx(
                 class_names_operations=inference_config.class_names_operations,
                 device=device,
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
-        )
-        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
