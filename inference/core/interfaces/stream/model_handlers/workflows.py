@@ -73,6 +73,13 @@ class WorkflowRunner:
         if fps is None:
             # for FPS reporting we expect 0 when FPS cannot be determined
             fps = 0
+        # Preview block-cache (and similar) may pass full per-video lists via
+        # workflows_parameters while the stream runs one frame / small batch at
+        # a time. Index those lists by frame_id so WorkflowBatchInput length
+        # matches the current image batch.
+        workflows_parameters = _index_list_parameters_by_frame_id(
+            workflows_parameters, video_frames
+        )
         video_metadata_for_images = [
             VideoMetadata(
                 video_identifier=(
@@ -102,6 +109,32 @@ class WorkflowRunner:
             video_metadata_for_images
         )
         return workflows_parameters, fps
+
+
+def _index_list_parameters_by_frame_id(
+    workflows_parameters: Dict[str, Any],
+    video_frames: List[VideoFrame],
+) -> Dict[str, Any]:
+    batch_size = len(video_frames)
+    if batch_size == 0:
+        return workflows_parameters
+    indexed: Dict[str, Any] = {}
+    for key, value in workflows_parameters.items():
+        if not isinstance(value, list):
+            indexed[key] = value
+            continue
+        if len(value) in (0, 1, batch_size):
+            indexed[key] = value
+            continue
+        frame_ids = [frame.frame_id for frame in video_frames]
+        if any(
+            not isinstance(frame_id, int) or frame_id < 0 or frame_id >= len(value)
+            for frame_id in frame_ids
+        ):
+            indexed[key] = value
+            continue
+        indexed[key] = [value[frame_id] for frame_id in frame_ids]
+    return indexed
 
 
 class PipelinedWorkflowRunner:

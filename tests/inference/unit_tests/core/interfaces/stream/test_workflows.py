@@ -10,6 +10,7 @@ from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.model_handlers.workflows import (
     PipelinedWorkflowRunner,
     WorkflowRunner,
+    _index_list_parameters_by_frame_id,
     wrap_workflow_runner_for_stream_pipeline,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -365,6 +366,32 @@ def _make_frame(frame_id: int) -> VideoFrame:
         source_id=0,
         comes_from_video_file=True,
     )
+
+
+def test_index_list_parameters_by_frame_id_selects_matching_elements() -> None:
+    frames = [_make_frame(1), _make_frame(3)]
+    params = {
+        "threshold": 0.5,
+        "broadcast": ["same"],
+        "aligned": ["a", "b"],
+        "cached_preds": ["p0", "p1", "p2", "p3", "p4"],
+    }
+
+    indexed = _index_list_parameters_by_frame_id(params, frames)
+
+    assert indexed["threshold"] == 0.5
+    assert indexed["broadcast"] == ["same"]
+    assert indexed["aligned"] == ["a", "b"]
+    assert indexed["cached_preds"] == ["p1", "p3"]
+
+
+def test_index_list_parameters_by_frame_id_leaves_out_of_range_lists() -> None:
+    frames = [_make_frame(5)]
+    params = {"cached_preds": ["p0", "p1"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames)
+
+    assert indexed["cached_preds"] == ["p0", "p1"]
 
 
 def test_workflow_runner_without_stream_buffering_returns_current_frame() -> None:
