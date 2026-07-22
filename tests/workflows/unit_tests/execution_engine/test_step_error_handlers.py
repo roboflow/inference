@@ -10,6 +10,7 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIUsagePausedError,
 )
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
@@ -20,8 +21,11 @@ from inference.core.workflows.execution_engine.v1.step_error_handlers import (
     legacy_step_error_handler,
 )
 from inference_models.errors import (
+    ForbiddenModelAccessError,
     ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
+    PaymentRequiredModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_sdk.http.errors import HTTPCallErrorError
 
@@ -124,6 +128,30 @@ def test_extended_roboflow_errors_handler_when_payment_required_error_occurs() -
     assert error.value.status_code == 402
 
 
+@pytest.mark.parametrize(
+    ("model_access_error", "expected_status_code"),
+    [
+        (PaymentRequiredModelAccessError("payment required"), 402),
+        (ForbiddenModelAccessError("forbidden"), 403),
+        (UsagePausedModelAccessError("usage paused"), 423),
+    ],
+)
+def test_extended_roboflow_errors_handler_when_model_access_is_denied(
+    model_access_error: Exception, expected_status_code: int
+) -> None:
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("some", model_access_error)
+
+    assert error.value.status_code == expected_status_code
+
+
+def test_extended_roboflow_errors_handler_when_usage_is_paused() -> None:
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("some", RoboflowAPIUsagePausedError())
+
+    assert error.value.status_code == 423
+
+
 def test_extended_roboflow_errors_handler_when_payment_required_error_occurs_while_remote_execution() -> (
     None
 ):
@@ -133,6 +161,15 @@ def test_extended_roboflow_errors_handler_when_payment_required_error_occurs_whi
 
     # then
     assert error.value.status_code == 402
+
+
+def test_extended_roboflow_errors_handler_when_usage_is_paused_while_remote_execution() -> (
+    None
+):
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("some", HTTPCallErrorError("", 423, None))
+
+    assert error.value.status_code == 423
 
 
 def test_extended_roboflow_errors_handler_when_not_found_error_occurs() -> None:

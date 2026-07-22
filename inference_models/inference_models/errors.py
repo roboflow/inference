@@ -63,6 +63,18 @@ class UnauthorizedModelAccessError(ModelRetrievalError):
     pass
 
 
+class PaymentRequiredModelAccessError(ModelRetrievalError):
+    pass
+
+
+class ForbiddenModelAccessError(ModelRetrievalError):
+    pass
+
+
+class UsagePausedModelAccessError(ModelRetrievalError):
+    pass
+
+
 class ModelMetadataConsistencyError(ModelRetrievalError):
     pass
 

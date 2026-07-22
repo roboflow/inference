@@ -84,6 +84,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
 from inference_models.errors import (
     EnvironmentConfigurationError,
     FileHashSumMissmatch,
+    ForbiddenModelAccessError,
     InvalidEnvVariable,
     InvalidParameterError,
     JetsonTypeResolutionError,
@@ -95,8 +96,10 @@ from inference_models.errors import (
     ModelPackageNegotiationError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     UnauthorizedModelAccessError,
     UntrustedFileError,
+    UsagePausedModelAccessError,
 )
 
 
@@ -299,7 +302,7 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
-        except PaymentRequiredError as error:
+        except (PaymentRequiredError, PaymentRequiredModelAccessError) as error:
             logger.warning("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=402,
@@ -307,7 +310,7 @@ def with_route_exceptions(route):
                     "message": "Not enough credits to perform this request. Verify your workspace billing page."
                 },
             )
-        except RoboflowAPIForbiddenError as error:
+        except (RoboflowAPIForbiddenError, ForbiddenModelAccessError) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=403,
@@ -317,7 +320,7 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
-        except RoboflowAPIUsagePausedError as error:
+        except (RoboflowAPIUsagePausedError, UsagePausedModelAccessError) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=423,
@@ -778,7 +781,7 @@ def with_route_exceptions_async(route):
                     "to learn how to retrieve one."
                 },
             )
-        except PaymentRequiredError as error:
+        except (PaymentRequiredError, PaymentRequiredModelAccessError) as error:
             logger.warning("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=402,
@@ -786,7 +789,7 @@ def with_route_exceptions_async(route):
                     "message": "Not enough credits to perform this request. Verify your workspace billing page."
                 },
             )
-        except RoboflowAPIForbiddenError as error:
+        except (RoboflowAPIForbiddenError, ForbiddenModelAccessError) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=403,
@@ -796,7 +799,7 @@ def with_route_exceptions_async(route):
                     "to learn how to retrieve one."
                 },
             )
-        except RoboflowAPIUsagePausedError as error:
+        except (RoboflowAPIUsagePausedError, UsagePausedModelAccessError) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=423,

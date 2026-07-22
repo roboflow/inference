@@ -8,16 +8,20 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIUsagePausedError,
 )
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
     RuntimeLimitsCausedStepExecutionError,
 )
 from inference_models.errors import (
+    ForbiddenModelAccessError,
     ModelNotFoundError,
     ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
+    PaymentRequiredModelAccessError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_sdk.http.errors import HTTPCallErrorError
 
@@ -103,7 +107,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, PaymentRequiredError):
+    if isinstance(error, (PaymentRequiredError, PaymentRequiredModelAccessError)):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=402,
@@ -112,12 +116,21 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, RoboflowAPIForbiddenError):
+    if isinstance(error, (RoboflowAPIForbiddenError, ForbiddenModelAccessError)):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=403,
             public_message=f"Forbidden error occurred while execution of step {step_name} - "
             f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, (RoboflowAPIUsagePausedError, UsagePausedModelAccessError)):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=423,
+            public_message=f"Roboflow API usage is paused while executing step {step_name}. "
+            f"Contact your workspace administrator to re-enable API keys. Details: {error}",
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
@@ -183,6 +196,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
                 public_message=f"Deprecated feature usage detected while remote execution of step {step_name} - "
                 f"details of error: {error}.",
                 context="workflow_execution | step_execution | feature_deprecated",
+                inner_error=error,
+            ) from error
+        if error.status_code == 423:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=423,
+                public_message=f"Roboflow API usage is paused while remote executing step {step_name}. "
+                f"Contact your workspace administrator to re-enable API keys. Details: {error}",
+                context="workflow_execution | step_execution",
                 inner_error=error,
             ) from error
         if error.status_code == 507:

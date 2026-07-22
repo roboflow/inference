@@ -20,6 +20,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
+    ForbiddenModelAccessError,
     ModelInputError,
     ModelLoadingError,
     ModelNotFoundError,
@@ -27,8 +28,10 @@ from inference_models.errors import (
     ModelPackageNegotiationError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     UnauthorizedModelAccessError,
     UntrustedFileError,
+    UsagePausedModelAccessError,
 )
 
 
@@ -103,6 +106,47 @@ async def test_with_route_exceptions_async_when_unauthorized_model_access_error_
 
     assert resp.status_code == 401
     assert "unauthorized" in resp.body.decode().lower()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status_code"),
+    [
+        (PaymentRequiredModelAccessError("payment required"), 402),
+        (ForbiddenModelAccessError("forbidden"), 403),
+        (UsagePausedModelAccessError("usage paused"), 423),
+    ],
+)
+def test_with_route_exceptions_when_model_access_is_denied(
+    error: Exception, expected_status_code: int
+):
+    @with_route_exceptions
+    def my_route():
+        raise error
+
+    resp = my_route()
+
+    assert resp.status_code == expected_status_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_status_code"),
+    [
+        (PaymentRequiredModelAccessError("payment required"), 402),
+        (ForbiddenModelAccessError("forbidden"), 403),
+        (UsagePausedModelAccessError("usage paused"), 423),
+    ],
+)
+async def test_with_route_exceptions_async_when_model_access_is_denied(
+    error: Exception, expected_status_code: int
+):
+    @with_route_exceptions_async
+    async def my_route():
+        raise error
+
+    resp = await my_route()
+
+    assert resp.status_code == expected_status_code
 
 
 def test_with_route_exceptions_when_model_input_error_raised():

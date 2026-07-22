@@ -21,12 +21,15 @@ LOCAL_API_KEY = "local"
 from inference_models.errors import (
     AssumptionError,
     BaseInferenceModelsError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
     ModelNotFoundError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import BackendType
@@ -358,18 +361,36 @@ def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code == 401 or response.status_code == 403:
+    if response.status_code == 401:
         raise UnauthorizedModelAccessError(
             message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "
             "export key to `ROBOFLOW_API_KEY` environment variable",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#unauthorizedmodelaccesserror",
         )
+    if response.status_code == 402:
+        raise PaymentRequiredModelAccessError(
+            message=f"Could not {operation_name}. Not enough credits to perform this request. "
+            "Verify your workspace billing page.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
+    if response.status_code == 403:
+        raise ForbiddenModelAccessError(
+            message=f"Could not {operation_name}. Access forbidden. Check that the API key has the required scopes "
+            "and that the workspace is active.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     if response.status_code == 404:
         raise ModelNotFoundError(
             message=f"Could not {operation_name}. Model not found. Are you sure that the identifier is correct "
             f"and provided credentials ensure access to the model?",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelnotfounderror",
+        )
+    if response.status_code == 423:
+        raise UsagePausedModelAccessError(
+            message=f"Could not {operation_name}. Roboflow API usage is paused. Contact your workspace administrator "
+            "to re-enable API keys.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
