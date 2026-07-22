@@ -534,7 +534,9 @@ def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
         adapter.flush()
 
 
-def test_depth_estimation_adapter_normalization_matches_depth_anything_convention() -> None:
+def test_depth_estimation_adapter_normalization_matches_depth_anything_convention() -> (
+    None
+):
     """DepthAnything models serve disparity-style relative depth - larger means
     closer (see the "Flip to be consistent with V2" step in
     DepthAnythingV3Torch.forward). The metric-depth adapter must invert while
