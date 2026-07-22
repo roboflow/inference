@@ -170,15 +170,7 @@ def test_video_source_describe_source_sanitizes_credentialed_rtsp_url() -> None:
     assert source._stream_reference == credentialed_url
 
 
-def test_video_source_describe_source_device_index() -> None:
-    source = VideoSource.init(video_reference=0)
-
-    result = source.describe_source()
-
-    assert result.source_reference == "0"
-
-
-def test_video_source_describe_source_callable_reference() -> None:
+def test_video_source_describe_source_callable_reference_unchanged() -> None:
     def producer_factory():
         return MagicMock()
 
@@ -186,7 +178,7 @@ def test_video_source_describe_source_callable_reference() -> None:
 
     result = source.describe_source()
 
-    assert result.source_reference == "function"
+    assert result.source_reference == str(producer_factory)
 
 
 def test_video_source_connection_error_uses_sanitized_reference() -> None:

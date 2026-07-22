@@ -35,7 +35,7 @@ from inference.core.interfaces.camera.exceptions import (
     StreamOperationNotAllowedError,
 )
 from inference.core.interfaces.camera.source_reference_sanitizer import (
-    classify_source_reference,
+    sanitize_source_reference,
 )
 
 VIDEO_SOURCE_CONTEXT = "video_source"
@@ -358,7 +358,12 @@ class VideoSource:
         source_id: Optional[int],
     ):
         self._stream_reference = stream_reference
-        self._observability_reference = classify_source_reference(stream_reference)
+        if callable(stream_reference):
+            self._observability_reference = str(stream_reference)
+        else:
+            self._observability_reference = sanitize_source_reference(
+                str(stream_reference)
+            )
         self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
