@@ -1,11 +1,26 @@
 import inspect
 from threading import Lock
 from typing import Any, Callable, Dict, Iterable
+from urllib.parse import urlparse
 
 from inference.core.logger import logger
 
 signatures = {}
 lock = Lock()
+
+
+def ssl_verify_for_endpoint(url: str) -> bool:
+    """TLS verification is skipped only for local development endpoints.
+
+    Judges the hostname of the URL that will actually be requested, so
+    gateway-wrapped URLs (``SECURE_GATEWAY``) are evaluated by the gateway
+    host - not by substrings of the percent-encoded embedded target.
+    """
+    try:
+        hostname = urlparse(url).hostname or ""
+    except ValueError:
+        return True
+    return hostname.lower() not in {"localhost", "127.0.0.1"}
 
 
 def get_signature(func: Callable[[Any], Any]) -> inspect.Signature:
