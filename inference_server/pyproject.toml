@@ -37,6 +37,10 @@ test = [
   "pytest-timeout>=2.3.0",
 ]
 
+[tool.uv.sources]
+inference-model-manager = { path = "../inference_model_manager", editable = true }
+inference-models = { path = "../inference_models", editable = true }
+
 [tool.setuptools.packages.find]
 include = ["inference_server*"]
 exclude = ["tests*"]
