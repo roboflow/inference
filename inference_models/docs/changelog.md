@@ -7,6 +7,14 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ---
 
+## `0.32.3`
+
+### Fixed
+- Bump of transitive dependency `gitpython`
+
+---
+
+
 ## `0.32.2`
 
 ### Fixed
