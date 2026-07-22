@@ -56,7 +56,7 @@ def get_sam3_text_prompts_interface() -> ModelInterfaceDescription:
             "images": {"type": "image", "required": True},
             "prompts": {"type": "list", "required": True},
             "output_prob_thresh": {"type": "float", "required": False, "default": 0.5},
-            "return_rle": {"type": "bool", "required": False, "default": True},
+            "mask_format": {"type": "str", "required": False, "default": "rle"},
         },
         output_schema={
             "type": "roboflow-sam3-segmentation-v1",
