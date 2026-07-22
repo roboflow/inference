@@ -102,6 +102,11 @@ class SAM3Torch:
                 model_package_dir=model_name_or_path,
                 elements=["sam_configuration.json"],
             )
+        except CorruptedModelPackageError:
+            # sam_configuration.json is optional: fine-tuned SAM3 packages
+            # produced by roboflow-train do not include it.
+            config_content = None
+        if config_content is not None:
             version = decode_sam_version(
                 config_path=config_content["sam_configuration.json"]
             )
@@ -113,8 +118,6 @@ class SAM3Torch:
                     "contact us to get help.",
                     help_url="https://todo",
                 )
-        except KeyError:
-            pass
 
         device_str = "cuda" if device.type == "cuda" else "cpu"
         # build_sam3_image_model runs torch.jit.script on torchvision transforms
