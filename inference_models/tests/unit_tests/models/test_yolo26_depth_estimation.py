@@ -190,6 +190,9 @@ def test_yolo26_depth_estimation_registered():
 
 
 def test_yolo26_depth_estimation_onnx_imports():
+    import pytest
+
+    pytest.importorskip("onnxruntime")
     from inference_models.models.yolo26.yolo26_depth_estimation_onnx import (
         YOLO26ForDepthEstimationOnnx,
     )
