@@ -145,9 +145,10 @@ class StitchImagesBlockV1(WorkflowBlock):
         count_of_best_matches_per_query_descriptor: int,
         max_allowed_reprojection_error: float,
     ) -> BlockResult:
-        if count_of_best_matches_per_query_descriptor == 0:
+        if abs(int(round(count_of_best_matches_per_query_descriptor))) < 2:
             raise ValueError(
-                "count_of_best_matches_per_query_descriptor must be greater than 0"
+                "count_of_best_matches_per_query_descriptor must be at least 2 "
+                "because Lowe's ratio test compares the two best matches per query descriptor"
             )
         try:
             merged_image = stitch_images(
@@ -194,7 +195,11 @@ def stitch_images(
         k=count_of_best_matches_per_query_descriptor,
     )
 
-    good_matches = [m[0] for m in matches if m[0].distance < 0.75 * m[1].distance]
+    good_matches = [
+        m[0]
+        for m in matches
+        if len(m) >= 2 and m[0].distance < 0.75 * m[1].distance
+    ]
 
     image1_pts = np.float32([keypoints_1[m.queryIdx].pt for m in good_matches]).reshape(
         -1, 1, 2
