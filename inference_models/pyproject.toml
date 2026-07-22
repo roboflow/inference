@@ -47,7 +47,7 @@ dependencies = [
   "CairoSVG>=2.9.0,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
-  "idna>=3.15"
+  "idna>=3.15",
   "imagecodecs",
   "uvicorn[standard]>=0.30.0",
   "fastapi>=0.115.0",
