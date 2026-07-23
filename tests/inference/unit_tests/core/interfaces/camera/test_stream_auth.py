@@ -3,7 +3,6 @@ import json
 import secrets
 from urllib.parse import urlparse
 
-import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF

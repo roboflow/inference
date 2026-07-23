@@ -18,6 +18,7 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core import logger
+from inference.core.env import API_KEY
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPIConnectionError,
@@ -185,7 +186,7 @@ class InferencePipelineManager(Process):
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
             video_reference = parsed_payload.video_configuration.video_reference
             stream_credentials = parsed_payload.video_configuration.stream_credentials
-            api_key = parsed_payload.api_key or os.getenv("ROBOFLOW_API_KEY")
+            api_key = parsed_payload.api_key or API_KEY
             if stream_credentials and api_key:
                 video_reference = resolve_operational_video_reference(
                     video_reference, stream_credentials, api_key
