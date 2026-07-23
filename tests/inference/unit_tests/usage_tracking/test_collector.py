@@ -9,6 +9,7 @@ import pytest
 
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
+from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
@@ -16,6 +17,7 @@ from inference.usage_tracking.payload_helpers import (
     sha256_hash,
     zip_usage_payloads,
 )
+from inference_sdk.http.errors import HTTPCallErrorError
 
 
 def usage_key(
@@ -24,9 +26,15 @@ def usage_key(
     *,
     billable: bool = True,
     outcome: str = "success",
+    error_type: Optional[str] = None,
+    error_status_code: Optional[int] = None,
     stream_session_id: Optional[str] = None,
 ) -> str:
     key = f"{category}:{resource_id}:billable={str(billable).lower()}:outcome={outcome}"
+    if outcome == "error":
+        key = f"{key}:error_type={error_type or 'unknown'}"
+        if error_status_code is not None:
+            key = f"{key}:error_status_code={error_status_code}"
     if stream_session_id:
         key = f"{key}:{stream_session_id}"
     return key
@@ -1098,9 +1106,7 @@ def test_record_usage_separates_success_and_error_buckets(
 
     usage = collector._usage[api_key]
     success_key = usage_key("request", resource_id, billable=False)
-    error_key = usage_key(
-        "request", resource_id, billable=False, outcome="request failed"
-    )
+    error_key = usage_key("request", resource_id, billable=False, outcome="error")
 
     assert set(usage) == {success_key, error_key}
     assert "error" not in json.loads(usage[success_key]["resource_details"])
@@ -1109,7 +1115,7 @@ def test_record_usage_separates_success_and_error_buckets(
     )
 
 
-def test_record_usage_separates_error_types_into_own_buckets(
+def test_record_usage_bounds_unstructured_errors_to_generic_bucket(
     usage_collector_with_mocked_threads,
 ):
     collector = usage_collector_with_mocked_threads
@@ -1127,16 +1133,136 @@ def test_record_usage_separates_error_types_into_own_buckets(
 
     usage = collector._usage[api_key]
     syntax_key = usage_key(
-        "request", resource_id, billable=True, outcome="WorkflowSyntaxError"
+        "request",
+        resource_id,
+        billable=True,
+        outcome="error",
+        error_type="unknown",
     )
-    oom_key = usage_key("request", resource_id, billable=True, outcome="CudaOOMError")
+
+    assert set(usage) == {syntax_key}
+    assert usage[syntax_key]["processed_frames"] == 2
+    assert json.loads(usage[syntax_key]["resource_details"])["error"] in {
+        "WorkflowSyntaxError: bad step",
+        "CudaOOMError: out of memory",
+    }
+
+
+def test_record_usage_separates_structured_error_types_into_own_buckets(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "workspace/model"
+
+    for error_type in ("WorkflowSyntaxError", "CudaOOMError"):
+        collector.record_usage(
+            source="test",
+            category="request",
+            api_key=api_key,
+            resource_details={
+                "billable": True,
+                "error": f"{error_type}: request failed",
+                "error_type": error_type,
+            },
+            resource_id=resource_id,
+        )
+
+    usage = collector._usage[api_key]
+    syntax_key = usage_key(
+        "request",
+        resource_id,
+        billable=True,
+        outcome="error",
+        error_type="WorkflowSyntaxError",
+    )
+    oom_key = usage_key(
+        "request",
+        resource_id,
+        billable=True,
+        outcome="error",
+        error_type="CudaOOMError",
+    )
 
     assert set(usage) == {syntax_key, oom_key}
-    assert json.loads(usage[syntax_key]["resource_details"])["error"] == (
-        "WorkflowSyntaxError: bad step"
+    assert all(row["processed_frames"] == 1 for row in usage.values())
+
+
+def test_record_usage_bounds_invalid_error_metadata_to_generic_bucket(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "workspace/model"
+    collector.record_usage(
+        source="test",
+        category="request",
+        api_key=api_key,
+        resource_details={
+            "billable": True,
+            "error": "request failed",
+            "error_type": "dynamic error message with spaces",
+            "error_status_code": 999,
+        },
+        resource_id=resource_id,
     )
-    assert json.loads(usage[oom_key]["resource_details"])["error"] == (
-        "CudaOOMError: out of memory"
+
+    key = usage_key(
+        "request",
+        resource_id,
+        billable=True,
+        outcome="error",
+        error_type="unknown",
+    )
+    assert set(collector._usage[api_key]) == {key}
+    details = json.loads(collector._usage[api_key][key]["resource_details"])
+    assert details["error_type"] == "unknown"
+    assert "error_status_code" not in details
+
+
+def test_record_usage_normalizes_error_metadata_before_deriving_resource_id(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_details = {
+        "billable": True,
+        "error": "request failed",
+        "error_type": "dynamic error message with spaces",
+        "error_status_code": 999,
+    }
+    normalized_resource_details = {
+        "billable": True,
+        "error": "request failed",
+        "error_type": "unknown",
+    }
+    expected_resource_id = collector._calculate_resource_hash(
+        normalized_resource_details
+    )
+
+    collector.record_resource_details(
+        category="request",
+        resource_details=resource_details,
+        api_key=api_key,
+    )
+    collector.record_usage(
+        source="test",
+        category="request",
+        api_key=api_key,
+        resource_details=resource_details,
+    )
+
+    key = usage_key(
+        "request",
+        expected_resource_id,
+        billable=True,
+        outcome="error",
+        error_type="unknown",
+    )
+    assert set(collector._usage[api_key]) == {key}
+    assert len(collector._resource_details[api_key]) == 1
+    assert json.loads(collector._usage[api_key][key]["resource_details"]) == (
+        normalized_resource_details
     )
 
 
@@ -1218,10 +1344,18 @@ def test_record_usage_with_exception(usage_collector_with_mocked_threads):
 
     # then
     assert len(usage_collector._usage) == 1
-    key = usage_key("model", "unknown", billable=True, outcome="Exception")
+    key = usage_key(
+        "model",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="Exception",
+    )
     details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
     assert details["billable"] is True
     assert details["error"] == "Exception: test exception"
+    assert details["error_type"] == "Exception"
+    assert "error_status_code" not in details
 
 
 @pytest.mark.parametrize("countinference", [True, False])
@@ -1243,11 +1377,16 @@ def test_request_exception_preserves_countinference_intent(
         test_func(FakeRequest(), countinference=countinference)
 
     key = usage_key(
-        "request", "workspace/model", billable=countinference, outcome="RuntimeError"
+        "request",
+        "workspace/model",
+        billable=countinference,
+        outcome="error",
+        error_type="RuntimeError",
     )
     details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
     assert details["billable"] is countinference
     assert details["error"] == "RuntimeError: request failure"
+    assert details["error_type"] == "RuntimeError"
 
 
 def test_returned_http_error_response_records_error_outcome(
@@ -1265,10 +1404,71 @@ def test_returned_http_error_response_records_error_outcome(
     response = test_func()
 
     assert response.status_code == 422
-    key = usage_key("model", "unknown", billable=True, outcome="HTTPResponseError422")
+    key = usage_key(
+        "model",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="HTTPResponseError",
+        error_status_code=422,
+    )
     details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
     assert details["billable"] is True
     assert details["error"] == "HTTPResponseError422: response returned status 422"
+    assert details["error_type"] == "HTTPResponseError"
+    assert details["error_status_code"] == 422
+
+
+def test_wrapped_remote_http_errors_are_partitioned_by_status_code(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def test_func(status_code, api_key="test_key"):
+        inner_error = HTTPCallErrorError(
+            description="remote request failed",
+            status_code=status_code,
+            api_message=None,
+        )
+        raise ClientCausedStepExecutionError(
+            block_id="model",
+            status_code=status_code,
+            public_message="remote workflow step failed",
+            context="workflow_execution | step_execution",
+            inner_error=inner_error,
+        )
+
+    for status_code in (402, 403):
+        with pytest.raises(ClientCausedStepExecutionError):
+            test_func(status_code)
+
+    usage = usage_collector._usage["test_key"]
+    payment_required_key = usage_key(
+        "request",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="HTTPCallErrorError",
+        error_status_code=402,
+    )
+    forbidden_key = usage_key(
+        "request",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="HTTPCallErrorError",
+        error_status_code=403,
+    )
+
+    assert set(usage) == {payment_required_key, forbidden_key}
+    assert (
+        json.loads(usage[payment_required_key]["resource_details"])["error_status_code"]
+        == 402
+    )
+    assert (
+        json.loads(usage[forbidden_key]["resource_details"])["error_status_code"] == 403
+    )
 
 
 def test_async_exception_records_error_outcome(usage_collector_with_mocked_threads):
@@ -1282,10 +1482,17 @@ def test_async_exception_records_error_outcome(usage_collector_with_mocked_threa
     with pytest.raises(RuntimeError, match="async failure"):
         asyncio.run(test_func())
 
-    key = usage_key("model", "unknown", billable=True, outcome="RuntimeError")
+    key = usage_key(
+        "model",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="RuntimeError",
+    )
     details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
     assert details["billable"] is True
     assert details["error"] == "RuntimeError: async failure"
+    assert details["error_type"] == "RuntimeError"
 
 
 def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads):
@@ -1304,7 +1511,13 @@ def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads)
     # then
     assert len(usage_collector._usage) == 1
     assert "test_key" in usage_collector._usage
-    key = usage_key("model", "unknown", billable=True, outcome="Exception")
+    key = usage_key(
+        "model",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="Exception",
+    )
     assert key in usage_collector._usage["test_key"]
     assert (
         json.loads(usage_collector._usage["test_key"][key]["resource_details"]).get(
