@@ -86,9 +86,17 @@ class GridVisualizationManifest(WorkflowBlockManifest):
         }
     )
 
-    images: Selector(kind=[LIST_OF_VALUES_KIND]) = Field(  # type: ignore
-        description="List of images to arrange in a grid layout. Can be a list of image outputs from blocks like Buffer, Image Slicer, Dynamic Crop, or other blocks that output multiple images. Images will be automatically arranged in a square grid (calculated from the number of images) and resized to fit their grid cells while maintaining aspect ratio.",
-        examples=["$steps.buffer.output"],
+    images: Union[
+        List[Selector(kind=[IMAGE_KIND])],
+        Selector(kind=[LIST_OF_VALUES_KIND]),
+    ] = Field(  # type: ignore
+        description="Images to arrange in a grid layout. Provide either a list of "
+        "individual image references (e.g. `[\"$inputs.image\", \"$steps.depth.image\"]` "
+        "to compare an input image with a model's visualization side by side) or a single "
+        "selector pointing at a list of images produced by blocks like Buffer, Image Slicer, "
+        "or Dynamic Crop. Images are automatically arranged in a square grid (calculated from "
+        "the number of images) and resized to fit their grid cells while maintaining aspect ratio.",
+        examples=[["$inputs.image", "$steps.depth_estimation.image"], "$steps.buffer.output"],
     )
 
     width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore

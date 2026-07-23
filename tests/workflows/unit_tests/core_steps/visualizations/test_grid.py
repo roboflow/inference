@@ -2,11 +2,40 @@ import numpy as np
 
 from inference.core.workflows.core_steps.visualizations.grid.v1 import (
     GridVisualizationBlockV1,
+    GridVisualizationManifest,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+
+
+def test_grid_manifest_accepts_inline_list_of_image_selectors() -> None:
+    # given a comparison use case: input image next to a model visualization
+    manifest = GridVisualizationManifest.model_validate(
+        {
+            "type": "roboflow_core/grid_visualization@v1",
+            "name": "grid",
+            "images": ["$inputs.image", "$steps.depth_estimation.image"],
+        }
+    )
+
+    # then the inline list of image selectors is preserved
+    assert manifest.images == ["$inputs.image", "$steps.depth_estimation.image"]
+
+
+def test_grid_manifest_accepts_single_list_selector() -> None:
+    # given the pre-existing usage: a single selector to a list of images
+    manifest = GridVisualizationManifest.model_validate(
+        {
+            "type": "roboflow_core/grid_visualization@v1",
+            "name": "grid",
+            "images": "$steps.buffer.output",
+        }
+    )
+
+    # then the single list-producing selector is preserved (backward compatible)
+    assert manifest.images == "$steps.buffer.output"
 
 
 def test_grid_visualization_block_single() -> None:
