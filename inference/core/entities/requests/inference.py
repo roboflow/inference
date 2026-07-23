@@ -120,12 +120,14 @@ class DepthEstimationRequest(InferenceRequest):
         examples=["small"],
         description="The version ID of the depth estimation model",
     )
-    depth_map_format: Literal["png16", "json"] = Field(
+    depth_map_format: Literal["png16", "png8", "json"] = Field(
         default="png16",
         description="Serialization format for `normalized_depth` in the response: "
         "`png16` (default) returns a base64 16-bit grayscale PNG (quantization step "
-        "1/65535, typically >10x smaller payload); `json` returns the legacy nested "
-        "float list.",
+        "1/65535, typically >10x smaller payload); `png8` returns a base64 8-bit "
+        "grayscale PNG (256 depth levels, roughly another order of magnitude smaller - "
+        "fine for visualization/thresholding, lossy for geometric use); `json` returns "
+        "the legacy nested float list.",
     )
 
     @validator("model_id", always=True)

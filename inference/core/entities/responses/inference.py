@@ -457,11 +457,11 @@ class DepthEstimationResponse(BaseModel):
     """
 
     normalized_depth: Union[str, List[List[float]]] = Field(
-        description="The normalized depth map: a base64 16-bit grayscale PNG string "
-        "(`png16` format, default) or a 2D array of floats between 0 and 1 (`json` format), "
-        "per the request's `depth_map_format`"
+        description="The normalized depth map: a base64 grayscale PNG string "
+        "(`png16` format, default, or `png8`) or a 2D array of floats between 0 and 1 "
+        "(`json` format), per the request's `depth_map_format`"
     )
-    depth_map_format: Literal["png16", "json"] = Field(
+    depth_map_format: Literal["png16", "png8", "json"] = Field(
         default="png16",
         description="The serialization format used for `normalized_depth`",
     )

@@ -13,7 +13,7 @@ from inference.core.constants import (
 )
 from inference.core.env import CORRELATION_ID_HEADER
 from inference.core.exceptions import RoboflowAPINotAuthorizedError
-from inference.core.utils.depth_encoding import decode_png16_normalized_depth
+from inference.core.utils.depth_encoding import decode_png_normalized_depth
 from inference.core.roboflow_api import ServerlessUsageCheckResponse
 
 
@@ -326,7 +326,7 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     payload = response.json()
     assert payload["image"] == "depth-image"
     assert payload["depth_map_format"] == "png16"
-    decoded = decode_png16_normalized_depth(payload["normalized_depth"])
+    decoded = decode_png_normalized_depth(payload["normalized_depth"])
     assert np.allclose(decoded, _DUMMY_DEPTH_MAP, atol=1.0 / 65535)
     model_manager.add_model.assert_called_once_with(
         "depth-anything-v3/small",
@@ -413,7 +413,7 @@ def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) 
     payload = response.json()
     assert payload["image"] == "depth-image"
     assert payload["depth_map_format"] == "png16"
-    decoded = decode_png16_normalized_depth(payload["normalized_depth"])
+    decoded = decode_png_normalized_depth(payload["normalized_depth"])
     assert np.allclose(decoded, _DUMMY_DEPTH_MAP, atol=1.0 / 65535)
     model_manager.add_model.assert_called_once_with(
         "depth-anything-v3/small",
@@ -1305,3 +1305,42 @@ def test_empty_local_whitelist_alone_does_not_enable_middleware(monkeypatch) -> 
 
     assert response.status_code == 200
     workspace_lookup_mock.assert_not_awaited()
+
+
+def test_depth_estimation_png8_format_returns_decodable_payload(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "depth_map_format": "png8",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["depth_map_format"] == "png8"
+    decoded = decode_png_normalized_depth(payload["normalized_depth"])
+    assert np.allclose(decoded, _DUMMY_DEPTH_MAP, atol=1.0 / 255)
