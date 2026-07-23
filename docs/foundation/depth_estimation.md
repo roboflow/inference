@@ -7,6 +7,15 @@ You can use Depth-Anything-V2-Small to estimate the depth of objects in images, 
 
 You can deploy Depth-Anything-V2-Small with Inference.
 
+### Available Models
+
+The depth estimation endpoint and the `depth_estimation@v1` workflow block serve two model families through one contract (per-image normalized depth, 1.0 = nearest):
+
+- **Depth Anything** (relative depth): `depth-anything-v2/small`, `depth-anything-v3/small`, `depth-anything-v3/base`
+- **YOLO26 depth** (metric depth, normalized on this path; substantially faster): `yolo26n-depth-768`, `yolo26s-depth-768`, `yolo26m-depth-768`, `yolo26l-depth-768`, `yolo26x-depth-768`
+
+For absolute metric depth in meters from the YOLO26 checkpoints, load them directly with `inference_models.AutoModel` — see the `inference-models` YOLO26 depth documentation.
+
 ### Execution Modes
 
 Depth Estimation supports both local and remote execution modes when used in workflows:
