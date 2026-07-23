@@ -305,6 +305,10 @@ from inference.core.telemetry import (
     start_span,
 )
 from inference.core.utils.container import is_docker_socket_mounted
+from inference.core.utils.depth_encoding import (
+    DEPTH_MAP_FORMAT_JSON,
+    encode_normalized_depth_to_png16,
+)
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.url_utils import wrap_url
 from inference.core.warnings import InferenceDeprecationWarning
@@ -3878,8 +3882,15 @@ class HttpInterface(BaseInterface):
 
                     # Extract data from nested response structure
                     depth_data = response.response
+                    if inference_request.depth_map_format == DEPTH_MAP_FORMAT_JSON:
+                        serialized_depth = depth_data["normalized_depth"].tolist()
+                    else:
+                        serialized_depth = encode_normalized_depth_to_png16(
+                            depth_data["normalized_depth"]
+                        )
                     return DepthEstimationResponse(
-                        normalized_depth=depth_data["normalized_depth"].tolist(),
+                        normalized_depth=serialized_depth,
+                        depth_map_format=inference_request.depth_map_format,
                         image=depth_data["image"].base64_image,
                     )
 

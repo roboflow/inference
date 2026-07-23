@@ -48,6 +48,7 @@ from inference_sdk.http.utils.aliases import (
     resolve_ocr_path,
     resolve_roboflow_model_alias,
 )
+from inference_sdk.http.utils.depth_maps import decode_depth_estimation_result
 from inference_sdk.http.utils.executors import (
     UNKNOWN_MODEL_ID,
     RequestMethod,
@@ -1734,7 +1735,9 @@ class InferenceHTTPClient:
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
-                - normalized_depth: The normalized depth map as a list
+                - normalized_depth: The normalized depth map as a numpy array
+                  (PNG16-serialized responses are decoded automatically; legacy
+                  servers returning nested float lists pass through unchanged)
                 - image: Hex-encoded visualization of the depth map
 
         Raises:
@@ -1751,7 +1754,7 @@ class InferenceHTTPClient:
             endpoint=endpoint,
             extra_payload=extra_payload,
         )
-        return result
+        return decode_depth_estimation_result(result)
 
     @wrap_errors_async
     async def depth_estimation_async(
@@ -1788,7 +1791,7 @@ class InferenceHTTPClient:
             endpoint=endpoint,
             extra_payload=extra_payload,
         )
-        return result
+        return decode_depth_estimation_result(result)
 
     @wrap_errors
     def sam2_segment_image(

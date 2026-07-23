@@ -4681,3 +4681,42 @@ def test_start_inference_pipeline_with_workflow_when_configuration_is_valid(
             "results_buffer_size": 64,
         },
     }
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_decodes_png16_payload(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    import numpy as np
+
+    from inference_sdk.http.utils.depth_maps import decode_png16_normalized_depth
+
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    depth = np.array([[0.0, 0.5], [0.25, 1.0]], dtype=np.float32)
+    import base64 as _b64
+
+    import cv2
+
+    _, buffer = cv2.imencode(".png", np.round(depth * 65535).astype(np.uint16))
+    payload = _b64.b64encode(buffer.tobytes()).decode("ascii")
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/yolo26n-depth-768",
+        json={
+            "normalized_depth": payload,
+            "depth_map_format": "png16",
+            "image": "depth-image",
+        },
+    )
+
+    result = http_client.depth_estimation(
+        inference_input="/some/image.jpg",
+        model_id="yolo26n-depth-768",
+        model_id_in_path=True,
+    )
+
+    assert isinstance(result["normalized_depth"], np.ndarray)
+    assert np.allclose(result["normalized_depth"], depth, atol=1.0 / 65535)
+    assert result["image"] == "depth-image"

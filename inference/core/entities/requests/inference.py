@@ -109,6 +109,8 @@ class DepthEstimationRequest(InferenceRequest):
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
         model_id (str): The model ID to use for depth estimation.
         depth_version_id (Optional[str]): The version ID of the depth estimation model.
+        depth_map_format (Literal["png16", "json"]): Serialization format for the
+            normalized depth map in the response.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
@@ -117,6 +119,13 @@ class DepthEstimationRequest(InferenceRequest):
         default="small",
         examples=["small"],
         description="The version ID of the depth estimation model",
+    )
+    depth_map_format: Literal["png16", "json"] = Field(
+        default="png16",
+        description="Serialization format for `normalized_depth` in the response: "
+        "`png16` (default) returns a base64 16-bit grayscale PNG (quantization step "
+        "1/65535, typically >10x smaller payload); `json` returns the legacy nested "
+        "float list.",
     )
 
     @validator("model_id", always=True)
