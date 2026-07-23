@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    ClassificationPredictionProperty,
     ClassificationProperty,
     DetectionsProperty,
     DetectionsSelectionMode,
@@ -240,6 +241,39 @@ class ClassificationPropertyExtract(OperationDefinition):
     )
     type: Literal["ClassificationPropertyExtract"]
     property_name: ClassificationProperty
+
+
+class ExtractClassificationPredictionProperty(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts a property from one classification prediction.",
+            "compound": False,
+            "input_kind": [DICTIONARY_KIND],
+            "output_kind": [
+                STRING_KIND,
+                INTEGER_KIND,
+                FLOAT_ZERO_TO_ONE_KIND,
+            ],
+        },
+    )
+    type: Literal["ExtractClassificationPredictionProperty"]
+    property_name: ClassificationPredictionProperty
+
+
+class ClassificationFilter(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Filters classification predictions by applying a predicate "
+            "to each selected class prediction.",
+            "compound": True,
+            "input_kind": [CLASSIFICATION_PREDICTION_KIND],
+            "output_kind": [CLASSIFICATION_PREDICTION_KIND],
+            "nested_operation_input_kind": [DICTIONARY_KIND],
+            "nested_operation_output_kind": [BOOLEAN_KIND],
+        },
+    )
+    type: Literal["ClassificationFilter"]
+    filter_operation: "StatementGroup"
 
 
 class DetectionsSelection(OperationDefinition):
@@ -628,6 +662,8 @@ AllOperationsType = Annotated[
         DetectionsSelection,
         SortDetections,
         ClassificationPropertyExtract,
+        ExtractClassificationPredictionProperty,
+        ClassificationFilter,
         ConvertImageToJPEG,
         ConvertImageToBase64,
         DetectionsToDictionary,

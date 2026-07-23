@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     TYPE_PARAMETER_NAME,
+    ClassificationFilter,
     DetectionsFilter,
     OperationDefinition,
     OperationsChain,
@@ -19,7 +20,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.boolea
     to_bool,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.classification_results.base import (
+    extract_classification_prediction_property,
     extract_classification_property,
+    filter_classification_predictions,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.detection.base import (
     extract_detection_property,
@@ -178,6 +181,25 @@ def build_detections_filter_operation(
     return partial(filter_detections, filtering_fun=filtering_fun)
 
 
+def build_classification_filter_operation(
+    definition: ClassificationFilter,
+    execution_context: str,
+) -> Callable[[T], V]:
+    # local import to avoid circular dependency of modules with operations and evaluation
+    from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
+        build_eval_function,
+    )
+
+    filtering_fun = build_eval_function(
+        definition=definition.filter_operation,
+        execution_context=execution_context,
+    )
+    return partial(
+        filter_classification_predictions,
+        filtering_fun=filtering_fun,
+    )
+
+
 REGISTERED_SIMPLE_OPERATIONS = {
     "StringToLowerCase": string_to_lower,
     "StringToUpperCase": string_to_upper,
@@ -205,6 +227,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "DetectionsSelection": select_detections,
     "SortDetections": sort_detections,
     "ClassificationPropertyExtract": extract_classification_property,
+    "ExtractClassificationPredictionProperty": extract_classification_prediction_property,
     "DetectionsRename": rename_detections,
     "ConvertImageToJPEG": encode_image_to_jpeg,
     "ConvertImageToBase64": encode_image_to_base64,
@@ -217,4 +240,5 @@ REGISTERED_SIMPLE_OPERATIONS = {
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {
     "SequenceApply": build_sequence_apply_operation,
     "DetectionsFilter": build_detections_filter_operation,
+    "ClassificationFilter": build_classification_filter_operation,
 }
