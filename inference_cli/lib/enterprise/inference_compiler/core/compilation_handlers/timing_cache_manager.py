@@ -19,6 +19,9 @@ from inference_cli.lib.enterprise.inference_compiler.utils.http import (
     upload_file_to_cloud,
 )
 from inference_models.utils.download import download_files_to_directory
+from inference_models.weights_providers.roboflow import (
+    roboflow_secure_gateway_proxy_url_builder,
+)
 
 logger = logging.getLogger("inference_cli.inference_compiler")
 
@@ -57,7 +60,15 @@ class TimingCacheManager:
             md5_hash = compilation_features_specs.md5_hash
             download_results = download_files_to_directory(
                 target_dir=self._cache_root,
-                files_specs=[(file_handle, download_url, md5_hash)],
+                files_specs=[
+                    (
+                        file_handle,
+                        roboflow_secure_gateway_proxy_url_builder(
+                            url=download_url, query=None
+                        ),
+                        md5_hash,
+                    )
+                ],
             )
             logger.info(
                 "TRT timing cache hit for compilation features: %s",

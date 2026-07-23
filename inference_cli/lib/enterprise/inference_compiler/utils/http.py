@@ -12,6 +12,11 @@ from inference_cli.lib.enterprise.inference_compiler.errors import (
     RequestError,
     RetryError,
 )
+from inference_models.weights_providers.roboflow import (
+    roboflow_secure_gateway_proxy_url_builder,
+)
+
+UPLOAD_TIMEOUT_SECONDS = 60
 
 
 @backoff.on_exception(
@@ -27,7 +32,12 @@ def upload_file_to_cloud(
 ) -> None:
     try:
         with open(file_path, "rb") as f:
-            response = requests.put(url, headers=headers, data=f)
+            response = requests.put(
+                roboflow_secure_gateway_proxy_url_builder(url=url, query=None),
+                headers=headers,
+                data=f,
+                timeout=UPLOAD_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError("Connectivity error")
