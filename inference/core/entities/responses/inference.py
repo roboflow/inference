@@ -447,10 +447,10 @@ class DepthEstimationResponse(BaseModel):
     Attributes:
         normalized_depth (Union[str, List[List[float]]]): The normalized depth map,
             serialized according to the request's `depth_map_format`: a base64
-            16-bit grayscale PNG string (`png16`, default) or a 2D array of floats
-            between 0 and 1 (`json`).
-        depth_map_format (Literal["png16", "json"]): The serialization format used
-            for `normalized_depth`.
+            grayscale PNG string (16-bit for `png16`, the default; 8-bit for
+            `png8`) or a 2D array of floats between 0 and 1 (`json`).
+        depth_map_format (Literal["png16", "png8", "json"]): The serialization
+            format used for `normalized_depth`.
         image (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.
         time (float): The processing time in seconds.
         visualization (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.

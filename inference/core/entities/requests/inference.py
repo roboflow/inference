@@ -109,8 +109,8 @@ class DepthEstimationRequest(InferenceRequest):
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
         model_id (str): The model ID to use for depth estimation.
         depth_version_id (Optional[str]): The version ID of the depth estimation model.
-        depth_map_format (Literal["png16", "json"]): Serialization format for the
-            normalized depth map in the response.
+        depth_map_format (Literal["png16", "png8", "json"]): Serialization format
+            for the normalized depth map in the response.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
