@@ -5,11 +5,12 @@
 Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 `### Removed` subsections as appropriate.
 
+---
+
+## Unreleased
+
 ### Added
-- YOLO26 depth estimation (Ultralytics 8.4.104 `-depth` pretrains, 768x768) via
-  `YOLO26ForDepthEstimation{Onnx,TorchScript,TRT}` registered under
-  `("yolo26", "depth-estimation", ...)`, with shared
-  `post_process_depth_estimation_map()` letterbox-unwind helper.
+- Added YOLO26 monocular depth estimation support (ONNX, TorchScript, and TensorRT backends).
 
 ---
 
