@@ -55,6 +55,7 @@ class FakeClient:
             )
         ]
         self.infer_error = None
+        self.backend_type = None
 
     async def start(self):
         self.started = True
@@ -79,16 +80,14 @@ class FakeClient:
     model_class_name = "YOLOv8ObjectDetectionOnnx"
 
     async def stats(self):
-        return {
-            "mmp_models": {
-                m: {
-                    "class_names": self.class_names,
-                    "key_points_classes": self.key_points_classes,
-                    "model_class_name": self.model_class_name,
-                }
-                for m in self.loaded
-            }
+        entry = {
+            "class_names": self.class_names,
+            "key_points_classes": self.key_points_classes,
+            "model_class_name": self.model_class_name,
         }
+        if self.backend_type is not None:
+            entry["backend_type"] = self.backend_type
+        return {"mmp_models": {m: dict(entry) for m in self.loaded}}
 
     async def infer(self, *, model_id, image, task=None, instance="", params=None, **kw):
         self.infer_calls.append(
@@ -239,6 +238,40 @@ class TestRouting:
             running_adapter.add_model("ws/1", api_key="key")
         assert running_adapter._client.unloaded == ["ws/1"]
         assert "ws/1" not in running_adapter
+
+    def test_shared_base_preload_kept_resident(self, running_adapter, monkeypatch):
+        async def fake_stat(model_id, api_key):
+            return ("open-vocabulary-object-detection", "infer")
+
+        monkeypatch.setattr(translation, "stat_model", fake_stat)
+        client = running_adapter._client
+        client.backend_type = "shared-base"
+        client.tasks = {}
+        running_adapter.add_model("google/owlv2-large-patch14-ensemble", api_key="key")
+        assert client.unloaded == []
+        assert "google/owlv2-large-patch14-ensemble" in running_adapter
+        assert (
+            running_adapter.get_task_type("google/owlv2-large-patch14-ensemble")
+            == "open-vocabulary-object-detection"
+        )
+
+    def test_shared_base_preload_infer_is_unsupported(
+        self, running_adapter, monkeypatch, png_image
+    ):
+        async def fake_stat(model_id, api_key):
+            return ("open-vocabulary-object-detection", "infer")
+
+        monkeypatch.setattr(translation, "stat_model", fake_stat)
+        client = running_adapter._client
+        client.backend_type = "shared-base"
+        client.tasks = {}
+        running_adapter.add_model("google/owlv2-large-patch14-ensemble", api_key="key")
+        image, _ = png_image
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync(
+                "google/owlv2-large-patch14-ensemble", od_request(image=image)
+            )
+        assert client.unloaded == []
 
     def test_load_error_code_translates(self, running_adapter, od_stat):
         running_adapter._client.load_result = ("error", 5)
