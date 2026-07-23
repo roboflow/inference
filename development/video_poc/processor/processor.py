@@ -84,6 +84,13 @@ POLL_INTERVAL_S = 2.0
 EVENT_BUFFER_SIZE = 50
 MJPEG_MAX_FPS = 12
 
+# Bin-packing bias: pool workers that have never claimed wait this long before
+# each claim attempt, so a partially-filled worker (free slot, claims eagerly)
+# always wins the race and concurrent streams land on the SAME pod instead of
+# scattering across the pool. Costs at most a few seconds of start latency
+# when the whole pool is cold. 0 disables.
+POOL_FRESH_CLAIM_HOLDOFF_S = float(os.getenv("POOL_FRESH_CLAIM_HOLDOFF_S", "3"))
+
 # Used by stream-mode jobs on file sources: the file is replayed at native speed
 # into the local relay and consumed as RTSP, so the pipeline sees a real stream.
 RTSP_SIM_BASE = os.getenv("VIDEO_PROC_RTSP_BASE", "rtsp://127.0.0.1:8554")
@@ -1477,6 +1484,13 @@ class Worker:
             threading.Thread(target=run.start, daemon=True).start()
             return job
 
+    def _fresh_claim_holdoff(self):
+        """Fresh pool workers yield the claim race — see POOL_FRESH_CLAIM_HOLDOFF_S.
+        A fresh worker has no jobs, so sleeping here delays nothing but its own
+        first claim."""
+        if self.pod.enabled and not self.had_job and POOL_FRESH_CLAIM_HOLDOFF_S > 0:
+            time.sleep(POOL_FRESH_CLAIM_HOLDOFF_S)
+
     def start_pubsub_listener(self):
         """Optional Pub/Sub wake-ups: messages are notifications, not work items —
         the claim endpoint stays the transactional source of truth. Full workers
@@ -1496,6 +1510,7 @@ class Worker:
 
         def on_message(message):
             try:
+                self._fresh_claim_holdoff()
                 claimed = self.try_claim()
             except Exception:
                 message.nack()
@@ -1549,6 +1564,7 @@ class Worker:
                         self.finish_run(run)
                     else:
                         run.handle_watch(resp.get("watch") or {})
+                self._fresh_claim_holdoff()
                 self.try_claim()
             except requests.RequestException as exc:
                 print(f"[processor] poll error: {exc}", file=sys.stderr)
