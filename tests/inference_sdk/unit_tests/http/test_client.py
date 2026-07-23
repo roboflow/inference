@@ -4209,6 +4209,23 @@ def test_infer_from_workflow_when_faulty_response_given(
         )
 
 
+def test_run_workflow_can_request_sink_disabling(requests_mock: Mocker) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+
+    result = http_client.run_workflow(
+        specification={"my": "specification"},
+        disable_sinks=True,
+    )
+
+    assert result == [{"some": 3}]
+    assert requests_mock.request_history[0].json()["disable_sinks"] is True
+
+
 def test_infer_from_workflow_when_neither_workflow_name_nor_specs_given() -> None:
     # given
     api_url = "http://some.com"

@@ -27,6 +27,9 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
     prepare_execution_graph,
 )
+from inference.core.workflows.execution_engine.v1.compiler.sink_disabling import (
+    disable_workflow_sinks,
+)
 from inference.core.workflows.execution_engine.v1.compiler.steps_initialiser import (
     initialise_steps,
 )
@@ -69,6 +72,7 @@ COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
             partial(json.dumps, sort_keys=True),
         ),
         ("execution_engine_version", lambda version: str(version)),
+        ("disable_sinks", str),
     ],
 )
 
@@ -82,12 +86,14 @@ def compile_workflow(
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
+    disable_sinks: bool = False,
 ) -> CompiledWorkflow:
     graph_compilation_results = compile_workflow_graph(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
         profiler=profiler,
         init_parameters=init_parameters,
+        disable_sinks=disable_sinks,
     )
     steps = initialise_steps(
         steps_manifest=graph_compilation_results.parsed_workflow_definition.steps,
@@ -110,6 +116,7 @@ def compile_workflow(
         input_substitutions=input_substitutions,
         kinds_serializers=graph_compilation_results.kinds_serializers,
         kinds_deserializers=graph_compilation_results.kinds_deserializers,
+        disabled_steps=graph_compilation_results.disabled_steps,
     )
 
 
@@ -118,12 +125,14 @@ def compile_workflow_graph(
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
     init_parameters: Optional[Dict[str, Union[Any, Callable[[None], Any]]]] = None,
+    disable_sinks: bool = False,
 ) -> GraphCompilationResult:
     if init_parameters is None:
         init_parameters = {}
     key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
+        disable_sinks=disable_sinks,
     )
     cached_value = COMPILATION_CACHE.get(key=key)
     if cached_value is not None:
@@ -169,6 +178,14 @@ def compile_workflow_graph(
         available_blocks=available_blocks,
         profiler=profiler,
     )
+    disabled_steps = frozenset()
+    if disable_sinks:
+        sink_disabling_result = disable_workflow_sinks(
+            workflow_definition=inlined_raw_workflow_definition,
+            available_blocks=available_blocks,
+        )
+        inlined_raw_workflow_definition = sink_disabling_result.workflow_definition
+        disabled_steps = sink_disabling_result.steps_without_native_noop
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=inlined_raw_workflow_definition,
         available_blocks=available_blocks,
@@ -189,6 +206,7 @@ def compile_workflow_graph(
         initializers=initializers,
         kinds_serializers=kinds_serializers,
         kinds_deserializers=kinds_deserializers,
+        disabled_steps=disabled_steps,
     )
     COMPILATION_CACHE.cache(key=key, value=result)
     return result

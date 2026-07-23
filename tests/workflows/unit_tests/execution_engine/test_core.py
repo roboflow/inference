@@ -88,3 +88,14 @@ def test_execution_engine_init_with_invalid_step_error_handler() -> None:
             workflow_definition={},
             step_error_handler="invalid",
         )
+
+
+@mock.patch.object(core.ExecutionEngineV1, "init")
+def test_execution_engine_forwards_disable_sinks_flag(
+    execution_engine_init: mock.MagicMock,
+) -> None:
+    execution_engine_init.return_value = mock.MagicMock()
+
+    ExecutionEngine.init(workflow_definition={}, disable_sinks=True)
+
+    assert execution_engine_init.call_args.kwargs["disable_sinks"] is True

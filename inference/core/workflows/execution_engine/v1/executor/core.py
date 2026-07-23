@@ -257,6 +257,8 @@ def flush_stream_pipeline_outputs(
         else list(workflow.steps)
     )
     for step_name in step_names:
+        if step_name in workflow.disabled_steps:
+            continue
         step = workflow.steps[step_name]
         flush_fn = getattr(step.step, "flush_stream_pipeline_outputs", None)
         if not callable(flush_fn):
@@ -311,7 +313,9 @@ def _downstream_step_selectors(
 
 
 def close_stream_pipelines(workflow: CompiledWorkflow) -> None:
-    for step in workflow.steps.values():
+    for step_name, step in workflow.steps.items():
+        if step_name in workflow.disabled_steps:
+            continue
         close_fn = getattr(step.step, "close_stream_pipeline", None)
         if callable(close_fn):
             close_fn()
@@ -470,6 +474,9 @@ def run_step(
     execution_data_manager: ExecutionDataManager,
     profiler: WorkflowsProfiler,
 ) -> None:
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    if step_name in workflow.disabled_steps:
+        return
     if execution_data_manager.is_step_simd(step_selector=step_selector):
         return run_simd_step(
             step_selector=step_selector,

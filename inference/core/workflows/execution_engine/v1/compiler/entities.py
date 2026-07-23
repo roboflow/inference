@@ -1,7 +1,18 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    FrozenSet,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Type,
+    Union,
+)
 
 import networkx as nx
 
@@ -47,6 +58,7 @@ class GraphCompilationResult:
     initializers: Dict[str, Union[Any, Callable[[None], Any]]]
     kinds_serializers: Dict[str, Callable[[Any], Any]]
     kinds_deserializers: Dict[str, Callable[[str, Any], Any]]
+    disabled_steps: FrozenSet[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -64,6 +76,7 @@ class CompiledWorkflow:
     input_substitutions: List[InputSubstitution]
     workflow_json: Dict[str, Any]
     init_parameters: Dict[str, Any]
+    disabled_steps: FrozenSet[str] = field(default_factory=frozenset)
     kinds_serializers: Dict[str, Callable[[str, Any], Any]] = field(
         default_factory=dict
     )

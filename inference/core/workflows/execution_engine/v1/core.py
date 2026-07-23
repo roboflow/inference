@@ -59,6 +59,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         step_error_handler: Optional[
             Union[str, Callable[[str, Exception], None]]
         ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
+        disable_sinks: bool = False,
     ) -> "ExecutionEngineV1":
         if init_parameters is None:
             init_parameters = {}
@@ -83,6 +84,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             init_parameters=init_parameters,
             execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
             profiler=profiler,
+            disable_sinks=disable_sinks,
         )
         return cls(
             compiled_workflow=compiled_workflow,

@@ -2237,6 +2237,7 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -2260,6 +2261,7 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+            disable_sinks (bool, optional): Whether to disable workflow sink side effects. Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
@@ -2280,6 +2282,7 @@ class InferenceHTTPClient:
             use_cache=use_cache,
             enable_profiling=enable_profiling,
             workflow_version_id=workflow_version_id,
+            disable_sinks=disable_sinks,
         )
 
     @wrap_errors
@@ -2294,6 +2297,7 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -2325,6 +2329,7 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+            disable_sinks (bool, optional): Whether to disable workflow sink side effects. Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
@@ -2345,6 +2350,7 @@ class InferenceHTTPClient:
             use_cache=use_cache,
             enable_profiling=enable_profiling,
             workflow_version_id=workflow_version_id,
+            disable_sinks=disable_sinks,
         )
 
     def _run_workflow(
@@ -2359,6 +2365,7 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> List[Dict[str, Any]]:
         response = self._execute_workflow_request(
             workspace_name=workspace_name,
@@ -2371,6 +2378,7 @@ class InferenceHTTPClient:
             use_cache=use_cache,
             enable_profiling=enable_profiling,
             workflow_version_id=workflow_version_id,
+            disable_sinks=disable_sinks,
         )
         response_data = response.json()
         workflow_outputs = response_data["outputs"]
@@ -2397,6 +2405,7 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
@@ -2415,6 +2424,8 @@ class InferenceHTTPClient:
             "use_cache": use_cache,
             "enable_profiling": enable_profiling,
         }
+        if disable_sinks:
+            payload["disable_sinks"] = True
         inputs = {}
         for image_name, image in images.items():
             loaded_image = load_nested_batches_of_inference_input(

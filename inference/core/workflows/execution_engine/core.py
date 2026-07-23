@@ -43,6 +43,7 @@ class ExecutionEngine(BaseExecutionEngine):
         step_error_handler: Optional[
             Union[str, Callable[[str, Exception], None]]
         ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
+        disable_sinks: bool = False,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -59,6 +60,7 @@ class ExecutionEngine(BaseExecutionEngine):
             profiler=profiler,
             executor=executor,
             step_error_handler=step_error_handler,
+            disable_sinks=disable_sinks,
         )
         return cls(engine=engine)
 

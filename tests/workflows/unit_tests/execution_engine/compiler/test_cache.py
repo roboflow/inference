@@ -4,6 +4,7 @@ from inference.core.workflows.errors import WorkflowEnvironmentConfigurationErro
 from inference.core.workflows.execution_engine.v1.compiler.cache import (
     BasicWorkflowsCache,
 )
+from inference.core.workflows.execution_engine.v1.compiler.core import COMPILATION_CACHE
 
 
 def test_cache_when_hash_key_cannot_be_obtained() -> None:
@@ -83,3 +84,20 @@ def test_cache_being_emptied_properly() -> None:
     assert cache.get(key_one) is None
     assert cache.get(key_two) == "my_value_2"
     assert cache.get(key_three) == "my_value_3"
+
+
+def test_workflow_compilation_cache_distinguishes_sink_execution_modes() -> None:
+    workflow_definition = {"version": "1.0", "inputs": [], "steps": [], "outputs": []}
+
+    enabled_key = COMPILATION_CACHE.get_hash_key(
+        workflow_definition=workflow_definition,
+        execution_engine_version=None,
+        disable_sinks=False,
+    )
+    disabled_key = COMPILATION_CACHE.get_hash_key(
+        workflow_definition=workflow_definition,
+        execution_engine_version=None,
+        disable_sinks=True,
+    )
+
+    assert enabled_key != disabled_key
