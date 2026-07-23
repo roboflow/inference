@@ -205,7 +205,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DetectionsNearestNeighborBlockV1(WorkflowBlock):
@@ -317,12 +317,8 @@ def match_query_to_targets(
     max_distance: Optional[int],
 ) -> Tuple[List[Optional[float]], List[int], List[int]]:
     num_query = len(query_detections)
-    matched_query_indices: List[int] = []
-    matched_target_indices: List[int] = []
-    distances: List[Optional[float]] = [None] * num_query
-
     if len(target_detections) == 0:
-        return distances, matched_query_indices, matched_target_indices
+        return [None] * num_query, [], []
 
     # Plain brute-force pairwise distance matrix (not a KD-tree): typical
     # detection counts here are tens per set (single-frame use case), so
@@ -333,39 +329,38 @@ def match_query_to_targets(
 
     query_ids = query_detections.data.get(DETECTION_ID_KEY)
     target_ids = target_detections.data.get(DETECTION_ID_KEY)
-    can_exclude_self_matches = query_ids is not None and target_ids is not None
+    if query_ids is not None and target_ids is not None:
+        # A target counts as a self-match (and is excluded) whenever it shares
+        # the query detection's `detection_id` - this covers the same-set case
+        # automatically without a separate config flag. If `detection_id` is
+        # missing on either set, self-exclusion is skipped entirely rather
+        # than raising.
+        distance_matrix[
+            np.asarray(query_ids)[:, None] == np.asarray(target_ids)[None, :]
+        ] = np.nan
 
-    for i in range(num_query):
-        row = distance_matrix[i].copy()
-        if can_exclude_self_matches:
-            # A target counts as a self-match (and is excluded) whenever it shares
-            # the query detection's `detection_id` - this covers the same-set case
-            # automatically without a separate config flag. If `detection_id` is
-            # missing on either set, self-exclusion is skipped entirely (see
-            # `can_exclude_self_matches` above) rather than raising.
-            row[target_ids == query_ids[i]] = np.nan
+    if max_distance is not None:
+        # Candidates beyond the limit are dropped before ranking, so a tie
+        # can only ever form among targets that are themselves within
+        # `max_distance` - not merely within epsilon of an out-of-range
+        # minimum.
+        distance_matrix[distance_matrix > max_distance] = np.nan
 
-        if max_distance is not None:
-            # Candidates beyond the limit are dropped before ranking, so a tie
-            # can only ever form among targets that are themselves within
-            # `max_distance` - not merely within epsilon of an out-of-range
-            # minimum.
-            row[row > max_distance] = np.nan
+    # An all-NaN query row (no valid target) keeps NaN as its minimum - such
+    # rows are sliced out before `np.nanmin` only to avoid its all-NaN-slice
+    # warning. NaN compares False in the tie mask below, so those rows are
+    # omitted from the paired outputs entirely (no placeholder row);
+    # `query_predictions` still carries them, with `nearest_target_distance`
+    # left as `None`.
+    valid_rows = ~np.all(np.isnan(distance_matrix), axis=1)
+    min_per_row = np.full(num_query, np.nan)
+    min_per_row[valid_rows] = np.nanmin(distance_matrix[valid_rows], axis=1)
 
-        valid_mask = ~np.isnan(row)
-        if not valid_mask.any():
-            # No valid target for this query detection - it is omitted from the
-            # paired outputs entirely (no placeholder row); `query_predictions`
-            # still carries it, with `nearest_target_distance` left as `None`.
-            continue
-
-        min_distance = np.nanmin(row)
-        tie_mask = valid_mask & (row <= min_distance + TIE_EPSILON_PX)
-        distances[i] = float(min_distance)
-        for target_index in np.where(tie_mask)[0]:
-            # A tie duplicates the query row once per tied target, so the two
-            # paired outputs stay the same length and index-aligned.
-            matched_query_indices.append(i)
-            matched_target_indices.append(int(target_index))
-
+    # A tie duplicates the query row once per tied target; row-major `np.where`
+    # keeps the two paired outputs the same length and index-aligned.
+    tie_mask = distance_matrix <= (min_per_row[:, None] + TIE_EPSILON_PX)
+    matched_query_indices, matched_target_indices = (
+        x.tolist() for x in np.where(tie_mask)
+    )
+    distances = [None if np.isnan(d) else float(d) for d in min_per_row]
     return distances, matched_query_indices, matched_target_indices
