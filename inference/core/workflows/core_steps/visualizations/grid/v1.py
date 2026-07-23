@@ -91,12 +91,15 @@ class GridVisualizationManifest(WorkflowBlockManifest):
         Selector(kind=[LIST_OF_VALUES_KIND]),
     ] = Field(  # type: ignore
         description="Images to arrange in a grid layout. Provide either a list of "
-        "individual image references (e.g. `[\"$inputs.image\", \"$steps.depth.image\"]` "
+        'individual image references (e.g. `["$inputs.image", "$steps.depth.image"]` '
         "to compare an input image with a model's visualization side by side) or a single "
         "selector pointing at a list of images produced by blocks like Buffer, Image Slicer, "
         "or Dynamic Crop. Images are automatically arranged in a square grid (calculated from "
         "the number of images) and resized to fit their grid cells while maintaining aspect ratio.",
-        examples=[["$inputs.image", "$steps.depth_estimation.image"], "$steps.buffer.output"],
+        examples=[
+            ["$inputs.image", "$steps.depth_estimation.image"],
+            "$steps.buffer.output",
+        ],
     )
 
     width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
