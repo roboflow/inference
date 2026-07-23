@@ -63,6 +63,7 @@ class VideoConfiguration(BaseModel):
     )
     video_source_properties: Optional[Dict[str, float]] = None
     batch_collection_timeout: Optional[float] = None
+    stream_credentials: Optional[str] = None
 
 
 class MemorySinkConfiguration(BaseModel):
