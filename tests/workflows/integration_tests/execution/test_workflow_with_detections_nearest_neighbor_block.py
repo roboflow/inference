@@ -13,6 +13,9 @@ import numpy as np
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import (
+    NEAREST_TARGET_DISTANCE_KEY,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
@@ -126,9 +129,12 @@ def test_detections_nearest_neighbor_workflow(
         "matched_target_detections",
     }
 
-    query_predictions = result[0]["query_predictions"]["predictions"]
-    matched_query_detections = result[0]["matched_query_detections"]["predictions"]
-    matched_target_detections = result[0]["matched_target_detections"]["predictions"]
+    # `ExecutionEngine.run()` hands back live `sv.Detections` objects for
+    # detections-kind outputs (JSON serialization only happens at the HTTP API
+    # layer), so these are asserted on directly rather than as JSON dicts.
+    query_predictions = result[0]["query_predictions"]
+    matched_query_detections = result[0]["matched_query_detections"]
+    matched_target_detections = result[0]["matched_target_detections"]
 
     assert (
         len(query_predictions) > 0
@@ -142,14 +148,11 @@ def test_detections_nearest_neighbor_workflow(
         "detection on the crowd image."
     )
 
-    for detection in query_predictions:
-        assert "nearest_target_distance" in detection
-        distance = detection["nearest_target_distance"]
+    assert NEAREST_TARGET_DISTANCE_KEY in query_predictions.data
+    for distance in query_predictions.data[NEAREST_TARGET_DISTANCE_KEY]:
         assert distance is None or isinstance(distance, float)
 
-    matched_distances = [
-        detection["nearest_target_distance"] for detection in matched_query_detections
-    ]
+    matched_distances = matched_query_detections.data[NEAREST_TARGET_DISTANCE_KEY]
     assert all(distance is not None for distance in matched_distances), (
         "Every detection appearing in matched_query_detections must carry a "
         "real (non-None) nearest_target_distance."
@@ -185,9 +188,9 @@ def test_detections_nearest_neighbor_workflow_when_target_set_is_empty(
     # then
     assert isinstance(result, list)
     assert len(result) == 1
-    query_predictions = result[0]["query_predictions"]["predictions"]
-    matched_query_detections = result[0]["matched_query_detections"]["predictions"]
-    matched_target_detections = result[0]["matched_target_detections"]["predictions"]
+    query_predictions = result[0]["query_predictions"]
+    matched_query_detections = result[0]["matched_query_detections"]
+    matched_target_detections = result[0]["matched_target_detections"]
 
     assert len(query_predictions) > 0, (
         "Expected at least one person detection at confidence=0.3 on the crowd "
@@ -195,8 +198,8 @@ def test_detections_nearest_neighbor_workflow_when_target_set_is_empty(
     )
     assert len(matched_query_detections) == 0
     assert len(matched_target_detections) == 0
-    for detection in query_predictions:
-        assert detection["nearest_target_distance"] is None, (
+    for distance in query_predictions.data[NEAREST_TARGET_DISTANCE_KEY]:
+        assert distance is None, (
             "With an empty target set every query detection must be unmatched "
             "(nearest_target_distance=None)."
         )
