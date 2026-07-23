@@ -46,6 +46,16 @@ def decrypt_stream_credentials(stream_credentials: str, api_key: str) -> dict:
     return json.loads(plaintext.decode("utf-8"))
 
 
+def _sanitize_for_log(video_reference: str) -> str:
+    parsed = urlparse(video_reference)
+    if not (parsed.scheme and parsed.hostname):
+        return video_reference
+    if not (parsed.username or parsed.password):
+        return video_reference
+    netloc = parsed.hostname + (f":{parsed.port}" if parsed.port else "")
+    return urlunparse(parsed._replace(netloc=netloc))
+
+
 def _embed_credentials(video_reference: str, username: str, password: str) -> str:
     parsed = urlparse(video_reference)
     if not parsed.scheme or not parsed.hostname:
@@ -77,6 +87,6 @@ def resolve_operational_video_reference(
     except Exception:
         logger.warning(
             "Failed to decrypt stream_credentials for video reference %r",
-            video_reference,
+            _sanitize_for_log(video_reference),
         )
         return video_reference
