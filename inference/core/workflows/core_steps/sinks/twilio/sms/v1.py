@@ -18,6 +18,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -293,7 +294,9 @@ class TwilioSMSNotificationBlockV1(WorkflowBlock):
             return {
                 "error_status": False,
                 "throttling_status": False,
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
         credentials_hash = _hash_credentials(
             twilio_account_sid=twilio_account_sid,

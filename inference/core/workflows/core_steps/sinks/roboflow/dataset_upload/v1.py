@@ -49,6 +49,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 from inference.core.workflows.core_steps.common.utils import scale_sv_detections
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -314,11 +315,11 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
     ) -> BlockResult:
-        if self._disable_sinks or disable_sink:
+        if self._disable_sinks:
             return [
                 {
                     "error_status": False,
-                    "message": "Sink was disabled by parameter `disable_sink`",
+                    "message": disabled_sink_message(disabled_by_execution_policy=True),
                 }
                 for _ in range(len(images))
             ]
@@ -329,6 +330,16 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
+        if disable_sink:
+            return [
+                {
+                    "error_status": False,
+                    "message": disabled_sink_message(
+                        disabled_by_execution_policy=False
+                    ),
+                }
+                for _ in range(len(images))
+            ]
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name

@@ -25,6 +25,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -375,7 +376,9 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
             return {
                 "error_status": False,
                 "throttling_status": False,
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
 
         # Check cooldown using instance variable

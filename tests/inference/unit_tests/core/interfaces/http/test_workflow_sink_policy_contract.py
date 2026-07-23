@@ -73,7 +73,7 @@ def test_workflow_run_injects_sink_disabling_policy(
 
     assert response.status_code == 200
     assert response.json()["outputs"] == [
-        {"message": "Sink was disabled by parameter `disable_sink`"}
+        {"message": "Sink was disabled by workflow execution policy"}
     ]
     webhook_v1.METHOD_TO_HANDLER["POST"].assert_not_called()
 

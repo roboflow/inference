@@ -10,6 +10,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     update_image_metadata_at_roboflow,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -208,11 +209,11 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
         tags: Optional[Union[List[str], Batch[Optional[List[str]]]]] = None,
         disable_sink: bool = False,
     ) -> BlockResult:
-        if self._disable_sinks or disable_sink:
+        if self._disable_sinks:
             return [
                 {
                     "error_status": False,
-                    "message": "Sink was disabled by parameter `disable_sink`",
+                    "message": disabled_sink_message(disabled_by_execution_policy=True),
                 }
                 for _ in range(len(source_id))
             ]
@@ -223,6 +224,16 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
+        if disable_sink:
+            return [
+                {
+                    "error_status": False,
+                    "message": disabled_sink_message(
+                        disabled_by_execution_policy=False
+                    ),
+                }
+                for _ in range(len(source_id))
+            ]
 
         if len(source_id) > MAX_BATCH_UPDATES:
             raise ValueError(

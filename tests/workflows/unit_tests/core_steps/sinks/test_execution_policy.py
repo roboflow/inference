@@ -55,6 +55,8 @@ def test_injected_policy_noops_sink_with_declared_output_shape(block) -> None:
             continue
         if name == "disable_sink":
             run_arguments[name] = False
+        elif name == "mode":
+            run_arguments[name] = "write"
         elif name in {"images", "source_id"}:
             run_arguments[name] = [mock.MagicMock()]
         elif name == "predictions":

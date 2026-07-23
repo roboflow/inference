@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 
 
 class OPCUAConnectionManager:
@@ -698,12 +699,15 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         retry_backoff_seconds: float = 0.015,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
-            logger.debug("OPC Writer disabled by disable_sink parameter")
+            message = disabled_sink_message(
+                disabled_by_execution_policy=self._disable_sinks
+            )
+            logger.debug(message)
             return {
                 "disabled": True,
                 "throttling_status": False,
                 "error_status": False,
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": message,
             }
         seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:

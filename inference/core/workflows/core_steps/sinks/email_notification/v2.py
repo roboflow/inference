@@ -20,6 +20,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     send_email_using_smtp_server,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -478,7 +479,9 @@ class EmailNotificationBlockV2(WorkflowBlock):
             return {
                 "error_status": False,
                 "throttling_status": False,
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
         seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:

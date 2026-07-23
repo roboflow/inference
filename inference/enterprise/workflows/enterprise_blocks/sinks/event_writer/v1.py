@@ -11,6 +11,7 @@ import requests
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -370,7 +371,9 @@ class EventWriterSinkBlockV1(WorkflowBlock):
             return {
                 "error_status": False,
                 "event_id": "",
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
 
         url = event_ingestion_url.rstrip("/")

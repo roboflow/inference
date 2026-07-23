@@ -16,6 +16,7 @@ from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
@@ -503,7 +504,9 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 "error_status": False,
                 "throttling_status": False,
                 "event_id": "",
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
 
         # Selector-resolved values bypass manifest validation; a negative

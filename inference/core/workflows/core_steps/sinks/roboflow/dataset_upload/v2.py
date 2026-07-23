@@ -8,6 +8,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.cache.base import BaseCache
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     register_datapoint_at_roboflow,
 )
@@ -305,11 +306,11 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         image_name: Optional[Batch[Optional[str]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
-        if self._disable_sinks or disable_sink:
+        if self._disable_sinks:
             return [
                 {
                     "error_status": False,
-                    "message": "Sink was disabled by parameter `disable_sink`",
+                    "message": disabled_sink_message(disabled_by_execution_policy=True),
                 }
                 for _ in range(len(images))
             ]
@@ -320,6 +321,16 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
+        if disable_sink:
+            return [
+                {
+                    "error_status": False,
+                    "message": disabled_sink_message(
+                        disabled_by_execution_policy=False
+                    ),
+                }
+                for _ in range(len(images))
+            ]
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name

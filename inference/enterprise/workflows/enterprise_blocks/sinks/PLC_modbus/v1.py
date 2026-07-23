@@ -145,7 +145,7 @@ class ModbusTCPBlockV1(WorkflowBlock):
         image: Optional[WorkflowImageData] = None,
         metadata: Optional[VideoMetadata] = None,
     ) -> dict:
-        if self._disable_sinks:
+        if self._disable_sinks and mode == "write":
             return {"modbus_results": []}
         read_results = {}
         write_results = {}
@@ -173,7 +173,7 @@ class ModbusTCPBlockV1(WorkflowBlock):
                     read_results[address] = "ReadFailure"
 
         # If mode involves writing
-        if mode in ["write", "read_and_write"]:
+        if not self._disable_sinks and mode in ["write", "read_and_write"]:
             for address, value in registers_to_write.items():
                 try:
                     response = self.client.write_register(address, value)
