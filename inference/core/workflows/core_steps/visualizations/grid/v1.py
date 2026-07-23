@@ -1,16 +1,17 @@
 import math
 import uuid
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
@@ -86,21 +87,30 @@ class GridVisualizationManifest(WorkflowBlockManifest):
         }
     )
 
-    images: Union[
-        List[Selector(kind=[IMAGE_KIND])],
-        Selector(kind=[LIST_OF_VALUES_KIND]),
-    ] = Field(  # type: ignore
-        description="Images to arrange in a grid layout. Provide either a list of "
-        'individual image references (e.g. `["$inputs.image", "$steps.depth.image"]` '
-        "to compare an input image with a model's visualization side by side) or a single "
-        "selector pointing at a list of images produced by blocks like Buffer, Image Slicer, "
-        "or Dynamic Crop. Images are automatically arranged in a square grid (calculated from "
-        "the number of images) and resized to fit their grid cells while maintaining aspect ratio.",
+    images: List[Selector(kind=[IMAGE_KIND, LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+        description="Images to arrange in a grid layout. Add one or more image references: "
+        'individual images (e.g. `["$inputs.image", "$steps.depth_estimation.image"]` to '
+        "compare an input image with a model's visualization side by side) and/or selectors "
+        "pointing at lists of images produced by blocks like Buffer, Image Slicer, or Dynamic "
+        "Crop (which are flattened into the grid). Images are automatically arranged in a square "
+        "grid (calculated from the number of images) and resized to fit their grid cells while "
+        "maintaining aspect ratio.",
         examples=[
             ["$inputs.image", "$steps.depth_estimation.image"],
-            "$steps.buffer.output",
+            ["$steps.buffer.output"],
         ],
+        min_items=1,
     )
+
+    @field_validator("images", mode="before")
+    @classmethod
+    def coerce_single_selector_to_list(cls, value: Any) -> Any:
+        # Backwards compatibility: this field historically accepted a single selector
+        # pointing at a list of images (e.g. "$steps.buffer.output"). Wrap a bare
+        # selector so previously-saved workflows still validate as a one-element list.
+        if isinstance(value, str):
+            return [value]
+        return value
 
     width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Width of the output grid image in pixels. Controls the total width of the canvas where the image grid will be arranged. The width is divided into equal-sized cells based on the grid dimensions. Typical values range from 1280 to 3840 pixels depending on desired output size and number of images.",
@@ -142,9 +152,28 @@ class GridVisualizationBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return GridVisualizationManifest
 
+    def flattenImages(
+        self, images: Union[Batch[WorkflowImageData], List[WorkflowImageData]]
+    ) -> List[WorkflowImageData]:
+        # Each entry is either a single image (from an image selector) or a list of
+        # images (from a selector pointing at a LIST_OF_VALUES output, e.g. Buffer).
+        # Flatten everything into one flat list of images to tile.
+        flattened: List[WorkflowImageData] = []
+        for item in images or []:
+            if isinstance(item, list):
+                flattened.extend(item)
+            else:
+                flattened.append(item)
+        return flattened
+
     def run(
-        self, images: List[WorkflowImageData], width: int, height: int
+        self,
+        images: Union[Batch[WorkflowImageData], List[WorkflowImageData]],
+        width: int,
+        height: int,
     ) -> BlockResult:
+        images = self.flattenImages(images)
+
         # use previous result if input hasn't changed
         if self.prev_output is not None:
             if len(self.prev_input) == len(images) and all(
