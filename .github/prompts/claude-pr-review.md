@@ -229,6 +229,7 @@ each topic skill whose signal the PR exhibits (confirm via the skill's
 | calls an external / platform API, changes an SDK↔server contract, or adds fallback / auto-conversion | `review-topic-external-contract-and-silent-fallback` |
 | touches auth / api-key / workspace-tenant scoping / permissions / secrets | `review-topic-auth-and-tenant-security` |
 | ingests external / user input — a URL / file path / uploaded image, `torch.load` / pickle / weights load, or zip/tar extraction (SSRF, path traversal, unsafe deserialization, decompression bombs) | `review-topic-input-boundary-security` |
+| adds/modifies an outbound HTTP call, builds a URL from `API_BASE_URL` / `HOSTED_*_URL` / a `*.roboflow.com` host, adds an endpoint-URL env var or setting, constructs an `InferenceHTTPClient`, or touches `wrap_url` / `SECURE_GATEWAY` | `review-topic-secure-gateway-url-wrapping` |
 | **(every PR)** — verify changed behavior is covered by a real CI test, tests are isolated, selectors exercised | `review-topic-test-hygiene` |
 
 Load a skill when in doubt — skills are additive guidance, not gates. Apply only
@@ -297,6 +298,27 @@ avoid an empty review.
 
 Do not spend review space on broad summaries, implementation walkthroughs, or
 style feedback unless they are necessary to explain a concrete risk.
+
+### Version and changelog notices
+
+For functional changes to either versioned subsystem, post or refresh a concise
+top-level release-coordination comment (separate from the Pass Comment):
+
+- Tell the contributor to add the user-facing entry under `## Unreleased` in
+  `inference_models/docs/changelog.md` and/or
+  `docs/workflows/execution_engine_changelog.md` when it is missing. Do not ask
+  them to select or bump a version.
+- Tell maintainers exactly which system requires a release-time version change:
+  **inference-models requires a version bump for release**, **Execution Engine
+  requires a version bump for release**, or both. This maintainer notice is
+  required even when the contributor already updated the changelog, and it does
+  not block the contributor or the pass gate.
+
+Maintainers own the release PR: they choose the version, update the relevant
+version constant/project metadata and lock-step assertions or pins, move the
+`Unreleased` entries into the final release section, and leave a fresh
+`Unreleased` section. Avoid duplicate notices:
+update the prior release-coordination comment when the affected systems change.
 
 Escalate to code-owners only for genuinely difficult cases, unclear ownership or product
 intent, security-sensitive decisions, or when the contributor repeatedly does
@@ -407,7 +429,8 @@ Rules for the pass comment:
 
 ## Finding Policy
 
-Focus the review on two outputs: critical issues/risks and tests to add. The
+Focus the review on critical issues/risks, tests to add, and the required
+version/changelog notices above. The
 specific, evidenced checks for each surface and topic live in the dispatched
 skills — apply the ones relevant to the concrete changed code, not as an
 exhaustive checklist.
@@ -428,8 +451,9 @@ Severity:
 
 - **Critical** - likely production breakage, data loss, or security exposure.
 - **High** - significant bug or contract break under realistic usage.
-- **High** - clearly required version bump omitted for a breaking or
-  release-bound change.
+- **High** - a maintainer release PR changes a version but omits required
+  lock-step pins, lockfiles, assertions, or final changelog heading. Never raise
+  this for a feature/fix contributor who correctly leaves versions unchanged.
 - **Medium** - meaningful risk or maintainability issue worth addressing before
   merge.
 - **Medium** - missing docs, changelog, or release-note updates for user-visible

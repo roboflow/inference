@@ -1,0 +1,14 @@
+# Optional dependencies for NVIDIA Cosmos 3 Edge (reasoner + generator).
+#
+# Cosmos 3 support is newer than any transformers/diffusers release:
+# - transformers: `cosmos3_edge` model type requires >=5.15 (unreleased)
+# - diffusers: Cosmos3OmniPipeline checkpoint format requires >=0.40 (unreleased;
+#   0.39.0 loads the transformer with meta/randomly-initialized tensors)
+#
+# Until those releases land we pin the exact git commits validated on real
+# weights (L4, 2026-07-20). Replace with pypi version pins once released --
+# git direct-URL deps cannot ship in the pypi extras (see .release/pypi/*.setup.py),
+# so this file is intentionally NOT wired into extras_require yet.
+transformers @ git+https://github.com/huggingface/transformers.git@cbf4d720ec734edb77d25452b2790c7e4be2f8d7
+diffusers @ git+https://github.com/huggingface/diffusers.git@86e6dac5360703ddf09fe250db50be667eb93662
+sentencepiece>=0.2.1,<0.3.0

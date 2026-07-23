@@ -170,6 +170,9 @@ def send_usage_payload(
             for workflow_payload in complete_workflow_payloads:
                 if "api_key_hash" in workflow_payload:
                     del workflow_payload["api_key_hash"]
+                stream_session_id = workflow_payload.pop("stream_session_id", None)
+                if stream_session_id:
+                    workflow_payload["exec_session_id"] = stream_session_id
                 workflow_payload["api_key"] = api_key
             if not extra_headers:
                 extra_headers = {}

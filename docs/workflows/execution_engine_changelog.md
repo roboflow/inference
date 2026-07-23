@@ -2,6 +2,15 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Unreleased
+
+**What changed**
+
+Add user-facing compile or execution behavior changes here. Maintainers replace
+this heading with the Execution Engine and inference versions when releasing.
+
+---
+
 ## Execution Engine `v1.12.0` | inference `v1.3.2`
 
 **What changed**

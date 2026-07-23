@@ -71,7 +71,8 @@ from .payload_helpers import (
 from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
-from .utils import collect_func_params
+from .stream_session import stream_session_id as stream_session_id_var
+from .utils import collect_func_params, ssl_verify_for_endpoint
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -386,8 +387,12 @@ class UsageCollector:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
             hostname = self._system_info["hostname"]
+        stream_session_id = stream_session_id_var.get()
+        usage_key = f"{category}:{resource_id}"
+        if stream_session_id:
+            usage_key = f"{usage_key}:{stream_session_id}"
         with UsageCollector._lock:
-            source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
+            source_usage = self._usage[api_key_hash][usage_key]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
@@ -411,6 +416,9 @@ class UsageCollector:
             ):
                 source_usage["roboflow_service_name"] = roboflow_service_name
                 source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+
+            if stream_session_id:
+                source_usage["stream_session_id"] = stream_session_id
 
             exec_session_id = None
             if execution_id is not None:
@@ -532,11 +540,7 @@ class UsageCollector:
         self._offload_to_api(payloads=merged_payloads)
 
     def _offload_to_api(self, payloads: List[APIKeyUsage]):
-        ssl_verify = True
-        if "localhost" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
-        if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
+        ssl_verify = ssl_verify_for_endpoint(self._settings.api_usage_endpoint_url)
 
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 

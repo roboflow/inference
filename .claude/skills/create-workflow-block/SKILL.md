@@ -60,13 +60,13 @@ These hold regardless of category — the per-category references only add nuanc
 - [ ] `type` Literal `roboflow_core/{family}@v{N}` (+ legacy alias if replacing one).
 - [ ] Inputs are `Selector(kind=[...])` / `Union[literal, Selector(...)]` with rich `Field(description=, examples=)` (docs are generated from these).
 - [ ] `describe_outputs()` matches every key `run()` emits — on every path (empty / error branches included).
-- [ ] `get_execution_engine_compatibility()` set to the minimum EE version you rely on.
+- [ ] `get_execution_engine_compatibility()` set to the TRUE minimum EE version you rely on — look up which EE version introduced each capability you use in `docs/workflows/execution_engine_changelog.md`; do not copy-paste the default range. If a capability you need is still under `## Unreleased`, the EE version must be placed and bumped first (maintainer-coordinated) so your range can reference it.
 - [ ] Batch / dimensionality hooks declared if the block batches inputs or changes nesting level.
 - [ ] Registered in `core_steps/loader.py` (`load_blocks()`); any new kind in `types.py` + `load_kinds()` + a serializer/deserializer pair.
 - [ ] Producing/moving detections: parent-coordinate metadata attached.
 - [ ] Stateful block: state keyed by `video_identifier` + evicted; `get_restrictions()` declared; `NotImplementedError` on `StepExecutionMode.REMOTE` if remote is incoherent.
 - [ ] Unit test under `tests/workflows/unit_tests/core_steps/...` + integration test under `tests/workflows/integration_tests/execution/...`.
-- [ ] Version bump `inference/core/version.py`; bump `EXECUTION_ENGINE_V1_VERSION` + `docs/workflows/execution_engine_changelog.md` ONLY if the EE itself changed.
+- [ ] If the EE itself changed, add its user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`; maintainers bump the EE version at release time.
 - [ ] Do NOT hand-write `docs/workflows/blocks/<block>.md` — it is generated from manifest field descriptions.
 
 Reviewer's checklist for block PRs: `review-workflows-blocks`.
@@ -85,7 +85,7 @@ Rules from `docs/workflows/versioning.md` and `docs/workflows/blocks_bundling.md
 
 - **Bug-fix in place; anything else is a new version.** Only patch the existing `vN.py` for bug fixes. Behavioral/interface changes create `v(N+1).py` in a new module under the block package — **stability over DRY**; code duplication is accepted and blocks stay independent.
 - **Type identifiers & aliases.** Convention `{plugin}/{block_family}@v{X}` (e.g. `roboflow_core/detection_offset@v1`). The `type` `Literal` may list a legacy alias (`"DetectionOffset"`) so old definitions keep parsing.
-- **EE compatibility.** Every manifest returns a semver range from `get_execution_engine_compatibility()`; if a block needs a feature added in `1.3.7`, declare `">=1.3.7,<2.0.0"`. A definition's `version: 1.1.0` resolves to `>=1.1.0,<2.0.0`. History: `docs/workflows/execution_engine_changelog.md`.
+- **EE compatibility.** Every manifest returns a semver range from `get_execution_engine_compatibility()`; if a block needs a feature added in `1.3.7`, declare `">=1.3.7,<2.0.0"` — derive the floor from the changelog, never copy-paste the default. A feature still under `## Unreleased` has no version to declare against: the EE version must be placed and bumped (maintainer-coordinated) before the block ships. A definition's `version: 1.1.0` resolves to `>=1.1.0,<2.0.0`. History: `docs/workflows/execution_engine_changelog.md`.
 - **Plugin layout & the `__init__.py` requirement.** A plugin is a Python package: `{plugin}/{block_name}/v1.py` per block, plus a main `__init__.py` exposing `load_blocks()` (required), optionally `load_kinds()`, `REGISTERED_INITIALIZERS`, and `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`. See `docs/workflows/blocks_bundling.md`.
 
 ## Block categories (per-category references)

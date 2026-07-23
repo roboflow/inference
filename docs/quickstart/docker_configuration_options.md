@@ -63,7 +63,23 @@ If true, the batch size will be fixed to the maximum batch size configured for t
 
 **SECURE_GATEWAY**: String (default = None)
 
-Sets the address of a Roboflow Secure Gateway for air-gapped deployments. All API and model download traffic will be routed through this proxy.
+Sets the address of a Roboflow Secure Gateway for air-gapped deployments. Roboflow API
+and model download traffic is routed through this proxy; traffic that cannot be proxied
+is disabled or rerouted as follows:
+
+- The `inference` version check (which calls `api.github.com`) is force-disabled —
+  `DISABLE_VERSION_CHECK` is set to `True` even if explicitly configured otherwise.
+- If `WORKFLOWS_STEP_EXECUTION_MODE=remote` is combined with
+  `WORKFLOWS_REMOTE_API_TARGET=hosted`, step execution falls back to `local` with a
+  warning — the hosted Roboflow inference endpoints
+  (`detect`/`outline`/`segment`/`classify`/`infer.roboflow.com`) cannot be reached through
+  the gateway proxy. To keep remote execution, use
+  `WORKFLOWS_REMOTE_API_TARGET=self-hosted` **and** point `LOCAL_INFERENCE_API_URL`
+  (default `http://127.0.0.1:9001`) at an inference server reachable inside the
+  gateway perimeter.
+- Third-party integrations (Google Vision/Gemini direct-key paths, Stability AI, Twilio
+  media upload, webhooks to external hosts) are not proxied and will fail unless the
+  gateway network permits them.
 
 The legacy `LICENSE_SERVER` environment variable is still accepted but deprecated.
 

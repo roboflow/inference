@@ -20,6 +20,8 @@
     "@rive-app/canvas": "^2.25.7",
     "@tailwindcss/line-clamp": "^0.4.4",
     "gsap": "^3.12.7",
-    "swiper": "^12.1.2"
+    "swiper": "^12.1.2",
+    "shell-quote": "^1.9.0",
+    "brace-expansion": "^2.1.2"
   }
 }
