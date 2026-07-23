@@ -2,6 +2,10 @@ class InferenceDeprecationWarning(Warning):
     pass
 
 
+class InferenceConfigurationWarning(Warning):
+    pass
+
+
 class InferenceExperimentalFeatureWarning(Warning):
     pass
 

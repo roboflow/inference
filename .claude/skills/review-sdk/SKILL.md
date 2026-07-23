@@ -25,7 +25,7 @@ OUT of scope (other skills): server-side model code under `inference/models/**` 
 ## Review checklist
 Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (optional).
 
-- **BLOCK** — Behavioural change bumps `inference/core/version.py` (`__version__`); `inference_sdk/version.py` left untouched (it is generated).
+- **BLOCK** — `inference_sdk/version.py` left untouched (it is generated at build time; never hand-edited).
 - **BLOCK** — New HTTP call uses `api_key_safe_raise_for_status`, never bare `response.raise_for_status()`; every user-facing error/URL string passes through `deduct_api_key_from_string`.
 - **BLOCK** — New sync client method has a matching `_async` sibling, each decorated with the correct `@wrap_errors` (sync) / `@wrap_errors_async` (async).
 - **BLOCK** — V1-only endpoint calls `self.__ensure_v1_client_mode()` before building the request.
@@ -40,7 +40,8 @@ Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (opt
 - **NIT** — Public signatures fully type-hinted with Google-style docstrings; image params typed as `ImagesReference`; `WrongClientModeError` listed under `Raises:` for V1-gated methods.
 
 ### Not blocking
-- A pure-internal refactor (no public method/error/config/signature change and no behavioural change) does not require a version bump, docs, or new tests — only that existing tests still pass.
+- Do NOT demand an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs.
+- A pure-internal refactor (no public method/error/config/signature change and no behavioural change) does not require docs or new tests — only that existing tests still pass.
 - A method that is intrinsically V1-only *and* has no V0 route does not need a V0 fallback; the `WrongClientModeError` gate is the correct behaviour, not a gap.
 - Cosmetic docstring/typing nits (last two items) never block a merge on their own.
 
@@ -69,11 +70,11 @@ Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (opt
 - **Signatures + docstrings.** Type-hinted public signatures with Google-style `Args:`/`Returns:`/`Raises:`. Image params typed `ImagesReference = Union[np.ndarray, PIL.Image.Image, str]`.
 
 ## Required companions
-- **Version bump:** `inference/core/version.py` (`__version__`). `.release/pypi/inference.sdk.setup.py` copies it → `inference_sdk/version.py` at build time; never hand-edit the generated file (bumps: #248 rc17→rc19, #255 rc21→rc22, #1521 0.54.1→0.54.2).
+- **Versioning:** no `inference/core/version.py` bump is required (release-time concern). `.release/pypi/inference.sdk.setup.py` copies it → `inference_sdk/version.py` at build time; never hand-edit the generated file.
 - **Tests:** `tests/inference_sdk/unit_tests/**` — `http/test_client.py`, `test_entities.py`, `http/utils/test_*.py` (key redaction → `test_requests.py`; session reuse → `http/utils/test_executors.py`), `test_config.py` for env-flags, a dedicated file for deprecations, `webrtc/` for WebRTC.
 - **Docs:** `docs/inference_helpers/inference_sdk.md` and/or sub-pages (`inference_sdk/core_models.md`, `configuration.md`, `workflows.md`, `model_management.md`).
 - **Requirements:** a pin in `requirements/requirements.sdk.http.txt` / `.webrtc.txt` for any new runtime dependency.
-- There is **no dedicated SDK changelog** — version bump + docs are the changelog surface.
+- There is **no dedicated SDK changelog** — docs are the changelog surface.
 
 ## Key files & Reference PRs
 - `inference_sdk/http/client.py` — `InferenceHTTPClient`, `wrap_errors`/`wrap_errors_async`, `_determine_client_mode`, `__ensure_v1_client_mode`, endpoint methods.

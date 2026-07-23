@@ -2,6 +2,7 @@ import base64
 import io
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
 from time import perf_counter
@@ -175,6 +176,19 @@ class _PipelinePrimingSentinel:
 _PIPELINE_PRIMING = _PipelinePrimingSentinel()
 
 
+def _supports_independent_stage_execution(pre_process) -> bool:
+    """Return whether preprocessing declares the composed-execution control."""
+    try:
+        parameters = signature(pre_process).parameters
+    except (TypeError, ValueError):
+        return False
+    parameter = parameters.get("independent_stage_execution")
+    return parameter is not None and parameter.kind in {
+        Parameter.POSITIONAL_OR_KEYWORD,
+        Parameter.KEYWORD_ONLY,
+    }
+
+
 class InferenceModelsObjectDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -205,6 +219,9 @@ class InferenceModelsObjectDetectionAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        self._preprocess_supports_independent_stage_execution = (
+            _supports_independent_stage_execution(self._model.pre_process)
+        )
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -230,6 +247,8 @@ class InferenceModelsObjectDetectionAdapter(Model):
             for v in images
         ]
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if self._preprocess_supports_independent_stage_execution:
+            mapped_kwargs["independent_stage_execution"] = False
         return self._model.pre_process(np_images, **mapped_kwargs)
 
     def predict(self, img_in, **kwargs):
