@@ -28,11 +28,11 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
-from inference.core.interfaces.http.orjson_utils import (
-    serialise_single_workflow_result_element,
-)
 from inference.core.interfaces.camera.stream_auth import (
     resolve_operational_video_reference,
+)
+from inference.core.interfaces.http.orjson_utils import (
+    serialise_single_workflow_result_element,
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import InMemoryBufferSink, multi_sink
