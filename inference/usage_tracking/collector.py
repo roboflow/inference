@@ -251,9 +251,15 @@ class UsageCollector:
 
     @staticmethod
     def _usage_outcome(resource_details: Optional[Dict[str, Any]]) -> str:
-        if resource_details and "error" in resource_details:
+        if not resource_details or "error" not in resource_details:
+            return SUCCESS_OUTCOME
+        error = resource_details["error"]
+        if not isinstance(error, str):
             return ERROR_OUTCOME
-        return SUCCESS_OUTCOME
+        error_type = error.split(":", 1)[0].strip()
+        if not error_type or len(error_type) > 64:
+            return ERROR_OUTCOME
+        return error_type
 
     @classmethod
     def _resource_details_key(
@@ -727,10 +733,7 @@ class UsageCollector:
         if source_info:
             resource_details["source_info"] = source_info
 
-        # Any exception or returned HTTP error response is non-billable. Apply
-        # this after request details so countinference=True cannot overwrite it.
         if exc is not None:
-            resource_details["billable"] = False
             resource_details["error"] = exc
 
         source = None
@@ -798,7 +801,7 @@ class UsageCollector:
     def _response_error(response: Any) -> Optional[str]:
         status_code = getattr(response, "status_code", None)
         if isinstance(status_code, numbers.Integral) and status_code >= 400:
-            return f"HTTPResponseError: response returned status {status_code}"
+            return f"HTTPResponseError{status_code}: response returned status {status_code}"
         return None
 
     def __call__(
@@ -852,7 +855,7 @@ class UsageCollector:
                             usage_workflow_id=usage_workflow_id,
                             usage_workflow_preview=usage_workflow_preview,
                             usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=False,
+                            usage_billable=usage_billable,
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
@@ -911,7 +914,7 @@ class UsageCollector:
                             usage_workflow_id=usage_workflow_id,
                             usage_workflow_preview=usage_workflow_preview,
                             usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=False,
+                            usage_billable=usage_billable,
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
