@@ -88,16 +88,19 @@ class GridVisualizationManifest(WorkflowBlockManifest):
     )
 
     images: List[Selector(kind=[IMAGE_KIND, LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Images to arrange in a grid layout. Add one or more image references: "
-        'individual images (e.g. `["$inputs.image", "$steps.depth_estimation.image"]` to '
-        "compare an input image with a model's visualization side by side) and/or selectors "
-        "pointing at lists of images produced by blocks like Buffer, Image Slicer, or Dynamic "
-        "Crop (which are flattened into the grid). Images are automatically arranged in a square "
-        "grid (calculated from the number of images) and resized to fit their grid cells while "
-        "maintaining aspect ratio.",
+        description="Images to arrange in a grid layout. Add one or more references, all at the "
+        "same batch level: individual images (e.g. "
+        '`["$inputs.image", "$steps.depth_estimation.image"]` to compare an input image with a '
+        "model's visualization side by side) and/or single-level lists of images (e.g. a Buffer "
+        "output), which are flattened into the grid. Per-image batches such as Dynamic Crop "
+        "`crops` or Image Slicer tiles are nested one level deeper; flatten them with a Dimension "
+        "Collapse block before adding them here, otherwise the grid renders one cell per parent "
+        "image instead of a combined grid. Images are automatically arranged in a square grid "
+        "(calculated from the number of images) and resized to fit their cells while maintaining "
+        "aspect ratio.",
         examples=[
             ["$inputs.image", "$steps.depth_estimation.image"],
-            ["$steps.buffer.output"],
+            ["$inputs.image", "$steps.dimension_collapse.output"],
         ],
         min_items=1,
     )
