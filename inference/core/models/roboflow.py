@@ -113,6 +113,58 @@ DEFAULT_COLOR_PALETTE = [
 ]
 
 
+def get_model_download_lock_path(cache_dir: str) -> str:
+    """Build the lock-file path guarding weight downloads for one model cache dir.
+
+    This is the single definition of the download-lock identity, shared by every
+    download implementation (base, core-model, transformers, OWLv2, SAM3-3D) so
+    they cannot drift apart. Callers must not construct the path themselves.
+
+    The name is deliberately kept BYTE-FOR-BYTE IDENTICAL to the historical
+    ``_file_locks/<basename>.lock`` scheme. ``FileLock`` only coordinates
+    processes that open the exact same pathname, so renaming it would mean that
+    during a rolling deploy an old process (holding ``1.lock``) and a new one
+    would not mutually exclude, and both could download the same model into the
+    shared cache at once. Compatibility with already-deployed versions outranks
+    the naming defect below. Do not "improve" this name without a migration.
+
+    Caveat on that guarantee: it holds for the base and core-model downloaders,
+    which have never unlinked the lock file. It does NOT fully hold for OWLv2 and
+    transformers, whose previously released versions ``os.unlink`` the lock in a
+    ``finally`` block - and POSIX locks guard inodes, not path strings, so a
+    legacy process can unlink the inode a new process is holding, letting a third
+    create a fresh inode at the same path and download concurrently. This file
+    removes those unlinks, so the exposure lasts only until legacy processes for
+    those two model families drain. Deploy accordingly.
+
+    KNOWN GAP 1 - lock keys collide across models (accepted):
+    ``basename(cache_dir)`` is the version suffix, so ``dataset-a/1`` and
+    ``dataset-b/1`` both resolve to ``1.lock``. Unrelated models therefore
+    serialize their cold downloads behind one lock. This only costs latency, not
+    correctness: a waiter re-checks its OWN model's cache after acquiring (that
+    check is keyed by model_id, not by the lock name) and downloads if still
+    cold. Note this interacts with MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT - raising
+    the timeout also raises how long a colliding model can be stalled. Fixing it
+    means changing the lock name, which is gated on the migration above.
+
+    KNOWN GAP 2 - eviction does not share this lock (tracked separately):
+    ``clear_cache()`` in ``inference/core/cache/model_artifacts.py`` builds its
+    own, different lock path, so cache eviction and weight download do not
+    mutually exclude. That divergence pre-dates this helper, so it is not a
+    regression introduced here. Unifying them changes eviction locking for every
+    model (including its much shorter timeout) and belongs in its own change.
+    """
+    lock_dir = os.path.join(MODEL_CACHE_DIR, "_file_locks")
+    os.makedirs(lock_dir, exist_ok=True)
+    # `normpath` before `basename`: a trailing separator would otherwise make
+    # `basename` return "", collapsing every model onto a shared `.lock`. For
+    # paths without one - which is what `get_cache_dir` produces - this is a
+    # no-op, so the historical lock name is preserved exactly.
+    return os.path.join(
+        lock_dir, f"{os.path.basename(os.path.normpath(cache_dir))}.lock"
+    )
+
+
 def acquire_model_download_lock(lock_file: str, model_id: str) -> FileLock:
     """Acquire the per-model weight-download FileLock, retrying on timeout.
 
@@ -363,17 +415,22 @@ class RoboflowInferenceModel(Model):
             "model.artifacts.download",
             {"model.id": self.endpoint, "model.artifacts.source": "roboflow_api"},
         ):
-            # Use the same lock file pattern as in clear_cache
-            lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
-            os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-            lock_file = os.path.join(
-                lock_dir, f"{os.path.basename(self.cache_dir)}.lock"
-            )
+            lock_file = get_model_download_lock_path(cache_dir=self.cache_dir)
             lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
             try:
                 # A sibling pipeline may have completed the download while we
                 # waited on the lock - reload from the now-warm cache instead of
                 # downloading again.
+                # NOTE: this check is existence-only (`are_all_files_cached` stats
+                # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
+                # killed mid-write can leave a truncated artifact that passes it.
+                # Accepted deliberately: the caller already gates on this exact
+                # predicate before we are reached, so a partial cache is a
+                # pre-existing hazard, not one introduced here. The alternatives are
+                # worse - a completion marker forces every already-warm deployment to
+                # re-download once on upgrade (through the slow gateway this fix
+                # exists for), and dropping the recheck makes each waiter re-download
+                # serially under the lock. Fix belongs with atomic cache writes.
                 if are_all_files_cached(
                     files=self.get_all_required_infer_bucket_file(),
                     model_id=self.endpoint,
@@ -744,15 +801,22 @@ class RoboflowCoreModel(RoboflowInferenceModel):
 
     def download_model_from_roboflow_api(self) -> None:
 
-        # Use the same lock file pattern as in clear_cache
-        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
-        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        lock_file = get_model_download_lock_path(cache_dir=self.cache_dir)
         lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
         try:
             # A sibling pipeline may have completed the download while we waited
             # on the lock - reload from the now-warm cache instead of downloading
             # again.
+            # NOTE: this check is existence-only (`are_all_files_cached` stats
+            # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
+            # killed mid-write can leave a truncated artifact that passes it.
+            # Accepted deliberately: the caller already gates on this exact
+            # predicate before we are reached, so a partial cache is a
+            # pre-existing hazard, not one introduced here. The alternatives are
+            # worse - a completion marker forces every already-warm deployment to
+            # re-download once on upgrade (through the slow gateway this fix
+            # exists for), and dropping the recheck makes each waiter re-download
+            # serially under the lock. Fix belongs with atomic cache writes.
             if are_all_files_cached(
                 files=self.get_infer_bucket_file_list(), model_id=self.endpoint
             ):

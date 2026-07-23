@@ -10,12 +10,14 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 import cv2
 import numpy as np
 import torch
-from filelock import FileLock
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from PIL import Image, ImageDraw
 
-from inference.core.cache.model_artifacts import get_cache_dir
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    get_cache_dir,
+)
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.responses.sam3_3d import (
@@ -23,9 +25,14 @@ from inference.core.entities.responses.sam3_3d import (
     Sam3_3D_Objects_Metadata,
     Sam3_3D_Objects_Response,
 )
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE
 from inference.core.exceptions import ModelArtefactError
-from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.logger import logger
+from inference.core.models.roboflow import (
+    RoboflowCoreModel,
+    acquire_model_download_lock,
+    get_model_download_lock_path,
+)
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_roboflow_model_data,
@@ -331,11 +338,30 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
 
     def download_model_from_roboflow_api(self) -> None:
         """Override parent method to use streaming downloads for large SAM3_3D model files."""
-        lock_dir = MODEL_CACHE_DIR + "/_file_locks"
-        os.makedirs(lock_dir, exist_ok=True)
-        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
-        lock = FileLock(lock_file, timeout=120)
-        with lock:
+        lock_file = get_model_download_lock_path(cache_dir=self.cache_dir)
+        lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
+        try:
+            # A sibling process may have completed the download while we waited
+            # on the lock - reload from the now-warm cache instead of downloading
+            # again.
+            # NOTE: this check is existence-only (`are_all_files_cached` stats
+            # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
+            # killed mid-write can leave a truncated artifact that passes it.
+            # Accepted deliberately: the caller already gates on this exact
+            # predicate before we are reached, so a partial cache is a
+            # pre-existing hazard, not one introduced here. The alternatives are
+            # worse - a completion marker forces every already-warm deployment to
+            # re-download once on upgrade (through the slow gateway this fix
+            # exists for), and dropping the recheck makes each waiter re-download
+            # serially under the lock. Fix belongs with atomic cache writes.
+            if are_all_files_cached(
+                files=self.get_infer_bucket_file_list(), model_id=self.endpoint
+            ):
+                logger.debug(
+                    "Model artifacts already cached after acquiring download "
+                    "lock; skipping download."
+                )
+                return
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id="sam3-3d-weights-vc6vz/1",
@@ -356,6 +382,8 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     filename=filename,
                     model_id=self.endpoint,
                 )
+        finally:
+            lock.release()
 
     def infer_from_request(
         self, request: Sam3_3D_Objects_InferenceRequest

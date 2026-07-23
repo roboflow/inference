@@ -7,9 +7,8 @@ import tarfile
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
 
-from filelock import FileLock
-
 from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
     get_cache_dir,
     get_cache_file_path,
     save_bytes_in_cache,
@@ -22,7 +21,11 @@ from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
-from inference.core.models.roboflow import RoboflowInferenceModel
+from inference.core.models.roboflow import (
+    RoboflowInferenceModel,
+    acquire_model_download_lock,
+    get_model_download_lock_path,
+)
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
@@ -193,127 +196,143 @@ class TransformerModel(RoboflowInferenceModel):
     ) -> None:
         logger.info(f"Downloading transformers model artifacts")
 
-        # Use the same lock file pattern as in clear_cache
-        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
-        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        lock_file = get_model_download_lock_path(cache_dir=self.cache_dir)
+        lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
         try:
-            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
-            with lock:
-                if self.load_weights_as_transformers:
-                    api_data = get_roboflow_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        endpoint_type=ModelEndpointType.CORE_MODEL,
-                        device_id=self.device_id,
-                        countinference=countinference,
-                        service_secret=service_secret,
+            # A sibling process may have completed the download while we waited
+            # on the lock - reload from the now-warm cache instead of downloading
+            # again.
+            # NOTE: this check is existence-only (`are_all_files_cached` stats
+            # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
+            # killed mid-write can leave a truncated artifact that passes it.
+            # Accepted deliberately: the caller already gates on this exact
+            # predicate before we are reached, so a partial cache is a
+            # pre-existing hazard, not one introduced here. The alternatives are
+            # worse - a completion marker forces every already-warm deployment to
+            # re-download once on upgrade (through the slow gateway this fix
+            # exists for), and dropping the recheck makes each waiter re-download
+            # serially under the lock. Fix belongs with atomic cache writes.
+            if are_all_files_cached(
+                files=self.get_all_required_infer_bucket_file(), model_id=self.endpoint
+            ):
+                logger.info(
+                    "Model artifacts already cached after acquiring download "
+                    "lock; skipping download."
+                )
+                return
+            if self.load_weights_as_transformers:
+                api_data = get_roboflow_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    endpoint_type=ModelEndpointType.CORE_MODEL,
+                    device_id=self.device_id,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+                if "weights" not in api_data:
+                    raise ModelArtefactError(
+                        f"`weights` key not available in Roboflow API response while downloading model weights."
                     )
-                    if "weights" not in api_data:
-                        raise ModelArtefactError(
-                            f"`weights` key not available in Roboflow API response while downloading model weights."
-                        )
-                    weights = api_data["weights"]
-                elif self.version_id is not None:
-                    api_data = get_roboflow_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        endpoint_type=ModelEndpointType.ORT,
-                        device_id=self.device_id,
-                        countinference=countinference,
-                        service_secret=service_secret,
+                weights = api_data["weights"]
+            elif self.version_id is not None:
+                api_data = get_roboflow_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    endpoint_type=ModelEndpointType.ORT,
+                    device_id=self.device_id,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+                if "weights" not in api_data["ort"]:
+                    raise ModelArtefactError(
+                        f"`weights` key not available in Roboflow API response while downloading model weights."
                     )
-                    if "weights" not in api_data["ort"]:
-                        raise ModelArtefactError(
-                            f"`weights` key not available in Roboflow API response while downloading model weights."
-                        )
-                    weights = api_data["ort"]["weights"]
-                else:
-                    api_data = get_roboflow_instant_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        countinference=countinference,
-                        service_secret=service_secret,
+                weights = api_data["ort"]["weights"]
+            else:
+                api_data = get_roboflow_instant_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+                if "modelFiles" not in api_data:
+                    raise ModelArtefactError(
+                        f"`modelFiles` key not available in Roboflow API response while downloading model weights."
                     )
-                    if "modelFiles" not in api_data:
-                        raise ModelArtefactError(
-                            f"`modelFiles` key not available in Roboflow API response while downloading model weights."
-                        )
-                    if "transformers" not in api_data["modelFiles"]:
-                        raise ModelArtefactError(
-                            f"`transformers` key not available in Roboflow API response while downloading model weights."
-                        )
-                    weights = api_data["modelFiles"]["transformers"]
-                files_to_download = list(weights.keys())
-                for file_name in files_to_download:
-                    weights_url = weights[file_name]
-                    t1 = perf_counter()
-                    filename = weights_url.split("?")[0].split("/")[-1]
-                    if filename.endswith(".npz"):
-                        continue
-                    stream_url_to_cache(
-                        url=weights_url,
-                        filename=filename,
-                        model_id=self.endpoint,
+                if "transformers" not in api_data["modelFiles"]:
+                    raise ModelArtefactError(
+                        f"`transformers` key not available in Roboflow API response while downloading model weights."
                     )
-                    if filename.endswith("tar.gz"):
-                        try:
-                            subprocess.run(
-                                [
-                                    "tar",
-                                    "-xzf",
-                                    os.path.join(self.cache_dir, filename),
-                                    "-C",
-                                    self.cache_dir,
-                                ],
-                                check=True,
-                            )
-                        except subprocess.CalledProcessError as e:
-                            raise ModelArtefactError(
-                                f"Failed to extract model archive {filename}. Error: {str(e)}"
-                            ) from e
+                weights = api_data["modelFiles"]["transformers"]
+            files_to_download = list(weights.keys())
+            for file_name in files_to_download:
+                weights_url = weights[file_name]
+                t1 = perf_counter()
+                filename = weights_url.split("?")[0].split("/")[-1]
+                if filename.endswith(".npz"):
+                    continue
+                stream_url_to_cache(
+                    url=weights_url,
+                    filename=filename,
+                    model_id=self.endpoint,
+                )
+                if filename.endswith("tar.gz"):
+                    try:
+                        subprocess.run(
+                            [
+                                "tar",
+                                "-xzf",
+                                os.path.join(self.cache_dir, filename),
+                                "-C",
+                                self.cache_dir,
+                            ],
+                            check=True,
+                        )
+                    except subprocess.CalledProcessError as e:
+                        raise ModelArtefactError(
+                            f"Failed to extract model archive {filename}. Error: {str(e)}"
+                        ) from e
 
-                    if perf_counter() - t1 > 120:
-                        logger.debug(
-                            "Weights download took longer than 120 seconds, refreshing API request"
+                if perf_counter() - t1 > 120:
+                    logger.debug(
+                        "Weights download took longer than 120 seconds, refreshing API request"
+                    )
+                    if self.load_weights_as_transformers:
+                        api_data = get_roboflow_model_data(
+                            api_key=self.api_key,
+                            model_id=self.endpoint,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            device_id=self.device_id,
+                            countinference=countinference,
+                            service_secret=service_secret,
                         )
-                        if self.load_weights_as_transformers:
-                            api_data = get_roboflow_model_data(
-                                api_key=self.api_key,
-                                model_id=self.endpoint,
-                                endpoint_type=ModelEndpointType.CORE_MODEL,
-                                device_id=self.device_id,
-                                countinference=countinference,
-                                service_secret=service_secret,
-                            )
-                            weights = api_data["weights"]
-                        elif self.version_id is not None:
-                            api_data = get_roboflow_model_data(
-                                api_key=self.api_key,
-                                model_id=self.endpoint,
-                                endpoint_type=ModelEndpointType.ORT,
-                                device_id=self.device_id,
-                                countinference=countinference,
-                                service_secret=service_secret,
-                            )
-                            weights = api_data["ort"]["weights"]
-                        else:
-                            api_data = get_roboflow_instant_model_data(
-                                api_key=self.api_key,
-                                model_id=self.endpoint,
-                                countinference=countinference,
-                                service_secret=service_secret,
-                            )
-                            weights = api_data["modelFiles"]["transformers"]
+                        weights = api_data["weights"]
+                    elif self.version_id is not None:
+                        api_data = get_roboflow_model_data(
+                            api_key=self.api_key,
+                            model_id=self.endpoint,
+                            endpoint_type=ModelEndpointType.ORT,
+                            device_id=self.device_id,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                        weights = api_data["ort"]["weights"]
+                    else:
+                        api_data = get_roboflow_instant_model_data(
+                            api_key=self.api_key,
+                            model_id=self.endpoint,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                        weights = api_data["modelFiles"]["transformers"]
         except Exception as e:
             logger.error(f"Error downloading transformers model artifacts: {e}")
             raise
         finally:
-            try:
-                if os.path.exists(lock_file):
-                    os.unlink(lock_file)  # Clean up lock file
-            except OSError:
-                pass  # Best effort cleanup
+            # NOTE: the lock file itself is intentionally left in place. Unlinking
+            # it would let a newly arriving process create a fresh lock file and
+            # download concurrently with a waiter still blocked on the old inode.
+            lock.release()
 
     @property
     def weights_file(self) -> None:

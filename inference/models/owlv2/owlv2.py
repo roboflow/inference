@@ -12,12 +12,14 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
-from filelock import FileLock
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
 from inference.core import logger
-from inference.core.cache.model_artifacts import save_bytes_in_cache
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    save_bytes_in_cache,
+)
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -40,7 +42,9 @@ from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowInferenceModel,
+    acquire_model_download_lock,
     draw_detection_predictions,
+    get_model_download_lock_path,
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -954,66 +958,82 @@ class SerializedOwlV2(RoboflowInferenceModel):
     ):
         logger.info("Downloading OWLv2 model artifacts")
 
-        # Use the same lock file pattern as in clear_cache
-        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
-        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        lock_file = get_model_download_lock_path(cache_dir=self.cache_dir)
+        lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
         try:
-            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
-            with lock:
-                if self.version_id is not None:
-                    api_data = get_roboflow_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        endpoint_type=ModelEndpointType.OWLV2,
-                        device_id=self.device_id,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-                    api_data = api_data["owlv2"]
-                    if "model" not in api_data:
-                        raise ModelArtefactError(
-                            "Could not find `model` key in roboflow API model description response."
-                        )
-                    logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
-                    model_weights_response = get_from_url(
-                        api_data["model"], json_response=False
-                    )
-                else:
-                    logger.info("Getting OWLv2 model data for %s", self.endpoint)
-                    api_data = get_roboflow_instant_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-                    if (
-                        "modelFiles" not in api_data
-                        or "owlv2" not in api_data["modelFiles"]
-                        or "model" not in api_data["modelFiles"]["owlv2"]
-                    ):
-                        raise ModelArtefactError(
-                            "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
-                        )
-                    logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
-                    model_weights_response = get_from_url(
-                        api_data["modelFiles"]["owlv2"]["model"], json_response=False
-                    )
-                save_bytes_in_cache(
-                    content=model_weights_response.content,
-                    file=self.weights_file,
-                    model_id=self.endpoint,
+            # A sibling process may have completed the download while we waited
+            # on the lock - reload from the now-warm cache instead of downloading
+            # again.
+            # NOTE: this check is existence-only (`are_all_files_cached` stats
+            # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
+            # killed mid-write can leave a truncated artifact that passes it.
+            # Accepted deliberately: the caller already gates on this exact
+            # predicate before we are reached, so a partial cache is a
+            # pre-existing hazard, not one introduced here. The alternatives are
+            # worse - a completion marker forces every already-warm deployment to
+            # re-download once on upgrade (through the slow gateway this fix
+            # exists for), and dropping the recheck makes each waiter re-download
+            # serially under the lock. Fix belongs with atomic cache writes.
+            if are_all_files_cached(
+                files=self.get_all_required_infer_bucket_file(), model_id=self.endpoint
+            ):
+                logger.info(
+                    "Model artifacts already cached after acquiring download "
+                    "lock; skipping download."
                 )
-                logger.info("OWLv2 model weights saved to cache")
+                return
+            if self.version_id is not None:
+                api_data = get_roboflow_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    endpoint_type=ModelEndpointType.OWLV2,
+                    device_id=self.device_id,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+                api_data = api_data["owlv2"]
+                if "model" not in api_data:
+                    raise ModelArtefactError(
+                        "Could not find `model` key in roboflow API model description response."
+                    )
+                logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
+                model_weights_response = get_from_url(
+                    api_data["model"], json_response=False
+                )
+            else:
+                logger.info("Getting OWLv2 model data for %s", self.endpoint)
+                api_data = get_roboflow_instant_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+                if (
+                    "modelFiles" not in api_data
+                    or "owlv2" not in api_data["modelFiles"]
+                    or "model" not in api_data["modelFiles"]["owlv2"]
+                ):
+                    raise ModelArtefactError(
+                        "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
+                    )
+                logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
+                model_weights_response = get_from_url(
+                    api_data["modelFiles"]["owlv2"]["model"], json_response=False
+                )
+            save_bytes_in_cache(
+                content=model_weights_response.content,
+                file=self.weights_file,
+                model_id=self.endpoint,
+            )
+            logger.info("OWLv2 model weights saved to cache")
         except Exception as e:
             logger.error("Error downloading OWLv2 model artifacts: %s", e)
             raise
         finally:
-            try:
-                if os.path.exists(lock_file):
-                    os.unlink(lock_file)  # Clean up lock file
-            except OSError:
-                pass  # Best effort cleanup
+            # NOTE: the lock file itself is intentionally left in place. Unlinking
+            # it would let a newly arriving process create a fresh lock file and
+            # download concurrently with a waiter still blocked on the old inode.
+            lock.release()
 
     def load_model_artifacts_from_cache(self):
         if DEVICE == "cpu":
