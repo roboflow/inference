@@ -459,12 +459,17 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     EmailNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
+from inference.core.workflows.core_steps.sinks.local_file.v2 import LocalFileSinkBlockV2
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+from inference.core.workflows.core_steps.sinks.onvif_movement.v2 import ONVIFSinkBlockV2
 from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
     RoboflowAssetLibraryAttributesBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v2 import (
+    RoboflowCustomMetadataBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     RoboflowDatasetUploadBlockV1,
@@ -475,10 +480,14 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v2 import (
+    ModelMonitoringInferenceAggregatorBlockV2,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
     RoboflowVisionEventsBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
+from inference.core.workflows.core_steps.sinks.s3.v2 import S3SinkBlockV2
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
 )
@@ -933,7 +942,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
         RoboflowCustomMetadataBlockV1,
+        RoboflowCustomMetadataBlockV2,
         ModelMonitoringInferenceAggregatorBlockV1,
+        ModelMonitoringInferenceAggregatorBlockV2,
         RoboflowDatasetUploadBlockV2,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
@@ -975,7 +986,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
+        LocalFileSinkBlockV2,
         S3SinkBlockV1,
+        S3SinkBlockV2,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
@@ -1028,6 +1041,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        ONVIFSinkBlockV2,
         RoboflowVisionEventsBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
