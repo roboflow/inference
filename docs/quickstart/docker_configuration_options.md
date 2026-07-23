@@ -59,14 +59,6 @@ Sets the max batch size accepted by the clip model inference functions.
 
 If true, the batch size will be fixed to the maximum batch size configured for this server.
 
-## Disable Workflow Sinks
-
-**WORKFLOWS_DISABLE_SINKS**: Boolean (default = False)
-
-When true, workflow sink blocks run as no-ops. Other workflow blocks continue to execute
-normally. This is useful for traffic shadowing and evaluation environments where workflow
-outputs are required without external side effects.
-
 ## Secure Gateway
 
 **SECURE_GATEWAY**: String (default = None)

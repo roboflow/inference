@@ -9,7 +9,6 @@ from inference.core.env import (
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOW_DISABLED_BLOCK_PATTERNS,
     WORKFLOW_DISABLED_BLOCK_TYPES,
-    WORKFLOWS_DISABLE_SINKS,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
@@ -717,7 +716,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
-    "disable_sinks": WORKFLOWS_DISABLE_SINKS,
+    "disable_sinks": False,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,

@@ -4,7 +4,10 @@ from unittest import mock
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.loader import load_blocks
+from inference.core.workflows.core_steps.loader import (
+    REGISTERED_INITIALIZERS,
+    load_blocks,
+)
 from inference.enterprise.workflows.enterprise_blocks.loader import (
     load_enterprise_blocks,
 )
@@ -25,6 +28,10 @@ def _load_sink_blocks():
 
 
 SINK_BLOCKS = _load_sink_blocks()
+
+
+def test_sink_disabling_defaults_to_false() -> None:
+    assert REGISTERED_INITIALIZERS["disable_sinks"] is False
 
 
 @pytest.mark.parametrize("block", SINK_BLOCKS)

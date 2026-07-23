@@ -203,7 +203,6 @@ from inference.core.env import (
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
-    WORKFLOWS_DISABLE_SINKS,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -1348,9 +1347,7 @@ class HttpInterface(BaseInterface):
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
-                "workflows_core.disable_sinks": (
-                    WORKFLOWS_DISABLE_SINKS or workflow_request.disable_sinks
-                ),
+                "workflows_core.disable_sinks": workflow_request.disable_sinks,
             }
             with start_span(
                 "workflow.init",

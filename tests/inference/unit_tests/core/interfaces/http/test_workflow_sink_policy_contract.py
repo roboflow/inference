@@ -1,7 +1,6 @@
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from requests import Response
 from starlette.testclient import TestClient
 
@@ -18,7 +17,7 @@ class _DummyInstrumentator:
         self.stream_manager_client = stream_manager_client
 
 
-def _build_test_client(monkeypatch, disable_sinks_by_environment: bool) -> TestClient:
+def _build_test_client(monkeypatch) -> TestClient:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -26,11 +25,6 @@ def _build_test_client(monkeypatch, disable_sinks_by_environment: bool) -> TestC
         http_api.usage_collector,
         "async_push_usage_payloads",
         AsyncMock(),
-    )
-    monkeypatch.setattr(
-        http_api,
-        "WORKFLOWS_DISABLE_SINKS",
-        disable_sinks_by_environment,
     )
     model_manager = MagicMock()
     model_manager.pingback = None
@@ -62,27 +56,18 @@ WEBHOOK_WORKFLOW = {
 }
 
 
-@pytest.mark.parametrize(
-    "request_disables_sinks,environment_disables_sinks",
-    [(True, False), (False, True)],
-)
 @mock.patch.dict(webhook_v1.METHOD_TO_HANDLER, {"POST": MagicMock()}, clear=True)
 def test_workflow_run_injects_sink_disabling_policy(
     monkeypatch,
-    request_disables_sinks: bool,
-    environment_disables_sinks: bool,
 ) -> None:
-    client = _build_test_client(
-        monkeypatch,
-        disable_sinks_by_environment=environment_disables_sinks,
-    )
+    client = _build_test_client(monkeypatch)
 
     response = client.post(
         "/workflows/run",
         json={
             "specification": WEBHOOK_WORKFLOW,
             "inputs": {},
-            "disable_sinks": request_disables_sinks,
+            "disable_sinks": True,
         },
     )
 
@@ -98,7 +83,7 @@ def test_workflow_run_keeps_sinks_enabled_by_default(monkeypatch) -> None:
     response_from_webhook = Response()
     response_from_webhook.status_code = 200
     webhook_v1.METHOD_TO_HANDLER["POST"].return_value = response_from_webhook
-    client = _build_test_client(monkeypatch, disable_sinks_by_environment=False)
+    client = _build_test_client(monkeypatch)
 
     response = client.post(
         "/workflows/run",
