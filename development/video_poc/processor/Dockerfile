@@ -1,8 +1,11 @@
-# Video POC processor image. The inference GPU server image ships the full
-# `inference` package with CUDA onnxruntime; its runtime stage lacks the ffmpeg
-# CLI, which the processor needs for stream-simulation replays and for encoding
-# batch results to mp4.
-FROM roboflow/roboflow-inference-server-gpu:latest
+# Video POC processor image. The inference server image ships the full
+# `inference` package; its runtime stage lacks the ffmpeg CLI, which the
+# processor needs for stream-simulation replays and for encoding batch results
+# to mp4. Two tiers from one Dockerfile:
+#   gpu (default) — CUDA onnxruntime base
+#   cpu — --build-arg BASE_IMAGE=roboflow/roboflow-inference-server-cpu:latest
+ARG BASE_IMAGE=roboflow/roboflow-inference-server-gpu:latest
+FROM ${BASE_IMAGE}
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
