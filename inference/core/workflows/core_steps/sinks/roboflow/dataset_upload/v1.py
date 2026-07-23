@@ -273,15 +273,23 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._cache = cache
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["cache", "api_key", "background_tasks", "thread_pool_executor"]
+        return [
+            "cache",
+            "api_key",
+            "background_tasks",
+            "thread_pool_executor",
+            "disable_sinks",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -306,14 +314,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
     ) -> BlockResult:
-        if self._api_key is None:
-            raise ValueError(
-                "RoboflowDataCollector block cannot run without Roboflow API key. "
-                "If you do not know how to get API key - visit "
-                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                "retrieve one."
-            )
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             return [
                 {
                     "error_status": False,
@@ -321,6 +322,13 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
+        if self._api_key is None:
+            raise ValueError(
+                "RoboflowDataCollector block cannot run without Roboflow API key. "
+                "If you do not know how to get API key - visit "
+                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                "retrieve one."
+            )
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name

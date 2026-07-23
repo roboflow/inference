@@ -528,6 +528,14 @@ class PLCWriterBlockManifest(WorkflowBlockManifest):
 class PLCWriterBlockV1(_PLCConnectionMixin, WorkflowBlock):
     """Writes PLC tag values over the PLC Relay or a direct EtherNet/IP / Modbus connection."""
 
+    def __init__(self, disable_sinks: bool = False):
+        super().__init__()
+        self._disable_sinks = disable_sinks
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["disable_sinks"]
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return PLCWriterBlockManifest
@@ -549,7 +557,7 @@ class PLCWriterBlockV1(_PLCConnectionMixin, WorkflowBlock):
         metadata: Optional[VideoMetadata] = None,
     ) -> dict:
         """Write a single tag to the PLC. Returns `write_result` and `error_status`."""
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             return {"write_result": "", "error_status": False}
 
         write_results, had_failure = self._write(

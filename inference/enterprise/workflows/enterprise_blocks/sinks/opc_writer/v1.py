@@ -651,14 +651,16 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         self,
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
         self._last_notification_fired: Optional[datetime] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor"]
+        return ["background_tasks", "thread_pool_executor", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -695,7 +697,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         max_retries: int = 3,
         retry_backoff_seconds: float = 0.015,
     ) -> BlockResult:
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             logger.debug("OPC Writer disabled by disable_sink parameter")
             return {
                 "disabled": True,

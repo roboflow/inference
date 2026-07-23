@@ -182,16 +182,18 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
         update_attributes_offloader: Optional[
             UpdateAssetLibraryAttributesOffloader
         ] = None,
+        disable_sinks: bool = False,
     ):
         self._api_key = api_key
         self._cache = cache
         self._offloader: UpdateAssetLibraryAttributesOffloader = (
             update_attributes_offloader or call_asset_library_attributes_endpoint
         )
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "update_attributes_offloader"]
+        return ["api_key", "cache", "update_attributes_offloader", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -206,14 +208,7 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
         tags: Optional[Union[List[str], Batch[Optional[List[str]]]]] = None,
         disable_sink: bool = False,
     ) -> BlockResult:
-        if self._api_key is None:
-            raise ValueError(
-                "Roboflow Asset Library Attributes block cannot run without Roboflow API key. "
-                "If you do not know how to get API key - visit "
-                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                "retrieve one."
-            )
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             return [
                 {
                     "error_status": False,
@@ -221,6 +216,13 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
                 }
                 for _ in range(len(source_id))
             ]
+        if self._api_key is None:
+            raise ValueError(
+                "Roboflow Asset Library Attributes block cannot run without Roboflow API key. "
+                "If you do not know how to get API key - visit "
+                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                "retrieve one."
+            )
 
         if len(source_id) > MAX_BATCH_UPDATES:
             raise ValueError(
