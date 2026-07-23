@@ -21,13 +21,18 @@ from inference.core.workflows.execution_engine.v1.step_error_handlers import (
     legacy_step_error_handler,
 )
 from inference_models.errors import (
-    ForbiddenModelAccessError,
     ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
-    PaymentRequiredModelAccessError,
-    UsagePausedModelAccessError,
+    ModelRetrievalError,
 )
 from inference_sdk.http.errors import HTTPCallErrorError
+
+
+class ModelRetrievalErrorWithStatus(ModelRetrievalError):
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @pytest.mark.parametrize(
@@ -131,9 +136,9 @@ def test_extended_roboflow_errors_handler_when_payment_required_error_occurs() -
 @pytest.mark.parametrize(
     ("model_access_error", "expected_status_code"),
     [
-        (PaymentRequiredModelAccessError("payment required"), 402),
-        (ForbiddenModelAccessError("forbidden"), 403),
-        (UsagePausedModelAccessError("usage paused"), 423),
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
     ],
 )
 def test_extended_roboflow_errors_handler_when_model_access_is_denied(

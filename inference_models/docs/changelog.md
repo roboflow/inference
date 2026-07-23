@@ -5,6 +5,11 @@
 Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 `### Removed` subsections as appropriate.
 
+### Fixed
+
+- Preserve HTTP 402, 403, and 423 model-access failures as typed errors when the
+  Roboflow weights provider retrieves model metadata or weights.
+
 ---
 
 ## `0.32.3`

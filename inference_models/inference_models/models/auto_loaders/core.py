@@ -10,14 +10,12 @@ from filelock import FileLock
 from rich.console import Console
 from rich.text import Text
 
-from inference_models.configuration import (
-    DEFAULT_DEVICE,
-    FILE_LOCK_ACQUIRE_TIMEOUT,
-)
+from inference_models.configuration import DEFAULT_DEVICE, FILE_LOCK_ACQUIRE_TIMEOUT
 from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
     ForbiddenLocalCodePackageAccessError,
+    ForbiddenModelAccessError,
     InvalidModelInitParameterError,
     InvalidParameterError,
     MissingModelInitParameterError,
@@ -830,7 +828,10 @@ class AutoModel:
                     model_access_manager.on_model_package_access_granted(
                         package_access_identifiers
                     )
-            except UnauthorizedModelAccessError as error:
+            except (
+                UnauthorizedModelAccessError,
+                ForbiddenModelAccessError,
+            ) as error:
                 model_access_manager.on_model_access_forbidden(
                     model_id=model_id_or_path, api_key=api_key
                 )

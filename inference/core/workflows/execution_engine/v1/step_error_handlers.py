@@ -15,15 +15,21 @@ from inference.core.workflows.errors import (
     RuntimeLimitsCausedStepExecutionError,
 )
 from inference_models.errors import (
-    ForbiddenModelAccessError,
     ModelNotFoundError,
     ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
-    PaymentRequiredModelAccessError,
+    ModelRetrievalError,
     UnauthorizedModelAccessError,
-    UsagePausedModelAccessError,
 )
 from inference_sdk.http.errors import HTTPCallErrorError
+
+MODEL_ACCESS_ERROR_MESSAGES = {
+    402: "Not enough credits to execute step {step_name}. Verify your workspace billing page.",
+    403: "Forbidden error occurred while execution of step {step_name}. "
+    "This error usually means there is a problem with the Roboflow API key.",
+    423: "Roboflow API usage is paused while executing step {step_name}. "
+    "Contact your workspace administrator to re-enable API keys.",
+}
 
 
 def legacy_step_error_handler(step_name: str, error: Exception) -> None:
@@ -107,7 +113,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, (PaymentRequiredError, PaymentRequiredModelAccessError)):
+    if isinstance(error, PaymentRequiredError):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=402,
@@ -116,7 +122,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, (RoboflowAPIForbiddenError, ForbiddenModelAccessError)):
+    if isinstance(error, RoboflowAPIForbiddenError):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=403,
@@ -125,7 +131,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, (RoboflowAPIUsagePausedError, UsagePausedModelAccessError)):
+    if isinstance(error, RoboflowAPIUsagePausedError):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=423,
@@ -134,6 +140,19 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
+    if isinstance(error, ModelRetrievalError):
+        status_code = getattr(error, "status_code", None)
+        if status_code in MODEL_ACCESS_ERROR_MESSAGES:
+            public_message = MODEL_ACCESS_ERROR_MESSAGES[status_code].format(
+                step_name=step_name
+            )
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=status_code,
+                public_message=f"{public_message} Details: {error}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
     if isinstance(error, (RoboflowAPINotNotFoundError, ModelNotFoundError)):
         raise ClientCausedStepExecutionError(
             block_id=step_name,

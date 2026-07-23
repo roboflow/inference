@@ -20,7 +20,6 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
-    ForbiddenModelAccessError,
     ModelInputError,
     ModelLoadingError,
     ModelNotFoundError,
@@ -28,11 +27,16 @@ from inference_models.errors import (
     ModelPackageNegotiationError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
-    PaymentRequiredModelAccessError,
     UnauthorizedModelAccessError,
     UntrustedFileError,
-    UsagePausedModelAccessError,
 )
+
+
+class ModelRetrievalErrorWithStatus(ModelRetrievalError):
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def test_with_route_exceptions_when_usage_paused_error_raised():
@@ -111,9 +115,9 @@ async def test_with_route_exceptions_async_when_unauthorized_model_access_error_
 @pytest.mark.parametrize(
     ("error", "expected_status_code"),
     [
-        (PaymentRequiredModelAccessError("payment required"), 402),
-        (ForbiddenModelAccessError("forbidden"), 403),
-        (UsagePausedModelAccessError("usage paused"), 423),
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
     ],
 )
 def test_with_route_exceptions_when_model_access_is_denied(
@@ -132,9 +136,9 @@ def test_with_route_exceptions_when_model_access_is_denied(
 @pytest.mark.parametrize(
     ("error", "expected_status_code"),
     [
-        (PaymentRequiredModelAccessError("payment required"), 402),
-        (ForbiddenModelAccessError("forbidden"), 403),
-        (UsagePausedModelAccessError("usage paused"), 423),
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
     ],
 )
 async def test_with_route_exceptions_async_when_model_access_is_denied(

@@ -1070,8 +1070,11 @@ def test_handle_response_errors_when_model_access_is_denied(
     response.status_code = status_code
 
     # when
-    with pytest.raises(expected_error):
+    with pytest.raises(expected_error) as error:
         handle_response_errors(response=response, operation_name="get model weights")
+
+    assert error.value.status_code == status_code
+    assert expected_error.__name__.lower() in error.value.help_url
 
 
 def test_handle_response_errors_when_status_code_is_non_retryable_error() -> None:

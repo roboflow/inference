@@ -372,13 +372,13 @@ def handle_response_errors(response: Response, operation_name: str) -> None:
         raise PaymentRequiredModelAccessError(
             message=f"Could not {operation_name}. Not enough credits to perform this request. "
             "Verify your workspace billing page.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#paymentrequiredmodelaccesserror",
         )
     if response.status_code == 403:
         raise ForbiddenModelAccessError(
             message=f"Could not {operation_name}. Access forbidden. Check that the API key has the required scopes "
             "and that the workspace is active.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#forbiddenmodelaccesserror",
         )
     if response.status_code == 404:
         raise ModelNotFoundError(
@@ -390,7 +390,7 @@ def handle_response_errors(response: Response, operation_name: str) -> None:
         raise UsagePausedModelAccessError(
             message=f"Could not {operation_name}. Roboflow API usage is paused. Contact your workspace administrator "
             "to re-enable API keys.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#usagepausedmodelaccesserror",
         )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
