@@ -129,14 +129,28 @@ class ModelManagerAdapter:
             raise _unsupported(model_id)
         result = await self._client.load(model_id, api_key or "")
         translation.raise_for_lifecycle_result(result, model_id)
+        stats = await self._client.stats()
+        model_entry = stats.get("mmp_models", {}).get(model_id, {})
+        if model_entry.get("backend_type") == "shared-base":
+            # Base-only preload: no inferable backend, kept resident so heads
+            # (e.g. roboflow-instant on owlv2) can attach to the shared worker.
+            route = {
+                "supported": True,
+                "mmp_model_id": model_id,
+                "task_type": task_type,
+                "action": default_action,
+                "tasks": set(),
+                "class_names": None,
+                "key_points_classes": None,
+            }
+            self._routes[model_id] = route
+            return route
         interface = await self._client.interface(model_id)
         tasks = set(interface.get("tasks", {}))
         if not tasks.intersection(translation.implemented_actions(task_type)):
             await self._client.unload(model_id)
             self._routes[model_id] = terminal
             raise _unsupported(model_id)
-        stats = await self._client.stats()
-        model_entry = stats.get("mmp_models", {}).get(model_id, {})
         key_points_classes = model_entry.get("key_points_classes")
         if task_type == "keypoint-detection" and key_points_classes is None:
             await self._client.unload(model_id)
