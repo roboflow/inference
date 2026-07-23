@@ -154,11 +154,15 @@ def test_max_distance_excludes_matches_beyond_the_limit() -> None:
     assert len(matched_target) == 0
 
 
-def test_max_distance_falls_back_to_next_target_within_limit() -> None:
-    # given: the nearest target (t1) is beyond max_distance, but a second,
-    # farther-but-still-in-range target (t2) must be chosen instead - this
-    # confirms filtering happens before ranking, not just as a post-hoc check
-    # on the single overall nearest match
+def test_max_distance_retains_in_range_target_while_excluding_out_of_range_target() -> (
+    None
+):
+    # given: t1 is beyond max_distance and t2 is within it. Note t2 is
+    # genuinely the nearer of the two here - a target closer than an excluded
+    # one is, by construction, also within range, so there's no geometry where
+    # the true nearest target is excluded yet a farther target is retained.
+    # This test instead confirms that an out-of-range candidate doesn't
+    # prevent a valid in-range candidate from being matched.
     query = make_detections(
         xyxy=[[0, 0, 10, 10]], detection_ids=["q1"]
     )  # center (5, 5)

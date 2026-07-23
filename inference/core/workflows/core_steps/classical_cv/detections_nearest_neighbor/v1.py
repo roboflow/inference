@@ -66,6 +66,8 @@ This block receives two detection sets and produces the enriched query predictio
 ## Requirements
 
 This block requires two sets of detection predictions (object detection, instance segmentation, or keypoint detection); the same set can be used for both `query_predictions` and `target_predictions`. To use the `KEYPOINT` anchor option for either set, that set must be keypoint detection predictions and the corresponding `query_keypoint_name`/`target_keypoint_name` must be provided. Self-match exclusion relies on `detection_id` being present on both sets - this is populated automatically for all Roboflow object detection, instance segmentation, and keypoint detection model blocks. `max_distance` is optional; leave it unset to match every query detection to its nearest target regardless of distance.
+
+Note that `query_predictions` is enriched in place - the same `sv.Detections` object passed in is mutated (a new `nearest_target_distance` field is added to its `.data`) and returned, the same convention used by blocks like Velocity and Time in Zone. Avoid feeding the same selector into two independent branches of a workflow if each branch needs to see its own, unmodified `nearest_target_distance`.
 """
 
 TIE_EPSILON_PX = 1.0
@@ -251,6 +253,9 @@ class DetectionsNearestNeighborBlockV1(WorkflowBlock):
                 max_distance=max_distance,
             )
         )
+        # Mutates the input `sv.Detections` object in place (same convention
+        # as Velocity/Time in Zone), so `matched_query_detections` below picks
+        # up this field for free via the index-slice.
         query_predictions.data[NEAREST_TARGET_DISTANCE_KEY] = np.array(
             distances, dtype=object
         )
