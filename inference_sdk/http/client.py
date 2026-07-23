@@ -1714,6 +1714,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
         model_id_in_path: bool = False,
+        depth_map_format: str = "png16",
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s).
 
@@ -1732,11 +1733,16 @@ class InferenceHTTPClient:
                 (e.g., /infer/depth-estimation/depth-anything-v3/small), which enables
                 path-based routing. If False (default), model_id is only sent in the
                 request body.
+            depth_map_format (str, optional): Requested serialization for
+                `normalized_depth` on the wire: "png16" (default, compact base64
+                16-bit PNG), "png8" (smaller, 256 depth levels), or "json" (legacy
+                nested float list). Servers that predate this field ignore it and
+                return the legacy list.
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
                 - normalized_depth: The normalized depth map as a numpy array
-                  (PNG16-serialized responses are decoded automatically; legacy
+                  (PNG-serialized responses are decoded automatically; legacy
                   servers returning nested float lists pass through unchanged)
                 - image: Hex-encoded visualization of the depth map
 
@@ -1744,7 +1750,10 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        extra_payload = {"model_id": model_id}
+        extra_payload = {
+            "model_id": model_id,
+            "depth_map_format": depth_map_format,
+        }
         if model_id_in_path:
             endpoint = f"/infer/depth-estimation/{model_id}"
         else:
@@ -1762,6 +1771,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
         model_id_in_path: bool = False,
+        depth_map_format: str = "png16",
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s) asynchronously.
 
@@ -1781,7 +1791,10 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        extra_payload = {"model_id": model_id}
+        extra_payload = {
+            "model_id": model_id,
+            "depth_map_format": depth_map_format,
+        }
         if model_id_in_path:
             endpoint = f"/infer/depth-estimation/{model_id}"
         else:

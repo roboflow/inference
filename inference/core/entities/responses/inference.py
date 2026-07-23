@@ -446,10 +446,10 @@ class DepthEstimationResponse(BaseModel):
 
     Attributes:
         normalized_depth (Union[str, List[List[float]]]): The normalized depth map,
-            serialized according to the request's `depth_map_format`: a base64
-            grayscale PNG string (16-bit for `png16`, the default; 8-bit for
-            `png8`) or a 2D array of floats between 0 and 1 (`json`).
-        depth_map_format (Literal["png16", "png8", "json"]): The serialization
+            serialized according to the request's `depth_map_format`: a 2D array of
+            floats between 0 and 1 (`json`, the default) or a base64 grayscale PNG
+            string (16-bit for `png16`, 8-bit for `png8`).
+        depth_map_format (Literal["json", "png16", "png8"]): The serialization
             format used for `normalized_depth`.
         image (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.
         time (float): The processing time in seconds.
@@ -457,12 +457,12 @@ class DepthEstimationResponse(BaseModel):
     """
 
     normalized_depth: Union[str, List[List[float]]] = Field(
-        description="The normalized depth map: a base64 grayscale PNG string "
-        "(`png16` format, default, or `png8`) or a 2D array of floats between 0 and 1 "
-        "(`json` format), per the request's `depth_map_format`"
+        description="The normalized depth map: a 2D array of floats between 0 and 1 "
+        "(`json` format, default) or a base64 grayscale PNG string (`png16`/`png8`), "
+        "per the request's `depth_map_format`"
     )
-    depth_map_format: Literal["png16", "png8", "json"] = Field(
-        default="png16",
+    depth_map_format: Literal["json", "png16", "png8"] = Field(
+        default="json",
         description="The serialization format used for `normalized_depth`",
     )
     image: Optional[str] = Field(

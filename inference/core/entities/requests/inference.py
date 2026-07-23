@@ -109,7 +109,7 @@ class DepthEstimationRequest(InferenceRequest):
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
         model_id (str): The model ID to use for depth estimation.
         depth_version_id (Optional[str]): The version ID of the depth estimation model.
-        depth_map_format (Literal["png16", "png8", "json"]): Serialization format
+        depth_map_format (Literal["json", "png16", "png8"]): Serialization format
             for the normalized depth map in the response.
     """
 
@@ -120,14 +120,16 @@ class DepthEstimationRequest(InferenceRequest):
         examples=["small"],
         description="The version ID of the depth estimation model",
     )
-    depth_map_format: Literal["png16", "png8", "json"] = Field(
-        default="png16",
+    depth_map_format: Literal["json", "png16", "png8"] = Field(
+        default="json",
         description="Serialization format for `normalized_depth` in the response: "
-        "`png16` (default) returns a base64 16-bit grayscale PNG (quantization step "
-        "1/65535, typically >10x smaller payload); `png8` returns a base64 8-bit "
-        "grayscale PNG (256 depth levels, roughly another order of magnitude smaller - "
-        "fine for visualization/thresholding, lossy for geometric use); `json` returns "
-        "the legacy nested float list.",
+        "`json` (default, wire-compatible with older clients) returns the nested "
+        "float list; `png16` returns a base64 16-bit grayscale PNG (quantization "
+        "step 1/65535, typically >10x smaller payload - `inference_sdk` requests "
+        "this automatically and decodes it back to a numpy array); `png8` returns "
+        "a base64 8-bit grayscale PNG (256 depth levels, roughly another order of "
+        "magnitude smaller - fine for visualization/thresholding, lossy for "
+        "geometric use).",
     )
 
     @validator("model_id", always=True)

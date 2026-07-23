@@ -14,6 +14,25 @@ Depth Estimation supports both local and remote execution modes when used in wor
 - **Local execution**: The model runs directly on your inference server (GPU recommended for faster inference)
 - **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `depth_estimation()` client method
 
+### HTTP Response Format
+
+The `/infer/depth-estimation` endpoint serializes `normalized_depth` according to the
+request's `depth_map_format` field:
+
+- `json` (default): a nested list of floats between 0 and 1 — wire-compatible with
+  older clients, but ~17 MB for a 1080×810 image.
+- `png16`: a base64 16-bit grayscale PNG (quantization step 1/65535, typically >10x
+  smaller and much faster to serve).
+- `png8`: a base64 8-bit grayscale PNG (256 depth levels, roughly another order of
+  magnitude smaller — fine for visualization and thresholding, lossy for
+  derivative-based geometric use).
+
+The `inference_sdk` `depth_estimation()` client method requests `png16` automatically
+and decodes the payload back to a `numpy.ndarray`, so SDK callers always receive an
+array (note: an `ndarray`, not a plain list — call `.tolist()` if you need
+JSON-serializable output). Raw REST callers keep the legacy list unless they opt in
+to a PNG format.
+
 ### Installation
 
 To install inference with the extra dependencies necessary to run Depth-Anything-V2-Small, run
