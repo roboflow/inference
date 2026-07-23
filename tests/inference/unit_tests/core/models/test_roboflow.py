@@ -4,10 +4,12 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
+from filelock import Timeout
 
 from inference.core.exceptions import ModelArtefactError
 from inference.core.models import roboflow
 from inference.core.models.roboflow import (
+    acquire_model_download_lock,
     class_mapping_not_available_in_environment,
     color_mapping_available_in_environment,
     get_class_names_from_environment_file,
@@ -194,3 +196,59 @@ def test_get_class_names_from_environment_file() -> None:
         "class_k",
         "class_l",
     ]
+
+
+@mock.patch.object(roboflow, "MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS", 3)
+@mock.patch.object(roboflow, "MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT", 600.0)
+@mock.patch.object(roboflow, "FileLock")
+def test_acquire_model_download_lock_returns_held_lock_on_first_success(
+    file_lock_mock: MagicMock,
+) -> None:
+    # given
+    lock = MagicMock()
+    file_lock_mock.return_value = lock
+
+    # when
+    result = acquire_model_download_lock("/tmp/model.lock", model_id="m/1")
+
+    # then
+    assert result is lock
+    file_lock_mock.assert_called_once_with("/tmp/model.lock", timeout=600.0)
+    lock.acquire.assert_called_once()
+
+
+@mock.patch.object(roboflow, "MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS", 3)
+@mock.patch.object(roboflow, "MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT", 600.0)
+@mock.patch.object(roboflow, "FileLock")
+def test_acquire_model_download_lock_retries_on_timeout_then_succeeds(
+    file_lock_mock: MagicMock,
+) -> None:
+    # given - first lock times out on acquire (holder still downloading), second succeeds
+    timing_out_lock = MagicMock()
+    timing_out_lock.acquire.side_effect = Timeout("/tmp/model.lock")
+    succeeding_lock = MagicMock()
+    file_lock_mock.side_effect = [timing_out_lock, succeeding_lock]
+
+    # when
+    result = acquire_model_download_lock("/tmp/model.lock", model_id="m/1")
+
+    # then
+    assert result is succeeding_lock
+    assert file_lock_mock.call_count == 2
+
+
+@mock.patch.object(roboflow, "MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS", 3)
+@mock.patch.object(roboflow, "MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT", 600.0)
+@mock.patch.object(roboflow, "FileLock")
+def test_acquire_model_download_lock_raises_after_exhausting_attempts(
+    file_lock_mock: MagicMock,
+) -> None:
+    # given - every attempt times out
+    always_timing_out_lock = MagicMock()
+    always_timing_out_lock.acquire.side_effect = Timeout("/tmp/model.lock")
+    file_lock_mock.return_value = always_timing_out_lock
+
+    # when / then
+    with pytest.raises(Timeout):
+        acquire_model_download_lock("/tmp/model.lock", model_id="m/1")
+    assert file_lock_mock.call_count == 3

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 import onnxruntime
-from filelock import FileLock
+from filelock import FileLock, Timeout
 from PIL import Image
 
 from inference.core.env import (
@@ -27,6 +27,8 @@ from inference.core.env import (
     MAX_BATCH_SIZE,
     MODEL_CACHE_DIR,
     MODEL_VALIDATION_DISABLED,
+    MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS,
+    MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
@@ -109,6 +111,45 @@ DEFAULT_COLOR_PALETTE = [
     "#78C1D2",
     "#8C29FF",
 ]
+
+
+def acquire_model_download_lock(lock_file: str, model_id: str) -> FileLock:
+    """Acquire the per-model weight-download FileLock, retrying on timeout.
+
+    Several pipelines sharing one model each run their own ``ModelManager`` and,
+    on a cold cache, all try to download the same weights into the shared cache
+    at once. They serialize on this single per-model lock: one downloads, the
+    rest wait and then load from a warm cache. A cold download can take minutes
+    through a slow gateway, so a single lock-wait window may expire before the
+    holder finishes. Instead of hard-erroring the waiting pipeline, retry the
+    acquisition: by the next attempt the holder has almost always finished and
+    the cache is warm. Callers MUST re-check the cache after acquiring, since the
+    download they were about to perform may already be done. See ENT-1569.
+
+    Raises:
+        filelock.Timeout: if the lock cannot be acquired within
+            ``MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS`` attempts.
+    """
+    attempts = max(1, MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS)
+    last_error: Optional[Timeout] = None
+    for attempt in range(1, attempts + 1):
+        lock = FileLock(lock_file, timeout=MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT)
+        try:
+            lock.acquire()
+            return lock
+        except Timeout as error:
+            last_error = error
+            logger.warning(
+                "Timed out after %ss waiting for model download lock %s for "
+                "model_id=%s (attempt %s/%s).",
+                MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT,
+                lock_file,
+                model_id,
+                attempt,
+                attempts,
+            )
+    # Exhausted retries - surface the timeout to the caller.
+    raise last_error
 
 
 class RoboflowInferenceModel(Model):
@@ -328,97 +369,108 @@ class RoboflowInferenceModel(Model):
             lock_file = os.path.join(
                 lock_dir, f"{os.path.basename(self.cache_dir)}.lock"
             )
+            lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
             try:
-                lock = FileLock(
-                    lock_file, timeout=120
-                )  # 120 second timeout for downloads
-                with lock:
-                    if self.version_id is not None:
-                        api_data = get_roboflow_model_data(
-                            api_key=self.api_key,
+                # A sibling pipeline may have completed the download while we
+                # waited on the lock - reload from the now-warm cache instead of
+                # downloading again.
+                if are_all_files_cached(
+                    files=self.get_all_required_infer_bucket_file(),
+                    model_id=self.endpoint,
+                ):
+                    logger.debug(
+                        "Model artifacts already cached after acquiring download "
+                        "lock; skipping download."
+                    )
+                    return
+                if self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.ORT,
+                        device_id=self.device_id,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    if "ort" not in api_data.keys():
+                        raise ModelArtefactError(
+                            "Could not find `ort` key in roboflow API model description response."
+                        )
+                    api_data = api_data["ort"]
+                    if "classes" in api_data:
+                        save_text_lines_in_cache(
+                            content=api_data["classes"],
+                            file="class_names.txt",
                             model_id=self.endpoint,
-                            endpoint_type=ModelEndpointType.ORT,
-                            device_id=self.device_id,
-                            countinference=countinference,
-                            service_secret=service_secret,
                         )
-                        if "ort" not in api_data.keys():
-                            raise ModelArtefactError(
-                                "Could not find `ort` key in roboflow API model description response."
-                            )
-                        api_data = api_data["ort"]
-                        if "classes" in api_data:
-                            save_text_lines_in_cache(
-                                content=api_data["classes"],
-                                file="class_names.txt",
-                                model_id=self.endpoint,
-                            )
-                        if "model" not in api_data:
-                            raise ModelArtefactError(
-                                "Could not find `model` key in roboflow API model description response."
-                            )
-                        if "environment" not in api_data:
-                            raise ModelArtefactError(
-                                "Could not find `environment` key in roboflow API model description response."
-                            )
-                        environment = get_from_url(api_data["environment"])
-                        model_weights_response = get_from_url(
-                            api_data["model"],
-                            json_response=False,
+                    if "model" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `model` key in roboflow API model description response."
                         )
-                    else:
-                        api_data = get_roboflow_instant_model_data(
-                            api_key=self.api_key,
+                    if "environment" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `environment` key in roboflow API model description response."
+                        )
+                    environment = get_from_url(api_data["environment"])
+                    model_weights_response = get_from_url(
+                        api_data["model"],
+                        json_response=False,
+                    )
+                else:
+                    api_data = get_roboflow_instant_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    if (
+                        "modelFiles" not in api_data
+                        or "ort" not in api_data["modelFiles"]
+                        or "model" not in api_data["modelFiles"]["ort"]
+                    ):
+                        raise ModelArtefactError(
+                            "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
+                        )
+                    if "environment" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `environment` key in roboflow API model description response."
+                        )
+                    model_weights_response = get_from_url(
+                        api_data["modelFiles"]["ort"]["model"],
+                        json_response=False,
+                    )
+                    environment = api_data["environment"]
+                    if "classes" in api_data:
+                        save_text_lines_in_cache(
+                            content=api_data["classes"],
+                            file="class_names.txt",
                             model_id=self.endpoint,
-                            countinference=countinference,
-                            service_secret=service_secret,
                         )
-                        if (
-                            "modelFiles" not in api_data
-                            or "ort" not in api_data["modelFiles"]
-                            or "model" not in api_data["modelFiles"]["ort"]
-                        ):
-                            raise ModelArtefactError(
-                                "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
-                            )
-                        if "environment" not in api_data:
-                            raise ModelArtefactError(
-                                "Could not find `environment` key in roboflow API model description response."
-                            )
-                        model_weights_response = get_from_url(
-                            api_data["modelFiles"]["ort"]["model"],
-                            json_response=False,
-                        )
-                        environment = api_data["environment"]
-                        if "classes" in api_data:
-                            save_text_lines_in_cache(
-                                content=api_data["classes"],
-                                file="class_names.txt",
-                                model_id=self.endpoint,
-                            )
 
-                    save_bytes_in_cache(
-                        content=model_weights_response.content,
-                        file=self.weights_file,
-                        model_id=self.endpoint,
-                    )
-                    if "colors" in api_data:
-                        environment["COLORS"] = api_data["colors"]
+                save_bytes_in_cache(
+                    content=model_weights_response.content,
+                    file=self.weights_file,
+                    model_id=self.endpoint,
+                )
+                if "colors" in api_data:
+                    environment["COLORS"] = api_data["colors"]
+                save_json_in_cache(
+                    content=environment,
+                    file="environment.json",
+                    model_id=self.endpoint,
+                )
+                if "keypoints_metadata" in api_data:
+                    # TODO: make sure backend provides that
                     save_json_in_cache(
-                        content=environment,
-                        file="environment.json",
+                        content=api_data["keypoints_metadata"],
+                        file="keypoints_metadata.json",
                         model_id=self.endpoint,
                     )
-                    if "keypoints_metadata" in api_data:
-                        # TODO: make sure backend provides that
-                        save_json_in_cache(
-                            content=api_data["keypoints_metadata"],
-                            file="keypoints_metadata.json",
-                            model_id=self.endpoint,
-                        )
             except Exception as e:
                 logger.error(f"Error downloading model artifacts: {e}")
                 raise
+            finally:
+                lock.release()
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
@@ -696,46 +748,56 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
         os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
         lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
         try:
-            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
-            with lock:
-                api_data = get_roboflow_model_data(
-                    api_key=self.api_key,
-                    model_id=self.endpoint,
-                    endpoint_type=ModelEndpointType.CORE_MODEL,
-                    device_id=self.device_id,
-                    countinference=self.countinference,
-                    service_secret=self.service_secret,
+            # A sibling pipeline may have completed the download while we waited
+            # on the lock - reload from the now-warm cache instead of downloading
+            # again.
+            if are_all_files_cached(
+                files=self.get_infer_bucket_file_list(), model_id=self.endpoint
+            ):
+                logger.debug(
+                    "Model artifacts already cached after acquiring download "
+                    "lock; skipping download."
                 )
-                if "weights" not in api_data:
-                    raise ModelArtefactError(
-                        f"`weights` key not available in Roboflow API response while downloading model weights."
+                return
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+                device_id=self.device_id,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
+            )
+            if "weights" not in api_data:
+                raise ModelArtefactError(
+                    f"`weights` key not available in Roboflow API response while downloading model weights."
+                )
+            for weights_url_key in api_data["weights"]:
+                weights_url = api_data["weights"][weights_url_key]
+                t1 = perf_counter()
+                model_weights_response = get_from_url(weights_url, json_response=False)
+                filename = weights_url.split("?")[0].split("/")[-1]
+                save_bytes_in_cache(
+                    content=model_weights_response.content,
+                    file=filename,
+                    model_id=self.endpoint,
+                )
+                if perf_counter() - t1 > 120:
+                    logger.debug(
+                        "Weights download took longer than 120 seconds, refreshing API request"
                     )
-                for weights_url_key in api_data["weights"]:
-                    weights_url = api_data["weights"][weights_url_key]
-                    t1 = perf_counter()
-                    model_weights_response = get_from_url(
-                        weights_url, json_response=False
-                    )
-                    filename = weights_url.split("?")[0].split("/")[-1]
-                    save_bytes_in_cache(
-                        content=model_weights_response.content,
-                        file=filename,
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
                         model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        device_id=self.device_id,
                     )
-                    if perf_counter() - t1 > 120:
-                        logger.debug(
-                            "Weights download took longer than 120 seconds, refreshing API request"
-                        )
-                        api_data = get_roboflow_model_data(
-                            api_key=self.api_key,
-                            model_id=self.endpoint,
-                            endpoint_type=ModelEndpointType.CORE_MODEL,
-                            device_id=self.device_id,
-                        )
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise
+        finally:
+            lock.release()
 
     def get_device_id(self) -> str:
         """Returns the device ID associated with this model.

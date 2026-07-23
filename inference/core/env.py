@@ -965,6 +965,17 @@ MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0
 HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
     os.getenv("HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT", "5.0")
 )
+# Per-model weight-download FileLock: when several pipelines share one model on a
+# cold cache, one downloads while siblings wait on this lock. A cold download can
+# take minutes through a slow gateway, so the wait window must comfortably exceed
+# it (default 600s, up from the previous hard-coded 120s) and waiters retry rather
+# than hard-erroring their pipeline. See ENT-1569.
+MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT = float(
+    os.getenv("MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT", "600.0")
+)
+MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS = int(
+    os.getenv("MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS", "3")
+)
 
 # RFDETR input resolution limit for models loaded through onnx runtime
 # 1280 -> ~3.5G
