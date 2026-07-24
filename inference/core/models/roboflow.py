@@ -804,9 +804,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
                 if ep == "TensorrtExecutionProvider":
-                    engine_cache_path = os.path.join(
-                        TENSORRT_CACHE_PATH, self.endpoint
-                    )
+                    engine_cache_path = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
                     engine_cached = os.path.isdir(engine_cache_path) and any(
                         f.endswith(".engine") for f in os.listdir(engine_cache_path)
                     )
