@@ -2432,6 +2432,9 @@ def test_auto_load_exact_cache_rejects_manifest_canonical_owner_mismatch(
 
     assert result is None
     model_access_manager.is_model_package_access_granted.assert_not_called()
+    auto_resolution_cache.invalidate.assert_called_once_with(
+        auto_negotiation_hash="a" * 64
+    )
 
 
 def test_auto_load_exact_cache_rejects_same_owner_manifest_rewrite(
@@ -2501,6 +2504,9 @@ def test_auto_load_exact_cache_rejects_same_owner_manifest_rewrite(
     assert result is None
     resolve_model_class.assert_not_called()
     model_access_manager.is_model_package_access_granted.assert_not_called()
+    auto_resolution_cache.invalidate.assert_called_once_with(
+        auto_negotiation_hash="a" * 64
+    )
 
 
 def test_auto_load_exact_keyed_cache_accepts_matching_canonical_manifest(
@@ -2615,7 +2621,97 @@ def test_auto_load_exact_cache_rejects_resolution_constraints_mismatch() -> None
     )
 
     assert result is None
+    auto_resolution_cache.invalidate.assert_not_called()
     model_access_manager.is_model_package_access_granted.assert_not_called()
+
+
+def test_auto_load_cache_preserves_entry_on_temporary_manifest_error() -> None:
+    cache_entry = AutoResolutionCacheEntry(
+        model_id="workspace/model/1",
+        cache_model_id="workspace/model/1",
+        canonical_model_id="workspace/model/1",
+        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
+        model_package_id="package",
+        resolved_files=[],
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        created_at=datetime.now(),
+        trusted_source=True,
+        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
+    )
+    on_invalid_cache_entry = MagicMock()
+
+    with mock.patch.object(
+        core,
+        "resolve_existing_model_package_cache_path",
+        side_effect=OSError("temporary mount failure"),
+    ):
+        result = core._verified_auto_cache_package_dir(
+            cache_entry=cache_entry,
+            on_invalid_cache_entry=on_invalid_cache_entry,
+        )
+
+    assert result is None
+    on_invalid_cache_entry.assert_not_called()
+
+
+def test_auto_load_cache_preserves_entry_after_transient_constructor_error() -> None:
+    cache_entry = AutoResolutionCacheEntry(
+        model_id="workspace/model/1",
+        cache_model_id="workspace/model/1",
+        canonical_model_id="workspace/model/1",
+        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
+        model_package_id="package",
+        resolved_files=[],
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        created_at=datetime.now(),
+        trusted_source=True,
+        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
+    )
+    auto_resolution_cache = MagicMock()
+    auto_resolution_cache.retrieve.return_value = cache_entry
+    model_access_manager = MagicMock()
+    model_access_manager.is_model_package_access_granted.return_value = True
+    package_config = InferenceModelConfig(
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        model_module=None,
+        model_class=None,
+        dependency_package_paths=[],
+    )
+    model_class = MagicMock()
+    model_class.from_pretrained.side_effect = RuntimeError("temporary GPU failure")
+
+    with mock.patch.object(
+        core, "_verified_auto_cache_package_dir", return_value="/cached/model"
+    ), mock.patch.object(
+        core, "parse_model_config", return_value=package_config
+    ), mock.patch.object(
+        core, "resolve_model_class", return_value=model_class
+    ):
+        result = attempt_loading_model_with_auto_load_cache(
+            use_auto_resolution_cache=True,
+            auto_resolution_cache=auto_resolution_cache,
+            auto_negotiation_hash="a" * 64,
+            model_access_manager=model_access_manager,
+            model_name_or_path="workspace/model/1",
+            model_init_kwargs={},
+            api_key="api-key",
+            allow_loading_dependency_models=True,
+            forwarded_kwargs_values={},
+        )
+
+    assert result is None
+    auto_resolution_cache.invalidate.assert_not_called()
+    model_access_manager.is_model_package_access_granted.assert_called_once_with(
+        model_id="workspace/model/1",
+        package_id="package",
+        api_key="api-key",
+    )
 
 
 def test_auto_load_exact_cache_rejects_constructor_artifact_mutation(
@@ -2696,6 +2792,9 @@ def test_auto_load_exact_cache_rejects_constructor_artifact_mutation(
             )
 
     assert result is None
+    auto_resolution_cache.invalidate.assert_called_once_with(
+        auto_negotiation_hash="a" * 64
+    )
 
 
 @pytest.mark.parametrize("trusted_source", [None, False])
@@ -2735,6 +2834,9 @@ def test_auto_load_cache_rejects_entry_without_trusted_provenance(
 def test_auto_load_cache_rejects_dependencies_when_disabled() -> None:
     cache_entry = AutoResolutionCacheEntry(
         model_id="workspace/model/1",
+        cache_model_id="workspace/model/1",
+        canonical_model_id="workspace/model/1",
+        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
         model_package_id="package",
         resolved_files=[],
         model_architecture="yolov8",
@@ -2742,6 +2844,7 @@ def test_auto_load_cache_rejects_dependencies_when_disabled() -> None:
         backend_type=BackendType.ONNX,
         created_at=datetime.now(),
         trusted_source=True,
+        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
         model_dependencies=[
             ModelDependency(
                 name="encoder",
@@ -2755,7 +2858,9 @@ def test_auto_load_cache_rejects_dependencies_when_disabled() -> None:
     model_access_manager = MagicMock()
     model_access_manager.is_model_package_access_granted.return_value = True
 
-    with mock.patch.object(core.AutoModel, "from_pretrained") as dependency_load:
+    with mock.patch.object(
+        core, "_verified_auto_cache_package_dir", return_value="/cached/model"
+    ), mock.patch.object(core.AutoModel, "from_pretrained") as dependency_load:
         result = attempt_loading_model_with_auto_load_cache(
             use_auto_resolution_cache=True,
             auto_resolution_cache=auto_resolution_cache,
@@ -2770,6 +2875,7 @@ def test_auto_load_cache_rejects_dependencies_when_disabled() -> None:
 
     assert result is None
     dependency_load.assert_not_called()
+    auto_resolution_cache.invalidate.assert_not_called()
 
 
 def test_auto_load_cache_does_not_mutate_dependency_model_parameters() -> None:
@@ -2942,6 +3048,9 @@ def test_exact_cache_rejects_dependency_resolved_to_unbound_package() -> None:
 
     assert result is None
     resolve_parent_model.assert_not_called()
+    auto_resolution_cache.invalidate.assert_called_once_with(
+        auto_negotiation_hash="a" * 64
+    )
 
 
 def test_dump_model_config_for_offline_use_rejects_symlink_target(
