@@ -2261,7 +2261,8 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
-            disable_sinks (bool, optional): Whether to disable workflow sink side effects. Defaults to False.
+            disable_sinks (bool, optional): Whether to disable sink writes and outbound
+                notifications/uploads (sink reads still execute). Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
@@ -2329,7 +2330,8 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
-            disable_sinks (bool, optional): Whether to disable workflow sink side effects. Defaults to False.
+            disable_sinks (bool, optional): Whether to disable sink writes and outbound
+                notifications/uploads (sink reads still execute). Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.

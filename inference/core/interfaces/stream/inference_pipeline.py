@@ -564,7 +564,8 @@ class InferencePipeline:
             workflow_init_parameters (Optional[Dict[str, Any]]): Additional init parameters to be used by
                 workflows Execution Engine to init steps of your workflow - may be required when running workflows
                 with custom plugins.
-            disable_sinks (bool): Whether to disable workflow sink side effects.
+            disable_sinks (bool): Whether to disable sink writes and outbound notifications/uploads.
+                Read operations of sink blocks (e.g. PLC register reads) still execute.
             workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
                 by workflows blocks to run background tasks.
             cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
