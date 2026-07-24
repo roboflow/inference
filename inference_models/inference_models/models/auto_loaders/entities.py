@@ -51,6 +51,15 @@ AnyModel = Union[
 
 
 @dataclass(frozen=True)
+class SuppliedDependency:
+    model_id: str
+    # Mirrors the metadata dependency package id (None when metadata leaves it
+    # unresolved); validated by strict equality against the dependency metadata.
+    model_package_id: Optional[str]
+    instance: AnyModel
+
+
+@dataclass(frozen=True)
 class InferenceModelConfig:
     model_architecture: Optional[ModelArchitecture]
     task_type: TaskType

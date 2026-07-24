@@ -57,6 +57,8 @@ WORKDIR /build
 COPY . .
 RUN make create_wheels
 RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --no-cache-dir --no-deps './inference_models[torch-cpu,onnx-cpu]' && \
+    pip3 install --no-cache-dir ./inference_model_manager ./inference_server
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
 
@@ -67,6 +69,7 @@ COPY examples/notebooks .
 WORKDIR /app
 COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py
+COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 

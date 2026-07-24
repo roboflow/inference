@@ -127,6 +127,26 @@ class RecommendedParameters(BaseModel):
     per_class_confidence: Optional[Dict[str, float]] = None
 
 
+class MemoryProfile(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="ignore",
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
+    peak_vram_mb: Dict[int, int] = Field(default_factory=dict)
+
+    def vram_for_batch(self, batch_size: int) -> Optional[int]:
+        if not self.peak_vram_mb:
+            return None
+        keys = sorted(self.peak_vram_mb)
+        for key in keys:
+            if key >= batch_size:
+                return self.peak_vram_mb[key]
+        return self.peak_vram_mb[keys[-1]]
+
+
 @dataclass(frozen=True)
 class ModelPackageMetadata:
     package_id: str
@@ -151,6 +171,7 @@ class ModelPackageMetadata:
     # locally-discovered packages whose cache slug differs from the requested
     # (alias) model id so loading resolves the correct directory.
     cache_model_id: Optional[str] = field(default=None)
+    memory_profile: MemoryProfile = field(default_factory=MemoryProfile)
 
     def get_summary(self) -> str:
         return (

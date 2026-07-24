@@ -48,7 +48,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -71,6 +71,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: 🧪 Integration Tests of Workflows
         run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
       - name: 🧪 Integration Tests of Workflows (Modal, staging)

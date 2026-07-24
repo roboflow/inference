@@ -77,7 +77,10 @@ from inference_models.models.rfdetr.pre_processing import (
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running RFDETR model with TRT backend on GPU requires pycuda installation, which is brought with "
@@ -271,6 +274,12 @@ class RFDetrForObjectDetectionTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
+        if trt_config.static_batch_size is not None:
+            self._max_batch_size = trt_config.static_batch_size
+        elif trt_config.dynamic_batch_size_max is not None:
+            self._max_batch_size = trt_config.dynamic_batch_size_max
+        else:
+            self._max_batch_size = 1
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
             max_workers=rfdetr_preprocessor_max_workers
         )

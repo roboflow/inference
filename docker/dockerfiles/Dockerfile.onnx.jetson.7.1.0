@@ -271,6 +271,8 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
         "setuptools<=75.5.0"
+RUN python -m pip install --break-system-packages --no-deps ./inference_models && \
+    python -m pip install --break-system-packages ./inference_model_manager ./inference_server
 
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned
@@ -385,6 +387,7 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 

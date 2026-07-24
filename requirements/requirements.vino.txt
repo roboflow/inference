@@ -1,2 +1,2 @@
 onnxruntime-openvino>=1.15.0,<1.22.0
-inference-models[torch-cpu]~=0.32.3  # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
+# NOTE: inference-models (extras: torch-cpu) is installed from local ./inference_models source by the consuming Dockerfile/CI step, not pinned here.

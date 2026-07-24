@@ -315,6 +315,9 @@ ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
 CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
     os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
 )
+# Route legacy model requests to the new ModelManagerProcess via
+# ModelManagerAdapter, default is False
+LEGACY_MMP_ADAPTER_ENABLED = str2bool(os.getenv("LEGACY_MMP_ADAPTER_ENABLED", False))
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)

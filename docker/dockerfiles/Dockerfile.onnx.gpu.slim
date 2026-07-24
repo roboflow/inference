@@ -32,6 +32,14 @@ RUN pip3 install \
     "setuptools<=75.5.0" \
     && rm -rf ~/.cache/pip
 
+# NOTE: inference_models must install WITH its dependencies (its base deps are not provided
+# by this image's requirements files). Installed in this builder stage so pycuda from the
+# cu12 extras resolves where the CUDA toolchain exists; the already-installed cu124 torch
+# satisfies the torch constraint and is left untouched. The result reaches the runtime
+# stage via the /usr/local/lib/python3.10 copy below.
+COPY inference_models /build/inference_models
+RUN pip3 install --no-cache-dir '/build/inference_models[torch-cu124,onnx-cu12]' && rm -rf /build
+
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
 WORKDIR /app
@@ -64,7 +72,15 @@ COPY inference_cli inference_cli
 
 ENV PYTHONPATH=/app
 
+# Installed (not copied into /app) so the project dirs never shadow the packages on import.
+# inference_models itself is installed in the builder stage (see NOTE there) and arrives
+# via the /usr/local/lib/python3.10 copy above.
+COPY inference_model_manager /build/inference_model_manager
+COPY inference_server /build/inference_server
+RUN pip3 install --no-cache-dir /build/inference_model_manager /build/inference_server && rm -rf /build
+
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 

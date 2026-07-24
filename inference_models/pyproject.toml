@@ -26,6 +26,7 @@ dependencies = [
   "rich>=14.1.0,<15.0.0",
   "pydantic>=2.11.7,<3.0.0",
   "filelock>=3.20.3,<4.0.0",
+  "pyzmq>=26.0.0,<27.0.0",
   "segmentation-models-pytorch>=0.5.0,<1.0.0",
   "scikit-image>=0.24.0,<0.26.0",
   "easyocr~=1.7.2",
@@ -46,7 +47,13 @@ dependencies = [
   "CairoSVG>=2.9.0,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
-  "idna>=3.15"
+  "idna>=3.15",
+  "imagecodecs",
+  "uvicorn[standard]>=0.30.0",
+  "fastapi>=0.115.0",
+  "psutil>=5.9.0",
+  "filetype>=1.2.0",
+  "pillow-heif>=0.18.0",
 ]
 
 [project.optional-dependencies]
@@ -59,14 +66,12 @@ torch-cu118 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
 ]
 torch-cu124 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
 ]
 torch-cu126 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
@@ -79,14 +84,12 @@ torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
 ]
 torch-cu130 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<=2026.1.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
 ]
 torch-jp6-cu126 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
@@ -94,7 +97,6 @@ torch-jp6-cu126 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0",
-  "Mako>=1.3.11",
 ]
 onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0",
@@ -129,6 +131,14 @@ trt10 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
   "Mako>=1.3.11",
 ]
+# Runtime-only TRT: lean runtime (executes prebuilt engines) without the ~6GB
+# full builder libs. Code prefers `tensorrt_lean` over `tensorrt`. Use for
+# serving images; use `trt10` (full) where engines are BUILT (development/).
+trt10-runtime = [
+  "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.3.11",
+]
 test = [
   "pytest>=9.0.3",
   "pytest-timeout==2.4.0",
@@ -159,14 +169,18 @@ torch = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
+  { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
+  { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 
