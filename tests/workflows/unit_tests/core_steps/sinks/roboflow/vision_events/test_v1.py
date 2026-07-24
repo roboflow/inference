@@ -273,6 +273,42 @@ def test_convert_keypoint_detection() -> None:
     assert k["keypoints"][2] == {"id": 2, "x": 45.0, "y": 55.0}
 
 
+def test_convert_keypoint_detection_skips_padding_slots() -> None:
+    # given the padded (n, max_kps, 2) layout produced when detections carry
+    # unequal keypoint counts: detection has 2 real keypoints and 1 empty-named
+    # padding slot that must not be emitted as a phantom keypoint at (0, 0).
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 50, 60]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["person"]),
+            "detection_id": np.array(["id1"]),
+            PREDICTION_TYPE_KEY: np.array(["keypoint-detection"]),
+            KEYPOINTS_XY_KEY_IN_SV_DETECTIONS: np.array(
+                [[[15.0, 25.0], [30.0, 40.0], [0.0, 0.0]]], dtype=np.float32
+            ),
+            KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS: np.array(
+                [[0.9, 0.8, 0.0]], dtype=np.float32
+            ),
+            KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS: np.array([[0, 1, 0]], dtype=int),
+            KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS: np.array(
+                [["nose", "eye", ""]], dtype=object
+            ),
+        },
+    )
+
+    # when
+    _, _, kp = _convert_sv_detections_to_vision_events_format(detections)
+
+    # then only the 2 real keypoints are emitted
+    assert len(kp[0]["keypoints"]) == 2
+    assert kp[0]["keypoints"] == [
+        {"id": 0, "x": 15.0, "y": 25.0},
+        {"id": 1, "x": 30.0, "y": 40.0},
+    ]
+
+
 # === Classification Conversion ===
 
 

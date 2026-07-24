@@ -144,6 +144,7 @@ def post_process_instance_segmentation_results(
     threshold: Union[float, torch.Tensor],
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     results = []
@@ -186,6 +187,13 @@ def post_process_instance_segmentation_results(
         top_classes = top_classes[sorted_indices]
         selected_boxes = selected_boxes[sorted_indices]
         selected_masks = selected_masks[sorted_indices]
+        if max_detections is not None:
+            # Cap BEFORE alignment: each survivor past this point costs a
+            # full-resolution mask, so this is the last cheap place to bound n.
+            confidence = confidence[:max_detections]
+            top_classes = top_classes[:max_detections]
+            selected_boxes = selected_boxes[:max_detections]
+            selected_masks = selected_masks[:max_detections]
         cxcy = selected_boxes[:, :2]
         wh = selected_boxes[:, 2:]
         xy_min = cxcy - 0.5 * wh
@@ -239,6 +247,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
     threshold: Union[float, torch.Tensor],
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
 ) -> InstanceDetections:
     global _TRITON_POSTPROC_JIT_DISABLED
@@ -254,6 +263,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
                     image_meta=image_meta,
                     threshold=threshold,
                     classes_re_mapping=classes_re_mapping,
+                    max_detections=max_detections,
                     defer_postprocess_sync=defer_postprocess_sync,
                 )
             )
@@ -280,6 +290,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
         threshold=threshold,
         num_classes=num_classes,
         classes_re_mapping=classes_re_mapping,
+        max_detections=max_detections,
     )
 
 
@@ -291,6 +302,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
     threshold: Union[float, torch.Tensor],
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
 ) -> InstanceDetections:
     num_queries, num_logits_classes = image_logits.shape
     flat_scores = image_logits.reshape(-1)
@@ -323,6 +335,10 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
     confidence, sorted_indices = torch.sort(confidence, descending=True)
     top_classes = top_classes[sorted_indices]
     query_indices = query_indices[sorted_indices]
+    if max_detections is not None:
+        confidence = confidence[:max_detections]
+        top_classes = top_classes[:max_detections]
+        query_indices = query_indices[:max_detections]
     selected_boxes = image_bboxes[query_indices]
     selected_masks = image_masks[query_indices]
     cxcy = selected_boxes[:, :2]
@@ -390,6 +406,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
     threshold: Union[float, torch.Tensor],
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
@@ -406,6 +423,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 threshold=threshold,
                 num_classes=num_classes,
                 classes_re_mapping=classes_re_mapping,
+                max_detections=max_detections,
                 defer_postprocess_sync=defer_postprocess_sync,
             )
             for image_bboxes, image_logits, image_masks, image_meta in zip(
@@ -424,6 +442,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
             threshold=threshold,
             num_classes=num_classes,
             classes_re_mapping=classes_re_mapping,
+            max_detections=max_detections,
         )
         for image_bboxes, image_logits, image_masks, image_meta in zip(
             bboxes,

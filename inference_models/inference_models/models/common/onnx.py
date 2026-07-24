@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
@@ -174,6 +175,17 @@ def set_onnx_execution_provider_defaults(
         device_id_options["device_id"] = device.index
     for provider in providers:
         if provider == "TensorrtExecutionProvider" and default_onnx_trt_options:
+            engine_cached = os.path.isdir(model_package_path) and any(
+                f.endswith(".engine") for f in os.listdir(model_package_path)
+            )
+            if not engine_cached:
+                LOGGER.warning(
+                    "No cached TensorRT engine found in %s. ONNX Runtime will build one "
+                    "during the first inference; this can take many minutes on embedded "
+                    "devices and blocks requests for this model until it finishes. "
+                    "Persist this directory to avoid rebuilds.",
+                    model_package_path,
+                )
             provider = (
                 "TensorrtExecutionProvider",
                 {

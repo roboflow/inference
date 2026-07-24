@@ -9,6 +9,9 @@ Below you can find the changelog for Execution Engine.
 Add user-facing compile or execution behavior changes here. Maintainers replace
 this heading with the Execution Engine and inference versions when releasing.
 
+- Model-access failures raised while loading local workflow models now preserve HTTP
+  402, 403, and 423 statuses instead of surfacing as generic HTTP 500 errors.
+
 ---
 
 ## Execution Engine `v1.12.0` | inference `v1.3.2`

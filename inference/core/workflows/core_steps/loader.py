@@ -737,6 +737,7 @@ KINDS_SERIALIZERS = {
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
+    DETECTIONS_OVERLAPS_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
 }
 KINDS_DESERIALIZERS = {
@@ -756,6 +757,7 @@ KINDS_DESERIALIZERS = {
     ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
     LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    DETECTIONS_OVERLAPS_KIND.name: deserialize_list_of_values_kind,
     BOOLEAN_KIND.name: deserialize_boolean_kind,
     INTEGER_KIND.name: deserialize_integer_kind,
     STRING_KIND.name: deserialize_string_kind,
