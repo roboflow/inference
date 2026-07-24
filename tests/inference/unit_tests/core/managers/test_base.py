@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -37,6 +37,23 @@ def test_add_model_when_model_not_loaded() -> None:
     model_manager.add_model(model_id="some/1", api_key="some_api_key")
 
     # then
+    assert "some/1" in model_manager.models()
+
+
+def test_add_model_skips_online_cache_authorization_in_offline_mode() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+
+    with patch.object(base_module, "MODELS_CACHE_AUTH_ENABLED", True), patch.object(
+        base_module,
+        "OFFLINE_MODE",
+        True,
+    ), patch.object(
+        base_module,
+        "_check_if_api_key_has_access_to_model",
+    ) as access_check_mock:
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+
+    access_check_mock.assert_not_called()
     assert "some/1" in model_manager.models()
 
 

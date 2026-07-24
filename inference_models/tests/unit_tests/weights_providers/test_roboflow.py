@@ -1174,6 +1174,17 @@ def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
     assert "Authorization" not in requests_mock.last_request.headers
 
 
+def test_get_one_page_of_model_metadata_rejects_offline_mode(
+    requests_mock: Mocker,
+) -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), pytest.raises(
+        ModelRetrievalError, match="OFFLINE_MODE"
+    ):
+        get_one_page_of_model_metadata(model_id="my-model")
+
+    assert not requests_mock.called
+
+
 def test_get_one_page_of_model_metadata_when_retry_not_needed_and_not_parsable_response(
     requests_mock: Mocker,
 ) -> None:

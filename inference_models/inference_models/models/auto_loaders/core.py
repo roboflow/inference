@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import inspect
 import os.path
 from datetime import datetime
 from functools import partial
@@ -1155,7 +1156,11 @@ def attempt_loading_model_with_auto_load_cache(
                 cache_entry.recommended_parameters
             )
         model = model_class.from_pretrained(
-            model_package_cache_dir, **model_init_kwargs
+            model_package_cache_dir,
+            **_prepare_library_model_init_kwargs(
+                model_class=model_class,
+                model_init_kwargs=model_init_kwargs,
+            ),
         )
         verbose_info(
             message=f"Successfully loaded model {model_name_or_path} using auto-loading cache.",
@@ -1208,8 +1213,24 @@ def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, No
             continue
         if not os.path.isdir(package_dir):
             continue
-        if os.path.isfile(os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)):
-            yield package_dir
+        config_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
+        if not os.path.isfile(config_path):
+            continue
+        try:
+            config_content = read_json(path=config_path)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(config_content, dict):
+            continue
+        cached_model_id = config_content.get("model_id")
+        if cached_model_id is not None and cached_model_id != model_id:
+            LOGGER.warning(
+                f"Ignoring cached package at {package_dir} because its model ID "
+                f"({cached_model_id}) does not match the requested model ID "
+                f"({model_id})."
+            )
+            continue
+        yield package_dir
 
 
 def attempt_loading_model_from_offline_cache(
@@ -1249,7 +1270,7 @@ def attempt_loading_model_from_offline_cache(
         )
         return None
     found_any_package = False
-    if requested_backends is None:
+    if requested_model_package_id is not None or requested_backends is None:
         requested_backend_values = None
     else:
         requested_backends_list = (
@@ -1257,27 +1278,14 @@ def attempt_loading_model_from_offline_cache(
             if isinstance(requested_backends, list)
             else [requested_backends]
         )
-        requested_backend_values = {
+        requested_backend_values = [
             backend.value if isinstance(backend, BackendType) else backend
             for backend in requested_backends_list
-        }
-    for package_dir in _iterate_cached_model_package_dirs(model_id=model_id):
-        package_id = os.path.basename(package_dir)
-        if (
-            requested_model_package_id is not None
-            and package_id != requested_model_package_id
-        ):
-            continue
-        if (
-            model_access_manager is not None
-            and not model_access_manager.is_model_package_access_granted(
-                model_id=model_id,
-                package_id=package_id,
-                api_key=api_key,
-            )
-        ):
-            continue
-        if requested_backend_values is not None:
+        ]
+    package_dirs = list(_iterate_cached_model_package_dirs(model_id=model_id))
+    if requested_backend_values is not None:
+        compatible_package_dirs = []
+        for package_dir in package_dirs:
             try:
                 package_config = parse_model_config(
                     config_path=os.path.join(
@@ -1296,6 +1304,32 @@ def attempt_loading_model_from_offline_cache(
                 or package_config.backend_type.value not in requested_backend_values
             ):
                 continue
+            compatible_package_dirs.append(
+                (
+                    requested_backend_values.index(package_config.backend_type.value),
+                    package_dir,
+                )
+            )
+        package_dirs = [
+            package_dir
+            for _, package_dir in sorted(compatible_package_dirs)
+        ]
+    for package_dir in package_dirs:
+        package_id = os.path.basename(package_dir)
+        if (
+            requested_model_package_id is not None
+            and package_id != requested_model_package_id
+        ):
+            continue
+        if (
+            model_access_manager is not None
+            and not model_access_manager.is_model_package_access_granted(
+                model_id=model_id,
+                package_id=package_id,
+                api_key=api_key,
+            )
+        ):
+            continue
         found_any_package = True
         try:
             model = attempt_loading_model_from_local_storage(
@@ -1337,6 +1371,22 @@ def attempt_loading_model_from_offline_cache(
 
 def all_files_exist(files: List[str]) -> bool:
     return all(os.path.exists(f) for f in files)
+
+
+def _prepare_library_model_init_kwargs(
+    model_class: Any, model_init_kwargs: dict
+) -> dict:
+    if not OFFLINE_MODE:
+        return model_init_kwargs
+    try:
+        loader_parameters = inspect.signature(
+            model_class.from_pretrained
+        ).parameters
+    except (TypeError, ValueError):
+        return model_init_kwargs
+    if "local_files_only" not in loader_parameters:
+        return model_init_kwargs
+    return {**model_init_kwargs, "local_files_only": True}
 
 
 def attempt_loading_matching_model_packages(
@@ -1562,7 +1612,7 @@ def initialize_model(
         task_type=task_type,
         backend_type=model_package.backend,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        model_id=model_id,
+        model_id=cache_model_id,
         on_file_created=on_file_created,
     )
     resolved_files = set(shared_files_mapping.values())
@@ -1584,7 +1634,13 @@ def initialize_model(
     )
     if resolved_recommended_parameters is not None:
         model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
-    model = model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
+    model = model_class.from_pretrained(
+        model_package_cache_dir,
+        **_prepare_library_model_init_kwargs(
+            model_class=model_class,
+            model_init_kwargs=model_init_kwargs,
+        ),
+    )
     dump_auto_resolution_cache(
         use_auto_resolution_cache=use_auto_resolution_cache,
         auto_resolution_cache=auto_resolution_cache,
@@ -1909,7 +1965,13 @@ def attempt_loading_model_from_checkpoint(
         task_type=task_type,
         backend=backend_type,
     )
-    return model_class.from_pretrained(checkpoint_path, **model_init_kwargs)
+    return model_class.from_pretrained(
+        checkpoint_path,
+        **_prepare_library_model_init_kwargs(
+            model_class=model_class,
+            model_init_kwargs=model_init_kwargs,
+        ),
+    )
 
 
 def resolve_models_registry_entry(
@@ -2032,7 +2094,13 @@ def load_library_model_from_local_dir(
         task_type=model_config.task_type,
         backend=model_config.backend_type,
     )
-    return model_class.from_pretrained(model_dir, **model_init_kwargs)
+    return model_class.from_pretrained(
+        model_dir,
+        **_prepare_library_model_init_kwargs(
+            model_class=model_class,
+            model_init_kwargs=model_init_kwargs,
+        ),
+    )
 
 
 def load_model_from_local_package_with_arbitrary_code(

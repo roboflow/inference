@@ -1,5 +1,7 @@
 import os
 import platform
+import sys
+import types
 import uuid
 import warnings
 from typing import Optional
@@ -356,12 +358,26 @@ DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", 
 _OFFLINE_MODE_PROCESS_LATCH_ENV = (
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 )
+_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
-_latched_offline_mode = os.environ.setdefault(
-    _OFFLINE_MODE_PROCESS_LATCH_ENV,
-    str(_requested_offline_mode),
-)
-OFFLINE_MODE = str2bool(_latched_offline_mode)
+_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
+if _offline_mode_process_state is None:
+    _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
+    _latched_offline_mode = (
+        _requested_offline_mode
+        if _inherited_offline_mode is None
+        else str2bool(_inherited_offline_mode)
+    )
+    _offline_mode_process_state = types.ModuleType(
+        _OFFLINE_MODE_PROCESS_STATE_MODULE
+    )
+    _offline_mode_process_state.offline_mode = _latched_offline_mode
+    sys.modules[_OFFLINE_MODE_PROCESS_STATE_MODULE] = _offline_mode_process_state
+OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
+os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
+if OFFLINE_MODE:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 if OFFLINE_MODE != _requested_offline_mode:
     warnings.warn(
         "Changing OFFLINE_MODE at runtime is not supported. The new value is "
@@ -378,6 +394,8 @@ if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
         stacklevel=1,
     )
     SAM3_EXEC_MODE = "local"
+    if os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED") is None:
+        SAM3_FINE_TUNED_MODELS_ENABLED = True
 
 # Flag to disable version check, default is False
 DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
@@ -568,6 +586,9 @@ OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
 OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
 OTEL_TRACE_EXPORT_INTERVAL_MS = int(os.getenv("OTEL_TRACE_EXPORT_INTERVAL_MS", "5000"))
 OTEL_METRICS_ENABLED = str2bool(os.getenv("OTEL_METRICS_ENABLED", "True"))
+if OFFLINE_MODE:
+    OTEL_TRACING_ENABLED = False
+    OTEL_METRICS_ENABLED = False
 OTEL_METRIC_EXPORTER_ENDPOINT = os.getenv("OTEL_METRIC_EXPORTER_ENDPOINT", "")
 OTEL_METRIC_EXPORT_INTERVAL_MS = int(
     os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS", "10000")
@@ -1060,6 +1081,15 @@ WEBRTC_MODAL_TOKEN_ID = (
 WEBRTC_MODAL_TOKEN_SECRET = (
     _webrtc_modal_token_secret.strip("\"'") if _webrtc_modal_token_secret else None
 )
+if OFFLINE_MODE and (WEBRTC_MODAL_TOKEN_ID or WEBRTC_MODAL_TOKEN_SECRET):
+    warnings.warn(
+        "Modal WebRTC workers are not available while OFFLINE_MODE is enabled. "
+        "Forcing local WebRTC worker execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WEBRTC_MODAL_TOKEN_ID = None
+    WEBRTC_MODAL_TOKEN_SECRET = None
 WEBRTC_MODAL_APP_NAME = os.getenv(
     "WEBRTC_MODAL_APP_NAME", f"inference-webrtc-{PROJECT}"
 )

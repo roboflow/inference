@@ -151,9 +151,9 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
     1. **Traditional** — ``model_type.json`` marker files written by the model
        registry.  The model ID is derived from the directory path.
     2. **inference-models** — ``model_config.json`` files written by
-       ``dump_model_config_for_offline_use``.  The canonical ``model_id`` is
-       read from the file, which ensures alias resolution works correctly
-       (the directory name is an opaque slug in this layout).
+       ``dump_model_config_for_offline_use``.  The cache-owning ``model_id`` is
+       read from the file (the directory name is an opaque slug in this
+       layout).
 
     Returns a list of dicts with the following shape::
 
@@ -187,7 +187,7 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
         metadata: Optional[dict] = None
         stored_model_id: Optional[str] = None
 
-        # Prefer model_config.json when present — it contains the canonical
+        # Prefer model_config.json when present — it contains the cache-owning
         # model_id, while the directory name is an opaque slug.
         if has_model_config:
             config_path = os.path.join(root, "model_config.json")

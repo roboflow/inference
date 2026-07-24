@@ -271,6 +271,12 @@ def get_one_page_of_model_metadata(
     extra_headers: Optional[Dict[str, str]] = None,
     proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     query = {
         "modelId": model_id,
     }

@@ -28,6 +28,7 @@ from inference.core.env import (
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
+    OFFLINE_MODE,
     OWLV2_COMPILE_MODEL,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
@@ -128,6 +129,7 @@ class Owlv2Singleton:
                 Owlv2ForObjectDetection.from_pretrained(
                     huggingface_id,
                     device_map=DEVICE if str(DEVICE).startswith("cuda") else None,
+                    local_files_only=OFFLINE_MODE,
                 )
                 .eval()
                 .to(DEVICE)
@@ -192,7 +194,10 @@ def dummy_infer(hf_id: str):
     # Below code is copied from Owlv2.__init__
     singleton = Owlv2Singleton(hf_id)
     model = singleton.model
-    processor = Owlv2Processor.from_pretrained(hf_id)
+    processor = Owlv2Processor.from_pretrained(
+        hf_id,
+        local_files_only=OFFLINE_MODE,
+    )
     image_size = (
         processor.image_processor.size.height,
         processor.image_processor.size.width,
@@ -412,7 +417,10 @@ class OwlV2(RoboflowInferenceModel):
             self.dataset_id = owlv2_model_id_chunks[0]
             self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
-        processor = Owlv2Processor.from_pretrained(hf_id)
+        processor = Owlv2Processor.from_pretrained(
+            hf_id,
+            local_files_only=OFFLINE_MODE,
+        )
         self.image_size = (
             processor.image_processor.size.height,
             processor.image_processor.size.width,

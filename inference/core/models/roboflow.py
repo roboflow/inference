@@ -28,6 +28,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     MODEL_VALIDATION_DISABLED,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
@@ -85,7 +86,7 @@ SLEEP_SECONDS_BETWEEN_RETRIES = 3
 MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT = 3600  # 1 hour
 
 S3_CLIENT = None
-if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
+if not OFFLINE_MODE and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     try:
         import boto3
         from botocore.config import Config
@@ -243,7 +244,7 @@ class RoboflowInferenceModel(Model):
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -271,6 +272,11 @@ class RoboflowInferenceModel(Model):
 
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             return None
+        if OFFLINE_MODE:
+            raise ModelArtefactError(
+                f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
+                "or more required artifacts are missing from the local cache."
+            )
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
@@ -670,7 +676,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
 
         This method includes handling for AWS access keys and error handling.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -685,6 +691,11 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             logger.debug("Model artifacts already downloaded, loading from cache")
             return None
+        if OFFLINE_MODE:
+            raise ModelArtefactError(
+                f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
+                "or more required artifacts are missing from the local cache."
+            )
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
@@ -1128,7 +1139,8 @@ def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
 def is_model_artefacts_bucket_available() -> bool:
     # TODO: download from GCS directly if GCP_SERVERLESS is true
     return (
-        AWS_ACCESS_KEY_ID is not None
+        not OFFLINE_MODE
+        and AWS_ACCESS_KEY_ID is not None
         and AWS_SECRET_ACCESS_KEY is not None
         and LAMBDA
         and S3_CLIENT is not None

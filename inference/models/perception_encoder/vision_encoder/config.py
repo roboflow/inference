@@ -10,6 +10,8 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from huggingface_hub import hf_hub_download
 
+from inference.core.env import OFFLINE_MODE
+
 
 def fetch_pe_checkpoint(name: str, path: Optional[str] = None):
     path = path or f"hf://facebook/{name}:{name}.pt"
@@ -20,8 +22,13 @@ def fetch_pe_checkpoint(name: str, path: Optional[str] = None):
         repo, file = path.split(":")
 
         # To count the download, config.yaml is empty
-        hf_hub_download(repo_id=repo, filename="config.yaml")
-        return hf_hub_download(repo_id=repo, filename=file)
+        if not OFFLINE_MODE:
+            hf_hub_download(repo_id=repo, filename="config.yaml")
+        return hf_hub_download(
+            repo_id=repo,
+            filename=file,
+            local_files_only=OFFLINE_MODE,
+        )
     else:
         return path
 
