@@ -6,6 +6,7 @@ import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
+import inference.core.interfaces.http.http_api as http_api
 from inference.core.constants import (
     PROCESSING_TIME_HEADER,
     TRACE_ID_HEADER,
@@ -13,8 +14,8 @@ from inference.core.constants import (
 )
 from inference.core.env import CORRELATION_ID_HEADER
 from inference.core.exceptions import RoboflowAPINotAuthorizedError
-from inference.core.utils.depth_encoding import decode_png_normalized_depth
 from inference.core.roboflow_api import ServerlessUsageCheckResponse
+from inference.core.utils.depth_encoding import decode_png_normalized_depth
 
 
 class _DummyInstrumentator:
@@ -341,8 +342,6 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
 
 
 def test_depth_estimation_png16_format_returns_decodable_payload(monkeypatch) -> None:
-    import inference.core.interfaces.http.http_api as http_api
-
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
     monkeypatch.setattr(
         http_api.usage_collector,
@@ -380,8 +379,6 @@ def test_depth_estimation_png16_format_returns_decodable_payload(monkeypatch) ->
 
 
 def test_depth_estimation_json_format_returns_legacy_shape(monkeypatch) -> None:
-    import inference.core.interfaces.http.http_api as http_api
-
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
     monkeypatch.setattr(
         http_api.usage_collector,
@@ -1346,8 +1343,6 @@ def test_empty_local_whitelist_alone_does_not_enable_middleware(monkeypatch) -> 
 
 
 def test_depth_estimation_png8_format_returns_decodable_payload(monkeypatch) -> None:
-    import inference.core.interfaces.http.http_api as http_api
-
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
     monkeypatch.setattr(
         http_api.usage_collector,

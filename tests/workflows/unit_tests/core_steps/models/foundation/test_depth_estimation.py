@@ -109,4 +109,5 @@ def test_run_remotely_calls_depth_estimation(
         inference_input=mock_workflow_image_data.base64_image,
         model_id="depth-anything-v3/small",
         model_id_in_path=True,
+        depth_map_format="png16",
     )

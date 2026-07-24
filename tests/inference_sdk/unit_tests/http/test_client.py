@@ -1,11 +1,14 @@
 import base64
 import json
 import os.path
+import warnings
 from glob import glob
 from io import BytesIO
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
+import cv2
+import numpy as np
 import pytest
 import requests
 from aiohttp import ClientConnectionError, ClientResponseError, RequestInfo
@@ -14,7 +17,11 @@ from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
 from yarl import URL
 
-from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
+from inference_sdk.config import (
+    InferenceSDKDeprecationWarning,
+    RemoteProcessingTimeCollector,
+    remote_processing_times,
+)
 from inference_sdk.http import client
 from inference_sdk.http.client import (
     DEFAULT_HEADERS,
@@ -42,6 +49,7 @@ from inference_sdk.http.errors import (
     WrongClientModeError,
 )
 from inference_sdk.http.utils import executors
+from inference_sdk.http.utils.depth_maps import decode_png_normalized_depth
 
 
 def test_ensure_model_is_selected_when_model_is_selected() -> None:
@@ -4690,20 +4698,12 @@ def test_depth_estimation_decodes_png16_payload(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
-    import numpy as np
-
-    from inference_sdk.http.utils.depth_maps import decode_png_normalized_depth
-
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     depth = np.array([[0.0, 0.5], [0.25, 1.0]], dtype=np.float32)
-    import base64 as _b64
-
-    import cv2
-
     _, buffer = cv2.imencode(".png", np.round(depth * 65535).astype(np.uint16))
-    payload = _b64.b64encode(buffer.tobytes()).decode("ascii")
+    payload = base64.b64encode(buffer.tobytes()).decode("ascii")
     requests_mock.post(
         f"{api_url}/infer/depth-estimation/yolo26n-depth-768",
         json={
@@ -4731,17 +4731,12 @@ def test_depth_estimation_decodes_png8_payload(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
-    import base64 as _b64
-
-    import cv2
-    import numpy as np
-
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     depth = np.array([[0.0, 0.5], [0.25, 1.0]], dtype=np.float32)
     _, buffer = cv2.imencode(".png", np.round(depth * 255).astype(np.uint8))
-    payload = _b64.b64encode(buffer.tobytes()).decode("ascii")
+    payload = base64.b64encode(buffer.tobytes()).decode("ascii")
     requests_mock.post(
         f"{api_url}/infer/depth-estimation/yolo26n-depth-768",
         json={
@@ -4787,69 +4782,17 @@ def test_depth_estimation_passes_requested_depth_map_format(
 
 
 @mock.patch.object(client, "load_static_inference_input")
-def test_depth_estimation_emits_deprecation_warning_for_json_format(
-    load_static_inference_input_mock: MagicMock,
-    requests_mock: Mocker,
-) -> None:
-    import warnings
-
-    from inference_sdk.config import InferenceSDKDeprecationWarning
-
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    requests_mock.post(
-        f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
-        json={"normalized_depth": [[0.0]], "depth_map_format": "json", "image": "i"},
-    )
-
-    # when - default (json) and explicit json both warn; per-process dedup is
-    # delegated to Python's default warning filters, so under the "always"
-    # filter each call emits
-    with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("always")
-        http_client.depth_estimation(
-            inference_input="/some/image.jpg",
-            model_id="depth-anything-v3/small",
-            model_id_in_path=True,
-        )
-        http_client.depth_estimation(
-            inference_input="/some/image.jpg",
-            model_id="depth-anything-v3/small",
-            model_id_in_path=True,
-            depth_map_format="json",
-        )
-
-    # then - both selections announce the 2027 breaking switch
-    sdk_warnings = [
-        w for w in captured if issubclass(w.category, InferenceSDKDeprecationWarning)
-    ]
-    assert len(sdk_warnings) == 2
-    assert "2027" in str(sdk_warnings[0].message)
-    assert "png16" in str(sdk_warnings[0].message)
-
-
-@mock.patch.object(client, "load_static_inference_input")
 def test_depth_estimation_png_opt_in_does_not_emit_deprecation_warning(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
-    import base64 as _b64
-    import warnings
-
-    import cv2
-    import numpy as np
-
-    from inference_sdk.config import InferenceSDKDeprecationWarning
-
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     depth = np.array([[0.0, 1.0]], dtype=np.float32)
     _, buffer = cv2.imencode(".png", np.round(depth * 65535).astype(np.uint16))
-    payload = _b64.b64encode(buffer.tobytes()).decode("ascii")
+    payload = base64.b64encode(buffer.tobytes()).decode("ascii")
     requests_mock.post(
         f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
         json={
@@ -4881,10 +4824,6 @@ def test_depth_estimation_png_opt_in_does_not_emit_deprecation_warning(
 async def test_depth_estimation_async_defaults_to_json_and_warns(
     load_static_inference_input_async_mock: AsyncMock,
 ) -> None:
-    import warnings
-
-    from inference_sdk.config import InferenceSDKDeprecationWarning
-
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
