@@ -1601,10 +1601,8 @@ def get_workflow_specification(
         api_key: Roboflow API key, or None for unauthenticated fetches.
         workspace_id: Workspace slug, or ``local`` for filesystem-backed workflows.
         workflow_id: Workflow identifier within the workspace.
-        use_cache: If True, read and write the ephemeral workflow-definition
-            cache while online. Ephemeral caches are always bypassed offline.
+        use_cache: If True, read and write the ephemeral workflow-definition cache.
         ephemeral_cache: Cache backend; defaults to the process-global cache.
-            This backend is not accessed while offline.
         workflow_version_id: Optional pinned workflow version.
 
     Returns:
@@ -1616,9 +1614,8 @@ def get_workflow_specification(
         FileNotFoundError: Local workspace workflow file is missing.
         ValueError: Invalid local workflow id.
     """
-    use_ephemeral_cache = use_cache and not OFFLINE_MODE
-    if use_ephemeral_cache:
-        ephemeral_cache = ephemeral_cache or cache
+    ephemeral_cache = ephemeral_cache or cache
+    if use_cache:
         cached_entry = _try_retrieve_workflow_specification_from_ephemeral_cache(
             api_key=api_key,
             workspace_id=workspace_id,
@@ -1699,7 +1696,7 @@ def get_workflow_specification(
         if not isinstance(specification, dict):
             raise TypeError("Workflow specification must be a dictionary")
         specification["id"] = response["workflow"].get("id")
-        if use_ephemeral_cache:
+        if use_cache:
             _try_cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
                 workspace_id=workspace_id,

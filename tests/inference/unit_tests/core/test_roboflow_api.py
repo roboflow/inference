@@ -2943,23 +2943,17 @@ def test_get_workflow_specification_uses_online_cache_after_switching_offline(
     assert result == {"source": "online-cache", "id": None}
 
 
-def test_get_workflow_specification_does_not_use_ephemeral_cache_offline(
-    tmp_path: Path,
-) -> None:
-    cached_response = _workflow_cache_response("file-cache")
+def test_get_workflow_specification_uses_ephemeral_cache_offline() -> None:
     ephemeral_cache = MagicMock()
+    ephemeral_cache.get.return_value = {
+        "source": "ephemeral-cache",
+        "id": "workflow-id",
+    }
 
     with (
-        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
         mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
-        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+        mock.patch.object(roboflow_api, "_get_from_url") as get_from_url_mock,
     ):
-        roboflow_api.cache_workflow_response(
-            api_key=None,
-            workspace_id="my_workspace",
-            workflow_id="some_workflow",
-            response=cached_response,
-        )
         result = get_workflow_specification(
             api_key=None,
             workspace_id="my_workspace",
@@ -2967,9 +2961,10 @@ def test_get_workflow_specification_does_not_use_ephemeral_cache_offline(
             ephemeral_cache=ephemeral_cache,
         )
 
-    assert result == {"source": "file-cache", "id": None}
-    ephemeral_cache.get.assert_not_called()
+    assert result == {"source": "ephemeral-cache", "id": "workflow-id"}
+    ephemeral_cache.get.assert_called_once()
     ephemeral_cache.set.assert_not_called()
+    get_from_url_mock.assert_not_called()
 
 
 def test_get_pinned_workflow_uses_online_cache_after_switching_offline(
