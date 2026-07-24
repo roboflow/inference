@@ -804,13 +804,24 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
                 if ep == "TensorrtExecutionProvider":
+                    engine_cache_path = os.path.join(
+                        TENSORRT_CACHE_PATH, self.endpoint
+                    )
+                    engine_cached = os.path.isdir(engine_cache_path) and any(
+                        f.endswith(".engine") for f in os.listdir(engine_cache_path)
+                    )
+                    if not engine_cached:
+                        logger.warning(
+                            f"No cached TensorRT engine for '{model_id}' in {engine_cache_path}. "
+                            "ONNX Runtime will build one during the first inference; this can take "
+                            "many minutes on embedded devices and blocks requests for this model "
+                            "until it finishes. Persist this directory to avoid rebuilds."
+                        )
                     ep = (
                         "TensorrtExecutionProvider",
                         {
                             "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": os.path.join(
-                                TENSORRT_CACHE_PATH, self.endpoint
-                            ),
+                            "trt_engine_cache_path": engine_cache_path,
                             "trt_fp16_enable": True,
                         },
                     )
