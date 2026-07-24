@@ -4178,6 +4178,12 @@ class HttpInterface(BaseInterface):
                     Returns:
                         OCRInferenceResponse: The response containing the retrieved text.
                     """
+                    if not USE_INFERENCE_MODELS:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="PP-OCR is not supported by this inference server configuration.",
+                        )
+
                     logger.debug(f"Reached /ocr/pp-ocr")
                     pp_ocr_model_id = load_pp_ocr_model(
                         inference_request,
