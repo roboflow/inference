@@ -134,6 +134,13 @@ class PLCBlockV1(WorkflowBlock):
     In case of failures, errors are printed to terminal and the corresponding tag entry in the output is set to "ReadFailure" or "WriteFailure".
     """
 
+    def __init__(self, disable_sinks: bool = False):
+        self._disable_sinks = disable_sinks
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["disable_sinks"]
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return PLCBlockManifest
@@ -189,6 +196,9 @@ class PLCBlockV1(WorkflowBlock):
         Returns:
             dict: A dictionary with `plc_results` as a list containing one dictionary. That dictionary has 'read' and/or 'write' keys.
         """
+        if self._disable_sinks and mode == "write":
+            return {"plc_results": []}
+
         read_results = {}
         write_results = {}
 
@@ -200,7 +210,7 @@ class PLCBlockV1(WorkflowBlock):
                     tag: self._read_single_tag(comm, tag) for tag in tags_to_read
                 }
 
-            if mode in ["write", "read_and_write"]:
+            if not self._disable_sinks and mode in ["write", "read_and_write"]:
                 write_results = {
                     tag: self._write_single_tag(comm, tag, value)
                     for tag, value in tags_to_write.items()

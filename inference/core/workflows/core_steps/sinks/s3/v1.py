@@ -9,6 +9,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -244,10 +245,15 @@ class BlockManifest(WorkflowBlockManifest):
 
 class S3SinkBlockV1(WorkflowBlock):
 
-    def __init__(self):
+    def __init__(self, disable_sinks: bool = False):
         self._buffer: List[str] = []
         self._entries_in_buffer: int = 0
         self._current_key: Optional[str] = None
+        self._disable_sinks = disable_sinks
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -266,6 +272,8 @@ class S3SinkBlockV1(WorkflowBlock):
         aws_secret_access_key: Optional[str] = None,
         aws_region: Optional[str] = None,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return disabled_sink_response()
         s3_client = create_s3_client(
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,

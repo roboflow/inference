@@ -5,6 +5,7 @@ import paho.mqtt.client as mqtt
 from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -107,9 +108,10 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class MQTTWriterSinkBlockV1(WorkflowBlock):
-    def __init__(self):
+    def __init__(self, disable_sinks: bool = False):
         self.mqtt_client: Optional[mqtt.Client] = None
         self._connected = threading.Event()
+        self._disable_sinks = disable_sinks
 
     def __del__(self):
         try:
@@ -123,6 +125,10 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["disable_sinks"]
+
     def run(
         self,
         host: str,
@@ -135,6 +141,8 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         retain: bool = False,
         timeout: float = 0.5,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return disabled_sink_response()
         if self.mqtt_client is None:
             self.mqtt_client = mqtt.Client()
             if username and password:
