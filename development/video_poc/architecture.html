@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Sources POC — Architecture</title>
+<style>
+  :root {
+    --purple: #6706CE; --purple-soft: #8A4BE0;
+    --ink: #1B1327; --mut: #6c6480; --line: #e4ddf0; --bg: #FBFAFE;
+    --control: #6706CE; --media: #0F7B5F; --file: #1D62C4; --results: #B4690E;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 36px 24px 80px; }
+
+  header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { color: var(--mut); margin: 0; max-width: 72ch; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+             text-transform: uppercase; color: var(--purple); margin-bottom: 8px; }
+
+  /* scenario buttons */
+  .scenarios { display: flex; flex-wrap: wrap; gap: 8px; margin: 26px 0 10px; }
+  .scenarios button {
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 999px; padding: 7px 15px; font-size: 13.5px; cursor: pointer;
+  }
+  .scenarios button:hover { border-color: var(--purple-soft); }
+  .scenarios button.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0 18px;
+            font-size: 12.5px; color: var(--mut); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* diagram */
+  #diagram { position: relative; background: #fff; border: 1px solid var(--line);
+             border-radius: 16px; padding: 24px; overflow: hidden; }
+  #edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .grid { position: relative; display: grid; grid-template-columns: 1fr 1.15fr 1fr;
+          gap: 90px; z-index: 1; }
+  .lane { display: flex; flex-direction: column; gap: 18px; }
+  .lane-title { font-family: var(--mono); font-size: 11px; letter-spacing: .09em;
+                text-transform: uppercase; color: var(--mut); text-align: center;
+                padding-bottom: 4px; border-bottom: 1px dashed var(--line); }
+  .browser-row { position: relative; z-index: 1; display: flex; justify-content: center;
+                 margin-bottom: 46px; }
+
+  .node { background: #fff; border: 1.5px solid var(--line); border-radius: 12px;
+          padding: 12px 15px; transition: opacity .25s, border-color .25s, box-shadow .25s; }
+  .node b { display: block; font-size: 14.5px; }
+  .node small { display: block; color: var(--mut); font-size: 12px; margin-top: 2px; line-height: 1.45; }
+  .node .tag { font-family: var(--mono); font-size: 10.5px; color: var(--purple); }
+  .node.hero { border-color: var(--purple); box-shadow: 0 0 0 1px var(--purple); }
+  .node.dim { opacity: .22; }
+  .subnodes { display: flex; gap: 8px; margin-top: 9px; }
+  .subnode { flex: 1; border: 1px dashed var(--line); border-radius: 8px;
+             padding: 6px 9px; font-size: 11.5px; color: var(--mut); }
+  .subnode b { font-size: 12px; color: var(--ink); display: block; }
+
+  /* steps panel */
+  #steps { margin-top: 22px; background: #fff; border: 1px solid var(--line);
+           border-radius: 14px; padding: 20px 24px; min-height: 90px; }
+  #steps h3 { margin: 0 0 4px; font-size: 16px; }
+  #steps p.blurb { color: var(--mut); font-size: 13.5px; margin: 0 0 14px; }
+  #steps ol { margin: 0; padding-left: 24px; display: grid; gap: 7px; font-size: 14px; }
+  #steps li::marker { color: var(--purple); font-weight: 600; }
+  #steps .via { font-family: var(--mono); font-size: 11.5px; padding: 1.5px 8px;
+                border-radius: 999px; margin-left: 6px; white-space: nowrap; }
+  .via.control { background: #F0E6FD; color: var(--control); }
+  .via.media   { background: #E2F3EC; color: var(--media); }
+  .via.file    { background: #E4EDFB; color: var(--file); }
+  .via.results { background: #F8EEDD; color: var(--results); }
+
+  /* scale notes */
+  .notes { margin-top: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .note { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 15px 17px; }
+  .note h4 { margin: 0 0 6px; font-size: 13px; }
+  .note h4 .tag { font-family: var(--mono); font-size: 10px; color: var(--mut);
+                  border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+  .note p { margin: 0; font-size: 12.5px; color: var(--mut); }
+  h2.section { font-size: 15px; margin: 34px 0 10px; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; gap: 26px; }
+    .notes { grid-template-columns: 1fr; }
+    #edges { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Roboflow · Video Sources POC · July 2026</div>
+    <h1>How the video POC works</h1>
+    <p>Four processes, four kinds of traffic. Everything customer-side dials <em>out</em>;
+       nothing opens an inbound port. Click a scenario to trace its path through the system.</p>
+  </header>
+
+  <div class="scenarios" id="scenarioButtons"></div>
+  <div class="legend">
+    <span><i style="background:var(--control)"></i> control (HTTPS, poll/commands)</span>
+    <span><i style="background:var(--media)"></i> live media (RTSP / WebRTC)</span>
+    <span><i style="background:var(--file)"></i> files (HTTPS blobs)</span>
+    <span><i style="background:var(--results)"></i> results (POC: direct from processor)</span>
+  </div>
+
+  <div id="diagram">
+    <svg id="edges"></svg>
+    <div class="browser-row">
+      <div class="node" id="browser" style="min-width:340px;">
+        <b>Browser — Roboflow app <span class="tag">Video Sources page</span></b>
+        <small>list sources · preview · start/stop jobs · watch results</small>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="lane">
+        <div class="lane-title">customer network</div>
+        <div class="node" id="cameras">
+          <b>Cameras &amp; files</b>
+          <small>USB cams (avfoundation/v4l2) · RTSP cams · a folder of video files</small>
+        </div>
+        <div class="node hero" id="connector">
+          <b>Connector <span class="tag">Go binary</span></b>
+          <small>discovers sources · pushes video only when commanded · ffmpeg does
+                 capture/remux · local config UI on <span class="tag">:8070</span></small>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="lane-title">roboflow platform (cloud)</div>
+        <div class="node" id="platform">
+          <b>Platform API <span class="tag">Firebase functions</span></b>
+          <small>source registry · job queue · command channel (poll + ack) ·
+                 stream reconciler (desired vs actual, every healthcheck)</small>
+          <div class="subnodes">
+            <div class="subnode"><b>Firestore</b>video_sources · video_connectors · video_jobs</div>
+            <div class="subnode" id="gcs"><b>GCS</b>uploaded videos (signed URLs)</div>
+          </div>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="lane-title">processing host</div>
+        <div class="node" id="mediamtx">
+          <b>MediaMTX <span class="tag">media plane</span></b>
+          <small>RTSP ingest <span class="tag">:8554</span> · fan-out ·
+                 WHEP to browsers <span class="tag">:8889</span></small>
+        </div>
+        <div class="node hero" id="processor">
+          <b>Processor <span class="tag">warm worker · Python</span></b>
+          <small>claims jobs · InferencePipeline + workflow engine ·
+                 batch (every frame) or stream (real-time, drops) ·
+                 records batch results to disk</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="steps"></div>
+
+  <h2 class="section">What changes at production scale (deliberately not built yet)</h2>
+  <div class="notes">
+    <div class="note">
+      <h4>Results stop coming from the processor <span class="tag">routing</span></h4>
+      <p>Completed batch artifacts upload to object storage (job doc carries URLs).
+         Live events publish to the platform (vision-events ingest exists today).
+         Nobody ever connects <em>to</em> a worker — same outbound-only rule as the connector.</p>
+    </div>
+    <div class="note">
+      <h4>Live annotated preview moves onto the relay <span class="tag">pixels</span></h4>
+      <p>The processor publishes its annotated output into MediaMTX as just another stream;
+         browsers watch it over WHEP like any source. Encoded only while someone is watching
+         — MJPEG retires.</p>
+    </div>
+    <div class="note">
+      <h4>One warm worker becomes a pool in a cell <span class="tag">scale</span></h4>
+      <p>Relay + worker pool deploy together as a cell (Crusoe/L40S); a job's results stream
+         and WHEP URL point at its cell. Raw video never crosses a cloud boundary.
+         See the video strategy deck for the full argument.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const EDGES = [
+  { id: "ui",        from: "browser",   to: "platform",  kind: "control",
+    label: "REST /query/video-sources (session auth)" },
+  { id: "poll",      from: "connector", to: "platform",  kind: "control",
+    label: "healthcheck poll every 2s — commands ride the response, acked by id" },
+  { id: "claim",     from: "processor", to: "platform",  kind: "control",
+    label: "claim job / report status (poll)" },
+  { id: "capture",   from: "cameras",   to: "connector", kind: "media",
+    label: "USB capture / RTSP pull / file read (ffmpeg)" },
+  { id: "push",      from: "connector", to: "mediamtx",  kind: "media",
+    label: "RTSP push over TCP — only while a stream is wanted" },
+  { id: "consume",   from: "mediamtx",  to: "processor", kind: "media",
+    label: "RTSP consume (localhost)" },
+  { id: "whep",      from: "mediamtx",  to: "browser",   kind: "media",
+    label: "WHEP (WebRTC) source preview" },
+  { id: "upload",    from: "browser",   to: "gcs",       kind: "file",
+    label: "PUT via signed URL" },
+  { id: "download",  from: "gcs",       to: "processor", kind: "file",
+    label: "batch: download whole file to local temp (true file semantics)" },
+  { id: "replay",    from: "processor", to: "mediamtx",  kind: "media",
+    label: "stream-mode file replay: ffmpeg -re loop, pushed as RTSP" },
+  { id: "results",   from: "processor", to: "browser",   kind: "results",
+    label: "SSE events (images redacted) + MJPEG progress + scrubbable mp4 w/ Range" },
+];
+
+const SCENARIOS = [
+  {
+    name: "Everything",
+    blurb: "All paths at once. Purple is control, green is live media, blue is file transfer, amber is results (the POC shortcut: browser talks to the processor directly).",
+    steps: [],
+    edges: EDGES.map(e => e.id),
+  },
+  {
+    name: "Register a connector",
+    blurb: "One command on any machine near the cameras. Outbound-only: works behind NAT with zero open ports.",
+    edges: ["capture", "poll", "ui"],
+    steps: [
+      ["Connector starts, discovers USB cams, RTSP cams, and files in its folder", "capture", "media"],
+      ["It polls the platform; sources upsert into Firestore, keyed by (connector, localId)", "poll", "control"],
+      ["The Video Sources page (polling the API) shows them 'connected' within ~2s", "ui", "control"],
+    ],
+  },
+  {
+    name: "Preview a live camera",
+    blurb: "Registered ≠ streaming: video only flows after the platform asks for it, and stops when nobody wants it.",
+    edges: ["ui", "poll", "capture", "push", "whep"],
+    steps: [
+      ["Clicking the source requests a preview (sets a 5-min TTL on the source)", "ui", "control"],
+      ["Next healthcheck response carries start_stream + the ingest URL", "poll", "control"],
+      ["Connector's ffmpeg captures the camera…", "capture", "media"],
+      ["…and pushes RTSP to MediaMTX (remux only for RTSP cams — no transcode)", "push", "media"],
+      ["Browser plays it via WHEP; when the TTL lapses, reconcile sends stop_stream", "whep", "media"],
+    ],
+  },
+  {
+    name: "Batch-process an uploaded file",
+    blurb: "Files are not streams: this path never touches MediaMTX. Every frame, in order, faster than real time — then scrubbable results.",
+    edges: ["upload", "ui", "claim", "download", "results"],
+    steps: [
+      ["Earlier: the file went straight to GCS via a signed URL", "upload", "file"],
+      ["'Start processing' creates a queued job with the workflow + mode", "ui", "control"],
+      ["The idle warm processor claims it (payload: signed read URL + workflow spec)", "claim", "control"],
+      ["Processor downloads the file to local disk — true file semantics, natural end, no loop", "download", "file"],
+      ["While running: SSE events + sampled MJPEG progress; on completion: annotated mp4 + frame-aligned JSONL, scrubbable", "results", "results"],
+    ],
+  },
+  {
+    name: "Simulate a live camera from a file",
+    blurb: "The deliberate file→stream conversion: the pipeline experiences a genuine live source — real-time pacing, drops under load, loops until stopped.",
+    edges: ["ui", "claim", "download", "replay", "consume", "results"],
+    steps: [
+      ["Job created in stream mode", "ui", "control"],
+      ["Processor claims it", "claim", "control"],
+      ["ffmpeg reads the file from GCS…", "download", "file"],
+      ["…and replays it in real time (looping) into MediaMTX as RTSP", "replay", "media"],
+      ["The pipeline consumes it like any camera — drops frames if inference falls behind", "consume", "media"],
+      ["Events + annotated preview flow to the browser until you hit stop", "results", "results"],
+    ],
+  },
+  {
+    name: "Workflow on a live camera",
+    blurb: "The 24/7 monitoring shape, at POC scale: the platform reconciles the stream into existence because a job wants it.",
+    edges: ["ui", "claim", "poll", "capture", "push", "consume", "results"],
+    steps: [
+      ["Job created on a connector source", "ui", "control"],
+      ["Processor claims it and waits for frames", "claim", "control"],
+      ["Reconciler sees an active job wants this source → start_stream command", "poll", "control"],
+      ["Camera → connector → RTSP push into MediaMTX", "push", "media"],
+      ["Processor consumes the stream; latest-frame sampling keeps latency bounded", "consume", "media"],
+      ["Detections stream out as events; annotated view on demand", "results", "results"],
+    ],
+  },
+];
+
+const COLORS = { control: "#6706CE", media: "#0F7B5F", file: "#1D62C4", results: "#B4690E" };
+const svg = document.getElementById("edges");
+const diagram = document.getElementById("diagram");
+let activeScenario = 0;
+
+function anchor(fromBox, toBox) {
+  // connect the closest sides of the two boxes
+  const dx = (toBox.left + toBox.width / 2) - (fromBox.left + fromBox.width / 2);
+  const dy = (toBox.top + toBox.height / 2) - (fromBox.top + fromBox.height / 2);
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0
+      ? [{ x: fromBox.right, y: fromBox.top + fromBox.height / 2 }, { x: toBox.left,  y: toBox.top + toBox.height / 2 }]
+      : [{ x: fromBox.left,  y: fromBox.top + fromBox.height / 2 }, { x: toBox.right, y: toBox.top + toBox.height / 2 }];
+  }
+  return dy > 0
+    ? [{ x: fromBox.left + fromBox.width / 2, y: fromBox.bottom }, { x: toBox.left + toBox.width / 2, y: toBox.top }]
+    : [{ x: fromBox.left + fromBox.width / 2, y: fromBox.top },    { x: toBox.left + toBox.width / 2, y: toBox.bottom }];
+}
+
+function rel(el) {
+  const d = diagram.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { left: r.left - d.left, right: r.right - d.left, top: r.top - d.top,
+           bottom: r.bottom - d.top, width: r.width, height: r.height };
+}
+
+function draw() {
+  const active = new Set(SCENARIOS[activeScenario].edges);
+  svg.setAttribute("viewBox", `0 0 ${diagram.clientWidth} ${diagram.clientHeight}`);
+  let defs = `<defs>` + Object.entries(COLORS).map(([k, c]) =>
+    `<marker id="arr-${k}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+       <path d="M0,0 L8,4 L0,8 z" fill="${c}"/></marker>`).join("") + `</defs>`;
+  let paths = "";
+  const laneOffsets = {};
+  for (const e of EDGES) {
+    const fromEl = document.getElementById(e.from), toEl = document.getElementById(e.to);
+    if (!fromEl || !toEl) continue;
+    const [a, b] = anchor(rel(fromEl), rel(toEl));
+    // spread parallel edges between the same pair slightly
+    const key = [e.from, e.to].sort().join("-");
+    laneOffsets[key] = (laneOffsets[key] || 0) + 1;
+    const off = (laneOffsets[key] - 1) * 14;
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2 + off;
+    const horizontal = Math.abs(b.x - a.x) > Math.abs(b.y - a.y);
+    const c1 = horizontal ? `${midX},${a.y + off}` : `${a.x + off},${midY}`;
+    const c2 = horizontal ? `${midX},${b.y + off}` : `${b.x + off},${midY}`;
+    const isActive = active.has(e.id);
+    paths += `<path d="M${a.x},${a.y} C${c1} ${c2} ${b.x},${b.y}"
+      fill="none" stroke="${COLORS[e.kind]}" stroke-width="${isActive ? 2.4 : 1.6}"
+      opacity="${isActive ? 0.95 : 0.10}" marker-end="url(#arr-${e.kind})"
+      ${isActive ? 'stroke-dasharray="7 5"><animate attributeName="stroke-dashoffset" from="24" to="0" dur="1.2s" repeatCount="indefinite"/></path>' : "/>"}`;
+  }
+  svg.innerHTML = defs + paths;
+
+  // dim uninvolved nodes
+  const involved = new Set();
+  for (const e of EDGES) {
+    if (active.has(e.id)) { involved.add(e.from); involved.add(e.to); }
+  }
+  if (involved.has("gcs")) involved.add("platform");
+  for (const el of diagram.querySelectorAll(".node")) {
+    el.classList.toggle("dim", involved.size > 0 && !involved.has(el.id));
+  }
+}
+
+function renderSteps() {
+  const s = SCENARIOS[activeScenario];
+  const el = document.getElementById("steps");
+  const items = s.steps.map(([text, edgeId, kind]) => {
+    const edge = EDGES.find(e => e.id === edgeId);
+    return `<li>${text}<span class="via ${kind}" title="${edge ? edge.label : ""}">${kind}</span></li>`;
+  }).join("");
+  el.innerHTML = `<h3>${s.name}</h3><p class="blurb">${s.blurb}</p>` +
+    (items ? `<ol>${items}</ol>` :
+      `<p class="blurb" style="margin:0">Hover any line for its exact protocol. Pick a scenario above to walk a single flow.</p>`);
+}
+
+function renderButtons() {
+  const holder = document.getElementById("scenarioButtons");
+  holder.innerHTML = "";
+  SCENARIOS.forEach((s, i) => {
+    const btn = document.createElement("button");
+    btn.textContent = s.name;
+    btn.className = i === activeScenario ? "active" : "";
+    btn.onclick = () => { activeScenario = i; renderButtons(); renderSteps(); draw(); };
+    holder.appendChild(btn);
+  });
+}
+
+renderButtons();
+renderSteps();
+requestAnimationFrame(draw);
+window.addEventListener("resize", () => requestAnimationFrame(draw));
+</script>
+</body>
+</html>

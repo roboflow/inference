@@ -1,0 +1,7 @@
+bin/
+__pycache__/
+.venv/
+videos/
+auto.key
+auto.crt
+connector.json
