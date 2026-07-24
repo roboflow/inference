@@ -78,6 +78,7 @@ class WorkflowConfiguration(BaseModel):
     workflow_version_id: Optional[str] = None
     image_input_name: str = "image"
     workflows_parameters: Optional[Dict[str, Any]] = None
+    disable_sinks: bool = False
     workflows_thread_pool_workers: int = 4
     cancel_thread_pool_tasks_on_exit: bool = True
     video_metadata_input_name: str = "video_metadata"
