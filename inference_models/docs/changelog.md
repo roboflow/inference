@@ -25,6 +25,11 @@
   but malformed `sam_configuration.json` (invalid JSON or missing `version` key) now
   raises a clear `CorruptedModelPackageError` instead of an unhandled exception.
 
+### Fixed
+
+- Preserve HTTP 402, 403, and 423 model-access failures as typed errors when the
+  Roboflow weights provider retrieves model metadata or weights.
+
 ---
 
 ## `0.32.3`
