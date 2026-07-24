@@ -21,6 +21,7 @@ both implementations are mathematically identical and bit-for-bit
 agreement is meaningful).
 """
 
+import json
 from typing import List
 
 import numpy as np
@@ -29,9 +30,13 @@ import supervision as sv
 from pydantic import ValidationError
 from shapely.geometry import Polygon, box
 
+from inference.core.workflows.core_steps import loader
 from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
     BlockManifest,
     OverlapAnalysisBlockV1,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    DETECTIONS_OVERLAPS_KIND,
 )
 
 # ---------------------------------------------------------------------------
@@ -586,3 +591,37 @@ def test_parity_against_original_code_on_bbox_only_inputs() -> None:
     assert sorted(map(_record_key, new_records)) == sorted(
         map(_record_key, legacy_records)
     )
+
+
+def test_detections_overlaps_kind_has_registered_serializer_and_deserializer() -> None:
+    # the kind is declared in load_kinds(), so it must also have both a
+    # serializer and a deserializer registered, otherwise workflow output
+    # construction silently falls back to raw pass-through.
+    assert DETECTIONS_OVERLAPS_KIND.name in loader.KINDS_SERIALIZERS
+    assert DETECTIONS_OVERLAPS_KIND.name in loader.KINDS_DESERIALIZERS
+
+
+def test_overlap_records_survive_registered_serializer_round_trip() -> None:
+    # given a real block output
+    ref = _detections_from_xyxy(
+        np.array([[0, 0, 100, 100]]),
+        class_names=["alpha"],
+        confidences=[0.9],
+    )
+    cand = _detections_from_xyxy(
+        np.array([[50, 0, 150, 100]]),
+        class_names=["x"],
+        confidences=[0.6],
+    )
+    records = OverlapAnalysisBlockV1().run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )["overlaps"]
+    assert records, "fixture must produce at least one overlap record"
+
+    # when we push it through the serializer registered for this kind
+    serializer = loader.KINDS_SERIALIZERS[DETECTIONS_OVERLAPS_KIND.name]
+    serialized = serializer(records)
+
+    # then the result is plain JSON serializable data
+    dumped = json.dumps(serialized)
+    assert json.loads(dumped) == serialized
