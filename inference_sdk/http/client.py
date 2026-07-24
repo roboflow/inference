@@ -1734,7 +1734,9 @@ class InferenceHTTPClient:
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
-                - normalized_depth: The normalized depth map as a list
+                - normalized_depth: Per-image normalized ordinal depth as a list,
+                  where 1 is nearest and 0 is farthest. Values are not physical
+                  distances or directly comparable across images or model families.
                 - image: Hex-encoded visualization of the depth map
 
         Raises:
@@ -1772,7 +1774,8 @@ class InferenceHTTPClient:
                 request body.
 
         Returns:
-            Union[dict, List[dict]]: Depth estimation results.
+            Union[dict, List[dict]]: Depth estimation results containing per-image
+                normalized ordinal depth, where 1 is nearest and 0 is farthest.
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
