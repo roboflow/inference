@@ -11,6 +11,18 @@ this heading with the Execution Engine and inference versions when releasing.
 
 ---
 
+## Execution Engine `v1.13.0` | inference `v1.3.6`
+
+**What changed**
+
+* **Offline mode rejects remote Workflow step execution** — When `OFFLINE_MODE`
+  is enabled, the compiler rejects `StepExecutionMode.REMOTE` during step
+  initialisation (`WorkflowEnvironmentConfigurationError`) so Workflows cannot
+  open remote inference clients without network access. Local step execution
+  continues to work against warmed caches.
+
+---
+
 ## Execution Engine `v1.12.0` | inference `v1.3.2`
 
 **What changed**

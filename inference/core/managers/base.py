@@ -18,6 +18,7 @@ from inference.core.env import (
     METRICS_INTERVAL,
     MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     ROBOFLOW_SERVER_UUID,
     USE_INFERENCE_MODELS,
 )
@@ -89,7 +90,7 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
                 model_id=model_id,
@@ -267,7 +268,11 @@ class ModelManager:
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache"):
                         try:
                             logger.debug(
@@ -302,7 +307,11 @@ class ModelManager:
             except Exception as e:
                 record_error(e)
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache_error"):
                         try:
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
@@ -365,7 +374,11 @@ class ModelManager:
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache"):
                         try:
                             logger.debug(
@@ -400,7 +413,11 @@ class ModelManager:
             except Exception as e:
                 record_error(e)
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache_error"):
                         try:
                             model_monitoring_cache_module.model_monitoring_cache.zadd(

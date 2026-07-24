@@ -188,6 +188,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    OFFLINE_MODE,
     OTEL_TRACING_ENABLED,
     PINNED_MODELS,
     PRELOAD_API_KEY,
@@ -337,7 +338,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
-if LAMBDA:
+if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
 
 import time
@@ -574,6 +575,22 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
+        if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with LAMBDA / "
+                "GCP_SERVERLESS deployments because authentication and usage "
+                "accounting require API connectivity."
+            )
+        if OFFLINE_MODE and (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with dedicated or "
+                "workspace-whitelist authentication because API keys cannot be "
+                "mapped to workspaces without API connectivity."
+            )
 
         description = "Roboflow inference server"
 
@@ -963,6 +980,26 @@ class HttpInterface(BaseInterface):
                                 )
                                 if usage_check_result.status_code == 200:
                                     workspace_id = usage_check_result.workspace_id
+                                    if (
+                                        not workspace_id
+                                        or usage_check_result.under_cap is not True
+                                    ):
+                                        if auth_span is not None:
+                                            auth_span.set_attribute(
+                                                "http.status_code", 500
+                                            )
+                                            auth_span.set_attribute(
+                                                "auth.result",
+                                                "invalid_usage_check_response",
+                                            )
+                                        return _authorization_error_response(
+                                            500,
+                                            (
+                                                "Serverless authorization failed because "
+                                                "the usage check returned incomplete data."
+                                            ),
+                                            cache_hit=False,
+                                        )
                                     workspace_db_id = usage_check_result.workspace_db_id
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(
@@ -1025,6 +1062,22 @@ class HttpInterface(BaseInterface):
                                         402,
                                         cached_api_keys[cache_key].message,
                                         workspace_id=usage_check_result.workspace_id,
+                                        cache_hit=False,
+                                    )
+                                else:
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 500)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "unexpected_usage_check_status",
+                                        )
+                                    return _authorization_error_response(
+                                        500,
+                                        (
+                                            "Serverless authorization failed because "
+                                            "the usage check returned an unexpected "
+                                            f"status ({usage_check_result.status_code})."
+                                        ),
                                         cache_hit=False,
                                     )
 

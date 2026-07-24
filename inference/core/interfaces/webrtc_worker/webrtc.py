@@ -28,6 +28,7 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    OFFLINE_MODE,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
@@ -209,6 +210,40 @@ class RTCPeerConnectionWithLoop(RTCPeerConnection):
     ):
         super().__init__(*args, **kwargs)
         self._loop = asyncio_loop
+
+
+def _build_rtc_configuration(
+    webrtc_config: Optional[Any],
+) -> Optional[RTCConfiguration]:
+    """Build an explicit ICE configuration without aiortc's implicit STUN."""
+
+    if webrtc_config is None and not OFFLINE_MODE:
+        # Preserve aiortc's historical online default when the client did not
+        # supply an ICE configuration.
+        return None
+    ice_servers = []
+    if webrtc_config is not None:
+        for ice_server in webrtc_config.iceServers:
+            ice_servers.append(
+                RTCIceServer(
+                    urls=ice_server.urls,
+                    username=ice_server.username,
+                    credential=ice_server.credential,
+                )
+            )
+    if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
+        for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
+            try:
+                ice_servers.append(RTCIceServer(urls=stun_server.strip()))
+            except Exception as error:
+                logger.warning(
+                    "Failed to add public stun server '%s': %s",
+                    stun_server,
+                    error,
+                )
+    # Passing an empty list is intentional: aiortc treats ``None`` as a
+    # request to use its built-in public Google STUN server.
+    return RTCConfiguration(iceServers=ice_servers)
 
 
 class VideoFrameProcessor:
@@ -1021,29 +1056,10 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
 
-    if webrtc_request.webrtc_config is not None:
-        ice_servers = []
-        for ice_server in webrtc_request.webrtc_config.iceServers:
-            ice_servers.append(
-                RTCIceServer(
-                    urls=ice_server.urls,
-                    username=ice_server.username,
-                    credential=ice_server.credential,
-                )
-            )
-        # Always add public stun servers (if specified)
-        if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
-            for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
-                try:
-                    ice_servers.append(RTCIceServer(urls=stun_server.strip()))
-                except Exception as e:
-                    logger.warning(
-                        "Failed to add public stun server '%s': %s", stun_server, e
-                    )
-    else:
-        ice_servers = None
     peer_connection = RTCPeerConnectionWithLoop(
-        configuration=RTCConfiguration(iceServers=ice_servers) if ice_servers else None,
+        configuration=_build_rtc_configuration(
+            webrtc_config=webrtc_request.webrtc_config
+        ),
         asyncio_loop=asyncio_loop,
     )
 

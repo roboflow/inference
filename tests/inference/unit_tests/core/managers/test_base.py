@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -37,6 +37,23 @@ def test_add_model_when_model_not_loaded() -> None:
     model_manager.add_model(model_id="some/1", api_key="some_api_key")
 
     # then
+    assert "some/1" in model_manager.models()
+
+
+def test_add_model_skips_online_cache_authorization_in_offline_mode() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+
+    with patch.object(base_module, "MODELS_CACHE_AUTH_ENABLED", True), patch.object(
+        base_module,
+        "OFFLINE_MODE",
+        True,
+    ), patch.object(
+        base_module,
+        "_check_if_api_key_has_access_to_model",
+    ) as access_check_mock:
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+
+    access_check_mock.assert_not_called()
     assert "some/1" in model_manager.models()
 
 
@@ -131,6 +148,8 @@ def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
         "to_cachable_inference_item",
         lambda _request, _response: cached_item,
     )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
 
     model_manager.infer_from_request_sync(model_id="some/1", request=request)
 
@@ -154,9 +173,88 @@ def test_infer_from_request_sync_skips_model_monitoring_cache_when_disabled(
         "model_monitoring_cache",
         cache_mock,
     )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
 
     model_manager.infer_from_request_sync(model_id="some/1", request=request)
 
+    cache_mock.zadd.assert_not_called()
+
+
+@pytest.mark.parametrize("raises_error", [False, True], ids=["success", "error"])
+def test_infer_from_request_sync_skips_model_monitoring_cache_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    raises_error: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    error = RuntimeError("inference failed")
+    if raises_error:
+        model.infer_from_request.side_effect = error
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", True)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+
+    if raises_error:
+        with pytest.raises(RuntimeError, match="inference failed"):
+            model_manager.infer_from_request_sync(
+                model_id="some/1",
+                request=request,
+            )
+    else:
+        model_manager.infer_from_request_sync(
+            model_id="some/1",
+            request=request,
+        )
+
+    model.infer_from_request.assert_called_once_with(request)
+    cache_mock.zadd.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raises_error", [False, True], ids=["success", "error"])
+async def test_infer_from_request_skips_model_monitoring_cache_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    raises_error: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    error = RuntimeError("inference failed")
+    if raises_error:
+        model.infer_from_request.side_effect = error
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", True)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+
+    if raises_error:
+        with pytest.raises(RuntimeError, match="inference failed"):
+            await model_manager.infer_from_request(
+                model_id="some/1",
+                request=request,
+            )
+    else:
+        await model_manager.infer_from_request(
+            model_id="some/1",
+            request=request,
+        )
+
+    model.infer_from_request.assert_called_once_with(request)
     cache_mock.zadd.assert_not_called()
 
 

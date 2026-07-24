@@ -1,6 +1,7 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from inference.core.managers.base import ModelManager
+from inference.core.managers.decorators import fixed_size_cache
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.managers.decorators.locked_load import (
@@ -62,6 +63,28 @@ def test_fixed_size_cache_records_request_metadata_for_warm_model() -> None:
     assert description.model_id == "sam3/sam3_interactive"
     assert description.request_aliases == ["sam3/sam3_final"]
     assert description.request_paths == ["/sam3/embed_image"]
+
+
+def test_fixed_size_cache_skips_online_authorization_in_offline_mode() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+
+    with patch.object(
+        fixed_size_cache,
+        "MODELS_CACHE_AUTH_ENABLED",
+        True,
+    ), patch.object(
+        fixed_size_cache,
+        "OFFLINE_MODE",
+        True,
+    ), patch.object(
+        fixed_size_cache,
+        "_check_if_api_key_has_access_to_model",
+    ) as access_check_mock:
+        decorator.add_model(model_id="some/1", api_key="key")
+
+    access_check_mock.assert_not_called()
+    assert "some/1" in model_manager.models()
 
 
 def test_nested_decorators_record_request_metadata_for_warm_model() -> None:

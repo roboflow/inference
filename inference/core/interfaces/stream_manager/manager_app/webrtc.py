@@ -21,7 +21,11 @@ from av import VideoFrame
 from av import logging as av_logging
 
 from inference.core import logger
-from inference.core.env import DEBUG_AIORTC_QUEUES, DEBUG_WEBRTC_PROCESSING_LATENCY
+from inference.core.env import (
+    DEBUG_AIORTC_QUEUES,
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
+    OFFLINE_MODE,
+)
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     StatusUpdate,
@@ -374,6 +378,23 @@ class WebRTCPipelineWatchDog(BasePipelineWatchDog):
         self._stream_updates.append(status_update)
 
 
+def _build_rtc_configuration(
+    webrtc_turn_config: Optional[WebRTCTURNConfig],
+) -> Optional[RTCConfiguration]:
+    if webrtc_turn_config:
+        turn_server = RTCIceServer(
+            urls=webrtc_turn_config.urls,
+            username=webrtc_turn_config.username,
+            credential=webrtc_turn_config.credential,
+        )
+        return RTCConfiguration(iceServers=[turn_server])
+    if OFFLINE_MODE:
+        # aiortc interprets ``None`` as permission to contact its built-in
+        # public Google STUN server. An explicit empty list keeps ICE local.
+        return RTCConfiguration(iceServers=[])
+    return None
+
+
 async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
     to_inference_queue: "SyncAsyncQueue[VideoFrame]",
@@ -397,26 +418,13 @@ async def init_rtc_peer_connection(
         drain_remote_stream_track=webrtc_realtime_processing,
     )
 
-    if webrtc_turn_config:
-        turn_server = RTCIceServer(
-            urls=webrtc_turn_config.urls,
-            username=webrtc_turn_config.username,
-            credential=webrtc_turn_config.credential,
-        )
-        peer_connection = RTCPeerConnectionWithFPS(
-            video_transform_track=video_transform_track,
-            configuration=RTCConfiguration(iceServers=[turn_server]),
-            asyncio_loop=asyncio_loop,
-            stream_output=stream_output,
-            data_output=data_output,
-        )
-    else:
-        peer_connection = RTCPeerConnectionWithFPS(
-            video_transform_track=video_transform_track,
-            asyncio_loop=asyncio_loop,
-            stream_output=stream_output,
-            data_output=data_output,
-        )
+    peer_connection = RTCPeerConnectionWithFPS(
+        video_transform_track=video_transform_track,
+        configuration=_build_rtc_configuration(webrtc_turn_config=webrtc_turn_config),
+        asyncio_loop=asyncio_loop,
+        stream_output=stream_output,
+        data_output=data_output,
+    )
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):

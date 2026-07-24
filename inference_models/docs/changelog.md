@@ -2,8 +2,43 @@
 
 ## Unreleased
 
-Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
-`### Removed` subsections as appropriate.
+### Added
+
+- Startup-only `OFFLINE_MODE` environment variable. When set to `True` before process startup,
+  built-in Roboflow API and model artifact requests are blocked and models are loaded exclusively
+  from local cache. The first `inference` or `inference_models` import latches the value for the
+  process; runtime changes and module reloads are ignored until the process restarts, and children
+  inherit the latch when they inherit the parent environment. Models must be pre-cached by running
+  once with network connectivity. In `OFFLINE_MODE`, auto-resolution cache entries never expire.
+  If a compatible cached model is not found, a clear error is raised immediately with no retries
+  or timeouts. Custom providers, local-code model packages, integrations, and child processes
+  launched with sanitized environments remain separate trust boundaries, so deployments requiring
+  a hard air gap must also enforce network isolation.
+- Offline cache fallback on connectivity failures: when the weights-provider API is unreachable
+  (`RetryError`), `AutoModel.from_pretrained(...)` now scans `{INFERENCE_HOME}/models-cache/` for a
+  previously cached package of the requested model and loads it locally instead of failing. This
+  applies even when `OFFLINE_MODE` is not set.
+- `model_id` is now written into each package's `model_config.json`; pre-existing configs are
+  upgraded on reuse, and legacy packages can be identified from auto-resolution metadata so
+  offline scanning can attribute cache entries to the model ID that owns their cache directory.
+- Offline package manifests now include a versioned trust, dependency, package-selection, and
+  structured runtime-compatibility contract. Raw cache fallback rejects malformed, untrusted, or
+  incompatible packages and safely skips bad candidates. Legacy manifests and auto-resolution
+  entries cannot prove this metadata and are rejected by default; re-warm required caches online
+  with the matching release before upgrading an air-gapped deployment.
+- Auto-resolution metadata now stores an API-key-independent compatibility fingerprint, allowing a
+  cache warmed with one credential to be reused after a credential change without weakening the
+  package access-manager check.
+- `find_cached_model_package_dir(...)` helper exposed from the auto-loaders module for downstream
+  cache introspection.
+- `INFERENCE_HOME` now falls back to `MODEL_CACHE_DIR` (when set) before the `/tmp/cache` default,
+  so the `inference` server's mounted cache volume persists both cache layouts regardless of
+  module import order.
+
+### Fixed
+
+- Offline mode now permits idempotent access to already-cached downloads and custom local weights
+  providers while continuing to block missing-file downloads and the built-in network provider.
 
 ---
 

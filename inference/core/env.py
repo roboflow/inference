@@ -1,5 +1,8 @@
 import os
 import platform
+import sys
+import threading
+import types
 import uuid
 import warnings
 from typing import Optional
@@ -349,8 +352,94 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
+# Offline mode is latched on the first import of either configuration package.
+# The private marker is inherited by child processes, which prevents a runtime
+# environment mutation from enabling offline-only authorization paths in a
+# newly spawned worker. Changing modes requires a full process restart.
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
+_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
+if _offline_mode_process_state is None:
+    _candidate_process_state = types.ModuleType(_OFFLINE_MODE_PROCESS_STATE_MODULE)
+    _candidate_process_state.lock = threading.Lock()
+    _offline_mode_process_state = sys.modules.setdefault(
+        _OFFLINE_MODE_PROCESS_STATE_MODULE,
+        _candidate_process_state,
+    )
+if not hasattr(_offline_mode_process_state, "lock"):
+    _offline_mode_process_state.lock = threading.Lock()
+if hasattr(os, "register_at_fork") and not getattr(
+    _offline_mode_process_state, "at_fork_registered", False
+):
+    _offline_mode_process_state.at_fork_registered = True
+
+    def _reset_offline_mode_lock_after_fork() -> None:
+        _offline_mode_process_state.lock = threading.Lock()
+
+    os.register_at_fork(after_in_child=_reset_offline_mode_lock_after_fork)
+with _offline_mode_process_state.lock:
+    if not hasattr(_offline_mode_process_state, "offline_mode"):
+        _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
+        _latched_offline_mode = (
+            str2bool(os.getenv("OFFLINE_MODE", False))
+            if _inherited_offline_mode is None
+            else str2bool(_inherited_offline_mode)
+        )
+        _offline_mode_process_state.offline_mode = _latched_offline_mode
+OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
+os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
+if OFFLINE_MODE:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+try:
+    _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
+except Exception:
+    # The process-wide state has already been established.  A malformed
+    # runtime mutation must not crash a module reload or spawned worker.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+if OFFLINE_MODE and USE_INFERENCE_MODELS:
+    from inference_models import configuration as inference_models_configuration
+
+    inference_models_offline_contract = getattr(
+        inference_models_configuration,
+        "OFFLINE_MODE_CONTRACT_VERSION",
+        0,
+    )
+    if (
+        getattr(inference_models_configuration, "OFFLINE_MODE", None) is not True
+        or not isinstance(inference_models_offline_contract, int)
+        or isinstance(inference_models_offline_contract, bool)
+        or inference_models_offline_contract < 2
+    ):
+        raise RuntimeError(
+            "The installed inference-models package does not support the "
+            "required process-wide OFFLINE_MODE and trusted-cache contract. "
+            "Install the matching inference-models release before starting an "
+            "offline server."
+        )
+
+if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
+    warnings.warn(
+        "SAM3_EXEC_MODE=remote is not available while OFFLINE_MODE is enabled. "
+        "Forcing local SAM3 execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    SAM3_EXEC_MODE = "local"
+    if os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED") is None:
+        SAM3_FINE_TUNED_MODELS_ENABLED = True
+
 # Flag to disable version check, default is False
 DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
+if OFFLINE_MODE:
+    DISABLE_VERSION_CHECK = True
 
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
@@ -430,6 +519,16 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+    # Roboflow-hosted serverless runtimes require API connectivity for auth
+    # and usage accounting - OFFLINE_MODE would leave that state undefined
+    # (e.g. usage checks succeeding with no workspace resolved).
+    raise ValueError(
+        "OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS "
+        "deployments - authentication and usage accounting require API "
+        "connectivity. Unset OFFLINE_MODE for serverless runtimes."
+    )
+
 # This variable affects extra headers passed to new weights provider created for
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
 # makes the weights provider to reject request for model weights that are coming to
@@ -507,6 +606,19 @@ MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
 # Enable models cache auth
 MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", False))
+ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS = str2bool(
+    os.getenv("ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS", False)
+)
+if (
+    OFFLINE_MODE
+    and MODELS_CACHE_AUTH_ENABLED
+    and not ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS
+):
+    raise ValueError(
+        "MODELS_CACHE_AUTH_ENABLED cannot verify model access while OFFLINE_MODE "
+        "is enabled. Set ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS=True only for a "
+        "trusted single-tenant deployment, or disable one of these modes."
+    )
 
 # Models cache auth cache ttl, default is 15 minutes
 MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
@@ -524,6 +636,9 @@ OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
 OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
 OTEL_TRACE_EXPORT_INTERVAL_MS = int(os.getenv("OTEL_TRACE_EXPORT_INTERVAL_MS", "5000"))
 OTEL_METRICS_ENABLED = str2bool(os.getenv("OTEL_METRICS_ENABLED", "True"))
+if OFFLINE_MODE:
+    OTEL_TRACING_ENABLED = False
+    OTEL_METRICS_ENABLED = False
 OTEL_METRIC_EXPORTER_ENDPOINT = os.getenv("OTEL_METRIC_EXPORTER_ENDPOINT", "")
 OTEL_METRIC_EXPORT_INTERVAL_MS = int(
     os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS", "10000")
@@ -531,7 +646,7 @@ OTEL_METRIC_EXPORT_INTERVAL_MS = int(
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA or GCP_SERVERLESS:
+if LAMBDA or GCP_SERVERLESS or OFFLINE_MODE:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60
@@ -542,6 +657,13 @@ METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
+# Keep the `inference-models` cache co-located with the traditional cache so
+# that mounting MODEL_CACHE_DIR persists both layouts. The authoritative
+# fallback lives in `inference_models.configuration` (INFERENCE_HOME defaults
+# to MODEL_CACHE_DIR there, independent of import order); this setdefault is
+# defense-in-depth for any consumer reading the INFERENCE_HOME env var
+# directly. An explicit INFERENCE_HOME always wins.
+os.environ.setdefault("INFERENCE_HOME", MODEL_CACHE_DIR)
 INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
 
 # Model ID, default is None
@@ -670,6 +792,8 @@ INFER_BUCKET = os.getenv(
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
+if OFFLINE_MODE:
+    ACTIVE_LEARNING_ENABLED = False
 ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager
@@ -755,7 +879,15 @@ WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
-if (
+if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
+    warnings.warn(
+        "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "
+        "is enabled. Forcing local workflow step execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WORKFLOWS_STEP_EXECUTION_MODE = "local"
+elif (
     SECURE_GATEWAY
     and WORKFLOWS_STEP_EXECUTION_MODE == "remote"
     and WORKFLOWS_REMOTE_API_TARGET == "hosted"
@@ -795,6 +927,14 @@ ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
 WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
 ).lower()  # "local" or "modal"
+if OFFLINE_MODE and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
+    warnings.warn(
+        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal is not available while "
+        "OFFLINE_MODE is enabled. Forcing local custom Python execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = "local"
 
 # JPEG quality used when serializing images for the webexec round-trip.
 # Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
@@ -860,6 +1000,14 @@ WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = safe_split_value(
     delimiter=",",
     strip=True,
 )
+if OFFLINE_MODE and (
+    DEDICATED_DEPLOYMENT_WORKSPACE_URL or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+):
+    raise ValueError(
+        "OFFLINE_MODE is not supported together with dedicated or "
+        "workspace-whitelist authentication because API keys cannot be mapped "
+        "to workspaces without API connectivity."
+    )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
@@ -878,6 +1026,17 @@ USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
 SINGLE_TENANT_WORKFLOW_CACHE = str2bool(
     os.getenv("SINGLE_TENANT_WORKFLOW_CACHE", "False")
 )
+if OFFLINE_MODE:
+    if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+        warnings.warn(
+            "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False is not available "
+            "while OFFLINE_MODE is enabled. Forcing the file cache on so "
+            "pre-warmed Workflow definitions remain usable.",
+            InferenceConfigurationWarning,
+            stacklevel=1,
+        )
+    USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = True
+    SINGLE_TENANT_WORKFLOW_CACHE = True
 ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )
@@ -997,6 +1156,15 @@ WEBRTC_MODAL_TOKEN_ID = (
 WEBRTC_MODAL_TOKEN_SECRET = (
     _webrtc_modal_token_secret.strip("\"'") if _webrtc_modal_token_secret else None
 )
+if OFFLINE_MODE and (WEBRTC_MODAL_TOKEN_ID or WEBRTC_MODAL_TOKEN_SECRET):
+    warnings.warn(
+        "Modal WebRTC workers are not available while OFFLINE_MODE is enabled. "
+        "Forcing local WebRTC worker execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WEBRTC_MODAL_TOKEN_ID = None
+    WEBRTC_MODAL_TOKEN_SECRET = None
 WEBRTC_MODAL_APP_NAME = os.getenv(
     "WEBRTC_MODAL_APP_NAME", f"inference-webrtc-{PROJECT}"
 )
@@ -1058,8 +1226,20 @@ except (ValueError, TypeError):
     WEBRTC_MODAL_MIN_RAM_MB = None
 WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
     "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
-    "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,stun:stun4.l.google.com:19302",
+    (
+        ""
+        if OFFLINE_MODE
+        else "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,stun:stun4.l.google.com:19302"
+    ),
 )
+if OFFLINE_MODE and WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
+    warnings.warn(
+        "WEBRTC_MODAL_PUBLIC_STUN_SERVERS is not available while OFFLINE_MODE "
+        "is enabled. Ignoring the configured public STUN servers.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WEBRTC_MODAL_PUBLIC_STUN_SERVERS = ""
 WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )

@@ -4,6 +4,10 @@ from typing import Optional
 
 import torch
 
+from inference_models._offline import (
+    OFFLINE_MODE,
+    OFFLINE_MODE_CONTRACT_VERSION,
+)
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -57,7 +61,29 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
-INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Fall back to the inference server's MODEL_CACHE_DIR so that both cache
+# layouts live on the same (typically mounted) volume without relying on
+# import order between `inference` and `inference_models`.
+INFERENCE_HOME = (
+    os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
+)
+# The package initializer establishes the dependency-light process-wide latch
+# before importing this configuration module. Reloads only compare the public
+# environment request with that immutable state.
+try:
+    _requested_offline_mode = get_boolean_from_env(
+        variable_name="OFFLINE_MODE", default=False
+    )
+except InvalidEnvVariable:
+    # Ignore malformed runtime mutations once the process-wide state exists.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,

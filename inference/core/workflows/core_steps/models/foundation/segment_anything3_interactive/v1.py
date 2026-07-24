@@ -52,6 +52,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
@@ -370,6 +371,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         threshold: float,
         multimask_output: bool,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 Interactive remote execution")
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -436,6 +438,9 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         threshold: float,
         multimask_output: bool,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed(
+            "SAM3 Interactive inference proxy execution"
+        )
         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
 
         if boxes is None:

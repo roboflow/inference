@@ -17,13 +17,15 @@ export INFERENCE_HOME="/path/to/cache"
 export DEFAULT_DEVICE="cuda:0"
 ```
 
-Or use a `.env` file in your project root:
+`inference-models` reads the process environment when it is first imported; it
+does not load `.env` files itself. If your application uses a `.env` file, load
+it before importing `inference_models`, for example:
 
-```bash
-# .env file
-ROBOFLOW_API_KEY=your_api_key_here
-MODEL_CACHE_DIR=/path/to/cache
-DEFAULT_DEVICE=cuda:0
+```python
+from dotenv import load_dotenv
+
+load_dotenv()
+from inference_models import AutoModel
 ```
 
 ## Core Configuration
@@ -56,11 +58,32 @@ export ROBOFLOW_API_HOST="https://api.roboflow.com"
 ### Model Cache
 
 **`INFERENCE_HOME`**  
-Directory where downloaded models are cached. Default: `/tmp/cache`
+Directory where downloaded models are cached. If it is unset,
+`MODEL_CACHE_DIR` is used; if both are unset, the default is `/tmp/cache`.
 
 ```bash
 export INFERENCE_HOME="/home/user/.cache/inference-models"
 ```
+
+**`OFFLINE_MODE`**
+Startup-only switch for loading network-provider models exclusively from a
+trusted, compatible local cache.
+
+```bash
+export OFFLINE_MODE="True"
+```
+
+The first import of either `inference` or `inference_models` latches this value
+for the process. Changing or removing the variable later does not change the
+mode; restart the process instead. Child processes inherit the latch when they
+inherit the parent environment. A child launched with a deliberately sanitized
+environment is a new startup boundary, so use operating-system or network-level
+isolation when a hard air gap is required.
+
+Warm the cache online with the matching `inference-models` release and the same
+model-loading constraints and runtime environment before enabling offline mode.
+Legacy cache manifests do not contain the trust, dependency, and compatibility
+metadata required by the offline loader and must be re-warmed.
 
 ### Device Selection
 

@@ -54,6 +54,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     RoboflowModelField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
@@ -396,6 +397,7 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         predictions = []
         if class_names is None:
             class_names = []
@@ -477,6 +479,7 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         predictions = []
         if class_names is None:
             class_names = []

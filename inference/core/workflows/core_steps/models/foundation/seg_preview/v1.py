@@ -39,6 +39,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -182,6 +183,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("Seg Preview remote execution")
         predictions = []
         if class_names is None:
             class_names = []
