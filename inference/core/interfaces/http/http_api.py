@@ -1066,9 +1066,7 @@ class HttpInterface(BaseInterface):
                                     )
                                 else:
                                     if auth_span is not None:
-                                        auth_span.set_attribute(
-                                            "http.status_code", 500
-                                        )
+                                        auth_span.set_attribute("http.status_code", 500)
                                         auth_span.set_attribute(
                                             "auth.result",
                                             "unexpected_usage_check_status",

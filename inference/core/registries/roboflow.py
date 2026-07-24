@@ -149,8 +149,8 @@ def _find_cached_model_package_dir_compat(model_id: str) -> Optional[str]:
         if not isinstance(task_type, str) or not task_type:
             continue
         model_architecture = config.get("model_architecture")
-        has_library_model = (
-            isinstance(model_architecture, str) and bool(model_architecture)
+        has_library_model = isinstance(model_architecture, str) and bool(
+            model_architecture
         )
         has_custom_model = (
             isinstance(config.get("model_module"), str)
@@ -475,11 +475,12 @@ def _get_model_metadata_from_cache(
             error,
         )
     else:
+        # construct_model_type_cache_path sanitizes or hashes the model ID,
+        # verifies cache-root containment, and rejects every child symlink.
+        # codeql[py/path-injection]: Validated model metadata cache path.
         if os.path.isfile(model_type_cache_path):
             try:
-                model_metadata = _read_model_metadata_json(
-                    path=model_type_cache_path
-                )
+                model_metadata = _read_model_metadata_json(path=model_type_cache_path)
             except (OSError, ValueError) as error:
                 logger.warning(
                     "Could not load model description from cache under path: "
@@ -599,6 +600,9 @@ def _save_model_metadata_in_cache(
 def _read_model_metadata_json(path: str) -> Optional[Union[dict, list]]:
     """Read metadata without following a final symlink where the OS supports it."""
 
+    # The sole caller supplies construct_model_type_cache_path's validated result;
+    # O_NOFOLLOW also prevents following a final symlink on supported platforms.
+    # codeql[py/path-injection]: Validated model metadata cache path.
     descriptor = os.open(
         path,
         os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
@@ -636,6 +640,9 @@ def construct_model_type_cache_path(
     current_path = absolute_cache_root
     for path_part in relative_metadata_path.split(os.sep):
         current_path = os.path.join(current_path, path_part)
+        # This is the validation step for a path already proven lexically
+        # contained by commonpath above.
+        # codeql[py/path-injection]: Validation of a root-contained cache path.
         if os.path.islink(current_path):
             raise ValueError(
                 f"Model metadata cache path for model {model_id} traverses a symbolic link."

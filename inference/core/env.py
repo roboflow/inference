@@ -356,15 +356,11 @@ DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", 
 # The private marker is inherited by child processes, which prevents a runtime
 # environment mutation from enabling offline-only authorization paths in a
 # newly spawned worker. Changing modes requires a full process restart.
-_OFFLINE_MODE_PROCESS_LATCH_ENV = (
-    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-)
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 _offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
 if _offline_mode_process_state is None:
-    _candidate_process_state = types.ModuleType(
-        _OFFLINE_MODE_PROCESS_STATE_MODULE
-    )
+    _candidate_process_state = types.ModuleType(_OFFLINE_MODE_PROCESS_STATE_MODULE)
     _candidate_process_state.lock = threading.Lock()
     _offline_mode_process_state = sys.modules.setdefault(
         _OFFLINE_MODE_PROCESS_STATE_MODULE,
@@ -372,9 +368,8 @@ if _offline_mode_process_state is None:
     )
 if not hasattr(_offline_mode_process_state, "lock"):
     _offline_mode_process_state.lock = threading.Lock()
-if (
-    hasattr(os, "register_at_fork")
-    and not getattr(_offline_mode_process_state, "at_fork_registered", False)
+if hasattr(os, "register_at_fork") and not getattr(
+    _offline_mode_process_state, "at_fork_registered", False
 ):
     _offline_mode_process_state.at_fork_registered = True
 
@@ -1006,8 +1001,7 @@ WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = safe_split_value(
     strip=True,
 )
 if OFFLINE_MODE and (
-    DEDICATED_DEPLOYMENT_WORKSPACE_URL
-    or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+    DEDICATED_DEPLOYMENT_WORKSPACE_URL or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
 ):
     raise ValueError(
         "OFFLINE_MODE is not supported together with dedicated or "

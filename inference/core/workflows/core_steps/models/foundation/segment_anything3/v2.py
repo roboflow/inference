@@ -35,7 +35,6 @@ from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
-from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -55,6 +54,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     RoboflowModelField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,

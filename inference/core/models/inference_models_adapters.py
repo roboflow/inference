@@ -179,9 +179,7 @@ _PIPELINE_PRIMING = _PipelinePrimingSentinel()
 def _get_enabled_inference_models_backends() -> List[str]:
     """Return a stable backend request independent of Python hash seeding."""
     return sorted(
-        VALID_INFERENCE_MODELS_BACKENDS.difference(
-            DISABLED_INFERENCE_MODELS_BACKENDS
-        )
+        VALID_INFERENCE_MODELS_BACKENDS.difference(DISABLED_INFERENCE_MODELS_BACKENDS)
     )
 
 

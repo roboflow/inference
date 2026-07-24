@@ -13,9 +13,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     InitialisedStep,
 )
-from inference.core.workflows.offline import (
-    ensure_workflow_step_execution_mode_allowed,
-)
+from inference.core.workflows.offline import ensure_workflow_step_execution_mode_allowed
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 

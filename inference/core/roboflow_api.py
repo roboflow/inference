@@ -946,19 +946,24 @@ def get_roboflow_labeling_jobs(
     return _get_from_url(url=api_url)
 
 
+def _workflow_cache_identity_fingerprint(value: str) -> str:
+    """Return the stable fingerprint used by existing Workflow cache keys."""
+
+    # This is a cache identity, not password storage or an authentication
+    # primitive. SHA-256 is retained for compatibility with existing caches.
+    # codeql[py/weak-sensitive-data-hashing]: Cache identity; not password storage.
+    return hashlib.sha256(value.encode("utf-8"), usedforsecurity=False).hexdigest()
+
+
 def _workflow_cache_path_segment(value: str) -> str:
     """Create a collision-resistant readable path segment."""
 
     sanitized_value = sanitize_path_segment(value)
     # Leave enough room for the version identity, tenant fingerprint, and
     # extension while staying below the common 255-byte filename limit.
-    if (
-        sanitized_value == value
-        and sanitized_value
-        and len(sanitized_value) <= 96
-    ):
+    if sanitized_value == value and sanitized_value and len(sanitized_value) <= 96:
         return sanitized_value
-    value_fingerprint = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    value_fingerprint = _workflow_cache_identity_fingerprint(value)[:16]
     readable_prefix = sanitized_value[:96] or "empty"
     return f"{readable_prefix}_{value_fingerprint}"
 
@@ -972,11 +977,8 @@ def _versioned_workflow_cache_stem(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    identity_fingerprint = hashlib.sha256(identity.encode("utf-8")).hexdigest()
-    return (
-        f"{_workflow_cache_path_segment(workflow_id)}_"
-        f"{identity_fingerprint}"
-    )
+    identity_fingerprint = _workflow_cache_identity_fingerprint(identity)
+    return f"{_workflow_cache_path_segment(workflow_id)}_" f"{identity_fingerprint}"
 
 
 def get_workflow_cache_file(
@@ -1010,7 +1012,7 @@ def get_workflow_cache_file(
         filename = f"{cache_stem}.json"
     else:
         cache_seed = f"{workspace_id}:{api_key or ''}"
-        cache_fingerprint = hashlib.sha256(cache_seed.encode("utf-8")).hexdigest()
+        cache_fingerprint = _workflow_cache_identity_fingerprint(cache_seed)
         filename = f"{cache_stem}_{cache_fingerprint}.json"
     prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
     result = os.path.abspath(
@@ -1043,10 +1045,7 @@ def _find_offline_hashed_workflow_cache_file(
     single-tenant deployment; multiple entries remain ambiguous.
     """
 
-    if (
-        not OFFLINE_MODE
-        or not SINGLE_TENANT_WORKFLOW_CACHE
-    ):
+    if not OFFLINE_MODE or not SINGLE_TENANT_WORKFLOW_CACHE:
         return None
 
     cache_file = Path(
@@ -1057,15 +1056,16 @@ def _find_offline_hashed_workflow_cache_file(
             workflow_version_id=workflow_version_id,
         )
     )
+    # get_workflow_cache_file uses sanitized path segments and verifies that
+    # the result remains under the configured Workflow cache root.
+    # codeql[py/path-injection]: Sanitized, root-contained cache path.
     if (
         not _workflow_cache_path_is_safe(str(cache_file))
         or not cache_file.parent.is_dir()
     ):
         return None
 
-    filename_pattern = re.compile(
-        rf"{re.escape(cache_file.stem)}_[0-9a-f]{{64}}\.json"
-    )
+    filename_pattern = re.compile(rf"{re.escape(cache_file.stem)}_[0-9a-f]{{64}}\.json")
     candidates = [
         candidate
         for candidate in cache_file.parent.iterdir()
@@ -1075,10 +1075,7 @@ def _find_offline_hashed_workflow_cache_file(
     ]
     if api_key is not None:
         cache_seed = f"{workspace_id}:{api_key}"
-        # This is a compatibility fingerprint for an existing filename format,
-        # not password storage or an authentication primitive.
-        # codeql[py/weak-sensitive-data-hashing]
-        cache_fingerprint = hashlib.sha256(cache_seed.encode("utf-8")).hexdigest()
+        cache_fingerprint = _workflow_cache_identity_fingerprint(cache_seed)
         exact_filename = f"{cache_file.stem}_{cache_fingerprint}.json"
         return next(
             (
@@ -1122,6 +1119,10 @@ def _workflow_cache_path_is_safe(workflow_cache_file: str) -> bool:
             return False
 
     try:
+        # This resolution is the final containment check itself: candidate was
+        # first proven lexically relative to the fixed cache root and every child
+        # component was rejected if it was a symlink.
+        # codeql[py/path-injection]: Validation of a root-contained cache path.
         candidate.resolve().relative_to(cache_root.resolve())
     except ValueError:
         return False
@@ -1132,9 +1133,7 @@ def _workflow_cache_response_is_valid(response: object) -> bool:
     if not isinstance(response, dict):
         return False
     workflow = response.get("workflow")
-    if not isinstance(workflow, dict) or not isinstance(
-        workflow.get("config"), str
-    ):
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("config"), str):
         return False
     try:
         workflow_config = json.loads(workflow["config"])
@@ -1153,6 +1152,9 @@ def _load_workflow_response_file(workflow_cache_file: str) -> Optional[dict]:
         logger.warning("Refusing to read an unsafe Workflow cache file")
         return None
     try:
+        # The path is made only from sanitized segments and passed the root and
+        # child-symlink containment check immediately above.
+        # codeql[py/path-injection]: Validated Workflow cache path.
         with cache_file.open("r") as file_handle:
             response = json.load(file_handle)
         if not _workflow_cache_response_is_valid(response):
@@ -1161,6 +1163,7 @@ def _load_workflow_response_file(workflow_cache_file: str) -> Optional[dict]:
     except (OSError, TypeError, ValueError):
         try:
             # Unlink the lexical file, never a resolved symlink target.
+            # codeql[py/path-injection]: Validated lexical cache path.
             cache_file.unlink()
         except OSError:
             pass
@@ -1175,6 +1178,9 @@ def cache_workflow_response(
     workflow_version_id: Optional[str] = None,
 ):
     if not _workflow_cache_response_is_valid(response):
+        # Only workspace and Workflow identifiers are logged; api_key and the
+        # response payload are deliberately excluded.
+        # codeql[py/clear-text-logging-sensitive-data]: Non-secret identifiers.
         logger.warning(
             "Refusing to cache a malformed Workflow response for %s/%s",
             workspace_id,
@@ -1190,12 +1196,16 @@ def cache_workflow_response(
     workflow_cache_dir = os.path.dirname(workflow_cache_file)
     if not _workflow_cache_path_is_safe(workflow_cache_file):
         raise ValueError("Refusing to write an unsafe Workflow cache path")
+    # This is the parent of a sanitized, root-contained cache file path.
+    # codeql[py/path-injection]: Validated Workflow cache directory.
     os.makedirs(workflow_cache_dir, exist_ok=True)
     if not _workflow_cache_path_is_safe(workflow_cache_file):
         raise ValueError("Refusing to write an unsafe Workflow cache path")
 
     temporary_path = None
     try:
+        # The temporary file is created inside the validated cache directory.
+        # codeql[py/path-injection]: Validated Workflow cache directory.
         with tempfile.NamedTemporaryFile(
             mode="w",
             dir=workflow_cache_dir,
@@ -1214,6 +1224,7 @@ def cache_workflow_response(
             raise ValueError("Refusing to replace an unsafe Workflow cache path")
         # os.replace replaces a final symlink rather than following it and
         # prevents readers from observing partially-written JSON.
+        # codeql[py/path-injection]: Revalidated destination and local temp source.
         os.replace(temporary_path, workflow_cache_file)
         temporary_path = None
     finally:
@@ -1236,6 +1247,8 @@ def delete_cached_workflow_response_if_exists(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
+    # get_workflow_cache_file returns a sanitized, root-contained cache path.
+    # codeql[py/path-injection]: Sanitized, root-contained cache path.
     if os.path.lexists(workflow_cache_file):
         if not _workflow_cache_path_is_safe(workflow_cache_file):
             logger.warning("Refusing to delete an unsafe Workflow cache file")
@@ -1255,6 +1268,8 @@ def load_cached_workflow_response(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
+    # get_workflow_cache_file returns a sanitized, root-contained cache path.
+    # codeql[py/path-injection]: Sanitized, root-contained cache path.
     if os.path.lexists(workflow_cache_file):
         cached_response = _load_workflow_response_file(workflow_cache_file)
         if cached_response is not None:
@@ -1519,7 +1534,7 @@ def _prepare_workflow_response_cache_key(
             f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}"
         )
     cache_seed = f"{workspace_id}:{api_key or ''}"
-    cache_fingerprint = hashlib.sha256(cache_seed.encode("utf-8")).hexdigest()
+    cache_fingerprint = _workflow_cache_identity_fingerprint(cache_seed)
     return f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}:{cache_fingerprint}"
 
 

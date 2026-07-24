@@ -8,9 +8,7 @@ import requests
 # NOTE: This module is used in isolation, no imports from inference are allowed
 # NOTE: Any change made to this file should be matched to changes in redis offloader
 
-_OFFLINE_MODE_PROCESS_LATCH_ENV = (
-    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-)
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _offline_mode_process_state = sys.modules.get("_roboflow_inference_process_state")
 if _offline_mode_process_state is not None and hasattr(
     _offline_mode_process_state, "offline_mode"
