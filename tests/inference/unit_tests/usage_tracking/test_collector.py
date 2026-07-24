@@ -1008,6 +1008,22 @@ def test_record_malformed_usage(usage_collector_with_mocked_threads):
     assert collector._usage[api_key][key]["api_key_hash"] == api_key
 
 
+def test_record_usage_is_noop_in_offline_mode(usage_collector_with_mocked_threads):
+    collector = usage_collector_with_mocked_threads
+
+    with mock.patch(
+        "inference.usage_tracking.collector.OFFLINE_MODE", True
+    ), mock.patch.object(collector, "record_system_info") as record_system_info:
+        collector.record_usage(
+            source="test",
+            category="model",
+            api_key="fake",
+        )
+
+    record_system_info.assert_not_called()
+    assert not collector._usage
+
+
 def test_update_usage_payload_preserves_billable_on_cache_miss(
     usage_collector_with_mocked_threads,
 ):

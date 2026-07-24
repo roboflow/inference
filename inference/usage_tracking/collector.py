@@ -588,6 +588,8 @@ class UsageCollector:
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
     ):
+        if OFFLINE_MODE:
+            return
         if not api_key:
             return
         self.record_system_info()

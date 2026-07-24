@@ -9,15 +9,15 @@
   from local cache. Runtime changes are ignored until the process restarts. Models must be
   pre-cached by running once with network connectivity. In `OFFLINE_MODE`, auto-resolution cache
   entries never expire. If a cached model is not found, a clear error is raised immediately with no
-  retries or timeouts. Custom providers and integrations may still use the network, so deployments
-  requiring a hard air gap must also enforce network isolation.
+  retries or timeouts. Custom providers, local-code model packages, and integrations may still use
+  the network, so deployments requiring a hard air gap must also enforce network isolation.
 - Offline cache fallback on connectivity failures: when the weights-provider API is unreachable
   (`RetryError`), `AutoModel.from_pretrained(...)` now scans `{INFERENCE_HOME}/models-cache/` for a
   previously cached package of the requested model and loads it locally instead of failing. This
   applies even when `OFFLINE_MODE` is not set.
 - `model_id` is now written into each package's `model_config.json`; pre-existing configs are
   upgraded on reuse, and legacy packages can be identified from auto-resolution metadata so
-  offline scanning maps cache entries back to their canonical model IDs.
+  offline scanning can attribute cache entries to the model ID that owns their cache directory.
 - `find_cached_model_package_dir(...)` helper exposed from the auto-loaders module for downstream
   cache introspection.
 - `INFERENCE_HOME` now falls back to `MODEL_CACHE_DIR` (when set) before the `/tmp/cache` default,

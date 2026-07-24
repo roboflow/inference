@@ -7,7 +7,7 @@ from PIL import Image
 from transformers import AutoModelForImageTextToText
 from transformers.utils import is_flash_attn_2_available
 
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -126,6 +126,7 @@ class LoRASmolVLM(LoRATransformerModel):
             cache_dir=cache_dir,
             token=token,
             attn_implementation=attn_implementation,
+            local_files_only=OFFLINE_MODE,
         )
 
         self.model = (
@@ -138,11 +139,16 @@ class LoRASmolVLM(LoRATransformerModel):
 
         if is_smolvlm_256m:
             self.processor = self.processor_class.from_pretrained(
-                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/smolvlm-256m/main")
+                os.path.join(
+                    MODEL_CACHE_DIR,
+                    "lora-bases/smolvlm2/smolvlm-256m/main",
+                ),
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.processor = self.processor_class.from_pretrained(
-                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
+                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main"),
+                local_files_only=OFFLINE_MODE,
             )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):

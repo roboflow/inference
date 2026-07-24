@@ -7,7 +7,7 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel, logging
 
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.env import DEVICE
+from inference.core.env import DEVICE, OFFLINE_MODE
 from inference.core.exceptions import InvalidModelIDError
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -35,9 +35,17 @@ class TrOCR(RoboflowCoreModel):
         self.endpoint = model_id
         self.model_id = model_id
         self.model = (
-            VisionEncoderDecoderModel.from_pretrained(self.model_id).eval().to(DEVICE)
+            VisionEncoderDecoderModel.from_pretrained(
+                self.model_id,
+                local_files_only=OFFLINE_MODE,
+            )
+            .eval()
+            .to(DEVICE)
         )
-        self.processor = TrOCRProcessor.from_pretrained(self.model_id)
+        self.processor = TrOCRProcessor.from_pretrained(
+            self.model_id,
+            local_files_only=OFFLINE_MODE,
+        )
         self.task_type = "ocr"
 
     def preprocess(

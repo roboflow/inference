@@ -9,6 +9,7 @@ from peft import PeftModel
 from torch import nn
 from transformers import AutoBackbone
 
+from inference_models.configuration import OFFLINE_MODE
 from inference_models.logger import LOGGER
 from inference_models.models.rfdetr.dinov2_with_windowed_attn import (
     WindowedDinov2WithRegistersBackbone,
@@ -86,6 +87,7 @@ class DinoV2(nn.Module):
                 name,
                 out_features=[f"stage{i}" for i in out_feature_indexes],
                 return_dict=False,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             window_block_indexes = set(range(out_feature_indexes[-1] + 1))
@@ -131,6 +133,7 @@ class DinoV2(nn.Module):
                 WindowedDinov2WithRegistersBackbone.from_pretrained(
                     name,
                     config=windowed_dino_config,
+                    local_files_only=OFFLINE_MODE,
                 )
                 if load_dinov2_weights
                 else WindowedDinov2WithRegistersBackbone(windowed_dino_config)

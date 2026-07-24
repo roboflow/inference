@@ -1,4 +1,6 @@
 import os
+import sys
+import types
 import warnings
 from typing import Optional
 
@@ -69,17 +71,31 @@ INFERENCE_HOME = (
 _OFFLINE_MODE_PROCESS_LATCH_ENV = (
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 )
+_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 _requested_offline_mode = get_boolean_from_env(
     variable_name="OFFLINE_MODE", default=False
 )
-_latched_offline_mode = os.environ.setdefault(
-    _OFFLINE_MODE_PROCESS_LATCH_ENV,
-    str(_requested_offline_mode),
-)
-OFFLINE_MODE = str2bool(
-    _latched_offline_mode,
-    variable_name=_OFFLINE_MODE_PROCESS_LATCH_ENV,
-)
+_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
+if _offline_mode_process_state is None:
+    _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
+    _latched_offline_mode = (
+        _requested_offline_mode
+        if _inherited_offline_mode is None
+        else str2bool(
+            _inherited_offline_mode,
+            variable_name=_OFFLINE_MODE_PROCESS_LATCH_ENV,
+        )
+    )
+    _offline_mode_process_state = types.ModuleType(
+        _OFFLINE_MODE_PROCESS_STATE_MODULE
+    )
+    _offline_mode_process_state.offline_mode = _latched_offline_mode
+    sys.modules[_OFFLINE_MODE_PROCESS_STATE_MODULE] = _offline_mode_process_state
+OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
+os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
+if OFFLINE_MODE:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 if OFFLINE_MODE != _requested_offline_mode:
     warnings.warn(
         "Changing OFFLINE_MODE at runtime is not supported. The new value is "

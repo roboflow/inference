@@ -658,6 +658,7 @@ def _write_offline_package(
     package_dir = os.path.join(inference_home, "models-cache", slug, package_id)
     os.makedirs(package_dir, exist_ok=True)
     if config is not None:
+        config = {**config, "model_id": model_id}
         _create_file(os.path.join(package_dir, "model_config.json"), json.dumps(config))
     # scanning helpers yield realpath-resolved paths
     return os.path.realpath(package_dir)
@@ -698,6 +699,26 @@ def test_find_cached_model_package_dir_when_no_cache_present(
         result = find_cached_model_package_dir(model_id="nonexistent/model")
 
     # then
+    assert result is None
+
+
+def test_find_cached_model_package_dir_rejects_mismatched_model_config(
+    empty_local_dir: str,
+) -> None:
+    package_dir = _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id="requested/model",
+        package_id="pkg001",
+        config=_OFFLINE_PACKAGE_CONFIG,
+    )
+    _create_file(
+        os.path.join(package_dir, "model_config.json"),
+        json.dumps({**_OFFLINE_PACKAGE_CONFIG, "model_id": "different/model"}),
+    )
+
+    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
+        result = find_cached_model_package_dir(model_id="requested/model")
+
     assert result is None
 
 
@@ -804,7 +825,10 @@ def test_attempt_loading_model_from_offline_cache_tries_next_package_on_failure(
             inference_home=empty_local_dir,
             model_id=model_id,
             package_id=package_id,
-            config=_OFFLINE_PACKAGE_CONFIG,
+            config={
+                **_OFFLINE_PACKAGE_CONFIG,
+                "backend_type": "torch" if package_id == "pkg002" else "onnx",
+            },
         )
     mock_model = MagicMock()
 
@@ -840,7 +864,10 @@ def test_attempt_loading_model_from_offline_cache_honors_requested_package(
             inference_home=empty_local_dir,
             model_id=model_id,
             package_id=package_id,
-            config=_OFFLINE_PACKAGE_CONFIG,
+            config={
+                **_OFFLINE_PACKAGE_CONFIG,
+                "backend_type": "torch" if package_id == "pkg002" else "onnx",
+            },
         )
     mock_model = MagicMock()
 
@@ -853,6 +880,7 @@ def test_attempt_loading_model_from_offline_cache_honors_requested_package(
             model_id=model_id,
             model_init_kwargs={},
             requested_model_package_id="pkg002",
+            requested_backends=BackendType.ONNX,
         )
 
     assert result is not None
@@ -887,6 +915,40 @@ def test_attempt_loading_model_from_offline_cache_honors_requested_backend(
             model_id=model_id,
             model_init_kwargs={},
             requested_backends=BackendType.TORCH,
+        )
+
+    assert result is not None
+    assert result[1].endswith("pkg002")
+    assert mock_load.call_args[1]["model_dir_or_weights_path"].endswith("pkg002")
+
+
+def test_attempt_loading_model_from_offline_cache_honors_backend_preference_order(
+    empty_local_dir: str,
+) -> None:
+    model_id = "yolov8n-640"
+    _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id=model_id,
+        package_id="pkg001",
+        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "onnx"},
+    )
+    _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id=model_id,
+        package_id="pkg002",
+        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "torch"},
+    )
+    mock_model = MagicMock()
+
+    with mock.patch.object(
+        model_cache_paths, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage", return_value=mock_model
+    ) as mock_load:
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+            requested_backends=[BackendType.TORCH, BackendType.ONNX],
         )
 
     assert result is not None
@@ -1032,12 +1094,49 @@ def test_from_pretrained_in_offline_mode_loads_from_cache_without_provider_call(
         result = core.AutoModel.from_pretrained(
             model_id,
             api_key="test-key",
+            local_files_only=False,
             use_auto_resolution_cache=False,
         )
 
     # then
     assert result is mock_model
     mock_provider.assert_not_called()
+
+
+def test_offline_library_load_cannot_override_local_files_only() -> None:
+    class HuggingFaceModel:
+        @classmethod
+        def from_pretrained(
+            cls,
+            model_name_or_path,
+            local_files_only=False,
+            **kwargs,
+        ):
+            pass
+
+    with mock.patch.object(core, "OFFLINE_MODE", True):
+        result = core._prepare_library_model_init_kwargs(
+            model_class=HuggingFaceModel,
+            model_init_kwargs={"local_files_only": False, "device": "cpu"},
+        )
+
+    assert result == {"local_files_only": True, "device": "cpu"}
+
+
+def test_offline_library_load_does_not_inject_hugging_face_argument() -> None:
+    class OnnxModel:
+        @classmethod
+        def from_pretrained(cls, model_name_or_path, **kwargs):
+            pass
+
+    model_init_kwargs = {"device": "cpu"}
+    with mock.patch.object(core, "OFFLINE_MODE", True):
+        result = core._prepare_library_model_init_kwargs(
+            model_class=OnnxModel,
+            model_init_kwargs=model_init_kwargs,
+        )
+
+    assert result is model_init_kwargs
 
 
 def test_from_pretrained_in_offline_mode_raises_when_no_cache(

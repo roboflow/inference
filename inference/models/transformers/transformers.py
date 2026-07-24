@@ -18,7 +18,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
 )
-from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
@@ -102,13 +102,17 @@ class TransformerModel(RoboflowInferenceModel):
                 device_map=DEVICE,
                 token=self.huggingface_token,
                 torch_dtype=self.default_dtype,
+                local_files_only=OFFLINE_MODE,
             )
             .eval()
             .to(self.dtype)
         )
 
         self.processor = self.processor_class.from_pretrained(
-            model_id, cache_dir=self.cache_dir, token=self.huggingface_token
+            model_id,
+            cache_dir=self.cache_dir,
+            token=self.huggingface_token,
+            local_files_only=OFFLINE_MODE,
         )
 
     def preprocess(
@@ -355,6 +359,7 @@ class LoRATransformerModel(TransformerModel):
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
+            local_files_only=OFFLINE_MODE,
         ).to(self.dtype)
         self.model = (
             PeftModel.from_pretrained(self.base_model, self.cache_dir)
@@ -365,7 +370,11 @@ class LoRATransformerModel(TransformerModel):
         self.model.merge_and_unload()
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token
+            model_load_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=OFFLINE_MODE,
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:

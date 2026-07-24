@@ -34,6 +34,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         device: torch.device = DEFAULT_DEVICE,
         model_dependencies: Optional[Dict[str, AnyModel]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "ObjectDetectionModel":
         model_package_content = get_model_package_contents(
@@ -48,6 +49,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
                 os.path.join(
                     model_name_or_path, "model_dependencies", "feature_extractor"
                 ),
+                local_files_only=local_files_only,
                 **kwargs,
             )
         try:

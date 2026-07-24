@@ -18,6 +18,7 @@ from inference.core.env import (
     METRICS_INTERVAL,
     MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     ROBOFLOW_SERVER_UUID,
     USE_INFERENCE_MODELS,
 )
@@ -89,7 +90,7 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
                 model_id=model_id,

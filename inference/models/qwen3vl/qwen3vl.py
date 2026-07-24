@@ -13,7 +13,7 @@ from transformers import (
 from transformers.utils import is_flash_attn_2_available
 
 from inference.core.cache.model_artifacts import get_cache_dir, get_cache_file_path
-from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.roboflow_api import get_roboflow_base_lora, stream_url_to_cache
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
@@ -96,6 +96,7 @@ class Qwen3VL(TransformerModel):
                 token=token,
                 quantization_config=bnb_config,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -105,6 +106,7 @@ class Qwen3VL(TransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
         self.model = self.base_model.eval().to(self.dtype)
 
@@ -115,6 +117,7 @@ class Qwen3VL(TransformerModel):
             token=token,
             min_pixels=256 * 28 * 28,
             max_pixels=1280 * 28 * 28,
+            local_files_only=OFFLINE_MODE,
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
@@ -281,6 +284,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 token=token,
                 quantization_config=bnb_config,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -290,6 +294,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
 
         if model_load_id != "qwen-pretrains/2":
@@ -315,6 +320,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 chat_template=chat_template,
                 min_pixels=256 * 28 * 28,
                 max_pixels=1280 * 28 * 28,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.processor = self.processor_class.from_pretrained(
@@ -324,6 +330,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 token=token,
                 min_pixels=256 * 28 * 28,
                 max_pixels=1280 * 28 * 28,
+                local_files_only=OFFLINE_MODE,
             )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
