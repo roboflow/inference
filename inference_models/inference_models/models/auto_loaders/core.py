@@ -805,6 +805,12 @@ class AutoModel:
                 offline_result = attempt_loading_model_from_offline_cache(
                     model_id=model_id_or_path,
                     model_init_kwargs=model_init_kwargs,
+                    requested_model_package_id=model_package_id,
+                    requested_backends=backend,
+                    requested_batch_size=batch_size,
+                    requested_quantization=quantization,
+                    model_access_manager=model_access_manager,
+                    api_key=api_key,
                     allow_local_code_packages=allow_local_code_packages,
                     verbose=verbose,
                 )
@@ -815,7 +821,8 @@ class AutoModel:
                     return model
                 raise ModelRetrievalError(
                     message=f"Cannot load model {model_id_or_path} in OFFLINE_MODE - "
-                    f"no cached model package found in {INFERENCE_HOME}/models-cache/. "
+                    f"no compatible cached model package found in "
+                    f"{INFERENCE_HOME}/models-cache/. "
                     f"Pre-populate the cache by running once with network access, "
                     f"or disable OFFLINE_MODE.",
                     help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
@@ -874,6 +881,12 @@ class AutoModel:
                 offline_result = attempt_loading_model_from_offline_cache(
                     model_id=model_id_or_path,
                     model_init_kwargs=model_init_kwargs,
+                    requested_model_package_id=model_package_id,
+                    requested_backends=backend,
+                    requested_batch_size=batch_size,
+                    requested_quantization=quantization,
+                    model_access_manager=model_access_manager,
+                    api_key=api_key,
                     allow_local_code_packages=allow_local_code_packages,
                     verbose=verbose,
                 )
@@ -1202,6 +1215,16 @@ def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, No
 def attempt_loading_model_from_offline_cache(
     model_id: str,
     model_init_kwargs: dict,
+    requested_model_package_id: Optional[str] = None,
+    requested_backends: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
+    requested_batch_size: Optional[Union[int, Tuple[int, int]]] = None,
+    requested_quantization: Optional[
+        Union[str, Quantization, List[Union[str, Quantization]]]
+    ] = None,
+    model_access_manager: Optional[ModelAccessManager] = None,
+    api_key: Optional[str] = None,
     allow_local_code_packages: bool = True,
     verbose: bool = False,
 ) -> Optional[Tuple[AnyModel, str]]:
@@ -1212,8 +1235,67 @@ def attempt_loading_model_from_offline_cache(
     Returns ``(model, package_dir)`` on success, ``None`` if no cached
     package could be loaded.
     """
+    if (
+        requested_model_package_id is None
+        and (requested_batch_size is not None or requested_quantization is not None)
+    ):
+        verbose_info(
+            message=(
+                f"Cannot safely select an offline cache package for {model_id} "
+                "because batch-size or quantization constraints were requested "
+                "without an explicit model package ID."
+            ),
+            verbose_requested=verbose,
+        )
+        return None
     found_any_package = False
+    if requested_backends is None:
+        requested_backend_values = None
+    else:
+        requested_backends_list = (
+            requested_backends
+            if isinstance(requested_backends, list)
+            else [requested_backends]
+        )
+        requested_backend_values = {
+            backend.value if isinstance(backend, BackendType) else backend
+            for backend in requested_backends_list
+        }
     for package_dir in _iterate_cached_model_package_dirs(model_id=model_id):
+        package_id = os.path.basename(package_dir)
+        if (
+            requested_model_package_id is not None
+            and package_id != requested_model_package_id
+        ):
+            continue
+        if (
+            model_access_manager is not None
+            and not model_access_manager.is_model_package_access_granted(
+                model_id=model_id,
+                package_id=package_id,
+                api_key=api_key,
+            )
+        ):
+            continue
+        if requested_backend_values is not None:
+            try:
+                package_config = parse_model_config(
+                    config_path=os.path.join(
+                        package_dir,
+                        MODEL_CONFIG_FILE_NAME,
+                    )
+                )
+            except Exception as error:
+                LOGGER.warning(
+                    f"Failed to inspect cached model package from {package_dir}: "
+                    f"{error}"
+                )
+                continue
+            if (
+                package_config.backend_type is None
+                or package_config.backend_type.value not in requested_backend_values
+            ):
+                continue
         found_any_package = True
         try:
             model = attempt_loading_model_from_local_storage(
@@ -1225,6 +1307,16 @@ def attempt_loading_model_from_offline_cache(
                 message=f"Loaded model {model_id} from offline cache at {package_dir}.",
                 verbose_requested=verbose,
             )
+            if model_access_manager is not None:
+                model_access_manager.on_model_loaded(
+                    model=model,
+                    access_identifiers=AccessIdentifiers(
+                        model_id=model_id,
+                        package_id=package_id,
+                        api_key=api_key,
+                    ),
+                    model_storage_path=package_dir,
+                )
             return model, package_dir
         except Exception as error:
             LOGGER.warning(

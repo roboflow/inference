@@ -11,6 +11,7 @@ from inference_models.utils.environment import (
     get_float_from_env,
     get_integer_from_env,
     parse_comma_separated_values,
+    str2bool,
 )
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
@@ -63,9 +64,29 @@ L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = (
     os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
 )
-# Offline mode - disables all outbound network requests. Models are loaded
-# exclusively from local cache. Designed for air-gapped deployments.
-OFFLINE_MODE = get_boolean_from_env(variable_name="OFFLINE_MODE", default=False)
+# Share the process-start latch with ``inference.core.env``. Whichever package
+# is imported first establishes the mode for this process and its children.
+_OFFLINE_MODE_PROCESS_LATCH_ENV = (
+    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+)
+_requested_offline_mode = get_boolean_from_env(
+    variable_name="OFFLINE_MODE", default=False
+)
+_latched_offline_mode = os.environ.setdefault(
+    _OFFLINE_MODE_PROCESS_LATCH_ENV,
+    str(_requested_offline_mode),
+)
+OFFLINE_MODE = str2bool(
+    _latched_offline_mode,
+    variable_name=_OFFLINE_MODE_PROCESS_LATCH_ENV,
+)
+if OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,

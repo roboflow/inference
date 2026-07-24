@@ -638,6 +638,41 @@ def test_serverless_auth_middleware_rejects_and_does_not_cache_incomplete_succes
     model_manager.infer_from_request_sync.assert_not_called()
 
 
+def test_serverless_auth_middleware_rejects_unexpected_usage_check_status(
+    monkeypatch,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(status_code=503),
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 500
+    assert second_response.status_code == 500
+    assert first_response.json() == {
+        "status": 500,
+        "message": (
+            "Serverless authorization failed because the usage check returned "
+            "an unexpected status (503)."
+        ),
+    }
+    assert second_response.json() == first_response.json()
+    assert usage_check_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_sets_assume_identity_workspace_db_id_context(
     monkeypatch,
 ) -> None:

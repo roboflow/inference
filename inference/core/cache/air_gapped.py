@@ -12,9 +12,6 @@ from typing import Any, Dict, List, Optional, Set
 from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
-from inference_models.models.auto_loaders.model_cache_paths import (
-    slugify_model_id_to_os_safe_format,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +35,12 @@ def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
     """Map legacy package directories to IDs stored in auto-resolution metadata."""
     resolution_cache_dir = os.path.join(cache_dir, "auto-resolution-cache")
     if not os.path.isdir(resolution_cache_dir):
+        return {}
+    try:
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
+    except ImportError:
         return {}
     candidates: Dict[str, Set[str]] = {}
     try:
@@ -241,6 +244,8 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             # Normalise path separators on Windows.
             model_id = model_id.replace(os.sep, "/")
 
+        if not isinstance(model_id, str) or not model_id:
+            continue
         if model_id in seen_ids:
             continue
         seen_ids.add(model_id)

@@ -47,6 +47,17 @@ from inference_models.weights_providers.roboflow import (
 DUMMY_PROXY_PREFIX = "http://gateway.local/proxy?url="
 
 
+def test_get_roboflow_model_does_not_request_metadata_in_offline_mode() -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), patch.object(
+        roboflow_module,
+        "get_model_metadata",
+    ) as get_model_metadata_mock:
+        with pytest.raises(ModelRetrievalError, match="OFFLINE_MODE"):
+            get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    get_model_metadata_mock.assert_not_called()
+
+
 def test_as_version_when_valid_version_provided() -> None:
     # when
     result = as_version(value="1.2.3")

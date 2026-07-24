@@ -1055,6 +1055,24 @@ class HttpInterface(BaseInterface):
                                         workspace_id=usage_check_result.workspace_id,
                                         cache_hit=False,
                                     )
+                                else:
+                                    if auth_span is not None:
+                                        auth_span.set_attribute(
+                                            "http.status_code", 500
+                                        )
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "unexpected_usage_check_status",
+                                        )
+                                    return _authorization_error_response(
+                                        500,
+                                        (
+                                            "Serverless authorization failed because "
+                                            "the usage check returned an unexpected "
+                                            f"status ({usage_check_result.status_code})."
+                                        ),
+                                        cache_hit=False,
+                                    )
 
                         if auth_span is not None:
                             auth_span.set_attribute("http.status_code", 200)

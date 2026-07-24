@@ -413,6 +413,25 @@ class TestScanModelConfigJson:
 
         assert len(result) == 0
 
+    @pytest.mark.parametrize("invalid_model_id", ["", [], {}])
+    def test_skips_config_with_invalid_model_id(self, tmp_path, invalid_model_id):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        _write_model_config_json(
+            cache,
+            slug_dir="some-slug-abcd1234",
+            package_id="pkg001",
+            config={
+                "model_id": invalid_model_id,
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnx",
+            },
+        )
+
+        assert scan_cached_models(cache) == []
+
     def test_uses_resolution_metadata_for_legacy_config(self, tmp_path):
         """Pre-upgrade configs are listed using their auto-resolution metadata."""
         from inference.core.cache.air_gapped import scan_cached_models
@@ -451,6 +470,22 @@ class TestScanModelConfigJson:
                 "is_foundation": False,
             }
         ]
+
+    def test_legacy_scan_tolerates_missing_inference_models_package(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        _write_auto_resolution_cache_entry(
+            cache_dir=cache,
+            model_id="workspace/my-project/3",
+            package_id="pkg001",
+        )
+
+        with patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.model_cache_paths": None},
+        ):
+            assert scan_cached_models(cache) == []
 
 
 # ---------------------------------------------------------------------------

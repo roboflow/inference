@@ -837,6 +837,10 @@ def update_image_metadata_at_roboflow(
     metadata: Optional[Dict[str, Any]] = None,
     add_tags: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    if OFFLINE_MODE:
+        raise RoboflowAPIConnectionError(
+            "Cannot update image metadata at Roboflow - OFFLINE_MODE is enabled."
+        )
     payload = {}
     if metadata is not None:
         payload["metadata"] = metadata
@@ -867,6 +871,10 @@ def batch_update_image_metadata_at_roboflow(
     workspace_id: WorkspaceID,
     updates: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
+    if OFFLINE_MODE:
+        raise RoboflowAPIConnectionError(
+            "Cannot update image metadata at Roboflow - OFFLINE_MODE is enabled."
+        )
     api_url = wrap_url(
         _add_params_to_url(
             url=f"{API_BASE_URL}/{workspace_id}/images/metadata",
@@ -1464,6 +1472,8 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
     Note: We can't rely on Accept-Ranges header alone because some servers/CDNs
     advertise range support but return 200 (full file) instead of 206 (partial).
     """
+    if OFFLINE_MODE:
+        return False
     try:
         headers = {"Range": "bytes=0-0"}
         response = requests.get(

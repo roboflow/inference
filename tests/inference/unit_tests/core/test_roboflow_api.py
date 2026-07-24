@@ -2012,6 +2012,27 @@ def test_update_image_metadata_at_roboflow_when_wrong_image_id_used(
     assert requests_mock.last_request.query == "api_key=my_api_key"
 
 
+def test_update_image_metadata_does_not_make_request_in_offline_mode(
+    monkeypatch,
+) -> None:
+    request_mock = MagicMock()
+    monkeypatch.setattr(roboflow_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(roboflow_api.requests, "post", request_mock)
+
+    with pytest.raises(
+        RoboflowAPIConnectionError,
+        match="Cannot update image metadata at Roboflow - OFFLINE_MODE is enabled",
+    ):
+        update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            image_id="image_1",
+            metadata={"color": "red"},
+        )
+
+    request_mock.assert_not_called()
+
+
 def test_batch_update_image_metadata_at_roboflow_when_successful_response_expected(
     requests_mock: Mocker,
 ) -> None:
@@ -2057,6 +2078,35 @@ def test_batch_update_image_metadata_at_roboflow_when_preflight_error_occurs(
 
     # then
     assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_batch_update_image_metadata_does_not_make_request_in_offline_mode(
+    monkeypatch,
+) -> None:
+    request_mock = MagicMock()
+    monkeypatch.setattr(roboflow_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(roboflow_api.requests, "post", request_mock)
+
+    with pytest.raises(
+        RoboflowAPIConnectionError,
+        match="Cannot update image metadata at Roboflow - OFFLINE_MODE is enabled",
+    ):
+        batch_update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            updates=[{"imageId": "image_1", "addTags": ["auto"]}],
+        )
+
+    request_mock.assert_not_called()
+
+
+def test_range_probe_does_not_make_request_in_offline_mode(monkeypatch) -> None:
+    request_mock = MagicMock()
+    monkeypatch.setattr(roboflow_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(roboflow_api.requests, "get", request_mock)
+
+    assert roboflow_api._test_range_request("https://example.com/weights.bin") is False
+    request_mock.assert_not_called()
 
 
 def test_search_project_images_at_roboflow_uses_existing_search_fields(

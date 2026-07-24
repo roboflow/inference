@@ -349,9 +349,35 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
-# Offline mode - disables all outbound network requests to Roboflow API.
-# Models must be pre-cached locally. Telemetry and metrics are silently skipped.
-OFFLINE_MODE = str2bool(os.getenv("OFFLINE_MODE", False))
+# Offline mode is latched on the first import of either configuration package.
+# The private marker is inherited by child processes, which prevents a runtime
+# environment mutation from enabling offline-only authorization paths in a
+# newly spawned worker. Changing modes requires a full process restart.
+_OFFLINE_MODE_PROCESS_LATCH_ENV = (
+    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+)
+_requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
+_latched_offline_mode = os.environ.setdefault(
+    _OFFLINE_MODE_PROCESS_LATCH_ENV,
+    str(_requested_offline_mode),
+)
+OFFLINE_MODE = str2bool(_latched_offline_mode)
+if OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+
+if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
+    warnings.warn(
+        "SAM3_EXEC_MODE=remote is not available while OFFLINE_MODE is enabled. "
+        "Forcing local SAM3 execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    SAM3_EXEC_MODE = "local"
 
 # Flag to disable version check, default is False
 DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
@@ -782,7 +808,15 @@ WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
-if (
+if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
+    warnings.warn(
+        "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "
+        "is enabled. Forcing local workflow step execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WORKFLOWS_STEP_EXECUTION_MODE = "local"
+elif (
     SECURE_GATEWAY
     and WORKFLOWS_STEP_EXECUTION_MODE == "remote"
     and WORKFLOWS_REMOTE_API_TARGET == "hosted"
