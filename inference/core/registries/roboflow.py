@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Union
 
 from cachetools.func import ttl_cache
@@ -66,7 +67,6 @@ GENERIC_MODELS = {
     "doctr": ("ocr", "doctr"),
     "easy_ocr": ("ocr", "easy_ocr"),
     "trocr": ("ocr", "trocr"),
-    "pp_ocr": ("ocr", "pp_ocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
@@ -80,6 +80,79 @@ GENERIC_MODELS = {
     "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
     "qwen3_5-4b": ("lmm", "qwen3_5-4b"),
 }
+
+
+@dataclass(frozen=True)
+class ModelPipelineDefinition:
+    """A synthetic model ID composed of concrete `inference_models` stage models.
+
+    Pipeline IDs do not exist in remote model registries - only their downstream
+    stage models do. Recognition maps the pipeline ID to a (task_type, model_type)
+    pair served by a pipeline adapter; authorization is delegated to every
+    downstream stage model ID.
+    """
+
+    task_type: TaskType
+    model_type: ModelType
+    downstream_model_ids: Tuple[str, ...]
+
+
+PP_OCR_STAGE_VARIANTS = ("none", "tiny", "small", "medium")
+PP_OCR_DEFAULT_STAGE_VARIANT = "small"
+
+
+def _pp_ocr_pipeline_definition(
+    text_detection: str, text_recognition: str
+) -> ModelPipelineDefinition:
+    downstream_model_ids = []
+    if text_detection != "none":
+        downstream_model_ids.append(f"pp-ocrv6-det/{text_detection}")
+    if text_recognition != "none":
+        downstream_model_ids.append(f"pp-ocrv6-rec/{text_recognition}")
+    return ModelPipelineDefinition(
+        task_type="ocr",
+        model_type="pp_ocr",
+        downstream_model_ids=tuple(downstream_model_ids),
+    )
+
+
+def _build_pp_ocr_pipelines() -> Dict[str, ModelPipelineDefinition]:
+    # The recognized IDs mirror what InferenceModelsPPOCRAdapter._parse_det_rec
+    # accepts: `pp_ocr/{det}-{rec}` for every valid combination (at least one
+    # stage enabled), the single-token alias `pp_ocr/{variant}` (applies the
+    # variant to both stages), and bare `pp_ocr` (defaults both stages).
+    pipelines: Dict[str, ModelPipelineDefinition] = {}
+    for text_detection in PP_OCR_STAGE_VARIANTS:
+        for text_recognition in PP_OCR_STAGE_VARIANTS:
+            if (text_detection, text_recognition) == ("none", "none"):
+                continue
+            pipelines[f"pp_ocr/{text_detection}-{text_recognition}"] = (
+                _pp_ocr_pipeline_definition(text_detection, text_recognition)
+            )
+    for variant in PP_OCR_STAGE_VARIANTS:
+        if variant == "none":
+            continue
+        pipelines[f"pp_ocr/{variant}"] = _pp_ocr_pipeline_definition(variant, variant)
+    pipelines["pp_ocr"] = _pp_ocr_pipeline_definition(
+        PP_OCR_DEFAULT_STAGE_VARIANT, PP_OCR_DEFAULT_STAGE_VARIANT
+    )
+    return pipelines
+
+
+MODEL_PIPELINES: Dict[str, ModelPipelineDefinition] = _build_pp_ocr_pipelines()
+
+
+def _get_model_pipeline_definition(model_id: str) -> Optional[ModelPipelineDefinition]:
+    """Returns the pipeline definition for `model_id`, or None.
+
+    Pipeline adapters are backed by `inference_models`, so pipeline IDs are only
+    recognized when USE_INFERENCE_MODELS is enabled - otherwise they fall through
+    to the regular Roboflow model resolution (and fail there).
+    """
+    if not USE_INFERENCE_MODELS:
+        return None
+    return MODEL_PIPELINES.get(model_id)
+
 
 STUB_VERSION_ID = "0"
 
@@ -140,6 +213,21 @@ def _check_if_api_key_has_access_to_model(
     service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    pipeline_definition = _get_model_pipeline_definition(model_id=model_id)
+    if pipeline_definition is not None:
+        # Pipeline IDs are synthetic - they do not exist in remote model
+        # registries, only their downstream stage models do. Authorization is
+        # therefore delegated to every stage model the pipeline is composed of.
+        return all(
+            _check_if_api_key_has_access_to_model(
+                api_key=api_key,
+                model_id=downstream_model_id,
+                endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+            for downstream_model_id in pipeline_definition.downstream_model_ids
+        )
     if _get_local_model_type(model_id=model_id) is not None:
         return True
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
@@ -226,6 +314,10 @@ def get_model_type(
     local_model_type = _get_local_model_type(model_id=model_id)
     if local_model_type is not None:
         return local_model_type
+    pipeline_definition = _get_model_pipeline_definition(model_id=model_id)
+    if pipeline_definition is not None:
+        logger.debug(f"Loading model pipeline: {model_id}.")
+        return pipeline_definition.task_type, pipeline_definition.model_type
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
