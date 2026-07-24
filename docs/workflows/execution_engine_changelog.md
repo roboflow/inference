@@ -9,11 +9,6 @@ Below you can find the changelog for Execution Engine.
 Add user-facing compile or execution behavior changes here. Maintainers replace
 this heading with the Execution Engine and inference versions when releasing.
 
-* **Disable sink side effects per execution** — Workflow HTTP requests, the Python
-  SDK, and streaming workflow configuration now accept `disable_sinks`. When enabled,
-  sink writes and other external side effects are skipped while the rest of the
-  workflow continues to run.
-
 ---
 
 ## Execution Engine `v1.12.0` | inference `v1.3.2`
