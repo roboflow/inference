@@ -831,6 +831,129 @@ def test_attempt_loading_model_from_offline_cache_tries_next_package_on_failure(
     assert cache_dir.endswith("pkg002")
 
 
+def test_attempt_loading_model_from_offline_cache_honors_requested_package(
+    empty_local_dir: str,
+) -> None:
+    model_id = "yolov8n-640"
+    for package_id in ["pkg001", "pkg002"]:
+        _write_offline_package(
+            inference_home=empty_local_dir,
+            model_id=model_id,
+            package_id=package_id,
+            config=_OFFLINE_PACKAGE_CONFIG,
+        )
+    mock_model = MagicMock()
+
+    with mock.patch.object(
+        model_cache_paths, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage", return_value=mock_model
+    ) as mock_load:
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+            requested_model_package_id="pkg002",
+        )
+
+    assert result is not None
+    assert result[1].endswith("pkg002")
+    assert mock_load.call_args[1]["model_dir_or_weights_path"].endswith("pkg002")
+
+
+def test_attempt_loading_model_from_offline_cache_honors_requested_backend(
+    empty_local_dir: str,
+) -> None:
+    model_id = "yolov8n-640"
+    _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id=model_id,
+        package_id="pkg001",
+        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "onnx"},
+    )
+    _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id=model_id,
+        package_id="pkg002",
+        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "torch"},
+    )
+    mock_model = MagicMock()
+
+    with mock.patch.object(
+        model_cache_paths, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage", return_value=mock_model
+    ) as mock_load:
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+            requested_backends=BackendType.TORCH,
+        )
+
+    assert result is not None
+    assert result[1].endswith("pkg002")
+    assert mock_load.call_args[1]["model_dir_or_weights_path"].endswith("pkg002")
+
+
+def test_attempt_loading_model_from_offline_cache_rejects_unverifiable_constraints(
+    empty_local_dir: str,
+) -> None:
+    model_id = "yolov8n-640"
+    _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id=model_id,
+        package_id="pkg001",
+        config=_OFFLINE_PACKAGE_CONFIG,
+    )
+
+    with mock.patch.object(
+        model_cache_paths, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage"
+    ) as mock_load:
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+            requested_quantization="fp16",
+        )
+
+    assert result is None
+    mock_load.assert_not_called()
+
+
+def test_attempt_loading_model_from_offline_cache_respects_access_manager(
+    empty_local_dir: str,
+) -> None:
+    model_id = "yolov8n-640"
+    _write_offline_package(
+        inference_home=empty_local_dir,
+        model_id=model_id,
+        package_id="pkg001",
+        config=_OFFLINE_PACKAGE_CONFIG,
+    )
+    access_manager = MagicMock()
+    access_manager.is_model_package_access_granted.return_value = False
+
+    with mock.patch.object(
+        model_cache_paths, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage"
+    ) as mock_load:
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+            model_access_manager=access_manager,
+            api_key="test-key",
+        )
+
+    assert result is None
+    access_manager.is_model_package_access_granted.assert_called_once_with(
+        model_id=model_id,
+        package_id="pkg001",
+        api_key="test-key",
+    )
+    mock_load.assert_not_called()
+
+
 def test_from_pretrained_falls_back_to_offline_cache_on_retry_error(
     empty_local_dir: str,
 ) -> None:

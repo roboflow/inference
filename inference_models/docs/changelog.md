@@ -4,11 +4,13 @@
 
 ### Added
 
-- `OFFLINE_MODE` environment variable. When set to `True`, all outbound HTTP requests are blocked
-  and models are loaded exclusively from local cache. Designed for air-gapped deployments where the
-  inference server has no network access. Models must be pre-cached by running once with network
-  connectivity. In `OFFLINE_MODE`, auto-resolution cache entries never expire. If a cached model is
-  not found, a clear error is raised immediately with no retries or timeouts.
+- Startup-only `OFFLINE_MODE` environment variable. When set to `True` before process startup,
+  built-in Roboflow API and model artifact requests are blocked and models are loaded exclusively
+  from local cache. Runtime changes are ignored until the process restarts. Models must be
+  pre-cached by running once with network connectivity. In `OFFLINE_MODE`, auto-resolution cache
+  entries never expire. If a cached model is not found, a clear error is raised immediately with no
+  retries or timeouts. Custom providers and integrations may still use the network, so deployments
+  requiring a hard air gap must also enforce network isolation.
 - Offline cache fallback on connectivity failures: when the weights-provider API is unreachable
   (`RetryError`), `AutoModel.from_pretrained(...)` now scans `{INFERENCE_HOME}/models-cache/` for a
   previously cached package of the requested model and loads it locally instead of failing. This
