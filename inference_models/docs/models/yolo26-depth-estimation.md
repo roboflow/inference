@@ -91,8 +91,8 @@ The model returns a list of `torch.Tensor` depth maps, one per input image:
     converted to the per-image ordinal-depth contract also used for Depth Anything
     (`1.0` = nearest, `0.0` = farthest). The models therefore share the same output
     shape, range, and near-to-far ordering, but intermediate values are not
-    geometrically equivalent or directly comparable across model families. The
-    metric scale is not exposed on that path.
+    geometrically equivalent or directly comparable across model families without
+    calibration. The metric scale is not exposed on that path.
 
 !!! note "Choosing between YOLO26 depth and Depth Anything"
     YOLO26 predicts at input/4 native resolution and is substantially faster at a

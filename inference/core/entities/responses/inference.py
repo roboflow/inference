@@ -458,7 +458,7 @@ class DepthEstimationResponse(BaseModel):
             "Per-image normalized ordinal depth as a 2D array of floats between "
             "0 and 1, where 1 is nearest and 0 is farthest. Values are not "
             "physical distances or directly comparable across images or model "
-            "families."
+            "families without calibration."
         )
     )
     image: Optional[str] = Field(

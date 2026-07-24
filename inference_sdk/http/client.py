@@ -1736,7 +1736,8 @@ class InferenceHTTPClient:
             Union[dict, List[dict]]: Depth estimation results containing:
                 - normalized_depth: Per-image normalized ordinal depth as a list,
                   where 1 is nearest and 0 is farthest. Values are not physical
-                  distances or directly comparable across images or model families.
+                  distances or directly comparable across images or model families
+                  without calibration.
                 - image: Hex-encoded visualization of the depth map
 
         Raises:
