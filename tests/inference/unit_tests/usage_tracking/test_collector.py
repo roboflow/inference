@@ -1976,7 +1976,7 @@ def test_send_usage_payload_does_not_post_when_offline(post_mock) -> None:
         hashes_to_api_keys={"fake_hash": "fake-api-key"},
     )
 
-    assert failed_hashes == set()
+    assert failed_hashes == {"fake_hash"}
     post_mock.assert_not_called()
 
 

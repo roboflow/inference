@@ -194,7 +194,10 @@ def send_usage_payload(
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> Set[APIKeyHash]:
     if OFFLINE_MODE:
-        return set()
+        # Report every hash as failed so callers that delete on "no failures"
+        # (including the Redis usage offloader) retain the payload instead of
+        # treating the offline no-op as a successful delivery.
+        return set(payload.keys())
     hashes_to_api_keys = hashes_to_api_keys or {}
     api_keys_hashes_failed = set()
     for api_key_hash, workflow_payloads in payload.items():
