@@ -2625,7 +2625,10 @@ def test_auto_load_exact_cache_rejects_resolution_constraints_mismatch() -> None
     model_access_manager.is_model_package_access_granted.assert_not_called()
 
 
-def test_auto_load_cache_preserves_entry_on_temporary_manifest_error() -> None:
+@pytest.mark.parametrize("offline_mode", [False, True])
+def test_auto_load_cache_handles_manifest_error_according_to_mode(
+    offline_mode: bool,
+) -> None:
     cache_entry = AutoResolutionCacheEntry(
         model_id="workspace/model/1",
         cache_model_id="workspace/model/1",
@@ -2640,23 +2643,39 @@ def test_auto_load_cache_preserves_entry_on_temporary_manifest_error() -> None:
         trusted_source=True,
         package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
     )
-    on_invalid_cache_entry = MagicMock()
+    auto_resolution_cache = MagicMock()
+    auto_resolution_cache.retrieve.return_value = cache_entry
 
-    with mock.patch.object(
+    with mock.patch.object(core, "OFFLINE_MODE", offline_mode), mock.patch.object(
         core,
         "resolve_existing_model_package_cache_path",
         side_effect=OSError("temporary mount failure"),
     ):
-        result = core._verified_auto_cache_package_dir(
-            cache_entry=cache_entry,
-            on_invalid_cache_entry=on_invalid_cache_entry,
+        result = attempt_loading_model_with_auto_load_cache(
+            use_auto_resolution_cache=True,
+            auto_resolution_cache=auto_resolution_cache,
+            auto_negotiation_hash="a" * 64,
+            model_access_manager=MagicMock(),
+            model_name_or_path="workspace/model/1",
+            model_init_kwargs={},
+            api_key="api-key",
+            allow_loading_dependency_models=True,
+            forwarded_kwargs_values={},
         )
 
     assert result is None
-    on_invalid_cache_entry.assert_not_called()
+    if offline_mode:
+        auto_resolution_cache.invalidate.assert_not_called()
+    else:
+        auto_resolution_cache.invalidate.assert_called_once_with(
+            auto_negotiation_hash="a" * 64
+        )
 
 
-def test_auto_load_cache_preserves_entry_after_transient_constructor_error() -> None:
+@pytest.mark.parametrize("offline_mode", [False, True])
+def test_auto_load_cache_handles_constructor_error_according_to_mode(
+    offline_mode: bool,
+) -> None:
     cache_entry = AutoResolutionCacheEntry(
         model_id="workspace/model/1",
         cache_model_id="workspace/model/1",
@@ -2686,7 +2705,7 @@ def test_auto_load_cache_preserves_entry_after_transient_constructor_error() -> 
     model_class = MagicMock()
     model_class.from_pretrained.side_effect = RuntimeError("temporary GPU failure")
 
-    with mock.patch.object(
+    with mock.patch.object(core, "OFFLINE_MODE", offline_mode), mock.patch.object(
         core, "_verified_auto_cache_package_dir", return_value="/cached/model"
     ), mock.patch.object(
         core, "parse_model_config", return_value=package_config
@@ -2706,7 +2725,12 @@ def test_auto_load_cache_preserves_entry_after_transient_constructor_error() -> 
         )
 
     assert result is None
-    auto_resolution_cache.invalidate.assert_not_called()
+    if offline_mode:
+        auto_resolution_cache.invalidate.assert_not_called()
+    else:
+        auto_resolution_cache.invalidate.assert_called_once_with(
+            auto_negotiation_hash="a" * 64
+        )
     model_access_manager.is_model_package_access_granted.assert_called_once_with(
         model_id="workspace/model/1",
         package_id="package",
