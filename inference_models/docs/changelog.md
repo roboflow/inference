@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.34.0`
+
 ### Added
 
 - Startup-only `OFFLINE_MODE` environment variable. When set to `True` before process startup,
