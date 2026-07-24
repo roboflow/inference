@@ -697,8 +697,10 @@ class ONVIFSinkBlockV1(WorkflowBlock):
     def __init__(
         self,
         step_execution_mode: StepExecutionMode,
+        disable_sinks: bool = False,
     ):
         self._step_execution_mode = step_execution_mode
+        self._disable_sinks = disable_sinks
         # all commands will be send to the camera normalized to -1 to 1
         # all setpoints are 0, which represents the center of the frame
         self.x_pid = PID(0, 0, 0, setpoint=0)
@@ -718,7 +720,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["step_execution_mode"]
+        return ["step_execution_mode", "disable_sinks"]
 
     # gets the CameraWrapper from the static cameras collection
     def get_camera(
@@ -772,6 +774,11 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         minimum_camera_speed: float,
         simulate_variable_speed: bool,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return {
+                PREDICTIONS_OUTPUT_KEY: predictions,
+                SEEKING_OUTPUT_KEY: False,
+            }
 
         # this is hard coded: if intermittent move signals are less
         # than 10% then it's unlikely the camera will ever move

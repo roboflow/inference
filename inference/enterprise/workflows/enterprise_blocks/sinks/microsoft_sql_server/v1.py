@@ -17,6 +17,7 @@ else:
 
 PYODBC_AVAILABLE = pyodbc is not None
 
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -211,14 +212,16 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         self,
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._connection = None
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor"]
+        return ["background_tasks", "thread_pool_executor", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -235,6 +238,8 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         password: Optional[str] = None,
         fire_and_forget: bool = True,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return disabled_sink_response()
         registration_task = partial(
             self._process_data,
             host=host,

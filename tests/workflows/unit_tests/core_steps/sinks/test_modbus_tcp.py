@@ -81,6 +81,50 @@ class TestModbusTCPBlockV1(unittest.TestCase):
     @patch(
         "inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient"
     )
+    def test_disable_sinks_preserves_reads_and_skips_writes(self, MockModbusClient):
+        mock_client = MagicMock()
+        MockModbusClient.return_value = mock_client
+        mock_client.connect.return_value = True
+        read_response = MagicMock()
+        read_response.isError.return_value = False
+        read_response.registers = [123]
+        mock_client.read_holding_registers.return_value = read_response
+
+        block = ModbusTCPBlockV1(disable_sinks=True)
+        result = block.run(
+            plc_ip="10.0.1.31",
+            plc_port=502,
+            mode="read_and_write",
+            registers_to_read=[1000],
+            registers_to_write={1005: 25},
+            depends_on=None,
+        )
+
+        self.assertEqual(result, {"modbus_results": [{"read": {1000: 123}}]})
+        mock_client.read_holding_registers.assert_called_once_with(1000)
+        mock_client.write_register.assert_not_called()
+
+    @patch(
+        "inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient"
+    )
+    def test_disable_sinks_skips_write_only_connection(self, MockModbusClient):
+        block = ModbusTCPBlockV1(disable_sinks=True)
+
+        result = block.run(
+            plc_ip="10.0.0.205",
+            plc_port=502,
+            mode="write",
+            registers_to_read=[],
+            registers_to_write={1005: 25},
+            depends_on=None,
+        )
+
+        self.assertEqual(result, {"modbus_results": []})
+        MockModbusClient.assert_not_called()
+
+    @patch(
+        "inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient"
+    )
     def test_connection_failure(self, MockModbusClient):
         # Arrange
         mock_client = MagicMock()

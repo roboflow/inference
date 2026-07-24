@@ -10,6 +10,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     update_image_metadata_at_roboflow,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -182,16 +183,18 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
         update_attributes_offloader: Optional[
             UpdateAssetLibraryAttributesOffloader
         ] = None,
+        disable_sinks: bool = False,
     ):
         self._api_key = api_key
         self._cache = cache
         self._offloader: UpdateAssetLibraryAttributesOffloader = (
             update_attributes_offloader or call_asset_library_attributes_endpoint
         )
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "update_attributes_offloader"]
+        return ["api_key", "cache", "update_attributes_offloader", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -206,6 +209,14 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
         tags: Optional[Union[List[str], Batch[Optional[List[str]]]]] = None,
         disable_sink: bool = False,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return [
+                {
+                    "error_status": False,
+                    "message": disabled_sink_message(disabled_by_execution_policy=True),
+                }
+                for _ in range(len(source_id))
+            ]
         if self._api_key is None:
             raise ValueError(
                 "Roboflow Asset Library Attributes block cannot run without Roboflow API key. "
@@ -217,7 +228,9 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
             return [
                 {
                     "error_status": False,
-                    "message": "Sink was disabled by parameter `disable_sink`",
+                    "message": disabled_sink_message(
+                        disabled_by_execution_policy=False
+                    ),
                 }
                 for _ in range(len(source_id))
             ]

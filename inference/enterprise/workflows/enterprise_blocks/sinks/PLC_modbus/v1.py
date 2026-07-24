@@ -115,8 +115,9 @@ class ModbusTCPBlockV1(WorkflowBlock):
     On failures, errors are printed and marked as "ReadFailure" or "WriteFailure".
     """
 
-    def __init__(self):
+    def __init__(self, disable_sinks: bool = False):
         self.client: Optional[ModbusClient] = None
+        self._disable_sinks = disable_sinks
 
     def __del__(self):
         if self.client:
@@ -129,6 +130,10 @@ class ModbusTCPBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ModbusTCPBlockManifest
 
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["disable_sinks"]
+
     def run(
         self,
         plc_ip: str,
@@ -140,6 +145,8 @@ class ModbusTCPBlockV1(WorkflowBlock):
         image: Optional[WorkflowImageData] = None,
         metadata: Optional[VideoMetadata] = None,
     ) -> dict:
+        if self._disable_sinks and mode == "write":
+            return {"modbus_results": []}
         read_results = {}
         write_results = {}
 
@@ -166,7 +173,7 @@ class ModbusTCPBlockV1(WorkflowBlock):
                     read_results[address] = "ReadFailure"
 
         # If mode involves writing
-        if mode in ["write", "read_and_write"]:
+        if not self._disable_sinks and mode in ["write", "read_and_write"]:
             for address, value in registers_to_write.items():
                 try:
                     response = self.client.write_register(address, value)

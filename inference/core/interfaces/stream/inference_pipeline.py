@@ -495,6 +495,7 @@ class InferencePipeline:
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
+        disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
@@ -563,6 +564,8 @@ class InferencePipeline:
             workflow_init_parameters (Optional[Dict[str, Any]]): Additional init parameters to be used by
                 workflows Execution Engine to init steps of your workflow - may be required when running workflows
                 with custom plugins.
+            disable_sinks (bool): Whether to disable sink writes and outbound notifications/uploads.
+                Read operations of sink blocks (e.g. PLC register reads) still execute.
             workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
                 by workflows blocks to run background tasks.
             cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
@@ -668,6 +671,7 @@ class InferencePipeline:
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
             )
+            workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
