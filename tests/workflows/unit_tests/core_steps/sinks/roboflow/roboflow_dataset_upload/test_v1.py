@@ -833,7 +833,8 @@ def test_execute_registration_when_registration_should_be_successful(
     return_strategy_credit_mock.assert_not_called()
 
 
-def test_run_sink_when_api_key_is_not_specified() -> None:
+@pytest.mark.parametrize("disable_sink", [False, True])
+def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
@@ -856,11 +857,46 @@ def test_run_sink_when_api_key_is_not_specified() -> None:
             max_image_size=(128, 128),
             compression_level=75,
             registration_tags=["some"],
-            disable_sink=False,
+            disable_sink=disable_sink,
             fire_and_forget=True,
             labeling_batch_prefix="my_batch",
             labeling_batches_recreation_frequency="never",
         )
+
+
+def test_execution_policy_noops_without_api_key() -> None:
+    data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=Batch(content=[MagicMock()], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=True,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
 
 
 def test_run_sink_when_sink_is_disabled_by_configuration() -> None:

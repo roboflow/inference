@@ -42,6 +42,9 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1 import (
+    AutoRotateOnEdgesBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
     BackgroundSubtractionBlockV1,
 )
@@ -62,6 +65,9 @@ from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 i
 )
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+    DetectionsNearestNeighborBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
     DistanceMeasurementBlockV1,
@@ -200,6 +206,7 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.frame_delay.v1 import FrameDelayBlockV1
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
     OverlapAnalysisBlockV1,
@@ -233,6 +240,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 )
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
     DepthEstimationBlockV1,
@@ -709,6 +719,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "disable_sinks": False,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
@@ -727,6 +738,7 @@ KINDS_SERIALIZERS = {
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
+    DETECTIONS_OVERLAPS_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
 }
 KINDS_DESERIALIZERS = {
@@ -746,6 +758,7 @@ KINDS_DESERIALIZERS = {
     ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
     LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    DETECTIONS_OVERLAPS_KIND.name: deserialize_list_of_values_kind,
     BOOLEAN_KIND.name: deserialize_boolean_kind,
     INTEGER_KIND.name: deserialize_integer_kind,
     STRING_KIND.name: deserialize_string_kind,
@@ -839,6 +852,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
+        FrameDelayBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
@@ -877,6 +891,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
+        DetectionsNearestNeighborBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
@@ -892,6 +907,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
+        AutoRotateOnEdgesBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         HeatmapVisualizationBlockV1,
@@ -1003,6 +1019,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
+        Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,

@@ -23,6 +23,7 @@ TEXT_ONLY_OCR_TASK = "text-only-ocr"
 GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
+WORLD_MODEL_TASK = "world-model"
 
 
 @dataclass(frozen=True)
@@ -267,6 +268,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_trt",
         class_name="YOLO26ForSemanticSegmentationTRT",
     ),
+    ("yolo26", DEPTH_ESTIMATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_depth_estimation_onnx",
+        class_name="YOLO26ForDepthEstimationOnnx",
+    ),
+    ("yolo26", DEPTH_ESTIMATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_depth_estimation_torch_script",
+        class_name="YOLO26ForDepthEstimationTorchScript",
+    ),
+    ("yolo26", DEPTH_ESTIMATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_depth_estimation_trt",
+        class_name="YOLO26ForDepthEstimationTRT",
+    ),
     ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.yololite.yololite_object_detection_onnx",
@@ -293,6 +306,14 @@ REGISTERED_MODELS: Dict[
     ("qwen3vl", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
+    ),
+    ("cosmos-3-edge", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
+        class_name="Cosmos3EdgeReasoner",
+    ),
+    ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos3_world",
+        class_name="Cosmos3EdgeWorldModel",
     ),
     ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",

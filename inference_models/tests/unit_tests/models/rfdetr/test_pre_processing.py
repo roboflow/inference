@@ -148,6 +148,34 @@ def test_one_step_stretch_tensor_matches_reference_pipeline() -> None:
     torch.testing.assert_close(actual_tensor, expected, atol=1e-6, rtol=0)
 
 
+def test_shared_preprocessor_does_not_consume_trt_selection_environment(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
+        "triton-universal-v1",
+    )
+    image_pre_processing = ImagePreProcessing()
+    network_input = _build_network_input(
+        training_h=16,
+        training_w=16,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=None,
+    )
+    image = np.zeros((16, 16, 3), dtype=np.uint8)
+
+    actual_tensor, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    expected = _reference_pipeline(Image.fromarray(image), target_h=16, target_w=16)
+    torch.testing.assert_close(actual_tensor, expected, atol=0, rtol=0)
+
+
 def test_one_step_stretch_with_bgr_input_matches_rgb_reference() -> None:
     """When caller passes BGR data with input_color_format='bgr', preprocessor
     swaps to RGB and the resulting tensor matches the RGB reference exactly."""

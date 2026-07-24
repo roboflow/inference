@@ -18,14 +18,14 @@ Note: there is no `inference/core/workflows/entities/` directory — the engine 
 ## Review checklist
 Severity-tagged. Verify each against the linked Standard before raising.
 
-- **BLOCK** — Diff changes compile or run **behavior** but does not bump `EXECUTION_ENGINE_V1_VERSION` (`execution_engine/v1/core.py`) AND add a changelog top-section with the exact heading. (Standard: Versioning.)
+- **BLOCK** — Diff changes compile or run **behavior** but has no user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`. Do not ask the contributor to bump a version. (Standard: Versioning.)
 - **BLOCK** — Compile behavior depends on an input that is NOT part of the `COMPILATION_CACHE` hash key (`workflow_definition` + `execution_engine_version` only). Stale graphs get served on a cache hit. (Standard: Compilation cache.)
 - **BLOCK** — Dict-key access on external/JSON input (`introspection/schema_parser.py`, definition parsing) checks presence but not type — must be `isinstance(..., dict/list)`. (Standard: Defensive parsing; broke in #1122.)
 - **BLOCK** — Emptiness check on an index/batch/collection uses truthiness instead of `is not None` / `len(...) > 0`. (Standard: None-vs-falsy; broke in #777.)
 - **BLOCK** — A client-caused failure is raised as `StepExecutionError` instead of `ClientCausedStepExecutionError` (with `status_code`), regressing a 4xx back to HTTP 500. (Standard: Structured errors.)
 - **BLOCK** — A value that can hold a `Future` reaches a client/output without passing through the shared resolvers in `executor/utils.py`. (Standard: Future resolution; broke in #2486.)
 - **FLAG** — `init(...)`/`run(...)` signature changed but not mirrored in lockstep. (Standard: Public engine API.)
-- **FLAG** — Missing version-assertion test update (`test_get_versions_of_execution_engine`) or the missing scenario test for a fixed bug. (Standard: Required companions.)
+- **FLAG** — Missing scenario test for a fixed bug. Version-assertion tests change only in the maintainer release PR. (Standard: Required companions.)
 - **FLAG** — Inner-workflow change reorders substitution (renames must precede bindings) or drops depth-first dynamic-block collection/dedupe. (Standard: Inner-workflow inlining; #2352, #2380.)
 - **FLAG** — A `ThreadPoolExecutor` is created inside `run(...)`, or `max_concurrent_steps` is no longer honored. (Standard: Injectable executor.)
 - **FLAG** — Serialization change drops empty or non-batch outputs. (Standard: Serialization; broke in #815.)
@@ -33,14 +33,14 @@ Severity-tagged. Verify each against the linked Standard before raising.
 - **NIT** — Deprecated inputs/selectors (`WorkflowImage`, `WorkflowVideoMetadata`, old `*Selector` annotations) removed before EE v2.
 
 ### Not blocking
-- Comment/type-only refactors, formatting, and pure test/doc mirroring with **no** behavior change do NOT require a version bump or changelog (explicit exemption in `.cursor/rules/execution-engine-version-changelog.mdc`).
+- Comment/type-only refactors, formatting, and pure test/doc mirroring with **no** behavior change do NOT require a changelog entry or maintainer release notice (explicit exemption in `.cursor/rules/execution-engine-version-changelog.mdc`).
 - A pure bug fix to a scenario already covered by an integration test does not require a *new* test file — an assertion added to the existing scenario is fine.
-- An `inference/core/version.py` `__version__` bump is only required when the change ships as a release; a standalone EE change can defer it (do not demand it on every EE PR).
+- Never demand an `EXECUTION_ENGINE_V1_VERSION` or `inference/core/version.py` bump from a contributor — maintainers handle both at release time (sole EE exception: a Workflow block gating on unreleased capabilities needs the version placed early — see Versioning).
 - Do not demand `flush_stream_pipeline` mirroring on the ABC — it is intentionally not part of `BaseExecutionEngine` (see Public engine API).
 
 ## Standards
 
-**Versioning.** Any behavior change to compile or run MUST bump `EXECUTION_ENGINE_V1_VERSION` in `execution_engine/v1/core.py` AND add a top section to `docs/workflows/execution_engine_changelog.md`. Heading format is fixed: `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` where `A.B.C` is the current `inference/core/version.py` `__version__`, followed by user-facing "What changed" bullets (behavior, not file lists). Patch = bug fix, minor = new capability, major = breaking (rare). Codified in `.cursor/rules/execution-engine-version-changelog.mdc`.
+**Versioning.** Any behavior change to compile or run MUST add user-facing behavior bullets (not file lists) under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`. Contributors do not choose or change a version. At release time, maintainers choose the bump (patch = bug fix, minor = new capability, major = breaking and rare), update `EXECUTION_ENGINE_V1_VERSION` and mirrored assertions, and replace `## Unreleased` with the final `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` heading. Codified in `.cursor/rules/execution-engine-version-changelog.mdc`. One exception to release-time bumping: when a Workflow block must gate on a capability still under `## Unreleased` via `get_execution_engine_compatibility()`, the version is placed and bumped early (final heading + `EXECUTION_ENGINE_V1_VERSION` + mirrored assertions, maintainer-coordinated) so the block can declare its floor — see `review-workflows-blocks`.
 
 **Compilation cache.** `COMPILATION_CACHE` (a `BasicWorkflowsCache`, defined in `compiler/core.py`, class in `compiler/cache.py`) memoizes the compiled graph. Its hash key is built from exactly two hash functions: `workflow_definition` (`json.dumps(sort_keys=True)`) and `execution_engine_version`. Any new compile-time input that changes the resulting graph MUST be added to the cache's `hash_functions`, or a cache hit will serve a stale graph. The cache is size-bounded (`cache_size=256`, LRU-style eviction via `_keys_buffer`) — do not swap in an unbounded dict. Dynamic-blocks-allowed is re-validated on every hit (`ensure_dynamic_blocks_allowed`); preserve that so a cached graph cannot bypass the guard.
 
@@ -70,12 +70,20 @@ Severity-tagged. Verify each against the linked Standard before raising.
 
 ## Required companions
 Block a behavior-changing EE PR that is missing:
-1. **Version bump** — `EXECUTION_ENGINE_V1_VERSION` (`execution_engine/v1/core.py`).
-2. **Changelog** — new top section (`docs/workflows/execution_engine_changelog.md`, exact heading above).
-3. **Version-assertion tests** — `test_get_versions_of_execution_engine` in `tests/inference/integration_tests/test_workflow_endpoints.py` and the hardcoded version in `tests/inference/hosted_platform_tests/test_workflows.py` (#2383, #2106, #645).
-4. **Tests** — unit test in the matching `tests/workflows/unit_tests/execution_engine/{compiler,executor,inner_workflow,introspection,profiling,...}` dir AND an integration test under `tests/workflows/integration_tests/execution/` reproducing the fixed scenario (#777, #2352, #645).
+1. **Changelog** — a user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`.
+2. **Tests** — unit test in the matching `tests/workflows/unit_tests/execution_engine/{compiler,executor,inner_workflow,introspection,profiling,...}` dir AND an integration test under `tests/workflows/integration_tests/execution/` reproducing the fixed scenario (#777, #2352, #645).
 
-(See `### Not blocking` for the `inference/core/version.py` and exemption carve-outs.)
+(See `### Not blocking` for version-bump and exemption carve-outs.)
+
+## Release notice
+
+For every compile/run behavior change, add a non-blocking top-level review notice
+addressed to maintainers: **Execution Engine requires a version bump for
+release**. This notice is required even when the contributor supplied the
+changelog entry. Maintainers choose the version, update
+`EXECUTION_ENGINE_V1_VERSION` and mirrored version assertions, move the entries
+into the final version section, and leave a fresh `## Unreleased` section for
+subsequent contributions.
 
 ## Key files & entry points
 - `execution_engine/core.py` — `REGISTERED_ENGINES`, `retrieve_requested_execution_engine_version`, `_select_execution_engine`, `flush_stream_pipeline`.

@@ -169,6 +169,7 @@ if TRITON_AVAILABLE:
         src_w,
         src_stride_h,
         src_stride_w,
+        src_stride_c,
         crop_offset_y,
         crop_offset_x,
         target_w,
@@ -192,8 +193,9 @@ if TRITON_AVAILABLE:
                 ``(target_w * KSIZE_X,)``.
             src_h/src_w: Logical source height/width after crop. These drive
                 bounds checks for the resized region.
-            src_stride_h/src_stride_w: Source strides in elements, used so the
-                kernel does not assume contiguous row pitch beyond HWC layout.
+            src_stride_h/src_stride_w/src_stride_c: Source strides in elements,
+                used so the kernel accepts both contiguous HWC tensors and HWC
+                views over CUDA CHW tensors without a layout conversion.
             crop_offset_y/crop_offset_x: Offset into ``src_ptr`` for static
                 crop support. The TRT fast path passes zero.
             target_w: Width of the resized network input.
@@ -232,9 +234,15 @@ if TRITON_AVAILABLE:
             base = sy[:, None] * src_stride_h + sx_c[None, :] * src_stride_w
             # Load source pixels in the network's channel order so the channel
             # swap replaces the original PIL image conversion step.
-            p_r = tl.load(src_ptr + base + CH_R, mask=mask_out, other=0).to(tl.int32)
-            p_g = tl.load(src_ptr + base + CH_G, mask=mask_out, other=0).to(tl.int32)
-            p_b = tl.load(src_ptr + base + CH_B, mask=mask_out, other=0).to(tl.int32)
+            p_r = tl.load(
+                src_ptr + base + CH_R * src_stride_c, mask=mask_out, other=0
+            ).to(tl.int32)
+            p_g = tl.load(
+                src_ptr + base + CH_G * src_stride_c, mask=mask_out, other=0
+            ).to(tl.int32)
+            p_b = tl.load(
+                src_ptr + base + CH_B * src_stride_c, mask=mask_out, other=0
+            ).to(tl.int32)
             wx_2d = wx[None, :]
             # Fixed-point horizontal convolution: sum(src * PIL_weight_int).
             hacc_r += p_r * wx_2d
@@ -493,6 +501,7 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
     src_w = crop_w if crop_w is not None else raw_src_w
     src_stride_h = int(src.stride(0))
     src_stride_w = int(src.stride(1))
+    src_stride_c = int(src.stride(2))
     dst_stride_c = target_h * target_w
     dst_stride_h = target_w
 
@@ -524,6 +533,7 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
         src_w,
         src_stride_h,
         src_stride_w,
+        src_stride_c,
         int(crop_offset_y),
         int(crop_offset_x),
         target_w,

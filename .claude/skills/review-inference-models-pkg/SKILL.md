@@ -16,7 +16,7 @@ OUT of scope (defer to sibling skills): `inference/core/**` model adapters, work
 ## Review checklist
 Severity tags: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** = optional.
 
-1. **BLOCK** — Functional change but no version bump in `inference_models/pyproject.toml` (`version = "0.29.x"`) OR no `docs/changelog.md` entry. See *Required companions*.
+1. **BLOCK** — Functional change but no entry under `## Unreleased` in `inference_models/docs/changelog.md`. Do not ask the contributor to bump a version. See *Required companions*.
 2. **BLOCK** — Deps changed in `pyproject.toml` but `uv.lock` not regenerated, or shared server deps not mirrored into `requirements/*.txt`.
 3. **BLOCK** — New model/backend not registered in `REGISTERED_MODELS`, or missing `from_pretrained(**kwargs)`, resolvable `LazyClass`, integration tests, or `docs/models/*`. See *Standards §1–2*.
 4. **BLOCK** — Prediction-entity field shape/semantics (`xyxy`/`class_id`/`confidence`/`mask`) changed non-additively, or a backend / `to_supervision()` / `docs/api-reference/*` left un-updated. See *Standards §3*.
@@ -32,7 +32,8 @@ Severity tags: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** =
 
 ### Not blocking
 - Do NOT demand a **speed-verification** or **prediction-correctness** artefact from the diff — those live in the PR description / attached evidence, not the tree (see *Required companions*). Confirm they were provided; do not block on their absence from the diff.
-- Do NOT block a doc-only, changelog-only, or test-only PR for a missing version bump.
+- Do NOT block a doc-only or test-only PR for a missing changelog entry.
+- Do NOT ask contributors to change `inference_models/pyproject.toml` or `inference/core/version.py`; maintainers version releases separately.
 - Do NOT treat a `supervision`-constructor guard as an inference_models concern — that guard lives in the workflows viz block (#2467); on this surface #2467 was only additive `keypoints_detection.py` enrichment.
 - Do NOT block a clean **revert** (#2241, #2087) for removing registry/CI/deps/changelog together — that is the correct rollback shape.
 
@@ -61,10 +62,10 @@ Severity tags: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** =
 11. **Tolerant test assertions.** New integration/e2e/GPU assertions use tolerant comparisons (`>=`, loosened tolerance), not exact box-count/class-set equality, which flakes on GPU/ONNX (#2026, #1646, #1649, #1809, #1638, #1843). Keypoint/segmentation slicing uses model-declared slot counts, not `-1` inference (#1626 broke multi-class keypoints with `5 + num_classes` / `view(..., -1, 3)`; fix uses fixed `6:` offset + `_key_points_slots_in_prediction`).
 
 ## Required companions
-Block a functional change unless it carries these (condition → required file):
+Block a functional change unless it carries these contributor-owned companions
+(condition → required file):
 
-- **Any functional change** → version bump in `inference_models/pyproject.toml` AND a `docs/changelog.md` entry under a new `` ## `{version}` `` heading with `Added`/`Fixed`/`Changed`.
-- **Change reaches the server** → bump `inference/core/version.py` (`__version__`) too (as in #2260).
+- **Any functional change** → an entry under `## Unreleased` in `inference_models/docs/changelog.md`, using `Added`/`Changed`/`Fixed`/`Removed` as appropriate.
 - **`pyproject.toml` deps changed** → `inference_models/uv.lock` regenerated (`uv sync`); shared server deps also mirrored into `requirements/*.txt` (#2047, #2449 security bumps, #2415/#2510 dep updates).
 - **New error class** → `docs/errors/<page>.md` section + `help_url` anchor.
 - **New model** → `REGISTERED_MODELS` entry + `docs/models/<model>.md` + a license file for the model-family dir, listed in `docs/models/index.md`.
@@ -76,6 +77,16 @@ Non-diff-checkable — **verify via the PR description / attached evidence, not 
 - **Model registration acknowledgement** → new-model registration details must be acknowledged by code-owners and confirmed done in the PR's GH comments.
 - **Speed verification** → new-model contributions must attach speed evidence on NVIDIA L4 GPU and MacBook (MacBook optional if unsupported), comparing our implementation vs. the original. Absence blocks approval.
 - **Prediction correctness** → new or substantial model changes must show predictions are reasonable — ideally integration tests asserting meaningful prediction qualities; for modifications, existing tests suffice or manual evidence against the unchanged code. Absence blocks approval.
+
+## Release notice
+
+For every functional `inference_models` change, add a non-blocking top-level
+review notice addressed to maintainers: **inference-models requires a version
+bump for release**. This notice is required even when the contributor supplied
+the changelog entry. Maintainers choose the version, update
+`inference_models/pyproject.toml` and related lock-step pins/lockfiles, move the
+entries into the final version section, and leave a fresh `## Unreleased`
+section for subsequent contributions.
 
 ## Key files & entry points
 - `models/auto_loaders/` — `core.py` (`AutoModel.from_pretrained`), `models_registry.py` (`REGISTERED_MODELS`), `auto_negotiation.py`, `ranking.py`, `model_cache_paths.py`.
