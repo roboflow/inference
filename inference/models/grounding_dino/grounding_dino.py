@@ -3,6 +3,7 @@ from time import perf_counter
 from typing import Any, List, Optional
 
 import torch
+from huggingface_hub import snapshot_download
 from transformers import BertModel
 
 # Monkey-patch BertModel for transformers>=5.0 compatibility.
@@ -45,9 +46,8 @@ def _patched_get_extended_attention_mask(
 
 BertModel.get_extended_attention_mask = _patched_get_extended_attention_mask
 
-from groundingdino.util.inference import Model
+from groundingdino.util.inference import Model, load_model
 
-from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import (
@@ -55,7 +55,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import CLASS_AGNOSTIC_NMS
+from inference.core.env import CLASS_AGNOSTIC_NMS, HF_HUB_CACHE, OFFLINE_MODE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
 
@@ -79,8 +79,6 @@ class GroundingDINO(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-        GROUNDING_DINO_CACHE_DIR = get_cache_dir(model_id=model_id)
-
         import groundingdino.config as _gd_config
 
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
@@ -88,16 +86,24 @@ class GroundingDINO(RoboflowCoreModel):
             "GroundingDINO_SwinT_OGC.py",
         )
 
-        if not os.path.exists(GROUNDING_DINO_CACHE_DIR):
-            os.makedirs(GROUNDING_DINO_CACHE_DIR)
-
-        self.model = Model(
-            model_config_path=GROUNDING_DINO_CONFIG_PATH,
-            model_checkpoint_path=os.path.join(
-                GROUNDING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
-            ),
-            device="cuda" if torch.cuda.is_available() else "cpu",
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        text_encoder_path = snapshot_download(
+            repo_id="bert-base-uncased",
+            cache_dir=HF_HUB_CACHE,
+            local_files_only=OFFLINE_MODE,
         )
+        # The installed GroundingDINO wrapper does not expose load_model's
+        # keyword overrides, so assemble the wrapper with the local text
+        # encoder path explicitly instead of letting its nested Transformers
+        # constructors resolve a repository ID through process-global state.
+        self.model = Model.__new__(Model)
+        self.model.model = load_model(
+            model_config_path=GROUNDING_DINO_CONFIG_PATH,
+            model_checkpoint_path=self.cache_file("groundingdino_swint_ogc.pth"),
+            device=device,
+            text_encoder_type=text_encoder_path,
+        ).to(device)
+        self.model.device = device
         self.task_type = "object-detection"
 
     def preproc_image(self, image: Any):

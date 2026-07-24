@@ -353,9 +353,10 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
 # Offline mode is latched on the first import of either configuration package.
-# The private marker is inherited by child processes, which prevents a runtime
-# environment mutation from enabling offline-only authorization paths in a
-# newly spawned worker. Changing modes requires a full process restart.
+# The private marker carries the latch into normal child processes, so changing
+# the public OFFLINE_MODE variable alone cannot enable offline-only paths in a
+# spawned worker. The marker is trusted internal process state; code able to
+# rewrite it is already able to monkeypatch this module's authorization state.
 _OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 _offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
@@ -391,6 +392,7 @@ os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
 if OFFLINE_MODE:
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["YOLO_OFFLINE"] = "True"
 try:
     _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
 except Exception:
@@ -404,6 +406,21 @@ if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
         InferenceConfigurationWarning,
         stacklevel=1,
     )
+if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
+    "true",
+    "1",
+    "yes",
+    "y",
+    "on",
+}:
+    # The proxy always communicates with a separately served vLLM process over
+    # HTTP, and fine-tuned adapters also require online registry resolution.
+    # Treat it as a remote backend rather than implying that an air-gapped
+    # deployment can use a loopback exception.
+    raise ValueError(
+        "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
+        "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
+    )
 if OFFLINE_MODE and USE_INFERENCE_MODELS:
     from inference_models import configuration as inference_models_configuration
 
@@ -416,7 +433,7 @@ if OFFLINE_MODE and USE_INFERENCE_MODELS:
         getattr(inference_models_configuration, "OFFLINE_MODE", None) is not True
         or not isinstance(inference_models_offline_contract, int)
         or isinstance(inference_models_offline_contract, bool)
-        or inference_models_offline_contract < 2
+        or inference_models_offline_contract < 3
     ):
         raise RuntimeError(
             "The installed inference-models package does not support the "
@@ -657,6 +674,7 @@ METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
+HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
 # Keep the `inference-models` cache co-located with the traditional cache so
 # that mounting MODEL_CACHE_DIR persists both layouts. The authoritative
 # fallback lives in `inference_models.configuration` (INFERENCE_HOME defaults

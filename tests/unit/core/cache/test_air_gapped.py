@@ -73,6 +73,88 @@ class TestScanTraditionalCache:
         assert m["model_architecture"] == "yolov8n"
         assert m["is_foundation"] is False
 
+    def test_scans_attributed_v2_slug_without_exposing_slug_as_model_id(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference.core.cache.model_artifacts import get_model_id_cache_path
+
+        model_id = f"{'a' * 300}/1"
+        model_slug = get_model_id_cache_path(
+            model_id=model_id,
+            cache_dir_root=str(tmp_path),
+        )
+        _write_model_type_json(
+            str(tmp_path),
+            model_slug,
+            {
+                "model_id": model_id,
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+        )
+
+        assert scan_cached_models(str(tmp_path)) == [
+            {
+                "model_id": model_id,
+                "name": model_id,
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "is_foundation": False,
+            }
+        ]
+
+    def test_rejects_ownerless_or_wrongly_attributed_traditional_slug(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference.core.cache.model_artifacts import get_model_id_cache_path
+
+        model_id = f"{'a' * 300}/1"
+        model_slug = get_model_id_cache_path(
+            model_id=model_id,
+            cache_dir_root=str(tmp_path),
+        )
+        _write_model_type_json(
+            str(tmp_path),
+            model_slug,
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+        )
+        _write_model_type_json(
+            str(tmp_path),
+            "wrong-slug",
+            {
+                "model_id": model_id,
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+        )
+
+        assert scan_cached_models(str(tmp_path)) == []
+
+    def test_scans_exactly_attributed_legacy_traditional_slug(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference.core.cache.model_artifacts import get_legacy_model_id_cache_path
+
+        model_id = f"{'a' * 300}/1"
+        legacy_slug = get_legacy_model_id_cache_path(
+            model_id=model_id,
+            cache_dir_root=str(tmp_path),
+        )
+        assert legacy_slug is not None
+        _write_model_type_json(
+            str(tmp_path),
+            legacy_slug,
+            {
+                "model_id": model_id,
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+        )
+
+        assert [entry["model_id"] for entry in scan_cached_models(str(tmp_path))] == [
+            model_id
+        ]
+
 
 class TestScanInferenceModelsCache:
     """model_type.json written with ``taskType`` / ``modelArchitecture`` keys."""
@@ -98,7 +180,7 @@ class TestScanInferenceModelsCache:
 
 
 class TestSkipNonModelDirs:
-    """Ensure ``workflow/`` and ``_file_locks/`` are not traversed."""
+    """Ensure cache infrastructure directories are not traversed."""
 
     def test_skip_non_model_dirs(self, tmp_path):
         from inference.core.cache.air_gapped import scan_cached_models
@@ -106,16 +188,24 @@ class TestSkipNonModelDirs:
         cache = str(tmp_path)
 
         # These should be skipped.
-        _write_model_type_json(
-            cache,
-            "workflow/some-workflow",
-            {"project_task_type": "object-detection", "model_type": "yolov8n"},
-        )
-        _write_model_type_json(
-            cache,
-            "_file_locks/lock-dir",
-            {"project_task_type": "object-detection", "model_type": "yolov8n"},
-        )
+        for infrastructure_root in (
+            "workflow",
+            "_file_locks",
+            "auto-resolution-cache",
+            "hf_home",
+            "huggingface",
+            "lora-bases",
+            "owl-v2-serialized-data",
+            "shared-blobs",
+        ):
+            _write_model_type_json(
+                cache,
+                f"{infrastructure_root}/not-a-model",
+                {
+                    "project_task_type": "object-detection",
+                    "model_type": "yolov8n",
+                },
+            )
 
         # This should be found.
         _write_model_type_json(
@@ -221,11 +311,15 @@ class TestFoundationModelListFormat:
 
     def test_detected_when_any_variant_cached(self, tmp_path):
         from inference.core.cache.air_gapped import get_cached_foundation_models
+        from inference.core.cache.model_artifacts import get_cache_dir
 
         cache = str(tmp_path)
 
         # Create a cache directory for one of the variants with a file.
-        variant_dir = os.path.join(cache, "clip", "ViT-B-32")
+        variant_dir = get_cache_dir(
+            model_id="clip/ViT-B-32",
+            cache_dir_root=cache,
+        )
         os.makedirs(variant_dir, exist_ok=True)
         open(os.path.join(variant_dir, "visual.onnx"), "w").close()
 
@@ -276,11 +370,15 @@ class TestFoundationModelListFormat:
 
     def test_not_detected_when_variant_dir_empty(self, tmp_path):
         from inference.core.cache.air_gapped import get_cached_foundation_models
+        from inference.core.cache.model_artifacts import get_cache_dir
 
         cache = str(tmp_path)
 
         # Create a cache directory but with no files in it.
-        variant_dir = os.path.join(cache, "clip", "ViT-B-32")
+        variant_dir = get_cache_dir(
+            model_id="clip/ViT-B-32",
+            cache_dir_root=cache,
+        )
         os.makedirs(variant_dir, exist_ok=True)
 
         class FakeManifest(_DefaultManifestMixin):
@@ -447,13 +545,13 @@ class TestScanModelConfigJson:
         """Pre-upgrade configs are listed using their auto-resolution metadata."""
         from inference.core.cache.air_gapped import scan_cached_models
         from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format,
+            slugify_model_id_to_os_safe_format_v1,
         )
 
         cache = str(tmp_path)
         model_id = "workspace/my-project/3"
         package_id = "pkg001"
-        model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        model_slug = slugify_model_id_to_os_safe_format_v1(model_id=model_id)
         _write_model_config_json(
             cache,
             slug_dir=model_slug,
@@ -481,6 +579,55 @@ class TestScanModelConfigJson:
                 "is_foundation": False,
             }
         ]
+
+    def test_accepts_exactly_attributed_legacy_v1_config(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format_v1,
+        )
+
+        model_id = "workspace/my-project/3"
+        _write_model_config_json(
+            str(tmp_path),
+            slug_dir=slugify_model_id_to_os_safe_format_v1(model_id=model_id),
+            package_id="pkg001",
+            config={
+                "model_id": model_id,
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnx",
+            },
+        )
+
+        assert [entry["model_id"] for entry in scan_cached_models(str(tmp_path))] == [
+            model_id
+        ]
+
+    def test_does_not_use_v2_path_for_pre_manifest_legacy_attribution(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format_v2,
+        )
+
+        model_id = "workspace/my-project/3"
+        package_id = "pkg001"
+        _write_model_config_json(
+            str(tmp_path),
+            slug_dir=slugify_model_id_to_os_safe_format_v2(model_id=model_id),
+            package_id=package_id,
+            config={
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnx",
+            },
+        )
+        _write_auto_resolution_cache_entry(
+            cache_dir=str(tmp_path),
+            model_id=model_id,
+            package_id=package_id,
+        )
+
+        assert scan_cached_models(str(tmp_path)) == []
 
     def test_legacy_scan_tolerates_missing_inference_models_package(self, tmp_path):
         from inference.core.cache.air_gapped import scan_cached_models
@@ -522,9 +669,7 @@ class TestScanModelConfigJson:
             ("model_architecture", {"name": "yolov8n"}),
         ],
     )
-    def test_skips_malformed_model_config_metadata(
-        self, tmp_path, field, value
-    ):
+    def test_skips_malformed_model_config_metadata(self, tmp_path, field, value):
         from inference.core.cache.air_gapped import scan_cached_models
         from inference_models.models.auto_loaders.model_cache_paths import (
             slugify_model_id_to_os_safe_format,
@@ -733,6 +878,29 @@ class TestScanModelConfigJson:
 
         assert scan_cached_models(str(tmp_path)) == []
 
+    @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO unavailable")
+    def test_skips_non_regular_metadata_without_opening_it(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format_v2,
+        )
+
+        model_id = "workspace/project/3"
+        package_dir = (
+            tmp_path
+            / "models-cache"
+            / slugify_model_id_to_os_safe_format_v2(model_id=model_id)
+            / "pkg001"
+        )
+        package_dir.mkdir(parents=True)
+        os.mkfifo(package_dir / "model_config.json")
+
+        traditional_model_dir = tmp_path / "traditional" / "model" / "1"
+        traditional_model_dir.mkdir(parents=True)
+        os.mkfifo(traditional_model_dir / "model_type.json")
+
+        assert scan_cached_models(str(tmp_path)) == []
+
 
 # ---------------------------------------------------------------------------
 # is_model_cached — inference-models layout delegation
@@ -769,6 +937,22 @@ class TestIsModelCachedTraditionalLayout:
             "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
             str(cache_root),
         ), patch("inference.core.cache.air_gapped.USE_INFERENCE_MODELS", False):
+            assert is_model_cached("workspace/project/1") is False
+
+    def test_rejects_symlinked_artifact_inside_model_tree(self, tmp_path):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        model_directory = tmp_path / "workspace" / "project" / "1"
+        model_directory.mkdir(parents=True)
+        outside_weights = tmp_path / "outside-weights.onnx"
+        outside_weights.write_text("outside")
+        (model_directory / "weights.onnx").symlink_to(outside_weights)
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR", str(tmp_path)
+        ), patch("inference.core.cache.air_gapped.USE_INFERENCE_MODELS", False), patch(
+            "inference.core.cache.model_artifacts.OFFLINE_MODE", True
+        ):
             assert is_model_cached("workspace/project/1") is False
 
     def test_allows_configured_cache_root_to_be_a_symlink(self, tmp_path):

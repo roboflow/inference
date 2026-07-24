@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 import inference.core.interfaces.http.http_api as http_api
+from inference.core import roboflow_api
 from inference.core.constants import (
     PROCESSING_TIME_HEADER,
     TRACE_ID_HEADER,
@@ -96,6 +97,37 @@ def _build_serverless_interface(
     model_manager.infer_from_request_sync.return_value = _DummyResponse()
     interface = http_api.HttpInterface(model_manager=model_manager)
     return interface, model_manager, usage_check_mock, workspace_lookup_mock
+
+
+def test_offline_interface_never_starts_cache_eviction_watchdog(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    watchdog = MagicMock()
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(http_api, "InferenceModelsCacheWatchdog", watchdog)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(http_api, "MAX_INFERENCE_MODELS_CACHE_SIZE_MB", 1)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        None,
+    )
+
+    interface = http_api.HttpInterface(model_manager=MagicMock())
+
+    assert interface.inference_models_cache_daemon is None
+    watchdog.assert_not_called()
 
 
 @pytest.mark.parametrize("serverless_flag", ["GCP_SERVERLESS", "LAMBDA"])
@@ -721,6 +753,17 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
             workspace_id="rf-inference-benchmark",
             under_cap=False,
         ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="workspace\r\nx",
+            under_cap=True,
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            workspace_db_id="workspace\r\nx",
+            under_cap=True,
+        ),
     ],
 )
 def test_serverless_auth_middleware_rejects_and_does_not_cache_incomplete_success(
@@ -883,11 +926,11 @@ def test_serverless_auth_middleware_refreshes_cached_entry_missing_workspace_db_
             json=_make_inference_request(),
         )
 
-    assert first_response.status_code == 200
+    assert first_response.status_code == 500
     assert second_response.status_code == 200
-    assert first_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    assert WORKSPACE_ID_HEADER not in first_response.headers
     assert second_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
-    assert context_values == [None, "workspace-db-id"]
+    assert context_values == ["workspace-db-id"]
     assert usage_check_mock.await_count == 2
     assert roboflow_api.assume_identity_authorised_workspace_db_id.get() is None
 
@@ -962,6 +1005,40 @@ def test_serverless_auth_middleware_caches_payment_required_response(
     model_manager.infer_from_request_sync.assert_not_called()
 
 
+def test_serverless_auth_middleware_sanitizes_malformed_payment_required_identity(
+    monkeypatch,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=402,
+            workspace_id="workspace\r\nx",
+            workspace_db_id="\x00workspace",
+            under_cap=False,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 402
+    assert second_response.status_code == 402
+    assert WORKSPACE_ID_HEADER not in first_response.headers
+    assert WORKSPACE_ID_HEADER not in second_response.headers
+    assert usage_check_mock.await_count == 1
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_adds_observability_headers_and_logs_on_denial(
     monkeypatch,
 ) -> None:
@@ -1020,7 +1097,7 @@ def test_serverless_auth_middleware_uses_auth_only_path_for_internal_non_billabl
 ) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
-    monkeypatch.setattr(http_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
     interface, _, usage_check_mock, workspace_lookup_mock = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -1059,12 +1136,77 @@ def test_serverless_auth_middleware_uses_auth_only_path_for_internal_non_billabl
     assert workspace_lookup_mock.await_count == 1
 
 
+@pytest.mark.parametrize(
+    "invalid_workspace_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        [],
+        {},
+        " workspace",
+        "workspace ",
+        "work space",
+        "workspace\r\nx",
+        "workspace/x",
+        "workspace?x",
+        "\x00workspace",
+        "\ud800",
+    ],
+)
+def test_serverless_auth_middleware_rejects_and_does_not_cache_invalid_auth_only_workspace(
+    monkeypatch,
+    invalid_workspace_id,
+) -> None:
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+    interface, model_manager, usage_check_mock, workspace_lookup_mock = (
+        _build_serverless_interface(
+            monkeypatch=monkeypatch,
+            usage_check_result=ServerlessUsageCheckResponse(
+                status_code=402,
+                workspace_id="rf-inference-benchmark",
+                under_cap=False,
+            ),
+            workspace_lookup_result=invalid_workspace_id,
+        )
+    )
+
+    with TestClient(interface.app) as client:
+        responses = [
+            client.post(
+                "/infer/lmm/florence-2-base",
+                params={
+                    "api_key": "query-api-key",
+                    "countinference": "false",
+                    "service_secret": "shared-secret",
+                },
+                json=_make_inference_request(),
+            )
+            for _ in range(2)
+        ]
+
+    assert [response.status_code for response in responses] == [500, 500]
+    assert responses[0].json() == {
+        "status": 500,
+        "message": (
+            "Serverless authorization failed because workspace lookup returned "
+            "an invalid identity."
+        ),
+    }
+    assert responses[1].json() == responses[0].json()
+    assert usage_check_mock.await_count == 0
+    assert workspace_lookup_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_keeps_non_billable_and_billable_cache_entries_separate(
     monkeypatch,
 ) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
-    monkeypatch.setattr(http_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
     interface, model_manager, usage_check_mock, workspace_lookup_mock = (
         _build_serverless_interface(
             monkeypatch=monkeypatch,
@@ -1098,6 +1240,39 @@ def test_serverless_auth_middleware_keeps_non_billable_and_billable_cache_entrie
     assert usage_check_mock.await_count == 1
     assert workspace_lookup_mock.await_count == 1
     assert model_manager.infer_from_request_sync.call_count == 1
+
+
+def test_serverless_auth_middleware_does_not_accept_empty_service_secret(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "")
+    interface, model_manager, usage_check_mock, workspace_lookup_mock = (
+        _build_serverless_interface(
+            monkeypatch=monkeypatch,
+            usage_check_result=ServerlessUsageCheckResponse(
+                status_code=402,
+                workspace_id="rf-inference-benchmark",
+                under_cap=False,
+                error="Workspace is billing-restricted.",
+            ),
+        )
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={
+                "api_key": "query-api-key",
+                "countinference": "false",
+                "service_secret": "",
+            },
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 402
+    assert usage_check_mock.await_count == 1
+    assert workspace_lookup_mock.await_count == 0
+    assert model_manager.infer_from_request_sync.call_count == 0
 
 
 def test_serverless_auth_middleware_rejects_host_header_path_injection(

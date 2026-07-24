@@ -17,16 +17,10 @@ export INFERENCE_HOME="/path/to/cache"
 export DEFAULT_DEVICE="cuda:0"
 ```
 
-`inference-models` reads the process environment when it is first imported; it
-does not load `.env` files itself. If your application uses a `.env` file, load
-it before importing `inference_models`, for example:
-
-```python
-from dotenv import load_dotenv
-
-load_dotenv()
-from inference_models import AutoModel
-```
+`inference-models` reads the process environment when it is first imported and
+then loads a `.env` file from the current working directory without overriding
+already-set process values. This matches the `inference` package, so package
+import order cannot change the selected cache or offline mode.
 
 ## Core Configuration
 
@@ -76,14 +70,29 @@ export OFFLINE_MODE="True"
 The first import of either `inference` or `inference_models` latches this value
 for the process. Changing or removing the variable later does not change the
 mode; restart the process instead. Child processes inherit the latch when they
-inherit the parent environment. A child launched with a deliberately sanitized
-environment is a new startup boundary, so use operating-system or network-level
-isolation when a hard air gap is required.
+inherit the parent environment with Inference's private marker intact. That
+marker is trusted internal process state, not a security boundary against
+arbitrary code already running in the process. A child launched with a
+deliberately rewritten or sanitized environment is a new startup boundary, so
+use operating-system or network-level isolation when a hard air gap is required.
+
+The startup latch also enables the Hugging Face and Ultralytics dependency
+offline controls before Inference imports those libraries, preventing their
+built-in connectivity checks and online-gated behavior.
+If `HF_HOME` is not explicitly configured, both packages set it before heavy
+imports to `$INFERENCE_HOME/hf_home`, `$MODEL_CACHE_DIR/hf_home`, or
+`/tmp/cache/hf_home` in that order. This keeps implicit Hugging Face backbone,
+processor, and checkpoint downloads in the mounted cache across the
+online-warm and fresh-offline phases.
 
 Warm the cache online with the matching `inference-models` release and the same
 model-loading constraints and runtime environment before enabling offline mode.
-Legacy cache manifests do not contain the trust, dependency, and compatibility
-metadata required by the offline loader and must be re-warmed.
+Legacy cache manifests do not contain the canonical owner, trust, dependency,
+and compatibility metadata required by the offline loader and must be
+re-warmed. A credential-free offline restart can use a cache warmed with a key
+only when the current metadata proves one unambiguous canonical model identity.
+A changed or rotated non-empty key requires an exact matching cache entry and
+otherwise fails closed.
 
 ### Device Selection
 

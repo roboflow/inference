@@ -26,6 +26,7 @@ from inference.core.env import (
     DEBUG_WEBRTC_PROCESSING_LATENCY,
     OFFLINE_MODE,
 )
+from inference.core.exceptions import WebRTCConfigurationError
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     StatusUpdate,
@@ -381,6 +382,15 @@ class WebRTCPipelineWatchDog(BasePipelineWatchDog):
 def _build_rtc_configuration(
     webrtc_turn_config: Optional[WebRTCTURNConfig],
 ) -> Optional[RTCConfiguration]:
+    if OFFLINE_MODE:
+        if webrtc_turn_config is not None:
+            raise WebRTCConfigurationError(
+                "Explicit WebRTC TURN servers are not available while "
+                "OFFLINE_MODE is enabled."
+            )
+        # aiortc interprets ``None`` as permission to contact its built-in
+        # public Google STUN server. An explicit empty list keeps ICE local.
+        return RTCConfiguration(iceServers=[])
     if webrtc_turn_config:
         turn_server = RTCIceServer(
             urls=webrtc_turn_config.urls,
@@ -388,10 +398,6 @@ def _build_rtc_configuration(
             credential=webrtc_turn_config.credential,
         )
         return RTCConfiguration(iceServers=[turn_server])
-    if OFFLINE_MODE:
-        # aiortc interprets ``None`` as permission to contact its built-in
-        # public Google STUN server. An explicit empty list keeps ICE local.
-        return RTCConfiguration(iceServers=[])
     return None
 
 

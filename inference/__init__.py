@@ -1,6 +1,7 @@
 import _thread
 import os
 import sys
+import tempfile
 
 _OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
@@ -100,6 +101,41 @@ try:
     if load_dotenv is not None:
         load_dotenv(_dotenv_path)
 
+    # Keep implicit Hugging Face downloads inside the cache volume that a
+    # fresh offline process will mount. The Hub and Transformers snapshot
+    # these variables at import time, so publish every relevant path before
+    # importing either library. Explicit user configuration always wins.
+    _dependency_cache_root = (
+        os.environ.get("INFERENCE_HOME")
+        or os.environ.get("MODEL_CACHE_DIR")
+        or "/tmp/cache"
+    )
+    os.environ.setdefault(
+        "HF_HOME",
+        os.path.join(_dependency_cache_root, "hf_home"),
+    )
+    os.environ.setdefault(
+        "HF_HUB_CACHE",
+        os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("TRANSFORMERS_CACHE")
+        or os.path.join(os.environ["HF_HOME"], "hub"),
+    )
+    os.environ.setdefault(
+        "HF_MODULES_CACHE",
+        os.path.join(os.environ["HF_HOME"], "modules"),
+    )
+    # Ultralytics persists settings even while merely loading them. Keep this
+    # mutable runtime state out of the model artifact volume, which is expected
+    # to be mounted read-only during an offline restart.
+    os.environ.setdefault(
+        "YOLO_CONFIG_DIR",
+        os.path.join(
+            tempfile.gettempdir(),
+            "roboflow-inference",
+            "ultralytics",
+        ),
+    )
+
     if not hasattr(_offline_mode_process_state, "offline_mode"):
         if _inherited_offline_mode_at_import is not None:
             _latched_offline_mode = _parse_offline_mode(
@@ -129,8 +165,17 @@ finally:
 _LATCHED_OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
 os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(_LATCHED_OFFLINE_MODE)
 if _LATCHED_OFFLINE_MODE:
+    if any(
+        module_name == "ultralytics" or module_name.startswith("ultralytics.")
+        for module_name in sys.modules
+    ):
+        raise RuntimeError(
+            "Ultralytics was imported before Inference could establish "
+            "OFFLINE_MODE. Restart the process and import inference first."
+        )
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["YOLO_OFFLINE"] = "True"
 
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict

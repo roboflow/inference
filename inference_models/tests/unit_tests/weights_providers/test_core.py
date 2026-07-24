@@ -54,16 +54,22 @@ def test_get_model_from_builtin_network_provider_in_offline_mode() -> None:
 
 @mock.patch.object(core, "WEIGHTS_PROVIDERS", {})
 @mock.patch.object(core, "OFFLINE_MODE", True)
-def test_get_model_from_custom_provider_overriding_builtin_name_offline() -> None:
-    """A custom handler remains local-capable when overriding a built-in name."""
+def test_custom_provider_cannot_override_builtin_name_offline() -> None:
+    """Built-in provenance cannot be replaced by a self-asserted local handler."""
     # given
-    local_metadata = object()
-    local_provider = mock.Mock(return_value=local_metadata)
-    core.register_model_provider("roboflow", local_provider)
-
-    # when
-    result = get_model_from_provider(model_id="my-model", provider="roboflow")
+    local_provider = mock.Mock()
+    with pytest.raises(ValueError, match="reserved"):
+        core.register_model_provider("roboflow", local_provider)
 
     # then
-    assert result is local_metadata
-    local_provider.assert_called_once_with("my-model", None)
+    assert core.WEIGHTS_PROVIDERS == {}
+    local_provider.assert_not_called()
+
+
+@mock.patch.object(
+    core,
+    "WEIGHTS_PROVIDERS",
+    {"roboflow": lambda model_id, api_key: object()},
+)
+def test_builtin_network_requirement_is_bound_to_reserved_provider_name() -> None:
+    assert core.model_provider_requires_network(provider="roboflow") is True

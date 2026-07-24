@@ -19,11 +19,7 @@ WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = (
 
 def model_provider_requires_network(provider: str) -> bool:
     """Return whether a registered provider is a built-in network handler."""
-    provider_handler = WEIGHTS_PROVIDERS.get(provider)
-    return any(
-        provider_handler is built_in_handler
-        for built_in_handler in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS.values()
-    )
+    return provider in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
 
 
 def get_model_from_provider(
@@ -189,7 +185,7 @@ def register_model_provider(
 
     Note:
         - Provider handlers must return a `ModelMetadata` object
-        - The provider name must be unique (will override existing providers)
+        - Built-in provider names are reserved and cannot be overridden
         - Provider handlers should handle authentication and error cases
 
     See Also:
@@ -197,4 +193,18 @@ def register_model_provider(
         - `ModelMetadata`: Structure for model metadata
         - `ModelPackageMetadata`: Structure for package metadata
     """
+    if (
+        not isinstance(provider_name, str)
+        or not provider_name.strip()
+        or provider_name.casefold()
+        in {
+            built_in_name.casefold()
+            for built_in_name in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
+        }
+    ):
+        raise ValueError(
+            f"Weights provider name {provider_name!r} is empty or reserved."
+        )
+    if not callable(provider_handler):
+        raise TypeError("Weights provider handler must be callable.")
     WEIGHTS_PROVIDERS[provider_name] = provider_handler

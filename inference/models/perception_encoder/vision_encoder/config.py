@@ -10,7 +10,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from huggingface_hub import hf_hub_download
 
-from inference.core.env import OFFLINE_MODE
+from inference.core.env import HF_HUB_CACHE, OFFLINE_MODE
 
 
 def fetch_pe_checkpoint(name: str, path: Optional[str] = None):
@@ -23,10 +23,15 @@ def fetch_pe_checkpoint(name: str, path: Optional[str] = None):
 
         # To count the download, config.yaml is empty
         if not OFFLINE_MODE:
-            hf_hub_download(repo_id=repo, filename="config.yaml")
+            hf_hub_download(
+                repo_id=repo,
+                filename="config.yaml",
+                cache_dir=HF_HUB_CACHE,
+            )
         return hf_hub_download(
             repo_id=repo,
             filename=file,
+            cache_dir=HF_HUB_CACHE,
             local_files_only=OFFLINE_MODE,
         )
     else:

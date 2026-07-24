@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision
+from huggingface_hub import snapshot_download
 from transformers import BertModel
 
 # Monkey-patch BertModel for transformers>=5.0 compatibility.
@@ -56,9 +57,11 @@ from torchvision.ops import box_convert
 from inference_models import Detections
 from inference_models.configuration import (
     DEFAULT_DEVICE,
+    HF_HUB_CACHE,
     INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE,
     INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS,
+    OFFLINE_MODE,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
@@ -87,13 +90,16 @@ class GroundingDinoForObjectDetectionTorch(
             elements=["weights.pth", "config.py"],
         )
         text_encoder_dir = os.path.join(model_name_or_path, "text_encoder")
-        loader_kwargs = {}
-        if os.path.isdir(text_encoder_dir):
-            loader_kwargs["text_encoder_type"] = text_encoder_dir
+        if not os.path.isdir(text_encoder_dir):
+            text_encoder_dir = snapshot_download(
+                repo_id="bert-base-uncased",
+                cache_dir=HF_HUB_CACHE,
+                local_files_only=OFFLINE_MODE,
+            )
         model = load_model(
             model_config_path=model_package_content["config.py"],
             model_checkpoint_path=model_package_content["weights.pth"],
-            **loader_kwargs,
+            text_encoder_type=text_encoder_dir,
         ).to(device)
         return cls(model=model, device=device)
 

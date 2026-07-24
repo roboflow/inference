@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 import numpy as np
 import torch
 
+from inference_models.configuration import OFFLINE_MODE
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -98,6 +99,39 @@ MODEL_INPUT_CASTING = {
     torch.bool: {torch.uint8, torch.int8, torch.float16, torch.float32, torch.float64},
 }
 
+_OFFLINE_TRT_OPTIONS_FORCED_DISABLED = {
+    "trt_engine_cache_enable",
+    "trt_timing_cache_enable",
+    "trt_force_timing_cache",
+    "trt_dump_subgraphs",
+    "trt_dump_ep_context_model",
+}
+_OFFLINE_TRT_PATH_OPTIONS = {
+    "trt_engine_cache_path",
+    "trt_engine_cache_prefix",
+    "trt_timing_cache_path",
+    "trt_ep_context_file_path",
+    "trt_onnx_model_folder_path",
+}
+
+
+def _disable_tensorrt_file_outputs(
+    provider: Union[str, tuple],
+) -> Union[str, tuple]:
+    if (
+        not OFFLINE_MODE
+        or not isinstance(provider, tuple)
+        or len(provider) != 2
+        or provider[0] != "TensorrtExecutionProvider"
+    ):
+        return provider
+    provider_options = dict(provider[1])
+    for option_name in _OFFLINE_TRT_OPTIONS_FORCED_DISABLED:
+        provider_options[option_name] = False
+    for option_name in _OFFLINE_TRT_PATH_OPTIONS:
+        provider_options.pop(option_name, None)
+    return provider[0], provider_options
+
 
 def set_onnx_execution_provider_defaults(
     providers: List[Union[str, tuple]],
@@ -174,6 +208,7 @@ def set_onnx_execution_provider_defaults(
     if device.index is not None:
         device_id_options["device_id"] = device.index
     for provider in providers:
+        provider = _disable_tensorrt_file_outputs(provider=provider)
         if provider == "TensorrtExecutionProvider" and default_onnx_trt_options:
             engine_cached = os.path.isdir(model_package_path) and any(
                 f.endswith(".engine") for f in os.listdir(model_package_path)
@@ -186,14 +221,19 @@ def set_onnx_execution_provider_defaults(
                     "Persist this directory to avoid rebuilds.",
                     model_package_path,
                 )
+            provider_options = {
+                # Offline packages are immutable input. TensorRT may compile
+                # an engine in memory, but cannot cache it beside verified
+                # model artifacts.
+                "trt_engine_cache_enable": not OFFLINE_MODE,
+                "trt_fp16_enable": enable_fp16,
+                **device_id_options,
+            }
+            if not OFFLINE_MODE:
+                provider_options["trt_engine_cache_path"] = model_package_path
             provider = (
                 "TensorrtExecutionProvider",
-                {
-                    "trt_engine_cache_enable": True,
-                    "trt_engine_cache_path": model_package_path,
-                    "trt_fp16_enable": enable_fp16,
-                    **device_id_options,
-                },
+                provider_options,
             )
         if provider == "CUDAExecutionProvider":
             provider = ("CUDAExecutionProvider", device_id_options)

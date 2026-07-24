@@ -26,6 +26,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import (
     DEVICE,
+    HF_HUB_CACHE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
     OFFLINE_MODE,
@@ -128,6 +129,7 @@ class Owlv2Singleton:
             model = (
                 Owlv2ForObjectDetection.from_pretrained(
                     huggingface_id,
+                    cache_dir=HF_HUB_CACHE,
                     device_map=DEVICE if str(DEVICE).startswith("cuda") else None,
                     local_files_only=OFFLINE_MODE,
                 )
@@ -196,6 +198,7 @@ def dummy_infer(hf_id: str):
     model = singleton.model
     processor = Owlv2Processor.from_pretrained(
         hf_id,
+        cache_dir=HF_HUB_CACHE,
         local_files_only=OFFLINE_MODE,
     )
     image_size = (
@@ -419,6 +422,7 @@ class OwlV2(RoboflowInferenceModel):
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(
             hf_id,
+            cache_dir=HF_HUB_CACHE,
             local_files_only=OFFLINE_MODE,
         )
         self.image_size = (

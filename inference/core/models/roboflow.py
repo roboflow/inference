@@ -44,7 +44,7 @@ from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     clear_cache,
     get_cache_dir,
-    get_cache_file_path,
+    get_cache_dir_for_read,
     initialise_cache,
     load_json_from_cache,
     load_text_file_from_cache,
@@ -65,7 +65,10 @@ from inference.core.exceptions import (
 )
 from inference.core.models.base import Model
 from inference.core.models.utils.batching import create_batches
-from inference.core.models.utils.onnx import has_trt
+from inference.core.models.utils.onnx import (
+    disable_onnxruntime_trt_file_outputs,
+    has_trt,
+)
 from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -141,7 +144,7 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-        self.cache_dir = get_cache_dir(
+        self.cache_dir = get_cache_dir_for_read(
             model_id=self.endpoint, cache_dir_root=cache_dir_root
         )
         self.keypoints_metadata: Optional[dict] = None
@@ -156,7 +159,7 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: Full path to the cached file.
         """
-        return get_cache_file_path(file=f, model_id=self.endpoint)
+        return os.path.join(self.cache_dir, f)
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clear the cache directory.
@@ -814,25 +817,36 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
             expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
+                if OFFLINE_MODE:
+                    ep = disable_onnxruntime_trt_file_outputs(provider=ep)
                 if ep == "TensorrtExecutionProvider":
                     engine_cache_path = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
-                    engine_cached = os.path.isdir(engine_cache_path) and any(
-                        f.endswith(".engine") for f in os.listdir(engine_cache_path)
-                    )
-                    if not engine_cached:
-                        logger.warning(
-                            f"No cached TensorRT engine for '{model_id}' in {engine_cache_path}. "
-                            "ONNX Runtime will build one during the first inference; this can take "
-                            "many minutes on embedded devices and blocks requests for this model "
-                            "until it finishes. Persist this directory to avoid rebuilds."
+                    if not OFFLINE_MODE:
+                        engine_cached = os.path.isdir(engine_cache_path) and any(
+                            f.endswith(".engine") for f in os.listdir(engine_cache_path)
+                        )
+                        if not engine_cached:
+                            logger.warning(
+                                f"No cached TensorRT engine for '{model_id}' in {engine_cache_path}. "
+                                "ONNX Runtime will build one during the first inference; this can take "
+                                "many minutes on embedded devices and blocks requests for this model "
+                                "until it finishes. Persist this directory to avoid rebuilds."
+                            )
+                    provider_options = {
+                        # An offline model package is immutable input. TensorRT
+                        # may compile an engine in memory, but must not create
+                        # or replace engine/timing files inside that package.
+                        "trt_engine_cache_enable": not OFFLINE_MODE,
+                        "trt_fp16_enable": True,
+                    }
+                    if not OFFLINE_MODE:
+                        provider_options["trt_engine_cache_path"] = os.path.join(
+                            TENSORRT_CACHE_PATH,
+                            self.endpoint,
                         )
                     ep = (
                         "TensorrtExecutionProvider",
-                        {
-                            "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": engine_cache_path,
-                            "trt_fp16_enable": True,
-                        },
+                        provider_options,
                     )
                 expanded_execution_providers.append(ep)
             self.onnxruntime_execution_providers = expanded_execution_providers
@@ -844,7 +858,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
-            if DISK_CACHE_CLEANUP:
+            if DISK_CACHE_CLEANUP and not OFFLINE_MODE:
                 self.clear_cache(delete_from_disk=True)
             else:
                 logger.error("NOT deleting model from cache, inspect model artifacts")
@@ -974,7 +988,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
+                if not OFFLINE_MODE:
+                    self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e

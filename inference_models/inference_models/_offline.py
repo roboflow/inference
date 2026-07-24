@@ -8,7 +8,15 @@ from inference_models.errors import InvalidEnvVariable
 
 _OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
-OFFLINE_MODE_CONTRACT_VERSION = 2
+OFFLINE_MODE_CONTRACT_VERSION = 3
+
+
+def _set_dependency_offline_environment() -> None:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["YOLO_OFFLINE"] = "True"
+
+
 _existing_offline_mode_process_state = sys.modules.get(
     _OFFLINE_MODE_PROCESS_STATE_MODULE
 )
@@ -22,8 +30,7 @@ if _existing_offline_mode_process_state is not None and hasattr(
     # trust either environment variable after startup.
     os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
     if OFFLINE_MODE:
-        os.environ["HF_HUB_OFFLINE"] = "1"
-        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        _set_dependency_offline_environment()
 
 
 def _parse_offline_mode(value: Any, variable_name: str) -> bool:
@@ -51,6 +58,7 @@ def publish_offline_mode(
     offline_mode_process_state: Any,
     requested_offline_mode: Optional[str],
     inherited_offline_mode: Optional[str],
+    requested_offline_mode_declared: bool = False,
 ) -> bool:
     """Publish a snapshot while the package initializer owns the shared lock."""
 
@@ -62,7 +70,7 @@ def publish_offline_mode(
             if inherited_offline_mode is None
             else inherited_offline_mode
         )
-        if initial_offline_mode is None:
+        if initial_offline_mode is None and not requested_offline_mode_declared:
             initial_offline_mode = "False"
         requested_variable_name = (
             "OFFLINE_MODE"
@@ -77,6 +85,5 @@ def publish_offline_mode(
     OFFLINE_MODE = bool(offline_mode_process_state.offline_mode)
     os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
     if OFFLINE_MODE:
-        os.environ["HF_HUB_OFFLINE"] = "1"
-        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        _set_dependency_offline_environment()
     return OFFLINE_MODE

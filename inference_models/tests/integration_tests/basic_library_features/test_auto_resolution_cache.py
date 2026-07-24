@@ -1,6 +1,8 @@
 import json
 import os.path
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from threading import Event
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -29,7 +31,10 @@ def test_cache_entry_registration_for_base_cache(
         )
     )
     cache_entry = AutoResolutionCacheEntry(
-        model_id="my-model",
+        model_id="my-alias",
+        cache_model_id="tenant/canonical-model",
+        canonical_model_id="tenant/canonical-model",
+        cache_attribution_version=1,
         model_package_id="my-package",
         resolved_files=["a", "b", "c"],
         model_architecture="yolov8",
@@ -53,7 +58,7 @@ def test_cache_entry_registration_for_base_cache(
     # then
     expected_cache_path = os.path.join(empty_local_dir, "my-hash.json")
     on_file_created.assert_called_once_with(
-        expected_cache_path, "my-model", "my-package"
+        expected_cache_path, "tenant/canonical-model", "my-package"
     )
     on_file_deleted.assert_not_called()
     assert os.path.exists(expected_cache_path)
@@ -420,6 +425,71 @@ def test_find_compatible_reuses_newest_entry_across_api_key_hashes(
 
 @pytest.mark.torch_models
 @pytest.mark.cpu_only
+def test_expired_retrieve_cannot_delete_concurrently_registered_fresh_entry(
+    empty_local_dir: str,
+) -> None:
+    cache = BaseAutoLoadMetadataCache(file_lock_acquire_timeout=10)
+    expired_entry = AutoResolutionCacheEntry(
+        model_id="workspace/model/1",
+        model_package_id="expiredPackage",
+        resolved_files=[],
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        created_at=datetime(2020, 1, 1),
+    )
+    fresh_entry = expired_entry.model_copy(
+        update={
+            "model_package_id": "freshPackage",
+            "created_at": datetime.now(),
+        }
+    )
+    expired_read_started = Event()
+    allow_expired_read_to_finish = Event()
+    original_read_json = auto_resolution_cache.read_json
+    block_first_read = [True]
+
+    def controlled_read_json(path: str):
+        content = original_read_json(path=path)
+        if block_first_read[0]:
+            block_first_read[0] = False
+            expired_read_started.set()
+            assert allow_expired_read_to_finish.wait(timeout=5)
+        return content
+
+    with mock.patch.object(
+        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        auto_resolution_cache, "OFFLINE_MODE", False
+    ), mock.patch.object(
+        auto_resolution_cache,
+        "read_json",
+        side_effect=controlled_read_json,
+    ), ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+        cache.register(auto_negotiation_hash="a" * 64, cache_entry=expired_entry)
+        retrieve_future = executor.submit(
+            cache.retrieve,
+            auto_negotiation_hash="a" * 64,
+        )
+        assert expired_read_started.wait(timeout=5)
+        register_future = executor.submit(
+            cache.register,
+            auto_negotiation_hash="a" * 64,
+            cache_entry=fresh_entry,
+        )
+        assert not register_future.done()
+        allow_expired_read_to_finish.set()
+        assert retrieve_future.result(timeout=5) is None
+        register_future.result(timeout=5)
+        retrieved = cache.retrieve(auto_negotiation_hash="a" * 64)
+
+    assert retrieved == fresh_entry
+
+
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_auto_resolution_cache_rejects_symlinked_cache_directory(
     empty_local_dir: str,
 ) -> None:
@@ -517,3 +587,68 @@ def test_auto_resolution_cache_does_not_follow_symlinked_lock_file(
     assert os.path.islink(lock_path)
     with open(outside_file) as file:
         assert file.read() == "sentinel"
+
+
+def test_offline_auto_resolution_cache_read_is_lock_free(
+    empty_local_dir: str,
+) -> None:
+    cache_dir = os.path.join(empty_local_dir, "auto-resolution-cache")
+    os.makedirs(cache_dir)
+    cache_hash = "a" * 64
+    cache_path = os.path.join(cache_dir, f"{cache_hash}.json")
+    entry = AutoResolutionCacheEntry(
+        model_id="some/1",
+        model_package_id="pkg001",
+        resolved_files=[],
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        created_at=datetime(2020, 1, 1),
+    )
+    with open(cache_path, "w", encoding="utf-8") as cache_file:
+        json.dump(entry.model_dump(mode="json"), cache_file)
+    cache = BaseAutoLoadMetadataCache(file_lock_acquire_timeout=1)
+
+    with mock.patch.object(
+        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        auto_resolution_cache, "OFFLINE_MODE", True
+    ), mock.patch.object(
+        auto_resolution_cache,
+        "FileLock",
+        side_effect=AssertionError("offline read attempted to create a lock"),
+    ):
+        retrieved = cache.retrieve(auto_negotiation_hash=cache_hash)
+
+    assert retrieved == entry
+    assert not os.path.lexists(os.path.join(cache_dir, f".{cache_hash}.json.lock"))
+
+
+def test_offline_auto_resolution_cache_preserves_invalid_metadata(
+    empty_local_dir: str,
+) -> None:
+    cache_dir = os.path.join(empty_local_dir, "auto-resolution-cache")
+    os.makedirs(cache_dir)
+    cache_hash = "b" * 64
+    cache_path = os.path.join(cache_dir, f"{cache_hash}.json")
+    with open(cache_path, "w", encoding="utf-8") as cache_file:
+        cache_file.write("{invalid")
+    on_file_deleted = MagicMock()
+    cache = BaseAutoLoadMetadataCache(
+        file_lock_acquire_timeout=1,
+        on_file_deleted=on_file_deleted,
+    )
+
+    with mock.patch.object(
+        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        auto_resolution_cache, "OFFLINE_MODE", True
+    ), mock.patch.object(
+        auto_resolution_cache,
+        "FileLock",
+        side_effect=AssertionError("offline read attempted to create a lock"),
+    ):
+        assert cache.retrieve(auto_negotiation_hash=cache_hash) is None
+
+    assert os.path.isfile(cache_path)
+    on_file_deleted.assert_not_called()

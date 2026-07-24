@@ -1,9 +1,13 @@
 """Behavioral tests for the process-wide OFFLINE_MODE startup latch."""
 
+import importlib
+import multiprocessing
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[4])
 _INFERENCE_MODELS_ROOT = str(Path(_REPO_ROOT) / "inference_models")
@@ -31,8 +35,18 @@ _CONTROLLED_VARIABLES = [
     "METRICS_ENABLED",
     "HF_HUB_OFFLINE",
     "TRANSFORMERS_OFFLINE",
+    "YOLO_OFFLINE",
+    "HF_HOME",
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "TRANSFORMERS_CACHE",
+    "HF_MODULES_CACHE",
+    "YOLO_CONFIG_DIR",
+    "VLLM_PROXY_ENABLED",
     "DISABLE_VERSION_CHECK",
     "VERSION_CHECK_MODE",
+    "INFERENCE_HOME",
+    "MODEL_CACHE_DIR",
     "SECURE_GATEWAY",
     "LICENSE_SERVER",
     "ELASTICACHE_ENDPOINT",
@@ -72,6 +86,31 @@ def _run_with_env(code: str, extra_env: dict) -> None:
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
+
+
+def _assert_multiprocessing_child_retains_offline_mode_latch(
+    expected_mode: bool,
+) -> None:
+    """Assert a forked or spawned child cannot consume a runtime env mutation."""
+
+    import inference
+    from inference.core import env as core_env
+    from inference_models import _offline as inference_models_offline
+    from inference_models import configuration as inference_models_configuration
+
+    importlib.reload(inference)
+    importlib.reload(core_env)
+    importlib.reload(inference_models_offline)
+    importlib.reload(inference_models_configuration)
+
+    process_state = sys.modules["_roboflow_inference_process_state"]
+    assert process_state.offline_mode is expected_mode
+    assert inference._LATCHED_OFFLINE_MODE is expected_mode
+    assert core_env.OFFLINE_MODE is expected_mode
+    assert inference_models_offline.OFFLINE_MODE is expected_mode
+    assert inference_models_configuration.OFFLINE_MODE is expected_mode
+    assert os.environ[_OFFLINE_MODE_LATCH] == str(expected_mode)
+    assert os.environ["OFFLINE_MODE"] == str(not expected_mode)
 
 
 def test_top_level_import_latches_mode_before_first_core_import() -> None:
@@ -126,6 +165,141 @@ else:
 """,
         {},
     )
+
+
+def test_dotenv_offline_mode_is_import_order_independent() -> None:
+    for first_package, second_package in (
+        ("inference_models", "inference"),
+        ("inference", "inference_models"),
+    ):
+        _run_with_env(
+            f"""
+import importlib
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory() as temporary_directory:
+    expected_cache_directory = str(Path(temporary_directory, "model-cache"))
+    Path(temporary_directory, ".env").write_text(
+        "OFFLINE_MODE=True\\n"
+        f"MODEL_CACHE_DIR={{expected_cache_directory}}\\n"
+    )
+    os.chdir(temporary_directory)
+
+    importlib.import_module({first_package!r})
+    state = sys.modules["_roboflow_inference_process_state"]
+    assert state.offline_mode is True
+    assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "True"
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+    assert os.environ["YOLO_OFFLINE"] == "True"
+    assert os.environ["HF_HOME"] == str(Path(expected_cache_directory, "hf_home"))
+    assert os.environ["HF_HUB_CACHE"] == str(
+        Path(expected_cache_directory, "hf_home", "hub")
+    )
+    assert os.environ["HF_MODULES_CACHE"] == str(
+        Path(expected_cache_directory, "hf_home", "modules")
+    )
+    assert os.environ["YOLO_CONFIG_DIR"] == str(
+        Path(
+            tempfile.gettempdir(),
+            "roboflow-inference",
+            "ultralytics",
+        )
+    )
+
+    importlib.import_module({second_package!r})
+    models_configuration = importlib.import_module(
+        "inference_models.configuration"
+    )
+    from inference.core import env as core_env
+
+    assert state.offline_mode is True
+    assert models_configuration.OFFLINE_MODE is True
+    assert models_configuration.INFERENCE_HOME == expected_cache_directory
+    assert os.environ["MODEL_CACHE_DIR"] == expected_cache_directory
+    assert core_env.OFFLINE_MODE is True
+""",
+            {},
+        )
+
+
+def test_process_environment_takes_precedence_over_dotenv_in_both_import_orders() -> (
+    None
+):
+    for first_package, second_package in (
+        ("inference_models", "inference"),
+        ("inference", "inference_models"),
+    ):
+        _run_with_env(
+            f"""
+import importlib
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory() as temporary_directory:
+    Path(temporary_directory, ".env").write_text("OFFLINE_MODE=True\\n")
+    os.chdir(temporary_directory)
+
+    importlib.import_module({first_package!r})
+    importlib.import_module({second_package!r})
+
+state = sys.modules["_roboflow_inference_process_state"]
+assert state.offline_mode is False
+assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
+assert "HF_HUB_OFFLINE" not in os.environ
+assert "TRANSFORMERS_OFFLINE" not in os.environ
+assert "YOLO_OFFLINE" not in os.environ
+""",
+            {"OFFLINE_MODE": "False"},
+        )
+
+
+def test_invalid_dotenv_offline_mode_fails_closed_in_both_import_orders() -> None:
+    for dotenv_contents in (
+        "OFFLINE_MODE\n",
+        "OFFLINE_MODE=not-a-boolean\n",
+    ):
+        for first_package, second_package in (
+            ("inference_models", "inference"),
+            ("inference", "inference_models"),
+        ):
+            _run_with_env(
+                f"""
+import importlib
+import os
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory() as temporary_directory:
+    Path(temporary_directory, ".env").write_text({dotenv_contents!r})
+    os.chdir(temporary_directory)
+
+    try:
+        importlib.import_module({first_package!r})
+    except Exception as error:
+        first_error = error
+        assert "OFFLINE_MODE" in str(error)
+    else:
+        raise AssertionError("Invalid .env OFFLINE_MODE was accepted")
+
+    os.environ["OFFLINE_MODE"] = "False"
+    try:
+        importlib.import_module({second_package!r})
+    except Exception as error:
+        assert type(error) is type(first_error)
+        assert str(error) == str(first_error)
+    else:
+        raise AssertionError(
+            "A competing import bypassed the invalid startup value"
+        )
+""",
+                {},
+            )
 
 
 def test_malformed_inference_models_latch_cannot_be_bypassed_by_root() -> None:
@@ -532,12 +706,278 @@ assert models_config.OFFLINE_MODE is False
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
 assert "HF_HUB_OFFLINE" not in os.environ
 assert "TRANSFORMERS_OFFLINE" not in os.environ
+assert "YOLO_OFFLINE" not in os.environ
 """,
         {
             "OFFLINE_MODE": "False",
             "DISABLE_VERSION_CHECK": "True",
         },
     )
+
+
+def test_inference_root_publishes_dependency_offline_environment() -> None:
+    _run_with_env(
+        """
+import os
+import tempfile
+
+import inference
+
+assert os.environ["HF_HUB_OFFLINE"] == "1"
+assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+assert os.environ["YOLO_OFFLINE"] == "True"
+assert os.environ["HF_HOME"] == "/tmp/cache/hf_home"
+assert os.environ["HF_HUB_CACHE"] == "/tmp/cache/hf_home/hub"
+assert os.environ["HF_MODULES_CACHE"] == "/tmp/cache/hf_home/modules"
+assert os.environ["YOLO_CONFIG_DIR"] == os.path.join(
+    tempfile.gettempdir(),
+    "roboflow-inference",
+    "ultralytics",
+)
+""",
+        {"OFFLINE_MODE": "True"},
+    )
+
+
+def test_inference_core_env_republishes_dependency_offline_environment() -> None:
+    _run_with_env(
+        """
+import importlib
+import os
+
+import inference
+from inference.core import env as core_env
+
+for variable in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "YOLO_OFFLINE"):
+    os.environ.pop(variable)
+importlib.reload(core_env)
+
+assert os.environ["HF_HUB_OFFLINE"] == "1"
+assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+assert os.environ["YOLO_OFFLINE"] == "True"
+""",
+        {"OFFLINE_MODE": "True"},
+    )
+
+
+def test_inference_models_republishes_dependency_offline_environment() -> None:
+    _run_with_env(
+        """
+import importlib
+import os
+
+import inference_models
+from inference_models import _offline
+
+for variable in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "YOLO_OFFLINE"):
+    os.environ.pop(variable)
+importlib.reload(_offline)
+
+assert os.environ["HF_HUB_OFFLINE"] == "1"
+assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+assert os.environ["YOLO_OFFLINE"] == "True"
+""",
+        {"OFFLINE_MODE": "True"},
+    )
+
+
+def test_dependency_cache_root_is_import_order_independent_and_explicit_hf_home_wins() -> (
+    None
+):
+    for first_package, second_package in (
+        ("inference_models", "inference"),
+        ("inference", "inference_models"),
+    ):
+        _run_with_env(
+            f"""
+import importlib
+import os
+
+importlib.import_module({first_package!r})
+importlib.import_module({second_package!r})
+assert os.environ["HF_HOME"] == "/mounted/inference-cache/hf_home"
+assert os.environ["HF_HUB_CACHE"] == "/mounted/inference-cache/hf_home/hub"
+assert os.environ["HF_MODULES_CACHE"] == "/mounted/inference-cache/hf_home/modules"
+""",
+            {
+                "OFFLINE_MODE": "False",
+                "MODEL_CACHE_DIR": "/mounted/inference-cache",
+            },
+        )
+        _run_with_env(
+            f"""
+import importlib
+import os
+
+importlib.import_module({first_package!r})
+importlib.import_module({second_package!r})
+assert os.environ["HF_HOME"] == "/explicit/hugging-face-cache"
+assert os.environ["HF_HUB_CACHE"] == "/explicit/hugging-face-cache/hub"
+assert os.environ["HF_MODULES_CACHE"] == "/explicit/hugging-face-cache/modules"
+""",
+            {
+                "OFFLINE_MODE": "True",
+                "MODEL_CACHE_DIR": "/mounted/inference-cache",
+                "HF_HOME": "/explicit/hugging-face-cache",
+            },
+        )
+
+
+def test_explicit_hugging_face_cache_paths_win_in_both_import_orders() -> None:
+    for first_package, second_package in (
+        ("inference_models", "inference"),
+        ("inference", "inference_models"),
+    ):
+        _run_with_env(
+            f"""
+import importlib
+import os
+
+importlib.import_module({first_package!r})
+importlib.import_module({second_package!r})
+assert os.environ["HF_HOME"] == "/explicit/home"
+assert os.environ["HF_HUB_CACHE"] == "/explicit/hub"
+assert os.environ["HF_MODULES_CACHE"] == "/explicit/modules"
+""",
+            {
+                "OFFLINE_MODE": "False",
+                "MODEL_CACHE_DIR": "/mounted/inference-cache",
+                "HF_HOME": "/explicit/home",
+                "HF_HUB_CACHE": "/explicit/hub",
+                "HUGGINGFACE_HUB_CACHE": "/ignored/legacy-hub",
+                "HF_MODULES_CACHE": "/explicit/modules",
+            },
+        )
+        _run_with_env(
+            f"""
+import importlib
+import os
+
+importlib.import_module({first_package!r})
+importlib.import_module({second_package!r})
+assert os.environ["HF_HUB_CACHE"] == "/explicit/legacy-hub"
+""",
+            {
+                "OFFLINE_MODE": "False",
+                "HUGGINGFACE_HUB_CACHE": "/explicit/legacy-hub",
+            },
+        )
+        _run_with_env(
+            f"""
+import importlib
+import os
+
+importlib.import_module({first_package!r})
+importlib.import_module({second_package!r})
+assert os.environ["HF_HUB_CACHE"] == "/explicit/transformers-cache"
+""",
+            {
+                "OFFLINE_MODE": "False",
+                "TRANSFORMERS_CACHE": "/explicit/transformers-cache",
+            },
+        )
+
+
+def test_preimported_hugging_face_hub_cannot_change_loader_cache_path() -> None:
+    _run_with_env(
+        """
+import os
+
+from huggingface_hub import constants as hub_constants
+
+snapshot_before_inference = hub_constants.HF_HUB_CACHE
+assert snapshot_before_inference != "/mounted/inference-cache/hf_home/hub"
+
+import inference
+from inference.core import env as core_env
+
+# huggingface_hub has already snapshotted its old default. Inference therefore
+# cannot rely on changing the process environment alone; built-in repository-ID
+# loaders use this explicit path.
+assert hub_constants.HF_HUB_CACHE == snapshot_before_inference
+assert os.environ["HF_HUB_CACHE"] == "/mounted/inference-cache/hf_home/hub"
+assert core_env.HF_HUB_CACHE == "/mounted/inference-cache/hf_home/hub"
+""",
+        {
+            "OFFLINE_MODE": "False",
+            "MODEL_CACHE_DIR": "/mounted/inference-cache",
+        },
+    )
+
+
+def test_ultralytics_runtime_config_is_outside_read_only_model_cache() -> None:
+    _run_with_env(
+        """
+import os
+import tempfile
+
+import inference
+
+expected = os.path.join(
+    tempfile.gettempdir(),
+    "roboflow-inference",
+    "ultralytics",
+)
+assert os.environ["YOLO_CONFIG_DIR"] == expected
+assert not expected.startswith("/mounted/read-only-model-cache/")
+""",
+        {
+            "OFFLINE_MODE": "True",
+            "MODEL_CACHE_DIR": "/mounted/read-only-model-cache",
+        },
+    )
+
+    _run_with_env(
+        """
+import os
+
+import inference
+
+assert os.environ["YOLO_CONFIG_DIR"] == "/explicit/yolo-runtime"
+""",
+        {
+            "OFFLINE_MODE": "True",
+            "YOLO_CONFIG_DIR": "/explicit/yolo-runtime",
+        },
+    )
+
+
+def test_offline_mode_rejects_ultralytics_imported_before_inference() -> None:
+    for package_name in ("inference", "inference_models"):
+        _run_with_env(
+            f"""
+import importlib
+import sys
+import types
+
+sys.modules["ultralytics"] = types.ModuleType("ultralytics")
+try:
+    importlib.import_module({package_name!r})
+except RuntimeError as error:
+    assert "Ultralytics was imported before" in str(error)
+else:
+    raise AssertionError("offline mode accepted stale Ultralytics online state")
+""",
+            {"OFFLINE_MODE": "True"},
+        )
+
+
+def test_offline_mode_rejects_vllm_http_proxy_at_startup() -> None:
+    for enabled_value in ("true", "1", "yes", "y", "on"):
+        _run_with_env(
+            """
+try:
+    from inference.core import env
+except ValueError as error:
+    assert "VLLM_PROXY_ENABLED is not supported" in str(error)
+else:
+    raise AssertionError("offline mode accepted an HTTP vLLM proxy")
+""",
+            {
+                "OFFLINE_MODE": "True",
+                "VLLM_PROXY_ENABLED": enabled_value,
+            },
+        )
 
 
 def test_both_packages_share_latch_and_offline_forces_local_execution() -> None:
@@ -549,7 +989,8 @@ import sys
 
 models_config = importlib.import_module("inference_models.configuration")
 assert models_config.OFFLINE_MODE is True
-assert models_config.OFFLINE_MODE_CONTRACT_VERSION >= 2
+assert models_config.OFFLINE_MODE_CONTRACT_VERSION >= 3
+assert os.environ["YOLO_OFFLINE"] == "True"
 os.environ["OFFLINE_MODE"] = "False"
 os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] = "False"
 from inference.core import env as core_env
@@ -568,12 +1009,14 @@ assert core_env.OTEL_TRACING_ENABLED is False
 assert core_env.OTEL_METRICS_ENABLED is False
 assert os.environ["HF_HUB_OFFLINE"] == "1"
 assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+assert os.environ["YOLO_OFFLINE"] == "True"
 
 importlib.reload(inference)
 importlib.reload(core_env)
 assert sys.modules["_roboflow_inference_process_state"].offline_mode is True
 assert core_env.OFFLINE_MODE is True
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "True"
+assert os.environ["YOLO_OFFLINE"] == "True"
 
 os.environ["OFFLINE_MODE"] = "not-a-boolean"
 importlib.reload(inference)
@@ -582,6 +1025,7 @@ importlib.reload(models_config)
 assert core_env.OFFLINE_MODE is True
 assert models_config.OFFLINE_MODE is True
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "True"
+assert os.environ["YOLO_OFFLINE"] == "True"
 """,
         {
             "OFFLINE_MODE": "True",
@@ -605,7 +1049,8 @@ def test_offline_startup_rejects_incompatible_inference_models_contract() -> Non
         ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 1", True),
         ("configuration.OFFLINE_MODE_CONTRACT_VERSION = True", True),
         ('configuration.OFFLINE_MODE_CONTRACT_VERSION = "2"', True),
-        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 2", False),
+        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 2", True),
+        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 3", False),
     ]
     for contract_declaration, inference_models_offline_mode in incompatible_contracts:
         _run_with_env(
@@ -639,7 +1084,7 @@ else:
         )
 
 
-def test_offline_startup_accepts_inference_models_contract_v2() -> None:
+def test_offline_startup_accepts_inference_models_contract_v3() -> None:
     _run_with_env(
         """
 import sys
@@ -650,7 +1095,7 @@ import inference
 inference_models = types.ModuleType("inference_models")
 configuration = types.ModuleType("inference_models.configuration")
 configuration.OFFLINE_MODE = True
-configuration.OFFLINE_MODE_CONTRACT_VERSION = 2
+configuration.OFFLINE_MODE_CONTRACT_VERSION = 3
 inference_models.configuration = configuration
 sys.modules["inference_models"] = inference_models
 sys.modules["inference_models.configuration"] = configuration
@@ -693,41 +1138,93 @@ assert core_env.USE_INFERENCE_MODELS is False
     )
 
 
-def test_runtime_change_is_ignored_by_spawned_child_with_inherited_latch() -> None:
-    _run_with_env(
-        """
-import os
-import subprocess
-import sys
-
-import inference
-
-assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
-os.environ["OFFLINE_MODE"] = "True"
-
-child = subprocess.run(
-    [
-        sys.executable,
-        "-c",
-        '''
-import os
-import sys
-import inference
-from inference.core import env as core_env
-
-assert core_env.OFFLINE_MODE is False
-assert sys.modules["_roboflow_inference_process_state"].offline_mode is False
-assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
-''',
-    ],
-    env=os.environ.copy(),
-    capture_output=True,
-    text=True,
-    timeout=60,
+@pytest.mark.skipif(
+    "spawn" not in multiprocessing.get_all_start_methods(),
+    reason="multiprocessing spawn is not available on this platform",
 )
-assert child.returncode == 0, child.stderr
+@pytest.mark.parametrize(
+    ("startup_mode", "runtime_mode"),
+    [(False, True), (True, False)],
+)
+def test_runtime_change_is_ignored_by_multiprocessing_spawned_child(
+    startup_mode,
+    runtime_mode,
+) -> None:
+    _run_with_env(
+        f"""
+import multiprocessing
+import os
+import sys
+
+import inference
+from tests.inference.unit_tests.core.test_offline_mode_configuration import (
+    _assert_multiprocessing_child_retains_offline_mode_latch,
+)
+
+assert sys.modules["_roboflow_inference_process_state"].offline_mode is {startup_mode}
+assert os.environ[
+    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+] == {str(startup_mode)!r}
+os.environ["OFFLINE_MODE"] = {str(runtime_mode)!r}
+
+child = multiprocessing.get_context("spawn").Process(
+    target=_assert_multiprocessing_child_retains_offline_mode_latch,
+    args=({startup_mode},),
+)
+child.start()
+child.join(timeout=60)
+if child.is_alive():
+    child.terminate()
+    child.join(timeout=10)
+    raise AssertionError("multiprocessing spawn child did not terminate")
+assert child.exitcode == 0, child.exitcode
 """,
-        {"OFFLINE_MODE": "False"},
+        {"OFFLINE_MODE": str(startup_mode)},
+    )
+
+
+@pytest.mark.skipif(
+    "fork" not in multiprocessing.get_all_start_methods(),
+    reason="multiprocessing fork is not available on this platform",
+)
+@pytest.mark.parametrize(
+    ("startup_mode", "runtime_mode"),
+    [(False, True), (True, False)],
+)
+def test_runtime_change_is_ignored_by_multiprocessing_forked_child(
+    startup_mode,
+    runtime_mode,
+) -> None:
+    _run_with_env(
+        f"""
+import multiprocessing
+import os
+import sys
+
+import inference
+from tests.inference.unit_tests.core.test_offline_mode_configuration import (
+    _assert_multiprocessing_child_retains_offline_mode_latch,
+)
+
+assert sys.modules["_roboflow_inference_process_state"].offline_mode is {startup_mode}
+assert os.environ[
+    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+] == {str(startup_mode)!r}
+os.environ["OFFLINE_MODE"] = {str(runtime_mode)!r}
+
+child = multiprocessing.get_context("fork").Process(
+    target=_assert_multiprocessing_child_retains_offline_mode_latch,
+    args=({startup_mode},),
+)
+child.start()
+child.join(timeout=60)
+if child.is_alive():
+    child.terminate()
+    child.join(timeout=10)
+    raise AssertionError("multiprocessing fork child did not terminate")
+assert child.exitcode == 0, child.exitcode
+""",
+        {"OFFLINE_MODE": str(startup_mode)},
     )
 
 

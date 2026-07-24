@@ -118,7 +118,10 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         Returns:
             List[str]: List of file names.
         """
-        return ["weights.pt"]
+        return [
+            "weights.pt",
+            "bpe_simple_vocab_16e6.txt.gz",
+        ]
 
     @torch.inference_mode()
     def embed_image(

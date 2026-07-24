@@ -8,21 +8,71 @@ import json
 import logging
 import os
 import re
+import stat
 from typing import Any, Dict, List, Optional, Set
 
-from inference.core.cache.model_artifacts import get_cache_dir
+from inference.core.cache.model_artifacts import (
+    RESERVED_CACHE_ROOT_NAMESPACES,
+    get_cache_dir,
+    get_cache_dir_for_read,
+    get_legacy_model_id_cache_path,
+    get_model_id_cache_path,
+)
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
+from inference.core.exceptions import ModelArtefactError
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
 
 logger = logging.getLogger(__name__)
 
 # Directories directly under MODEL_CACHE_DIR that are not model trees.
-_SKIP_TOP_LEVEL = {
-    "workflow",
-    "_file_locks",
-    "auto-resolution-cache",
-    "shared-blobs",
-}
+# ``models-cache`` is the one reserved namespace this scanner intentionally
+# traverses because it contains the inference-models layout.
+_SKIP_TOP_LEVEL = RESERVED_CACHE_ROOT_NAMESPACES - {"models-cache"}
+_LEGACY_TRADITIONAL_MODEL_SLUG = re.compile(r"[A-Za-z0-9_-]+-[0-9a-f]{8}")
+_INVALID_CACHE_METADATA = object()
+
+
+def _read_regular_json(path: str) -> object:
+    """Read JSON from a stable regular file without following a final symlink."""
+
+    try:
+        path_status = os.lstat(path)
+    except OSError:
+        return _INVALID_CACHE_METADATA
+    if not stat.S_ISREG(path_status.st_mode):
+        return _INVALID_CACHE_METADATA
+
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+        )
+        descriptor_status = os.fstat(descriptor)
+        if not stat.S_ISREG(descriptor_status.st_mode) or (
+            path_status.st_dev,
+            path_status.st_ino,
+        ) != (descriptor_status.st_dev, descriptor_status.st_ino):
+            return _INVALID_CACHE_METADATA
+        file_handle = os.fdopen(descriptor, encoding="utf-8")
+        descriptor = -1
+        with file_handle:
+            return json.load(file_handle)
+    except (
+        json.JSONDecodeError,
+        OSError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return _INVALID_CACHE_METADATA
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _has_non_hidden_children(path: str) -> bool:
@@ -74,6 +124,60 @@ def _is_safe_model_cache_directory(cache_root: str, model_path: str) -> bool:
     return os.path.realpath(absolute_model_path) == expected_resolved_path
 
 
+def _resolve_traditional_cache_model_id(
+    cache_dir: str,
+    model_root: str,
+    metadata: dict,
+) -> Optional[str]:
+    """Resolve raw and slugged traditional cache roots without trusting slugs."""
+
+    relative_root = os.path.relpath(model_root, cache_dir)
+    relative_root = relative_root.replace(os.sep, "/")
+    if "model_id" in metadata:
+        stored_model_id = metadata["model_id"]
+        if not isinstance(stored_model_id, str) or not stored_model_id:
+            return None
+        try:
+            expected_paths = {
+                get_model_id_cache_path(
+                    model_id=stored_model_id,
+                    cache_dir_root=cache_dir,
+                ).replace(os.sep, "/")
+            }
+            legacy_path = get_legacy_model_id_cache_path(
+                model_id=stored_model_id,
+                cache_dir_root=cache_dir,
+            )
+            if legacy_path is not None:
+                expected_paths.add(legacy_path.replace(os.sep, "/"))
+            else:
+                expected_paths.add(stored_model_id.replace(os.sep, "/"))
+        except ValueError:
+            return None
+        if relative_root not in expected_paths:
+            return None
+        return stored_model_id
+
+    # Historical raw-path entries predate model_id attribution. A namespaced V2
+    # slug or ambiguous single-component V1-looking path cannot prove ownership
+    # without metadata and must not be reported as the slug itself.
+    if "/" not in relative_root and (
+        relative_root.startswith("~")
+        or _LEGACY_TRADITIONAL_MODEL_SLUG.fullmatch(relative_root) is not None
+    ):
+        return None
+    try:
+        expected_raw_path = get_model_id_cache_path(
+            model_id=relative_root,
+            cache_dir_root=cache_dir,
+        ).replace(os.sep, "/")
+    except ValueError:
+        return None
+    if expected_raw_path != relative_root:
+        return None
+    return relative_root
+
+
 def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
     """Map legacy package directories to IDs stored in auto-resolution metadata."""
     resolution_cache_dir = os.path.join(cache_dir, "auto-resolution-cache")
@@ -81,7 +185,7 @@ def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
         return {}
     try:
         from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format,
+            slugify_model_id_to_os_safe_format_v1,
         )
     except ImportError:
         return {}
@@ -95,13 +199,7 @@ def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
         if entry.startswith(".") or not entry.endswith(".json"):
             continue
         metadata_path = os.path.join(resolution_cache_dir, entry)
-        if os.path.islink(metadata_path):
-            continue
-        try:
-            with open(metadata_path, "r") as file:
-                metadata = json.load(file)
-        except (json.JSONDecodeError, OSError):
-            continue
+        metadata = _read_regular_json(path=metadata_path)
         if not isinstance(metadata, dict):
             continue
         model_id = metadata.get("model_id")
@@ -114,7 +212,7 @@ def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
             continue
         if not re.fullmatch(r"[A-Za-z0-9]+", package_id):
             continue
-        model_slug = slugify_model_id_to_os_safe_format(model_id=cache_model_id)
+        model_slug = slugify_model_id_to_os_safe_format_v1(model_id=cache_model_id)
         model_root = os.path.join(models_cache_dir, model_slug)
         lexical_package_dir = os.path.join(model_root, package_id)
         if os.path.islink(model_root) or os.path.islink(lexical_package_dir):
@@ -145,11 +243,16 @@ def is_model_cached(model_id: str) -> bool:
        ``inference-models``.  Treat the result as *"there is a chance the
        model is cached"* rather than a guarantee.
     """
+    try:
+        traditional_path = get_cache_dir_for_read(
+            model_id=model_id,
+            cache_dir_root=MODEL_CACHE_DIR,
+        )
+    except (ModelArtefactError, TypeError, ValueError):
+        return False
+
     if not USE_INFERENCE_MODELS:
         # Only check the traditional layout when inference-models is disabled.
-        traditional_path = get_cache_dir(
-            model_id=model_id, cache_dir_root=MODEL_CACHE_DIR
-        )
         return (
             _is_safe_model_cache_directory(
                 cache_root=MODEL_CACHE_DIR,
@@ -161,7 +264,6 @@ def is_model_cached(model_id: str) -> bool:
 
     # When inference-models is enabled, check both layouts — models cached
     # before the migration still sit in the traditional tree.
-    traditional_path = get_cache_dir(model_id=model_id, cache_dir_root=MODEL_CACHE_DIR)
     if (
         _is_safe_model_cache_directory(
             cache_root=MODEL_CACHE_DIR,
@@ -187,64 +289,60 @@ def _find_cached_model_package_dir_compat(model_id: str) -> Optional[str]:
     """Find a package using the cache API available before the public helper."""
 
     try:
-        from inference_models.configuration import INFERENCE_HOME
         from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format,
+            generate_model_cache_root_candidates_for_model_id,
+            generate_models_cache_dir,
+            resolve_existing_model_package_cache_path,
         )
     except ImportError:
         return None
-    models_cache_root = os.path.realpath(os.path.join(INFERENCE_HOME, "models-cache"))
-    model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    lexical_model_root = os.path.join(models_cache_root, model_slug)
-    if os.path.islink(lexical_model_root):
-        return None
-    model_root = os.path.realpath(lexical_model_root)
-    if not model_root.startswith(models_cache_root + os.sep):
-        return None
-    try:
-        entries = sorted(os.listdir(model_root))
-    except OSError:
-        return None
-    for package_id in entries:
-        lexical_package_dir = os.path.join(model_root, package_id)
-        if (
-            package_id.startswith(".")
-            or re.fullmatch(r"[A-Za-z0-9]+", package_id) is None
-            or os.path.islink(lexical_package_dir)
-        ):
+    models_cache_root = os.path.realpath(generate_models_cache_dir())
+    seen_package_ids = set()
+    for lexical_model_root in generate_model_cache_root_candidates_for_model_id(
+        model_id=model_id
+    ):
+        if os.path.islink(lexical_model_root):
             continue
-        package_dir = os.path.realpath(lexical_package_dir)
-        config_path = os.path.join(package_dir, "model_config.json")
-        if not (
-            package_dir.startswith(model_root + os.sep)
-            and os.path.isdir(package_dir)
-            and not os.path.islink(config_path)
-            and os.path.isfile(config_path)
-        ):
+        model_root = os.path.realpath(lexical_model_root)
+        if not model_root.startswith(models_cache_root + os.sep):
             continue
         try:
-            with open(config_path, "r") as file_handle:
-                config = json.load(file_handle)
-        except (json.JSONDecodeError, OSError):
+            entries = sorted(os.listdir(lexical_model_root))
+        except OSError:
             continue
-        if not isinstance(config, dict):
-            continue
-        cached_model_id = config.get("model_id")
-        if cached_model_id is not None and cached_model_id != model_id:
-            continue
-        if not isinstance(config.get("task_type"), str) or not config.get("task_type"):
-            continue
-        if not (
-            isinstance(config.get("model_architecture"), str)
-            and config.get("model_architecture")
-        ) and not (
-            isinstance(config.get("model_module"), str)
-            and config.get("model_module")
-            and isinstance(config.get("model_class"), str)
-            and config.get("model_class")
-        ):
-            continue
-        return package_dir
+        for package_id in entries:
+            if (
+                package_id in seen_package_ids
+                or package_id.startswith(".")
+                or re.fullmatch(r"[A-Za-z0-9]+", package_id) is None
+            ):
+                continue
+            seen_package_ids.add(package_id)
+            package_dir = resolve_existing_model_package_cache_path(
+                model_id=model_id,
+                package_id=package_id,
+            )
+            if package_dir is None:
+                continue
+            config_path = os.path.join(package_dir, "model_config.json")
+            config = _read_regular_json(path=config_path)
+            if not isinstance(config, dict):
+                continue
+            if not isinstance(config.get("task_type"), str) or not config.get(
+                "task_type"
+            ):
+                continue
+            if not (
+                isinstance(config.get("model_architecture"), str)
+                and config.get("model_architecture")
+            ) and not (
+                isinstance(config.get("model_module"), str)
+                and config.get("model_module")
+                and isinstance(config.get("model_class"), str)
+                and config.get("model_class")
+            ):
+                continue
+            return package_dir
     return None
 
 
@@ -298,7 +396,8 @@ def scan_cached_models(
     Scans two cache layouts:
 
     1. **Traditional** — ``model_type.json`` marker files written by the model
-       registry.  The model ID is derived from the directory path.
+       registry. Current and legacy slugged roots require exact ``model_id``
+       attribution; compatible historical raw roots may derive it from the path.
     2. **inference-models** — ``model_config.json`` files written by
        ``dump_model_config_for_offline_use``.  The cache-owning ``model_id`` is
        read from the file (the directory name is an opaque slug in this
@@ -379,52 +478,56 @@ def scan_cached_models(
                 len(relative_parts) == 3
                 and relative_parts[0] == "models-cache"
                 and re.fullmatch(r"[A-Za-z0-9]+", relative_parts[2]) is not None
-                and not os.path.islink(config_path)
             )
             if not valid_inference_models_location:
                 has_model_config = False
         if has_model_config:
-            try:
-                with open(config_path, "r") as fh:
-                    cfg = json.load(fh)
-                if isinstance(cfg, dict) and cfg.get("task_type"):
-                    metadata = cfg
-                    stored_model_id = cfg.get("model_id")
-                    used_legacy_attribution = stored_model_id is None
-                    if stored_model_id is None:
-                        stored_model_id = legacy_model_ids.get(os.path.realpath(root))
-                    if stored_model_id is not None and not used_legacy_attribution:
-                        try:
-                            from inference_models.models.auto_loaders.model_cache_paths import (
-                                slugify_model_id_to_os_safe_format,
-                            )
+            cfg = _read_regular_json(path=config_path)
+            if isinstance(cfg, dict) and cfg.get("task_type"):
+                metadata = cfg
+                manifest_model_id = cfg.get("model_id")
+                used_legacy_attribution = "model_id" not in cfg
+                if used_legacy_attribution:
+                    stored_model_id = legacy_model_ids.get(os.path.realpath(root))
+                elif isinstance(manifest_model_id, str) and manifest_model_id:
+                    stored_model_id = manifest_model_id
+                    try:
+                        from inference_models.models.auto_loaders.model_cache_paths import (
+                            slugify_model_id_to_os_safe_format_v1,
+                            slugify_model_id_to_os_safe_format_v2,
+                        )
 
-                            expected_slug = slugify_model_id_to_os_safe_format(
+                        expected_slugs = {
+                            slugify_model_id_to_os_safe_format_v2(
                                 model_id=stored_model_id
-                            )
-                        except (ImportError, TypeError):
-                            expected_slug = None
-                        if expected_slug != relative_parts[1]:
-                            metadata = None
-                            stored_model_id = None
-            except (json.JSONDecodeError, OSError):
-                pass
+                            ),
+                            slugify_model_id_to_os_safe_format_v1(
+                                model_id=stored_model_id
+                            ),
+                        }
+                    except (ImportError, TypeError):
+                        expected_slugs = set()
+                    if relative_parts[1] not in expected_slugs:
+                        metadata = None
+                        stored_model_id = None
+                else:
+                    metadata = None
+                    stored_model_id = None
 
         # Fall back to model_type.json for the traditional layout.
         if metadata is None and has_model_type and relative_parts[0] != "models-cache":
             model_type_path = os.path.join(root, "model_type.json")
-            if os.path.islink(model_type_path):
+            metadata = _read_regular_json(path=model_type_path)
+            if metadata is _INVALID_CACHE_METADATA:
                 continue
-            try:
-                with open(model_type_path, "r") as fh:
-                    metadata = json.load(fh)
-            except (json.JSONDecodeError, OSError) as exc:
-                logger.warning(
-                    "Skipping unreadable model_type.json at %s: %s",
-                    model_type_path,
-                    exc,
+            if isinstance(metadata, dict):
+                stored_model_id = _resolve_traditional_cache_model_id(
+                    cache_dir=cache_dir,
+                    model_root=root,
+                    metadata=metadata,
                 )
-                continue
+                if stored_model_id is None:
+                    metadata = None
 
         if not isinstance(metadata, dict):
             continue

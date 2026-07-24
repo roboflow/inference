@@ -15,7 +15,12 @@ from transformers.utils import is_flash_attn_2_available
 from inference.core.cache.model_artifacts import get_cache_dir, get_cache_file_path
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.roboflow_api import get_roboflow_base_lora, stream_url_to_cache
-from inference.models.transformers import LoRATransformerModel, TransformerModel
+from inference.models.transformers import (
+    LoRATransformerModel,
+    TransformerModel,
+    load_compatible_adapter_config,
+    remove_extracted_archive_if_online,
+)
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -48,19 +53,19 @@ class Qwen3VL(TransformerModel):
         self.use_quantization = use_quantization
         super().__init__(model_id, *args, **kwargs)
 
+    def get_infer_bucket_file_list(self) -> list:
+        return [
+            *super().get_infer_bucket_file_list(),
+            "adapter_config.json",
+        ]
+
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=["eva_config", "lora_bias", "exclude_modules"],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -233,16 +238,10 @@ class LoRAQwen3VL(LoRATransformerModel):
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=["eva_config", "lora_bias", "exclude_modules"],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -266,8 +265,7 @@ class LoRAQwen3VL(LoRATransformerModel):
         rm_weights = os.path.join(
             MODEL_CACHE_DIR, "lora-bases/qwen/qwen3vl-2b-instruct/main/weights.tar.gz"
         )
-        if os.path.exists(rm_weights):
-            os.remove(rm_weights)
+        remove_extracted_archive_if_online(rm_weights)
 
         attn_implementation = (
             "flash_attention_2"
@@ -299,7 +297,11 @@ class LoRAQwen3VL(LoRATransformerModel):
 
         if model_load_id != "qwen-pretrains/2":
             self.model = (
-                PeftModel.from_pretrained(self.base_model, self.cache_dir)
+                PeftModel.from_pretrained(
+                    self.base_model,
+                    self.cache_dir,
+                    config=lora_config,
+                )
                 .eval()
                 .to(self.dtype)
             )

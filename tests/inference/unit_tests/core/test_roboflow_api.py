@@ -42,6 +42,7 @@ from inference.core.roboflow_api import (
     batch_update_image_metadata_at_roboflow,
     build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
+    get_extra_weights_provider_headers,
     get_from_url,
     get_model_metadata_from_inference_models_registry,
     get_roboflow_active_learning_configuration,
@@ -59,6 +60,7 @@ from inference.core.roboflow_api import (
     register_image_at_roboflow,
     search_project_images_at_roboflow,
     send_inference_results_to_model_monitoring,
+    service_secret_is_valid,
     update_image_metadata_at_roboflow,
     wrap_roboflow_api_errors,
     wrap_roboflow_api_errors_async,
@@ -70,6 +72,113 @@ from inference.core.version import __version__
 
 class TestException(Exception):
     pass
+
+
+@pytest.mark.parametrize("workspace_id", ["workspace", "my-workspace", "my_workspace"])
+def test_workspace_id_validation_accepts_workspace_slugs(workspace_id: str) -> None:
+    assert roboflow_api.workspace_id_is_valid(workspace_id) is True
+
+
+@pytest.mark.parametrize(
+    "workspace_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        [],
+        {},
+        " workspace",
+        "workspace ",
+        "work space",
+        "workspace\r\nx",
+        "workspace/x",
+        "workspace?x",
+        "\x00workspace",
+        "\ud800",
+    ],
+)
+def test_workspace_id_validation_rejects_malformed_values(workspace_id) -> None:
+    assert roboflow_api.workspace_id_is_valid(workspace_id) is False
+
+
+@pytest.mark.parametrize("workspace_db_id", ["workspace-db-id", "opaque/id?value"])
+def test_workspace_db_id_validation_accepts_visible_ascii(
+    workspace_db_id: str,
+) -> None:
+    assert roboflow_api.workspace_db_id_is_valid(workspace_db_id) is True
+
+
+@pytest.mark.parametrize(
+    "workspace_db_id",
+    [None, "", " ", "workspace db", "workspace\r\nx", "\x00workspace", "\ud800"],
+)
+def test_workspace_db_id_validation_rejects_unsafe_header_values(
+    workspace_db_id,
+) -> None:
+    assert roboflow_api.workspace_db_id_is_valid(workspace_db_id) is False
+
+
+@pytest.mark.parametrize(
+    "configured_secret,supplied_secret,expected",
+    [
+        (None, None, False),
+        (None, "", False),
+        ("", None, False),
+        ("", "", False),
+        ("configured", None, False),
+        ("configured", "", False),
+        ("configured", "different", False),
+        ("configured", "configured", True),
+        ("sëcret-🔐", "sëcret-🔐", True),
+        ("configured", "sëcret-🔐", False),
+        ("sëcret-🔐", "different", False),
+        ("\ud800", "\ud800", False),
+        ("configured", "\ud800", False),
+    ],
+)
+def test_service_secret_validation_fails_closed(
+    configured_secret: Optional[str],
+    supplied_secret: Optional[str],
+    expected: bool,
+) -> None:
+    with mock.patch.object(
+        roboflow_api,
+        "ROBOFLOW_SERVICE_SECRET",
+        configured_secret,
+    ):
+        assert service_secret_is_valid(supplied_secret) is expected
+
+
+@pytest.mark.parametrize(
+    "configured_secret,supplied_secret",
+    [
+        (None, None),
+        (None, ""),
+        ("", None),
+        ("", ""),
+        ("configured", None),
+        ("configured", ""),
+        ("configured", "different"),
+    ],
+)
+@mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
+def test_empty_or_invalid_service_secret_cannot_disable_credit_verification(
+    configured_secret: Optional[str],
+    supplied_secret: Optional[str],
+) -> None:
+    with mock.patch.object(
+        roboflow_api,
+        "ROBOFLOW_SERVICE_SECRET",
+        configured_secret,
+    ):
+        headers = get_extra_weights_provider_headers(
+            countinference=False,
+            service_secret=supplied_secret,
+        )
+
+    assert headers is not None
+    assert headers[roboflow_api.ENFORCE_CREDITS_VERIFICATION_HEADER] == "true"
 
 
 def test_wrap_roboflow_api_errors_when_no_error_occurs() -> None:
@@ -409,13 +518,33 @@ async def test_get_roboflow_workspace_async_when_response_parsing_error_occurs()
             _ = await get_roboflow_workspace_async(api_key="my_api_key")
 
 
-def test_get_roboflow_workspace_when_workspace_id_is_empty(
+@pytest.mark.parametrize(
+    "invalid_workspace_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        [],
+        {},
+        " workspace",
+        "workspace ",
+        "work space",
+        "workspace\r\nx",
+        "workspace/x",
+        "workspace?x",
+        "\x00workspace",
+        "\ud800",
+    ],
+)
+def test_get_roboflow_workspace_when_workspace_id_is_invalid(
     requests_mock: Mocker,
+    invalid_workspace_id,
 ) -> None:
     # given
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/"),
-        json={"some": "payload"},
+        json={"workspace": invalid_workspace_id},
     )
 
     # when
@@ -427,12 +556,33 @@ def test_get_roboflow_workspace_when_workspace_id_is_empty(
 
 
 @pytest.mark.asyncio
-async def test_get_roboflow_workspace_async_when_workspace_id_is_empty() -> None:
+@pytest.mark.parametrize(
+    "invalid_workspace_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        [],
+        {},
+        " workspace",
+        "workspace ",
+        "work space",
+        "workspace\r\nx",
+        "workspace/x",
+        "workspace?x",
+        "\x00workspace",
+        "\ud800",
+    ],
+)
+async def test_get_roboflow_workspace_async_when_workspace_id_is_invalid(
+    invalid_workspace_id,
+) -> None:
     # given
     with aioresponses() as request_mock:
         request_mock.get(
             f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
-            payload={"some": "payload"},
+            payload={"workspace": invalid_workspace_id},
         )
 
         # when
@@ -571,6 +721,54 @@ async def test_get_serverless_usage_check_async_when_response_is_valid() -> None
             roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
             roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "workspaceId": "workspace-db-id",
+            "workspace": "workspace\r\nx",
+            "underCap": True,
+        },
+        {
+            "workspaceId": "workspace db id",
+            "workspace": "my-workspace",
+            "underCap": True,
+        },
+    ],
+)
+async def test_get_serverless_usage_check_async_rejects_malformed_success_identity(
+    payload: dict,
+) -> None:
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
+            payload=payload,
+        )
+
+        with pytest.raises(WorkspaceLoadError, match="Unexpected serverless"):
+            await get_serverless_usage_check_async(api_key="my_api_key")
+
+
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_sanitizes_denial_identity() -> None:
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
+            payload={
+                "workspaceId": "\x00workspace",
+                "workspace": "workspace\r\nx",
+                "underCap": False,
+            },
+            status=402,
+        )
+
+        result = await get_serverless_usage_check_async(api_key="my_api_key")
+
+    assert result.workspace_id is None
+    assert result.workspace_db_id is None
 
 
 def test_get_roboflow_dataset_type_when_wrong_key_used(
@@ -2793,9 +2991,11 @@ def test_get_pinned_workflow_uses_online_cache_after_switching_offline(
         "foo/bar",
     ],
 )
+@pytest.mark.parametrize("offline_api_key", [None, "", roboflow_api.LOCAL_API_KEY])
 def test_transformed_tenanted_workflow_cache_survives_keyless_offline_restart(
     tmp_path: Path,
     workflow_id: str,
+    offline_api_key: Optional[str],
 ) -> None:
     cached_response = _workflow_cache_response("transformed-tenanted")
 
@@ -2818,7 +3018,7 @@ def test_transformed_tenanted_workflow_cache_survives_keyless_offline_restart(
         result = roboflow_api.load_cached_workflow_response(
             workspace_id="my_workspace",
             workflow_id=workflow_id,
-            api_key=None,
+            api_key=offline_api_key,
         )
 
     assert result == cached_response
@@ -3007,6 +3207,66 @@ def test_workflow_cache_paths_are_collision_resistant(tmp_path: Path) -> None:
     assert (
         roboflow_api._workflow_cache_path_segment(generated_marker_id)
         != generated_marker_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("workflow_" + ("a" * 64), True),
+        ("workflow_" + ("0123456789abcdef" * 4), True),
+        ("workflow_v1", True),
+        ("workflow_v1_v", True),
+        ("workflow_v-", True),
+        ("workflow_" + ("a" * 64) + "\n", True),
+        ("workflow_v1\n", True),
+        ("workflow_v\r\n", True),
+        ("workflow_v", False),
+        ("workflow_" + ("a" * 63), False),
+        ("workflow_" + ("a" * 65), False),
+        ("workflow_" + ("A" * 64), False),
+        ("workflow_" + ("a" * 63) + "g", False),
+        ("workflow_" + ("a" * 64) + "\n\n", False),
+        ("workflow_v1\nother", False),
+    ],
+)
+def test_workflow_cache_detects_ambiguous_legacy_filename_suffixes(
+    value: str,
+    expected: bool,
+) -> None:
+    assert (
+        roboflow_api._workflow_cache_has_ambiguous_legacy_filename_suffix(value)
+        is expected
+    )
+
+
+def test_workflow_cache_identity_fingerprint_frames_hmac_keys() -> None:
+    assert roboflow_api._workflow_cache_identity_fingerprint("identity") == (
+        "09c74b50be8892de464c518558570ce8a69009e1fd970904413f0839538adfe4"
+    )
+    assert roboflow_api._workflow_cache_identity_fingerprint(
+        "identity"
+    ) != roboflow_api._workflow_cache_identity_fingerprint("identity\0")
+
+
+def test_workflow_cache_fingerprints_isolated_surrogates_without_aliasing() -> None:
+    surrogate_fingerprint = roboflow_api._workflow_cache_identity_fingerprint(
+        "identity\ud800"
+    )
+
+    assert len(surrogate_fingerprint) == 64
+    assert surrogate_fingerprint != (
+        roboflow_api._workflow_cache_identity_fingerprint("identity\ufffd")
+    )
+    assert "~" in roboflow_api._workflow_cache_path_segment("workflow\ud800")
+    assert (
+        len(
+            roboflow_api._workflow_cache_tenant_fingerprint(
+                workspace_id="workspace\ud800",
+                api_key="key\udfff",
+            )
+        )
+        == 64
     )
 
 

@@ -16,7 +16,12 @@ from transformers.utils import is_flash_attn_2_available
 from inference.core.cache.model_artifacts import get_cache_dir, get_cache_file_path
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.roboflow_api import get_roboflow_base_lora, stream_url_to_cache
-from inference.models.transformers import LoRATransformerModel, TransformerModel
+from inference.models.transformers import (
+    LoRATransformerModel,
+    TransformerModel,
+    load_compatible_adapter_config,
+    remove_extracted_archive_if_online,
+)
 
 AutoModelForCausalLM.register(
     config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration
@@ -46,6 +51,12 @@ def _patch_preprocessor_config(cache_dir: str):
         data = json.load(f)
 
     if target_key in data and data[target_key] != correct_value:
+        if OFFLINE_MODE:
+            raise ValueError(
+                "The cached Qwen2.5-VL preprocessor configuration is not "
+                "offline-compatible. Re-warm this model with OFFLINE_MODE "
+                "disabled before mounting the cache read-only."
+            )
         data[target_key] = correct_value
         with open(config_path, "w") as f:
             json.dump(data, f, indent=4)
@@ -77,19 +88,20 @@ class Qwen25VL(TransformerModel):
         self.use_quantization = use_quantization
         super().__init__(model_id, *args, **kwargs)
 
+    def get_infer_bucket_file_list(self) -> list:
+        return [
+            *super().get_infer_bucket_file_list(),
+            "adapter_config.json",
+            "chat_template.json",
+        ]
+
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=["eva_config", "lora_bias", "exclude_modules"],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -269,19 +281,19 @@ class LoRAQwen25VL(LoRATransformerModel):
         cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
         return cache_dir
 
+    def get_infer_bucket_file_list(self) -> list:
+        return [
+            *super().get_infer_bucket_file_list(),
+            "chat_template.json",
+        ]
+
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=["eva_config", "lora_bias", "exclude_modules"],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -305,8 +317,7 @@ class LoRAQwen25VL(LoRATransformerModel):
         rm_weights = os.path.join(
             MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/weights.tar.gz"
         )
-        if os.path.exists(rm_weights):
-            os.remove(rm_weights)
+        remove_extracted_archive_if_online(rm_weights)
 
         files_folder = os.path.join(
             MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
@@ -344,11 +355,17 @@ class LoRAQwen25VL(LoRATransformerModel):
         if model_load_id != "qwen-pretrains/1":
             if self.use_quantization:
                 self.model = PeftModel.from_pretrained(
-                    self.base_model, self.cache_dir
+                    self.base_model,
+                    self.cache_dir,
+                    config=lora_config,
                 ).eval()
             else:
                 self.model = (
-                    PeftModel.from_pretrained(self.base_model, self.cache_dir)
+                    PeftModel.from_pretrained(
+                        self.base_model,
+                        self.cache_dir,
+                        config=lora_config,
+                    )
                     .eval()
                     .to(self.dtype)
                 )

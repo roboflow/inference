@@ -217,7 +217,16 @@ def _build_rtc_configuration(
 ) -> Optional[RTCConfiguration]:
     """Build an explicit ICE configuration without aiortc's implicit STUN."""
 
-    if webrtc_config is None and not OFFLINE_MODE:
+    if OFFLINE_MODE:
+        if webrtc_config is not None and webrtc_config.iceServers:
+            raise WebRTCConfigurationError(
+                "Explicit WebRTC ICE servers are not available while "
+                "OFFLINE_MODE is enabled."
+            )
+        # aiortc interprets ``None`` as permission to contact its built-in
+        # public Google STUN server. An explicit empty list keeps ICE local.
+        return RTCConfiguration(iceServers=[])
+    if webrtc_config is None:
         # Preserve aiortc's historical online default when the client did not
         # supply an ICE configuration.
         return None

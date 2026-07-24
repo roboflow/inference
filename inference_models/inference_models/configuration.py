@@ -64,6 +64,7 @@ L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = (
     os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
 )
+HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
 # The package initializer establishes the dependency-light process-wide latch
 # before importing this configuration module. Reloads only compare the public
 # environment request with that immutable state.

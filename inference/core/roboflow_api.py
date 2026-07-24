@@ -106,13 +106,13 @@ _WINDOWS_RESERVED_PATH_SEGMENTS = frozenset(
         *(f"LPT{index}" for index in range(1, 10)),
     }
 )
-_WORKFLOW_CACHE_AMBIGUOUS_LEGACY_FILENAME_SUFFIX = re.compile(
-    # Bound the `_v…` alternative so CodeQL does not treat this as polynomial
-    # ReDoS on attacker-controlled workflow IDs. Path separators are excluded
-    # because they never belong in a filename stem.
-    r"(?:_[0-9a-f]{64}|_v[^\\/]{1,256})$"
+_WORKFLOW_CACHE_LOWER_HEX_DIGITS = frozenset("0123456789abcdef")
+_WORKFLOW_CACHE_PUBLIC_IDENTITY_HMAC_MESSAGE = (
+    b"inference-workflow-cache-public-identity-v2"
 )
 _WORKFLOW_LEGACY_CANONICAL_SEGMENT = re.compile(r"[a-z0-9-]+")
+_WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+_HEADER_IDENTITY_PATTERN = re.compile(r"[\x21-\x7e]+")
 _WORKFLOW_CANONICAL_CACHE_NAMESPACE = ".canonical-v2"
 _WORKFLOW_TENANT_CACHE_NAMESPACE = ".tenanted-v2"
 
@@ -129,6 +129,41 @@ ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER = "x-assume-identity-authorised-work
 assume_identity_authorised_workspace_db_id: contextvars.ContextVar[
     Optional[WorkspaceID]
 ] = contextvars.ContextVar("assume_identity_authorised_workspace_db_id", default=None)
+
+
+def service_secret_is_valid(service_secret: object) -> bool:
+    """Return whether a supplied service secret matches a configured secret."""
+
+    if (
+        not isinstance(ROBOFLOW_SERVICE_SECRET, str)
+        or not ROBOFLOW_SERVICE_SECRET
+        or not isinstance(service_secret, str)
+        or not service_secret
+    ):
+        return False
+    try:
+        supplied_secret = service_secret.encode("utf-8")
+        configured_secret = ROBOFLOW_SERVICE_SECRET.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return hmac.compare_digest(supplied_secret, configured_secret)
+
+
+def workspace_id_is_valid(workspace_id: object) -> bool:
+    """Return whether an API response contains a usable workspace identity."""
+
+    return isinstance(workspace_id, str) and (
+        _WORKSPACE_ID_PATTERN.fullmatch(workspace_id) is not None
+    )
+
+
+def workspace_db_id_is_valid(workspace_db_id: object) -> bool:
+    """Return whether an opaque workspace ID is safe in an HTTP header."""
+
+    return isinstance(workspace_db_id, str) and (
+        _HEADER_IDENTITY_PATTERN.fullmatch(workspace_db_id) is not None
+    )
+
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -319,7 +354,7 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     )
     api_key_info = _get_from_url(url=api_url)
     workspace_id = api_key_info.get("workspace")
-    if workspace_id is None:
+    if not workspace_id_is_valid(workspace_id):
         raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
     return workspace_id
 
@@ -360,7 +395,7 @@ async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
                     raise error
                 response_payload = await response.json()
                 workspace_id = response_payload.get("workspace")
-                if workspace_id is None:
+                if not workspace_id_is_valid(workspace_id):
                     raise WorkspaceLoadError(
                         "Empty workspace encountered, check your API key."
                     )
@@ -405,13 +440,18 @@ async def get_serverless_usage_check_async(
                     return ServerlessUsageCheckResponse(status_code=401)
                 if response.status == 402:
                     response_payload = await response.json()
-                    workspace = response_payload.get(
-                        "workspace"
-                    ) or response_payload.get("workspaceId")
+                    workspace = response_payload.get("workspace")
+                    workspace_db_id = response_payload.get("workspaceId")
+                    if workspace is None:
+                        workspace = workspace_db_id
+                    if not workspace_id_is_valid(workspace):
+                        workspace = None
+                    if not workspace_db_id_is_valid(workspace_db_id):
+                        workspace_db_id = None
                     return ServerlessUsageCheckResponse(
                         status_code=402,
                         workspace_id=workspace,
-                        workspace_db_id=response_payload.get("workspaceId"),
+                        workspace_db_id=workspace_db_id,
                         under_cap=response_payload.get("underCap"),
                         error=response_payload.get("error"),
                     )
@@ -424,17 +464,25 @@ async def get_serverless_usage_check_async(
                         ) from error
                     raise error
                 response_payload = await response.json()
-                workspace_id = response_payload.get(
-                    "workspace"
-                ) or response_payload.get("workspaceId")
-                if workspace_id is None or response_payload.get("underCap") is not True:
+                workspace_id = response_payload.get("workspace")
+                workspace_db_id = response_payload.get("workspaceId")
+                if workspace_id is None:
+                    workspace_id = workspace_db_id
+                if (
+                    not workspace_id_is_valid(workspace_id)
+                    or (
+                        workspace_db_id is not None
+                        and not workspace_db_id_is_valid(workspace_db_id)
+                    )
+                    or response_payload.get("underCap") is not True
+                ):
                     raise WorkspaceLoadError(
                         "Unexpected serverless usage-check response received from Roboflow API."
                     )
                 return ServerlessUsageCheckResponse(
                     status_code=200,
                     workspace_id=workspace_id,
-                    workspace_db_id=response_payload.get("workspaceId"),
+                    workspace_db_id=workspace_db_id,
                     under_cap=True,
                 )
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
@@ -564,7 +612,7 @@ def get_roboflow_model_data(
         if (
             INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
             and countinference is False
-            and service_secret == ROBOFLOW_SERVICE_SECRET
+            and service_secret_is_valid(service_secret)
         ):
             params.append(("countinference", str(countinference).lower()))
             params.append(("service_secret", service_secret))
@@ -611,7 +659,7 @@ def get_roboflow_instant_model_data(
         if (
             INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
             and countinference is False
-            and service_secret == ROBOFLOW_SERVICE_SECRET
+            and service_secret_is_valid(service_secret)
         ):
             params.append(("countinference", str(countinference).lower()))
             params.append(("service_secret", service_secret))
@@ -657,11 +705,7 @@ def get_model_metadata_from_inference_models_registry(
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
-        skip = (
-            countinference is False
-            and service_secret is not None
-            and service_secret == ROBOFLOW_SERVICE_SECRET
-        )
+        skip = countinference is False and service_secret_is_valid(service_secret)
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     if ROBOFLOW_INTERNAL_SERVICE_SECRET:
@@ -693,7 +737,7 @@ def _add_assume_identity_headers(headers: Dict[str, str]) -> None:
     if not ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN:
         return
     authorised_workspace = assume_identity_authorised_workspace_db_id.get()
-    if not authorised_workspace:
+    if not workspace_db_id_is_valid(authorised_workspace):
         return
     headers[ASSUME_IDENTITY_ACCESS_TOKEN_HEADER] = (
         ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN
@@ -971,8 +1015,20 @@ def get_roboflow_labeling_jobs(
 def _workflow_cache_identity_fingerprint(value: str) -> str:
     """Return a stable fingerprint for non-secret Workflow identities."""
 
-    # This only hashes public identifiers, not credentials.
-    return hashlib.sha256(value.encode("utf-8"), usedforsecurity=False).hexdigest()
+    # ``str`` can contain isolated surrogates when called from Python rather
+    # than decoded HTTP input. Hash their lossless representation instead of
+    # letting cache-path construction fail with UnicodeEncodeError.
+    identity = value.encode("utf-8", errors="surrogatepass")
+    # HMAC pads short keys with zeroes, so length-frame the public identity to
+    # keep values such as b"a" and b"a\0" distinct. The fixed message
+    # domain-separates these cache identities; this is for stable,
+    # collision-resistant naming rather than secrecy.
+    identity_key = len(identity).to_bytes(length=8, byteorder="big") + identity
+    return hmac.new(
+        key=identity_key,
+        msg=_WORKFLOW_CACHE_PUBLIC_IDENTITY_HMAC_MESSAGE,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
 
 
 def _workflow_cache_tenant_fingerprint(
@@ -981,16 +1037,38 @@ def _workflow_cache_tenant_fingerprint(
 ) -> str:
     """Return a domain-separated tenant identity without exposing the API key."""
 
+    effective_api_key = api_key if api_key and api_key != LOCAL_API_KEY else None
     message = json.dumps(
         ["inference-workflow-tenant-v2", workspace_id],
         ensure_ascii=False,
         separators=(",", ":"),
-    ).encode("utf-8")
+    ).encode("utf-8", errors="surrogatepass")
     return hmac.new(
-        key=(api_key or "").encode("utf-8"),
+        key=(effective_api_key or "").encode("utf-8", errors="surrogatepass"),
         msg=message,
         digestmod=hashlib.sha256,
     ).hexdigest()
+
+
+def _workflow_cache_has_ambiguous_legacy_filename_suffix(value: str) -> bool:
+    """Return whether a value can alias a legacy generated cache filename."""
+
+    # ``$`` in the legacy regular expression also matched immediately before
+    # one final newline. Preserve that behavior while keeping this check linear
+    # for request-controlled identifiers.
+    match_end = len(value) - 1 if value.endswith("\n") else len(value)
+    if match_end >= 65:
+        fingerprint = value[match_end - 64 : match_end]
+        if value[match_end - 65] == "_" and all(
+            character in _WORKFLOW_CACHE_LOWER_HEX_DIGITS for character in fingerprint
+        ):
+            return True
+
+    # The legacy ``_v.+$`` alternative could only match on the final logical
+    # line because ``.`` did not consume newlines.
+    terminal_line_start = value.rfind("\n", 0, match_end) + 1
+    marker_index = value.find("_v", terminal_line_start, match_end)
+    return marker_index >= 0 and marker_index + 2 < match_end
 
 
 def _workflow_cache_path_segment(
@@ -1015,7 +1093,7 @@ def _workflow_cache_path_segment(
         and value.upper() not in _WINDOWS_RESERVED_PATH_SEGMENTS
         and (
             not reject_legacy_filename_shape
-            or _WORKFLOW_CACHE_AMBIGUOUS_LEGACY_FILENAME_SUFFIX.search(value) is None
+            or not _workflow_cache_has_ambiguous_legacy_filename_suffix(value)
         )
     ):
         return sanitized_value
@@ -1178,7 +1256,7 @@ def _find_offline_hashed_workflow_cache_file(
                 candidates.append(candidate)
     except OSError:
         return None
-    if api_key is not None:
+    if api_key and api_key != LOCAL_API_KEY:
         cache_fingerprint = _workflow_cache_tenant_fingerprint(
             workspace_id=workspace_id,
             api_key=api_key,
@@ -1574,7 +1652,7 @@ def get_workflow_specification(
         response = {"workflow": local_config}
     else:
         params = []
-        if api_key is not None and api_key != LOCAL_API_KEY:
+        if api_key and api_key != LOCAL_API_KEY:
             params.append(("api_key", api_key))
         if workflow_version_id is not None:
             params.append(("workflow_version", workflow_version_id))
@@ -1977,11 +2055,7 @@ def get_extra_weights_provider_headers(
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
-        skip = (
-            countinference is False
-            and service_secret is not None
-            and service_secret == ROBOFLOW_SERVICE_SECRET
-        )
+        skip = countinference is False and service_secret_is_valid(service_secret)
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     if ROBOFLOW_INTERNAL_SERVICE_SECRET:

@@ -16,6 +16,7 @@ https://github.com/roboflow/inference/issues/new
 import _thread
 import os
 import sys
+import tempfile
 
 _OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
@@ -69,13 +70,82 @@ try:
         _inherited_offline_mode_at_import,
     ) = _offline_mode_process_state.offline_mode_startup_snapshot
 
+    _offline_mode_declared_at_startup = (
+        _offline_mode_from_process_environment is not None
+    )
+    _dotenv_path = os.path.join(os.getcwd(), ".env")
+    from dotenv import dotenv_values, load_dotenv
+
+    if (
+        not hasattr(_offline_mode_process_state, "offline_mode")
+        and not _offline_mode_declared_at_startup
+        and _inherited_offline_mode_at_import is None
+    ):
+        # `inference` has historically loaded the project-local .env file. Both
+        # packages must resolve this security-sensitive startup flag identically
+        # so import order cannot silently select online mode.
+        _dotenv_values = dotenv_values(_dotenv_path)
+        _offline_mode_declared_at_startup = "OFFLINE_MODE" in _dotenv_values
+        if _offline_mode_declared_at_startup:
+            _offline_mode_from_process_environment = _dotenv_values.get("OFFLINE_MODE")
+
+    # Load the rest of the project-local configuration before importing any
+    # module that snapshots environment variables. The raw OFFLINE_MODE value
+    # above remains authoritative so a concurrent mutation cannot change the
+    # process latch.
+    load_dotenv(_dotenv_path)
+
+    # Keep implicit Hugging Face downloads inside the cache volume that a
+    # fresh offline process will mount. The Hub and Transformers snapshot
+    # these variables at import time, so publish every relevant path before
+    # importing either library. Explicit user configuration always wins.
+    _dependency_cache_root = (
+        os.environ.get("INFERENCE_HOME")
+        or os.environ.get("MODEL_CACHE_DIR")
+        or "/tmp/cache"
+    )
+    os.environ.setdefault(
+        "HF_HOME",
+        os.path.join(_dependency_cache_root, "hf_home"),
+    )
+    os.environ.setdefault(
+        "HF_HUB_CACHE",
+        os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("TRANSFORMERS_CACHE")
+        or os.path.join(os.environ["HF_HOME"], "hub"),
+    )
+    os.environ.setdefault(
+        "HF_MODULES_CACHE",
+        os.path.join(os.environ["HF_HOME"], "modules"),
+    )
+    # Ultralytics persists settings even while merely loading them. Keep this
+    # mutable runtime state out of the model artifact volume, which is expected
+    # to be mounted read-only during an offline restart.
+    os.environ.setdefault(
+        "YOLO_CONFIG_DIR",
+        os.path.join(
+            tempfile.gettempdir(),
+            "roboflow-inference",
+            "ultralytics",
+        ),
+    )
+
     from inference_models._offline import publish_offline_mode
 
     OFFLINE_MODE = publish_offline_mode(
         offline_mode_process_state=_offline_mode_process_state,
         requested_offline_mode=_offline_mode_from_process_environment,
         inherited_offline_mode=_inherited_offline_mode_at_import,
+        requested_offline_mode_declared=_offline_mode_declared_at_startup,
     )
+    if OFFLINE_MODE and any(
+        module_name == "ultralytics" or module_name.startswith("ultralytics.")
+        for module_name in sys.modules
+    ):
+        raise RuntimeError(
+            "Ultralytics was imported before inference-models could establish "
+            "OFFLINE_MODE. Restart the process and import inference_models first."
+        )
 except Exception as error:
     if not hasattr(_offline_mode_process_state, "offline_mode"):
         _offline_mode_process_state.offline_mode_initialization_error = error
