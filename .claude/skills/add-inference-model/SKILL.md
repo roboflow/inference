@@ -1,6 +1,6 @@
 ---
 name: add-inference-model
-description: Add a new core (pre-trained, non-user-fine-tuned) model to the inference repos. Covers the inference_models class + registry entry + tests, weight-zip preparation, the registration script against the Roboflow model registry, and the optional surfaces (workflow block, legacy-endpoint adapter). Trigger when the user asks to "add a model", "port a new model from HuggingFace", "wrap a transformers model", "expose X as a workflow block / model", or similar. This is a living skill — iterate on it each time a new model ships.
+description: Trigger when the user asks to "add a model", "add a core / pre-trained model", "port a model from HuggingFace", "wrap a transformers model", or "expose X as a workflow block / model". Also when a diff adds a subfolder under inference_models/inference_models/models/<family>/, a new (architecture, task, BackendType) key in auto_loaders/models_registry.py, an adapter in inference/core/models/inference_models_adapters.py, or a block under core_steps/models/foundation/<family>/.
 ---
 
 # Adding a new core model
@@ -22,10 +22,10 @@ A new model has up to **four surfaces**, and you only wire up the ones you need:
 
 | # | Surface | Required? | Location |
 | --- | --- | --- | --- |
-| 1 | Model class + registry entry | **Always** | `inference_models/inference_models/models/<family>/` + `models_registry.py` |
-| 2 | Weight zips + registry registration script | **Always** (so the model is actually loadable) | GCS test-assets bucket + PR to `roboflow/model-registry-sdk` |
-| 3 | Workflow block | Only if it should appear in workflows | `inference/core/workflows/core_steps/models/foundation/<name>/v1.py` |
-| 4 | Inference-models adapter | Only if it should serve on a plain `/infer` HTTP endpoint | Add a subclass in `inference/core/models/inference_models_adapters.py`, wire into `inference/models/utils.py` |
+| 1 | Model class + registry entry | **Always** | `inference_models/inference_models/models/<family>/` + `auto_loaders/models_registry.py` |
+| 2 | Weight packaging + registry registration | **Always** (so the model is actually loadable) | Internal tooling maintained by the Roboflow Inference Core team — see "Surface 2" below |
+| 3 | Workflow block | Only if it should appear in workflows | `inference/core/workflows/core_steps/models/foundation/<family>/v1.py` |
+| 4 | Inference-models adapter | Only if it should serve on a plain `/infer` HTTP endpoint | Subclass in `inference/core/models/inference_models_adapters.py`, wired into `inference/models/utils.py` |
 
 Quick guidance: plain HTTP `/infer` endpoint ⇒ add surface 4. Workflow visibility ⇒ add surface 3. Streaming video / stateful trackers typically only need 1-3 (state can't cross an `/infer` request boundary).
 
@@ -35,26 +35,26 @@ Quick guidance: plain HTTP `/infer` endpoint ⇒ add surface 4. Workflow visibil
 
 ```
 ls inference_models/inference_models/models/
-ls inference_models/inference_models/models/auto_loaders/models_registry.py  # see every registered arch
 ```
 
-Pick the 1-2 closest to the new model by (backend, task) and read:
+Read `inference_models/inference_models/models/auto_loaders/models_registry.py` to see every registered arch. Pick the 1-2 closest to the new model by (backend, task) and read:
+
 - the model class file
 - its registry entry
-- its unit test under `inference_models/tests/unit_tests/models/test_<family>.py`
-- its integration test + fixture if present
+- its unit test under `inference_models/tests/unit_tests/models/test_<family>_<backend>.py`
+- its integration test + fixture if present (`test_<family>_<backend>_predictions.py`)
 
 Only start scaffolding after you know which existing model yours most resembles. If nothing close exists (new backend, new task), flag that to the user — the skill's templates may not cover the gap.
 
 ## Discovery phase — ask the user
 
-Before touching files, get concrete answers:
+Before touching files, get concrete answers, agreed with codeowners — you must enforce acknowledgement of the proposed values. If you run as a CI agent, comment on the GH PR tagging codeowners to get the response and make that required to pass your review:
 
 1. **Architecture name** (registry key string) — lower-case, hyphens OK, no slashes. This is the string matched in `models_registry.py`.
-2. **Task type** — choose one of the concrete task constants defined in `inference_models/inference_models/models/auto_loaders/models_registry.py` (for example `OBJECT_DETECTION_TASK`, etc.), and verify the exact service-side accepted string against the model-registry API/schema docs or the model-registry SDK.
-3. **Backend** — `HF` / `TORCH` / `ONNX` / `TRT` (or `TORCH_SCRIPT`, `MEDIAPIPE`, etc. — check `BackendType`). Determines which sibling you survey.
+2. **Task type** — choose one of the concrete task constants defined in `inference_models/inference_models/models/auto_loaders/models_registry.py` (e.g. `OBJECT_DETECTION_TASK = "object-detection"`, `INSTANCE_SEGMENTATION_TASK`, `CLASSIFICATION_TASK`, `KEYPOINT_DETECTION_TASK`, `VLM_TASK`, `EMBEDDING_TASK`, etc.), and confirm the exact accepted task string with the Roboflow Inference Core team (who own the model-registry tooling).
+3. **Backend** — check the `BackendType` enum (imported into `models_registry.py`): `HF` / `TORCH` / `ONNX` / `TRT` / `TORCH_SCRIPT` , etc. Determines which sibling you survey.
 4. **Upstream weight source** — HF repo id, internal `.pt`, local files. **If HF and gated, stop** — the user needs to accept terms and supply an `HF_TOKEN` before any download.
-5. **Variants** — one id like `clip`, or a family like `foo/{tiny,small,large}` with a default. Variants share one registry entry; variant resolution lives in the weights provider.
+5. **Variants** — one id like `clip`, or a family like `foo/{tiny,small,large}` with a default. Variants share one registry entry; variant resolution happens server-side (see step 2).
 6. **Which surfaces?** Ask explicitly: workflow block? plain `/infer` adapter? If both, both get wired.
 7. **Any existing legacy implementation under `inference/models/<family>/`?** If yes, note that the new `inference_models` implementation is the replacement — don't delete the legacy in the same PR unless the user asks, but do avoid depending on it.
 
@@ -75,11 +75,11 @@ def from_pretrained(cls, model_name_or_path: str, **kwargs) -> "YourModel": ...
 
 If your model fits a standard category, extend the corresponding base class (see `inference_models/docs/contributors/adding-model.md` for the catalog: `ObjectDetectionModel`, `InstanceSegmentationModel`, `ClassificationModel`, `KeyPointsDetectionModel`, `SemanticSegmentationModel`, etc.). If it doesn't, a standalone class is fine — base classes exist for consistency, not as a hard requirement.
 
-For **shared plumbing across several HF models** (sessioned video trackers, etc.), check `inference_models/inference_models/models/common/` for reusable bases before writing your own.
+For **shared plumbing across several models** (sessioned video trackers, CUDA/ONNX/TRT helpers, etc.), check `inference_models/inference_models/models/common/` (`hf_streaming_video.py`, `cuda.py`, `onnx.py`, `torch.py`, `trt.py`, `model_packages.py`, and the `roboflow/` post-processing helpers) for reusable bases before writing your own.
 
 Read `inference_models/docs/contributors/adding-model.md` and `inference_models/docs/contributors/writing-tests.md` — they cover the `from_pretrained` contract in more depth than this skill.
 
-### 2. Registry entry (surface 1b)
+### 2. Registry entry + variant resolution (surface 1b)
 
 Edit `inference_models/inference_models/models/auto_loaders/models_registry.py`. Add:
 
@@ -90,179 +90,111 @@ Edit `inference_models/inference_models/models/auto_loaders/models_registry.py`.
 ),
 ```
 
-The key is **only** `(architecture, task, backend)` — **not** the variant. All variants of the same family share one entry. The variant suffix in the model id (e.g. `foo/tiny`) is resolved server-side by the weights provider. Don't add `"<arch>-tiny"` as a separate architecture.
+(`LazyClass` is imported from `inference_models.utils.imports`; note the `module_name` uses the `inference_models.models...` import path, not `inference_models.inference_models...`.)
 
-Use `RegistryEntry` (instead of `LazyClass` directly) if the model has optional features like fused NMS — see existing `yolov8` entries for the pattern.
+The key is **only** `(architecture, task, backend)` — **not** the variant. All variants of the same family share one entry. The variant suffix in the model id (e.g. `foo/tiny`) is resolved server-side: the Roboflow weights provider (`inference_models/inference_models/weights_providers/roboflow.py`) reads it from `RoboflowModelMetadata.model_variant` (the `modelVariant` field on the registry-served metadata). Don't add `"<arch>-tiny"` as a separate architecture.
+
+Use `RegistryEntry` (wrapping a `LazyClass` in `model_class=...`) instead of a bare `LazyClass` if the model has optional features — e.g. fused NMS via `supported_model_features={"nms_fused"}`. See the existing `yolov8` entries for the pattern.
 
 ### 3. Unit tests — inference_models side
 
-Create `inference_models/tests/unit_tests/models/test_<family>.py`. Mock the backend library (transformers / onnxruntime / torch) so the test runs without weights. Copy the structure from a nearby test that targets the same backend.
+Create `inference_models/tests/unit_tests/models/test_<family>_<backend>.py` (the file name carries the backend, e.g. `test_sam2_torch.py`, `test_glm_ocr_hf.py`). Mock the backend library (transformers / onnxruntime / torch) so the test runs without weights. Copy the structure from a nearby test that targets the same backend.
 
 **Run from `inference_models/` cwd** so pytest uses `inference_models/pytest.ini` (or pass `-c inference_models/pytest.ini` from the repo root):
 
 ```bash
 cd inference_models
-python -m pytest tests/unit_tests/models/test_<family>.py -W ignore
+python -m pytest tests/unit_tests/models/test_<family>_<backend>.py -W ignore
 ```
 
 Running from the repo root without `-c inference_models/pytest.ini` silently mis-collects.
 
 ### 4. Integration test + fixture
 
-Add a `..._PACKAGE_URL` constant and a `pytest.fixture(scope="module")` in `inference_models/tests/integration_tests/models/conftest.py` (follow existing patterns near other HF / torch packages). Add `inference_models/tests/integration_tests/models/test_<family>_predictions.py` marked `@pytest.mark.slow`. These run after step 6 uploads.
+Add a package-URL constant and a `pytest.fixture(scope="module")` in `inference_models/tests/integration_tests/models/conftest.py` (follow existing patterns near other HF / torch packages). Add `inference_models/tests/integration_tests/models/test_<family>_<backend>_predictions.py` marked `@pytest.mark.slow`. These run once the model package has been published via the internal registration tooling (Surface 2).
 
-### 5. Workflow block (surface 3, optional)
+Start from loading a **local** package while experimenting, then follow up by uploading that package as a `*.zip` asset and adding a fixture that downloads it at test time, as other integration tests do.
 
-Skip this section unless surface 3 is needed. Create `inference/core/workflows/core_steps/models/foundation/<family>/v1.py` + `__init__.py`. Read 1-2 existing blocks that match your pattern (stateless per-image vs. stateful per-video-session) before writing.
+### 5. Changelog companion (required)
 
-Block manifest fields to get right:
+Any PR that ships model code in `inference_models` must record the change. The
+package version is selected and bumped later by maintainers:
 
-- `model_id` default — use the variant-qualified id, e.g. `"foo/small"` (not bare `"foo"`)
-- `examples` — list every shipping variant
-- `get_supported_model_variants()` — list every variant; **put the default first** (used as display name by the air-gapped cache scanner in `inference/core/cache/air_gapped.py`)
+- Add an entry under `## Unreleased` in `inference_models/docs/changelog.md`, using the appropriate `### Added`, `### Changed`, `### Fixed`, or `### Removed` subsection.
+- Do not edit `inference_models/pyproject.toml` solely to bump its version.
 
-If the block holds per-video or otherwise per-request state, raise `NotImplementedError` in `__init__` when `step_execution_mode is StepExecutionMode.REMOTE` — remote sharding breaks stateful blocks. Fail at workflow-compile time, not at first-frame.
+### 6. Workflow block (surface 3, optional)
 
-Register the block with the block loader (grep for an existing block's name in `inference/core/workflows/core_steps/loader.py` or similar to find the registration site).
+Skip this section unless surface 3 is needed. If needed, create the workflow block by following the **`create-workflow-block`** skill (`.claude/skills/create-workflow-block/SKILL.md`) — the end-to-end playbook for authoring a Workflows block (manifest, kinds, `run()`, loader registration, versioning, tests). For a model block: put it under `inference/core/workflows/core_steps/models/foundation/<family>/`, use the variant-qualified model id (e.g. `"foo/small"`) as the `model_id` default, and wire `run()` to `AutoModel.from_pretrained`.
 
-Add unit tests at `tests/workflows/unit_tests/core_steps/models/foundation/test_<family>.py` — mock the inner `AutoModel.from_pretrained` and the model's inference call so the test isolates the block's branching/decision logic. Run from repo root:
+Run the block's unit tests from the repo root:
 
 ```bash
 python -m pytest tests/workflows/unit_tests/core_steps/models/foundation/test_<family>*.py -W ignore
 ```
 
-### 6. Weight zips
+### 7. Surface 2 — weight packaging & registry registration (internal tooling)
 
-For each variant, produce a **flat** zip — files at zip root, **no wrapping directory**. The test fixture `download_model_package` unzips the archive and calls `YourClass.from_pretrained(unzipped_dir)`; nested layouts break silently.
+**This is handled by internal tooling maintained by the Roboflow Inference Core team.** Preparing the model's weight package, uploading it, and registering the model into the Roboflow model registry (across staging and production) are done with internal scripts, service credentials, and infrastructure that are **out of scope for this skill and not documented here.** Coordinate with the Roboflow Inference Core team to get a new model packaged and registered.
 
-Typical fetch + zip from HF:
-
-```python
-from huggingface_hub import snapshot_download
-snapshot_download(repo_id="…", local_dir=out_dir, allow_patterns=[...])
-# then: zip every file at the root, no wrapping dir
-```
-
-Verify each zip with `unzip -l <zip> | head -10` — first column should be bare filenames, not `wrapper/config.json`.
-
-**Smoke-test the zip before uploading** by extracting to a temp dir and loading:
+The one part that touches **your** code: the model package is a **flat** set of files — every file at the package root, no wrapping directory — because the loader materializes the package into a plain directory and calls `YourClass.from_pretrained(that_dir)`. Make sure your `from_pretrained` loads from a directory of files with no nested wrapper; nested layouts break silently. Smoke-test the load path locally before handing off for registration:
 
 ```python
-YourClass.from_pretrained(unzipped_dir, device="cpu")
+YourClass.from_pretrained(local_dir, device="cpu")
 ```
 
-Upload to `gs://roboflow-tests-assets/rf-platform-models/<arch>-<variant>.zip`. Confirm each URL returns 200:
-
-```bash
-curl -sI https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/<arch>-<variant>.zip | head -1
-```
-
-### 7. Registration script (surface 2)
-
-Clone `roboflow/model-registry-sdk` if you haven't. Add a script at `scripts/core_models/register_<family>_models.py`. Browse `scripts/core_models/` for existing same-backend templates; copy the nearest one and swap constants.
-
-Shape of the registration flow (see the SDK's `registration_helpers.execute_model_package_registration` and the bare methods on `TheGOATModelsServiceClient`):
-
-```python
-client = TheGOATModelsServiceClient(
-    api_host=API_HOSTS[env],            # staging=api.roboflow.one, prod=api.roboflow.com
-    service_secret=os.environ["MODELS_SERVICE_INTERNAL_SECRET"],
-)
-client.register_pre_trained_model(model_id=f"{arch}/{variant}", model_architecture=arch,
-                                  model_variant=variant, model_access=..., task_type=...)
-reg = client.register_model_package(file_handles=[...], package_manifest=...)
-for spec in reg.file_upload_specs:
-    upload_from_local_file(source_file=local, target_uri=spec.gcs_uri)
-client.confirm_model_package_artefacts(..., seal_model_package=True)
-```
-
-Note: the base SDK's client **does not** have a `.init(current_environment=...)` classmethod — that helper only exists on the `exp-registry-migration` repo's vendored copy (and it reads from GCP Secret Manager). Script constructs the client directly from an env var + hardcoded host per `--env`.
-
-Open a PR against `roboflow/model-registry-sdk`. Do not run against production yet.
+Once the model has been registered by the internal tooling, the integration/e2e tests (steps 4 and 9) and `AutoModel.from_pretrained("<arch>/<variant>")` can load it.
 
 ### 8. Inference-models adapter (surface 4, optional)
 
-Skip unless the user wants plain `/infer` endpoint support. Add a subclass of `Model` to `inference/core/models/inference_models_adapters.py` matching your task (there are per-task parents: object detection, instance segmentation, classification, keypoints, semantic segmentation, etc. — read the existing adapters in that file). In the adapter `__init__`, follow the existing adapter constructors in that file: they call `AutoModel.from_pretrained(model_id_or_path=..., ...)` and pass through the additional flags they need (for example `allow_untrusted_packages`, `allow_direct_local_storage_loading`, backend selection, etc.), then store the result; predict / infer methods delegate.
+Skip unless the user wants plain `/infer` endpoint support. Add a subclass of `Model` to `inference/core/models/inference_models_adapters.py` matching your task (there are per-task parents: object detection, instance segmentation, classification, keypoints, semantic segmentation, etc. — read the existing adapters in that file). In the adapter `__init__`, follow the existing adapter constructors: they call `AutoModel.from_pretrained(model_id_or_path=..., ...)` and pass through the flags they need (e.g. `allow_untrusted_packages`, `allow_direct_local_storage_loading`, backend selection), then store the result; predict / infer methods delegate.
 
 Register the adapter by model architecture in `inference/models/utils.py` so `/infer?model_id=<arch>/<variant>` resolves to it. Follow the pattern other entries in that file use.
 
 Most new models on this path will NOT need surface 4 — workflow blocks (surface 3) cover the majority use case. Add 4 only if there's a concrete requirement.
 
-### 9. Run registration against staging
+### 9. End-to-end verify
 
-The user sets `MODELS_SERVICE_INTERNAL_SECRET` once per shell:
+Once the model has been registered (via the internal tooling, step 7), load it and exercise it end to end:
 
-```bash
-export MODELS_SERVICE_INTERNAL_SECRET=$(gcloud secrets versions access latest \
-    --secret=MODELS_SERVICE_INTERNAL_SECRET --project=878913763597)
-# 878913763597 = staging project; confirm before running
-```
+- `AutoModel.from_pretrained("<arch>/<variant>")` (`AutoModel` lives in `inference_models/inference_models/models/auto_loaders/core.py`) with a real input.
+- If surface 3 was built, run the workflow block on a real image or a short MP4 via `InferencePipeline` (e.g. `debugrun.py`).
+- If surface 4 was built, hit `/infer?model_id=<arch>/<variant>`.
 
-Then a per-variant smoke test first, then the full set:
-
-```bash
-python scripts/core_models/register_<family>_models.py --env staging --variants <one>
-python scripts/core_models/register_<family>_models.py --env staging
-```
-
-Verify via the staging API (needs a staging Roboflow API key):
-
-```bash
-curl -s "https://api.roboflow.one/models/v1/external/weights?modelId=<arch>/<variant>" \
-    -H "Authorization: Bearer <staging-api-key>" | python3 -m json.tool
-```
-
-Expect `status: ok` and `modelPackages[0].packageFiles` listing every file with `md5Hash` set.
-
-### 10. End-to-end verify
-
-Run `AutoModel.from_pretrained("<arch>/<variant>", api_key=<staging-key>)` against staging (set `ROBOFLOW_ENVIRONMENT=staging` or `ROBOFLOW_API_HOST=https://api.roboflow.one`) and exercise the model with a real input. If surface 3 was built, also run it through `debugrun.py` / a short MP4 via `InferencePipeline`. If surface 4 was built, hit `/infer?model_id=<arch>/<variant>`.
-
-**When running `debugrun.py` or the inference server from the repo root**, avoid letting the repo-root `inference_models/` directory shadow the editable-installed `inference_models` package. On newer Python versions that support it, you can use `PYTHONSAFEPATH=1` (or `python -P`) so Python does not auto-add the script directory to `sys.path`. **Do not rely on `python -P` on Python 3.10**. For Python 3.10, prefer running from an installed environment via `python -m ...` instead of invoking a repo-root script directly, or adjust your `PYTHONPATH` / working directory so the repo-root namespace package is not on `sys.path`.
+**When running `debugrun.py` or the inference server from the repo root**, avoid letting the repo-root `inference_models/` directory shadow the editable-installed `inference_models` package. On newer Python versions that support it, use `PYTHONSAFEPATH=1` (or `python -P`) so Python does not auto-add the script directory to `sys.path`. **Do not rely on `python -P` on Python 3.10.** For Python 3.10, prefer running from an installed environment via `python -m ...` instead of invoking a repo-root script directly, or adjust your `PYTHONPATH` / working directory so the repo-root namespace package is not on `sys.path`.
 
 ## Gotchas (real, collected as hit)
 
 Add to this list as new surprises surface.
 
 - **HF gating**: some `facebook/*` repos (e.g. `facebook/sam3`) return 401 on every file without an `HF_TOKEN`. Accept terms on the model page + generate a token before any download.
-- **Zip layout**: files at the zip root, no wrapping directory. The fixture unzips and calls `from_pretrained(that_dir)` — nested layouts break silently.
+- **Package layout**: files at the package root, no wrapping directory. The loader materializes the package and calls `from_pretrained(that_dir)` — nested layouts break silently.
 - **Nested-list shape for HF video processors**: some processor methods expect inputs at a very specific nesting depth (e.g. `input_boxes` at 3 levels `[image [boxes [coords]]]`, not 4). Unit tests that mock the processor won't catch wrong nesting — always include one integration or e2e test that exercises the real `from_pretrained` + predict path against real weights, even if tiny-variant.
 - **State-requiring `.track()` / similar must raise on missing state**, not silently create an empty session. Empty-state-then-silent-success bugs are hard to detect.
 - **Numpy array truthiness**: `dict.get(a) or dict.get(b)` raises on numpy arrays. Use explicit `"a" in d` / `"b" in d` checks, or a small `_first_present` helper.
-- **SDK client auth**: `TheGOATModelsServiceClient.init(current_environment=...)` doesn't exist on the base SDK — only on `exp-registry-migration`'s vendored client. Our scripts construct the client directly from the env var + hardcoded host per `--env`.
 - **Transformers import-time side effects**: some transformers model classes (e.g. SAM3 video) do `import torchvision` at module import. Missing torchvision surfaces as `ModuleNotFoundError: Could not import module 'Sam3VideoModel'` — misleading. Not a prod issue, but confuses local setup.
 - **Stateful workflow blocks + remote execution**: if your block keeps per-video or per-request state, raise `NotImplementedError` in `__init__` when the execution mode is `REMOTE`. Failing at compile time beats failing on first frame.
-- **`get_supported_model_variants` order**: the first entry is the display name for the air-gapped cache scanner. Put your default variant first.
-- **`PYTHONSAFEPATH=1`** when running scripts from the repo root — see step 10.
+- **`get_supported_model_variants` order** (workflow-block manifest classmethod, consumed by the air-gapped scanner in `inference/core/cache/air_gapped.py`): the first entry is the display name for the cache scanner. Put your default variant first.
+- **`PYTHONSAFEPATH=1`** when running scripts from the repo root — see step 9.
 
 ## Verification checklist
 
 Before declaring done:
 
 - [ ] Architecture registered in `models_registry.py`; import + class resolve without error
-- [ ] Every variant zip uploads and `curl -sI` returns 200
+- [ ] `YourClass.from_pretrained(local_dir)` loads from a flat directory of files (smoke-tested)
 - [ ] `inference_models` unit tests pass (from `inference_models/` cwd)
+- [ ] `inference_models/docs/changelog.md` entry added under `## Unreleased` (version bump left to maintainers)
 - [ ] If surface 3: workflow-block unit tests pass (from repo root)
-- [ ] Registration script merged or at least open as a PR against `roboflow/model-registry-sdk`
-- [ ] `register_*_models.py --env staging` completes without errors (run per-variant smoke test first)
-- [ ] Staging metadata API returns the model with every file + MD5 + sealed
-- [ ] `AutoModel.from_pretrained("<arch>/<default>")` loads + runs against staging
+- [ ] Model packaged & registered via the internal Inference Core team tooling (staging, then production after approval) — coordinate with the team
+- [ ] `AutoModel.from_pretrained("<arch>/<default>")` loads + runs once registered
 - [ ] If surface 3: block runs end-to-end on a real input (image or MP4 via `InferencePipeline`)
 - [ ] If surface 4: `/infer?model_id=...` returns a valid prediction
-- [ ] `make style` clean
 - [ ] At least one non-mock integration test exercises the real call path
-- [ ] PR descriptions list remaining TODOs (other variants, production registration, additional surfaces deferred)
-
-## Production registration
-
-Only after staging is fully verified and the user explicitly approves:
-
-```bash
-export MODELS_SERVICE_INTERNAL_SECRET=$(gcloud secrets versions access latest \
-    --secret=MODELS_SERVICE_INTERNAL_SECRET --project=481589474394)  # prod
-python scripts/core_models/register_<family>_models.py --env production
-```
+- [ ] PR descriptions list remaining TODOs (other variants, additional surfaces deferred)
 
 ## Iterating on this skill
 
 Each new model added either confirms an assumption here (leave alone) or surfaces a gap (add a gotcha / template note). Non-HF backends (ONNX, TRT, TORCH) are underrepresented in today's templates — the next model through a non-HF path should add a step-1 note for its backend.
+</content>
+</invoke>

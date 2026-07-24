@@ -1,5 +1,180 @@
 # Changelog
 
+## Unreleased
+
+Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
+`### Removed` subsections as appropriate.
+
+---
+
+## `0.32.3`
+
+### Fixed
+- Bump of transitive dependency `gitpython`
+
+---
+
+
+## `0.32.2`
+
+### Fixed
+- Patch `triton-fused-v1` post-processor to use correctly current device alias for comparison.
+
+---
+
+## `0.32.1`
+
+### Fixed
+- Patch for security issues 
+
+---
+
+## `0.32.0`
+
+### Changed
+
+- RF-DETR TensorRT object detection now selects `triton-universal-v1`
+  preprocessing and `triton-fused-v1` postprocessing by default. Incompatible requests
+  use the declared `base` implementation unless strict selection is requested through
+  an explicit execution plan. The selected implementations can be controlled with an
+  `RFDetrExecutionPlan` or the `INFERENCE_MODELS_RFDETR_PREPROCESSOR` and
+  `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` environment variables. No-op preprocessing
+  override containers used by the inference server remain on the optimized path;
+  active overrides use the declared fallback. Repeated occurrences of the same
+  request-level fallback warning are logged only once per model instance.
+- Direct RF-DETR TensorRT stage calls remain backward compatible: public
+  `pre_process()` synchronizes before returning by default, so its output is ready for
+  an independent `forward()` call. Composed `model(...)` and `infer()` calls explicitly
+  use the asynchronous exact-tensor readiness handoff to avoid a host synchronization.
+  The inference-server object-detection adapter also enables this handoff for models
+  that explicitly declare the invocation-level preprocessing parameter.
+
+### Fixed
+
+- SAM3 concept-segmentation postprocessing no longer scales its memory working set with
+  detection count × image resolution. `ChunkedPostProcessImage` applies the detection cap
+  before mask interpolation and upscales/encodes masks in fixed-size slices
+  (`INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE`, default 8), eliminating a measured
+  +14 GiB host-RAM transient (GPU-OOM CPU fallback) and reducing CUDA peak ~2.8x on
+  many-instance images. Outputs are bit-identical to the previous implementation.
+
+### Added
+
+- Composable RF-DETR TensorRT execution plans, implementation contracts and registries,
+  compatibility-aware implementation selection, and runtime metadata reporting the
+  requested and effective preprocessing and postprocessing implementations.
+- NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
+  image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
+  standard VLM contract. The generative world-model tower ships separately.
+- NVIDIA Cosmos 3 Edge generator (`cosmos-3-edge-world`, task `world-model`, backend
+  `custom`): image-to-video (`generate_video`), forward dynamics (`start_rollout` +
+  `forward_dynamics` with explicit session-state threading), and inverse dynamics
+  (`inverse_dynamics`). The step-wise robot policy mode is deferred. The denoising
+  runtime ships inside the model package (loaded via `import_class_from_file`), keeping
+  NVIDIA's cosmos stack out of `inference_models` dependencies.
+- `segment_with_text_prompts` accepts `max_detections` (top-k by score, applied before mask
+  interpolation; default `-1` = uncapped) and `mask_format` (`"dense"` default, or `"rle"`
+  for COCO RLE at original resolution).
+
+---
+
+## `0.31.0`
+
+### Fixed
+
+- Synchronisation of pre-processing and forward-pass for models running with `onnxruntime` backend.
+  Pre-processed input tensors could be consumed by the ONNX session before the CUDA stream that
+  produced them finished writing, yielding phantom predictions (in particular under
+  `TensorrtExecutionProvider`, where onnxruntime's own input synchronisation is a no-op). Forward
+  pass now explicitly synchronises with pre-processing on the torch side. Additionally, CUDA
+  streams are shared per `(thread, device, purpose)` instead of being created per model instance,
+  which bounds the GPU memory segregated by the torch caching allocator across streams.
+
+### Added
+
+- `align_device_with_onnx_session(...)` exposed in developer tools (public dev API) - makes sure
+  the `torch.device` declared for a model is in line with what the `onnxruntime` session can
+  actually consume (avoiding runtime errors), with `resolution_mode` (`"fallback"` / `"fail"`)
+  and optional `fallback_device` parameters. For now only CUDA primary devices are verified.
+
+---
+
+## `0.30.1`
+
+### Fixed
+
+- PP-OCRv6 pipeline assembles `text` by joining fragments detected on the same
+  visual line with spaces; newlines now separate only distinct lines. Previously
+  every detected fragment was joined with a newline, splitting single sentences
+  the detector returned as multiple boxes.
+
+---
+
+## `0.30.0`
+
+### Added
+
+- Support for [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR),
+  PaddlePaddle's ultra-lightweight OCR system: text detection
+  (`pp-ocrv6-det`) and text recognition (`pp-ocrv6-rec`) models, plus the
+  `pp-ocrv6` pipeline chaining both stages into end-to-end OCR. See the
+  [model documentation](models/pp-ocrv6.md) for details.
+
+---
+
+## `0.29.7`
+
+### Added
+
+- Enriched `KeyPoints` representation to expose `covariance` and 
+`detection_confidence` to streamline changes in `supervision`
+
+- Align changes in RF-DETR model to expose pixel-space `covariance`, 
+following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
+
+---
+
+## `0.29.6`
+
+### Added
+
+- Opt-in Triton RF-DETR instance-segmentation RLE post-processing. Set
+  `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
+  masks directly from sparse interpolated mask regions on supported CUDA
+  inputs.
+- Opt-in Triton RF-DETR instance-segmentation preprocessing for the TensorRT
+  backend. Set `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` to run the
+  supported resize and normalize path on CUDA.
+- Opt-in Triton RF-DETR instance-segmentation pipelining. Set
+  `RFDETR_PIPELINE_DEPTH=2`.
+
+---
+
+## `0.29.4`
+
+### Fixed
+
+- Security issues patch, 19.06.2026 - `bleach>=6.4.0` and `tornado>=6.5.7` in `docs` extras.
+
+---
+
+## `0.29.4`
+
+### Fixed
+
+- Fixed GLM-OCR dtype mismatch on Jetson by casting HuggingFace processor floating-point
+inputs to the model dtype resolved for the target device (bfloat16 on supported CUDA hardware,
+otherwise float16).
+
+---
+
+## `0.29.3`
+
+### Fixed
+
+- Incompatibility with `supervision==0.29.0` due to init param in `sv.KeyPoints(...)`
+
+---
 
 ## `0.29.2`
 
@@ -7,7 +182,7 @@
 
 - Transitive dependency vulnerability patched - `idna>=3.15` required by the package
 
-
+---
 ## `0.29.1`
 
 ### Fixed

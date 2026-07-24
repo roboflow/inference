@@ -202,7 +202,7 @@ def apply_template_matching(
     w, h = template_gray.shape[::-1]
     res = cv2.matchTemplate(img_gray, template_gray, cv2.TM_CCOEFF_NORMED)
     loc = np.where(res >= matching_threshold)
-    xyxy, confidence, class_id, class_name, detections_id = [], [], [], [], []
+    xyxy, confidence, class_id, class_name = [], [], [], []
     for pt in zip(*loc[::-1]):
         top_left = pt
         bottom_right = (pt[0] + w, pt[1] + h)
@@ -210,7 +210,6 @@ def apply_template_matching(
         confidence.append(1.0)
         class_id.append(0)
         class_name.append("template_match")
-        detections_id.append(str(uuid4()))
     if len(xyxy) == 0:
         return sv.Detections.empty()
     detections = sv.Detections(
@@ -225,7 +224,9 @@ def apply_template_matching(
         [image.parent_metadata.parent_id] * len(detections)
     )
     detections[PREDICTION_TYPE_KEY] = np.array(["object-detection"] * len(detections))
-    detections[DETECTION_ID_KEY] = np.array(detections_id)
+    detections[DETECTION_ID_KEY] = np.array(
+        [str(uuid4()) for _ in range(len(detections))]
+    )
     image_height, image_width = image.numpy_image.shape[:2]
     detections[IMAGE_DIMENSIONS_KEY] = np.array(
         [[image_height, image_width]] * len(detections)

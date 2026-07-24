@@ -115,7 +115,7 @@ class AutoModelPipeline:
                 Default: False.
 
             model_download_file_lock_acquire_timeout: Timeout in seconds for acquiring
-                file locks during concurrent downloads. Default: 10.
+                file locks during concurrent downloads. Default: FILE_LOCK_ACQUIRE_TIMEOUT (20).
 
             allow_untrusted_packages: Allow loading model packages with custom code that
                 haven't been verified. **Security risk**. Default: False.

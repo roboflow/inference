@@ -18,10 +18,12 @@ _SAM3_PACKAGE_MODULES = [
     "sam3.eval",
     "sam3.eval.postprocessors",
     "sam3.model",
+    "sam3.model.data_misc",
     "sam3.model.sam3_image_processor",
     "sam3.model.utils",
     "sam3.model.utils.misc",
     "sam3.train",
+    "sam3.train.masks_ops",
     "sam3.train.data",
     "sam3.train.data.collator",
     "sam3.train.data.sam3_image_dataset",
@@ -139,3 +141,97 @@ def test_segment_image_forwards_all_prompts_to_model(
     boxes = call_kwargs["boxes"]
     assert boxes.shape == (2, 4)
     np.testing.assert_allclose(boxes, [[8, 8, 12, 12], [26, 26, 34, 34]])
+
+
+def _single_prediction() -> SimpleNamespace:
+    return SimpleNamespace(
+        masks=torch.rand(1, 8, 8),
+        scores=torch.tensor([0.7]),
+        logits=torch.rand(1, 16, 16),
+    )
+
+
+_CACHE_MISS_MESSAGE = (
+    "Attempted to use SAM3 model segment_with_visual_prompts(...) method providing "
+    "`image_hashes` for which no embeddings were found in the cache."
+)
+
+
+def test_segment_image_with_cached_image_id_skips_preprocessing(
+    adapter_module: ModuleType,
+) -> None:
+    # given
+    adapter = _build_adapter(adapter_module, _single_prediction())
+    adapter.preproc_image = MagicMock()
+
+    # when
+    adapter.segment_image(image=object(), image_id="abc")
+
+    # then
+    adapter.preproc_image.assert_not_called()
+    adapter._model.segment_with_visual_prompts.assert_called_once()
+    call_kwargs = adapter._model.segment_with_visual_prompts.call_args.kwargs
+    assert call_kwargs["images"] is None
+    assert call_kwargs["image_hashes"] == "abc"
+
+
+def test_segment_image_falls_back_to_preprocessing_on_cache_miss(
+    adapter_module: ModuleType,
+) -> None:
+    # given
+    adapter = _build_adapter(adapter_module, _single_prediction())
+    adapter._model.segment_with_visual_prompts.side_effect = [
+        adapter_module.ModelInputError(message=_CACHE_MISS_MESSAGE),
+        [_single_prediction()],
+    ]
+    loaded_image = object()
+    adapter.preproc_image = MagicMock(return_value=loaded_image)
+
+    # when
+    adapter.segment_image(image=object(), image_id="abc")
+
+    # then
+    adapter.preproc_image.assert_called_once()
+    assert adapter._model.segment_with_visual_prompts.call_count == 2
+    call_kwargs = adapter._model.segment_with_visual_prompts.call_args.kwargs
+    assert call_kwargs["images"] is loaded_image
+    assert call_kwargs["image_hashes"] == "abc"
+
+
+def test_segment_image_propagates_non_cache_miss_input_error(
+    adapter_module: ModuleType,
+) -> None:
+    # given
+    adapter = _build_adapter(adapter_module, _single_prediction())
+    adapter._model.segment_with_visual_prompts.side_effect = (
+        adapter_module.ModelInputError(message="invalid point shape")
+    )
+    adapter.preproc_image = MagicMock()
+
+    # when / then
+    with pytest.raises(adapter_module.ModelInputError):
+        adapter.segment_image(image=object(), image_id="abc")
+    adapter.preproc_image.assert_not_called()
+
+
+@pytest.mark.parametrize("send_to_cpu", [True, False])
+def test_adapter_init_honors_cache_device_setting(
+    adapter_module: ModuleType, send_to_cpu: bool
+) -> None:
+    # when
+    with patch.object(
+        adapter_module.Sam3ImageEmbeddingsInMemoryCache, "init"
+    ) as emb_init, patch.object(
+        adapter_module.Sam3LowResolutionMasksInMemoryCache, "init"
+    ) as masks_init, patch.object(
+        adapter_module.AutoModel, "from_pretrained"
+    ), patch.object(
+        adapter_module, "get_extra_weights_provider_headers"
+    ), patch.object(
+        adapter_module, "SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", send_to_cpu
+    ):
+        adapter_module.InferenceModelsSAM3InteractiveAdapter(api_key="k")
+
+    # then
+    assert emb_init.call_args.kwargs["send_to_cpu"] is send_to_cpu
+    assert masks_init.call_args.kwargs["send_to_cpu"] is send_to_cpu

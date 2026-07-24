@@ -8,12 +8,30 @@ from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
 from inference.core.warnings import (
+    InferenceConfigurationWarning,
     InferenceDeprecationWarning,
     InferenceModelsStackMissing,
     ModelDependencyMissing,
 )
 
 load_dotenv(os.getcwd() + "/.env")
+
+# Install warning filters before any module-level ``warnings.warn`` calls below,
+# so these flags also suppress warnings emitted during this module's own import
+# (e.g. the gaze deprecation stub warning), not just warnings raised afterwards.
+INFERENCE_WARNINGS_DISABLED = str2bool(
+    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
+)
+if INFERENCE_WARNINGS_DISABLED:
+    warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
+    warnings.simplefilter("ignore", InferenceConfigurationWarning)
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)
 
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
@@ -39,6 +57,26 @@ if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
         BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
     )
+
+# SSRF hardening for URL image input (GHSA-hjmm-hr52-vrp2).
+# When enabled, redirects are followed one hop at a time and every hop URL is
+# re-validated (scheme / FQDN / allow-list / block-list) instead of being
+# followed blindly by `requests`. Default is currently False to preserve the
+# legacy behaviour; the default is scheduled to flip to True in Q4 2026.
+VALIDATE_IMAGE_URL_REDIRECTS = str2bool(
+    os.getenv("VALIDATE_IMAGE_URL_REDIRECTS", False)
+)
+# Hard cap on the number of redirect hops allowed when fetching a URL image.
+# Enforced regardless of VALIDATE_IMAGE_URL_REDIRECTS. 30 mirrors the historical
+# `requests` default.
+MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", 30))
+# When False, a URL image whose hostname resolves to a non-global address
+# (loopback, private, link-local/metadata, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP. Default is currently True to preserve
+# the legacy behaviour; the default is scheduled to flip to False in Q4 2026.
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+)
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
@@ -109,13 +147,16 @@ GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
 # OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
 OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
 
-# OWLv2 image cache size, default is 1000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
+# OWLv2 image cache size, default is 10000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
 OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
 OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 
-# OWLv2 CPU image cache size, default is 10000
+# OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
+OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
+
+# OWLv2 CPU image cache size, default is 1000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
 # OWLv2 compile model, default is True
@@ -146,7 +187,7 @@ CLASS_AGNOSTIC_NMS = str2bool(
     os.getenv(CLASS_AGNOSTIC_NMS_ENV, DEFAULT_CLASS_AGNOSTIC_NMS)
 )
 
-# Confidence threshold, default is 50%
+# Confidence threshold, default is 40%
 CONFIDENCE_ENV = "CONFIDENCE"
 DEFAULT_CONFIDENCE = 0.4
 CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
@@ -208,12 +249,17 @@ CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", Tr
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
 
+# Flag to enable PP-OCR core model, default is True
+CORE_MODEL_PPOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_PPOCR_ENABLED", True))
+
 # Flag to enable GROUNDINGDINO core model, default is True
 CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
 )
 
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
+
+COSMOS3_ENABLED = str2bool(os.getenv("COSMOS3_ENABLED", True))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
@@ -258,6 +304,16 @@ MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
 )
 INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
     os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
+)
+
+# Periodically returns cached-but-unused CUDA memory to the driver
+# (torch.cuda.empty_cache) from a daemon thread, to bound the PyTorch caching
+# allocator high-water mark on long-running servers. Disabled by default.
+ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
+    os.getenv("ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG", "False")
+)
+CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
+    os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
 )
 
 # ID of host device, default is None
@@ -417,6 +473,11 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
         DeprecationWarning,
         stacklevel=1,
     )
+if SECURE_GATEWAY:
+    # The version check pings api.github.com, which is unreachable behind a
+    # secure gateway - with the default VERSION_CHECK_MODE=once it runs
+    # synchronously at import and can stall startup until the TCP timeout.
+    DISABLE_VERSION_CHECK = True
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
@@ -551,7 +612,13 @@ SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+# Cap on detections returned per prompt by /sam3/concept_segment; -1 = uncapped.
+# Applied before mask interpolation (see inference_models ChunkedPostProcessImage).
+SAM3_MAX_DETECTIONS = int(os.getenv("SAM3_MAX_DETECTIONS", -1))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = str2bool(
+    os.getenv("SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", True)
+)
 DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
@@ -684,8 +751,29 @@ HOSTED_CORE_MODEL_URL = os.getenv(
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
-WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
-WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
+    "WORKFLOWS_STEP_EXECUTION_MODE", "local"
+).lower()
+WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
+if (
+    SECURE_GATEWAY
+    and WORKFLOWS_STEP_EXECUTION_MODE == "remote"
+    and WORKFLOWS_REMOTE_API_TARGET == "hosted"
+):
+    # Remote step execution against hosted Roboflow inference endpoints
+    # (detect/outline/segment/classify/infer.roboflow.com) bypasses the secure
+    # gateway - the SDK client cannot route through the /proxy endpoint. Fall
+    # back to local execution instead of dead-ending every remote step.
+    warnings.warn(
+        "WORKFLOWS_STEP_EXECUTION_MODE=remote with WORKFLOWS_REMOTE_API_TARGET=hosted "
+        "is not supported behind SECURE_GATEWAY - hosted Roboflow inference endpoints "
+        "are not reachable through the gateway proxy. Forcing local step execution. "
+        "Use WORKFLOWS_REMOTE_API_TARGET=self-hosted (with LOCAL_INFERENCE_API_URL "
+        "pointing at a server inside the gateway perimeter) to keep remote execution.",
+        InferenceConfigurationWarning,
+        stacklevel=1,
+    )
+    WORKFLOWS_STEP_EXECUTION_MODE = "local"
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
 WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
     os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH", "4")
@@ -708,6 +796,35 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
 ).lower()  # "local" or "modal"
 
+# JPEG quality used when serializing images for the webexec round-trip.
+# Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
+# shrink payloads significantly for WebRTC preview with minimal visual impact.
+WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
+
+# Transport protocol for webexec execution: "http" or "websocket".
+# Modal code validation always uses the HTTP execute-block endpoint, so
+# websocket deployments must keep both execute-block and wsapp deployed.
+WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
+
+# Websocket transport timeouts. Keep connection establishment fast, but allow
+# reads to wait for Modal's custom block execution budget.
+WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
+)
+# Set slightly above the server's 700s execution budget (modal_app.py Executor
+# timeout) so that when a block hits the server limit, the server's error frame
+# arrives before the client read times out. Equal values race and surface an
+# ambiguous "connection lost after send" instead of the real server error.
+WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
+)
+
+WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))
+WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
+    os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
+)
+
+
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
 _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
@@ -716,6 +833,10 @@ _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
 MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+MODAL_WEB_ENDPOINT_URL = os.getenv("MODAL_WEB_ENDPOINT_URL", "")
+MODAL_WS_ENDPOINT_URL = os.getenv("MODAL_WS_ENDPOINT_URL", "")
+WEBEXEC_MODAL_APP_NAME = os.getenv("WEBEXEC_MODAL_APP_NAME", f"webexec-{PROJECT}")
+WEBEXEC_INFERENCE_VERSION = os.getenv("WEBEXEC_INFERENCE_VERSION")
 
 # Control whether anonymous Modal execution is allowed (when no api_key is available)
 MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
@@ -727,14 +848,6 @@ MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
 )
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
-
-INFERENCE_WARNINGS_DISABLED = str2bool(
-    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
-)
-
-if INFERENCE_WARNINGS_DISABLED:
-    warnings.simplefilter("ignore", InferenceDeprecationWarning)
-    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
@@ -780,6 +893,9 @@ DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
 
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
+ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN = os.getenv(
+    "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN"
+) or os.getenv("ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN")
 
 # Preload Models
 PRELOAD_MODELS = (
@@ -823,12 +939,6 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
 # Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
 ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
 
-IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
-    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
-)
-if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
-    warnings.simplefilter("ignore", ModelDependencyMissing)
-
 DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
 MEMORY_FREE_THRESHOLD = float(
     os.getenv("MEMORY_FREE_THRESHOLD", "0.0")
@@ -862,6 +972,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1600 -> ~10G
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
+# pipeline futures on the main execution path.
+WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = float(
+    os.getenv("WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT", "60.0")
+)
 
 # Confidence lower bound to prevent OOM when inferring on instance segmentation models
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
@@ -948,6 +1064,16 @@ WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
 
+# When enabled, force the Modal region to WEBRTC_MODAL_REQUIRED_REGION regardless of
+# the client-requested region (e.g. to enforce EU data residency)
+WEBRTC_MODAL_ENFORCE_REGION = str2bool(
+    os.getenv("WEBRTC_MODAL_ENFORCE_REGION", "False")
+)
+WEBRTC_MODAL_REQUIRED_REGION = os.getenv("WEBRTC_MODAL_REQUIRED_REGION")
+WEBRTC_MODAL_VOLUME_NAME = os.getenv("WEBRTC_MODAL_VOLUME_NAME", "rfcache")
+# Baked into the Modal class decorator at deploy time since with_options cannot set it
+WEBRTC_MODAL_ROUTING_REGION = os.getenv("WEBRTC_MODAL_ROUTING_REGION")
+
 #
 # Workspace stream quota
 #
@@ -1009,6 +1135,14 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )
+
+# Size of the anyio thread pool serving synchronous HTTP handlers.
+# Default is None, which leaves the anyio default (40 threads) untouched.
+HTTP_API_THREADPOOL_WORKERS = os.getenv("HTTP_API_THREADPOOL_WORKERS")
+if HTTP_API_THREADPOOL_WORKERS:
+    HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
+else:
+    HTTP_API_THREADPOOL_WORKERS = None
 
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")

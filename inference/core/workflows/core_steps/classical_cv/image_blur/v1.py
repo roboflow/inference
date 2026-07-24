@@ -123,7 +123,7 @@ class ImageBlurManifest(WorkflowBlockManifest):
 
     kernel_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=5,
-        description="Size of the blur kernel (must be positive and typically odd). Controls the blur intensity - larger values create more blur, smaller values create less blur. For average and gaussian blur, this is the width and height of the kernel (e.g., 5 means 5x5 kernel). For median blur, this must be an odd integer (automatically handled). For bilateral blur, this controls the diameter of the pixel neighborhood. Typical values range from 3-15: smaller values (3-5) provide subtle blur, medium values (5-9) provide moderate blur, larger values (11-15) provide strong blur. Default is 5, which provides moderate blur. Adjust based on image size and desired blur intensity.",
+        description="Size of the blur kernel (must be positive and typically odd). Controls the blur intensity - larger values create more blur, smaller values create less blur. For average and gaussian blur, this is the width and height of the kernel (e.g., 5 means 5x5 kernel). For gaussian and median blur, the kernel size must be a positive odd integer; even or non-positive values are automatically coerced to the next positive odd value. For bilateral blur, this controls the diameter of the pixel neighborhood. Typical values range from 3-15: smaller values (3-5) provide subtle blur, medium values (5-9) provide moderate blur, larger values (11-15) provide strong blur. Default is 5, which provides moderate blur. Adjust based on image size and desired blur intensity.",
         examples=[5, "$inputs.kernel_size"],
     )
 
@@ -168,6 +168,18 @@ class ImageBlurBlockV1(WorkflowBlock):
         return {OUTPUT_IMAGE_KEY: output}
 
 
+def _to_positive_odd(ksize: int) -> int:
+    """Coerce a kernel size to a positive odd integer.
+
+    ``cv2.GaussianBlur`` and ``cv2.medianBlur`` require an odd, positive ksize
+    and raise ``cv2.error`` otherwise.
+    """
+    ksize = max(1, int(ksize))
+    if ksize % 2 == 0:
+        ksize += 1
+    return ksize
+
+
 def apply_blur(image: np.ndarray, blur_type: str, ksize: int = 5) -> np.ndarray:
     """
     Applies the specified blur to the image.
@@ -184,8 +196,10 @@ def apply_blur(image: np.ndarray, blur_type: str, ksize: int = 5) -> np.ndarray:
     if blur_type == "average":
         blurred_image = cv2.blur(image, (ksize, ksize))
     elif blur_type == "gaussian":
+        ksize = _to_positive_odd(ksize)
         blurred_image = cv2.GaussianBlur(image, (ksize, ksize), 0)
     elif blur_type == "median":
+        ksize = _to_positive_odd(ksize)
         blurred_image = cv2.medianBlur(image, ksize)
     elif blur_type == "bilateral":
         blurred_image = cv2.bilateralFilter(image, ksize, 75, 75)

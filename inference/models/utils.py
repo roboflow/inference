@@ -9,11 +9,13 @@ from inference.core.env import (
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
+    CORE_MODEL_PPOCR_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
+    COSMOS3_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
     FLORENCE2_ENABLED,
     GLM_OCR_ENABLED,
@@ -33,7 +35,10 @@ from inference.core.models.stubs import (
     KeypointsDetectionModelStub,
     ObjectDetectionModelStub,
 )
-from inference.core.registries.roboflow import get_model_type
+from inference.core.registries.roboflow import (
+    LOCAL_INFERENCE_MODELS_MODEL_TYPE,
+    get_model_type,
+)
 from inference.core.warnings import InferenceModelsStackMissing, ModelDependencyMissing
 from inference.models import (
     YOLACT,
@@ -60,6 +65,7 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.vllm_proxy import VLLM_PROXY_ENABLED
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
@@ -466,18 +472,51 @@ except:
 
 try:
     if QWEN_3_ENABLED:
-        from inference.models import LoRAQwen3VL, Qwen3VL
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3vl_vllm import Qwen3VLVLLMProxy
 
-        qwen3vl_models = {
-            ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
-            ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
-        }
+            qwen3vl_models = {
+                ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VLVLLMProxy,
+                ("text-image-pairs", "qwen3vl-2b-instruct-peft"): Qwen3VLVLLMProxy,
+            }
+        else:
+            from inference.models import LoRAQwen3VL, Qwen3VL
+
+            qwen3vl_models = {
+                ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
+                ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
+            }
         ROBOFLOW_MODEL_TYPES.update(qwen3vl_models)
 except:
     warnings.warn(
         "Your `inference` configuration does not support Qwen3-VL model. "
         "Use pip install 'inference[transformers]' to install missing requirements."
         "To suppress this warning, set QWEN_3_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    # Cosmos 3 Edge has no legacy implementation — it is served exclusively
+    # through the inference_models bridge adapter.
+    if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
+        from inference.models.cosmos3.cosmos3_reasoner_inference_models import (
+            InferenceModelsCosmos3ReasonerAdapter,
+        )
+
+        cosmos3_models = {
+            (
+                "text-image-pairs",
+                "cosmos-3-edge",
+            ): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+        }
+        ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support the Cosmos 3 model. "
+        "Since inference 1.3.6 was shipped when downstream model dependencies were not released yet, "
+        "we have enabled the model in selected builds only. Installation guide will be provided "
+        "in following releases. To suppress this warning, set COSMOS3_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -653,14 +692,31 @@ except:
 
 try:
     if CORE_MODEL_TROCR_ENABLED:
-        from inference.models import TrOCR
+        from inference.models.trocr.trocr_inference_models import (
+            InferenceModelsTrOCRAdapter,
+        )
 
-        ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
+        ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = InferenceModelsTrOCRAdapter
 except:
     warnings.warn(
         "Your `inference` configuration does not support TrOCR model. "
         "Use pip install 'inference[transformers]' to install missing requirements."
         "To suppress this warning, set CORE_MODEL_TROCR_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if CORE_MODEL_PPOCR_ENABLED:
+        from inference.models.pp_ocr.pp_ocr_inference_models import (
+            InferenceModelsPPOCRAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("ocr", "pp_ocr")] = InferenceModelsPPOCRAdapter
+except ImportError:
+    warnings.warn(
+        "Your `inference` configuration does not support PP-OCR model. "
+        "Use pip install 'inference[inference-models]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_PPOCR_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -809,21 +865,30 @@ if USE_INFERENCE_MODELS:
                     InferenceModelsQwen25VLAdapter
                 )
             elif variant.startswith("qwen3vl-"):
-                from inference.models.qwen3vl.qwen3vl_inference_models import (
-                    InferenceModelsQwen3VLAdapter,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3vl_vllm import (
+                        Qwen3VLVLLMProxy as _Qwen3VLModelClass,
+                    )
+                else:
+                    from inference.models.qwen3vl.qwen3vl_inference_models import (
+                        InferenceModelsQwen3VLAdapter as _Qwen3VLModelClass,
+                    )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3vl")] = InferenceModelsQwen3VLAdapter
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen3VLModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3vl")] = _Qwen3VLModelClass
             elif variant.startswith("qwen3_5"):
-                from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
-                    InferenceModelsQwen35VLAdapter,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3_5_vllm import (
+                        Qwen35VLLMProxy as _Qwen35ModelClass,
+                    )
+                else:
+                    from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
+                        InferenceModelsQwen35VLAdapter as _Qwen35ModelClass,
+                    )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen35VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = (
-                    InferenceModelsQwen35VLAdapter
-                )
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen35ModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ModelClass
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
                     InferenceModelsSAMAdapter,
@@ -848,6 +913,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM3Adapter
+                ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3")] = (
+                    InferenceModelsSAM3Adapter
+                )
                 ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = (
                     InferenceModelsSAM3Adapter
                 )
@@ -857,6 +925,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsSAM3InteractiveAdapter
+                )
+                ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam3")] = (
                     InferenceModelsSAM3InteractiveAdapter
                 )
             elif task == "embed" and variant == "clip":
@@ -892,6 +963,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsGazeAdapter
+                ROBOFLOW_MODEL_TYPES[("gaze-detection", "l2cs-net")] = (
+                    InferenceModelsGazeAdapter
+                )
             elif task in {"lmm", "text-image-pairs"} and (
                 variant.startswith("smolvlm-2.2b")
                 or variant.startswith("smolvlm2")
@@ -965,6 +1039,9 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsGroundingDINOAdapter
                 )
+                ROBOFLOW_MODEL_TYPES[
+                    ("open-vocabulary-object-detection", "grounding-dino")
+                ] = InferenceModelsGroundingDINOAdapter
             elif task == "embed" and variant == "perception_encoder":
                 from inference.models.perception_encoder.perception_encoder_inference_models import (
                     InferenceModelsPerceptionEncoderAdapter,
@@ -989,6 +1066,80 @@ if USE_INFERENCE_MODELS:
                 f"falling back to regular `inference` stack - error: {e}",
                 category=InferenceModelsStackMissing,
             )
+
+    # Exact (taskType, modelArchitecture) tuples returned by
+    # /models/v1/external/stat for entries backed by generic inference-models
+    # adapters. These complement the legacy variant aliases above.
+    ROBOFLOW_MODEL_TYPES.update(
+        {
+            ("object-detection", "rfdetr"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolo26"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yololite"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolonas"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov10"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov11"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov12"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov5"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov8"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov9"): InferenceModelsObjectDetectionAdapter,
+            ("instance-segmentation", "rfdetr"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "segment-anything-2-rt"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolact"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolo26"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov11"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov5"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov7"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov8"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("keypoint-detection", "rfdetr"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("keypoint-detection", "yolo26"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("keypoint-detection", "yolov11"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("keypoint-detection", "yolov8"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("semantic-segmentation", "deep-lab-v3-plus"): (
+                InferenceModelsSemanticSegmentationAdapter
+            ),
+            ("semantic-segmentation", "yolo26"): (
+                InferenceModelsSemanticSegmentationAdapter
+            ),
+            ("classification", "dinov3_probe"): InferenceModelsClassificationAdapter,
+            ("classification", "resnet"): InferenceModelsClassificationAdapter,
+            ("classification", "vit"): InferenceModelsClassificationAdapter,
+            ("classification", "yolov11"): InferenceModelsClassificationAdapter,
+            ("classification", "yolov8"): InferenceModelsClassificationAdapter,
+            ("multi-label-classification", "dinov3_probe"): (
+                InferenceModelsClassificationAdapter
+            ),
+            ("multi-label-classification", "resnet"): (
+                InferenceModelsClassificationAdapter
+            ),
+            ("multi-label-classification", "vit"): (
+                InferenceModelsClassificationAdapter
+            ),
+        }
+    )
 
     # YOLO26 semantic segmentation is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
@@ -1031,9 +1182,14 @@ if USE_INFERENCE_MODELS:
 
     # inference-models only, needs to be added here
     if QWEN_3_5_ENABLED:
-        from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
-            InferenceModelsQwen35VLAdapter,
-        )
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3_5_vllm import (
+                Qwen35VLLMProxy as _Qwen35ExplicitModelClass,
+            )
+        else:
+            from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
+                InferenceModelsQwen35VLAdapter as _Qwen35ExplicitModelClass,
+            )
 
         for variant in [
             "qwen3_5-0.8b",
@@ -1042,11 +1198,12 @@ if USE_INFERENCE_MODELS:
             "qwen3_5-0.8b-peft",
             "qwen3_5-2b-peft",
         ]:
-            ROBOFLOW_MODEL_TYPES[("lmm", variant)] = InferenceModelsQwen35VLAdapter
+            ROBOFLOW_MODEL_TYPES[("lmm", variant)] = _Qwen35ExplicitModelClass
             ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
-                InferenceModelsQwen35VLAdapter
+                _Qwen35ExplicitModelClass
             )
-        ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+        ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ExplicitModelClass
+        ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ExplicitModelClass
 
     if GLM_OCR_ENABLED:
         from inference.models.glm_ocr.glm_ocr_inference_models import (
@@ -1054,3 +1211,17 @@ if USE_INFERENCE_MODELS:
         )
 
         ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter
+
+    # Models loaded directly from a local directory (ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES).
+    # Task type is read from the local model_config.json; the adapter forwards the path to
+    # AutoModel.from_pretrained with allow_direct_local_storage_loading=True.
+    for local_task, local_adapter in [
+        ("object-detection", InferenceModelsObjectDetectionAdapter),
+        ("instance-segmentation", InferenceModelsInstanceSegmentationAdapter),
+        ("keypoint-detection", InferenceModelsKeyPointsDetectionAdapter),
+        ("classification", InferenceModelsClassificationAdapter),
+        ("semantic-segmentation", InferenceModelsSemanticSegmentationAdapter),
+    ]:
+        ROBOFLOW_MODEL_TYPES[(local_task, LOCAL_INFERENCE_MODELS_MODEL_TYPE)] = (
+            local_adapter
+        )

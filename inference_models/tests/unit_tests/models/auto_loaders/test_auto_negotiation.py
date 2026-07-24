@@ -22,6 +22,7 @@ from inference_models.models.auto_loaders.auto_negotiation import (
     filter_model_packages_by_requested_quantization,
     model_package_matches_batch_size_request,
     model_package_matches_runtime_environment,
+    negotiate_model_packages,
     onnx_package_matches_runtime_environment,
     parse_backend_type,
     parse_batch_size,
@@ -2559,6 +2560,49 @@ def test_select_model_package_by_id_when_there_is_single_match() -> None:
 
     # then
     assert result.package_id == "my-package-id-2"
+
+
+def test_negotiate_rejects_explicit_untrusted_package_without_opt_in() -> None:
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="localtrtabc",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP16,
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    with pytest.raises(NoModelPackagesAvailableError):
+        negotiate_model_packages(
+            model_architecture="rfdetr",
+            task_type="object-detection",
+            model_packages=model_packages,
+            requested_model_package_id="localtrtabc",
+            allow_untrusted_packages=False,
+        )
+
+
+def test_negotiate_allows_explicit_untrusted_package_with_opt_in() -> None:
+    package = ModelPackageMetadata(
+        package_id="localtrtabc",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+        trusted_source=False,
+    )
+
+    result = negotiate_model_packages(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        model_packages=[package],
+        requested_model_package_id="localtrtabc",
+        allow_untrusted_packages=True,
+    )
+
+    assert [p.package_id for p in result] == ["localtrtabc"]
 
 
 def test_remove_untrusted_packages() -> None:

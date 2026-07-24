@@ -291,7 +291,7 @@ class SizeMeasurementBlockV1(WorkflowBlock):
         dimensions = []
         for i in range(len(object_predictions)):
             obj_w_pixels, obj_h_pixels = get_detection_dimensions(object_predictions, i)
-            if obj_w_pixels > 0 and obj_h_pixels > 0:
+            if obj_w_pixels and obj_h_pixels and obj_w_pixels > 0 and obj_h_pixels > 0:
                 obj_w_actual = obj_w_pixels * width_scale
                 obj_h_actual = obj_h_pixels * height_scale
                 dimensions.append(

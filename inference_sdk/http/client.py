@@ -147,7 +147,7 @@ def wrap_errors(function: callable) -> callable:
                 status_code=error.response.status_code,
                 api_message=api_message,
             ) from error
-        except ConnectionError as error:
+        except (ConnectionError, requests.exceptions.ConnectionError) as error:
             raise HTTPClientError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
@@ -1106,9 +1106,15 @@ class InferenceHTTPClient:
 
         Args:
             inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for OCR.
-            model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
+            model (str, optional): OCR model to use ('doctr', 'trocr', 'easy_ocr' or 'pp_ocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
+                For pp_ocr, the version selects the detection and recognition stages as
+                '{detection}-{recognition}', where each stage is one of 'none', 'tiny', 'small' or 'medium'
+                (default 'small-small'). Passing a single token (e.g. 'small') applies it to both stages.
+                Setting a stage to 'none' skips it: 'small-none' runs detection only (boxes without text),
+                'none-small' runs recognition only (each full input image is read as a single text line).
+                'none-none' is invalid.
             quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
             generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
                 with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
@@ -1169,9 +1175,15 @@ class InferenceHTTPClient:
 
         Args:
             inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for OCR.
-            model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
+            model (str, optional): OCR model to use ('doctr', 'trocr', 'easy_ocr' or 'pp_ocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
+                For pp_ocr, the version selects the detection and recognition stages as
+                '{detection}-{recognition}', where each stage is one of 'none', 'tiny', 'small' or 'medium'
+                (default 'small-small'). Passing a single token (e.g. 'small') applies it to both stages.
+                Setting a stage to 'none' skips it: 'small-none' runs detection only (boxes without text),
+                'none-small' runs recognition only (each full input image is read as a single text line).
+                'none-none' is invalid.
             quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
             generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
                 with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some

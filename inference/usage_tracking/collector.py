@@ -3,6 +3,7 @@ import atexit
 import json
 import mimetypes
 import numbers
+import re
 import socket
 import sys
 import time
@@ -52,6 +53,7 @@ from .decorator_helpers import (
     get_request_api_key_from_kwargs,
     get_request_resource_details_from_kwargs,
     get_request_resource_id_from_kwargs,
+    get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
     get_workflow_resource_details_from_kwargs,
 )
@@ -70,10 +72,18 @@ from .payload_helpers import (
 from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
-from .utils import collect_func_params
+from .stream_session import stream_session_id as stream_session_id_var
+from .utils import collect_func_params, ssl_verify_for_endpoint
 
 T = TypeVar("T")
 P = ParamSpec("P")
+
+SUCCESS_OUTCOME = "success"
+ERROR_OUTCOME = "error"
+UNKNOWN_ERROR_TYPE = "unknown"
+ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+ERROR_STATUS_CODE_KEY = "error_status_code"
+ERROR_TYPE_KEY = "error_type"
 
 
 class UsageCollector:
@@ -150,7 +160,18 @@ class UsageCollector:
         self._system_info: Dict[str, Any] = {}
         self._resource_details_lock = Lock()
         self._resource_details: DefaultDict[
-            APIKey, Dict[Tuple[ResourceCategory, ResourceID], Dict[str, Any]]
+            APIKey,
+            Dict[
+                Tuple[
+                    ResourceCategory,
+                    ResourceID,
+                    bool,
+                    str,
+                    Optional[str],
+                    Optional[int],
+                ],
+                Dict[str, Any],
+            ],
         ] = defaultdict(dict)
 
         self._terminate_collector_thread = Event()
@@ -233,6 +254,114 @@ class UsageCollector:
     def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
+    @staticmethod
+    def _is_billable(resource_details: Optional[Dict[str, Any]]) -> bool:
+        """Normalize the pass-through billing flag for aggregation partitioning."""
+        if not resource_details:
+            return True
+        billable = resource_details.get("billable")
+        return not (
+            billable is False
+            or (isinstance(billable, str) and billable.lower() == "false")
+        )
+
+    @staticmethod
+    def _normalize_error_type(error_type: Any) -> str:
+        if not isinstance(error_type, str):
+            return UNKNOWN_ERROR_TYPE
+        error_type = error_type.strip()
+        if not ERROR_TYPE_PATTERN.fullmatch(error_type):
+            return UNKNOWN_ERROR_TYPE
+        return error_type
+
+    @staticmethod
+    def _normalize_error_status_code(status_code: Any) -> Optional[int]:
+        if isinstance(status_code, bool) or not isinstance(
+            status_code, numbers.Integral
+        ):
+            return None
+        status_code = int(status_code)
+        if not 400 <= status_code <= 599:
+            return None
+        return status_code
+
+    @classmethod
+    def _normalize_error_metadata(
+        cls, resource_details: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        resource_details = dict(resource_details)
+        if "error" not in resource_details:
+            resource_details.pop(ERROR_TYPE_KEY, None)
+            resource_details.pop(ERROR_STATUS_CODE_KEY, None)
+            return resource_details
+
+        resource_details[ERROR_TYPE_KEY] = cls._normalize_error_type(
+            resource_details.get(ERROR_TYPE_KEY)
+        )
+        error_status_code = cls._normalize_error_status_code(
+            resource_details.get(ERROR_STATUS_CODE_KEY)
+        )
+        if error_status_code is None:
+            resource_details.pop(ERROR_STATUS_CODE_KEY, None)
+        else:
+            resource_details[ERROR_STATUS_CODE_KEY] = error_status_code
+        return resource_details
+
+    @classmethod
+    def _usage_outcome(
+        cls, resource_details: Optional[Dict[str, Any]]
+    ) -> Tuple[str, Optional[str], Optional[int]]:
+        if not resource_details or "error" not in resource_details:
+            return SUCCESS_OUTCOME, None, None
+        error_type = cls._normalize_error_type(resource_details.get(ERROR_TYPE_KEY))
+        error_status_code = cls._normalize_error_status_code(
+            resource_details.get(ERROR_STATUS_CODE_KEY)
+        )
+        return ERROR_OUTCOME, error_type, error_status_code
+
+    @classmethod
+    def _resource_details_key(
+        cls,
+        category: ResourceCategory,
+        resource_id: ResourceID,
+        resource_details: Optional[Dict[str, Any]],
+    ) -> Tuple[
+        ResourceCategory,
+        ResourceID,
+        bool,
+        str,
+        Optional[str],
+        Optional[int],
+    ]:
+        outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
+        return (
+            category,
+            resource_id,
+            cls._is_billable(resource_details),
+            outcome,
+            error_type,
+            error_status_code,
+        )
+
+    @classmethod
+    def _usage_key(
+        cls,
+        category: ResourceCategory,
+        resource_id: ResourceID,
+        resource_details: Optional[Dict[str, Any]],
+        stream_session_id: Optional[str] = None,
+    ) -> str:
+        billable = str(cls._is_billable(resource_details)).lower()
+        outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
+        usage_key = f"{category}:{resource_id}:billable={billable}:outcome={outcome}"
+        if outcome == ERROR_OUTCOME:
+            usage_key = f"{usage_key}:error_type={error_type}"
+            if error_status_code is not None:
+                usage_key = f"{usage_key}:error_status_code={error_status_code}"
+        if stream_session_id:
+            usage_key = f"{usage_key}:{stream_session_id}"
+        return usage_key
+
     def _enqueue_payload(self, payload: UsagePayload):
         logger.debug("Enqueuing usage payload")
         if not payload:
@@ -263,6 +392,7 @@ class UsageCollector:
                 "Tried to record non-dict resource details, '%s'", resource_details
             )
             return
+        resource_details = self._normalize_error_metadata(resource_details)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -271,7 +401,12 @@ class UsageCollector:
 
         with self._resource_details_lock:
             api_key_resource_details = self._resource_details[api_key]
-            api_key_resource_details[(category, resource_id)] = resource_details
+            resource_details_key = self._resource_details_key(
+                category=category,
+                resource_id=resource_id,
+                resource_details=resource_details,
+            )
+            api_key_resource_details[resource_details_key] = dict(resource_details)
 
     @staticmethod
     def system_info(
@@ -367,26 +502,44 @@ class UsageCollector:
         except Exception:
             frames = 0
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
-        if not resource_id and resource_details:
-            resource_id = UsageCollector._calculate_resource_hash(resource_details)
+        provided_resource_details = self._normalize_error_metadata(
+            resource_details or {}
+        )
+        if not resource_id and provided_resource_details:
+            resource_id = UsageCollector._calculate_resource_hash(
+                resource_details=provided_resource_details
+            )
+        resource_details_key = self._resource_details_key(
+            category=category,
+            resource_id=resource_id,
+            resource_details=provided_resource_details,
+        )
         with self._resource_details_lock:
             cached_resource_details = self._resource_details.get(api_key, {}).get(
-                (category, resource_id)
+                resource_details_key
             )
             if cached_resource_details is not None:
                 cached_resource_details = dict(cached_resource_details)
-        # Cache miss must not silently drop the billable flag (and other fields)
-        # off the payload — fall back to the resource_details passed in by the caller.
-        if cached_resource_details:
-            resource_details = cached_resource_details
-        elif not resource_details:
-            resource_details = {}
+        # Cached details may contain stable resource metadata, but per-request
+        # values such as billable and error must always remain authoritative.
+        resource_details = {
+            **(cached_resource_details or {}),
+            **provided_resource_details,
+        }
+        resource_details = self._normalize_error_metadata(resource_details)
         with self._system_info_lock:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
             hostname = self._system_info["hostname"]
+        stream_session_id = stream_session_id_var.get()
+        usage_key = self._usage_key(
+            category=category,
+            resource_id=resource_id,
+            resource_details=resource_details,
+            stream_session_id=stream_session_id,
+        )
         with UsageCollector._lock:
-            source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
+            source_usage = self._usage[api_key_hash][usage_key]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
@@ -410,6 +563,9 @@ class UsageCollector:
             ):
                 source_usage["roboflow_service_name"] = roboflow_service_name
                 source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+
+            if stream_session_id:
+                source_usage["stream_session_id"] = stream_session_id
 
             exec_session_id = None
             if execution_id is not None:
@@ -531,11 +687,7 @@ class UsageCollector:
         self._offload_to_api(payloads=merged_payloads)
 
     def _offload_to_api(self, payloads: List[APIKeyUsage]):
-        ssl_verify = True
-        if "localhost" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
-        if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
+        ssl_verify = ssl_verify_for_endpoint(self._settings.api_usage_endpoint_url)
 
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 
@@ -597,7 +749,7 @@ class UsageCollector:
         execution_duration: float,
         func: Callable[[Any], Any],
         category: Literal["model", "workflows", "request", "modal"],
-        exc: Optional[str],
+        error_details: Optional[Dict[str, Any]],
         args: List[Any],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -609,8 +761,6 @@ class UsageCollector:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
         if DEVICE_ID:
             resource_details["device_id"] = DEVICE_ID
-        if exc is not None:
-            resource_details["error"] = exc
         resource_id = ""
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if category == "workflows":
@@ -656,6 +806,13 @@ class UsageCollector:
         else:
             resource_id = "unknown"
             category = "unknown"
+
+        source_info = get_source_info_from_kwargs(func_kwargs)
+        if source_info:
+            resource_details["source_info"] = source_info
+
+        if error_details is not None:
+            resource_details = {**resource_details, **error_details}
 
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
@@ -718,6 +875,45 @@ class UsageCollector:
                 pass
         return max(raw, 0.1)
 
+    @classmethod
+    def _exception_error_details(cls, error: Exception) -> Dict[str, Any]:
+        error_type = cls._normalize_error_type(type(error).__name__)
+        inner_error_type = getattr(error, "inner_error_type", None)
+        if inner_error_type:
+            error_type = cls._normalize_error_type(inner_error_type)
+
+        error_status_code = cls._normalize_error_status_code(
+            getattr(error, "status_code", None)
+        )
+        inner_error = getattr(error, "inner_error", None)
+        if error_status_code is None and inner_error is not None:
+            error_status_code = cls._normalize_error_status_code(
+                getattr(inner_error, "status_code", None)
+            )
+
+        error_details = {
+            "error": f"{error_type}: {str(error)}",
+            ERROR_TYPE_KEY: error_type,
+        }
+        if error_status_code is not None:
+            error_details[ERROR_STATUS_CODE_KEY] = error_status_code
+        return error_details
+
+    @classmethod
+    def _response_error(cls, response: Any) -> Optional[Dict[str, Any]]:
+        status_code = getattr(response, "status_code", None)
+        status_code = cls._normalize_error_status_code(status_code)
+        if status_code is not None:
+            return {
+                "error": (
+                    f"HTTPResponseError{status_code}: "
+                    f"response returned status {status_code}"
+                ),
+                ERROR_TYPE_KEY: "HTTPResponseError",
+                ERROR_STATUS_CODE_KEY: status_code,
+            }
+        return None
+
     def __call__(
         self, category: Literal["model", "workflows", "request"]
     ) -> Callable[P, T]:
@@ -738,6 +934,7 @@ class UsageCollector:
                     res = func(*args, **kwargs)
                     t2 = time.time()
                     execution_duration = self._compute_execution_duration(t1, t2)
+                    response_error_details = self._response_error(res)
                     self.record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -749,7 +946,7 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=None,
+                            error_details=response_error_details,
                             args=args,
                             kwargs=kwargs,
                         )
@@ -757,10 +954,7 @@ class UsageCollector:
                 except Exception as exc:
                     t2 = time.time()
                     execution_duration = self._compute_execution_duration(t1, t2)
-                    exc_type = type(exc).__name__
-                    if hasattr(exc, "inner_error_type"):
-                        exc_type = exc.inner_error_type
-                    exc_str = f"{exc_type}: {str(exc)}"
+                    error_details = self._exception_error_details(exc)
                     self.record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -772,7 +966,7 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=exc_str,
+                            error_details=error_details,
                             args=args,
                             kwargs=kwargs,
                         )
@@ -796,6 +990,7 @@ class UsageCollector:
                     res = await func(*args, **kwargs)
                     t2 = time.time()
                     execution_duration = self._compute_execution_duration(t1, t2)
+                    response_error_details = self._response_error(res)
                     await self.async_record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -807,7 +1002,7 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=None,
+                            error_details=response_error_details,
                             args=args,
                             kwargs=kwargs,
                         )
@@ -815,10 +1010,7 @@ class UsageCollector:
                 except Exception as exc:
                     t2 = time.time()
                     execution_duration = self._compute_execution_duration(t1, t2)
-                    exc_type = type(exc).__name__
-                    if hasattr(exc, "inner_error_type"):
-                        exc_type = exc.inner_error_type
-                    exc_str = f"{exc_type}: {str(exc)}"
+                    error_details = self._exception_error_details(exc)
                     await self.async_record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -830,7 +1022,7 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=exc_str,
+                            error_details=error_details,
                             args=args,
                             kwargs=kwargs,
                         )

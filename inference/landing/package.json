@@ -12,7 +12,11 @@
     "@tailwindcss/postcss": "^4.3.0",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "brace-expansion": "^5.0.7",
+    "js-yaml": "^4.3.0",
+    "immutable": ">=5.1.8",
+    "sharp": "^0.35.0"
   },
   "devDependencies": {
     "@headlessui/react": "^1.7.17",
@@ -29,7 +33,11 @@
     "react-syntax-highlighter": "^16.1.1",
     "sass": "^1.68.0",
     "tailwindcss": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "js-yaml": "^4.3.0",
+    "@babel/core": "^7.29.6",
+    "immutable": ">=5.1.8",
+    "sharp": "^0.35.0"
   },
   "overrides": {
     "next": {

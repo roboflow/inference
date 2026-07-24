@@ -42,6 +42,9 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1 import (
+    AutoRotateOnEdgesBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
     BackgroundSubtractionBlockV1,
 )
@@ -62,6 +65,9 @@ from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 i
 )
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+    DetectionsNearestNeighborBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
     DistanceMeasurementBlockV1,
@@ -153,6 +159,9 @@ from inference.core.workflows.core_steps.flow_control.inner_workflow.v1 import (
 from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.switch_case.v1 import (
+    SwitchCaseBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.current_time.v1 import (
     CurrentTimeBlockV1,
@@ -197,9 +206,16 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.frame_delay.v1 import FrameDelayBlockV1
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
     OverlapAnalysisBlockV1,
+)
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
+    RoboflowVisualSearchBlockV1,
+)
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+    RoboflowVisualSearchClassifierBlockV1,
 )
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
@@ -224,6 +240,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 )
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
     DepthEstimationBlockV1,
@@ -300,6 +319,7 @@ from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import 
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import PPOCRBlockV1
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
@@ -522,6 +542,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 )
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     DynamicZonesBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.geotag_detection.v1 import (
+    GeoTagDetectionBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
@@ -811,6 +834,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
+        RoboflowVisualSearchBlockV1,
+        RoboflowVisualSearchClassifierBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
@@ -819,12 +844,14 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
+        SwitchCaseBlockV1,
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
+        FrameDelayBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
@@ -863,6 +890,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
+        DetectionsNearestNeighborBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
@@ -878,6 +906,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
+        AutoRotateOnEdgesBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         HeatmapVisualizationBlockV1,
@@ -931,6 +960,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIImageGenBlockV1,
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
+        GeoTagDetectionBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,
@@ -988,6 +1018,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
+        Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
@@ -1006,6 +1037,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowVisionEventsBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
+        PPOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,

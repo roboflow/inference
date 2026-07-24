@@ -1,5 +1,6 @@
 from functools import wraps
 
+from fastapi import HTTPException
 from starlette.responses import JSONResponse
 
 from inference.core import logger
@@ -73,6 +74,13 @@ from inference.core.workflows.errors import (
     WorkflowExecutionEngineVersionError,
     WorkflowSyntaxError,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowInvalidStepEntryError,
+    InnerWorkflowNestingDepthError,
+    InnerWorkflowParameterBindingsError,
+    InnerWorkflowTotalCountError,
+)
 from inference_models.errors import (
     EnvironmentConfigurationError,
     FileHashSumMissmatch,
@@ -124,6 +132,12 @@ def _build_execution_error_response(
                 block_traceback=error.block_traceback,
             ),
         ],
+        # Attached by the workflow-run route when `debug=True` and the run
+        # failed; carries logs of python blocks executed before the failure.
+        python_blocks_output_streams=getattr(
+            error, "python_blocks_output_streams", None
+        ),
+        python_blocks_debug_traces=getattr(error, "python_blocks_debug_traces", None),
     )
 
 
@@ -238,6 +252,11 @@ def with_route_exceptions(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            InnerWorkflowCompositionCycleError,
+            InnerWorkflowInvalidStepEntryError,
+            InnerWorkflowNestingDepthError,
+            InnerWorkflowTotalCountError,
+            InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
@@ -500,6 +519,14 @@ def with_route_exceptions(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -522,6 +549,15 @@ def with_route_exceptions(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -574,6 +610,8 @@ def with_route_exceptions(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except HTTPException:
+            raise
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -693,6 +731,11 @@ def with_route_exceptions_async(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            InnerWorkflowCompositionCycleError,
+            InnerWorkflowInvalidStepEntryError,
+            InnerWorkflowNestingDepthError,
+            InnerWorkflowTotalCountError,
+            InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
@@ -955,6 +998,14 @@ def with_route_exceptions_async(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -977,6 +1028,15 @@ def with_route_exceptions_async(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -1029,6 +1089,8 @@ def with_route_exceptions_async(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except HTTPException:
+            raise
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})

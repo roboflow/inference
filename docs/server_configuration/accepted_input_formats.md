@@ -88,5 +88,17 @@ other targets will be rejected.
 destinations for URL requests. For example:  `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com`.
 URLs pointing to these targets will be rejected.
 * `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` - Set to `False` to disable local filesystem access to images - default: `True`.
+* `ALLOW_URL_TO_NON_GLOBAL_ADDRESSES` - Set to `False` to reject URLs whose host resolves to a non-global address
+(loopback, private/RFC1918, link-local/cloud-metadata `169.254.169.254`, CGNAT, IPv6 ULA, ...) and pin the connection to
+the validated IP so DNS rebinding cannot swap the target after validation - default: `True` (scheduled to change to
+`False` in Q4 2026).
+* `VALIDATE_IMAGE_URL_REDIRECTS` - Set to `True` to follow redirects one hop at a time and re-validate every hop URL
+(scheme / FQDN / allow-list / block-list / non-global address) instead of letting the client follow redirects blindly -
+default: `False` (scheduled to change to `True` in Q4 2026).
+* `MAX_IMAGE_URL_REDIRECTS` - Hard cap on the number of redirect hops allowed when fetching a URL image, enforced
+regardless of `VALIDATE_IMAGE_URL_REDIRECTS` - default: `30`.
+
+See [Securing a Self-Hosted Server](../install/security.md) for a fuller explanation of the SSRF controls and
+recommended configurations.
 
 Check [inference cli docs](../inference_helpers/inference_cli.md) to see how to run server with specific flags.

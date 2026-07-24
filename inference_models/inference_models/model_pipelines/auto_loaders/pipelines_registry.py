@@ -3,9 +3,16 @@ from typing import Dict, List, Optional, Union
 from inference_models.errors import ModelPipelineNotFound
 from inference_models.utils.imports import LazyClass
 
-REGISTERED_PIPELINES: Dict[str, LazyClass] = {}
+REGISTERED_PIPELINES: Dict[str, LazyClass] = {
+    "pp-ocrv6": LazyClass(
+        module_name="inference_models.models.pp_ocrv6.pp_ocrv6_pipeline",
+        class_name="PPOCRv6Pipeline",
+    ),
+}
 
-DEFAULT_PIPELINES_PARAMETERS: Dict[str, List[Union[str, dict]]] = {}
+DEFAULT_PIPELINES_PARAMETERS: Dict[str, List[Union[str, dict]]] = {
+    "pp-ocrv6": ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"],
+}
 
 
 def resolve_pipeline_class(pipline_id: str) -> type:

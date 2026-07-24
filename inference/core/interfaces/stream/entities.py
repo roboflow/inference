@@ -121,7 +121,15 @@ class PipelineStateReport:
     sources_metadata: List[SourceMetadata]
 
 
-InferenceHandler = Callable[[List[VideoFrame]], List[AnyPrediction]]
+@dataclass(frozen=True)
+class InferenceHandlerResult:
+    predictions: List[AnyPrediction]
+    video_frames: Optional[List[VideoFrame]] = None
+
+
+InferenceHandler = Callable[
+    [List[VideoFrame]], Optional[Union[List[AnyPrediction], InferenceHandlerResult]]
+]
 SinkHandler = Optional[
     Union[
         Callable[[AnyPrediction, VideoFrame], None],

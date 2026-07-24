@@ -1,8 +1,10 @@
 import os
 import warnings
+from typing import Optional
 
 import torch
 
+from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_comma_separated_list_of_integers_from_env,
@@ -69,6 +71,17 @@ AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
 SAM3_IMAGE_SIZE = get_integer_from_env(variable_name="SAM3_IMAGE_SIZE", default=1008)
+INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE", default=8
+)
+if INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
     variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
     default=30.0,
@@ -224,6 +237,14 @@ INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
+INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
 INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS",
     default=8192,
@@ -289,10 +310,72 @@ INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
 )
+DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = False
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED",
+    default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+)
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS",
+    default=4096 * 2160,
+)
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS",
+    default=32768,
+)
 INFERENCE_MODELS_RFDETR_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
     variable_name="INFERENCE_MODELS_DETR_DEFAULT_KEY_POINTS_THRESHOLD",
     default=0.3,
 )
+DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = False
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED",
+    default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
+)
+RFDETR_PIPELINE_DEPTH_ENV_NAME = "RFDETR_PIPELINE_DEPTH"
+DEFAULT_RFDETR_PIPELINE_DEPTH = 1
+MIN_RFDETR_PIPELINE_DEPTH = 1
+MAX_RFDETR_PIPELINE_DEPTH = 2
+
+
+def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
+    """Parse and validate the RF-DETR streaming pipeline depth.
+
+    Depth is the number of in-flight CPU/GPU stages the stream adapter may keep
+    alive. ``1`` preserves the original synchronous behavior; values greater
+    than one enable delayed response finalization. Values above the supported
+    maximum are normalized to ``2``. Zero, negative, and non-integer values are
+    rejected instead of being silently clamped.
+    """
+    if value is None:
+        return DEFAULT_RFDETR_PIPELINE_DEPTH
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be an integer but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    if parsed < MIN_RFDETR_PIPELINE_DEPTH:
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be >= {MIN_RFDETR_PIPELINE_DEPTH} but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return min(parsed, MAX_RFDETR_PIPELINE_DEPTH)
+
+
+def get_rfdetr_pipeline_depth() -> int:
+    """Read and validate ``RFDETR_PIPELINE_DEPTH`` from the environment."""
+    return parse_rfdetr_pipeline_depth(os.getenv(RFDETR_PIPELINE_DEPTH_ENV_NAME))
+
+
+RFDETR_PIPELINE_DEPTH = get_rfdetr_pipeline_depth()
 INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE",
     default=0.99,

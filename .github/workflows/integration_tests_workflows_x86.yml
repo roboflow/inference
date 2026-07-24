@@ -37,8 +37,12 @@ jobs:
   build-dev-test:
     needs: call_is_mergeable
     if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    # These are workflow integration tests (pytest + Modal staging calls) — I/O-bound,
+    # not compute-bound. Measured on Depot across the 3.10/3.11/3.12 x true/false matrix:
+    # ~10-13% average CPU and ~9.3GB peak RAM, so the 16c/64GB machine sat almost idle.
+    # 4c/16GB keeps ~7GB headroom over the measured peak at a quarter of the per-minute cost.
     runs-on:
-      labels: depot-ubuntu-22.04-16
+      labels: depot-ubuntu-22.04-4
       group: public-depot
     strategy:
       matrix:
@@ -68,4 +72,6 @@ jobs:
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
       - name: 🧪 Integration Tests of Workflows
-        run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests
+        run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
+      - name: 🧪 Integration Tests of Workflows (Modal, staging)
+        run: PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py

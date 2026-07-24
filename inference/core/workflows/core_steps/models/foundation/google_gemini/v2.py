@@ -47,13 +47,23 @@ MODEL_ALIASES = {
 
 GEMINI_MODELS = [
     {
+        "id": "gemini-3.5-flash",
+        "name": "Gemini 3.5 Flash",
+        "supports_thinking_level": True,
+    },
+    {
         "id": "gemini-3.1-pro-preview",
         "name": "Gemini 3.1 Pro",
         "supports_thinking_level": True,
     },
     {
-        "id": "gemini-3-pro-preview",
-        "name": "Gemini 3 Pro",
+        "id": "gemini-3.1-flash-lite",
+        "name": "Gemini 3.1 Flash-Lite",
+        "supports_thinking_level": True,
+    },
+    {
+        "id": "gemini-3-flash-preview",
+        "name": "Gemini 3 Flash",
         "supports_thinking_level": True,
     },
     {
@@ -224,9 +234,9 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
         Literal[tuple(MODEL_VERSION_IDS)],
     ] = Field(
-        default="gemini-3-pro-preview",
+        default="gemini-3.1-pro-preview",
         description="Model to be used",
-        examples=["gemini-3-pro-preview", "$inputs.gemini_model"],
+        examples=["gemini-3.1-pro-preview", "$inputs.gemini_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },

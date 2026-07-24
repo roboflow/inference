@@ -1,26 +1,45 @@
+import threading
+import time
 import types
+from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
+    WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import WorkspaceLoadError
+from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    get_active_collector,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+    create_dynamic_block_code_error,
+    extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+try:
+    from inference_sdk.config import execution_id as _execution_id_ctxvar
+except ImportError:
+    _execution_id_ctxvar = None
 
 IMPORTS_LINES = [
     "from typing import Any, List, Dict, Set, Optional",
@@ -35,16 +54,112 @@ IMPORTS_LINES = [
     "import shapely",
     "from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData",
     "from inference.core.workflows.prototypes.block import BlockResult",
+    "from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import debug_traces",
 ]
 
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
 
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
-    capture_output,
-    create_dynamic_block_code_error,
-    extract_code_snippet,
-)
+
+@dataclass
+class _ModalExecutorCacheEntry:
+    executor: Any
+    active_count: int
+    last_used_at: float
+
+
+_MODAL_EXECUTOR_CACHE: Dict[str, _ModalExecutorCacheEntry] = {}
+_MODAL_EXECUTOR_CACHE_LOCK = threading.RLock()
+
+
+def _close_modal_executor(executor: Any) -> None:
+    close = getattr(executor, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception:
+        logger.debug("Failed to close cached Modal executor", exc_info=True)
+
+
+def _pop_idle_modal_executors(now: float) -> List[Any]:
+    if WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS <= 0:
+        return []
+    evicted_executors = []
+    for workspace_id, entry in list(_MODAL_EXECUTOR_CACHE.items()):
+        if entry.active_count > 0:
+            continue
+        if now - entry.last_used_at <= WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS:
+            continue
+        evicted_executors.append(entry.executor)
+        del _MODAL_EXECUTOR_CACHE[workspace_id]
+    return evicted_executors
+
+
+def _close_modal_executors(executors: List[Any]) -> None:
+    for executor in executors:
+        _close_modal_executor(executor)
+
+
+@contextmanager
+def _acquire_modal_executor(workspace_id: str):
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+        get_modal_executor,
+    )
+
+    evicted_executors = []
+    with _MODAL_EXECUTOR_CACHE_LOCK:
+        now = time.monotonic()
+        evicted_executors = _pop_idle_modal_executors(now)
+        entry = _MODAL_EXECUTOR_CACHE.get(workspace_id)
+        if entry is None:
+            entry = _ModalExecutorCacheEntry(
+                executor=get_modal_executor(workspace_id),
+                active_count=0,
+                last_used_at=now,
+            )
+            _MODAL_EXECUTOR_CACHE[workspace_id] = entry
+        entry.active_count += 1
+
+    _close_modal_executors(evicted_executors)
+
+    try:
+        yield entry.executor
+    finally:
+        evicted_executors = []
+        with _MODAL_EXECUTOR_CACHE_LOCK:
+            entry.active_count -= 1
+            entry.last_used_at = time.monotonic()
+            evicted_executors = _pop_idle_modal_executors(entry.last_used_at)
+        _close_modal_executors(evicted_executors)
+
+
+def _current_workflow_execution_id() -> Optional[str]:
+    """Return the current workflow execution id, sourced from the existing
+    ``inference_sdk.config.execution_id`` ContextVar.
+
+    The execution engine sets that ContextVar inside every worker thread via
+    ``safe_execute_step`` so it is reliably populated by the time a block's
+    ``run()`` method executes.
+    """
+    if _execution_id_ctxvar is None:
+        return None
+    return _execution_id_ctxvar.get()
+
+
+def _record_logs_to_active_collector(
+    step_name: str,
+    stdout_buf,
+    stderr_buf,
+) -> None:
+    collector = get_active_collector()
+    if collector is None:
+        return
+    collector.record(
+        step_name=step_name,
+        stdout=stdout_buf.getvalue() or None,
+        stderr=stderr_buf.getvalue() or None,
+    )
 
 
 def assembly_custom_python_block(
@@ -73,29 +188,23 @@ def assembly_custom_python_block(
     run_function = getattr(code_module, python_code.run_function_name)
 
     def run(self, *args, **kwargs) -> BlockResult:
-        # Check if we're using Modal remote execution
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
-            # Remote execution via Modal - allowed even if local execution is disabled
-            from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-                ModalExecutor,
-            )
-
-            try:  # Get workspace_id from context if available
+            try:
                 workspace_id = get_roboflow_workspace(self._api_key)
             except WorkspaceLoadError:
                 workspace_id = None
 
-            # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
-            executor = ModalExecutor(workspace_id)
-            return executor.execute_remote(
-                block_type_name=block_type_name,
-                python_code=python_code,
-                inputs=kwargs,
-                workspace_id=workspace_id,
-            )
+            with _acquire_modal_executor(workspace_id) as executor:
+                return executor.execute_remote(
+                    block_type_name=block_type_name,
+                    python_code=python_code,
+                    inputs=kwargs,
+                    workspace_id=workspace_id,
+                    workflow_context=self.get_workflow_context(),
+                )
         else:
             # Local execution - check if allowed
             if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
@@ -106,12 +215,18 @@ def assembly_custom_python_block(
                     context="workflow_execution | step_execution | dynamic_step",
                 )
             import_lines_count = len(_get_python_code_imports(python_code).splitlines())
+            step_name = getattr(self, "_workflow_step_name", None) or block_type_name
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # stdout/stderr already reach the process streams in real time via the
-                    # tee in capture_output(); buffers are only used to attach context on error.
-                    return run_function(self, *args, **kwargs)
+                    # tee in capture_output(); buffers are also forwarded to the active
+                    # debug collector (if any) and used to attach context on error.
+                    result = run_function(self, *args, **kwargs)
             except Exception as error:
+                # Record on failure too: the error payload carries this step's
+                # streams via BlockTraceback, but the collector is the only place
+                # where logs of ALL steps of the run are aggregated.
+                _record_logs_to_active_collector(step_name, stdout_buf, stderr_buf)
                 raise create_dynamic_block_code_error(
                     error=error,
                     user_code=python_code.run_function_code or "",
@@ -120,6 +235,8 @@ def assembly_custom_python_block(
                     stderr=stderr_buf.getvalue() or None,
                     block_type_name=block_type_name,
                 ) from error
+            _record_logs_to_active_collector(step_name, stdout_buf, stderr_buf)
+            return result
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -136,6 +253,14 @@ def assembly_custom_python_block(
         self._init_results = init_function()
         self._api_key = api_key
 
+    def get_workflow_context(self) -> Dict[str, Any]:
+        return {
+            "step_name": getattr(self, "_workflow_step_name", None),
+            "step_selector": getattr(self, "_workflow_step_selector", None),
+            "block_type": getattr(self, "_workflow_step_type", block_type_name),
+            "workflow_execution_id": _current_workflow_execution_id(),
+        }
+
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["api_key"]
@@ -149,6 +274,7 @@ def assembly_custom_python_block(
         (WorkflowBlock,),
         {
             "__init__": constructor,
+            "get_workflow_context": get_workflow_context,
             "get_init_parameters": get_init_parameters,
             "get_manifest": get_manifest,
             "run": run,

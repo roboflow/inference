@@ -95,13 +95,22 @@ RUN set -eux; \
         wget \
         rustc \
         cargo; \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*; \
+# apt's uvicorn drags in python3-h11 0.13.0 (CVE-2025-43859); the served process uses
+# pip's h11 from /usr/local, but scanners flag the apt copy - upgrade it in place in the
+# same layer so the vulnerable version never lands in any image layer
+    pip3 install --no-cache-dir --upgrade --target=/usr/lib/python3/dist-packages "h11>=0.16.0"; \
+    rm -rf /usr/lib/python3/dist-packages/h11-*.egg-info
 
 WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+
+# Instal Cosmos 3 preview (requires override of transformers, since 21.07.2026 it was not released yet).
+COPY requirements/requirements.cosmos.txt .
+RUN python3 -m pip install -r requirements.cosmos.txt
 
 WORKDIR /notebooks
 COPY examples/notebooks .

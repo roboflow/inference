@@ -1,6 +1,8 @@
 from collections import defaultdict
+from concurrent.futures import Future
 from datetime import datetime
 from functools import partial
+from inspect import signature
 from queue import Queue
 from threading import Lock
 from typing import Any, List, Optional, Tuple, Union
@@ -28,8 +30,14 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
     lock_state_transition,
 )
-from inference.core.interfaces.stream.entities import ModelConfig
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.entities import (
+    InferenceHandlerResult,
+    ModelConfig,
+)
+from inference.core.interfaces.stream.inference_pipeline import (
+    InferencePipeline,
+    _resolve_prediction_futures,
+)
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
@@ -138,6 +146,84 @@ class ModelStub:
                 image=InferenceResponseImage(width=1920, height=1080),
             )
         ] * len(image)
+
+
+class _PredictionReadyWatchdog:
+    def __init__(self) -> None:
+        self.ready_frames = []
+
+    def on_model_prediction_ready(self, frames):
+        self.ready_frames.append(frames)
+
+
+class _FlushableInferenceHandler:
+    def __init__(self, results):
+        self.results = results
+        self.flush_calls = 0
+        self.close_calls = 0
+
+    def flush(self):
+        self.flush_calls += 1
+        return self.results
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def test_inference_pipeline_drain_enqueues_flush_results_with_bound_frames() -> None:
+    frame_1 = VideoFrame(
+        image=np.zeros((8, 8, 3), dtype=np.uint8),
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=0,
+    )
+    frame_2 = VideoFrame(
+        image=np.zeros((8, 8, 3), dtype=np.uint8),
+        frame_id=2,
+        frame_timestamp=datetime.now(),
+        source_id=0,
+    )
+    handler = _FlushableInferenceHandler(
+        results=[
+            InferenceHandlerResult(predictions=["p1"], video_frames=[frame_1]),
+            InferenceHandlerResult(predictions=["p2"], video_frames=[frame_2]),
+        ]
+    )
+    watchdog = _PredictionReadyWatchdog()
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._on_video_frame = handler
+    pipeline._watchdog = watchdog
+    pipeline._predictions_queue = Queue()
+    pipeline._status_update_handlers = []
+
+    pipeline._drain_inference_handler()
+
+    assert handler.flush_calls == 1
+    assert pipeline._predictions_queue.get_nowait() == (["p1"], [frame_1])
+    assert pipeline._predictions_queue.get_nowait() == (["p2"], [frame_2])
+    assert watchdog.ready_frames == [[frame_1], [frame_2]]
+
+
+def test_resolve_prediction_futures_recursively_resolves_nested_values() -> None:
+    inner = Future()
+    inner.set_result("resolved")
+    outer = Future()
+    outer.set_result({"detections": [inner]})
+
+    assert _resolve_prediction_futures((outer, {"raw": inner})) == (
+        {"detections": ["resolved"]},
+        {"raw": "resolved"},
+    )
+
+
+def test_inference_pipeline_close_calls_handler_close_hook() -> None:
+    handler = _FlushableInferenceHandler(results=[])
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._on_video_frame = handler
+
+    pipeline._close_inference_handler()
+
+    assert handler.close_calls == 1
 
 
 @pytest.mark.timeout(90)
@@ -658,3 +744,104 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     assert frames_by_sources[1] == list(
         range(1, 431 * 2 + 1)
     ), "Order of prediction frames violated for source 1"
+
+
+def _make_minimal_pipeline(
+    on_video_frame, exec_session_id: Optional[str] = None
+) -> InferencePipeline:
+    from unittest.mock import MagicMock
+
+    return InferencePipeline(
+        on_video_frame=on_video_frame,
+        video_sources=[],
+        predictions_queue=Queue(maxsize=8),
+        watchdog=MagicMock(),
+        status_update_handlers=[],
+        exec_session_id=exec_session_id,
+    )
+
+
+def test_inference_pipeline_instances_get_distinct_stream_session_ids() -> None:
+    pipeline_1 = _make_minimal_pipeline(on_video_frame=lambda frames: [])
+    pipeline_2 = _make_minimal_pipeline(on_video_frame=lambda frames: [])
+
+    assert pipeline_1._stream_session_id
+    assert pipeline_2._stream_session_id
+    assert pipeline_1._stream_session_id != pipeline_2._stream_session_id
+
+
+def test_inference_pipeline_factory_uses_supplied_exec_session_id(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference.core.interfaces.stream.inference_pipeline.prepare_video_sources",
+        lambda **kwargs: [],
+    )
+
+    pipeline = InferencePipeline.init_with_custom_logic(
+        video_reference="rtsp://camera-7",
+        on_video_frame=lambda frames: [],
+        exec_session_id="camera-7",
+    )
+
+    assert pipeline._stream_session_id == "camera-7"
+
+
+def test_inference_pipeline_empty_exec_session_id_mints_fallback() -> None:
+    pipeline_1 = _make_minimal_pipeline(
+        on_video_frame=lambda frames: [], exec_session_id=""
+    )
+    pipeline_2 = _make_minimal_pipeline(
+        on_video_frame=lambda frames: [], exec_session_id=""
+    )
+
+    assert pipeline_1._stream_session_id
+    assert pipeline_2._stream_session_id
+    assert pipeline_1._stream_session_id != pipeline_2._stream_session_id
+
+
+@pytest.mark.parametrize(
+    "factory_name",
+    ["init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic"],
+)
+def test_inference_pipeline_factories_expose_optional_exec_session_id(
+    factory_name: str,
+) -> None:
+    parameter = signature(getattr(InferencePipeline, factory_name)).parameters[
+        "exec_session_id"
+    ]
+
+    assert parameter.default is None
+
+
+def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
+    from threading import Thread
+    from unittest.mock import MagicMock
+
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    ids_seen_by_inference: dict = {}
+
+    def make_on_video_frame(name):
+        def on_video_frame(video_frames):
+            ids_seen_by_inference[name] = stream_session_id.get()
+            return []
+
+        return on_video_frame
+
+    pipeline_1 = _make_minimal_pipeline(make_on_video_frame("pipeline_1"))
+    pipeline_2 = _make_minimal_pipeline(make_on_video_frame("pipeline_2"))
+    for pipeline in (pipeline_1, pipeline_2):
+        fake_frame = MagicMock()
+        pipeline._generate_frames = lambda frame=fake_frame: iter([[frame]])
+
+    threads = [
+        Thread(target=pipeline_1._execute_inference),
+        Thread(target=pipeline_2._execute_inference),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert ids_seen_by_inference["pipeline_1"] == pipeline_1._stream_session_id
+    assert ids_seen_by_inference["pipeline_2"] == pipeline_2._stream_session_id
+    assert stream_session_id.get() is None

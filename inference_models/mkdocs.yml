@@ -25,6 +25,9 @@ extra:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+
 nav:
   - Home: index.md
   - Getting Started:
@@ -65,6 +68,7 @@ nav:
           - EasyOCR: models/easyocr.md
           - TrOCR: models/trocr.md
           - GLM-OCR: models/glm-ocr.md
+          - PP-OCRv6: models/pp-ocrv6.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
@@ -110,6 +114,7 @@ nav:
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
+      - Inference-Path Optimization Architecture: contributors/inference-path-optimization-architecture.md
       - Dependencies and Backends: contributors/dependencies-and-backends.md
       - Adding a Model: contributors/adding-model.md
       - Writing Tests: contributors/writing-tests.md
@@ -143,6 +148,7 @@ nav:
                   - use_cuda_context: api-reference/developer-tools/cuda/use-cuda-context.md
               - ONNX:
                   - set_onnx_execution_provider_defaults: api-reference/developer-tools/onnx/set-onnx-execution-provider-defaults.md
+                  - align_device_with_onnx_session: api-reference/developer-tools/onnx/align-device-with-onnx-session.md
                   - run_onnx_session_with_batch_size_limit: api-reference/developer-tools/onnx/run-onnx-session-with-batch-size-limit.md
                   - run_onnx_session_via_iobinding: api-reference/developer-tools/onnx/run-onnx-session-via-iobinding.md
               - PyTorch:
@@ -238,9 +244,12 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - toc:
       permalink: true
-
