@@ -531,6 +531,9 @@ from inference.core.workflows.core_steps.transformations.detections_combine.v1 i
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.detections_filter.v2 import (
+    DetectionsFilterBlockV2,
+)
 from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
     DetectionsMergeBlockV1,
 )
@@ -829,6 +832,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
+        DetectionsFilterBlockV2,
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,

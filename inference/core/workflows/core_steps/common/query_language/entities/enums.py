@@ -51,6 +51,12 @@ class ClassificationProperty(Enum):
     ALL_CONFIDENCES = "all_confidences"
 
 
+class ClassificationPredictionProperty(Enum):
+    CLASS_NAME = "class_name"
+    CLASS_ID = "class_id"
+    CONFIDENCE = "confidence"
+
+
 class DetectionsProperty(Enum):
     CONFIDENCE = "confidence"
     CLASS_NAME = "class_name"
