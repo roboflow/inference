@@ -136,21 +136,30 @@ assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False
     )
 
 
-def test_offline_mode_does_not_construct_configured_redis_cache() -> None:
+def test_offline_mode_uses_explicitly_configured_redis_cache() -> None:
     _run_with_env(
         """
 import importlib
 import redis
 
-def fail_if_redis_is_constructed(*args, **kwargs):
-    raise AssertionError("Redis client constructed in OFFLINE_MODE")
+redis_connection = {}
 
-redis.Redis = fail_if_redis_is_constructed
+class FakeRedisClient:
+    def ping(self):
+        redis_connection["pinged"] = True
+
+def create_redis_client(**kwargs):
+    redis_connection["configuration"] = kwargs
+    return FakeRedisClient()
+
+redis.Redis = create_redis_client
 
 cache_module = importlib.import_module("inference.core.cache")
-from inference.core.cache.memory import MemoryCache
+from inference.core.cache.redis import RedisCache
 
-assert isinstance(cache_module.cache, MemoryCache)
+assert isinstance(cache_module.cache, RedisCache)
+assert redis_connection["pinged"] is True
+assert redis_connection["configuration"]["host"] == "redis.internal"
 """,
         {
             "OFFLINE_MODE": "True",
