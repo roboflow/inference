@@ -48,9 +48,7 @@ def _is_safe_model_cache_directory(cache_root: str, model_path: str) -> bool:
             != absolute_cache_root
         ):
             return False
-        relative_model_path = os.path.relpath(
-            absolute_model_path, absolute_cache_root
-        )
+        relative_model_path = os.path.relpath(absolute_model_path, absolute_cache_root)
     except ValueError:
         return False
     if relative_model_path in ("", os.curdir) or relative_model_path.startswith(
@@ -79,9 +77,7 @@ def _is_safe_model_cache_directory(cache_root: str, model_path: str) -> bool:
 def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
     """Map legacy package directories to IDs stored in auto-resolution metadata."""
     resolution_cache_dir = os.path.join(cache_dir, "auto-resolution-cache")
-    if os.path.islink(resolution_cache_dir) or not os.path.isdir(
-        resolution_cache_dir
-    ):
+    if os.path.islink(resolution_cache_dir) or not os.path.isdir(resolution_cache_dir):
         return {}
     try:
         from inference_models.models.auto_loaders.model_cache_paths import (
@@ -197,9 +193,7 @@ def _find_cached_model_package_dir_compat(model_id: str) -> Optional[str]:
         )
     except ImportError:
         return None
-    models_cache_root = os.path.realpath(
-        os.path.join(INFERENCE_HOME, "models-cache")
-    )
+    models_cache_root = os.path.realpath(os.path.join(INFERENCE_HOME, "models-cache"))
     model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
     lexical_model_root = os.path.join(models_cache_root, model_slug)
     if os.path.islink(lexical_model_root):
@@ -238,9 +232,7 @@ def _find_cached_model_package_dir_compat(model_id: str) -> Optional[str]:
         cached_model_id = config.get("model_id")
         if cached_model_id is not None and cached_model_id != model_id:
             continue
-        if not isinstance(config.get("task_type"), str) or not config.get(
-            "task_type"
-        ):
+        if not isinstance(config.get("task_type"), str) or not config.get("task_type"):
             continue
         if not (
             isinstance(config.get("model_architecture"), str)
@@ -345,9 +337,7 @@ def scan_cached_models(
                 directory_path == excluded_root
                 or directory_path.startswith(excluded_root + os.sep)
                 or resolved_directory_path == resolved_excluded_root
-                or resolved_directory_path.startswith(
-                    resolved_excluded_root + os.sep
-                )
+                or resolved_directory_path.startswith(resolved_excluded_root + os.sep)
                 for excluded_root, resolved_excluded_root in excluded_cache_roots
             ):
                 continue
@@ -358,12 +348,8 @@ def scan_cached_models(
             if os.path.islink(directory_path):
                 if (
                     resolved_directory_path == resolved_cache_dir
-                    or resolved_directory_path.startswith(
-                        resolved_cache_dir + os.sep
-                    )
-                    or resolved_cache_dir.startswith(
-                        resolved_directory_path + os.sep
-                    )
+                    or resolved_directory_path.startswith(resolved_cache_dir + os.sep)
+                    or resolved_cache_dir.startswith(resolved_directory_path + os.sep)
                 ):
                     continue
             filtered_dirs.append(directory)
@@ -425,11 +411,7 @@ def scan_cached_models(
                 pass
 
         # Fall back to model_type.json for the traditional layout.
-        if (
-            metadata is None
-            and has_model_type
-            and relative_parts[0] != "models-cache"
-        ):
+        if metadata is None and has_model_type and relative_parts[0] != "models-cache":
             model_type_path = os.path.join(root, "model_type.json")
             if os.path.islink(model_type_path):
                 continue

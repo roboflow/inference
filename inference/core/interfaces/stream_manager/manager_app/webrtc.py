@@ -420,9 +420,7 @@ async def init_rtc_peer_connection(
 
     peer_connection = RTCPeerConnectionWithFPS(
         video_transform_track=video_transform_track,
-        configuration=_build_rtc_configuration(
-            webrtc_turn_config=webrtc_turn_config
-        ),
+        configuration=_build_rtc_configuration(webrtc_turn_config=webrtc_turn_config),
         asyncio_loop=asyncio_loop,
         stream_output=stream_output,
         data_output=data_output,

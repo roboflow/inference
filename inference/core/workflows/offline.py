@@ -20,8 +20,7 @@ def ensure_workflow_step_execution_mode_allowed(
     is_remote = (
         step_execution_mode is StepExecutionMode.REMOTE
         or step_execution_mode == StepExecutionMode.REMOTE.value
-        or getattr(step_execution_mode, "value", None)
-        == StepExecutionMode.REMOTE.value
+        or getattr(step_execution_mode, "value", None) == StepExecutionMode.REMOTE.value
     )
     if is_remote:
         raise WorkflowEnvironmentConfigurationError(

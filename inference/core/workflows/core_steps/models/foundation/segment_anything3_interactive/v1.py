@@ -33,7 +33,6 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
 )
-from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
 )
@@ -53,6 +52,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,

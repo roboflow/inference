@@ -14,8 +14,8 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from inference.core.cache.air_gapped import (
-    get_configured_model_cache_roots,
     get_cached_foundation_models,
+    get_configured_model_cache_roots,
     get_task_type_to_block_mapping,
     scan_cached_models,
 )
@@ -34,8 +34,7 @@ def _path_is_strict_descendant(path: str, parent: str) -> bool:
     try:
         return (
             resolved_path != resolved_parent
-            and os.path.commonpath([resolved_parent, resolved_path])
-            == resolved_parent
+            and os.path.commonpath([resolved_parent, resolved_path]) == resolved_parent
         )
     except ValueError:
         # Different drives on Windows cannot share a common path.
