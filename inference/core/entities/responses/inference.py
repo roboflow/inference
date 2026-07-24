@@ -445,7 +445,9 @@ class DepthEstimationResponse(BaseModel):
     """Response for depth estimation inference.
 
     Attributes:
-        normalized_depth (Union[str, List[List[float]]]): The normalized depth map,
+        normalized_depth (Union[str, List[List[float]]]): The per-image normalized ordinal
+            depth map as a 2D array of floats between 0 and 1. Higher values
+            indicate nearer predictions.
             serialized according to the request's `depth_map_format`: a 2D array of
             floats between 0 and 1 (`json`, the default) or a base64 grayscale PNG
             string (16-bit for `png16`, 8-bit for `png8`).
@@ -457,7 +459,10 @@ class DepthEstimationResponse(BaseModel):
     """
 
     normalized_depth: Union[str, List[List[float]]] = Field(
-        description="The normalized depth map: a 2D array of floats between 0 and 1 "
+        description="Per-image normalized ordinal depth as a 2D array of floats between "
+        "0 and 1, where 1 is nearest and 0 is farthest. Values are not "
+        "physical distances or directly comparable across images or model "
+        "families without calibration. The normalized depth map: a 2D array of floats between 0 and 1 "
         "(`json` format, default) or a base64 grayscale PNG string (`png16`/`png8`), "
         "per the request's `depth_map_format`"
     )

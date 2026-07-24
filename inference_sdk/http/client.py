@@ -1751,7 +1751,10 @@ class InferenceHTTPClient:
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
-                - normalized_depth: nested float list for "json" (default);
+                - normalized_depth: Per-image normalized ordinal depth as a list,
+                  where 1 is nearest and 0 is farthest. Values are not physical
+                  distances or directly comparable across images or model families
+                  without calibration. Nested float list for "json" (default);
                   numpy array for "png16"/"png8" (PNG payloads are decoded
                   automatically; legacy servers returning float lists pass
                   through unchanged regardless of the requested format)
@@ -1809,7 +1812,8 @@ class InferenceHTTPClient:
                 ignore it and return the legacy list.
 
         Returns:
-            Union[dict, List[dict]]: Depth estimation results; `normalized_depth`
+            Union[dict, List[dict]]: Depth estimation results containing per-image
+                normalized ordinal depth, where 1 is nearest and 0 is farthest. `normalized_depth`
                 is a nested float list for "json" (default) and a numpy array for
                 "png16"/"png8".
 
