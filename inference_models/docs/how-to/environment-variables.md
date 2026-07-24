@@ -136,6 +136,16 @@ Default maximum number of detections to return. Default: `300`
 export INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS="100"
 ```
 
+**`INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE`**
+Number of instance-segmentation masks upscaled to original resolution per
+slice when producing dense masks. Bounds postprocessing memory (the float32
+working set is `chunk x H x W` instead of `detections x H x W`). Must be
+`>= 1`. Default: `16`
+
+```bash
+export INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE="16"
+```
+
 **`INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS`**
 Default for class-agnostic NMS. Default: `false`
 
@@ -420,6 +430,15 @@ Default: Inherits from `INFERENCE_MODELS_DEFAULT_CONFIDENCE`
 
 ```bash
 export INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE="0.5"
+```
+
+**`INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS`**
+Default cap on RF-DETR instance-segmentation detections, applied by score
+BEFORE masks are upscaled to original resolution (bounds mask memory).
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS`
+
+```bash
+export INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS="300"
 ```
 
 The following variables select RF-DETR TensorRT pipeline implementations when a client
