@@ -215,9 +215,12 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 inference_input=single_image.base64_image,
                 model_id=model_version,
                 model_id_in_path=True,
+                depth_map_format="png16",
             )
             # Convert the result back to the expected format
-            # Remote returns: {"normalized_depth": [...], "image": hex_string}
+            # Remote returns {"normalized_depth": ..., "image": hex_string}; the
+            # depth map is an ndarray decoded from png16, or a nested float list
+            # from servers that predate depth_map_format - np.array handles both
             image_output = WorkflowImageData.copy_and_replace(
                 origin_image_data=single_image,
                 base64_image=result.get("image", ""),
