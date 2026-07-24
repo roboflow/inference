@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os.path
 from copy import copy, deepcopy
 from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
@@ -27,15 +28,13 @@ from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.torch import torchscript_global_lock
-from inference_models.models.sam3.chunked_postprocessing import (
-    ChunkedPostProcessImage,
-)
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsCache,
     Sam3ImageEmbeddingsCacheNullObject,
     Sam3LowResolutionMasksCache,
     Sam3LowResolutionMasksCacheNullObject,
 )
+from inference_models.models.sam3.chunked_postprocessing import ChunkedPostProcessImage
 from inference_models.models.sam3.entities import (
     SAM3ImageEmbeddings,
     SAM3MaskCacheEntry,
@@ -97,14 +96,21 @@ class SAM3Torch:
             ],
         )
 
-        try:
-            config_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=["sam_configuration.json"],
-            )
-            version = decode_sam_version(
-                config_path=config_content["sam_configuration.json"]
-            )
+        # sam_configuration.json is optional: fine-tuned packages produced by
+        # roboflow-train ship without it, only base packages carry it.
+        sam_configuration_path = os.path.join(
+            model_name_or_path, "sam_configuration.json"
+        )
+        if os.path.exists(sam_configuration_path):
+            try:
+                version = decode_sam_version(config_path=sam_configuration_path)
+            except (KeyError, ValueError) as error:
+                raise CorruptedModelPackageError(
+                    message="Could not decode sam_configuration.json in SAM3 model package. "
+                    "If you run inference locally, verify the correctness of SAM3 model package. "
+                    "If you see the error running on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                ) from error
             if version not in SUPPORTED_VERSIONS:
                 raise CorruptedModelPackageError(
                     message=f"Detected unsupported version of SAM3 model: {version}. Supported versions: "
@@ -113,8 +119,6 @@ class SAM3Torch:
                     "contact us to get help.",
                     help_url="https://todo",
                 )
-        except KeyError:
-            pass
 
         device_str = "cuda" if device.type == "cuda" else "cpu"
         # build_sam3_image_model runs torch.jit.script on torchvision transforms

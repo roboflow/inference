@@ -2,8 +2,33 @@
 
 ## Unreleased
 
-Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
-`### Removed` subsections as appropriate.
+### Fixed
+
+- Dense instance-segmentation mask production no longer materializes the full
+  `detections × H × W` float32 batch when upscaling masks to original resolution.
+  `align_instance_segmentation_results` now resizes in fixed-size slices
+  (`INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE`, default 16), bounding the
+  transient working set to `chunk × H × W` while only the boolean output is held whole.
+  Measured on a 12MP image at 300 detections: CUDA peak 17.1 GiB → 4.2 GiB, host RSS
+  transient +17.4 GiB → +4.1 GiB, with no wall-time regression. Outputs are bit-identical.
+- RF-DETR instance segmentation now honours `max_detections` (new
+  `INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS`, inherits the global default of 300),
+  applied by score after thresholding and BEFORE masks are upscaled to original
+  resolution — previously the only bound on mask count was the confidence threshold, so
+  low-threshold requests could produce up to `num_queries` full-resolution masks. Applies
+  to dense, RLE, and Triton postprocess paths (pytorch/ONNX/TRT backends).
+
+### Fixed
+
+- Fine-tuned SAM3 model packages that ship without `sam_configuration.json` now load
+  correctly — the file is treated as optional (only base packages carry it). A present
+  but malformed `sam_configuration.json` (invalid JSON or missing `version` key) now
+  raises a clear `CorruptedModelPackageError` instead of an unhandled exception.
+
+### Fixed
+
+- Preserve HTTP 402, 403, and 423 model-access failures as typed errors when the
+  Roboflow weights provider retrieves model metadata or weights.
 
 ---
 
