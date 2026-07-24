@@ -537,11 +537,10 @@ def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
 def test_depth_estimation_adapter_normalization_matches_depth_anything_convention() -> (
     None
 ):
-    """DepthAnything models serve disparity-style relative depth - larger means
-    closer (see the "Flip to be consistent with V2" step in
-    DepthAnythingV3Torch.forward). The metric-depth adapter must invert while
-    normalizing so metric models are true drop-ins: nearest pixel -> 1.0,
-    farthest -> 0.0."""
+    """The endpoint's ordinal proximity convention uses larger values for nearer
+    predictions (see the "Flip to be consistent with V2" step in
+    DepthAnythingV3Torch.forward). The metric-depth adapter must reverse depth
+    while normalizing: nearest pixel -> 1.0, farthest -> 0.0."""
     import numpy as np
 
     adapter = InferenceModelsDepthEstimationAdapter.__new__(

@@ -88,13 +88,17 @@ The model returns a list of `torch.Tensor` depth maps, one per input image:
 !!! note "Metric vs relative depth"
     `AutoModel` returns **absolute metric depth in meters**. When served through the
     Roboflow hosted API or the `depth_estimation@v1` workflow block, the output is
-    min-max normalized per image to the disparity-style convention shared with
-    Depth Anything (1.0 = nearest, 0.0 = farthest) so the models are drop-in
-    interchangeable; the metric scale is not exposed on that path.
+    converted to the per-image ordinal-depth contract also used for Depth Anything
+    (`1.0` = nearest, `0.0` = farthest). The models therefore share the same output
+    shape, range, and near-to-far ordering, but intermediate values are not
+    geometrically equivalent or directly comparable across model families. The
+    metric scale is not exposed on that path.
 
 !!! note "Choosing between YOLO26 depth and Depth Anything"
     YOLO26 predicts at input/4 native resolution and is substantially faster at a
     matched budget, with metric calibration; [Depth Anything V3](depth-anything-v3.md)
     decodes at full network resolution, producing sharper relative-depth maps at
-    higher compute cost. Prefer YOLO26 for speed and absolute distances; prefer
-    Depth Anything for edge fidelity in relative maps.
+    higher compute cost. Prefer YOLO26 for speed and, when using `AutoModel`
+    directly, absolute distances. Prefer Depth Anything for edge fidelity in
+    relative maps. The hosted API and workflow block normalize both families and
+    do not expose YOLO26's absolute distances.
