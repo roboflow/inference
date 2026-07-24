@@ -107,7 +107,10 @@ _WINDOWS_RESERVED_PATH_SEGMENTS = frozenset(
     }
 )
 _WORKFLOW_CACHE_AMBIGUOUS_LEGACY_FILENAME_SUFFIX = re.compile(
-    r"(?:_[0-9a-f]{64}|_v.+)$"
+    # Bound the `_v…` alternative so CodeQL does not treat this as polynomial
+    # ReDoS on attacker-controlled workflow IDs. Path separators are excluded
+    # because they never belong in a filename stem.
+    r"(?:_[0-9a-f]{64}|_v[^\\/]{1,256})$"
 )
 _WORKFLOW_LEGACY_CANONICAL_SEGMENT = re.compile(r"[a-z0-9-]+")
 _WORKFLOW_CANONICAL_CACHE_NAMESPACE = ".canonical-v2"
