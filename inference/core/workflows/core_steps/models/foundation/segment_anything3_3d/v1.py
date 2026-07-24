@@ -20,6 +20,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     IMAGE_KIND,
@@ -185,6 +186,7 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         mask_input: Batch[Union[sv.Detections, List[float]]],
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 3D remote execution")
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"

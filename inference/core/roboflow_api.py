@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -945,36 +946,82 @@ def get_roboflow_labeling_jobs(
     return _get_from_url(url=api_url)
 
 
+def _workflow_cache_path_segment(value: str) -> str:
+    """Create a collision-resistant readable path segment."""
+
+    sanitized_value = sanitize_path_segment(value)
+    # Leave enough room for the version identity, tenant fingerprint, and
+    # extension while staying below the common 255-byte filename limit.
+    if (
+        sanitized_value == value
+        and sanitized_value
+        and len(sanitized_value) <= 96
+    ):
+        return sanitized_value
+    value_fingerprint = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    readable_prefix = sanitized_value[:96] or "empty"
+    return f"{readable_prefix}_{value_fingerprint}"
+
+
+def _versioned_workflow_cache_stem(
+    workflow_id: str,
+    workflow_version_id: str,
+) -> str:
+    identity = json.dumps(
+        [workflow_id, workflow_version_id],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    identity_fingerprint = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return (
+        f"{_workflow_cache_path_segment(workflow_id)}_"
+        f"{identity_fingerprint}"
+    )
+
+
 def get_workflow_cache_file(
     workspace_id: WorkspaceID,
     workflow_id: str,
     api_key: Optional[str],
     workflow_version_id: Optional[str] = None,
 ) -> str:
-    sanitized_workspace_id = sanitize_path_segment(workspace_id)
-    sanitized_workflow_id = sanitize_path_segment(workflow_id)
-    if SINGLE_TENANT_WORKFLOW_CACHE:
-        version_suffix = (
-            f"_v{sanitize_path_segment(workflow_version_id)}"
-            if workflow_version_id
-            else ""
+    sanitized_workspace_id = _workflow_cache_path_segment(workspace_id)
+    # Preserve the public API's historical truthiness semantics: an empty
+    # optional query value means "latest", just like ``None``. This also keeps
+    # file-cache attribution aligned with the ephemeral-cache key.
+    if not workflow_version_id:
+        cache_subdirectory = ""
+        cache_stem = _workflow_cache_path_segment(workflow_id)
+    else:
+        if not isinstance(workflow_version_id, str):
+            # Truthy non-string values failed in sanitize_path_segment before
+            # versioned cache paths were introduced. Keep that source behavior
+            # instead of silently creating a new cache identity for bad input.
+            raise TypeError("workflow_version_id must be a string or None")
+        # Keep pinned entries in a distinct namespace so an unversioned
+        # workflow ID can never collide with a workflow/version tuple.
+        cache_subdirectory = "versions"
+        cache_stem = _versioned_workflow_cache_stem(
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
         )
-        filename = f"{sanitized_workflow_id}{version_suffix}.json"
+
+    if SINGLE_TENANT_WORKFLOW_CACHE:
+        filename = f"{cache_stem}.json"
     else:
         cache_seed = f"{workspace_id}:{api_key or ''}"
-        cache_fingerprint = hashlib.sha256(
-            cache_seed.encode("utf-8"), usedforsecurity=False
-        ).hexdigest()
-        filename = f"{sanitized_workflow_id}_{cache_fingerprint}.json"
+        cache_fingerprint = hashlib.sha256(cache_seed.encode("utf-8")).hexdigest()
+        filename = f"{cache_stem}_{cache_fingerprint}.json"
     prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
     result = os.path.abspath(
         os.path.join(
             prefix,
             sanitized_workspace_id,
+            cache_subdirectory,
             filename,
         )
     )
-    if not result.startswith(prefix):
+    if os.path.commonpath([prefix, result]) != prefix or result == prefix:
         raise ValueError(
             "Detected attempt to save workflow definition in insecure location"
         )
@@ -989,18 +1036,16 @@ def _find_offline_hashed_workflow_cache_file(
 ) -> Optional[str]:
     """Find a safely attributable cache written before offline mode was enabled.
 
-    Multi-tenant cache filenames contain a workspace/API-key fingerprint, but no
-    Workflow version. An exact fingerprint match is safe when the API key is
-    still configured. Without an API key, a sole hashed entry is usable in an
-    offline single-tenant deployment; multiple entries are ambiguous and must
-    not be selected arbitrarily. Versioned requests never use this legacy cache
-    because its filename cannot prove which version it contains.
+    Multi-tenant cache filenames contain a workspace/API-key fingerprint. New
+    versioned entries also contain the exact Workflow version. An exact
+    fingerprint match is safe when the API key is still configured. Without an
+    API key, a sole entry for the requested version is usable in an offline
+    single-tenant deployment; multiple entries remain ambiguous.
     """
 
     if (
         not OFFLINE_MODE
         or not SINGLE_TENANT_WORKFLOW_CACHE
-        or workflow_version_id is not None
     ):
         return None
 
@@ -1009,29 +1054,32 @@ def _find_offline_hashed_workflow_cache_file(
             workspace_id=workspace_id,
             workflow_id=workflow_id,
             api_key=api_key,
+            workflow_version_id=workflow_version_id,
         )
     )
-    sanitized_workflow_id = sanitize_path_segment(workflow_id)
-    if not cache_file.parent.is_dir():
+    if (
+        not _workflow_cache_path_is_safe(str(cache_file))
+        or not cache_file.parent.is_dir()
+    ):
         return None
 
     filename_pattern = re.compile(
-        rf"{re.escape(sanitized_workflow_id)}_[0-9a-f]{{64}}\.json"
+        rf"{re.escape(cache_file.stem)}_[0-9a-f]{{64}}\.json"
     )
     candidates = [
         candidate
         for candidate in cache_file.parent.iterdir()
-        if candidate.is_file() and filename_pattern.fullmatch(candidate.name)
+        if candidate.is_file()
+        and filename_pattern.fullmatch(candidate.name)
+        and _workflow_cache_path_is_safe(str(candidate))
     ]
     if api_key is not None:
         cache_seed = f"{workspace_id}:{api_key}"
         # This is a compatibility fingerprint for an existing filename format,
         # not password storage or an authentication primitive.
         # codeql[py/weak-sensitive-data-hashing]
-        cache_fingerprint = hashlib.sha256(
-            cache_seed.encode("utf-8"), usedforsecurity=False
-        ).hexdigest()
-        exact_filename = f"{sanitized_workflow_id}_{cache_fingerprint}.json"
+        cache_fingerprint = hashlib.sha256(cache_seed.encode("utf-8")).hexdigest()
+        exact_filename = f"{cache_file.stem}_{cache_fingerprint}.json"
         return next(
             (
                 str(candidate)
@@ -1050,24 +1098,70 @@ def _find_offline_hashed_workflow_cache_file(
     return None
 
 
+def _workflow_cache_path_is_safe(workflow_cache_file: str) -> bool:
+    """Return whether a cache path is contained and has no child symlinks."""
+
+    cache_root = Path(MODEL_CACHE_DIR, "workflow").absolute()
+    candidate = Path(workflow_cache_file).absolute()
+    if cache_root.is_symlink():
+        return False
+    try:
+        relative_path = candidate.relative_to(cache_root)
+    except ValueError:
+        return False
+    if not relative_path.parts or candidate.suffix != ".json":
+        return False
+
+    # MODEL_CACHE_DIR itself may intentionally be a mounted/symlinked volume.
+    # Child symlinks are rejected because they can cross workspace, API-key, or
+    # filesystem attribution boundaries.
+    current_path = cache_root
+    for path_part in relative_path.parts:
+        current_path = current_path / path_part
+        if current_path.is_symlink():
+            return False
+
+    try:
+        candidate.resolve().relative_to(cache_root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _workflow_cache_response_is_valid(response: object) -> bool:
+    if not isinstance(response, dict):
+        return False
+    workflow = response.get("workflow")
+    if not isinstance(workflow, dict) or not isinstance(
+        workflow.get("config"), str
+    ):
+        return False
+    try:
+        workflow_config = json.loads(workflow["config"])
+    except (TypeError, ValueError):
+        return False
+    return isinstance(workflow_config, dict) and isinstance(
+        workflow_config.get("specification"), dict
+    )
+
+
 def _load_workflow_response_file(workflow_cache_file: str) -> Optional[dict]:
     """Load a Workflow cache file and remove it when its JSON is invalid."""
 
-    workflow_cache_root = Path(MODEL_CACHE_DIR, "workflow").resolve()
-    resolved_cache_file = Path(workflow_cache_file).resolve()
-    try:
-        resolved_cache_file.relative_to(workflow_cache_root)
-    except ValueError:
-        logger.warning("Refusing to read a Workflow cache file outside the cache root")
-        return None
-    if resolved_cache_file.suffix != ".json":
+    cache_file = Path(workflow_cache_file).absolute()
+    if not _workflow_cache_path_is_safe(str(cache_file)):
+        logger.warning("Refusing to read an unsafe Workflow cache file")
         return None
     try:
-        with resolved_cache_file.open("r") as file_handle:
-            return json.load(file_handle)
-    except Exception:
+        with cache_file.open("r") as file_handle:
+            response = json.load(file_handle)
+        if not _workflow_cache_response_is_valid(response):
+            raise ValueError("Malformed Workflow cache response")
+        return response
+    except (OSError, TypeError, ValueError):
         try:
-            resolved_cache_file.unlink()
+            # Unlink the lexical file, never a resolved symlink target.
+            cache_file.unlink()
         except OSError:
             pass
         return None
@@ -1080,6 +1174,13 @@ def cache_workflow_response(
     response: dict,
     workflow_version_id: Optional[str] = None,
 ):
+    if not _workflow_cache_response_is_valid(response):
+        logger.warning(
+            "Refusing to cache a malformed Workflow response for %s/%s",
+            workspace_id,
+            workflow_id,
+        )
+        return None
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
         workflow_id=workflow_id,
@@ -1087,10 +1188,40 @@ def cache_workflow_response(
         workflow_version_id=workflow_version_id,
     )
     workflow_cache_dir = os.path.dirname(workflow_cache_file)
-    if not os.path.exists(workflow_cache_dir):
-        os.makedirs(workflow_cache_dir, exist_ok=True)
-    with open(workflow_cache_file, "w") as f:
-        json.dump(response, f)
+    if not _workflow_cache_path_is_safe(workflow_cache_file):
+        raise ValueError("Refusing to write an unsafe Workflow cache path")
+    os.makedirs(workflow_cache_dir, exist_ok=True)
+    if not _workflow_cache_path_is_safe(workflow_cache_file):
+        raise ValueError("Refusing to write an unsafe Workflow cache path")
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=workflow_cache_dir,
+            # The final filename can already be close to NAME_MAX after adding
+            # version and tenant fingerprints. Keep the temporary component
+            # short so atomic writes still work for maximum-length IDs.
+            prefix=".workflow.",
+            suffix=".tmp",
+            delete=False,
+        ) as file_handle:
+            temporary_path = file_handle.name
+            json.dump(response, file_handle)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+        if not _workflow_cache_path_is_safe(workflow_cache_file):
+            raise ValueError("Refusing to replace an unsafe Workflow cache path")
+        # os.replace replaces a final symlink rather than following it and
+        # prevents readers from observing partially-written JSON.
+        os.replace(temporary_path, workflow_cache_file)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
 
 
 def delete_cached_workflow_response_if_exists(
@@ -1105,7 +1236,10 @@ def delete_cached_workflow_response_if_exists(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    if os.path.exists(workflow_cache_file):
+    if os.path.lexists(workflow_cache_file):
+        if not _workflow_cache_path_is_safe(workflow_cache_file):
+            logger.warning("Refusing to delete an unsafe Workflow cache file")
+            return
         os.remove(workflow_cache_file)
 
 
@@ -1121,8 +1255,10 @@ def load_cached_workflow_response(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    if os.path.exists(workflow_cache_file):
-        return _load_workflow_response_file(workflow_cache_file)
+    if os.path.lexists(workflow_cache_file):
+        cached_response = _load_workflow_response_file(workflow_cache_file)
+        if cached_response is not None:
+            return cached_response
 
     fallback_cache_file = _find_offline_hashed_workflow_cache_file(
         workspace_id=workspace_id,
@@ -1186,7 +1322,10 @@ def get_workflow_specification(
         local_file_path = (
             Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_hash}.json"
         )
-        if not local_file_path.exists():
+        if (
+            not _workflow_cache_path_is_safe(str(local_file_path))
+            or not local_file_path.exists()
+        ):
             raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
 
         with local_file_path.open("r", encoding="utf-8") as f:
@@ -1237,8 +1376,9 @@ def get_workflow_specification(
     try:
         workflow_config = json.loads(response["workflow"]["config"])
         specification = workflow_config["specification"]
-        if isinstance(specification, dict):
-            specification["id"] = response["workflow"].get("id")
+        if not isinstance(specification, dict):
+            raise TypeError("Workflow specification must be a dictionary")
+        specification["id"] = response["workflow"].get("id")
         if use_cache:
             _try_cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
@@ -1379,9 +1519,7 @@ def _prepare_workflow_response_cache_key(
             f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}"
         )
     cache_seed = f"{workspace_id}:{api_key or ''}"
-    cache_fingerprint = hashlib.sha256(
-        cache_seed.encode("utf-8"), usedforsecurity=False
-    ).hexdigest()
+    cache_fingerprint = hashlib.sha256(cache_seed.encode("utf-8")).hexdigest()
     return f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}:{cache_fingerprint}"
 
 
@@ -1496,6 +1634,10 @@ def stream_url_to_cache(
     filename: str,
     model_id: str,
 ) -> None:
+    if OFFLINE_MODE:
+        raise RoboflowAPIConnectionError(
+            "Cannot download model artifacts - OFFLINE_MODE is enabled."
+        )
     from inference_models.utils.download import download_files_to_directory
 
     with start_span(

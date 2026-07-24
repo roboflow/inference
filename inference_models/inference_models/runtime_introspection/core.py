@@ -49,13 +49,18 @@ class RuntimeXRayResult:
 
     def __str__(self) -> str:
         gpu_devices_str = ", ".join(self.gpu_devices)
+        onnx_execution_providers = (
+            sorted(self.available_onnx_execution_providers)
+            if self.available_onnx_execution_providers is not None
+            else None
+        )
         return (
             f"RuntimeXRayResult(gpu_available={self.gpu_available}, gpu_devices=[{gpu_devices_str}], "
             f"gpu_devices_cc={self.gpu_devices_cc}, gpu_driver={self.driver_version}, "
             f"cuda_version={self.cuda_version}, trt_version={self.trt_version}, "
             f"jetson_type={self.jetson_type}, l4t_version={self.l4t_version}, os_version={self.os_version}, "
             f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
-            f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
+            f"available_onnx_execution_providers={onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
             f"torchvision_version={self.torchvision_version})"
         )

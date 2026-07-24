@@ -35,6 +35,7 @@ from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -318,6 +319,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         predictions = []
         if class_names is None:
             class_names = []
@@ -392,6 +394,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         predictions = []
         if class_names is None:
             class_names = []

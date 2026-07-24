@@ -1,11 +1,13 @@
 import os
-import sys
-import types
 import warnings
 from typing import Optional
 
 import torch
 
+from inference_models._offline import (
+    OFFLINE_MODE,
+    OFFLINE_MODE_CONTRACT_VERSION,
+)
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -13,7 +15,6 @@ from inference_models.utils.environment import (
     get_float_from_env,
     get_integer_from_env,
     parse_comma_separated_values,
-    str2bool,
 )
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
@@ -66,37 +67,17 @@ L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = (
     os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
 )
-# Share the process-start latch with ``inference.core.env``. Whichever package
-# is imported first establishes the mode for this process and its children.
-_OFFLINE_MODE_PROCESS_LATCH_ENV = (
-    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-)
-_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
-_requested_offline_mode = get_boolean_from_env(
-    variable_name="OFFLINE_MODE", default=False
-)
-_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-if _offline_mode_process_state is None:
-    _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
-    _latched_offline_mode = (
-        _requested_offline_mode
-        if _inherited_offline_mode is None
-        else str2bool(
-            _inherited_offline_mode,
-            variable_name=_OFFLINE_MODE_PROCESS_LATCH_ENV,
-        )
+# The package initializer establishes the dependency-light process-wide latch
+# before importing this configuration module. Reloads only compare the public
+# environment request with that immutable state.
+try:
+    _requested_offline_mode = get_boolean_from_env(
+        variable_name="OFFLINE_MODE", default=False
     )
-    _offline_mode_process_state = types.ModuleType(
-        _OFFLINE_MODE_PROCESS_STATE_MODULE
-    )
-    _offline_mode_process_state.offline_mode = _latched_offline_mode
-    sys.modules[_OFFLINE_MODE_PROCESS_STATE_MODULE] = _offline_mode_process_state
-OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
-os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
-if OFFLINE_MODE:
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-if OFFLINE_MODE != _requested_offline_mode:
+except InvalidEnvVariable:
+    # Ignore malformed runtime mutations once the process-wide state exists.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
     warnings.warn(
         "Changing OFFLINE_MODE at runtime is not supported. The new value is "
         "being ignored; restart the process to change offline mode.",

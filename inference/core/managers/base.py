@@ -268,7 +268,11 @@ class ModelManager:
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache"):
                         try:
                             logger.debug(
@@ -303,7 +307,11 @@ class ModelManager:
             except Exception as e:
                 record_error(e)
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache_error"):
                         try:
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
@@ -366,7 +374,11 @@ class ModelManager:
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache"):
                         try:
                             logger.debug(
@@ -401,7 +413,11 @@ class ModelManager:
             except Exception as e:
                 record_error(e)
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache_error"):
                         try:
                             model_monitoring_cache_module.model_monitoring_cache.zadd(

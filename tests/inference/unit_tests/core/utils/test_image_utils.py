@@ -119,6 +119,20 @@ def test_load_image_from_url_when_url_loading_not_allowed() -> None:
         _ = load_image_from_url(value="https://google.com/image.jpg")
 
 
+@mock.patch.object(image_utils, "_fetch_image_bytes_from_url")
+@mock.patch.object(image_utils, "_validate_url_destination")
+@mock.patch.object(image_utils, "OFFLINE_MODE", True)
+def test_load_image_from_url_is_rejected_before_validation_when_offline(
+    validate_url_destination_mock: MagicMock,
+    fetch_image_bytes_from_url_mock: MagicMock,
+) -> None:
+    with pytest.raises(InputImageLoadError, match="OFFLINE_MODE"):
+        load_image_from_url(value="https://example.com/image.jpg")
+
+    validate_url_destination_mock.assert_not_called()
+    fetch_image_bytes_from_url_mock.assert_not_called()
+
+
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @pytest.mark.parametrize(

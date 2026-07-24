@@ -33,6 +33,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -437,6 +438,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         if class_names is None:
             class_names = []
         if len(class_names) == 0:
@@ -522,6 +524,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         if class_names is None:
             class_names = []
         if len(class_names) == 0:

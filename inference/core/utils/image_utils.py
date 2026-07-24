@@ -28,6 +28,7 @@ from inference.core.env import (
     ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
     MAX_IMAGE_URL_REDIRECTS,
+    OFFLINE_MODE,
     VALIDATE_IMAGE_URL_REDIRECTS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
@@ -402,6 +403,12 @@ def load_image_from_url(
     Returns:
         Image.Image: The loaded PIL image.
     """
+    if OFFLINE_MODE:
+        message = "Cannot load an image from URL while OFFLINE_MODE is enabled."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
     _ensure_url_input_allowed()
     prepared_url = _validate_url_destination(value=value)
     try:

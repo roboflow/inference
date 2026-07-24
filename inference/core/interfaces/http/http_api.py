@@ -338,7 +338,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
-if LAMBDA:
+if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
 
 import time
@@ -581,6 +581,15 @@ class HttpInterface(BaseInterface):
                 "OFFLINE_MODE is not supported together with LAMBDA / "
                 "GCP_SERVERLESS deployments because authentication and usage "
                 "accounting require API connectivity."
+            )
+        if OFFLINE_MODE and (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with dedicated or "
+                "workspace-whitelist authentication because API keys cannot be "
+                "mapped to workspaces without API connectivity."
             )
 
         description = "Roboflow inference server"

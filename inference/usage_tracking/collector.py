@@ -428,6 +428,10 @@ class UsageCollector:
         else:
             hostname = sha256_hash(hostname)
 
+        if OFFLINE_MODE and not ip_address:
+            # Avoid hostname resolution and the public 8.8.8.8 UDP route probe
+            # even when this helper is called directly outside record_usage().
+            ip_address = "127.0.0.1"
         if not ip_address:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
@@ -681,6 +685,10 @@ class UsageCollector:
         self._flush_queue()
 
     def _flush_queue(self):
+        if OFFLINE_MODE:
+            # Leave any usage persisted by an earlier online run untouched.
+            # Draining before the sender-level guard would silently discard it.
+            return
         usage_payloads = self._dump_usage_queue_with_lock()
         if not usage_payloads:
             return

@@ -1,10 +1,52 @@
 import hashlib
+import os
+import sys
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import requests
 
 # NOTE: This module is used in isolation, no imports from inference are allowed
 # NOTE: Any change made to this file should be matched to changes in redis offloader
+
+_OFFLINE_MODE_PROCESS_LATCH_ENV = (
+    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+)
+_offline_mode_process_state = sys.modules.get("_roboflow_inference_process_state")
+if _offline_mode_process_state is not None and hasattr(
+    _offline_mode_process_state, "offline_mode"
+):
+    OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
+    # The shared process state is authoritative. Re-publish it in case callers
+    # mutated the private marker after package startup.
+    os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
+else:
+    # This module is also reused by an isolated offloader. Snapshot its startup
+    # environment without importing inference and creating an import cycle.
+    # Publishing the private marker makes that snapshot survive module
+    # re-execution and propagate to descendant processes.
+    _inherited_offline_mode_value = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
+    _offline_mode_variable_name = (
+        _OFFLINE_MODE_PROCESS_LATCH_ENV
+        if _inherited_offline_mode_value is not None
+        else "OFFLINE_MODE"
+    )
+    _offline_mode_value = (
+        _inherited_offline_mode_value
+        if _inherited_offline_mode_value is not None
+        else os.getenv("OFFLINE_MODE", "False")
+    )
+    _normalized_offline_mode_value = _offline_mode_value.lower()
+    if _normalized_offline_mode_value == "true":
+        OFFLINE_MODE = True
+    elif _normalized_offline_mode_value == "false":
+        OFFLINE_MODE = False
+    else:
+        raise ValueError(
+            f"Expected {_offline_mode_variable_name} to be a boolean "
+            "(true or false), "
+            f"got {_offline_mode_value!r}"
+        )
+    os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
 
 
 ResourceID = str
@@ -153,6 +195,8 @@ def send_usage_payload(
     ssl_verify: bool = False,
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> Set[APIKeyHash]:
+    if OFFLINE_MODE:
+        return set()
     hashes_to_api_keys = hashes_to_api_keys or {}
     api_keys_hashes_failed = set()
     for api_key_hash, workflow_payloads in payload.items():

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import sys
+from queue import Queue
 from typing import Optional
 from unittest import mock
 
@@ -10,6 +11,7 @@ import pytest
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
+from inference.usage_tracking import payload_helpers
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
@@ -978,6 +980,27 @@ def test_system_info_with_no_dedicated_deployment_id(
         assert system_info[k] == v
 
 
+def test_system_info_does_not_probe_network_in_offline_mode(
+    usage_collector_with_mocked_threads,
+):
+    with mock.patch(
+        "inference.usage_tracking.collector.OFFLINE_MODE", True
+    ), mock.patch(
+        "inference.usage_tracking.collector.socket.gethostbyname"
+    ) as gethostbyname_mock, mock.patch(
+        "inference.usage_tracking.collector.socket.socket"
+    ) as socket_mock:
+        system_info = usage_collector_with_mocked_threads.system_info(
+            hostname="hostname01"
+        )
+
+    assert system_info["ip_address_hash"] == hashlib.sha256(
+        "127.0.0.1".encode()
+    ).hexdigest()[:5]
+    gethostbyname_mock.assert_not_called()
+    socket_mock.assert_not_called()
+
+
 def test_record_malformed_usage(usage_collector_with_mocked_threads):
     # given
     collector = usage_collector_with_mocked_threads
@@ -1022,6 +1045,24 @@ def test_record_usage_is_noop_in_offline_mode(usage_collector_with_mocked_thread
 
     record_system_info.assert_not_called()
     assert not collector._usage
+
+
+def test_flush_queue_preserves_preexisting_records_in_offline_mode(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    persisted_payload = {"preexisting": {"resource": {"processed_frames": 1}}}
+    collector._queue = Queue()
+    collector._queue.put(persisted_payload)
+
+    with mock.patch(
+        "inference.usage_tracking.collector.OFFLINE_MODE", True
+    ), mock.patch.object(collector, "_offload_to_api") as offload_to_api:
+        collector._flush_queue()
+
+    assert collector._queue.qsize() == 1
+    assert collector._queue.get_nowait() is persisted_payload
+    offload_to_api.assert_not_called()
 
 
 def test_update_usage_payload_preserves_billable_on_cache_miss(
@@ -1914,6 +1955,29 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
         "stream-b",
     }
     assert all("stream_session_id" not in row for row in outbound_rows)
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+@mock.patch.object(payload_helpers, "OFFLINE_MODE", True)
+def test_send_usage_payload_does_not_post_when_offline(post_mock) -> None:
+    payload = {
+        "fake_hash": {
+            "workflows:workflow-1": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "workflow-1",
+                "processed_frames": 1,
+            }
+        }
+    }
+
+    failed_hashes = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    assert failed_hashes == set()
+    post_mock.assert_not_called()
 
 
 @mock.patch("inference.usage_tracking.payload_helpers.requests.post")

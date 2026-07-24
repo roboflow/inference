@@ -110,11 +110,53 @@ def test_http_interface_rejects_offline_serverless_deployment(
     monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        None,
+    )
     monkeypatch.setattr(http_api, serverless_flag, True)
 
     with pytest.raises(
         RuntimeError,
         match="OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS",
+    ):
+        http_api.HttpInterface(model_manager=MagicMock())
+
+
+@pytest.mark.parametrize(
+    ("dedicated_workspace", "workspace_whitelist"),
+    [
+        ("dedicated-workspace", None),
+        (None, ["allowed-workspace"]),
+    ],
+)
+def test_http_interface_rejects_offline_workspace_authentication(
+    monkeypatch,
+    dedicated_workspace,
+    workspace_whitelist,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(
+        http_api,
+        "DEDICATED_DEPLOYMENT_WORKSPACE_URL",
+        dedicated_workspace,
+    )
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        workspace_whitelist,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="OFFLINE_MODE is not supported together with dedicated or "
+        "workspace-whitelist authentication",
     ):
         http_api.HttpInterface(model_manager=MagicMock())
 
