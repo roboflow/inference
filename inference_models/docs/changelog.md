@@ -6,6 +6,10 @@
 
 ## `0.33.0`
 
+### Added
+- Added YOLO26 monocular depth estimation support (ONNX, TorchScript, and TensorRT backends).
+
+
 ### Fixed
 
 - Dense instance-segmentation mask production no longer materializes the full
@@ -27,7 +31,6 @@
   raises a clear `CorruptedModelPackageError` instead of an unhandled exception.
 - Preserve HTTP 402, 403, and 423 model-access failures as typed errors when the
   Roboflow weights provider retrieves model metadata or weights.
-- Added YOLO26 monocular depth estimation support (ONNX, TorchScript, and TensorRT backends).
 
 ---
 
