@@ -125,11 +125,11 @@ class DepthEstimationRequest(InferenceRequest):
         description="Serialization format for `normalized_depth` in the response: "
         "`json` (default, wire-compatible with older clients) returns the nested "
         "float list; `png16` returns a base64 16-bit grayscale PNG (quantization "
-        "step 1/65535, typically >10x smaller payload - `inference_sdk` requests "
-        "this automatically and decodes it back to a numpy array); `png8` returns "
-        "a base64 8-bit grayscale PNG (256 depth levels, roughly another order of "
-        "magnitude smaller - fine for visualization/thresholding, lossy for "
-        "geometric use).",
+        "step 1/65535, typically >10x smaller payload - `inference_sdk` decodes "
+        "it back to a numpy array when requested via `depth_map_format='png16'`); "
+        "`png8` returns a base64 8-bit grayscale PNG (256 depth levels, roughly "
+        "another order of magnitude smaller - fine for visualization/thresholding, "
+        "lossy for geometric use).",
     )
 
     @validator("model_id", always=True)

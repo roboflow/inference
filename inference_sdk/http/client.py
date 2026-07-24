@@ -48,7 +48,10 @@ from inference_sdk.http.utils.aliases import (
     resolve_ocr_path,
     resolve_roboflow_model_alias,
 )
-from inference_sdk.http.utils.depth_maps import decode_depth_estimation_result
+from inference_sdk.http.utils.depth_maps import (
+    decode_depth_estimation_result,
+    warn_depth_map_json_format_deprecated,
+)
 from inference_sdk.http.utils.executors import (
     UNKNOWN_MODEL_ID,
     RequestMethod,
@@ -1714,7 +1717,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
         model_id_in_path: bool = False,
-        depth_map_format: str = "png16",
+        depth_map_format: str = "json",
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s).
 
@@ -1734,22 +1737,31 @@ class InferenceHTTPClient:
                 path-based routing. If False (default), model_id is only sent in the
                 request body.
             depth_map_format (str, optional): Requested serialization for
-                `normalized_depth` on the wire: "png16" (default, compact base64
-                16-bit PNG), "png8" (smaller, 256 depth levels), or "json" (legacy
-                nested float list). Servers that predate this field ignore it and
-                return the legacy list.
+                `normalized_depth` on the wire: "json" (default, legacy nested
+                float list), "png16" (compact base64 16-bit PNG, typically >10x
+                smaller payload, decoded client-side to a numpy array) or "png8"
+                (smaller still, 256 depth levels). The "json" default is
+                deprecated: in one of the first `inference` releases of 2027 the
+                default becomes "png16" in a breaking way (`normalized_depth`
+                turns into a numpy.ndarray), and a one-off
+                InferenceSDKDeprecationWarning is emitted whenever "json" is
+                used. Servers that predate this field ignore it and return the
+                legacy list.
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
-                - normalized_depth: The normalized depth map as a numpy array
-                  (PNG-serialized responses are decoded automatically; legacy
-                  servers returning nested float lists pass through unchanged)
+                - normalized_depth: nested float list for "json" (default);
+                  numpy array for "png16"/"png8" (PNG payloads are decoded
+                  automatically; legacy servers returning float lists pass
+                  through unchanged regardless of the requested format)
                 - image: Hex-encoded visualization of the depth map
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        if depth_map_format == "json":
+            warn_depth_map_json_format_deprecated()
         extra_payload = {
             "model_id": model_id,
             "depth_map_format": depth_map_format,
@@ -1771,7 +1783,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
         model_id_in_path: bool = False,
-        depth_map_format: str = "png16",
+        depth_map_format: str = "json",
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s) asynchronously.
 
@@ -1783,14 +1795,28 @@ class InferenceHTTPClient:
             model_id_in_path (bool, optional): If True, includes model_id in the URL path
                 for path-based routing. If False (default), model_id is only sent in the
                 request body.
+            depth_map_format (str, optional): Requested serialization for
+                `normalized_depth` on the wire: "json" (default, legacy nested
+                float list), "png16" (compact base64 16-bit PNG decoded
+                client-side to a numpy array) or "png8" (smaller still, 256
+                depth levels). The "json" default is deprecated: in one of the
+                first `inference` releases of 2027 the default becomes "png16"
+                in a breaking way (`normalized_depth` turns into a
+                numpy.ndarray), and a one-off InferenceSDKDeprecationWarning is
+                emitted whenever "json" is used. Servers that predate this
+                field ignore it and return the legacy list.
 
         Returns:
-            Union[dict, List[dict]]: Depth estimation results.
+            Union[dict, List[dict]]: Depth estimation results; `normalized_depth`
+                is a nested float list for "json" (default) and a numpy array for
+                "png16"/"png8".
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        if depth_map_format == "json":
+            warn_depth_map_json_format_deprecated()
         extra_payload = {
             "model_id": model_id,
             "depth_map_format": depth_map_format,

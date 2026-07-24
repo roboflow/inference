@@ -27,11 +27,21 @@ request's `depth_map_format` field:
   magnitude smaller — fine for visualization and thresholding, lossy for
   derivative-based geometric use).
 
-The `inference_sdk` `depth_estimation()` client method requests `png16` automatically
-and decodes the payload back to a `numpy.ndarray`, so SDK callers always receive an
-array (note: an `ndarray`, not a plain list — call `.tolist()` if you need
-JSON-serializable output). Raw REST callers keep the legacy list unless they opt in
-to a PNG format.
+The `inference_sdk` `depth_estimation()` client method defaults to `json`, so existing
+integrations keep receiving the legacy nested list. Pass `depth_map_format="png16"`
+(or `"png8"`) to opt in to the compact payload — the SDK decodes it back to a
+`numpy.ndarray` (note: an `ndarray`, not a plain list — call `.tolist()` if you need
+JSON-serializable output).
+
+!!! warning "Deprecation notice"
+
+    The SDK's `json` default is deprecated: in one of the first `inference` releases
+    of 2027 the default will switch to `png16` in a breaking way — `normalized_depth`
+    will then be returned as a `numpy.ndarray`. The SDK emits a one-off
+    `InferenceSDKDeprecationWarning` whenever the `json` format is used. Opt in to
+    `png16` early, or pass `depth_map_format="json"` explicitly to keep the list
+    format after the switch. Raw REST callers are unaffected — the server-side
+    default stays `json`.
 
 ### Installation
 
