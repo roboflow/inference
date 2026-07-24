@@ -96,6 +96,7 @@ nav:
           - Grounding DINO: models/grounding-dino.md
           - OWLv2: models/owlv2.md
       - Depth Estimation:
+          - YOLO26: models/yolo26-depth-estimation.md
           - Depth Anything V2: models/depth-anything-v2.md
           - Depth Anything V3: models/depth-anything-v3.md
       - Gaze Detection:

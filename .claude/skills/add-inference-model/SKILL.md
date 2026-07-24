@@ -176,6 +176,8 @@ Add to this list as new surprises surface.
 - **Stateful workflow blocks + remote execution**: if your block keeps per-video or per-request state, raise `NotImplementedError` in `__init__` when the execution mode is `REMOTE`. Failing at compile time beats failing on first frame.
 - **`get_supported_model_variants` order** (workflow-block manifest classmethod, consumed by the air-gapped scanner in `inference/core/cache/air_gapped.py`): the first entry is the display name for the cache scanner. Put your default variant first.
 - **`PYTHONSAFEPATH=1`** when running scripts from the repo root — see step 9.
+- **Never register `model_config.json` as a package artefact** (hit with yolo26-depth): the auto-loader generates that file itself for offline-loader compatibility, and a registered artefact with the same name fails every load with `CorruptedModelPackageError` ("collides with the config file that inference is supposed to create"). Registered packages carry only the weights + `inference_config.json` (+ per-task extras like `class_names.txt`); `model_config.json` belongs only in local/test packages. If it slips in: unseal → `artefacts/remove` → re-seal fixes it without re-uploading.
+- **Ultralytics exports for fixed-size heads**: mirror the predictor's real pre-processing in `inference_config.json` — ultralytics letterboxes with padding value 114 (not 0), RGB, `/255`, no normalization. Also mirror sibling manifests for the dynamic-ONNX `incompatibleProviders: ["CoreMLExecutionProvider"]` exclusion (dynamic-shape graphs break CoreML).
 
 ## Verification checklist
 

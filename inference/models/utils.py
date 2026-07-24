@@ -1155,6 +1155,25 @@ if USE_INFERENCE_MODELS:
             InferenceModelsSemanticSegmentationAdapter
         )
 
+    # YOLO26 depth estimation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    if DEPTH_ESTIMATION_ENABLED:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsDepthEstimationAdapter,
+        )
+
+        for variant in [
+            "yolo26",
+            "yolo26n-depth",
+            "yolo26s-depth",
+            "yolo26m-depth",
+            "yolo26l-depth",
+            "yolo26x-depth",
+        ]:
+            ROBOFLOW_MODEL_TYPES[("depth-estimation", variant)] = (
+                InferenceModelsDepthEstimationAdapter
+            )
+
     # RFDETR keypoint detection is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
