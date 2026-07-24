@@ -2221,6 +2221,15 @@ class AutoModel:
                 )
                 raise error
             except RetryError:
+                if not OFFLINE_MODE:
+                    verbose_info(
+                        message=(
+                            f"API unreachable for model {model_id_or_path}; "
+                            "cache fallback is disabled while running online."
+                        ),
+                        verbose_requested=verbose,
+                    )
+                    raise
                 if credential_bound_cache_request:
                     verbose_info(
                         message=(

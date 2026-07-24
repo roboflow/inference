@@ -4611,43 +4611,30 @@ def test_attempt_loading_model_from_offline_cache_requires_matching_runtime(
     mock_load.assert_not_called()
 
 
-def test_from_pretrained_falls_back_to_offline_cache_on_retry_error(
-    empty_local_dir: str,
-) -> None:
-    # given
+def test_online_retry_error_does_not_use_cache_fallback() -> None:
     model_id = "test/1"
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "offline_compatibility_hash": (
-                _offline_compatibility_hash_for_default_request(model_id)
-            ),
-        },
-    )
-    mock_model = MagicMock()
+    auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
 
-    # when
-    with mock.patch.object(core, "ROBOFLOW_API_KEY", None), mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
+    with mock.patch.object(core, "OFFLINE_MODE", False), mock.patch.object(
+        core, "ROBOFLOW_API_KEY", None
     ), mock.patch.object(
         core,
         "get_model_from_provider",
         side_effect=RetryError(message="network down", help_url="https://help"),
     ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = core.AutoModel.from_pretrained(
-            model_id,
-            api_key=None,
-            use_auto_resolution_cache=False,
-        )
+        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_offline_cache"
+    ) as raw_cache_load:
+        with pytest.raises(RetryError):
+            core.AutoModel.from_pretrained(
+                model_id,
+                api_key=None,
+                auto_resolution_cache=auto_resolution_cache,
+            )
 
-    # then
-    assert result is mock_model
-    assert mock_load.call_args[1]["model_dir_or_weights_path"] == package_dir
+    auto_resolution_cache.find_compatible_candidates.assert_not_called()
+    raw_cache_load.assert_not_called()
 
 
 def test_custom_cache_compatible_lookup_supports_no_key_offline_restart() -> None:
