@@ -115,6 +115,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [YOLO26 Depth](yolo26-depth-estimation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ❌ |
 | [Depth Anything V2](depth-anything-v2.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [Depth Anything V3](depth-anything-v3.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 

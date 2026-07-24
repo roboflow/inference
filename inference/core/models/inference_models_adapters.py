@@ -7,6 +7,7 @@ from io import BytesIO
 from threading import local
 from time import perf_counter
 from typing import Any, Deque, List, Optional, Tuple, Union
+from uuid import uuid4
 from weakref import finalize
 
 import numpy as np
@@ -31,6 +32,7 @@ from inference.core.entities.responses.inference import (
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
+    LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
@@ -51,16 +53,22 @@ from inference.core.env import (
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
     AutoModel,
     ClassificationModel,
     ClassificationPrediction,
+    DepthEstimationModel,
     Detections,
     InstanceDetections,
     InstanceSegmentationModel,
@@ -1711,3 +1719,96 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             "draw_predictions(...) is not implemented for semantic segmentation models - responses contain "
             "visualization already."
         )
+
+
+class InferenceModelsDepthEstimationAdapter(Model):
+    """Serves any `inference_models` DepthEstimationModel (e.g. YOLO26-depth)
+    behind the depth-estimation contract shared with the DepthAnything
+    adapters: per-image min-max-normalized depth plus a viridis
+    visualization."""
+
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+
+        self.api_key = api_key if api_key else API_KEY
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
+
+        self.task_type = "depth-estimation"
+
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
+        self._model: DepthEstimationModel = AutoModel.from_pretrained(
+            model_id_or_path=model_id,
+            api_key=self.api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
+            **kwargs,
+        )
+
+    def preprocess(self, image: Any, **kwargs):
+        if isinstance(image, list):
+            raise ValueError("Depth estimation does not support batched inference.")
+        np_image = load_image_bgr(
+            image,
+            disable_preproc_auto_orient=kwargs.get(
+                "disable_preproc_auto_orient", False
+            ),
+        )
+        return np_image, PreprocessReturnMetadata(
+            {"image_dims": (np_image.shape[1], np_image.shape[0])}
+        )
+
+    def predict(self, inputs: np.ndarray, **kwargs) -> Tuple[dict]:
+        import matplotlib.pyplot as plt
+
+        predictions = self._model(inputs)[0]
+        depth_map = predictions.to(torch.float32).cpu().numpy()
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
+        if depth_max == depth_min:
+            raise ValueError("Depth map has no variation (min equals max)")
+        # DepthAnything serves disparity-style values (larger = closer), so
+        # metric depth (larger = farther) is inverted while normalizing to
+        # keep the served convention identical across depth models.
+        normalized_depth = (depth_max - depth_map) / (depth_max - depth_min)
+
+        depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
+        cmap = plt.get_cmap("viridis")
+        colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+
+        parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
+        colored_depth_image = WorkflowImageData(
+            numpy_image=colored_depth, parent_metadata=parent_metadata
+        )
+        result = {
+            "image": colored_depth_image,
+            "normalized_depth": normalized_depth,
+        }
+        return (result,)
+
+    def postprocess(
+        self,
+        predictions: Tuple[dict],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> List[LMMInferenceResponse]:
+        image_dims = preprocess_return_metadata["image_dims"]
+        response = LMMInferenceResponse(
+            response=predictions[0],
+            image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
+        )
+        return [response]
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        pass

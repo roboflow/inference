@@ -7,6 +7,13 @@ Add user-facing changes below using `### Added`, `### Changed`, `### Fixed`, or
 
 ---
 
+## Unreleased
+
+### Added
+- Added YOLO26 monocular depth estimation support (ONNX, TorchScript, and TensorRT backends).
+
+---
+
 ## `0.32.3`
 
 ### Fixed

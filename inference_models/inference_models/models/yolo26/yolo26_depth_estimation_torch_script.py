@@ -1,0 +1,146 @@
+from threading import Lock
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+
+from inference_models import ColorFormat
+from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
+from inference_models.models.base.depth_estimation import DepthEstimationModel
+from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    PreProcessingMetadata,
+    ResizeMode,
+    parse_inference_config,
+)
+from inference_models.models.common.roboflow.post_processing import (
+    post_process_depth_estimation_map,
+)
+from inference_models.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
+from inference_models.models.common.torch import (
+    generate_batch_chunks,
+    torchscript_global_lock,
+)
+from inference_models.weights_providers.entities import RecommendedParameters
+
+
+class YOLO26ForDepthEstimationTorchScript(
+    DepthEstimationModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
+):
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path: str,
+        device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        torchscript_state_global_lock: Optional[Lock] = None,
+        **kwargs,
+    ) -> "YOLO26ForDepthEstimationTorchScript":
+        model_package_content = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=[
+                "inference_config.json",
+                "weights.torchscript",
+            ],
+        )
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLO26 Depth Estimation model running with TorchScript backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
+        )
+        if inference_config.forward_pass.static_batch_size is None:
+            raise CorruptedModelPackageError(
+                message="Expected static batch size to be registered in the inference configuration.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        with torchscript_global_lock(torchscript_state_global_lock):
+            model = torch.jit.load(
+                model_package_content["weights.torchscript"], map_location=device
+            ).train(False)
+        return cls(
+            model=model,
+            inference_config=inference_config,
+            device=device,
+            recommended_parameters=recommended_parameters,
+        )
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        inference_config: InferenceConfig,
+        device: torch.device,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+    ):
+        self._model = model
+        self._inference_config = inference_config
+        self._device = device
+        self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
+
+    def pre_process(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        **kwargs,
+    ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+        return pre_process_network_input(
+            images=images,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+            target_device=self._device,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+        with self._lock, torch.inference_mode():
+            if (
+                pre_processed_images.shape[0]
+                == self._inference_config.forward_pass.static_batch_size
+            ):
+                output = self._model(pre_processed_images)
+                return output.to(self._device)
+            chunks = []
+            for input_tensor, padding_size in generate_batch_chunks(
+                input_batch=pre_processed_images,
+                chunk_size=self._inference_config.forward_pass.static_batch_size,
+            ):
+                output_for_chunk = self._model(input_tensor)
+                if padding_size > 0:
+                    output_for_chunk = output_for_chunk[:-padding_size]
+                chunks.append(output_for_chunk)
+            return torch.cat(chunks, dim=0).to(self._device)
+
+    def post_process(
+        self,
+        model_results: torch.Tensor,
+        pre_processing_meta: List[PreProcessingMetadata],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        return post_process_depth_estimation_map(
+            model_results=model_results,
+            pre_processing_meta=pre_processing_meta,
+            device=self._device,
+        )
