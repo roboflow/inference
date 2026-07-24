@@ -1,15 +1,16 @@
 import os
 
+from inference_cli.lib.env import ROBOFLOW_REGION
+
 PROD_ENVIRONMENT_NAME = "prod"
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", PROD_ENVIRONMENT_NAME)
-ROBOFLOW_API_HOST = os.getenv(
-    "ROBOFLOW_API_HOST",
-    (
-        "https://api.roboflow.com"
-        if ROBOFLOW_ENVIRONMENT == PROD_ENVIRONMENT_NAME
-        else "https://api.roboflow.one"
-    ),
-)
+if ROBOFLOW_REGION == "eu":
+    _DEFAULT_ROBOFLOW_API_HOST = "https://api.roboflow.eu"
+elif ROBOFLOW_ENVIRONMENT == PROD_ENVIRONMENT_NAME:
+    _DEFAULT_ROBOFLOW_API_HOST = "https://api.roboflow.com"
+else:
+    _DEFAULT_ROBOFLOW_API_HOST = "https://api.roboflow.one"
+ROBOFLOW_API_HOST = os.getenv("ROBOFLOW_API_HOST", _DEFAULT_ROBOFLOW_API_HOST)
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", None)
 HTTP_CODES_TO_RETRY = {408, 429, 500, 502, 503, 504}
 YOLO_MODELS_MIN_DYNAMIC_BATCH_SIZE = int(
