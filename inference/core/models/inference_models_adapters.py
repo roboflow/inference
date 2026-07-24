@@ -1778,9 +1778,9 @@ class InferenceModelsDepthEstimationAdapter(Model):
         depth_max = depth_map.max()
         if depth_max == depth_min:
             raise ValueError("Depth map has no variation (min equals max)")
-        # DepthAnything serves disparity-style values (larger = closer), so
-        # metric depth (larger = farther) is inverted while normalizing to
-        # keep the served convention identical across depth models.
+        # The endpoint exposes an ordinal proximity map where larger means
+        # closer. Reverse metric depth while normalizing so all supported
+        # models share the same range, direction, and near-to-far ordering.
         normalized_depth = (depth_max - depth_map) / (depth_max - depth_min)
 
         depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
