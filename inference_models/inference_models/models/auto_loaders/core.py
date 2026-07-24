@@ -956,6 +956,7 @@ def _remove_unattributed_unhashed_artifacts(
 def _validate_cached_package_artifacts(
     package_dir: str,
     identities: Optional[List[dict]],
+    on_invalid_cache_entry: Optional[Callable[[str], None]] = None,
 ) -> bool:
     try:
         parsed_identities = _parse_package_artifact_identities(identities)
@@ -965,21 +966,38 @@ def _validate_cached_package_artifacts(
                 identities=parsed_identities
             ),
         )
-    except (OSError, CorruptedModelPackageError) as error:
+    except OSError as error:
+        LOGGER.warning(
+            "Ignoring cached package %s because artefact identity validation "
+            "is temporarily unavailable: %s",
+            package_dir,
+            error,
+        )
+        return False
+    except CorruptedModelPackageError as error:
         LOGGER.warning(
             "Ignoring cached package %s because artefact identity validation "
             "failed: %s",
             package_dir,
             error,
         )
+        if on_invalid_cache_entry is not None:
+            on_invalid_cache_entry(str(error))
         return False
-    return current_identities == parsed_identities
+    if current_identities != parsed_identities:
+        if on_invalid_cache_entry is not None:
+            on_invalid_cache_entry(
+                "cached package artefacts no longer match their warmed identities"
+            )
+        return False
+    return True
 
 
 def _validate_cached_package_layout(
     package_dir: str,
     artifact_identities: Optional[List[dict]],
     dependency_identities: Optional[List[dict]],
+    on_invalid_cache_entry: Optional[Callable[[str], None]] = None,
 ) -> bool:
     try:
         parsed_artifacts = _parse_package_artifact_identities(artifact_identities)
@@ -993,13 +1011,23 @@ def _validate_cached_package_layout(
             ),
             dependency_package_paths=parsed_dependencies,
         )
-    except (OSError, CorruptedModelPackageError) as error:
+    except OSError as error:
+        LOGGER.warning(
+            "Ignoring cached package %s because its directory layout is "
+            "temporarily unavailable: %s",
+            package_dir,
+            error,
+        )
+        return False
+    except CorruptedModelPackageError as error:
         LOGGER.warning(
             "Ignoring cached package %s because its directory layout is not "
             "fully declared by the package manifest: %s",
             package_dir,
             error,
         )
+        if on_invalid_cache_entry is not None:
+            on_invalid_cache_entry(str(error))
         return False
     return True
 
@@ -1204,6 +1232,7 @@ def _parse_dependency_package_path_identities(value: object) -> List[dict]:
 def _validate_cached_dependency_package_paths(
     package_dir: str,
     identities: Optional[List[dict]],
+    on_invalid_cache_entry: Optional[Callable[[str], None]] = None,
 ) -> bool:
     try:
         parsed_identities = _parse_dependency_package_path_identities(identities)
@@ -1241,13 +1270,23 @@ def _validate_cached_dependency_package_paths(
                     ),
                     help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
-    except (OSError, CorruptedModelPackageError) as error:
+    except OSError as error:
+        LOGGER.warning(
+            "Ignoring cached package %s because dependency path validation "
+            "is temporarily unavailable: %s",
+            package_dir,
+            error,
+        )
+        return False
+    except CorruptedModelPackageError as error:
         LOGGER.warning(
             "Ignoring cached package %s because dependency path validation "
             "failed: %s",
             package_dir,
             error,
         )
+        if on_invalid_cache_entry is not None:
+            on_invalid_cache_entry(str(error))
         return False
     return True
 
@@ -1912,6 +1951,10 @@ class AutoModel:
             runtime_compatibility = _runtime_compatibility_content(
                 runtime_x_ray=runtime_x_ray
             )
+            # This digest describes whether an already-warmed package can be
+            # loaded, so it deliberately excludes provider transport, retry,
+            # and download-integrity options. Those still belong to the exact
+            # online negotiation key below because they can affect acquisition.
             offline_compatibility_content = {
                 "provider": weights_provider,
                 "model_id": model_id_or_path,
@@ -1930,13 +1973,8 @@ class AutoModel:
                 "allow_untrusted_packages": allow_untrusted_packages,
                 "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
                 "allow_local_code_packages": allow_local_code_packages,
-                "verify_hash_while_download": verify_hash_while_download,
-                "download_files_without_hash": download_files_without_hash,
                 "allow_loading_dependency_models": allow_loading_dependency_models,
-                "max_package_loading_attempts": max_package_loading_attempts,
                 "nms_fusion_preferences": nms_fusion_preferences,
-                "weights_provider_extra_query_params": weights_provider_extra_query_params,
-                "weights_provider_extra_headers": weights_provider_extra_headers,
                 "dependency_models_params": _canonicalize_cache_hash_value(
                     dependency_models_params
                 ),
@@ -1951,6 +1989,11 @@ class AutoModel:
             auto_negotiation_hash = hash_dict_content(
                 content={
                     **offline_compatibility_content,
+                    "verify_hash_while_download": verify_hash_while_download,
+                    "download_files_without_hash": download_files_without_hash,
+                    "max_package_loading_attempts": max_package_loading_attempts,
+                    "weights_provider_extra_query_params": weights_provider_extra_query_params,
+                    "weights_provider_extra_headers": weights_provider_extra_headers,
                     "api_key": api_key,
                 }
             )
@@ -2221,6 +2264,15 @@ class AutoModel:
                 )
                 raise error
             except RetryError:
+                if not OFFLINE_MODE:
+                    verbose_info(
+                        message=(
+                            f"API unreachable for model {model_id_or_path}; "
+                            "cache fallback is disabled while running online."
+                        ),
+                        verbose_requested=verbose,
+                    )
+                    raise
                 if credential_bound_cache_request:
                     verbose_info(
                         message=(
@@ -2394,7 +2446,13 @@ class AutoModel:
 
 def _verified_auto_cache_package_dir(
     cache_entry: AutoResolutionCacheEntry,
+    on_invalid_cache_entry: Optional[Callable[[str], None]] = None,
 ) -> Optional[str]:
+    def reject_invalid_entry(reason: str) -> None:
+        LOGGER.warning("Ignoring invalid auto-load cache entry: %s", reason)
+        if on_invalid_cache_entry is not None:
+            on_invalid_cache_entry(reason)
+
     if (
         cache_entry.cache_attribution_version != CACHE_ATTRIBUTION_VERSION
         or not cache_entry.canonical_model_id
@@ -2404,6 +2462,7 @@ def _verified_auto_cache_package_dir(
         or not isinstance(cache_entry.package_manifest_hash, str)
         or re.fullmatch(r"[0-9a-f]{64}", cache_entry.package_manifest_hash) is None
     ):
+        reject_invalid_entry("canonical package attribution is missing or malformed")
         return None
     try:
         package_dir = resolve_existing_model_package_cache_path(
@@ -2415,11 +2474,16 @@ def _verified_auto_cache_package_dir(
         package_config = parse_model_config(
             config_path=os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
         )
-    except Exception as error:
+    except OSError as error:
         LOGGER.warning(
             "Ignoring auto-load cache entry because its package attribution "
-            "manifest could not be verified: %s",
+            "manifest is temporarily unavailable: %s",
             error,
+        )
+        return None
+    except Exception as error:
+        reject_invalid_entry(
+            f"package attribution manifest could not be verified: {error}"
         )
         return None
     if (
@@ -2446,24 +2510,27 @@ def _verified_auto_cache_package_dir(
         or package_config.runtime_compatibility_hash
         != _runtime_compatibility_hash(runtime_x_ray=x_ray_runtime_environment())
     ):
-        LOGGER.warning(
-            "Ignoring auto-load cache entry because its metadata does not "
-            "match the package manifest published by the successful warm."
+        reject_invalid_entry(
+            "resolution metadata does not match the package manifest "
+            "published by the successful warm"
         )
         return None
     if (
         not _validate_cached_package_artifacts(
             package_dir=package_dir,
             identities=package_config.package_artifacts,
+            on_invalid_cache_entry=reject_invalid_entry,
         )
         or not _validate_cached_dependency_package_paths(
             package_dir=package_dir,
             identities=package_config.dependency_package_paths,
+            on_invalid_cache_entry=reject_invalid_entry,
         )
         or not _validate_cached_package_layout(
             package_dir=package_dir,
             artifact_identities=package_config.package_artifacts,
             dependency_identities=package_config.dependency_package_paths,
+            on_invalid_cache_entry=reject_invalid_entry,
         )
     ):
         return None
@@ -2510,12 +2577,27 @@ def attempt_loading_model_with_auto_load_cache(
             verbose_requested=verbose,
         )
         return None
+    cache_entry_invalidated = False
+
+    def invalidate_cache_entry(reason: str) -> None:
+        nonlocal cache_entry_invalidated
+        if cache_entry_invalidated:
+            return
+        LOGGER.warning(
+            "Invalidating unusable auto-load cache entry for model %s: %s",
+            model_name_or_path,
+            reason,
+        )
+        auto_resolution_cache.invalidate(auto_negotiation_hash=auto_negotiation_hash)
+        cache_entry_invalidated = True
+
     if cache_entry.model_id != model_name_or_path:
         LOGGER.warning(
             "Ignoring auto-load cache entry for model %s while loading %s.",
             cache_entry.model_id,
             model_name_or_path,
         )
+        invalidate_cache_entry("cached requested-model identity does not match")
         return None
     if (
         expected_offline_compatibility_hash is not None
@@ -2537,7 +2619,10 @@ def attempt_loading_model_with_auto_load_cache(
             verbose_requested=verbose,
         )
         return None
-    model_package_cache_dir = _verified_auto_cache_package_dir(cache_entry=cache_entry)
+    model_package_cache_dir = _verified_auto_cache_package_dir(
+        cache_entry=cache_entry,
+        on_invalid_cache_entry=invalidate_cache_entry,
+    )
     if model_package_cache_dir is None:
         return None
     if not model_access_manager.is_model_package_access_granted(
@@ -2554,6 +2639,13 @@ def attempt_loading_model_with_auto_load_cache(
         return None
     try:
         model_dependencies = cache_entry.model_dependencies or []
+        if model_dependencies and not allow_loading_dependency_models:
+            LOGGER.warning(
+                "Ignoring auto-load cache entry for %s because dependency "
+                "loading is disabled for this request.",
+                model_name_or_path,
+            )
+            return None
         package_config = parse_model_config(
             config_path=os.path.join(
                 model_package_cache_dir,
@@ -2564,14 +2656,6 @@ def attempt_loading_model_with_auto_load_cache(
             model_dependencies=model_dependencies,
             identities=package_config.dependency_package_paths,
         )
-        if model_dependencies and not allow_loading_dependency_models:
-            raise CorruptedModelPackageError(
-                message=f"Could not load model {cache_entry.model_id} as it defines another models which are "
-                f"it's dependency, but the auto-loader prevents loading dependencies at certain "
-                f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
-                f"current implementation. Provide us the context of your use-case to get help.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
         model_dependencies_instances = {}
         dependency_models_params = dependency_models_params or {}
         for model_dependency in model_dependencies:
@@ -2688,6 +2772,9 @@ def attempt_loading_model_with_auto_load_cache(
             verbose_requested=verbose,
         )
         return model
+    except CorruptedModelPackageError as error:
+        invalidate_cache_entry(str(error))
+        return None
     except Exception as error:
         LOGGER.warning(
             f"Encountered error {error} of type {type(error)} when attempted to load model using "

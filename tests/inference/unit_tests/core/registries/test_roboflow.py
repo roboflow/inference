@@ -175,6 +175,41 @@ def test_in_process_model_metadata_cache_is_scoped_by_api_key() -> None:
     assert load_metadata.call_count == 2
 
 
+def test_save_model_metadata_populates_credential_scoped_in_process_cache() -> None:
+    with mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "_save_model_metadata_in_cache"
+    ), mock.patch.object(
+        roboflow,
+        "_get_model_metadata_from_cache",
+        return_value=("classification", "model-b"),
+    ) as load_metadata:
+        save_model_metadata_in_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            project_task_type="object-detection",
+            model_type="model-a",
+            api_key="credential-a",
+        )
+        same_credential = get_model_metadata_from_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            api_key="credential-a",
+        )
+        different_credential = get_model_metadata_from_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            api_key="credential-b",
+        )
+
+    assert same_credential == ("object-detection", "model-a")
+    assert different_credential == ("classification", "model-b")
+    load_metadata.assert_called_once_with(
+        dataset_id="workspace/model",
+        version_id="1",
+        api_key="credential-b",
+    )
+
+
 def test_model_metadata_content_is_invalid_when_content_is_empty() -> None:
     # when
     result = model_metadata_content_is_invalid(content=None)

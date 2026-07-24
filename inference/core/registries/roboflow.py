@@ -182,6 +182,17 @@ FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
 )
 
 
+def _get_in_process_metadata_cache_key(
+    dataset_id: Union[DatasetID, ModelID],
+    version_id: Optional[VersionID],
+    api_key: Optional[str],
+) -> Tuple[Union[DatasetID, ModelID], Optional[VersionID], str]:
+    credential_cache_key = hashlib.sha256(
+        f"{api_key is None}:{api_key or ''}".encode("utf-8")
+    ).hexdigest()
+    return dataset_id, version_id, credential_cache_key
+
+
 def _find_cached_model_package_dir_compat(
     model_id: str,
     api_key: Optional[str] = None,
@@ -492,6 +503,7 @@ def get_model_type(
             version_id=version_id,
             project_task_type=project_task_type,
             model_type=model_type,
+            api_key=api_key,
         )
         return project_task_type, model_type
 
@@ -543,6 +555,7 @@ def get_model_type(
         version_id=version_id,
         project_task_type=project_task_type,
         model_type=model_type,
+        api_key=api_key,
     )
 
     return project_task_type, model_type
@@ -571,10 +584,11 @@ def get_model_metadata_from_cache(
 ) -> Optional[Tuple[TaskType, ModelType]]:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     validate_model_id_for_cache(model_id=model_id)
-    credential_cache_key = hashlib.sha256(
-        f"{api_key is None}:{api_key or ''}".encode("utf-8")
-    ).hexdigest()
-    cache_key = (dataset_id, version_id, credential_cache_key)
+    cache_key = _get_in_process_metadata_cache_key(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        api_key=api_key,
+    )
     cached = _in_process_metadata_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -764,6 +778,7 @@ def save_model_metadata_in_cache(
     version_id: Optional[VersionID],
     project_task_type: TaskType,
     model_type: ModelType,
+    api_key: Optional[str] = None,
 ) -> None:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     validate_model_id_for_cache(model_id=model_id)
@@ -786,7 +801,12 @@ def save_model_metadata_in_cache(
                 model_type=model_type,
             )
     _in_process_metadata_cache.set(
-        (dataset_id, version_id), (project_task_type, model_type)
+        _get_in_process_metadata_cache_key(
+            dataset_id=dataset_id,
+            version_id=version_id,
+            api_key=api_key,
+        ),
+        (project_task_type, model_type),
     )
 
 
