@@ -160,6 +160,66 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
     ), "Source description must denote NOT_STARTED state and invalid source reference"
 
 
+def test_video_source_describe_source_sanitizes_credentialed_rtsp_url() -> None:
+    credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    result = source.describe_source()
+
+    assert result.source_reference == "rtsp://192.168.1.1:554/stream"
+    assert source._stream_reference == credentialed_url
+
+
+def test_video_source_describe_source_callable_reference_unchanged() -> None:
+    def producer_factory():
+        return MagicMock()
+
+    source = VideoSource.init(video_reference=producer_factory)
+
+    result = source.describe_source()
+
+    assert result.source_reference == str(producer_factory)
+
+
+def test_video_source_connection_error_uses_sanitized_reference() -> None:
+    credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    error_message = str(exc_info.value)
+    assert "secret" not in error_message
+    assert "rtsp://192.168.1.1:554/stream" in error_message
+    assert source._stream_reference == credentialed_url
+
+
+def test_video_source_decode_path_uses_operational_reference() -> None:
+    credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = True
+        mock_producer.return_value.discover_source_properties.return_value = (
+            SourceProperties(
+                width=640,
+                height=480,
+                fps=30.0,
+                total_frames=0,
+                is_file=False,
+            )
+        )
+        source.start()
+
+    mock_producer.assert_called_once_with(credentialed_url)
+
+
 def test_video_source_describe_source_when_invalid_video_reference_consumption_started() -> (
     None
 ):
