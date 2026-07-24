@@ -194,6 +194,29 @@ def test_serialise_sv_detections() -> None:
     }
 
 
+def test_serialise_sv_detections_with_nearest_target_distance() -> None:
+    # given: one detection with a real match distance, one unmatched (None)
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "nearest_target_distance": np.array([12.5, None], dtype=object),
+        },
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    predictions = result["predictions"]
+    assert predictions[0]["nearest_target_distance"] == 12.5
+    assert isinstance(predictions[0]["nearest_target_distance"], float)
+    assert predictions[1]["nearest_target_distance"] is None
+
+
 def test_serialise_image() -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)

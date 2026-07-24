@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    NEAREST_TARGET_DISTANCE_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -224,6 +225,13 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in data:
             detection_dict[AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE] = float(
                 data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
+            )
+        if NEAREST_TARGET_DISTANCE_KEY in data:
+            nearest_target_distance = data[NEAREST_TARGET_DISTANCE_KEY]
+            detection_dict[NEAREST_TARGET_DISTANCE_KEY] = (
+                float(nearest_target_distance)
+                if nearest_target_distance is not None
+                else None
             )
         serialized_detections.append(detection_dict)
     image_metadata = {
