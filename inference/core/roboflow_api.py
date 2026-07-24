@@ -361,7 +361,9 @@ async def get_serverless_usage_check_async(
     api_key: str,
 ) -> ServerlessUsageCheckResponse:
     if OFFLINE_MODE:
-        return ServerlessUsageCheckResponse(status_code=200)
+        raise RoboflowAPIConnectionError(
+            "Cannot run serverless usage check - OFFLINE_MODE is enabled."
+        )
     try:
         headers = build_roboflow_api_headers()
         full_url = wrap_url(
