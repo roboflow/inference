@@ -994,9 +994,10 @@ def test_system_info_does_not_probe_network_in_offline_mode(
             hostname="hostname01"
         )
 
-    assert system_info["ip_address_hash"] == hashlib.sha256(
-        "127.0.0.1".encode()
-    ).hexdigest()[:5]
+    assert (
+        system_info["ip_address_hash"]
+        == hashlib.sha256("127.0.0.1".encode()).hexdigest()[:5]
+    )
     gethostbyname_mock.assert_not_called()
     socket_mock.assert_not_called()
 

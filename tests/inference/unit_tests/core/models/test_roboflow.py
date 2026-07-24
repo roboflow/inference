@@ -102,9 +102,7 @@ def test_cached_model_load_skips_api_authorization_in_offline_mode() -> None:
 def test_missing_model_artifacts_do_not_use_network_in_offline_mode() -> None:
     model = object.__new__(RoboflowInferenceModel)
     model.endpoint = "workspace/model/1"
-    model.get_all_required_infer_bucket_file = MagicMock(
-        return_value=["weights.onnx"]
-    )
+    model.get_all_required_infer_bucket_file = MagicMock(return_value=["weights.onnx"])
     model.download_model_artefacts_from_s3 = MagicMock()
     model.download_model_artifacts_from_roboflow_api = MagicMock()
 

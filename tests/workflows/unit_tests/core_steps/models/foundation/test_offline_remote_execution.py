@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from inference.core.workflows import offline
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
@@ -22,8 +23,6 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
     SegmentAnything3InteractiveBlockV1,
 )
-from inference.core.workflows import offline
-
 
 REMOTE_LEAF_CASES = [
     (

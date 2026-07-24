@@ -1865,11 +1865,15 @@ def test_initialize_model_uses_canonical_identity_for_path_manifest_and_cache(
         assert cache_entry.cache_attribution_version == core.CACHE_ATTRIBUTION_VERSION
 
 
-def test_initialize_model_allows_same_bound_package_to_be_rewarmed(
+def test_initialize_model_rewarm_registers_new_request_without_rewriting_manifest(
     empty_local_dir: str,
 ) -> None:
     model_id = "workspace/project/1"
     package_id = "package"
+    first_request_hash = "a" * 64
+    second_request_hash = "b" * 64
+    first_compatibility_hash = "c" * 64
+    second_compatibility_hash = "d" * 64
     file_handle = "weights.onnx"
     blob_content = b"stable model bytes"
     md5_hash = hashlib.md5(blob_content).hexdigest()
@@ -1913,11 +1917,18 @@ def test_initialize_model_allows_same_bound_package_to_be_rewarmed(
             model_package=package,
             model_init_kwargs={},
             auto_resolution_cache=auto_resolution_cache,
-            auto_negotiation_hash="a" * 64,
+            auto_negotiation_hash=first_request_hash,
+            offline_compatibility_hash=first_compatibility_hash,
             model_dependencies=[],
             model_dependencies_instances={},
             model_dependencies_directories={},
         )
+        manifest_path = os.path.join(first_dir, MODEL_CONFIG_FILE_NAME)
+        with open(manifest_path, "rb") as manifest_file:
+            original_manifest = manifest_file.read()
+        original_manifest_stat = os.stat(manifest_path)
+        first_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
+
         second_model, second_dir = initialize_model(
             model_id=model_id,
             model_architecture="yolov8",
@@ -1925,18 +1936,48 @@ def test_initialize_model_allows_same_bound_package_to_be_rewarmed(
             model_package=package,
             model_init_kwargs={},
             auto_resolution_cache=auto_resolution_cache,
-            auto_negotiation_hash="b" * 64,
+            auto_negotiation_hash=second_request_hash,
+            offline_compatibility_hash=second_compatibility_hash,
             model_dependencies=[],
             model_dependencies_instances={},
             model_dependencies_directories={},
         )
+        second_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
+
+        auto_resolution_cache.retrieve.return_value = second_entry
+        model_access_manager = MagicMock()
+        model_access_manager.is_model_package_access_granted.return_value = True
+        reloaded_model = attempt_loading_model_with_auto_load_cache(
+            use_auto_resolution_cache=True,
+            auto_resolution_cache=auto_resolution_cache,
+            auto_negotiation_hash=second_request_hash,
+            model_access_manager=model_access_manager,
+            model_name_or_path=model_id,
+            model_init_kwargs={},
+            api_key=None,
+            allow_loading_dependency_models=True,
+            forwarded_kwargs_values={},
+            expected_offline_compatibility_hash=second_compatibility_hash,
+        )
 
     assert first_model is model_class.from_pretrained.return_value
     assert second_model is model_class.from_pretrained.return_value
+    assert reloaded_model is model_class.from_pretrained.return_value
     assert first_dir == second_dir
     assert os.path.islink(os.path.join(first_dir, file_handle))
     assert os.path.realpath(os.path.join(first_dir, file_handle)) == shared_blob_path
-    assert model_class.from_pretrained.call_count == 2
+    with open(manifest_path, "rb") as manifest_file:
+        assert manifest_file.read() == original_manifest
+    current_manifest_stat = os.stat(manifest_path)
+    assert current_manifest_stat.st_ino == original_manifest_stat.st_ino
+    assert current_manifest_stat.st_mtime_ns == original_manifest_stat.st_mtime_ns
+    assert parse_model_config(manifest_path).offline_compatibility_hash == (
+        first_compatibility_hash
+    )
+    assert first_entry.offline_compatibility_hash == first_compatibility_hash
+    assert second_entry.offline_compatibility_hash == second_compatibility_hash
+    assert first_entry.package_manifest_hash == second_entry.package_manifest_hash
+    assert model_class.from_pretrained.call_count == 3
     assert auto_resolution_cache.register.call_count == 2
 
 
@@ -5081,6 +5122,38 @@ def test_max_package_loading_attempts_is_bound_into_cache_identity() -> None:
     compatibility_hashes = [
         call.kwargs["offline_compatibility_hash"]
         for call in auto_resolution_cache.find_compatible_candidates.call_args_list
+    ]
+    assert len(set(exact_hashes)) == 2
+    assert len(set(compatibility_hashes)) == 2
+
+
+def test_provider_version_header_is_bound_into_cache_identity() -> None:
+    auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
+    auto_resolution_cache.find_compatible_candidates.return_value = []
+
+    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
+        core, "model_provider_requires_network", return_value=True
+    ), mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    ) as exact_cache_load, mock.patch.object(
+        core, "attempt_loading_model_from_offline_cache", return_value=None
+    ) as raw_cache_load:
+        for version in ("1.3.6", "1.3.7"):
+            with pytest.raises(ModelRetrievalError):
+                core.AutoModel.from_pretrained(
+                    "workspace/model/1",
+                    weights_provider_extra_headers={
+                        "X-Roboflow-Inference-Version": version,
+                    },
+                    auto_resolution_cache=auto_resolution_cache,
+                )
+
+    exact_hashes = [
+        call.kwargs["auto_negotiation_hash"] for call in exact_cache_load.call_args_list
+    ]
+    compatibility_hashes = [
+        call.kwargs["offline_compatibility_hash"]
+        for call in raw_cache_load.call_args_list
     ]
     assert len(set(exact_hashes)) == 2
     assert len(set(compatibility_hashes)) == 2

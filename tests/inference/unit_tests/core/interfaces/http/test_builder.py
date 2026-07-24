@@ -147,12 +147,10 @@ def test_api_create_rejects_final_workflow_symlink(builder_app, tmp_path):
     from inference.core.interfaces.http.builder import routes
 
     workflow_id = "write-symlink"
-    workflow_file, outside_file, outside_contents = (
-        _install_final_workflow_symlink(
-            routes=routes,
-            tmp_path=tmp_path,
-            workflow_id=workflow_id,
-        )
+    workflow_file, outside_file, outside_contents = _install_final_workflow_symlink(
+        routes=routes,
+        tmp_path=tmp_path,
+        workflow_id=workflow_id,
     )
     client = TestClient(builder_app)
 
@@ -172,12 +170,10 @@ def test_api_get_rejects_final_workflow_symlink(builder_app, tmp_path):
     from inference.core.interfaces.http.builder import routes
 
     workflow_id = "read-symlink"
-    workflow_file, outside_file, outside_contents = (
-        _install_final_workflow_symlink(
-            routes=routes,
-            tmp_path=tmp_path,
-            workflow_id=workflow_id,
-        )
+    workflow_file, outside_file, outside_contents = _install_final_workflow_symlink(
+        routes=routes,
+        tmp_path=tmp_path,
+        workflow_id=workflow_id,
     )
     client = TestClient(builder_app)
 
@@ -195,12 +191,10 @@ def test_api_delete_rejects_final_workflow_symlink(builder_app, tmp_path):
     from inference.core.interfaces.http.builder import routes
 
     workflow_id = "delete-symlink"
-    workflow_file, outside_file, outside_contents = (
-        _install_final_workflow_symlink(
-            routes=routes,
-            tmp_path=tmp_path,
-            workflow_id=workflow_id,
-        )
+    workflow_file, outside_file, outside_contents = _install_final_workflow_symlink(
+        routes=routes,
+        tmp_path=tmp_path,
+        workflow_id=workflow_id,
     )
     client = TestClient(builder_app)
 
@@ -218,12 +212,10 @@ def test_api_list_skips_final_workflow_symlink(builder_app, tmp_path):
     from inference.core.interfaces.http.builder import routes
 
     workflow_id = "list-symlink"
-    workflow_file, outside_file, outside_contents = (
-        _install_final_workflow_symlink(
-            routes=routes,
-            tmp_path=tmp_path,
-            workflow_id=workflow_id,
-        )
+    workflow_file, outside_file, outside_contents = _install_final_workflow_symlink(
+        routes=routes,
+        tmp_path=tmp_path,
+        workflow_id=workflow_id,
     )
     client = TestClient(builder_app)
 
@@ -380,9 +372,7 @@ def test_cached_model_aggregation_excludes_conflicting_metadata(
         )
 
     assert response.status_code == HTTP_200_OK
-    models_by_id = {
-        model["model_id"]: model for model in response.json()["models"]
-    }
+    models_by_id = {model["model_id"]: model for model in response.json()["models"]}
     assert set(models_by_id) == {
         identical_model["model_id"],
         unique_model["model_id"],

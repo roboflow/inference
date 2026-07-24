@@ -18,9 +18,9 @@ def test_increment_num_errors():
 def test_pingback_post_is_noop_in_offline_mode():
     pingback = pingback_module.PingbackInfo.__new__(pingback_module.PingbackInfo)
 
-    with mock.patch.object(
-        pingback_module, "OFFLINE_MODE", True
-    ), mock.patch.object(pingback_module.requests, "post") as post:
+    with mock.patch.object(pingback_module, "OFFLINE_MODE", True), mock.patch.object(
+        pingback_module.requests, "post"
+    ) as post:
         pingback.post_data(model_manager=mock.MagicMock())
 
     post.assert_not_called()
