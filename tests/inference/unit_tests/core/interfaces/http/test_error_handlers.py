@@ -32,6 +32,13 @@ from inference_models.errors import (
 )
 
 
+class ModelRetrievalErrorWithStatus(ModelRetrievalError):
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def test_with_route_exceptions_when_usage_paused_error_raised():
     @with_route_exceptions
     def my_route():
@@ -103,6 +110,47 @@ async def test_with_route_exceptions_async_when_unauthorized_model_access_error_
 
     assert resp.status_code == 401
     assert "unauthorized" in resp.body.decode().lower()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status_code"),
+    [
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
+    ],
+)
+def test_with_route_exceptions_when_model_access_is_denied(
+    error: Exception, expected_status_code: int
+):
+    @with_route_exceptions
+    def my_route():
+        raise error
+
+    resp = my_route()
+
+    assert resp.status_code == expected_status_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_status_code"),
+    [
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
+    ],
+)
+async def test_with_route_exceptions_async_when_model_access_is_denied(
+    error: Exception, expected_status_code: int
+):
+    @with_route_exceptions_async
+    async def my_route():
+        raise error
+
+    resp = await my_route()
+
+    assert resp.status_code == expected_status_code
 
 
 def test_with_route_exceptions_when_model_input_error_raised():

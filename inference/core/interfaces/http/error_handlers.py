@@ -99,6 +99,32 @@ from inference_models.errors import (
     UntrustedFileError,
 )
 
+MODEL_ACCESS_ERROR_MESSAGES = {
+    402: "Not enough credits to perform this request. Verify your workspace billing page.",
+    403: "Unauthorized access to roboflow API - check API key and make sure the key is valid and "
+    "have required scopes. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one.",
+    423: "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys.",
+}
+
+
+def _build_model_retrieval_error_response(
+    error: ModelRetrievalError,
+) -> JSONResponse:
+    status_code = getattr(error, "status_code", None)
+    if status_code in MODEL_ACCESS_ERROR_MESSAGES:
+        return JSONResponse(
+            status_code=status_code,
+            content={"message": MODEL_ACCESS_ERROR_MESSAGES[status_code]},
+        )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "message": f"Could not retrieve model {error}",
+            "help_url": error.help_url,
+        },
+    )
+
 
 def _build_execution_error_response(
     error: "DynamicBlockCodeError | StepExecutionError",
@@ -443,13 +469,7 @@ def with_route_exceptions(route):
             )
         except ModelRetrievalError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": f"Could not retrieve model {error}",
-                    "help_url": error.help_url,
-                },
-            )
+            resp = _build_model_retrieval_error_response(error=error)
         except OnnxProviderNotAvailable as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -922,13 +942,7 @@ def with_route_exceptions_async(route):
             )
         except ModelRetrievalError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": f"Could not retrieve model {error}",
-                    "help_url": error.help_url,
-                },
-            )
+            resp = _build_model_retrieval_error_response(error=error)
         except OnnxProviderNotAvailable as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(

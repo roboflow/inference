@@ -63,6 +63,18 @@ class UnauthorizedModelAccessError(ModelRetrievalError):
     pass
 
 
+class PaymentRequiredModelAccessError(ModelRetrievalError):
+    status_code = 402
+
+
+class ForbiddenModelAccessError(ModelRetrievalError):
+    status_code = 403
+
+
+class UsagePausedModelAccessError(ModelRetrievalError):
+    status_code = 423
+
+
 class ModelMetadataConsistencyError(ModelRetrievalError):
     pass
 
