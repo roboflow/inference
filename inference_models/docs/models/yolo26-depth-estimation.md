@@ -12,6 +12,8 @@ YOLO26 for depth estimation pairs the efficient YOLO26 backbone with a dense log
 - **768×768 inference** - Checkpoints are trained and exported at 768×768; the head predicts at input/4 resolution and upsamples inside the exported graph.
 - **Multiple model sizes** - From nano to extra-large variants.
 
+Visit [yolodepth.com](https://yolodepth.com) for an overview of how to use YOLO26 depth estimation in your Roboflow project.
+
 ## License
 
 **AGPL-3.0**
