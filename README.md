@@ -323,7 +323,7 @@ See the "Self Hosting and Edge Deployment" section of the [Roboflow Licensing](h
 
 ## 🏆 contribution
 
-We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
+We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
 
 
 <br>

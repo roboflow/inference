@@ -25,7 +25,7 @@ Severity tags: **BLOCK** = fix before merge; **FLAG** = raise it; **NIT** = opti
 4. **BLOCK — Cache/registry:** new cache reads degrade gracefully — wrapped, fall back to the API on outage, do not fail the request (#2387).
 5. **BLOCK — Entities:** new fields are defaulted AND mirrored across the Pydantic model + `*DC` dataclass + `_is_*_dc_to_dict` mapper; serialized aliases (`class_name` → `"class"`) preserved (#2484).
 6. **BLOCK — Ordering:** any "mutate then persist/cache" sequence mutates BEFORE the cache write (#966).
-7. **FLAG — Version:** if user-facing behavior changed or it's a release, `inference/core/version.py` bumps exactly the one const (no imports/side effects), monotonically (except deliberate reverts, #2136).
+7. **FLAG — Version:** only when the diff itself touches `inference/core/version.py` — it must change exactly the one const (no imports/side effects), monotonically (except deliberate reverts, #2136). Never require a bump on a PR that doesn't touch it.
 8. **FLAG — New env var:** typed coercion + sensible default, placed near related vars, AND documented (see *Env docs*).
 9. **FLAG — Exceptions:** correct base class (`RoboflowAPIRequestError` for API failures; standalone `Exception` only for cross-cutting like `CacheUnavailableError`), docstring-with-Attributes style.
 10. **FLAG — Logging:** log-event output stays JSON-serializable; no raw tracebacks / non-serializable objects into the event dict (#1225, #1340).
@@ -33,8 +33,8 @@ Severity tags: **BLOCK** = fix before merge; **FLAG** = raise it; **NIT** = opti
 12. **NIT — User-facing strings:** package names / commands are correct (`inference`, not `roboflow-inference`, #154); model-id slugs use the platform's exact underscores-vs-hyphens (#1343).
 
 ### Not blocking
-- A pure refactor, docs-only, or test-only PR need not bump `version.py`.
-- `inference_models` has its own version+changelog — do NOT demand a `version.py` bump for changes that live in that package.
+- No PR is required to bump `version.py` — inference releases are versioned separately; review the bump only when the diff includes one.
+- `inference_models` has its own version+changelog — its `pyproject.toml` version is a separate concern.
 - New env vars that are internal/experimental and off-by-default do not need a security-doc row (`environmental_variables.md` is enough).
 - Don't demand a Docker-ENV row for a flag that is identical across all images.
 
@@ -62,7 +62,7 @@ Severity tags: **BLOCK** = fix before merge; **FLAG** = raise it; **NIT** = opti
   Removing, reordering, or short-circuiting any layer is a BLOCK.
 
 ## Required companions
-- **Version bump:** a release/feature/fix that ships to users bumps `version.py` (chore PRs #2505, #2396, #1838 do only this; #793, #966, #1140, #1340, #1389 bump alongside the change). Pure refactor/docs need not.
+- **Versioning:** no `version.py` bump is required — release chore PRs (#2505, #2396, #1838) handle that separately. When the diff does bump it, apply checklist item 7.
 - **Env docs:** any new/renamed env var → row in `docs/server_configuration/environmental_variables.md`; input/security flags also in `docs/server_configuration/accepted_input_formats.md` (#957, #1004). Security-posture changes → `docs/install/security.md` (#2417).
 - **Tests:** changes to `image_utils.py`, `roboflow_api.py`, `entities/**`, `nms.py`, `logger.py`, `environment.py` require unit tests under the matching `tests/inference/unit_tests/core/**` subdir. Security fixes assert rejection + that `requests.get` is NOT called for the rejected URL (#2500, #2501). Entity changes extend `tests/inference/unit_tests/core/entities/**` (#2484).
 - **CI env parity:** if a default flips or a flag changes backend selection, the relevant CI workflow pins the flag so the matrix stays deterministic (#2136 pinned `USE_INFERENCE_MODELS=False`).

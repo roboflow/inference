@@ -23,6 +23,7 @@ from inference.core.env import (
     API_KEY,
     DEVICE,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    SAM3_MAX_DETECTIONS,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
@@ -119,6 +120,7 @@ class InferenceModelsSAM3Adapter(Model):
             images=[np_image],
             prompts=prompt_dicts,
             output_prob_thresh=float(min_threshold),
+            max_detections=SAM3_MAX_DETECTIONS,
         )
         per_prompt = per_image_results[0]
 

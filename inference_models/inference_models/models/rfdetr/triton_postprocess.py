@@ -221,6 +221,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_meta: PreProcessingMetadata,
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
 ) -> Optional[InstanceDetections]:
     """Run the sparse Triton RF-DETR RLE postprocess path for one image.
@@ -260,6 +261,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_masks = image_masks.contiguous()
     class_mapping = classes_re_mapping.class_mapping.contiguous()
     num_queries, num_classes = image_scores.shape
+    if max_detections is None:
+        max_detections = num_queries
     mask_height, mask_width = image_masks.shape[-2:]
     output_height = image_meta.original_size.height
     output_width = image_meta.original_size.width
@@ -391,7 +394,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
             max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
             height=output_height,
             width=output_width,
-            max_detections=num_queries,
+            max_detections=max_detections,
         )
 
     # First pass: keep the common case small by selecting only the best class
@@ -480,6 +483,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
+        max_detections=max_detections,
     )
     if result is not None:
         return result
@@ -584,7 +588,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_TOPK_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
-        max_detections=num_queries,
+        max_detections=max_detections,
     )
 
 

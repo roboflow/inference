@@ -23,6 +23,7 @@ TEXT_ONLY_OCR_TASK = "text-only-ocr"
 GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
+WORLD_MODEL_TASK = "world-model"
 
 
 @dataclass(frozen=True)
@@ -293,6 +294,14 @@ REGISTERED_MODELS: Dict[
     ("qwen3vl", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
+    ),
+    ("cosmos-3-edge", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
+        class_name="Cosmos3EdgeReasoner",
+    ),
+    ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos3_world",
+        class_name="Cosmos3EdgeWorldModel",
     ),
     ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",

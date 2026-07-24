@@ -115,12 +115,13 @@ Add a package-URL constant and a `pytest.fixture(scope="module")` in `inference_
 
 Start from loading a **local** package while experimenting, then follow up by uploading that package as a `*.zip` asset and adding a fixture that downloads it at test time, as other integration tests do.
 
-### 5. Version + changelog companion (required)
+### 5. Changelog companion (required)
 
-Any PR that ships model code in `inference_models` must bump the package version and record the change — the sibling `review-inference-models-pkg` skill enforces this:
+Any PR that ships model code in `inference_models` must record the change. The
+package version is selected and bumped later by maintainers:
 
-- Bump `version = "..."` in `inference_models/pyproject.toml`.
-- Add an entry under a new version heading in `inference_models/docs/changelog.md` (follow the existing `## \`<version>\`` → `### Added` format at the top of the file).
+- Add an entry under `## Unreleased` in `inference_models/docs/changelog.md`, using the appropriate `### Added`, `### Changed`, `### Fixed`, or `### Removed` subsection.
+- Do not edit `inference_models/pyproject.toml` solely to bump its version.
 
 ### 6. Workflow block (surface 3, optional)
 
@@ -183,7 +184,7 @@ Before declaring done:
 - [ ] Architecture registered in `models_registry.py`; import + class resolve without error
 - [ ] `YourClass.from_pretrained(local_dir)` loads from a flat directory of files (smoke-tested)
 - [ ] `inference_models` unit tests pass (from `inference_models/` cwd)
-- [ ] `inference_models/pyproject.toml` version bumped + `inference_models/docs/changelog.md` entry added
+- [ ] `inference_models/docs/changelog.md` entry added under `## Unreleased` (version bump left to maintainers)
 - [ ] If surface 3: workflow-block unit tests pass (from repo root)
 - [ ] Model packaged & registered via the internal Inference Core team tooling (staging, then production after approval) — coordinate with the team
 - [ ] `AutoModel.from_pretrained("<arch>/<default>")` loads + runs once registered

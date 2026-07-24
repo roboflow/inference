@@ -37,8 +37,12 @@ jobs:
   build-dev-test:
     needs: call_is_mergeable
     if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    # These are workflow integration tests (pytest + Modal staging calls) — I/O-bound,
+    # not compute-bound. Measured on Depot across the 3.10/3.11/3.12 x true/false matrix:
+    # ~10-13% average CPU and ~9.3GB peak RAM, so the 16c/64GB machine sat almost idle.
+    # 4c/16GB keeps ~7GB headroom over the measured peak at a quarter of the per-minute cost.
     runs-on:
-      labels: depot-ubuntu-22.04-16
+      labels: depot-ubuntu-22.04-4
       group: public-depot
     strategy:
       matrix:
