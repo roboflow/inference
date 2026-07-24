@@ -109,6 +109,49 @@ def test_workflow_plc_read_and_write(mock_pylogix) -> None:
 @patch(
     "inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1.pylogix"
 )
+def test_workflow_plc_disable_sinks_preserves_reads_and_skips_writes(
+    mock_pylogix,
+) -> None:
+    mock_comm = _setup_mock_comm(mock_pylogix)
+    mock_comm.Read.return_value = _make_mock_response(status="Success", value=3.14)
+
+    block = PLCBlockV1(disable_sinks=True)
+    result = block.run(
+        plc_ip="192.168.1.10",
+        mode="read_and_write",
+        tags_to_read=["sensor_val"],
+        tags_to_write={"output_flag": 1},
+        depends_on=None,
+    )
+
+    assert result == {"plc_results": [{"read": {"sensor_val": 3.14}}]}
+    mock_comm.Read.assert_called_once_with("sensor_val")
+    mock_comm.Write.assert_not_called()
+
+
+@pytest.mark.timeout(10)
+@patch(
+    "inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1.pylogix"
+)
+def test_workflow_plc_disable_sinks_skips_write_only_connection(mock_pylogix) -> None:
+    block = PLCBlockV1(disable_sinks=True)
+
+    result = block.run(
+        plc_ip="192.168.1.10",
+        mode="write",
+        tags_to_read=[],
+        tags_to_write={"output_flag": 1},
+        depends_on=None,
+    )
+
+    assert result == {"plc_results": []}
+    mock_pylogix.PLC.assert_not_called()
+
+
+@pytest.mark.timeout(10)
+@patch(
+    "inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1.pylogix"
+)
 def test_workflow_plc_read_status_failure(mock_pylogix) -> None:
     mock_comm = _setup_mock_comm(mock_pylogix)
     mock_comm.Read.return_value = _make_mock_response(status="Connection lost")

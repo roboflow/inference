@@ -17,6 +17,7 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
@@ -459,15 +460,17 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
         self._last_event_fired: Optional[datetime] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "background_tasks", "thread_pool_executor"]
+        return ["api_key", "background_tasks", "thread_pool_executor", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -498,12 +501,14 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         related_event_id: Optional[str] = None,
         feedback: Optional[str] = None,
     ) -> BlockResult:
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             return {
                 "error_status": False,
                 "throttling_status": False,
                 "event_id": "",
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
 
         # Selector-resolved values bypass manifest validation; a negative
