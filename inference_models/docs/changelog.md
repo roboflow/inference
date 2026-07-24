@@ -18,6 +18,13 @@
   low-threshold requests could produce up to `num_queries` full-resolution masks. Applies
   to dense, RLE, and Triton postprocess paths (pytorch/ONNX/TRT backends).
 
+### Fixed
+
+- Fine-tuned SAM3 model packages that ship without `sam_configuration.json` now load
+  correctly — the file is treated as optional (only base packages carry it). A present
+  but malformed `sam_configuration.json` (invalid JSON or missing `version` key) now
+  raises a clear `CorruptedModelPackageError` instead of an unhandled exception.
+
 ---
 
 ## `0.32.3`
