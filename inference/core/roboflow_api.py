@@ -3,9 +3,11 @@ import base64
 import binascii
 import contextvars
 import hashlib
+import hmac
 import json
 import os
 import re
+import stat
 import tempfile
 import time
 import urllib.parse
@@ -93,6 +95,23 @@ from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
 
 LOCAL_API_KEY = "local"
+
+_WINDOWS_RESERVED_PATH_SEGMENTS = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{index}" for index in range(1, 10)),
+        *(f"LPT{index}" for index in range(1, 10)),
+    }
+)
+_WORKFLOW_CACHE_AMBIGUOUS_LEGACY_FILENAME_SUFFIX = re.compile(
+    r"(?:_[0-9a-f]{64}|_v.+)$"
+)
+_WORKFLOW_LEGACY_CANONICAL_SEGMENT = re.compile(r"[a-z0-9-]+")
+_WORKFLOW_CANONICAL_CACHE_NAMESPACE = ".canonical-v2"
+_WORKFLOW_TENANT_CACHE_NAMESPACE = ".tenanted-v2"
 
 _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS = (
     RedisConnectionError,
@@ -947,25 +966,59 @@ def get_roboflow_labeling_jobs(
 
 
 def _workflow_cache_identity_fingerprint(value: str) -> str:
-    """Return the stable fingerprint used by existing Workflow cache keys."""
+    """Return a stable fingerprint for non-secret Workflow identities."""
 
-    # This is a cache identity, not password storage or an authentication
-    # primitive. SHA-256 is retained for compatibility with existing caches.
-    # codeql[py/weak-sensitive-data-hashing]: Cache identity; not password storage.
+    # This only hashes public identifiers, not credentials.
     return hashlib.sha256(value.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
-def _workflow_cache_path_segment(value: str) -> str:
+def _workflow_cache_tenant_fingerprint(
+    workspace_id: WorkspaceID,
+    api_key: Optional[str],
+) -> str:
+    """Return a domain-separated tenant identity without exposing the API key."""
+
+    message = json.dumps(
+        ["inference-workflow-tenant-v2", workspace_id],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hmac.new(
+        key=(api_key or "").encode("utf-8"),
+        msg=message,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+
+def _workflow_cache_path_segment(
+    value: str,
+    *,
+    reject_legacy_filename_shape: bool = False,
+) -> str:
     """Create a collision-resistant readable path segment."""
 
     sanitized_value = sanitize_path_segment(value)
     # Leave enough room for the version identity, tenant fingerprint, and
     # extension while staying below the common 255-byte filename limit.
-    if sanitized_value == value and sanitized_value and len(sanitized_value) <= 96:
+    # Uppercase and Windows device names get a fingerprint too, preventing
+    # aliases on case-insensitive filesystems and unusable reserved paths. The
+    # tilde prefix cannot be emitted by the legacy sanitizer, keeping every
+    # transformed path disjoint from old cache names.
+    if (
+        sanitized_value == value
+        and sanitized_value
+        and len(sanitized_value) <= 96
+        and value == value.lower()
+        and value.upper() not in _WINDOWS_RESERVED_PATH_SEGMENTS
+        and (
+            not reject_legacy_filename_shape
+            or _WORKFLOW_CACHE_AMBIGUOUS_LEGACY_FILENAME_SUFFIX.search(value) is None
+        )
+    ):
         return sanitized_value
-    value_fingerprint = _workflow_cache_identity_fingerprint(value)[:16]
-    readable_prefix = sanitized_value[:96] or "empty"
-    return f"{readable_prefix}_{value_fingerprint}"
+    value_fingerprint = _workflow_cache_identity_fingerprint(value)
+    readable_prefix = sanitized_value[:48] or "empty"
+    return f"~{readable_prefix}_{value_fingerprint}"
 
 
 def _versioned_workflow_cache_stem(
@@ -978,7 +1031,10 @@ def _versioned_workflow_cache_stem(
         separators=(",", ":"),
     )
     identity_fingerprint = _workflow_cache_identity_fingerprint(identity)
-    return f"{_workflow_cache_path_segment(workflow_id)}_" f"{identity_fingerprint}"
+    return (
+        f"{_workflow_cache_path_segment(workflow_id, reject_legacy_filename_shape=True)}_"
+        f"{identity_fingerprint}"
+    )
 
 
 def get_workflow_cache_file(
@@ -993,7 +1049,10 @@ def get_workflow_cache_file(
     # file-cache attribution aligned with the ephemeral-cache key.
     if not workflow_version_id:
         cache_subdirectory = ""
-        cache_stem = _workflow_cache_path_segment(workflow_id)
+        cache_stem = _workflow_cache_path_segment(
+            workflow_id,
+            reject_legacy_filename_shape=True,
+        )
     else:
         if not isinstance(workflow_version_id, str):
             # Truthy non-string values failed in sanitize_path_segment before
@@ -1010,10 +1069,24 @@ def get_workflow_cache_file(
 
     if SINGLE_TENANT_WORKFLOW_CACHE:
         filename = f"{cache_stem}.json"
+        cache_subdirectory = os.path.join(
+            _WORKFLOW_CANONICAL_CACHE_NAMESPACE,
+            cache_subdirectory,
+        )
     else:
-        cache_seed = f"{workspace_id}:{api_key or ''}"
-        cache_fingerprint = _workflow_cache_identity_fingerprint(cache_seed)
+        cache_fingerprint = _workflow_cache_tenant_fingerprint(
+            workspace_id=workspace_id,
+            api_key=api_key,
+        )
         filename = f"{cache_stem}_{cache_fingerprint}.json"
+        # Flat hashed filenames are indistinguishable from legacy canonical
+        # Workflow IDs that happen to end in ``_<64 hex>``. Keep newly warmed
+        # tenant-attributed entries in a reserved namespace so credential-free
+        # offline lookup never has to guess which Workflow a file belongs to.
+        cache_subdirectory = os.path.join(
+            _WORKFLOW_TENANT_CACHE_NAMESPACE,
+            cache_subdirectory,
+        )
     prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
     result = os.path.abspath(
         os.path.join(
@@ -1023,11 +1096,16 @@ def get_workflow_cache_file(
             filename,
         )
     )
-    if os.path.commonpath([prefix, result]) != prefix or result == prefix:
-        raise ValueError(
-            "Detected attempt to save workflow definition in insecure location"
-        )
-    return result
+    prefix_with_separator = prefix.rstrip(os.sep) + os.sep
+    if result.startswith(prefix_with_separator):
+        try:
+            if os.path.commonpath([prefix, result]) == prefix:
+                return result
+        except ValueError:
+            pass
+    raise ValueError(
+        "Detected attempt to save workflow definition in insecure location"
+    )
 
 
 def _find_offline_hashed_workflow_cache_file(
@@ -1038,11 +1116,14 @@ def _find_offline_hashed_workflow_cache_file(
 ) -> Optional[str]:
     """Find a safely attributable cache written before offline mode was enabled.
 
-    Multi-tenant cache filenames contain a workspace/API-key fingerprint. New
-    versioned entries also contain the exact Workflow version. An exact
-    fingerprint match is safe when the API key is still configured. Without an
-    API key, a sole entry for the requested version is usable in an offline
-    single-tenant deployment; multiple entries remain ambiguous.
+    Current multi-tenant cache filenames live in a reserved namespace and
+    contain a workspace/API-key fingerprint. Versioned entries also contain the
+    exact Workflow version. An exact fingerprint match is safe when the API key
+    is still configured. Without an API key, a sole entry for the requested
+    version is usable in an offline single-tenant deployment; multiple entries
+    remain ambiguous. Legacy flat hashed entries are deliberately ignored:
+    their names cannot be distinguished from canonical Workflow IDs ending in
+    ``_<64 hex>``.
     """
 
     if not OFFLINE_MODE or not SINGLE_TENANT_WORKFLOW_CACHE:
@@ -1056,26 +1137,49 @@ def _find_offline_hashed_workflow_cache_file(
             workflow_version_id=workflow_version_id,
         )
     )
-    # get_workflow_cache_file uses sanitized path segments and verifies that
-    # the result remains under the configured Workflow cache root.
-    # codeql[py/path-injection]: Sanitized, root-contained cache path.
-    if (
-        not _workflow_cache_path_is_safe(str(cache_file))
-        or not cache_file.parent.is_dir()
-    ):
+    validated_cache_file = _validated_workflow_cache_path(str(cache_file))
+    if validated_cache_file is None:
+        return None
+    cache_file = Path(validated_cache_file)
+
+    if workflow_version_id:
+        workspace_cache_directory = cache_file.parent.parent.parent
+        tenanted_cache_directory = (
+            workspace_cache_directory / _WORKFLOW_TENANT_CACHE_NAMESPACE / "versions"
+        )
+    else:
+        workspace_cache_directory = cache_file.parent.parent
+        tenanted_cache_directory = (
+            workspace_cache_directory / _WORKFLOW_TENANT_CACHE_NAMESPACE
+        )
+    validated_tenanted_probe = _validated_workflow_cache_path(
+        str(tenanted_cache_directory / cache_file.name)
+    )
+    if validated_tenanted_probe is None:
+        return None
+    tenanted_cache_directory = Path(validated_tenanted_probe).parent
+    if not tenanted_cache_directory.is_dir():
         return None
 
     filename_pattern = re.compile(rf"{re.escape(cache_file.stem)}_[0-9a-f]{{64}}\.json")
-    candidates = [
-        candidate
-        for candidate in cache_file.parent.iterdir()
-        if candidate.is_file()
-        and filename_pattern.fullmatch(candidate.name)
-        and _workflow_cache_path_is_safe(str(candidate))
-    ]
+    candidates = []
+    try:
+        for candidate in tenanted_cache_directory.iterdir():
+            if not filename_pattern.fullmatch(candidate.name):
+                continue
+            validated_candidate = _validated_workflow_cache_path(str(candidate))
+            if validated_candidate is None:
+                continue
+            candidate = Path(validated_candidate)
+            if candidate.is_file():
+                candidates.append(candidate)
+    except OSError:
+        return None
     if api_key is not None:
-        cache_seed = f"{workspace_id}:{api_key}"
-        cache_fingerprint = _workflow_cache_identity_fingerprint(cache_seed)
+        cache_fingerprint = _workflow_cache_tenant_fingerprint(
+            workspace_id=workspace_id,
+            api_key=api_key,
+        )
         exact_filename = f"{cache_file.stem}_{cache_fingerprint}.json"
         return next(
             (
@@ -1095,38 +1199,122 @@ def _find_offline_hashed_workflow_cache_file(
     return None
 
 
-def _workflow_cache_path_is_safe(workflow_cache_file: str) -> bool:
-    """Return whether a cache path is contained and has no child symlinks."""
+def _case_swapped_sibling(path: Path) -> Optional[Path]:
+    """Return one case-only alias probe for an ASCII cache path."""
 
-    cache_root = Path(MODEL_CACHE_DIR, "workflow").absolute()
-    candidate = Path(workflow_cache_file).absolute()
-    if cache_root.is_symlink():
-        return False
+    for index, character in enumerate(path.name):
+        if "a" <= character <= "z":
+            swapped_name = (
+                path.name[:index] + character.upper() + path.name[index + 1 :]
+            )
+            return path.with_name(swapped_name)
+        if "A" <= character <= "Z":
+            swapped_name = (
+                path.name[:index] + character.lower() + path.name[index + 1 :]
+            )
+            return path.with_name(swapped_name)
+    return None
+
+
+def _legacy_cache_path_has_exact_case(path: Path) -> bool:
+    """Reject missing, case-aliased, or case-insensitive legacy entries."""
+
     try:
-        relative_path = candidate.relative_to(cache_root)
+        if path.name not in os.listdir(path.parent):
+            return False
+    except OSError:
+        return False
+    case_alias = _case_swapped_sibling(path)
+    return case_alias is None or not os.path.lexists(case_alias)
+
+
+def _find_legacy_canonical_workflow_cache_file(
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    workflow_version_id: Optional[str] = None,
+) -> Optional[str]:
+    """Find a flat pre-v2 cache only when its identity is injective."""
+
+    if (
+        not SINGLE_TENANT_WORKFLOW_CACHE
+        or workflow_version_id
+        or _WORKFLOW_LEGACY_CANONICAL_SEGMENT.fullmatch(workspace_id) is None
+        or _WORKFLOW_LEGACY_CANONICAL_SEGMENT.fullmatch(workflow_id) is None
+    ):
+        return None
+
+    cache_root = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
+    legacy_cache_file = Path(
+        os.path.abspath(
+            os.path.join(
+                cache_root,
+                workspace_id,
+                f"{workflow_id}.json",
+            )
+        )
+    )
+    validated_legacy_cache_file = _validated_workflow_cache_path(str(legacy_cache_file))
+    if validated_legacy_cache_file is None:
+        return None
+    legacy_cache_file = Path(validated_legacy_cache_file)
+    workspace_cache_directory = legacy_cache_file.parent
+    if not _legacy_cache_path_has_exact_case(
+        workspace_cache_directory
+    ) or not _legacy_cache_path_has_exact_case(legacy_cache_file):
+        return None
+    return str(legacy_cache_file)
+
+
+def _validated_workflow_cache_path(workflow_cache_file: str) -> Optional[str]:
+    """Return a normalized cache path only when it is safe to access."""
+
+    model_cache_root = os.path.abspath(MODEL_CACHE_DIR)
+    cache_root = os.path.abspath(os.path.join(model_cache_root, "workflow"))
+    candidate = os.path.abspath(workflow_cache_file)
+    cache_prefix = cache_root.rstrip(os.sep) + os.sep
+
+    # The explicit normalized-prefix check is both a fast rejection and the
+    # analyzer-visible path traversal barrier. commonpath below remains the
+    # platform-aware authority.
+    if not candidate.startswith(cache_prefix):
+        return None
+    try:
+        if os.path.commonpath([cache_root, candidate]) != cache_root:
+            return None
     except ValueError:
-        return False
-    if not relative_path.parts or candidate.suffix != ".json":
-        return False
+        return None
+    if Path(candidate).suffix != ".json" or os.path.islink(cache_root):
+        return None
+    is_junction = getattr(os.path, "isjunction", lambda _path: False)
+    if is_junction(cache_root):
+        return None
+
+    resolved_root = os.path.realpath(cache_root)
+    expected_resolved_root = os.path.normpath(
+        os.path.join(os.path.realpath(model_cache_root), "workflow")
+    )
+    if os.path.normcase(resolved_root) != os.path.normcase(expected_resolved_root):
+        return None
+
+    relative_path = os.path.relpath(candidate, cache_root)
+    if relative_path in {"", os.curdir}:
+        return None
 
     # MODEL_CACHE_DIR itself may intentionally be a mounted/symlinked volume.
     # Child symlinks are rejected because they can cross workspace, API-key, or
     # filesystem attribution boundaries.
     current_path = cache_root
-    for path_part in relative_path.parts:
-        current_path = current_path / path_part
-        if current_path.is_symlink():
-            return False
+    for path_part in relative_path.split(os.sep):
+        current_path = os.path.join(current_path, path_part)
+        if os.path.islink(current_path):
+            return None
 
-    try:
-        # This resolution is the final containment check itself: candidate was
-        # first proven lexically relative to the fixed cache root and every child
-        # component was rejected if it was a symlink.
-        # codeql[py/path-injection]: Validation of a root-contained cache path.
-        candidate.resolve().relative_to(cache_root.resolve())
-    except ValueError:
-        return False
-    return True
+    expected_resolved_path = os.path.normpath(
+        os.path.join(resolved_root, relative_path)
+    )
+    if os.path.realpath(candidate) != expected_resolved_path:
+        return None
+    return candidate
 
 
 def _workflow_cache_response_is_valid(response: object) -> bool:
@@ -1144,29 +1332,50 @@ def _workflow_cache_response_is_valid(response: object) -> bool:
     )
 
 
-def _load_workflow_response_file(workflow_cache_file: str) -> Optional[dict]:
-    """Load a Workflow cache file and remove it when its JSON is invalid."""
+def _read_json_regular_file_no_follow(path: str) -> Any:
+    """Read JSON from a regular file without following a final symlink."""
 
-    cache_file = Path(workflow_cache_file).absolute()
-    if not _workflow_cache_path_is_safe(str(cache_file)):
+    path_status = os.lstat(path)
+    if not stat.S_ISREG(path_status.st_mode):
+        raise OSError(f"Refusing to read non-regular JSON file: {path}")
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+    )
+    try:
+        descriptor_status = os.fstat(descriptor)
+        if not stat.S_ISREG(descriptor_status.st_mode):
+            raise OSError(f"Refusing to read non-regular JSON file: {path}")
+        if (path_status.st_dev, path_status.st_ino) != (
+            descriptor_status.st_dev,
+            descriptor_status.st_ino,
+        ):
+            raise OSError(f"JSON file changed while it was being opened: {path}")
+        file_handle = os.fdopen(descriptor, "r", encoding="utf-8")
+        descriptor = -1
+        with file_handle:
+            return json.load(file_handle)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _load_workflow_response_file(workflow_cache_file: str) -> Optional[dict]:
+    """Load a Workflow cache file without following unsafe filesystem objects."""
+
+    validated_cache_file = _validated_workflow_cache_path(workflow_cache_file)
+    if validated_cache_file is None:
         logger.warning("Refusing to read an unsafe Workflow cache file")
         return None
     try:
-        # The path is made only from sanitized segments and passed the root and
-        # child-symlink containment check immediately above.
-        # codeql[py/path-injection]: Validated Workflow cache path.
-        with cache_file.open("r") as file_handle:
-            response = json.load(file_handle)
+        response = _read_json_regular_file_no_follow(validated_cache_file)
         if not _workflow_cache_response_is_valid(response):
             raise ValueError("Malformed Workflow cache response")
         return response
     except (OSError, TypeError, ValueError):
-        try:
-            # Unlink the lexical file, never a resolved symlink target.
-            # codeql[py/path-injection]: Validated lexical cache path.
-            cache_file.unlink()
-        except OSError:
-            pass
+        # Do not unlink a malformed path here. A concurrent atomic writer can
+        # replace the inode after this reader opens it; deleting by pathname
+        # would then remove the writer's valid replacement.
         return None
 
 
@@ -1178,14 +1387,7 @@ def cache_workflow_response(
     workflow_version_id: Optional[str] = None,
 ):
     if not _workflow_cache_response_is_valid(response):
-        # Only workspace and Workflow identifiers are logged; api_key and the
-        # response payload are deliberately excluded.
-        # codeql[py/clear-text-logging-sensitive-data]: Non-secret identifiers.
-        logger.warning(
-            "Refusing to cache a malformed Workflow response for %s/%s",
-            workspace_id,
-            workflow_id,
-        )
+        logger.warning("Refusing to cache a malformed Workflow response")
         return None
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
@@ -1193,19 +1395,17 @@ def cache_workflow_response(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    workflow_cache_dir = os.path.dirname(workflow_cache_file)
-    if not _workflow_cache_path_is_safe(workflow_cache_file):
+    validated_cache_file = _validated_workflow_cache_path(workflow_cache_file)
+    if validated_cache_file is None:
         raise ValueError("Refusing to write an unsafe Workflow cache path")
-    # This is the parent of a sanitized, root-contained cache file path.
-    # codeql[py/path-injection]: Validated Workflow cache directory.
+    workflow_cache_dir = os.path.dirname(validated_cache_file)
     os.makedirs(workflow_cache_dir, exist_ok=True)
-    if not _workflow_cache_path_is_safe(workflow_cache_file):
+    validated_cache_file = _validated_workflow_cache_path(validated_cache_file)
+    if validated_cache_file is None:
         raise ValueError("Refusing to write an unsafe Workflow cache path")
 
     temporary_path = None
     try:
-        # The temporary file is created inside the validated cache directory.
-        # codeql[py/path-injection]: Validated Workflow cache directory.
         with tempfile.NamedTemporaryFile(
             mode="w",
             dir=workflow_cache_dir,
@@ -1220,12 +1420,12 @@ def cache_workflow_response(
             json.dump(response, file_handle)
             file_handle.flush()
             os.fsync(file_handle.fileno())
-        if not _workflow_cache_path_is_safe(workflow_cache_file):
+        validated_cache_file = _validated_workflow_cache_path(validated_cache_file)
+        if validated_cache_file is None:
             raise ValueError("Refusing to replace an unsafe Workflow cache path")
         # os.replace replaces a final symlink rather than following it and
         # prevents readers from observing partially-written JSON.
-        # codeql[py/path-injection]: Revalidated destination and local temp source.
-        os.replace(temporary_path, workflow_cache_file)
+        os.replace(temporary_path, validated_cache_file)
         temporary_path = None
     finally:
         if temporary_path is not None:
@@ -1241,19 +1441,24 @@ def delete_cached_workflow_response_if_exists(
     api_key: Optional[str],
     workflow_version_id: Optional[str] = None,
 ) -> None:
+    """Delete the entry in the currently configured Workflow cache namespace."""
+
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
         workflow_id=workflow_id,
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    # get_workflow_cache_file returns a sanitized, root-contained cache path.
-    # codeql[py/path-injection]: Sanitized, root-contained cache path.
-    if os.path.lexists(workflow_cache_file):
-        if not _workflow_cache_path_is_safe(workflow_cache_file):
-            logger.warning("Refusing to delete an unsafe Workflow cache file")
-            return
-        os.remove(workflow_cache_file)
+    if not os.path.lexists(workflow_cache_file):
+        return
+    validated_cache_file = _validated_workflow_cache_path(workflow_cache_file)
+    if validated_cache_file is None:
+        logger.warning("Refusing to delete an unsafe Workflow cache file")
+        return
+    try:
+        os.remove(validated_cache_file)
+    except FileNotFoundError:
+        pass
 
 
 def load_cached_workflow_response(
@@ -1268,10 +1473,11 @@ def load_cached_workflow_response(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    # get_workflow_cache_file returns a sanitized, root-contained cache path.
-    # codeql[py/path-injection]: Sanitized, root-contained cache path.
-    if os.path.lexists(workflow_cache_file):
-        cached_response = _load_workflow_response_file(workflow_cache_file)
+    validated_cache_file = _validated_workflow_cache_path(workflow_cache_file)
+    if validated_cache_file is None:
+        return None
+    if os.path.lexists(validated_cache_file):
+        cached_response = _load_workflow_response_file(validated_cache_file)
         if cached_response is not None:
             return cached_response
 
@@ -1281,9 +1487,19 @@ def load_cached_workflow_response(
         api_key=api_key,
         workflow_version_id=workflow_version_id,
     )
-    if fallback_cache_file is None:
+    if fallback_cache_file is not None:
+        cached_response = _load_workflow_response_file(fallback_cache_file)
+        if cached_response is not None:
+            return cached_response
+
+    legacy_cache_file = _find_legacy_canonical_workflow_cache_file(
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+        workflow_version_id=workflow_version_id,
+    )
+    if legacy_cache_file is None:
         return None
-    return _load_workflow_response_file(fallback_cache_file)
+    return _load_workflow_response_file(legacy_cache_file)
 
 
 @wrap_roboflow_api_errors()
@@ -1337,14 +1553,19 @@ def get_workflow_specification(
         local_file_path = (
             Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_hash}.json"
         )
-        if (
-            not _workflow_cache_path_is_safe(str(local_file_path))
-            or not local_file_path.exists()
-        ):
+        validated_local_file_path = _validated_workflow_cache_path(str(local_file_path))
+        if validated_local_file_path is None:
+            raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
+        local_file_path = Path(validated_local_file_path)
+        if not local_file_path.exists():
             raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
 
-        with local_file_path.open("r", encoding="utf-8") as f:
-            local_config = json.load(f)
+        try:
+            local_config = _read_json_regular_file_no_follow(str(local_file_path))
+        except OSError as error:
+            raise FileNotFoundError(
+                f"Local workflow file not found: {local_file_path}"
+            ) from error
 
         # Mimic the same shape as the cloud response:
         response = {"workflow": local_config}
@@ -1526,16 +1747,24 @@ def _prepare_workflow_response_cache_key(
     workflow_id: str,
     workflow_version_id: Optional[str] = None,
 ) -> str:
-    workflow_version_suffix = (
-        f":workflow_version={workflow_version_id}" if workflow_version_id else ""
+    cache_identity = json.dumps(
+        [
+            "inference-workflow-definition-v2",
+            workspace_id,
+            workflow_id,
+            workflow_version_id or None,
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
+    cache_fingerprint = _workflow_cache_identity_fingerprint(cache_identity)
     if SINGLE_TENANT_WORKFLOW_CACHE:
-        return (
-            f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}"
-        )
-    cache_seed = f"{workspace_id}:{api_key or ''}"
-    cache_fingerprint = _workflow_cache_identity_fingerprint(cache_seed)
-    return f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}:{cache_fingerprint}"
+        return f"workflow_definition:v2:{cache_fingerprint}"
+    tenant_fingerprint = _workflow_cache_tenant_fingerprint(
+        workspace_id=workspace_id,
+        api_key=api_key,
+    )
+    return f"workflow_definition:v2:{cache_fingerprint}:{tenant_fingerprint}"
 
 
 @wrap_roboflow_api_errors()
