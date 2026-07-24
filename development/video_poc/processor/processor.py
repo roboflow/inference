@@ -49,6 +49,31 @@ import requests
 
 import cv2
 
+# ONNX Runtime sizes its intra-op thread pool to the NODE's cores (it can't
+# see cgroup limits) and busy-spins them: one CPU session then burns the whole
+# pod quota spinning, CFS-throttles the pod, and starves everything else (the
+# pipeline itself, the output publisher's ICE handshake). inference exposes no
+# knob for this, and the image runs the installed package — so cap it here by
+# wrapping session construction before any model loads. Opt-in via env; also
+# quiets the spin-wait (threads sleep instead of burning quota while idle).
+ONNX_INTRA_OP_THREADS = int(os.getenv("ONNX_INTRA_OP_THREADS", "0") or 0)
+if ONNX_INTRA_OP_THREADS > 0:
+    import onnxruntime as _ort
+
+    _orig_inference_session = _ort.InferenceSession
+
+    def _capped_inference_session(*args, **kwargs):
+        opts = kwargs.get("sess_options")
+        if opts is None and len(args) >= 2 and isinstance(args[1], _ort.SessionOptions):
+            opts = args[1]
+        if opts is None:
+            opts = kwargs["sess_options"] = _ort.SessionOptions()
+        opts.intra_op_num_threads = ONNX_INTRA_OP_THREADS
+        opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        return _orig_inference_session(*args, **kwargs)
+
+    _ort.InferenceSession = _capped_inference_session
+
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
