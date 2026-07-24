@@ -1,4 +1,15 @@
+import sys
+from unittest.mock import MagicMock
+
 import torch
+
+# Unit-test CI installs only ``[test]`` (no onnx-* extra). ``onnx.py`` hard-imports
+# onnxruntime at module load, but the provider-default helpers under test do not
+# call into it — stub the dependency so collection and assertions still run.
+try:
+    import onnxruntime  # noqa: F401
+except ImportError:
+    sys.modules["onnxruntime"] = MagicMock()
 
 from inference_models.models.common import onnx
 
