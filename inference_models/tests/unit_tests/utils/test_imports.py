@@ -1,3 +1,5 @@
+import os.path
+
 import pytest
 
 from inference_models.utils.imports import LazyClass, import_class_from_file
@@ -74,6 +76,18 @@ def test_import_class_from_file_when_valid_module_path_provided(
     assert (
         instance.hello() == "hello"
     ), "Expected fixed method response as confirmation of correct import"
+
+
+def test_import_class_from_file_does_not_write_bytecode_into_package_dir(
+    empty_local_dir: str,
+) -> None:
+    module_path = os.path.join(empty_local_dir, "hf_moondream.py")
+    with open(module_path, "w") as module_file:
+        module_file.write("class HfMoondream:\n    pass\n")
+
+    import_class_from_file(file_path=module_path, class_name="HfMoondream")
+
+    assert not os.path.exists(os.path.join(empty_local_dir, "__pycache__"))
 
 
 def test_import_class_from_file_when_invalid_module_path_provided(

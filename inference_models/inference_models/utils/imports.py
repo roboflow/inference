@@ -45,6 +45,11 @@ def import_class_from_file(
     parent_dir = os.path.dirname(module_dir)
 
     sys.path.insert(0, parent_dir)
+    # Package-local modules live inside the model cache. Writing bytecode there
+    # leaves undeclared `__pycache__` entries that fail post-init package-layout
+    # validation for models such as moondream2.
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
 
     try:
         spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -63,4 +68,5 @@ def import_class_from_file(
             globals()[alias_name] = cls
         return cls
     finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
         sys.path.pop(0)

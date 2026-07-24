@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Package-local imports also avoid writing bytecode into model package directories.
+
 ---
 
 ## `0.34.0`
