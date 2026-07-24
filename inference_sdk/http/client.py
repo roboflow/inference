@@ -2262,7 +2262,7 @@ class InferenceHTTPClient:
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
             disable_sinks (bool, optional): Whether to disable sink writes and outbound
-                notifications/uploads (sink reads still execute). Defaults to False.
+                notifications/uploads. Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
@@ -2331,7 +2331,7 @@ class InferenceHTTPClient:
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
             disable_sinks (bool, optional): Whether to disable sink writes and outbound
-                notifications/uploads (sink reads still execute). Defaults to False.
+                notifications/uploads. Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
