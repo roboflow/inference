@@ -184,6 +184,13 @@ class _PipelinePrimingSentinel:
 _PIPELINE_PRIMING = _PipelinePrimingSentinel()
 
 
+def _get_enabled_inference_models_backends() -> List[str]:
+    """Return a stable backend request independent of Python hash seeding."""
+    return sorted(
+        VALID_INFERENCE_MODELS_BACKENDS.difference(DISABLED_INFERENCE_MODELS_BACKENDS)
+    )
+
+
 def _supports_independent_stage_execution(pre_process) -> bool:
     """Return whether preprocessing declares the composed-execution control."""
     try:
@@ -212,11 +219,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -369,11 +372,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -1057,11 +1056,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: KeyPointsDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -1267,11 +1262,7 @@ class InferenceModelsClassificationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
             AutoModel.from_pretrained(
                 model_id_or_path=model_id,
@@ -1599,11 +1590,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: SemanticSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,

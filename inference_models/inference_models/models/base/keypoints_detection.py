@@ -13,6 +13,7 @@ from inference_models.models.base.types import (
     RawPrediction,
 )
 
+
 @dataclass
 class KeyPoints:
     xy: torch.Tensor  # (instances, instance_key_points, 2)

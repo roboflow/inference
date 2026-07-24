@@ -1,21 +1,20 @@
 """Discover locally installed TRT packages under INFERENCE_HOME/models-cache."""
 
+import hashlib
 import json
 import logging
 import os
+import stat
 from typing import List, Optional, Union
 
-from inference_models.errors import FileHashSumMissmatch
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.model_cache_paths import (
-    generate_model_cache_root_for_model_id,
-    generate_model_package_cache_path,
+    generate_model_cache_root_candidates_for_model_id,
+    generate_models_cache_dir,
     generate_shared_blobs_path,
+    resolve_existing_model_package_cache_path,
 )
-from inference_models.utils.download import (
-    is_valid_md5_hash,
-    verify_hash_sum_of_local_file,
-)
+from inference_models.utils.download import is_valid_md5_hash
 from inference_models.weights_providers.entities import (
     JetsonEnvironmentRequirements,
     LocalFileArtefactSpecs,
@@ -43,20 +42,103 @@ logger = logging.getLogger(__name__)
 ENGINE_PLAN_FILE = "engine.plan"
 
 
-def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
-    cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
-    if not os.path.isdir(cache_root):
-        return []
+def _read_regular_file(path: str) -> bytes:
+    path_stat = os.lstat(path)
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise OSError(f"Local TRT artefact is not a regular file: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(path, flags)
+    try:
+        opened_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+        ) != (path_stat.st_dev, path_stat.st_ino):
+            raise OSError(f"Local TRT artefact changed while opening: {path}")
+        with os.fdopen(file_descriptor, "rb") as file_handle:
+            file_descriptor = -1
+            content = file_handle.read()
+            completed_stat = os.fstat(file_handle.fileno())
+        if (
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ) != (
+            completed_stat.st_size,
+            completed_stat.st_mtime_ns,
+            completed_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Local TRT artefact changed while reading: {path}")
+        return content
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
 
+
+def _md5_regular_file(path: str) -> str:
+    path_stat = os.lstat(path)
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise OSError(f"Local TRT artefact is not a regular file: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(path, flags)
+    try:
+        opened_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ) != (
+            path_stat.st_dev,
+            path_stat.st_ino,
+            path_stat.st_size,
+            path_stat.st_mtime_ns,
+            path_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Local TRT artefact changed while opening: {path}")
+        digest = hashlib.md5()
+        with os.fdopen(file_descriptor, "rb") as file_handle:
+            file_descriptor = -1
+            for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+            completed_stat = os.fstat(file_handle.fileno())
+        if (
+            completed_stat.st_dev,
+            completed_stat.st_ino,
+            completed_stat.st_size,
+            completed_stat.st_mtime_ns,
+            completed_stat.st_ctime_ns,
+        ) != (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Local TRT artefact changed while reading: {path}")
+        return digest.hexdigest()
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+
+
+def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
     shared_blobs_dir = generate_shared_blobs_path()
     discovered: List[ModelPackageMetadata] = []
-    for package_id in sorted(os.listdir(cache_root)):
+    for package_id in _discover_local_trt_package_ids(model_id=model_id):
         if not package_id.startswith(LOCAL_TRT_PACKAGE_PREFIX):
             continue
         try:
-            package_dir = generate_model_package_cache_path(
-                model_id=model_id, package_id=package_id
+            package_dir = resolve_existing_model_package_cache_path(
+                model_id=model_id,
+                package_id=package_id,
+                allow_unattributed_local_cache=True,
             )
+            if package_dir is None:
+                continue
             metadata = _parse_local_trt_package(
                 model_id=model_id,
                 package_id=package_id,
@@ -83,6 +165,33 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
     return discovered
 
 
+def _discover_local_trt_package_ids(model_id: str) -> List[str]:
+    """List package IDs from V2 and legacy V1 roots, de-duplicated in that order."""
+
+    models_cache_dir = generate_models_cache_dir()
+    resolved_models_cache_dir = os.path.realpath(models_cache_dir)
+    package_ids = []
+    seen_package_ids = set()
+    for cache_root in generate_model_cache_root_candidates_for_model_id(
+        model_id=model_id
+    ):
+        if os.path.islink(cache_root) or not os.path.isdir(cache_root):
+            continue
+        resolved_cache_root = os.path.realpath(cache_root)
+        if not resolved_cache_root.startswith(resolved_models_cache_dir + os.sep):
+            continue
+        try:
+            entries = sorted(os.listdir(cache_root))
+        except OSError:
+            continue
+        for package_id in entries:
+            if package_id in seen_package_ids:
+                continue
+            seen_package_ids.add(package_id)
+            package_ids.append(package_id)
+    return package_ids
+
+
 def _is_safe_local_trt_file_handle(handle: str) -> bool:
     if handle not in ALLOWED_LOCAL_TRT_FILE_HANDLES:
         return False
@@ -99,12 +208,18 @@ def _parse_local_trt_package(
 ) -> Optional[ModelPackageMetadata]:
     manifest_path = os.path.join(package_dir, LOCAL_TRT_MANIFEST_FILE)
     engine_path = os.path.join(package_dir, ENGINE_PLAN_FILE)
-    if not os.path.isfile(manifest_path) or not os.path.isfile(engine_path):
+    if (
+        os.path.islink(manifest_path)
+        or os.path.islink(engine_path)
+        or not os.path.isfile(manifest_path)
+        or not os.path.isfile(engine_path)
+    ):
         return None
 
     try:
-        with open(manifest_path, encoding="utf-8") as manifest_file:
-            manifest_data = json.load(manifest_file)
+        manifest_content = _read_regular_file(path=manifest_path)
+        manifest_data = json.loads(manifest_content.decode("utf-8"))
+        manifest_md5 = hashlib.md5(manifest_content).hexdigest()
         parsed_manifest = TrtModelPackageV1.model_validate(
             manifest_data["packageManifest"]
         )
@@ -127,6 +242,7 @@ def _parse_local_trt_package(
         package_id=package_id,
         package_dir=package_dir,
         file_md5=file_md5,
+        manifest_md5=manifest_md5,
     )
     if package_artefacts is None:
         return None
@@ -164,6 +280,7 @@ def _build_local_package_artefacts(
     package_id: str,
     package_dir: str,
     file_md5: dict,
+    manifest_md5: str,
 ) -> Optional[List[PackageArtefactSpec]]:
     package_artefacts: List[PackageArtefactSpec] = []
     for handle, md5_hash in file_md5.items():
@@ -184,7 +301,7 @@ def _build_local_package_artefacts(
             )
             return None
         package_file_path = os.path.join(package_dir, handle)
-        if not os.path.isfile(package_file_path):
+        if os.path.islink(package_file_path) or not os.path.isfile(package_file_path):
             logger.warning(
                 "Local TRT package missing artefact model_id=%s package_id=%s handle=%s",
                 model_id,
@@ -196,12 +313,8 @@ def _build_local_package_artefacts(
         # written so this is not a tamper guarantee. Authenticity is gated by
         # trusted_source=False (requires allow_untrusted_packages to load).
         try:
-            verify_hash_sum_of_local_file(
-                url=f"local-cache://{handle}",
-                file_path=package_file_path,
-                expected_md5_hash=md5_hash,
-            )
-        except FileHashSumMissmatch as error:
+            actual_md5_hash = _md5_regular_file(path=package_file_path)
+        except OSError as error:
             logger.warning(
                 "Local TRT package failed md5 verification model_id=%s package_id=%s handle=%s error=%s",
                 model_id,
@@ -210,9 +323,23 @@ def _build_local_package_artefacts(
                 error,
             )
             return None
+        if actual_md5_hash != md5_hash:
+            logger.warning(
+                "Local TRT package failed md5 verification model_id=%s package_id=%s handle=%s",
+                model_id,
+                package_id,
+                handle,
+            )
+            return None
         package_artefacts.append(
             LocalFileArtefactSpecs(file_handle=handle, md5_hash=md5_hash)
         )
+    package_artefacts.append(
+        LocalFileArtefactSpecs(
+            file_handle=LOCAL_TRT_MANIFEST_FILE,
+            md5_hash=manifest_md5,
+        )
+    )
     return package_artefacts
 
 

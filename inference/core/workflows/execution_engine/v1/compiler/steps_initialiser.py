@@ -13,6 +13,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     InitialisedStep,
 )
+from inference.core.workflows.offline import ensure_workflow_step_execution_mode_allowed
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
@@ -122,18 +123,22 @@ def retrieve_init_parameter_values(
 ) -> Any:
     full_parameter_name = f"{block_source}.{block_init_parameter}"
     if full_parameter_name in explicit_init_parameters:
-        return explicit_init_parameters[full_parameter_name]
-    if full_parameter_name in initializers:
-        return call_if_callable(initializers[full_parameter_name])
-    if block_init_parameter in explicit_init_parameters:
-        return explicit_init_parameters[block_init_parameter]
-    if block_init_parameter in initializers:
-        return call_if_callable(initializers[block_init_parameter])
-    raise BlockInitParameterNotProvidedError(
-        public_message=f"Could not resolve init parameter {block_init_parameter} to initialise "
-        f"step `{block_name}` from plugin: {block_source}.",
-        context="workflow_compilation | steps_initialisation",
-    )
+        result = explicit_init_parameters[full_parameter_name]
+    elif full_parameter_name in initializers:
+        result = call_if_callable(initializers[full_parameter_name])
+    elif block_init_parameter in explicit_init_parameters:
+        result = explicit_init_parameters[block_init_parameter]
+    elif block_init_parameter in initializers:
+        result = call_if_callable(initializers[block_init_parameter])
+    else:
+        raise BlockInitParameterNotProvidedError(
+            public_message=f"Could not resolve init parameter {block_init_parameter} to initialise "
+            f"step `{block_name}` from plugin: {block_source}.",
+            context="workflow_compilation | steps_initialisation",
+        )
+    if block_init_parameter == "step_execution_mode":
+        ensure_workflow_step_execution_mode_allowed(step_execution_mode=result)
+    return result
 
 
 def call_if_callable(value: Union[Any, Callable[[None], Any]]) -> Any:

@@ -913,7 +913,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.33.0"
+version = "0.34.0rc2"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
@@ -938,6 +938,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pygments" },
     { name = "python-doctr" },
+    { name = "python-dotenv" },
     { name = "pyvips" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -1154,6 +1155,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = "==2.4.0" },
     { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.0.0" },
     { name = "python-doctr", extras = ["torch"], specifier = ">=1.0.0" },
+    { name = "python-dotenv", specifier = "~=1.0.0" },
     { name = "pyvips", specifier = ">=2.2.3,<3.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0,<7.0.0" },
     { name = "requests", specifier = ">=2.33.0,<3.0.0" },
@@ -3520,6 +3522,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1f/aa/35afe5b4f2e601557f9a617411896df0a5e092caac44a7ab78caec1e7fcd/python_doctr-1.0.1.tar.gz", hash = "sha256:6fc54316ea7915e1fa96bf58e9434b16e1511c3c61dff16d0802f18c71a5d9c6", size = 223224, upload-time = "2026-02-04T15:05:51.862Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/03/1d/83cfd3f35e6f83553b3effc951a45813a794da2f6ffc5c0e8f3557f4cead/python_doctr-1.0.1-py3-none-any.whl", hash = "sha256:a54028bc59df98816059fb038265c787ca971098ee78a2af2514267e6c71ce7e", size = 288861, upload-time = "2026-02-04T15:05:48.783Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bc/57/e84d88dfe0aec03b7a2d4327012c1627ab5f03652216c63d49846d7a6c58/python-dotenv-1.0.1.tar.gz", hash = "sha256:e324ee90a023d808f1959c46bcbc04446a10ced277783dc6ee09987c37ec10ca", size = 39115, upload-time = "2024-01-23T06:33:00.505Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/3e/b68c118422ec867fa7ab88444e1274aa40681c606d59ac27de5a5588f082/python_dotenv-1.0.1-py3-none-any.whl", hash = "sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a", size = 19863, upload-time = "2024-01-23T06:32:58.246Z" },
 ]
 
 [[package]]

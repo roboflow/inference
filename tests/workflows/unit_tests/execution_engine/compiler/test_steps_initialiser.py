@@ -1,8 +1,10 @@
 import pytest
 
+from inference.core.workflows import offline
 from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
+    WorkflowEnvironmentConfigurationError,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
@@ -13,6 +15,7 @@ from inference.core.workflows.execution_engine.v1.compiler.steps_initialiser imp
     retrieve_init_parameter_values,
     retrieve_init_parameters_values,
 )
+from inference.core.workflows.prototypes.block import StepExecutionMode
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (
     ExampleBlockWithFaultyInit,
     ExampleBlockWithFaultyInitManifest,
@@ -134,6 +137,98 @@ def test_retrieve_init_parameter_values_when_parameter_cannot_be_resolved() -> N
             explicit_init_parameters={},
             initializers={},
         )
+
+
+@pytest.mark.parametrize(
+    "explicit_init_parameters",
+    [
+        {"some.step_execution_mode": StepExecutionMode.REMOTE},
+        {"step_execution_mode": StepExecutionMode.REMOTE},
+    ],
+)
+def test_retrieve_init_parameter_values_rejects_remote_execution_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    explicit_init_parameters,
+) -> None:
+    monkeypatch.setattr(offline, "OFFLINE_MODE", True)
+
+    with pytest.raises(
+        WorkflowEnvironmentConfigurationError,
+        match="Remote Workflow step execution.*OFFLINE_MODE",
+    ):
+        retrieve_init_parameter_values(
+            block_name="block",
+            block_init_parameter="step_execution_mode",
+            block_source="some",
+            explicit_init_parameters=explicit_init_parameters,
+            initializers={},
+        )
+
+
+@pytest.mark.parametrize(
+    "initializers",
+    [
+        {"some.step_execution_mode": lambda: StepExecutionMode.REMOTE},
+        {"step_execution_mode": lambda: "remote"},
+    ],
+)
+def test_retrieve_init_parameter_values_rejects_remote_callable_initializer_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    initializers,
+) -> None:
+    monkeypatch.setattr(offline, "OFFLINE_MODE", True)
+
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        retrieve_init_parameter_values(
+            block_name="block",
+            block_init_parameter="step_execution_mode",
+            block_source="some",
+            explicit_init_parameters={},
+            initializers=initializers,
+        )
+
+
+def test_retrieve_init_parameter_values_allows_local_execution_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(offline, "OFFLINE_MODE", True)
+
+    result = retrieve_init_parameter_values(
+        block_name="block",
+        block_init_parameter="step_execution_mode",
+        block_source="some",
+        explicit_init_parameters={},
+        initializers={
+            "some.step_execution_mode": lambda: StepExecutionMode.LOCAL,
+        },
+    )
+
+    assert result is StepExecutionMode.LOCAL
+
+
+def test_step_execution_mode_guard_is_noop_online(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OpaqueStepExecutionMode:
+        @property
+        def value(self):
+            raise AssertionError("online guard inspected the value")
+
+        def __eq__(self, other):
+            raise AssertionError("online guard compared the value")
+
+    step_execution_mode = OpaqueStepExecutionMode()
+    monkeypatch.setattr(offline, "OFFLINE_MODE", False)
+
+    result = retrieve_init_parameter_values(
+        block_name="block",
+        block_init_parameter="step_execution_mode",
+        block_source="some",
+        explicit_init_parameters={"step_execution_mode": step_execution_mode},
+        initializers={},
+    )
+
+    assert result is step_execution_mode
 
 
 def test_retrieve_init_parameters_values() -> None:

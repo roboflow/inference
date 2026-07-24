@@ -45,9 +45,7 @@ def _free_gpu_after_test():
 @pytest.mark.slow
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
-def test_sam3_embeddings_numpy(
-    sam3_model, truck_image_numpy: np.ndarray
-) -> None:
+def test_sam3_embeddings_numpy(sam3_model, truck_image_numpy: np.ndarray) -> None:
     # given
     model = sam3_model
 
@@ -63,9 +61,7 @@ def test_sam3_embeddings_numpy(
 @pytest.mark.slow
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
-def test_sam3_embeddings_torch(
-    sam3_model, truck_image_torch: torch.Tensor
-) -> None:
+def test_sam3_embeddings_torch(sam3_model, truck_image_torch: torch.Tensor) -> None:
     # given
     model = sam3_model
 
@@ -80,9 +76,7 @@ def test_sam3_embeddings_torch(
 @pytest.mark.slow
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
-def test_sam3_embeddings_batch_numpy(
-    sam3_model, truck_image_numpy: np.ndarray
-) -> None:
+def test_sam3_embeddings_batch_numpy(sam3_model, truck_image_numpy: np.ndarray) -> None:
     # given
     model = sam3_model
 
@@ -98,9 +92,7 @@ def test_sam3_embeddings_batch_numpy(
 @pytest.mark.slow
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
-def test_sam3_embeddings_caching(
-    sam3_model, truck_image_numpy: np.ndarray
-) -> None:
+def test_sam3_embeddings_caching(sam3_model, truck_image_numpy: np.ndarray) -> None:
     # given
     model = sam3_model
 
@@ -550,9 +542,7 @@ def test_sam3_segment_images_return_logits(
 @pytest.mark.slow
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
-def test_sam3_caching_disabled(
-    sam3_model, truck_image_numpy: np.ndarray
-) -> None:
+def test_sam3_caching_disabled(sam3_model, truck_image_numpy: np.ndarray) -> None:
     # given
     model = sam3_model
 

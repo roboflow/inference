@@ -6,6 +6,7 @@ from typing import Callable, Optional
 import requests
 
 from inference.core.env import (
+    OFFLINE_MODE,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
     WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
 )
@@ -71,6 +72,8 @@ class Watchdog:
         This is used to sign that the session is alive so the system
         doesnt allow more than N concurrent sessions from a single workspace.
         """
+        if OFFLINE_MODE:
+            return
         if not all(
             [
                 self._heartbeat_url,
@@ -111,6 +114,8 @@ class Watchdog:
 
     def _send_session_heartbeat_stop(self):
         """Send session end to immediately free the quota slot."""
+        if OFFLINE_MODE:
+            return
         if not all([self._heartbeat_url, self._session_id]):
             return
 

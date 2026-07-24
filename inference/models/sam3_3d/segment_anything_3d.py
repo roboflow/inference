@@ -327,6 +327,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             "slat_decoder_gs.ckpt",
             "slat_decoder_gs_4.ckpt",
             "slat_decoder_mesh.pt",
+            "dinov2_vitl14_reg4_pretrain.pth",
         ]
 
     def download_model_from_roboflow_api(self) -> None:

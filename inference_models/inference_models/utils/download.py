@@ -31,6 +31,7 @@ from inference_models.configuration import (
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
@@ -69,6 +70,14 @@ _CONNECTIVITY_ERRORS = (
     Timeout,
     requests.exceptions.ConnectionError,
 )
+
+
+def _ensure_online_download_allowed() -> None:
+    if OFFLINE_MODE:
+        raise RuntimeError(
+            "Cannot download files - OFFLINE_MODE is enabled. "
+            "All model weights must be pre-cached locally."
+        )
 
 
 class PartialDownloadError(Exception):
@@ -224,6 +233,7 @@ def download_files_to_directory(
     )
     if not files_specs:
         return files_mapping
+    _ensure_online_download_allowed()
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if request_timeout is None:
@@ -470,6 +480,7 @@ def safe_check_range_download_option(
 def check_range_download_option(
     url: str, timeout: int, response_codes_to_retry: Set[int]
 ) -> Optional[int]:
+    _ensure_online_download_allowed()
     try:
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
@@ -503,6 +514,7 @@ def get_content_length(
     timeout: Optional[int] = None,
     response_codes_to_retry: Optional[Set[int]] = None,
 ) -> Optional[int]:
+    _ensure_online_download_allowed()
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if timeout is None:
@@ -665,6 +677,7 @@ def download_chunk(
         file_chunk: ``iter_content`` read size for streaming the response body.
         on_chunk_downloaded: Optional callback with bytes written per read.
     """
+    _ensure_online_download_allowed()
     current_start = start
     retryable_http_since_last_range_advance = 0
 
@@ -787,6 +800,7 @@ def stream_download(
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
+    _ensure_online_download_allowed()
     ensure_parent_dir_exists(path=target_path)
     computed_hash = (
         HashNullObject()
