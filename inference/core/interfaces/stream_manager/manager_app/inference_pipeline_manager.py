@@ -18,6 +18,7 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core import logger
+from inference.core.env import API_KEY
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPIConnectionError,
@@ -27,6 +28,9 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
+from inference.core.interfaces.camera.stream_auth import (
+    resolve_operational_video_reference,
+)
 from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,
 )
@@ -180,12 +184,19 @@ class InferencePipelineManager(Process):
         try:
             self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
+            video_reference = parsed_payload.video_configuration.video_reference
+            stream_credentials = parsed_payload.video_configuration.stream_credentials
+            api_key = parsed_payload.api_key or API_KEY
+            if stream_credentials and api_key:
+                video_reference = resolve_operational_video_reference(
+                    video_reference, stream_credentials, api_key
+                )
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
             self._inference_pipeline = InferencePipeline.init_with_workflow(
-                video_reference=parsed_payload.video_configuration.video_reference,
+                video_reference=video_reference,
                 workflow_specification=parsed_payload.processing_configuration.workflow_specification,
                 workspace_name=parsed_payload.processing_configuration.workspace_name,
                 workflow_id=parsed_payload.processing_configuration.workflow_id,
