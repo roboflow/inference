@@ -6,9 +6,7 @@ from typing import Any, Optional
 
 from inference_models.errors import InvalidEnvVariable
 
-_OFFLINE_MODE_PROCESS_LATCH_ENV = (
-    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-)
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 OFFLINE_MODE_CONTRACT_VERSION = 2
 _existing_offline_mode_process_state = sys.modules.get(
@@ -17,9 +15,8 @@ _existing_offline_mode_process_state = sys.modules.get(
 OFFLINE_MODE = bool(
     getattr(_existing_offline_mode_process_state, "offline_mode", False)
 )
-if (
-    _existing_offline_mode_process_state is not None
-    and hasattr(_existing_offline_mode_process_state, "offline_mode")
+if _existing_offline_mode_process_state is not None and hasattr(
+    _existing_offline_mode_process_state, "offline_mode"
 ):
     # A direct module reload must consume and re-publish the process latch, not
     # trust either environment variable after startup.

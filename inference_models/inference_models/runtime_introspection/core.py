@@ -307,6 +307,7 @@ def _get_cuda_version_with_dpkg() -> Optional[Version]:
     except Exception:
         return None
 
+
 def _get_cuda_version_loading_shared_library() -> Optional[Version]:
     try:
         lib = ctypes.CDLL("libcudart.so")  # resolves via loader / LD_LIBRARY_PATH
@@ -319,6 +320,7 @@ def _get_cuda_version_loading_shared_library() -> Optional[Version]:
         return Version(f"{major}.{minor}.{patch}")
     except Exception:
         return None
+
 
 def _get_cuda_version_from_torch() -> Optional[Version]:
     try:

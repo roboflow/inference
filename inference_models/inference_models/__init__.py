@@ -17,9 +17,7 @@ import _thread
 import os
 import sys
 
-_OFFLINE_MODE_PROCESS_LATCH_ENV = (
-    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-)
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 
 _offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
@@ -38,27 +36,21 @@ if _offline_mode_process_state is None:
         _candidate_process_state.lock.release()
 
 if not _offline_mode_initialization_lock_owned:
-    _offline_mode_initialization_lock = (
-        _offline_mode_process_state.__dict__.setdefault(
-            "lock", _thread.RLock()
-        )
+    _offline_mode_initialization_lock = _offline_mode_process_state.__dict__.setdefault(
+        "lock", _thread.RLock()
     )
     _offline_mode_initialization_lock.acquire()
 else:
     _offline_mode_initialization_lock = _offline_mode_process_state.lock
 
 try:
-    if (
-        not hasattr(_offline_mode_process_state, "offline_mode")
-        and hasattr(
-            _offline_mode_process_state, "offline_mode_initialization_error"
-        )
+    if not hasattr(_offline_mode_process_state, "offline_mode") and hasattr(
+        _offline_mode_process_state, "offline_mode_initialization_error"
     ):
         raise _offline_mode_process_state.offline_mode_initialization_error
 
-    if (
-        hasattr(os, "register_at_fork")
-        and not getattr(_offline_mode_process_state, "at_fork_registered", False)
+    if hasattr(os, "register_at_fork") and not getattr(
+        _offline_mode_process_state, "at_fork_registered", False
     ):
 
         def _reset_offline_mode_lock_after_fork() -> None:

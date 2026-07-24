@@ -65,9 +65,7 @@ def test_covariance_is_symmetric() -> None:
     )
 
     # then
-    assert torch.allclose(
-        covariance[..., 0, 1], covariance[..., 1, 0], equal_nan=True
-    )
+    assert torch.allclose(covariance[..., 0, 1], covariance[..., 1, 0], equal_nan=True)
 
 
 def test_covariance_non_finite_input_yields_nan() -> None:

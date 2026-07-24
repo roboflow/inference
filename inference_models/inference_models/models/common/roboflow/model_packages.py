@@ -76,7 +76,9 @@ def parse_key_points_metadata(
             skeletons = [None] * len(classes_re_mapping.remaining_class_ids)
         else:
             class_names: List[Optional[List[str]]] = [None] * len(parsed_config)
-            skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(parsed_config)
+            skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(
+                parsed_config
+            )
 
         for instance_key_point_description in parsed_config:
             if "object_class_id" not in instance_key_point_description:

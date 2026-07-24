@@ -81,7 +81,6 @@ from inference_models.models.auto_loaders.models_registry import (
     model_implementation_exists,
     resolve_model_class,
 )
-from inference_models.models.auto_loaders.ranking import rank_model_packages
 from inference_models.models.auto_loaders.presentation_utils import (
     calculate_artefacts_size,
     calculate_size_of_all_model_packages_artefacts,
@@ -90,6 +89,7 @@ from inference_models.models.auto_loaders.presentation_utils import (
     render_table_with_model_overview,
     render_table_with_model_packages,
 )
+from inference_models.models.auto_loaders.ranking import rank_model_packages
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.download import (
     FileHandle,
@@ -172,18 +172,14 @@ def _runtime_compatibility_content(runtime_x_ray: object) -> dict:
         "gpu_devices_cc": [
             str(value) for value in getattr(runtime_x_ray, "gpu_devices_cc", [])
         ],
-        "driver_version": stringify(
-            getattr(runtime_x_ray, "driver_version", None)
-        ),
+        "driver_version": stringify(getattr(runtime_x_ray, "driver_version", None)),
         "cuda_version": stringify(getattr(runtime_x_ray, "cuda_version", None)),
         "trt_version": stringify(getattr(runtime_x_ray, "trt_version", None)),
         "jetson_type": getattr(runtime_x_ray, "jetson_type", None),
         "l4t_version": stringify(getattr(runtime_x_ray, "l4t_version", None)),
         "os_version": getattr(runtime_x_ray, "os_version", None),
         "torch_available": getattr(runtime_x_ray, "torch_available", False),
-        "torch_version": stringify(
-            getattr(runtime_x_ray, "torch_version", None)
-        ),
+        "torch_version": stringify(getattr(runtime_x_ray, "torch_version", None)),
         "torchvision_version": stringify(
             getattr(runtime_x_ray, "torchvision_version", None)
         ),
@@ -191,9 +187,7 @@ def _runtime_compatibility_content(runtime_x_ray: object) -> dict:
             getattr(runtime_x_ray, "onnxruntime_version", None)
         ),
         "available_onnx_execution_providers": (
-            sorted(available_providers)
-            if available_providers is not None
-            else None
+            sorted(available_providers) if available_providers is not None else None
         ),
         "hf_transformers_available": getattr(
             runtime_x_ray, "hf_transformers_available", False
@@ -1312,9 +1306,7 @@ def attempt_loading_model_with_auto_load_cache(
             task_type=cache_entry.task_type,
             backend=cache_entry.backend_type,
             model_features=(
-                set(cache_entry.model_features)
-                if cache_entry.model_features
-                else None
+                set(cache_entry.model_features) if cache_entry.model_features else None
             ),
         )
         model_package_cache_dir = generate_model_package_cache_path(
@@ -1498,8 +1490,7 @@ def attempt_loading_model_from_offline_cache(
             )
             continue
         is_versioned_manifest = (
-            package_config.offline_manifest_version
-            == OFFLINE_CACHE_MANIFEST_VERSION
+            package_config.offline_manifest_version == OFFLINE_CACHE_MANIFEST_VERSION
         )
         if not is_versioned_manifest and not allow_untrusted_packages:
             LOGGER.warning(
@@ -1522,8 +1513,7 @@ def attempt_loading_model_from_offline_cache(
             continue
         if (
             offline_compatibility_hash is not None
-            and package_config.offline_compatibility_hash
-            != offline_compatibility_hash
+            and package_config.offline_compatibility_hash != offline_compatibility_hash
         ):
             LOGGER.warning(
                 "Ignoring cached package %s because it was not warmed for the "
@@ -1531,10 +1521,7 @@ def attempt_loading_model_from_offline_cache(
                 package_dir,
             )
             continue
-        if (
-            not allow_untrusted_packages
-            and package_config.trusted_source is not True
-        ):
+        if not allow_untrusted_packages and package_config.trusted_source is not True:
             continue
         if package_config.backend_type is None:
             continue
@@ -1601,13 +1588,11 @@ def attempt_loading_model_from_offline_cache(
                         device=model_init_kwargs.get("device")
                     )
                 if effective_quantization:
-                    compatible, _ = (
-                        filter_model_packages_by_requested_quantization(
-                            model_packages=compatible,
-                            requested_quantization=effective_quantization,
-                            default_quantization_used=default_quantization_used,
-                            verbose=verbose,
-                        )
+                    compatible, _ = filter_model_packages_by_requested_quantization(
+                        model_packages=compatible,
+                        requested_quantization=effective_quantization,
+                        default_quantization_used=default_quantization_used,
+                        verbose=verbose,
                     )
                 compatible, _ = filter_model_packages_based_on_model_features(
                     model_packages=compatible,
@@ -1638,10 +1623,7 @@ def attempt_loading_model_from_offline_cache(
         found_any_package = True
         try:
             raw_dependencies = package_config.model_dependencies
-            if (
-                raw_dependencies is None
-                and not allow_loading_dependency_models
-            ):
+            if raw_dependencies is None and not allow_loading_dependency_models:
                 raise CorruptedModelPackageError(
                     message=(
                         f"Cannot verify whether cached package {package_id} "
@@ -1761,9 +1743,7 @@ def _prepare_library_model_init_kwargs(
     if not OFFLINE_MODE:
         return model_init_kwargs
     try:
-        loader_parameters = inspect.signature(
-            model_class.from_pretrained
-        ).parameters
+        loader_parameters = inspect.signature(model_class.from_pretrained).parameters
     except (TypeError, ValueError):
         return model_init_kwargs
     local_files_only_parameter = loader_parameters.get("local_files_only")
@@ -2582,9 +2562,10 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
         "offline_compatibility_hash",
     ):
         hash_field_value = raw_config.get(hash_field_name)
-        if hash_field_value is not None and re.fullmatch(
-            r"[0-9a-f]{64}", hash_field_value
-        ) is None:
+        if (
+            hash_field_value is not None
+            and re.fullmatch(r"[0-9a-f]{64}", hash_field_value) is None
+        ):
             raise CorruptedModelPackageError(
                 message=(
                     f"Cached model config contains invalid {hash_field_name} "
@@ -2617,9 +2598,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             message="Cached model config contains invalid trusted_source metadata.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    dynamic_batch_size_supported = raw_config.get(
-        "dynamic_batch_size_supported"
-    )
+    dynamic_batch_size_supported = raw_config.get("dynamic_batch_size_supported")
     if dynamic_batch_size_supported is not None and not isinstance(
         dynamic_batch_size_supported, bool
     ):
@@ -2665,12 +2644,8 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
         quantization=raw_config.get("quantization"),
         dynamic_batch_size_supported=dynamic_batch_size_supported,
         static_batch_size=static_batch_size,
-        runtime_compatibility_hash=raw_config.get(
-            "runtime_compatibility_hash"
-        ),
-        offline_compatibility_hash=raw_config.get(
-            "offline_compatibility_hash"
-        ),
+        runtime_compatibility_hash=raw_config.get("runtime_compatibility_hash"),
+        offline_compatibility_hash=raw_config.get("offline_compatibility_hash"),
         offline_manifest_version=offline_manifest_version,
     )
 
@@ -2685,9 +2660,7 @@ def load_library_model_from_local_dir(
         task_type=model_config.task_type,
         backend=model_config.backend_type,
         model_features=(
-            set(model_config.model_features)
-            if model_config.model_features
-            else None
+            set(model_config.model_features) if model_config.model_features else None
         ),
     )
     return model_class.from_pretrained(

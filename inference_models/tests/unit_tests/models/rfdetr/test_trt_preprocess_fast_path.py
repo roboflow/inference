@@ -18,10 +18,7 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCrop,
     TrainingInputSize,
 )
-from inference_models.models.rfdetr import (
-    triton_preprocess,
-    triton_preprocess_runtime,
-)
+from inference_models.models.rfdetr import triton_preprocess, triton_preprocess_runtime
 from inference_models.models.rfdetr.triton_preprocess_runtime import (
     FastPreprocessRuntime,
 )

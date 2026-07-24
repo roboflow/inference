@@ -7,12 +7,12 @@ from unittest.mock import patch
 import pytest
 
 from inference_models.models.auto_loaders import model_cache_paths
+from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.model_cache_paths import (
     generate_model_cache_root_for_model_id,
     generate_model_package_cache_path,
     generate_shared_blobs_path,
 )
-from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers.entities import (
     LocalFileArtefactSpecs,
     PackageSourceType,

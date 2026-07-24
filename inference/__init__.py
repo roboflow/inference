@@ -2,9 +2,7 @@ import _thread
 import os
 import sys
 
-_OFFLINE_MODE_PROCESS_LATCH_ENV = (
-    "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-)
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 _OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
 
 _offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
@@ -27,27 +25,21 @@ if _offline_mode_process_state is None:
 if not _offline_mode_initialization_lock_owned:
     # Supports a fail-closed mixed-version startup where an older companion
     # package created the shared state before this package was imported.
-    _offline_mode_initialization_lock = (
-        _offline_mode_process_state.__dict__.setdefault(
-            "lock", _thread.RLock()
-        )
+    _offline_mode_initialization_lock = _offline_mode_process_state.__dict__.setdefault(
+        "lock", _thread.RLock()
     )
     _offline_mode_initialization_lock.acquire()
 else:
     _offline_mode_initialization_lock = _offline_mode_process_state.lock
 
 try:
-    if (
-        not hasattr(_offline_mode_process_state, "offline_mode")
-        and hasattr(
-            _offline_mode_process_state, "offline_mode_initialization_error"
-        )
+    if not hasattr(_offline_mode_process_state, "offline_mode") and hasattr(
+        _offline_mode_process_state, "offline_mode_initialization_error"
     ):
         raise _offline_mode_process_state.offline_mode_initialization_error
 
-    if (
-        hasattr(os, "register_at_fork")
-        and not getattr(_offline_mode_process_state, "at_fork_registered", False)
+    if hasattr(os, "register_at_fork") and not getattr(
+        _offline_mode_process_state, "at_fork_registered", False
     ):
 
         def _reset_offline_mode_lock_after_fork() -> None:
@@ -116,10 +108,7 @@ try:
             )
         else:
             _initial_offline_mode = _offline_mode_from_process_environment
-            if (
-                _initial_offline_mode is None
-                and _offline_mode_declared_in_dotenv
-            ):
+            if _initial_offline_mode is None and _offline_mode_declared_in_dotenv:
                 _initial_offline_mode = _offline_mode_from_dotenv
             elif _initial_offline_mode is None:
                 _initial_offline_mode = "False"
@@ -153,10 +142,7 @@ try:
     )
 except ValueError:
     _requested_offline_mode = None
-if (
-    _requested_offline_mode is None
-    or _requested_offline_mode != _LATCHED_OFFLINE_MODE
-):
+if _requested_offline_mode is None or _requested_offline_mode != _LATCHED_OFFLINE_MODE:
     warnings.warn(
         "Changing OFFLINE_MODE at runtime is not supported. The new value is "
         "being ignored; restart the process to change offline mode.",

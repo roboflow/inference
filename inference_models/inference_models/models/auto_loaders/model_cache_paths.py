@@ -50,9 +50,7 @@ def _ensure_cache_path_has_no_child_symlinks(
     target_path = os.path.abspath(target_path)
     try:
         relative_path = os.path.relpath(target_path, cache_root)
-        if relative_path == os.pardir or relative_path.startswith(
-            os.pardir + os.sep
-        ):
+        if relative_path == os.pardir or relative_path.startswith(os.pardir + os.sep):
             raise ValueError
         expected_resolved_path = os.path.normpath(
             os.path.join(os.path.realpath(cache_root), relative_path)

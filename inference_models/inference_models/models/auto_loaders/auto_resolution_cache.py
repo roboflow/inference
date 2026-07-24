@@ -130,7 +130,9 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
             or os.path.islink(path_for_cached_content)
             or os.path.islink(lock_path)
         ):
-            LOGGER.warning("Refusing to write auto-resolution metadata through a symlink")
+            LOGGER.warning(
+                "Refusing to write auto-resolution metadata through a symlink"
+            )
             return None
         with FileLock(lock_path, timeout=self._file_lock_acquire_timeout):
             temporary_path = None
@@ -235,13 +237,10 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
             if os.path.islink(entry_path) or not os.path.isfile(entry_path):
                 continue
             auto_negotiation_hash = entry_name[:-5]
-            cache_entry = self.retrieve(
-                auto_negotiation_hash=auto_negotiation_hash
-            )
+            cache_entry = self.retrieve(auto_negotiation_hash=auto_negotiation_hash)
             if (
                 cache_entry is not None
-                and cache_entry.offline_compatibility_hash
-                == offline_compatibility_hash
+                and cache_entry.offline_compatibility_hash == offline_compatibility_hash
             ):
                 matches.append((auto_negotiation_hash, cache_entry))
         return sorted(

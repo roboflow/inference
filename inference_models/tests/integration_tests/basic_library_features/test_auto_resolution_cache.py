@@ -371,9 +371,7 @@ def test_generate_auto_resolution_cache_path_rejects_unsafe_hash(
     auto_negotiation_hash: str,
 ) -> None:
     with pytest.raises(ValueError):
-        generate_auto_resolution_cache_path(
-            auto_negotiation_hash=auto_negotiation_hash
-        )
+        generate_auto_resolution_cache_path(auto_negotiation_hash=auto_negotiation_hash)
 
 
 @pytest.mark.torch_models
@@ -403,9 +401,7 @@ def test_find_compatible_reuses_newest_entry_across_api_key_hashes(
         }
     )
 
-    with mock.patch.object(
-        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ):
+    with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
         # These exact hashes model requests made with different API keys. Their
         # credential-free compatibility hash intentionally remains the same.
         cache.register(auto_negotiation_hash="a" * 64, cache_entry=older_entry)
@@ -413,9 +409,7 @@ def test_find_compatible_reuses_newest_entry_across_api_key_hashes(
         candidates = cache.find_compatible_candidates(
             offline_compatibility_hash=compatibility_hash
         )
-        result = cache.find_compatible(
-            offline_compatibility_hash=compatibility_hash
-        )
+        result = cache.find_compatible(offline_compatibility_hash=compatibility_hash)
 
     assert candidates == [
         ("b" * 64, newer_entry),
@@ -446,14 +440,10 @@ def test_auto_resolution_cache_rejects_symlinked_cache_directory(
         trusted_source=True,
     )
 
-    with mock.patch.object(
-        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ):
+    with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
         cache.register(auto_negotiation_hash="a" * 64, cache_entry=cache_entry)
         retrieved = cache.retrieve(auto_negotiation_hash="a" * 64)
-        compatible = cache.find_compatible(
-            offline_compatibility_hash="c" * 64
-        )
+        compatible = cache.find_compatible(offline_compatibility_hash="c" * 64)
 
     assert retrieved is None
     assert compatible is None
@@ -484,9 +474,7 @@ def test_auto_resolution_cache_does_not_follow_symlinked_entry(
         trusted_source=True,
     )
 
-    with mock.patch.object(
-        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ):
+    with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
         cache.register(auto_negotiation_hash="a" * 64, cache_entry=cache_entry)
         assert cache.retrieve(auto_negotiation_hash="a" * 64) is None
         cache.invalidate(auto_negotiation_hash="a" * 64)
@@ -522,9 +510,7 @@ def test_auto_resolution_cache_does_not_follow_symlinked_lock_file(
         trusted_source=True,
     )
 
-    with mock.patch.object(
-        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ):
+    with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
         cache.register(auto_negotiation_hash="a" * 64, cache_entry=cache_entry)
 
     assert not os.path.exists(cache_path)

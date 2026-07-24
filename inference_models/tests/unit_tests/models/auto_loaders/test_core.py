@@ -23,10 +23,10 @@ from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
 )
 from inference_models.models.auto_loaders.core import (
+    attempt_loading_matching_model_packages,
     attempt_loading_model_from_local_storage,
     attempt_loading_model_from_offline_cache,
     attempt_loading_model_with_auto_load_cache,
-    attempt_loading_matching_model_packages,
     create_symlinks_to_shared_blobs,
     dump_auto_resolution_cache,
     dump_model_config_for_offline_use,
@@ -722,9 +722,9 @@ def test_dump_model_config_for_offline_use_preserves_legacy_positional_slots(
 
 
 def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> None:
-    assert list(
-        inspect.signature(dump_model_config_for_offline_use).parameters
-    )[:7] == [
+    assert list(inspect.signature(dump_model_config_for_offline_use).parameters)[
+        :7
+    ] == [
         "config_path",
         "model_architecture",
         "task_type",
@@ -736,9 +736,10 @@ def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> 
     assert list(inspect.signature(initialize_model).parameters)[-1] == (
         "offline_compatibility_hash"
     )
-    assert list(
-        inspect.signature(attempt_loading_matching_model_packages).parameters
-    )[-1] == "offline_compatibility_hash"
+    assert (
+        list(inspect.signature(attempt_loading_matching_model_packages).parameters)[-1]
+        == "offline_compatibility_hash"
+    )
     assert list(inspect.signature(dump_auto_resolution_cache).parameters)[-1] == (
         "offline_compatibility_hash"
     )
@@ -1295,9 +1296,7 @@ def test_attempt_loading_model_from_offline_cache_tries_next_package_on_failure(
             package_id=package_id,
             config={
                 **_OFFLINE_PACKAGE_CONFIG,
-                "backend_type": (
-                    "torch-script" if package_id == "pkg002" else "onnx"
-                ),
+                "backend_type": ("torch-script" if package_id == "pkg002" else "onnx"),
             },
         )
     mock_model = MagicMock()
@@ -1336,9 +1335,7 @@ def test_attempt_loading_model_from_offline_cache_honors_requested_package(
             package_id=package_id,
             config={
                 **_OFFLINE_PACKAGE_CONFIG,
-                "backend_type": (
-                    "torch-script" if package_id == "pkg002" else "onnx"
-                ),
+                "backend_type": ("torch-script" if package_id == "pkg002" else "onnx"),
             },
         )
     mock_model = MagicMock()
@@ -1441,9 +1438,7 @@ def test_attempt_loading_model_from_offline_cache_rejects_unverifiable_constrain
 
     with mock.patch.object(
         model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as mock_load:
+    ), mock.patch.object(core, "attempt_loading_model_from_local_storage") as mock_load:
         result = attempt_loading_model_from_offline_cache(
             model_id=model_id,
             model_init_kwargs={},
@@ -1469,9 +1464,7 @@ def test_attempt_loading_model_from_offline_cache_respects_access_manager(
 
     with mock.patch.object(
         model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as mock_load:
+    ), mock.patch.object(core, "attempt_loading_model_from_local_storage") as mock_load:
         result = attempt_loading_model_from_offline_cache(
             model_id=model_id,
             model_init_kwargs={},
@@ -1692,9 +1685,7 @@ def test_attempt_loading_model_from_offline_cache_reconstructs_dependencies(
     assert result == (parent_model, package_dir)
     dependency_load.assert_called_once()
     assert dependency_load.call_args.kwargs["model_id_or_path"] == "dependency/1"
-    assert (
-        dependency_load.call_args.kwargs["model_package_id"] == "dependencyPackage"
-    )
+    assert dependency_load.call_args.kwargs["model_package_id"] == "dependencyPackage"
     assert model_load.call_args.kwargs["model_init_kwargs"][
         core.MODEL_DEPENDENCIES_KEY
     ] == {"encoder": dependency_model}
@@ -1748,9 +1739,7 @@ def test_attempt_loading_model_from_offline_cache_requires_matching_constraints_
 
     with mock.patch.object(
         model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as mock_load:
+    ), mock.patch.object(core, "attempt_loading_model_from_local_storage") as mock_load:
         result = attempt_loading_model_from_offline_cache(
             model_id=model_id,
             model_init_kwargs={},
@@ -1910,9 +1899,7 @@ def test_from_pretrained_tries_older_compatible_entry_after_newest_fails() -> No
         offline_compatibility_hash="c" * 64,
         trusted_source=True,
     )
-    older_entry = newest_entry.model_copy(
-        update={"model_package_id": "older-package"}
-    )
+    older_entry = newest_entry.model_copy(update={"model_package_id": "older-package"})
     auto_resolution_cache = MagicMock()
     attempted_hashes = []
 
