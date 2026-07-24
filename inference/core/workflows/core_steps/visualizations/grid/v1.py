@@ -93,9 +93,11 @@ class GridVisualizationManifest(WorkflowBlockManifest):
         '`["$inputs.image", "$steps.depth_estimation.image"]` to compare an input image with a '
         "model's visualization side by side) and/or single-level lists of images (e.g. a Buffer "
         "output), which are flattened into the grid. Per-image batches such as Dynamic Crop "
-        "`crops` or Image Slicer tiles are nested one level deeper; flatten them with a Dimension "
-        "Collapse block before adding them here, otherwise the grid renders one cell per parent "
-        "image instead of a combined grid. Images are automatically arranged in a square grid "
+        "`crops` or Image Slicer `slices` are nested one level deeper; flatten them with a "
+        "Dimension Collapse block before adding them here — mixing them directly with same-level "
+        "images fails workflow compilation, and using one alone produces a separate single-cell "
+        "grid per image instead of one combined grid. Images are automatically arranged in a "
+        "square grid "
         "(calculated from the number of images) and resized to fit their cells while maintaining "
         "aspect ratio.",
         examples=[
