@@ -213,6 +213,7 @@ def test_serverless_registers_pp_ocr_route_when_model_flag_is_enabled(
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
     interface, _, _, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -232,6 +233,7 @@ def test_serverless_does_not_register_pp_ocr_route_when_model_flag_is_disabled(
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", False)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
     interface, _, _, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -243,6 +245,39 @@ def test_serverless_does_not_register_pp_ocr_route_when_model_flag_is_disabled(
 
     paths = _route_paths(interface)
     assert "/ocr/pp-ocr" not in paths
+
+
+def test_serverless_pp_ocr_route_returns_404_without_inference_models(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", False)
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" in paths
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/ocr/pp-ocr",
+            params={"api_key": "test-api-key"},
+            json={
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                }
+            },
+        )
+    assert response.status_code == 404
+    model_manager.add_model.assert_not_called()
 
 
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
