@@ -9,15 +9,14 @@ import numpy as np
 from inference_sdk.config import InferenceSDKDeprecationWarning
 
 _MAX_VALUE_BY_DTYPE = {np.dtype(np.uint8): 255, np.dtype(np.uint16): 65535}
-_json_depth_map_deprecation_emitted = False
 
 
 def warn_depth_map_json_format_deprecated() -> None:
-    """Emit a one-off notice that the `"json"` depth map format is deprecated."""
-    global _json_depth_map_deprecation_emitted
-    if _json_depth_map_deprecation_emitted:
-        return
-    _json_depth_map_deprecation_emitted = True
+    """Emit a notice that the `"json"` depth map format is deprecated.
+
+    Deduplication is left to Python's warnings machinery: with default
+    filters the notice is shown once per process (single call site).
+    """
     warnings.warn(
         "depth_estimation() is returning `normalized_depth` as a JSON float list "
         "(depth_map_format='json'). This default will change in a breaking way in "

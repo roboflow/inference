@@ -37,11 +37,11 @@ JSON-serializable output).
 
     The SDK's `json` default is deprecated: in one of the first `inference` releases
     of 2027 the default will switch to `png16` in a breaking way — `normalized_depth`
-    will then be returned as a `numpy.ndarray`. The SDK emits a one-off
-    `InferenceSDKDeprecationWarning` whenever the `json` format is used. Opt in to
-    `png16` early, or pass `depth_map_format="json"` explicitly to keep the list
-    format after the switch. Raw REST callers are unaffected — the server-side
-    default stays `json`.
+    will then be returned as a `numpy.ndarray`. The SDK emits an
+    `InferenceSDKDeprecationWarning` when the `json` format is used (shown once per
+    process under default warning filters). Opt in to `png16` early, or pass
+    `depth_map_format="json"` explicitly to keep the list format after the switch.
+    Raw REST callers are unaffected — the server-side default stays `json`.
 
 ### Installation
 

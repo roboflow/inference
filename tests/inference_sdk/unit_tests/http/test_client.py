@@ -4787,18 +4787,15 @@ def test_depth_estimation_passes_requested_depth_map_format(
 
 
 @mock.patch.object(client, "load_static_inference_input")
-def test_depth_estimation_emits_one_off_deprecation_warning_for_json_format(
+def test_depth_estimation_emits_deprecation_warning_for_json_format(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
-    monkeypatch,
 ) -> None:
     import warnings
 
     from inference_sdk.config import InferenceSDKDeprecationWarning
-    from inference_sdk.http.utils import depth_maps
 
     # given
-    monkeypatch.setattr(depth_maps, "_json_depth_map_deprecation_emitted", False)
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
@@ -4807,7 +4804,9 @@ def test_depth_estimation_emits_one_off_deprecation_warning_for_json_format(
         json={"normalized_depth": [[0.0]], "depth_map_format": "json", "image": "i"},
     )
 
-    # when - default (json) and explicit json across two calls
+    # when - default (json) and explicit json both warn; per-process dedup is
+    # delegated to Python's default warning filters, so under the "always"
+    # filter each call emits
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         http_client.depth_estimation(
@@ -4822,11 +4821,11 @@ def test_depth_estimation_emits_one_off_deprecation_warning_for_json_format(
             depth_map_format="json",
         )
 
-    # then - exactly one warning per process, announcing the 2027 breaking switch
+    # then - both selections announce the 2027 breaking switch
     sdk_warnings = [
         w for w in captured if issubclass(w.category, InferenceSDKDeprecationWarning)
     ]
-    assert len(sdk_warnings) == 1
+    assert len(sdk_warnings) == 2
     assert "2027" in str(sdk_warnings[0].message)
     assert "png16" in str(sdk_warnings[0].message)
 
@@ -4835,7 +4834,6 @@ def test_depth_estimation_emits_one_off_deprecation_warning_for_json_format(
 def test_depth_estimation_png_opt_in_does_not_emit_deprecation_warning(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
-    monkeypatch,
 ) -> None:
     import base64 as _b64
     import warnings
@@ -4844,10 +4842,8 @@ def test_depth_estimation_png_opt_in_does_not_emit_deprecation_warning(
     import numpy as np
 
     from inference_sdk.config import InferenceSDKDeprecationWarning
-    from inference_sdk.http.utils import depth_maps
 
     # given
-    monkeypatch.setattr(depth_maps, "_json_depth_map_deprecation_emitted", False)
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
@@ -4884,15 +4880,12 @@ def test_depth_estimation_png_opt_in_does_not_emit_deprecation_warning(
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_depth_estimation_async_defaults_to_json_and_warns(
     load_static_inference_input_async_mock: AsyncMock,
-    monkeypatch,
 ) -> None:
     import warnings
 
     from inference_sdk.config import InferenceSDKDeprecationWarning
-    from inference_sdk.http.utils import depth_maps
 
     # given
-    monkeypatch.setattr(depth_maps, "_json_depth_map_deprecation_emitted", False)
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
@@ -4918,7 +4911,7 @@ async def test_depth_estimation_async_defaults_to_json_and_warns(
             call.kwargs["json"] for calls in m.requests.values() for call in calls
         ]
 
-    # then - async twin shares the json default and the one-off warning
+    # then - async twin shares the json default and the deprecation warning
     assert result["normalized_depth"] == [[0.0]]
     assert len(sent_payloads) == 1
     assert sent_payloads[0]["depth_map_format"] == "json"

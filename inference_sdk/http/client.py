@@ -1743,9 +1743,10 @@ class InferenceHTTPClient:
                 (smaller still, 256 depth levels). The "json" default is
                 deprecated: in one of the first `inference` releases of 2027 the
                 default becomes "png16" in a breaking way (`normalized_depth`
-                turns into a numpy.ndarray), and a one-off
-                InferenceSDKDeprecationWarning is emitted whenever "json" is
-                used. Servers that predate this field ignore it and return the
+                turns into a numpy.ndarray), and an
+                InferenceSDKDeprecationWarning is emitted when "json" is used
+                (shown once per process under default warning filters).
+                Servers that predate this field ignore it and return the
                 legacy list.
 
         Returns:
@@ -1802,9 +1803,10 @@ class InferenceHTTPClient:
                 depth levels). The "json" default is deprecated: in one of the
                 first `inference` releases of 2027 the default becomes "png16"
                 in a breaking way (`normalized_depth` turns into a
-                numpy.ndarray), and a one-off InferenceSDKDeprecationWarning is
-                emitted whenever "json" is used. Servers that predate this
-                field ignore it and return the legacy list.
+                numpy.ndarray), and an InferenceSDKDeprecationWarning is
+                emitted when "json" is used (shown once per process under
+                default warning filters). Servers that predate this field
+                ignore it and return the legacy list.
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results; `normalized_depth`
