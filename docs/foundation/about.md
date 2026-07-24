@@ -14,6 +14,7 @@ Inference supports the following foundation models:
 
 - [Gaze (L2CS-Net)](./gaze.md): ⚠ deprecated — see the linked page for the deprecation contract; no longer functional.
 - [CLIP](./clip.md): Classify images and compare the similarity of images and text.
+- [Cosmos 3 Edge](./cosmos3.md): Reason about physical scenes with NVIDIA's vision-language world model.
 - [DocTR](./doctr.md): Read characters in images.
 - [Grounding DINO](./grounding_dino.md): Detect objects in images using text prompts.
 - [Segment Anything 3 (SAM3)](./sam3.md): Segment objects in images.
