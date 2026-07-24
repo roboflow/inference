@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 from typing import Any, Optional
 from urllib.parse import quote, urlparse, urlunparse
 
@@ -46,14 +47,26 @@ def decrypt_stream_credentials(stream_credentials: str, api_key: str) -> dict:
     return json.loads(plaintext.decode("utf-8"))
 
 
+_SCHEMELESS_USERINFO_RE = re.compile(r"^([^:@/\s]+(?::[^@/\s]*)?@)(.+)$")
+
+
+def _cred_free_netloc(netloc: str) -> str:
+    return netloc.split("@", 1)[-1]
+
+
 def _sanitize_for_log(video_reference: str) -> str:
     parsed = urlparse(video_reference)
-    if not (parsed.scheme and parsed.hostname):
-        return video_reference
-    if not (parsed.username or parsed.password):
-        return video_reference
-    netloc = parsed.hostname + (f":{parsed.port}" if parsed.port else "")
-    return urlunparse(parsed._replace(netloc=netloc))
+    if parsed.scheme and parsed.hostname:
+        if not (parsed.username or parsed.password):
+            return video_reference
+        return urlunparse(parsed._replace(netloc=_cred_free_netloc(parsed.netloc)))
+
+    schemeless = _SCHEMELESS_USERINFO_RE.match(video_reference)
+    if schemeless:
+        rest = schemeless.group(2)
+        return rest.split("?", 1)[0].split("#", 1)[0]
+
+    return video_reference
 
 
 def _embed_credentials(video_reference: str, username: str, password: str) -> str:
@@ -61,9 +74,7 @@ def _embed_credentials(video_reference: str, username: str, password: str) -> st
     if not parsed.scheme or not parsed.hostname:
         return video_reference
     userinfo = f"{quote(username, safe='')}:{quote(password, safe='')}"
-    host = parsed.hostname
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
+    host = _cred_free_netloc(parsed.netloc)
     netloc = f"{userinfo}@{host}"
     return urlunparse(parsed._replace(netloc=netloc))
 

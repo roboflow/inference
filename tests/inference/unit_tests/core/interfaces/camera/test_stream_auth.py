@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from inference.core.interfaces.camera.stream_auth import (
+    _sanitize_for_log,
     decrypt_stream_credentials,
     resolve_operational_video_reference,
 )
@@ -61,3 +62,17 @@ def test_resolve_with_blob_embeds_credentials():
     assert parsed.username == "camera-user"
     assert parsed.hostname == "cam.local"
     assert parsed.password == "camera-pass"
+
+
+def test_sanitize_for_log_strips_schemeless_credentials():
+    assert (
+        _sanitize_for_log("admin:secret@192.168.1.1:554/stream")
+        == "192.168.1.1:554/stream"
+    )
+
+
+def test_sanitize_for_log_malformed_port_does_not_raise():
+    assert (
+        _sanitize_for_log("rtsp://user:pass@host:notaport/path")
+        == "rtsp://host:notaport/path"
+    )
