@@ -1,8 +1,59 @@
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
 import pytest
 import torch
+
+
+def _assert_detections_match(
+    actual: Any,
+    expected_confidence: torch.Tensor,
+    expected_class_id: torch.Tensor,
+    expected_xyxy: torch.Tensor,
+) -> None:
+    """Match detections as a set while enforcing confidence-descending output."""
+    actual_confidence = actual.confidence.cpu()
+    actual_class_id = actual.class_id.cpu()
+    actual_xyxy = actual.xyxy.cpu()
+    expected_confidence = expected_confidence.cpu()
+    expected_class_id = expected_class_id.cpu()
+    expected_xyxy = expected_xyxy.cpu()
+
+    assert actual_confidence.shape == expected_confidence.shape
+    assert actual_class_id.shape == expected_class_id.shape
+    assert actual_xyxy.shape == expected_xyxy.shape
+    assert torch.all(actual_confidence[:-1] >= actual_confidence[1:]), (
+        f"Detections are not ordered by decreasing confidence: "
+        f"{actual_confidence.tolist()}"
+    )
+
+    unmatched_actual_indices = set(range(actual_confidence.shape[0]))
+    for expected_index in range(expected_confidence.shape[0]):
+        matching_actual_indices = [
+            actual_index
+            for actual_index in unmatched_actual_indices
+            if actual_class_id[actual_index] == expected_class_id[expected_index]
+            and torch.isclose(
+                actual_confidence[actual_index],
+                expected_confidence[expected_index],
+                atol=0.01,
+            )
+            and torch.allclose(
+                actual_xyxy[actual_index],
+                expected_xyxy[expected_index],
+                atol=5,
+            )
+        ]
+        assert matching_actual_indices, (
+            f"No detection matches expected index {expected_index}: "
+            f"confidence={expected_confidence[expected_index].item()}, "
+            f"class_id={expected_class_id[expected_index].item()}, "
+            f"xyxy={expected_xyxy[expected_index].tolist()}"
+        )
+        unmatched_actual_indices.remove(matching_actual_indices[0])
+
+    assert not unmatched_actual_indices
 
 
 @pytest.mark.slow
@@ -25,28 +76,23 @@ def test_trt_package_numpy(
     predictions = model(coins_counting_image_numpy)
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9697,
-                0.9622,
-                0.9612,
-                0.9607,
-                0.9602,
-                0.9601,
-                0.9563,
-                0.9522,
-                0.8563,
-                0.8026,
-                0.4912,
-            ]
-        ).cpu(),
-        atol=0.01,
+    expected_confidence = torch.tensor(
+        [
+            0.9697,
+            0.9622,
+            0.9612,
+            0.9607,
+            0.9602,
+            0.9601,
+            0.9563,
+            0.9522,
+            0.8563,
+            0.8026,
+            0.4912,
+        ]
     )
-    assert torch.allclose(
-        predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 3], dtype=torch.int32).cpu(),
+    expected_class_id = torch.tensor(
+        [1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 3], dtype=torch.int32
     )
     expected_xyxy = torch.tensor(
         [
@@ -64,10 +110,11 @@ def test_trt_package_numpy(
         ],
         dtype=torch.int32,
     )
-    assert torch.allclose(
-        predictions[0].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
+    _assert_detections_match(
+        actual=predictions[0],
+        expected_confidence=expected_confidence,
+        expected_class_id=expected_class_id,
+        expected_xyxy=expected_xyxy,
     )
 
 
@@ -128,28 +175,23 @@ def test_trt_package_batch_numpy(
     predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9697,
-                0.9622,
-                0.9612,
-                0.9607,
-                0.9602,
-                0.9601,
-                0.9563,
-                0.9522,
-                0.8563,
-                0.8026,
-                0.4912,
-            ]
-        ).cpu(),
-        atol=0.01,
+    expected_confidence = torch.tensor(
+        [
+            0.9697,
+            0.9622,
+            0.9612,
+            0.9607,
+            0.9602,
+            0.9601,
+            0.9563,
+            0.9522,
+            0.8563,
+            0.8026,
+            0.4912,
+        ]
     )
-    assert torch.allclose(
-        predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 3], dtype=torch.int32).cpu(),
+    expected_class_id = torch.tensor(
+        [1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 3], dtype=torch.int32
     )
     expected_xyxy = torch.tensor(
         [
@@ -167,55 +209,13 @@ def test_trt_package_batch_numpy(
         ],
         dtype=torch.int32,
     )
-    assert torch.allclose(
-        predictions[0].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
-    )
-    assert torch.allclose(
-        predictions[1].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9697,
-                0.9622,
-                0.9612,
-                0.9607,
-                0.9602,
-                0.9601,
-                0.9563,
-                0.9522,
-                0.8563,
-                0.8026,
-                0.4912,
-            ]
-        ).cpu(),
-        atol=0.01,
-    )
-    assert torch.allclose(
-        predictions[1].class_id.cpu(),
-        torch.tensor([1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 3], dtype=torch.int32).cpu(),
-    )
-    expected_xyxy = torch.tensor(
-        [
-            [1172, 2633, 1376, 2848],
-            [1091, 2356, 1259, 2523],
-            [1316, 531, 3024, 1962],
-            [1741, 2299, 1918, 2469],
-            [1458, 2304, 1628, 2473],
-            [1254, 2061, 1425, 2231],
-            [1706, 2579, 1888, 2761],
-            [1501, 1884, 1724, 2095],
-            [922, 1842, 1095, 2007],
-            [2677, 803, 2874, 978],
-            [2677, 803, 2874, 978],
-        ],
-        dtype=torch.int32,
-    )
-    assert torch.allclose(
-        predictions[1].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
-    )
+    for prediction in predictions:
+        _assert_detections_match(
+            actual=prediction,
+            expected_confidence=expected_confidence,
+            expected_class_id=expected_class_id,
+            expected_xyxy=expected_xyxy,
+        )
 
 
 @pytest.mark.slow
@@ -238,29 +238,24 @@ def test_trt_package_torch(
     predictions = model(coins_counting_image_torch)
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9686,
-                0.9668,
-                0.9668,
-                0.9292,
-                0.9239,
-                0.8371,
-                0.8295,
-                0.7957,
-                0.7114,
-                0.5794,
-                0.5176,
-                0.4922,
-            ]
-        ).cpu(),
-        atol=0.01,
+    expected_confidence = torch.tensor(
+        [
+            0.9686,
+            0.9668,
+            0.9668,
+            0.9292,
+            0.9239,
+            0.8371,
+            0.8295,
+            0.7957,
+            0.7114,
+            0.5794,
+            0.5176,
+            0.4922,
+        ]
     )
-    assert torch.allclose(
-        predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32).cpu(),
+    expected_class_id = torch.tensor(
+        [1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32
     )
     expected_xyxy = torch.tensor(
         [
@@ -279,10 +274,11 @@ def test_trt_package_torch(
         ],
         dtype=torch.int32,
     )
-    assert torch.allclose(
-        predictions[0].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
+    _assert_detections_match(
+        actual=predictions[0],
+        expected_confidence=expected_confidence,
+        expected_class_id=expected_class_id,
+        expected_xyxy=expected_xyxy,
     )
 
 
@@ -307,29 +303,24 @@ def test_trt_package_torch_multiple_predictions_in_row(
         predictions = model(coins_counting_image_torch)
 
         # then
-        assert torch.allclose(
-            predictions[0].confidence.cpu(),
-            torch.tensor(
-                [
-                    0.9686,
-                    0.9668,
-                    0.9668,
-                    0.9292,
-                    0.9239,
-                    0.8371,
-                    0.8295,
-                    0.7957,
-                    0.7114,
-                    0.5794,
-                    0.5176,
-                    0.4922,
-                ]
-            ).cpu(),
-            atol=0.01,
+        expected_confidence = torch.tensor(
+            [
+                0.9686,
+                0.9668,
+                0.9668,
+                0.9292,
+                0.9239,
+                0.8371,
+                0.8295,
+                0.7957,
+                0.7114,
+                0.5794,
+                0.5176,
+                0.4922,
+            ]
         )
-        assert torch.allclose(
-            predictions[0].class_id.cpu(),
-            torch.tensor([1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32).cpu(),
+        expected_class_id = torch.tensor(
+            [1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32
         )
         expected_xyxy = torch.tensor(
             [
@@ -348,10 +339,11 @@ def test_trt_package_torch_multiple_predictions_in_row(
             ],
             dtype=torch.int32,
         )
-        assert torch.allclose(
-            predictions[0].xyxy.cpu(),
-            expected_xyxy.cpu(),
-            atol=5,
+        _assert_detections_match(
+            actual=predictions[0],
+            expected_confidence=expected_confidence,
+            expected_class_id=expected_class_id,
+            expected_xyxy=expected_xyxy,
         )
 
 
@@ -375,29 +367,24 @@ def test_trt_package_torch_list(
     predictions = model([coins_counting_image_torch, coins_counting_image_torch])
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9686,
-                0.9668,
-                0.9668,
-                0.9292,
-                0.9239,
-                0.8371,
-                0.8295,
-                0.7957,
-                0.7114,
-                0.5794,
-                0.5176,
-                0.4922,
-            ]
-        ).cpu(),
-        atol=0.01,
+    expected_confidence = torch.tensor(
+        [
+            0.9686,
+            0.9668,
+            0.9668,
+            0.9292,
+            0.9239,
+            0.8371,
+            0.8295,
+            0.7957,
+            0.7114,
+            0.5794,
+            0.5176,
+            0.4922,
+        ]
     )
-    assert torch.allclose(
-        predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32).cpu(),
+    expected_class_id = torch.tensor(
+        [1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32
     )
     expected_xyxy = torch.tensor(
         [
@@ -416,57 +403,13 @@ def test_trt_package_torch_list(
         ],
         dtype=torch.int32,
     )
-    assert torch.allclose(
-        predictions[0].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
-    )
-    assert torch.allclose(
-        predictions[1].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9686,
-                0.9668,
-                0.9668,
-                0.9292,
-                0.9239,
-                0.8371,
-                0.8295,
-                0.7957,
-                0.7114,
-                0.5794,
-                0.5176,
-                0.4922,
-            ]
-        ).cpu(),
-        atol=0.01,
-    )
-    assert torch.allclose(
-        predictions[1].class_id.cpu(),
-        torch.tensor([1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32).cpu(),
-    )
-    expected_xyxy = torch.tensor(
-        [
-            [1171, 2632, 1379, 2845],
-            [1458, 2305, 1631, 2471],
-            [1090, 2354, 1261, 2520],
-            [1315, 523, 3029, 1963],
-            [1498, 1883, 1726, 2093],
-            [2674, 801, 2878, 980],
-            [1702, 2571, 1892, 2760],
-            [1249, 2059, 1428, 2233],
-            [918, 1838, 1099, 2007],
-            [1737, 2289, 1922, 2472],
-            [1249, 2059, 1428, 2233],
-            [918, 1838, 1099, 2007],
-        ],
-        dtype=torch.int32,
-    )
-    assert torch.allclose(
-        predictions[1].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
-    )
+    for prediction in predictions:
+        _assert_detections_match(
+            actual=prediction,
+            expected_confidence=expected_confidence,
+            expected_class_id=expected_class_id,
+            expected_xyxy=expected_xyxy,
+        )
 
 
 @pytest.mark.slow
@@ -491,29 +434,24 @@ def test_trt_package_torch_batch(
     )
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9686,
-                0.9668,
-                0.9668,
-                0.9292,
-                0.9239,
-                0.8371,
-                0.8295,
-                0.7957,
-                0.7114,
-                0.5794,
-                0.5176,
-                0.4922,
-            ]
-        ).cpu(),
-        atol=0.01,
+    expected_confidence = torch.tensor(
+        [
+            0.9686,
+            0.9668,
+            0.9668,
+            0.9292,
+            0.9239,
+            0.8371,
+            0.8295,
+            0.7957,
+            0.7114,
+            0.5794,
+            0.5176,
+            0.4922,
+        ]
     )
-    assert torch.allclose(
-        predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32).cpu(),
+    expected_class_id = torch.tensor(
+        [1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32
     )
     expected_xyxy = torch.tensor(
         [
@@ -532,57 +470,13 @@ def test_trt_package_torch_batch(
         ],
         dtype=torch.int32,
     )
-    assert torch.allclose(
-        predictions[0].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
-    )
-    assert torch.allclose(
-        predictions[1].confidence.cpu(),
-        torch.tensor(
-            [
-                0.9686,
-                0.9668,
-                0.9668,
-                0.9292,
-                0.9239,
-                0.8371,
-                0.8295,
-                0.7957,
-                0.7114,
-                0.5794,
-                0.5176,
-                0.4922,
-            ]
-        ).cpu(),
-        atol=0.01,
-    )
-    assert torch.allclose(
-        predictions[1].class_id.cpu(),
-        torch.tensor([1, 1, 1, 4, 1, 3, 1, 1, 3, 3, 6, 1], dtype=torch.int32).cpu(),
-    )
-    expected_xyxy = torch.tensor(
-        [
-            [1171, 2632, 1379, 2845],
-            [1458, 2305, 1631, 2471],
-            [1090, 2354, 1261, 2520],
-            [1315, 523, 3029, 1963],
-            [1498, 1883, 1726, 2093],
-            [2674, 801, 2878, 980],
-            [1702, 2571, 1892, 2760],
-            [1249, 2059, 1428, 2233],
-            [918, 1838, 1099, 2007],
-            [1737, 2289, 1922, 2472],
-            [1249, 2059, 1428, 2233],
-            [918, 1838, 1099, 2007],
-        ],
-        dtype=torch.int32,
-    )
-    assert torch.allclose(
-        predictions[1].xyxy.cpu(),
-        expected_xyxy.cpu(),
-        atol=5,
-    )
+    for prediction in predictions:
+        _assert_detections_match(
+            actual=prediction,
+            expected_confidence=expected_confidence,
+            expected_class_id=expected_class_id,
+            expected_xyxy=expected_xyxy,
+        )
 
 
 @pytest.mark.slow

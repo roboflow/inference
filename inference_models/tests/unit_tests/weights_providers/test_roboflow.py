@@ -1,7 +1,7 @@
 import json
 import re
 import urllib.parse
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Type, Union
 from unittest.mock import patch
 
 import pytest
@@ -12,10 +12,13 @@ from requests_mock import Mocker
 from inference_models.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
 from inference_models.errors import (
     AssumptionError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
@@ -1049,6 +1052,29 @@ def test_handle_response_errors_when_status_code_is_retryable_error() -> None:
     # when
     with pytest.raises(RetryError):
         handle_response_errors(response=response, operation_name="some")
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (402, PaymentRequiredModelAccessError),
+        (403, ForbiddenModelAccessError),
+        (423, UsagePausedModelAccessError),
+    ],
+)
+def test_handle_response_errors_when_model_access_is_denied(
+    status_code: int, expected_error: Type[Exception]
+) -> None:
+    # given
+    response = Response()
+    response.status_code = status_code
+
+    # when
+    with pytest.raises(expected_error) as error:
+        handle_response_errors(response=response, operation_name="get model weights")
+
+    assert error.value.status_code == status_code
+    assert expected_error.__name__.lower() in error.value.help_url
 
 
 def test_handle_response_errors_when_status_code_is_non_retryable_error() -> None:

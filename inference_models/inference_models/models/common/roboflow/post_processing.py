@@ -4,7 +4,10 @@ import torch
 import torchvision
 from torchvision.transforms import functional
 
-from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.configuration import (
+    INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
+)
 from inference_models.entities import Confidence, ImageDimensions
 from inference_models.logger import LOGGER
 from inference_models.models.base.semantic_segmentation import (
@@ -400,6 +403,7 @@ def align_instance_segmentation_results(
     inference_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
     binarization_threshold: float = 0.0,
+    mask_chunk_size: int = INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
@@ -459,15 +463,24 @@ def align_instance_segmentation_results(
         masks = masks[
             :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
         ]
-    masks = (
-        functional.resize(
-            masks,
-            [size_after_pre_processing.height, size_after_pre_processing.width],
-            interpolation=functional.InterpolationMode.BILINEAR,
-        )
-        .gt_(binarization_threshold)
-        .to(dtype=torch.bool)
+    # Resize to full resolution in chunks: the float32 working set is
+    # chunk x H x W instead of n x H x W (17+ GiB at 300 masks on a 12MP
+    # image); only the n x H x W bool output is ever materialized whole.
+    mask_chunk_size = max(1, int(mask_chunk_size))
+    target_height = size_after_pre_processing.height
+    target_width = size_after_pre_processing.width
+    binarized_masks = torch.empty(
+        (masks.shape[0], target_height, target_width),
+        dtype=torch.bool,
+        device=masks.device,
     )
+    for start in range(0, masks.shape[0], mask_chunk_size):
+        binarized_masks[start : start + mask_chunk_size] = functional.resize(
+            masks[start : start + mask_chunk_size],
+            [target_height, target_width],
+            interpolation=functional.InterpolationMode.BILINEAR,
+        ).gt_(binarization_threshold)
+    masks = binarized_masks
     if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
         mask_canvas = torch.zeros(
             (

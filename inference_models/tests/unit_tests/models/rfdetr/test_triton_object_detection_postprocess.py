@@ -212,6 +212,9 @@ def test_fused_postprocessor_matches_reference(
     stream.synchronize()
 
     for actual_image, expected_image in zip(actual, expected):
+        assert torch.all(
+            actual_image.confidence[:-1] >= actual_image.confidence[1:]
+        ), f"Confidence is not decreasing: {actual_image.confidence.tolist()}"
         torch.testing.assert_close(actual_image.xyxy, expected_image.xyxy)
         torch.testing.assert_close(actual_image.class_id, expected_image.class_id)
         torch.testing.assert_close(

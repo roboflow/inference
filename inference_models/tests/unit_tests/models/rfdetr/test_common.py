@@ -99,3 +99,120 @@ def test_covariance_degenerate_precision_yields_nan() -> None:
 
     # then
     assert torch.isnan(covariance[0, 0]).all()
+
+
+class TestInstanceSegmentationMaxDetectionsCap:
+
+    @staticmethod
+    def _meta(orig_h=200, orig_w=300):
+        from inference_models.entities import ImageDimensions
+        from inference_models.models.common.roboflow.model_packages import (
+            PreProcessingMetadata,
+            StaticCropOffset,
+        )
+
+        return PreProcessingMetadata(
+            pad_left=0,
+            pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
+            original_size=ImageDimensions(height=orig_h, width=orig_w),
+            size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
+            inference_size=ImageDimensions(height=640, width=640),
+            scale_width=1.0,
+            scale_height=1.0,
+            static_crop_offset=StaticCropOffset(
+                offset_x=0,
+                offset_y=0,
+                crop_width=orig_w,
+                crop_height=orig_h,
+            ),
+        )
+
+    @staticmethod
+    def _inputs(num_queries=12, num_classes=3):
+        torch.manual_seed(7)
+        bboxes = torch.rand((1, num_queries, 4), dtype=torch.float32) * 0.5 + 0.25
+        logits = torch.randn((1, num_queries, num_classes), dtype=torch.float32)
+        masks = torch.randn((1, num_queries, 32, 32), dtype=torch.float32)
+        return bboxes, logits, masks
+
+    def _run_dense(self, max_detections):
+        from inference_models.models.rfdetr.common import (
+            post_process_instance_segmentation_results,
+        )
+
+        bboxes, logits, masks = self._inputs()
+        return post_process_instance_segmentation_results(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=[self._meta()],
+            threshold=0.0,
+            num_classes=3,
+            classes_re_mapping=None,
+            max_detections=max_detections,
+        )[0]
+
+    def _run_rle(self, max_detections):
+        from inference_models.models.rfdetr.common import (
+            post_process_instance_segmentation_results_to_rle_masks,
+        )
+
+        bboxes, logits, masks = self._inputs()
+        return post_process_instance_segmentation_results_to_rle_masks(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=[self._meta()],
+            threshold=0.0,
+            num_classes=3,
+            classes_re_mapping=None,
+            max_detections=max_detections,
+        )[0]
+
+    def test_dense_cap_keeps_top_scoring_prefix(self) -> None:
+        # given / when
+        uncapped = self._run_dense(max_detections=None)
+        capped = self._run_dense(max_detections=5)
+
+        # then: with threshold=0 every query survives, so uncapped = num_queries
+        assert uncapped.confidence.shape[0] == 12
+        assert capped.confidence.shape[0] == 5
+        # results are score-sorted, so the cap must select the top-5 prefix
+        assert torch.equal(capped.confidence, uncapped.confidence[:5])
+        assert torch.equal(capped.class_id, uncapped.class_id[:5])
+        assert torch.equal(capped.xyxy, uncapped.xyxy[:5])
+        assert torch.equal(capped.mask, uncapped.mask[:5])
+        assert capped.mask.shape == (5, 200, 300)
+
+    def test_dense_cap_larger_than_survivors_is_noop(self) -> None:
+        # given / when
+        uncapped = self._run_dense(max_detections=None)
+        capped = self._run_dense(max_detections=50)
+
+        # then
+        assert torch.equal(capped.confidence, uncapped.confidence)
+        assert torch.equal(capped.mask, uncapped.mask)
+
+    def test_rle_cap_keeps_top_scoring_prefix(self) -> None:
+        # given / when
+        uncapped = self._run_rle(max_detections=None)
+        capped = self._run_rle(max_detections=5)
+
+        # then
+        assert uncapped.confidence.shape[0] == 12
+        assert capped.confidence.shape[0] == 5
+        assert torch.equal(capped.confidence, uncapped.confidence[:5])
+        assert torch.equal(capped.class_id, uncapped.class_id[:5])
+        assert torch.equal(capped.xyxy, uncapped.xyxy[:5])
+        assert capped.mask.masks == uncapped.mask.masks[:5]
+
+    def test_dense_and_rle_agree_under_cap(self) -> None:
+        # given / when
+        dense = self._run_dense(max_detections=5)
+        rle = self._run_rle(max_detections=5)
+
+        # then
+        assert torch.equal(dense.confidence, rle.confidence)
+        assert torch.equal(dense.class_id, rle.class_id)
