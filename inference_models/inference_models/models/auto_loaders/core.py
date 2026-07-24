@@ -1951,6 +1951,10 @@ class AutoModel:
             runtime_compatibility = _runtime_compatibility_content(
                 runtime_x_ray=runtime_x_ray
             )
+            # This digest describes whether an already-warmed package can be
+            # loaded, so it deliberately excludes provider transport, retry,
+            # and download-integrity options. Those still belong to the exact
+            # online negotiation key below because they can affect acquisition.
             offline_compatibility_content = {
                 "provider": weights_provider,
                 "model_id": model_id_or_path,
@@ -1969,13 +1973,8 @@ class AutoModel:
                 "allow_untrusted_packages": allow_untrusted_packages,
                 "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
                 "allow_local_code_packages": allow_local_code_packages,
-                "verify_hash_while_download": verify_hash_while_download,
-                "download_files_without_hash": download_files_without_hash,
                 "allow_loading_dependency_models": allow_loading_dependency_models,
-                "max_package_loading_attempts": max_package_loading_attempts,
                 "nms_fusion_preferences": nms_fusion_preferences,
-                "weights_provider_extra_query_params": weights_provider_extra_query_params,
-                "weights_provider_extra_headers": weights_provider_extra_headers,
                 "dependency_models_params": _canonicalize_cache_hash_value(
                     dependency_models_params
                 ),
@@ -1990,6 +1989,11 @@ class AutoModel:
             auto_negotiation_hash = hash_dict_content(
                 content={
                     **offline_compatibility_content,
+                    "verify_hash_while_download": verify_hash_while_download,
+                    "download_files_without_hash": download_files_without_hash,
+                    "max_package_loading_attempts": max_package_loading_attempts,
+                    "weights_provider_extra_query_params": weights_provider_extra_query_params,
+                    "weights_provider_extra_headers": weights_provider_extra_headers,
                     "api_key": api_key,
                 }
             )

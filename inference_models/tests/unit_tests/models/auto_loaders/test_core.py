@@ -3230,13 +3230,8 @@ def _offline_compatibility_hash_for_default_request(model_id: str) -> str:
             "allow_untrusted_packages": False,
             "trt_engine_host_code_allowed": True,
             "allow_local_code_packages": True,
-            "verify_hash_while_download": True,
-            "download_files_without_hash": False,
             "allow_loading_dependency_models": True,
-            "max_package_loading_attempts": None,
             "nms_fusion_preferences": None,
-            "weights_provider_extra_query_params": None,
-            "weights_provider_extra_headers": None,
             "dependency_models_params": {},
             "forwarded_dependency_kwargs": {},
             "runtime_compatibility": core._runtime_compatibility_content(
@@ -5193,7 +5188,7 @@ def test_from_pretrained_env_api_key_does_not_use_credential_free_fallback(
     raw_cache_load.assert_not_called()
 
 
-def test_max_package_loading_attempts_is_bound_into_cache_identity() -> None:
+def test_max_package_loading_attempts_only_affects_exact_cache_identity() -> None:
     auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
     auto_resolution_cache.find_compatible_candidates.return_value = []
 
@@ -5220,10 +5215,10 @@ def test_max_package_loading_attempts_is_bound_into_cache_identity() -> None:
         for call in auto_resolution_cache.find_compatible_candidates.call_args_list
     ]
     assert len(set(exact_hashes)) == 2
-    assert len(set(compatibility_hashes)) == 2
+    assert len(set(compatibility_hashes)) == 1
 
 
-def test_provider_version_header_is_bound_into_cache_identity() -> None:
+def test_provider_version_header_only_affects_exact_cache_identity() -> None:
     auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
     auto_resolution_cache.find_compatible_candidates.return_value = []
 
@@ -5252,7 +5247,77 @@ def test_provider_version_header_is_bound_into_cache_identity() -> None:
         for call in raw_cache_load.call_args_list
     ]
     assert len(set(exact_hashes)) == 2
-    assert len(set(compatibility_hashes)) == 2
+    assert len(set(compatibility_hashes)) == 1
+
+
+@pytest.mark.parametrize(
+    ("first_acquisition_options", "second_acquisition_options"),
+    [
+        (
+            {"verify_hash_while_download": True},
+            {"verify_hash_while_download": False},
+        ),
+        (
+            {"download_files_without_hash": False},
+            {"download_files_without_hash": True},
+        ),
+        (
+            {
+                "weights_provider_extra_query_params": [
+                    ("service", "inference"),
+                    ("version", "1"),
+                ]
+            },
+            {
+                "weights_provider_extra_query_params": [
+                    ("version", "1"),
+                    ("service", "inference"),
+                ]
+            },
+        ),
+    ],
+    ids=[
+        "download-hash-verification",
+        "unhashed-download-policy",
+        "provider-query-order",
+    ],
+)
+def test_acquisition_options_do_not_affect_offline_compatibility(
+    first_acquisition_options: dict,
+    second_acquisition_options: dict,
+) -> None:
+    auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
+    auto_resolution_cache.find_compatible_candidates.return_value = []
+
+    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
+        core, "model_provider_requires_network", return_value=True
+    ), mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    ) as exact_cache_load, mock.patch.object(
+        core,
+        "attempt_loading_model_from_offline_cache",
+        return_value=None,
+    ) as raw_cache_load:
+        for acquisition_options in (
+            first_acquisition_options,
+            second_acquisition_options,
+        ):
+            with pytest.raises(ModelRetrievalError):
+                core.AutoModel.from_pretrained(
+                    "workspace/model/1",
+                    auto_resolution_cache=auto_resolution_cache,
+                    **acquisition_options,
+                )
+
+    exact_hashes = [
+        call.kwargs["auto_negotiation_hash"] for call in exact_cache_load.call_args_list
+    ]
+    compatibility_hashes = [
+        call.kwargs["offline_compatibility_hash"]
+        for call in raw_cache_load.call_args_list
+    ]
+    assert len(set(exact_hashes)) == 2
+    assert len(set(compatibility_hashes)) == 1
 
 
 def test_from_pretrained_uses_effective_env_key_for_strict_exact_cache_hit() -> None:
