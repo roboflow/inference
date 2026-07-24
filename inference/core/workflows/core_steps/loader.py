@@ -66,6 +66,9 @@ from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 i
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+    DetectionsNearestNeighborBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
     DistanceMeasurementBlockV1,
 )
@@ -885,6 +888,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
+        DetectionsNearestNeighborBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
