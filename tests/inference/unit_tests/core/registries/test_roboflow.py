@@ -373,6 +373,89 @@ def test_model_metadata_cache_rejects_final_symlink_and_preserves_outside_target
     assert json.loads(outside_metadata_path.read_text()) == outside_metadata
 
 
+def test_model_metadata_reader_closes_descriptor_when_fdopen_fails(
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "model_type.json"
+    metadata_path.write_text("{}")
+    opened_descriptors = []
+    real_open = os.open
+
+    def record_open(*args, **kwargs) -> int:
+        descriptor = real_open(*args, **kwargs)
+        opened_descriptors.append(descriptor)
+        return descriptor
+
+    with (
+        mock.patch.object(roboflow.os, "open", side_effect=record_open),
+        mock.patch.object(
+            roboflow.os,
+            "fdopen",
+            side_effect=OSError("fdopen failed"),
+        ),
+    ):
+        with pytest.raises(OSError, match="fdopen failed"):
+            roboflow._read_model_metadata_json(str(metadata_path))
+
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO support is POSIX-only")
+def test_model_metadata_reader_rejects_fifo_without_blocking(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "model_type.json"
+    os.mkfifo(metadata_path)
+
+    with pytest.raises(OSError, match="non-regular metadata"):
+        roboflow._read_model_metadata_json(str(metadata_path))
+
+    assert metadata_path.exists()
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="Symlink-race simulation requires POSIX symlinks",
+)
+def test_model_metadata_reader_rejects_symlink_swap_without_no_follow(
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "model_type.json"
+    outside_metadata_path = tmp_path / "outside.json"
+    metadata_path.write_text(json.dumps({"model_type": "inside"}))
+    outside_metadata_path.write_text(json.dumps({"model_type": "outside"}))
+    real_lstat = os.lstat
+    path_swapped = False
+
+    def lstat_then_swap(path: str) -> os.stat_result:
+        nonlocal path_swapped
+        file_status = real_lstat(path)
+        if not path_swapped:
+            Path(path).unlink()
+            Path(path).symlink_to(outside_metadata_path)
+            path_swapped = True
+        return file_status
+
+    with (
+        mock.patch.object(
+            roboflow.os,
+            "lstat",
+            side_effect=lstat_then_swap,
+        ),
+        mock.patch.object(
+            roboflow.os,
+            "O_NOFOLLOW",
+            0,
+            create=True,
+        ),
+    ):
+        with pytest.raises(OSError, match="changed while it was being opened"):
+            roboflow._read_model_metadata_json(str(metadata_path))
+
+    assert metadata_path.is_symlink()
+    assert json.loads(outside_metadata_path.read_text()) == {"model_type": "outside"}
+
+
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_cache_is_utilised(
     construct_model_type_cache_path_mock: MagicMock,

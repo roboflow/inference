@@ -1,6 +1,7 @@
 import json
+import os
 from pathlib import Path
-from typing import Type
+from typing import Optional, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -499,9 +500,7 @@ async def test_get_serverless_usage_check_async_when_unauthorized_key_used() -> 
 
 @mock.patch.object(roboflow_api, "OFFLINE_MODE", True)
 @pytest.mark.asyncio
-async def test_get_serverless_usage_check_async_fails_closed_in_offline_mode() -> (
-    None
-):
+async def test_get_serverless_usage_check_async_fails_closed_in_offline_mode() -> None:
     with pytest.raises(
         RoboflowAPIConnectionError,
         match="Cannot run serverless usage check - OFFLINE_MODE is enabled",
@@ -2700,11 +2699,7 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
 
 
 def _workflow_cache_response(source: str) -> dict:
-    return {
-        "workflow": {
-            "config": json.dumps({"specification": {"source": source}})
-        }
-    }
+    return {"workflow": {"config": json.dumps({"specification": {"source": source}})}}
 
 
 def test_get_workflow_specification_uses_online_cache_after_switching_offline(
@@ -2788,6 +2783,73 @@ def test_get_pinned_workflow_uses_online_cache_after_switching_offline(
         )
 
     assert result == {"source": "pinned-online-cache", "id": None}
+
+
+@pytest.mark.parametrize(
+    "workflow_id",
+    [
+        "base_v1",
+        f"base_{'a' * 64}",
+        "foo/bar",
+    ],
+)
+def test_transformed_tenanted_workflow_cache_survives_keyless_offline_restart(
+    tmp_path: Path,
+    workflow_id: str,
+) -> None:
+    cached_response = _workflow_cache_response("transformed-tenanted")
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id=workflow_id,
+            api_key="online-key",
+            response=cached_response,
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id=workflow_id,
+            api_key=None,
+        )
+
+    assert result == cached_response
+
+
+def test_offline_workflow_cache_does_not_use_sole_entry_for_wrong_key(
+    tmp_path: Path,
+) -> None:
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="first-key",
+            response=_workflow_cache_response("first"),
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key="wrong-key",
+        )
+
+    assert result is None
 
 
 def test_offline_workflow_cache_keeps_pinned_versions_isolated(
@@ -2895,11 +2957,57 @@ def test_workflow_cache_paths_are_collision_resistant(tmp_path: Path) -> None:
             workflow_version_id=None,
             api_key=None,
         )
+        uppercase_workflow_path = roboflow_api.get_workflow_cache_file(
+            workspace_id="workspace",
+            workflow_id="Foo",
+            workflow_version_id=None,
+            api_key=None,
+        )
+        lowercase_workflow_path = roboflow_api.get_workflow_cache_file(
+            workspace_id="workspace",
+            workflow_id="foo",
+            workflow_version_id=None,
+            api_key=None,
+        )
+        uppercase_workspace_path = roboflow_api.get_workflow_cache_file(
+            workspace_id="Workspace",
+            workflow_id="foo",
+            workflow_version_id=None,
+            api_key=None,
+        )
+        lowercase_workspace_path = roboflow_api.get_workflow_cache_file(
+            workspace_id="workspace",
+            workflow_id="foo",
+            workflow_version_id=None,
+            api_key=None,
+        )
+        windows_reserved_path = roboflow_api.get_workflow_cache_file(
+            workspace_id="NUL",
+            workflow_id="CON",
+            workflow_version_id=None,
+            api_key=None,
+        )
+        generated_marker_id = roboflow_api._workflow_cache_path_segment("foo/bar")
+        generated_marker_path = roboflow_api.get_workflow_cache_file(
+            workspace_id="workspace",
+            workflow_id=generated_marker_id,
+            workflow_version_id=None,
+            api_key=None,
+        )
 
     assert unversioned_suffix_path != pinned_path
     assert sanitized_slash_path != sanitized_underscore_path
     assert version_slash_path != version_underscore_path
     assert workspace_slash_path != workspace_underscore_path
+    assert uppercase_workflow_path.casefold() != lowercase_workflow_path.casefold()
+    assert uppercase_workspace_path.casefold() != lowercase_workspace_path.casefold()
+    assert Path(windows_reserved_path).stem.casefold() != "con"
+    assert Path(windows_reserved_path).parent.parent.name.casefold() != "nul"
+    assert generated_marker_path != sanitized_slash_path
+    assert (
+        roboflow_api._workflow_cache_path_segment(generated_marker_id)
+        != generated_marker_id
+    )
 
 
 @pytest.mark.parametrize("single_tenant", [False, True])
@@ -2929,6 +3037,42 @@ def test_empty_workflow_version_uses_unversioned_cache_namespace(
         )
 
     assert empty_version_path == unversioned_path
+
+
+@pytest.mark.parametrize("single_tenant", [False, True])
+def test_workflow_ephemeral_cache_keys_do_not_alias_version_delimiters(
+    single_tenant: bool,
+) -> None:
+    with mock.patch.object(
+        roboflow_api,
+        "SINGLE_TENANT_WORKFLOW_CACHE",
+        single_tenant,
+    ):
+        unversioned_key = roboflow_api._prepare_workflow_response_cache_key(
+            api_key="online-key",
+            workspace_id="workspace",
+            workflow_id="foo:workflow_version=1",
+        )
+        pinned_key = roboflow_api._prepare_workflow_response_cache_key(
+            api_key="online-key",
+            workspace_id="workspace",
+            workflow_id="foo",
+            workflow_version_id="1",
+        )
+        empty_version_key = roboflow_api._prepare_workflow_response_cache_key(
+            api_key="online-key",
+            workspace_id="workspace",
+            workflow_id="foo",
+            workflow_version_id="",
+        )
+        latest_key = roboflow_api._prepare_workflow_response_cache_key(
+            api_key="online-key",
+            workspace_id="workspace",
+            workflow_id="foo",
+        )
+
+    assert unversioned_key != pinned_key
+    assert empty_version_key == latest_key
 
 
 @pytest.mark.parametrize("invalid_version", [True, 1, ["1"], {"version": "1"}])
@@ -3050,6 +3194,304 @@ def test_offline_workflow_cache_rejects_ambiguous_hashed_entries(
     assert result is None
 
 
+def test_offline_workflow_cache_validates_only_matching_candidate_names(
+    tmp_path: Path,
+) -> None:
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        matching_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key="online-key",
+            )
+        )
+        matching_file.parent.mkdir(parents=True, exist_ok=True)
+        matching_file.write_text(json.dumps(_workflow_cache_response("matching")))
+        for index in range(100):
+            (matching_file.parent / f"irrelevant-{index}.json").write_text("{}")
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        real_validator = roboflow_api._validated_workflow_cache_path
+
+        with mock.patch.object(
+            roboflow_api,
+            "_validated_workflow_cache_path",
+            wraps=real_validator,
+        ) as validator_mock:
+            result = roboflow_api._find_offline_hashed_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+
+    assert result == str(matching_file)
+    assert validator_mock.call_count == 3
+
+
+def test_offline_workflow_cache_treats_candidate_directory_removal_as_miss(
+    tmp_path: Path,
+) -> None:
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", False),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key="online-key",
+            )
+        )
+        cache_file.parent.mkdir(parents=True)
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+        mock.patch.object(
+            Path,
+            "iterdir",
+            side_effect=FileNotFoundError("cache directory removed"),
+        ),
+    ):
+        result = roboflow_api._find_offline_hashed_workflow_cache_file(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    assert result is None
+
+
+@pytest.mark.parametrize("api_key", [None, "online-key"])
+def test_offline_workflow_cache_ignores_ambiguous_legacy_flat_hashed_entry(
+    tmp_path: Path,
+    api_key: Optional[str],
+) -> None:
+    if api_key is None:
+        cache_fingerprint = "a" * 64
+    else:
+        # Pre-v2 SHA-256 of ``my_workspace:online-key``. Keep this as a fixture
+        # constant so no credential-shaped test value reaches the production
+        # public-identity hash helper.
+        cache_fingerprint = (
+            "154bfb5b9411058e87623f8e11c455ad" "6c9d4d07a06a7205b402c22234ad950e"
+        )
+    aliased_workflow_id = f"base_{cache_fingerprint}"
+    aliased_response = _workflow_cache_response("different-workflow")
+
+    # Reproduce the flat canonical path written by origin/main. The current
+    # writer fingerprints marker-like IDs, so using it here would miss the
+    # legacy collision this regression test is intended to cover.
+    legacy_cache_file = (
+        tmp_path / "workflow" / "my_workspace" / f"{aliased_workflow_id}.json"
+    )
+    legacy_cache_file.parent.mkdir(parents=True)
+    legacy_cache_file.write_text(json.dumps(aliased_response))
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        aliased_base_result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="base",
+            api_key=api_key,
+        )
+        ambiguous_exact_result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id=aliased_workflow_id,
+            api_key=api_key,
+        )
+
+    assert aliased_base_result is None
+    assert ambiguous_exact_result is None
+
+
+@pytest.mark.parametrize("api_key", [None, "online-key"])
+def test_offline_workflow_cache_ignores_ambiguous_legacy_pinned_entry(
+    tmp_path: Path,
+    api_key: Optional[str],
+) -> None:
+    cached_response = _workflow_cache_response("legacy-base-version-1")
+    legacy_cache_file = tmp_path / "workflow" / "my_workspace" / "base_v1.json"
+    legacy_cache_file.parent.mkdir(parents=True)
+    legacy_cache_file.write_text(json.dumps(cached_response))
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="base_v1",
+            api_key=api_key,
+        )
+
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    "workflow_id",
+    [
+        f"base_{'a' * 16}",
+        f"base_{'a' * 64}",
+        "base_v1",
+    ],
+)
+def test_offline_workflow_cache_loads_current_ambiguous_suffix_ids(
+    tmp_path: Path,
+    workflow_id: str,
+) -> None:
+    cached_response = _workflow_cache_response("current-canonical")
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id=workflow_id,
+            api_key=None,
+            response=cached_response,
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id=workflow_id,
+            api_key=None,
+        )
+
+    assert result == cached_response
+
+
+@pytest.mark.parametrize(
+    "workspace_id",
+    [
+        "my-workspace",
+        "company-v2",
+        f"company-{'a' * 64}",
+        pytest.param(
+            "con",
+            marks=pytest.mark.skipif(
+                os.name == "nt",
+                reason="Windows reserves CON as a path segment",
+            ),
+        ),
+        "w" * 100,
+    ],
+)
+@pytest.mark.parametrize("offline_mode", [False, True])
+def test_workflow_cache_loads_injective_legacy_canonical_entry(
+    tmp_path: Path,
+    workspace_id: str,
+    offline_mode: bool,
+) -> None:
+    cached_response = _workflow_cache_response("legacy-canonical")
+    legacy_cache_file = tmp_path / "workflow" / workspace_id / "some-workflow.json"
+    legacy_cache_file.parent.mkdir(parents=True)
+    legacy_cache_file.write_text(json.dumps(cached_response))
+    case_alias = roboflow_api._case_swapped_sibling(legacy_cache_file)
+    if case_alias is not None and os.path.lexists(case_alias):
+        pytest.skip(
+            "Legacy fallback is intentionally disabled on case-insensitive paths"
+        )
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", offline_mode),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id=workspace_id,
+            workflow_id="some-workflow",
+            api_key=None,
+        )
+
+    assert result == cached_response
+
+
+@pytest.mark.parametrize(
+    ("workspace_id", "workflow_id"),
+    [
+        ("company_v2", "workflow"),
+        ("company", "workflow_v2"),
+        ("Company", "workflow"),
+        ("company", "Workflow"),
+    ],
+)
+def test_offline_workflow_cache_rejects_non_injective_legacy_canonical_entry(
+    tmp_path: Path,
+    workspace_id: str,
+    workflow_id: str,
+) -> None:
+    cached_response = _workflow_cache_response("ambiguous-legacy-canonical")
+    legacy_cache_file = tmp_path / "workflow" / workspace_id / f"{workflow_id}.json"
+    legacy_cache_file.parent.mkdir(parents=True)
+    legacy_cache_file.write_text(json.dumps(cached_response))
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        result = roboflow_api.load_cached_workflow_response(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            api_key=None,
+        )
+
+    assert result is None
+
+
+def test_offline_workflow_cache_rejects_case_insensitive_legacy_alias(
+    tmp_path: Path,
+) -> None:
+    workspace_id = "company"
+    workflow_id = "workflow"
+    cached_response = _workflow_cache_response("case-aliased-legacy")
+    legacy_cache_file = tmp_path / "workflow" / workspace_id / f"{workflow_id}.json"
+    legacy_cache_file.parent.mkdir(parents=True)
+    legacy_cache_file.write_text(json.dumps(cached_response))
+    real_lexists = os.path.lexists
+
+    def case_insensitive_lexists(path: os.PathLike) -> bool:
+        if Path(path).name == "Company":
+            return True
+        return real_lexists(path)
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "OFFLINE_MODE", True),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+        mock.patch.object(
+            roboflow_api.os.path,
+            "lexists",
+            side_effect=case_insensitive_lexists,
+        ),
+    ):
+        result = roboflow_api._find_legacy_canonical_workflow_cache_file(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+        )
+
+    assert result is None
+
+
 def test_offline_workflow_cache_uses_matching_hashed_entry_when_ambiguous(
     tmp_path: Path,
 ) -> None:
@@ -3158,10 +3600,10 @@ def test_offline_workflow_cache_does_not_use_unversioned_hashed_entry(
     assert result is None
 
 
-def test_offline_workflow_cache_removes_malformed_hashed_entry(
+def test_offline_workflow_cache_preserves_malformed_hashed_entry(
     tmp_path: Path,
 ) -> None:
-    """Remove the selected fallback file when its cached JSON is malformed."""
+    """Ignore malformed fallback JSON without racing a concurrent writer."""
     # given
     with (
         mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
@@ -3191,7 +3633,7 @@ def test_offline_workflow_cache_removes_malformed_hashed_entry(
 
     # then
     assert result is None
-    assert not cache_file.exists()
+    assert cache_file.read_text() == "not-json"
 
 
 @pytest.mark.parametrize(
@@ -3232,9 +3674,7 @@ def test_get_workflow_rejects_non_mapping_specification_without_caching(
     tmp_path: Path,
 ) -> None:
     malformed_response = {
-        "workflow": {
-            "config": json.dumps({"specification": ["not", "a", "mapping"]})
-        }
+        "workflow": {"config": json.dumps({"specification": ["not", "a", "mapping"]})}
     }
     with (
         mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
@@ -3289,6 +3729,7 @@ def test_malformed_canonical_workflow_cache_falls_back_to_hashed_entry(
                 api_key=None,
             )
         )
+        canonical_cache_file.parent.mkdir(parents=True, exist_ok=True)
         canonical_cache_file.write_text(
             json.dumps({"workflow": {"config": "not-json"}})
         )
@@ -3305,7 +3746,93 @@ def test_malformed_canonical_workflow_cache_falls_back_to_hashed_entry(
         )
 
     assert result == cached_response
-    assert not canonical_cache_file.exists()
+    assert canonical_cache_file.is_file()
+
+
+def test_malformed_workflow_cache_reader_preserves_concurrent_replacement(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    valid_response = _workflow_cache_response("concurrent-replacement")
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text("malformed-old-inode")
+
+        def replace_during_read(_file_handle: object) -> object:
+            replacement_file = cache_file.with_suffix(".replacement.json")
+            replacement_file.write_text(json.dumps(valid_response))
+            os.replace(replacement_file, cache_file)
+            return {"malformed": True}
+
+        with mock.patch.object(
+            roboflow_api.json,
+            "load",
+            side_effect=replace_during_read,
+        ):
+            result = roboflow_api._load_workflow_response_file(str(cache_file))
+
+    assert result is None
+    assert json.loads(cache_file.read_text()) == valid_response
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO support is POSIX-only")
+def test_workflow_cache_reader_rejects_fifo_without_blocking(tmp_path: Path) -> None:
+    cache_root = tmp_path / "cache"
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        os.mkfifo(cache_file)
+
+        result = roboflow_api._load_workflow_response_file(str(cache_file))
+
+    assert result is None
+    assert cache_file.exists()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO support is POSIX-only")
+def test_json_reader_rejects_fifo_swapped_after_lstat_without_blocking(
+    tmp_path: Path,
+) -> None:
+    cache_file = tmp_path / "cache.json"
+    cache_file.write_text(json.dumps(_workflow_cache_response("cached")))
+    real_lstat = os.lstat
+
+    def lstat_then_swap_to_fifo(path: str) -> os.stat_result:
+        file_status = real_lstat(path)
+        Path(path).unlink()
+        os.mkfifo(path)
+        return file_status
+
+    with mock.patch.object(
+        roboflow_api.os,
+        "lstat",
+        side_effect=lstat_then_swap_to_fifo,
+    ):
+        with pytest.raises(OSError, match="non-regular JSON"):
+            roboflow_api._read_json_regular_file_no_follow(str(cache_file))
+
+    assert cache_file.exists()
 
 
 def test_workflow_cache_rejects_symlinked_workflow_root(tmp_path: Path) -> None:
@@ -3318,6 +3845,31 @@ def test_workflow_cache_rejects_symlinked_workflow_root(tmp_path: Path) -> None:
     with (
         mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
         mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        with pytest.raises(ValueError, match="unsafe Workflow cache path"):
+            roboflow_api.cache_workflow_response(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+                response=_workflow_cache_response("must-not-be-written"),
+            )
+
+    assert list(outside_dir.iterdir()) == []
+
+
+def test_workflow_cache_rejects_aliased_workflow_root_not_reported_as_symlink(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    outside_dir = tmp_path / "outside"
+    cache_root.mkdir()
+    outside_dir.mkdir()
+    (cache_root / "workflow").symlink_to(outside_dir, target_is_directory=True)
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+        mock.patch.object(roboflow_api.os.path, "islink", return_value=False),
     ):
         with pytest.raises(ValueError, match="unsafe Workflow cache path"):
             roboflow_api.cache_workflow_response(
@@ -3373,17 +3925,233 @@ def test_workflow_cache_rejects_symlink_outside_cache_root(tmp_path: Path) -> No
     assert cache_file.is_symlink()
 
 
+def test_workflow_cache_delete_refuses_symlink_outside_cache_root(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    outside_file = tmp_path / "outside.json"
+    outside_response = _workflow_cache_response("outside")
+    outside_file.write_text(json.dumps(outside_response))
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.symlink_to(outside_file)
+
+        delete_cached_workflow_response_if_exists(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    assert outside_file.exists()
+    assert json.loads(outside_file.read_text()) == outside_response
+    assert cache_file.is_symlink()
+
+
+def test_workflow_cache_delete_tolerates_concurrent_removal(tmp_path: Path) -> None:
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+            response=_workflow_cache_response("cached"),
+        )
+
+        with mock.patch.object(
+            roboflow_api.os,
+            "remove",
+            side_effect=FileNotFoundError("removed concurrently"),
+        ):
+            delete_cached_workflow_response_if_exists(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+
+
+def test_workflow_cache_allows_mounted_symlink_cache_root(tmp_path: Path) -> None:
+    real_cache_root = tmp_path / "real-cache"
+    real_cache_root.mkdir()
+    mounted_cache_root = tmp_path / "mounted-cache"
+    mounted_cache_root.symlink_to(real_cache_root, target_is_directory=True)
+    response = _workflow_cache_response("mounted-cache")
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(mounted_cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        roboflow_api.cache_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+            response=response,
+        )
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+        )
+        loaded_response = roboflow_api.load_cached_workflow_response(
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            api_key=None,
+        )
+
+    assert cache_file == (
+        mounted_cache_root
+        / "workflow"
+        / "my_workspace"
+        / ".canonical-v2"
+        / "some_workflow.json"
+    )
+    assert cache_file.is_file()
+    assert loaded_response == response
+
+
+def test_workflow_cache_reader_closes_descriptor_when_fdopen_fails(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    opened_descriptors = []
+    real_open = os.open
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(roboflow_api, "SINGLE_TENANT_WORKFLOW_CACHE", True),
+    ):
+        cache_file = Path(
+            roboflow_api.get_workflow_cache_file(
+                workspace_id="my_workspace",
+                workflow_id="some_workflow",
+                api_key=None,
+            )
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(_workflow_cache_response("cached")))
+
+        def record_open(*args, **kwargs) -> int:
+            descriptor = real_open(*args, **kwargs)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        with (
+            mock.patch.object(roboflow_api.os, "open", side_effect=record_open),
+            mock.patch.object(
+                roboflow_api.os,
+                "fdopen",
+                side_effect=OSError("fdopen failed"),
+            ),
+        ):
+            result = roboflow_api._load_workflow_response_file(str(cache_file))
+
+    assert result is None
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="Symlink-race simulation requires POSIX symlinks",
+)
+def test_local_workflow_rejects_symlink_swapped_after_validation(
+    tmp_path: Path,
+) -> None:
+    workflow_id = "local-workflow"
+    cache_root = tmp_path / "cache"
+    outside_file = tmp_path / "outside.json"
+    outside_file.write_text(
+        json.dumps(
+            {"config": json.dumps({"specification": {"source": "outside-cache-root"}})}
+        )
+    )
+    local_cache_file = (
+        cache_root
+        / "workflow"
+        / "local"
+        / f"{roboflow_api.sha256(workflow_id.encode()).hexdigest()}.json"
+    )
+    local_cache_file.parent.mkdir(parents=True)
+    local_cache_file.write_text(
+        json.dumps(
+            {"config": json.dumps({"specification": {"source": "inside-cache-root"}})}
+        )
+    )
+    real_validator = roboflow_api._validated_workflow_cache_path
+    real_lstat = os.lstat
+    validation_finished = False
+    path_swapped = False
+
+    def record_validation(path: str) -> str:
+        nonlocal validation_finished
+        validated_path = real_validator(path)
+        assert validated_path is not None
+        validation_finished = True
+        return validated_path
+
+    def lstat_then_swap(path: str) -> os.stat_result:
+        nonlocal path_swapped
+        file_status = real_lstat(path)
+        if validation_finished and not path_swapped and Path(path) == local_cache_file:
+            Path(path).unlink()
+            Path(path).symlink_to(outside_file)
+            path_swapped = True
+        return file_status
+
+    with (
+        mock.patch.object(roboflow_api, "MODEL_CACHE_DIR", str(cache_root)),
+        mock.patch.object(
+            roboflow_api,
+            "_validated_workflow_cache_path",
+            side_effect=record_validation,
+        ),
+        mock.patch.object(
+            roboflow_api.os,
+            "lstat",
+            side_effect=lstat_then_swap,
+        ),
+        mock.patch.object(
+            roboflow_api.os,
+            "O_NOFOLLOW",
+            0,
+            create=True,
+        ),
+    ):
+        with pytest.raises(FileNotFoundError):
+            get_workflow_specification(
+                api_key=None,
+                workspace_id="local",
+                workflow_id=workflow_id,
+                use_cache=False,
+            )
+
+    assert outside_file.exists()
+    assert local_cache_file.is_symlink()
+    assert path_swapped
+
+
 def test_local_workflow_rejects_symlink_outside_cache_root(tmp_path: Path) -> None:
     workflow_id = "local-workflow"
     cache_root = tmp_path / "cache"
     outside_file = tmp_path / "outside.json"
     outside_file.write_text(
         json.dumps(
-            {
-                "config": json.dumps(
-                    {"specification": {"source": "outside-cache-root"}}
-                )
-            }
+            {"config": json.dumps({"specification": {"source": "outside-cache-root"}})}
         )
     )
     local_cache_file = (
