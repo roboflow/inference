@@ -497,6 +497,18 @@ async def test_get_serverless_usage_check_async_when_unauthorized_key_used() -> 
         assert result == ServerlessUsageCheckResponse(status_code=401)
 
 
+@mock.patch.object(roboflow_api, "OFFLINE_MODE", True)
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_fails_closed_in_offline_mode() -> (
+    None
+):
+    with pytest.raises(
+        RoboflowAPIConnectionError,
+        match="Cannot run serverless usage check - OFFLINE_MODE is enabled",
+    ):
+        await get_serverless_usage_check_async(api_key="my_api_key")
+
+
 @pytest.mark.asyncio
 async def test_get_serverless_usage_check_async_when_workspace_is_billing_restricted() -> (
     None

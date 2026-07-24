@@ -188,6 +188,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    OFFLINE_MODE,
     OTEL_TRACING_ENABLED,
     PINNED_MODELS,
     PRELOAD_API_KEY,
@@ -574,6 +575,13 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
+        if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with LAMBDA / "
+                "GCP_SERVERLESS deployments because authentication and usage "
+                "accounting require API connectivity."
+            )
 
         description = "Roboflow inference server"
 
@@ -963,6 +971,26 @@ class HttpInterface(BaseInterface):
                                 )
                                 if usage_check_result.status_code == 200:
                                     workspace_id = usage_check_result.workspace_id
+                                    if (
+                                        not workspace_id
+                                        or usage_check_result.under_cap is not True
+                                    ):
+                                        if auth_span is not None:
+                                            auth_span.set_attribute(
+                                                "http.status_code", 500
+                                            )
+                                            auth_span.set_attribute(
+                                                "auth.result",
+                                                "invalid_usage_check_response",
+                                            )
+                                        return _authorization_error_response(
+                                            500,
+                                            (
+                                                "Serverless authorization failed because "
+                                                "the usage check returned incomplete data."
+                                            ),
+                                            cache_hit=False,
+                                        )
                                     workspace_db_id = usage_check_result.workspace_db_id
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(

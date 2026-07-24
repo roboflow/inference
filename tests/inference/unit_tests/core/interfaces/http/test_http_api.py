@@ -77,6 +77,8 @@ def _build_serverless_interface(
         AsyncMock(),
     )
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", True)
     usage_check_mock = AsyncMock(return_value=usage_check_result)
     monkeypatch.setattr(
@@ -96,6 +98,25 @@ def _build_serverless_interface(
     model_manager.infer_from_request_sync.return_value = _DummyResponse()
     interface = http_api.HttpInterface(model_manager=model_manager)
     return interface, model_manager, usage_check_mock, workspace_lookup_mock
+
+
+@pytest.mark.parametrize("serverless_flag", ["GCP_SERVERLESS", "LAMBDA"])
+def test_http_interface_rejects_offline_serverless_deployment(
+    monkeypatch,
+    serverless_flag,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, serverless_flag, True)
+
+    with pytest.raises(
+        RuntimeError,
+        match="OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS",
+    ):
+        http_api.HttpInterface(model_manager=MagicMock())
 
 
 def _build_dedicated_deployment_interface(
@@ -563,6 +584,58 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
     assert first_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
     assert second_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
     assert usage_check_mock.await_count == 1
+
+
+@pytest.mark.parametrize(
+    "usage_check_result",
+    [
+        ServerlessUsageCheckResponse(status_code=200),
+        ServerlessUsageCheckResponse(status_code=200, workspace_id=""),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=False,
+        ),
+    ],
+)
+def test_serverless_auth_middleware_rejects_and_does_not_cache_incomplete_success(
+    monkeypatch,
+    usage_check_result,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=usage_check_result,
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 500
+    assert second_response.status_code == 500
+    assert first_response.json() == {
+        "status": 500,
+        "message": (
+            "Serverless authorization failed because the usage check returned "
+            "incomplete data."
+        ),
+    }
+    assert second_response.json() == first_response.json()
+    assert usage_check_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
 
 
 def test_serverless_auth_middleware_sets_assume_identity_workspace_db_id_context(
