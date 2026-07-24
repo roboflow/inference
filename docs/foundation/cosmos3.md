@@ -31,15 +31,26 @@ Cosmos 3 Edge is served exclusively through the `inference_models` backend (a Hu
 
 ### Installation
 
-To install inference with the extra dependencies necessary to run Cosmos 3 Edge, run
-
-```pip install "inference-gpu[transformers]"```
-
-Because Cosmos 3 Edge requires a CUDA GPU, use the `inference-gpu` package.
-
-If you only need to call the hosted Serverless API, you can instead install the lightweight SDK:
+If you only need to call the hosted Serverless API, install the lightweight SDK:
 
 ```pip install inference-sdk```
+
+To run Cosmos 3 Edge locally, you need the `inference-gpu` package (the model requires a CUDA GPU) plus Cosmos-specific dependencies:
+
+```
+pip install inference-gpu
+pip install -r https://raw.githubusercontent.com/roboflow/inference/main/requirements/requirements.cosmos.txt
+```
+
+!!! warning "Local installation requires pre-release dependencies"
+
+    Cosmos 3 Edge support is newer than any released `transformers` version — the
+    `cosmos3_edge` model type requires `transformers>=5.15`, which has not been
+    published yet. The standard `inference-gpu[transformers]` extra installs an
+    older release that cannot load the model, so the git-pinned versions in
+    `requirements/requirements.cosmos.txt` are required until the upstream
+    releases land. If you cannot install git-pinned dependencies, use the hosted
+    Serverless API instead.
 
 ### How to Use Cosmos 3 Edge (Hosted API)
 
@@ -79,7 +90,7 @@ The model's text answer will be printed to the console.
 
 ### How to Use Cosmos 3 Edge (Local Inference Server)
 
-If you are running your own GPU-backed inference server, point the same SDK code at it — for example a server running locally on port 9001:
+If you are running your own GPU-backed inference server (with the Cosmos dependencies from the Installation section above), point the same SDK code at it — for example a server running locally on port 9001:
 
 ```python
 from inference_sdk import InferenceHTTPClient
