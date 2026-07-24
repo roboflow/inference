@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -5,6 +6,8 @@ from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -127,13 +130,23 @@ def _index_list_parameters_by_frame_id(
             indexed[key] = value
             continue
         frame_ids = [frame.frame_id for frame in video_frames]
-        if any(
-            not isinstance(frame_id, int) or frame_id < 0 or frame_id >= len(value)
-            for frame_id in frame_ids
-        ):
+        if any(not isinstance(frame_id, int) for frame_id in frame_ids):
             indexed[key] = value
             continue
-        indexed[key] = [value[frame_id] for frame_id in frame_ids]
+        # Out-of-range frame ids clamp to the nearest cached element. Passing
+        # the full list through would make the execution engine treat its
+        # length as the batch size and broadcast the single image across it.
+        if any(frame_id < 0 or frame_id >= len(value) for frame_id in frame_ids):
+            logger.warning(
+                "Parameter '%s' holds %d cached elements but frame ids reach %d - "
+                "clamping to the nearest cached value.",
+                key,
+                len(value),
+                max(frame_ids),
+            )
+        indexed[key] = [
+            value[min(max(frame_id, 0), len(value) - 1)] for frame_id in frame_ids
+        ]
     return indexed
 
 

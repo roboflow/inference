@@ -385,13 +385,25 @@ def test_index_list_parameters_by_frame_id_selects_matching_elements() -> None:
     assert indexed["cached_preds"] == ["p1", "p3"]
 
 
-def test_index_list_parameters_by_frame_id_leaves_out_of_range_lists() -> None:
+def test_index_list_parameters_by_frame_id_clamps_out_of_range_frame_ids() -> None:
+    # Frame ids beyond the cached list must never pass the full list through -
+    # the execution engine would treat its length as the batch size and
+    # broadcast the single image across it.
     frames = [_make_frame(5)]
-    params = {"cached_preds": ["p0", "p1"]}
+    params = {"cached_preds": ["p0", "p1", "p2"]}
 
     indexed = _index_list_parameters_by_frame_id(params, frames)
 
-    assert indexed["cached_preds"] == ["p0", "p1"]
+    assert indexed["cached_preds"] == ["p2"]
+
+
+def test_index_list_parameters_by_frame_id_clamps_negative_frame_ids() -> None:
+    frames = [_make_frame(-1), _make_frame(2)]
+    params = {"cached_preds": ["p0", "p1", "p2", "p3", "p4"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames)
+
+    assert indexed["cached_preds"] == ["p0", "p2"]
 
 
 def test_workflow_runner_without_stream_buffering_returns_current_frame() -> None:
