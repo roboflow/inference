@@ -247,6 +247,7 @@ class TestFoundationModelListFormat:
 
         assert len(result) == 1
         m = result[0]
+        assert m["model_id"] == "clip/ViT-B-32"
         assert m["is_foundation"] is True
         assert m["name"] == "CLIP"
 
@@ -298,6 +299,8 @@ class TestFoundationModelListFormat:
         ):
             result = get_cached_foundation_models(blocks=[block])
 
+        assert result == []
+
 
 # ---------------------------------------------------------------------------
 # scan_cached_models — model_config.json (inference-models cache layout)
@@ -341,14 +344,18 @@ class TestScanModelConfigJson:
     def test_uses_canonical_model_id_from_config(self, tmp_path):
         """When model_config.json has model_id, use it instead of directory path."""
         from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
 
         cache = str(tmp_path)
+        model_id = "coco/22"
         _write_model_config_json(
             cache,
-            slug_dir="coco-22-abcd1234",
+            slug_dir=slugify_model_id_to_os_safe_format(model_id=model_id),
             package_id="pkg001",
             config={
-                "model_id": "coco/22",
+                "model_id": model_id,
                 "task_type": "object-detection",
                 "model_architecture": "yolov10b",
                 "backend_type": "onnx",
@@ -367,15 +374,19 @@ class TestScanModelConfigJson:
     def test_deduplicates_by_model_id(self, tmp_path):
         """Two cache entries with the same canonical model_id produce one result."""
         from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
 
         cache = str(tmp_path)
+        model_id = "coco/22"
         # Same model in inference-models layout
         _write_model_config_json(
             cache,
-            slug_dir="coco-22-abcd1234",
+            slug_dir=slugify_model_id_to_os_safe_format(model_id=model_id),
             package_id="pkg001",
             config={
-                "model_id": "coco/22",
+                "model_id": model_id,
                 "task_type": "object-detection",
                 "model_architecture": "yolov10b",
                 "backend_type": "onnx",
@@ -487,10 +498,297 @@ class TestScanModelConfigJson:
         ):
             assert scan_cached_models(cache) == []
 
+    def test_skips_model_config_in_wrong_slug(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        _write_model_config_json(
+            str(tmp_path),
+            slug_dir="wrong-slug",
+            package_id="pkg001",
+            config={
+                "model_id": "workspace/project/3",
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnx",
+            },
+        )
+
+        assert scan_cached_models(str(tmp_path)) == []
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("task_type", ["object-detection"]),
+            ("model_architecture", {"name": "yolov8n"}),
+        ],
+    )
+    def test_skips_malformed_model_config_metadata(
+        self, tmp_path, field, value
+    ):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
+
+        model_id = "workspace/project/3"
+        config = {
+            "model_id": model_id,
+            "task_type": "object-detection",
+            "model_architecture": "yolov8n",
+            "backend_type": "onnx",
+        }
+        config[field] = value
+        _write_model_config_json(
+            str(tmp_path),
+            slug_dir=slugify_model_id_to_os_safe_format(model_id=model_id),
+            package_id="pkg001",
+            config=config,
+        )
+
+        assert scan_cached_models(str(tmp_path)) == []
+
+    def test_skips_symlinked_model_config_and_legacy_metadata(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
+
+        cache = tmp_path / "cache"
+        model_id = "workspace/project/3"
+        model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        package_dir = cache / "models-cache" / model_slug / "pkg001"
+        package_dir.mkdir(parents=True)
+        external_config = tmp_path / "external-model-config.json"
+        external_config.write_text(
+            json.dumps(
+                {
+                    "model_id": model_id,
+                    "task_type": "object-detection",
+                    "model_architecture": "yolov8n",
+                    "backend_type": "onnx",
+                }
+            )
+        )
+        (package_dir / "model_config.json").symlink_to(external_config)
+
+        legacy_package = cache / "models-cache" / model_slug / "pkg002"
+        legacy_package.mkdir()
+        (legacy_package / "model_config.json").write_text(
+            json.dumps(
+                {
+                    "task_type": "object-detection",
+                    "model_architecture": "yolov8n",
+                    "backend_type": "onnx",
+                }
+            )
+        )
+        resolution_dir = cache / "auto-resolution-cache"
+        resolution_dir.mkdir()
+        external_resolution = tmp_path / "external-resolution.json"
+        external_resolution.write_text(
+            json.dumps(
+                {
+                    "model_id": model_id,
+                    "model_package_id": "pkg002",
+                }
+            )
+        )
+        (resolution_dir / "entry.json").symlink_to(external_resolution)
+
+        assert scan_cached_models(str(cache)) == []
+
+    def test_supports_symlinked_models_cache_root(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
+
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        external_models_cache = tmp_path / "external-models-cache"
+        external_models_cache.mkdir()
+        (cache / "models-cache").symlink_to(
+            external_models_cache,
+            target_is_directory=True,
+        )
+        model_id = "workspace/project/3"
+        package_dir = (
+            external_models_cache
+            / slugify_model_id_to_os_safe_format(model_id=model_id)
+            / "pkg001"
+        )
+        package_dir.mkdir(parents=True)
+        (package_dir / "model_config.json").write_text(
+            json.dumps(
+                {
+                    "model_id": model_id,
+                    "task_type": "object-detection",
+                    "model_architecture": "yolov8n",
+                    "backend_type": "onnx",
+                }
+            )
+        )
+
+        result = scan_cached_models(str(cache))
+
+        assert [entry["model_id"] for entry in result] == [model_id]
+
+    def test_rejects_models_cache_symlink_cycle(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / "models-cache").symlink_to(cache, target_is_directory=True)
+
+        assert scan_cached_models(str(cache)) == []
+
+    def test_conflicting_package_metadata_is_not_reported(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+        from inference_models.models.auto_loaders.model_cache_paths import (
+            slugify_model_id_to_os_safe_format,
+        )
+
+        model_id = "workspace/project/3"
+        model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        for package_id, task_type in (
+            ("pkg001", "object-detection"),
+            ("pkg002", "classification"),
+        ):
+            _write_model_config_json(
+                str(tmp_path),
+                slug_dir=model_slug,
+                package_id=package_id,
+                config={
+                    "model_id": model_id,
+                    "task_type": task_type,
+                    "model_architecture": "yolov8n",
+                    "backend_type": "onnx",
+                },
+            )
+
+        assert scan_cached_models(str(tmp_path)) == []
+
+    def test_excludes_nested_cache_root(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = tmp_path / "cache"
+        nested_cache = cache / "nested"
+        _write_model_type_json(
+            str(cache),
+            "outer/model/1",
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+        )
+        _write_model_type_json(
+            str(nested_cache),
+            "inner/model/1",
+            {
+                "project_task_type": "classification",
+                "model_type": "vit",
+            },
+        )
+
+        result = scan_cached_models(
+            str(cache),
+            excluded_cache_roots=[str(nested_cache)],
+        )
+
+        assert [entry["model_id"] for entry in result] == ["outer/model/1"]
+
+    def test_skips_symlinked_traditional_model_type(self, tmp_path):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        model_dir = tmp_path / "workspace" / "project" / "3"
+        model_dir.mkdir(parents=True)
+        external_metadata = tmp_path / "external-model-type.json"
+        external_metadata.write_text(
+            json.dumps(
+                {
+                    "project_task_type": "object-detection",
+                    "model_type": "yolov8n",
+                }
+            )
+        )
+        (model_dir / "model_type.json").symlink_to(external_metadata)
+
+        assert scan_cached_models(str(tmp_path)) == []
+
+    def test_does_not_treat_model_type_inside_models_cache_as_traditional(
+        self, tmp_path
+    ):
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        package_dir = tmp_path / "models-cache" / "wrong-slug" / "pkg001"
+        package_dir.mkdir(parents=True)
+        (package_dir / "model_type.json").write_text(
+            json.dumps(
+                {
+                    "project_task_type": "object-detection",
+                    "model_type": "yolov8n",
+                }
+            )
+        )
+
+        assert scan_cached_models(str(tmp_path)) == []
+
 
 # ---------------------------------------------------------------------------
 # is_model_cached — inference-models layout delegation
 # ---------------------------------------------------------------------------
+
+
+class TestIsModelCachedTraditionalLayout:
+    @pytest.mark.parametrize("model_id", ["", ".", "nested/.."])
+    def test_does_not_treat_cache_root_as_a_model(self, tmp_path, model_id):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        (tmp_path / "unrelated-cache-entry").write_text("not a model")
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR", str(tmp_path)
+        ), patch("inference.core.cache.air_gapped.USE_INFERENCE_MODELS", False):
+            assert is_model_cached(model_id) is False
+
+    def test_rejects_intermediate_symlink_below_cache_root(self, tmp_path):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        cache_root = tmp_path / "cache"
+        cache_root.mkdir()
+        outside_workspace = tmp_path / "outside-workspace"
+        model_directory = outside_workspace / "project" / "1"
+        model_directory.mkdir(parents=True)
+        (model_directory / "weights.onnx").write_text("outside")
+        (cache_root / "workspace").symlink_to(
+            outside_workspace,
+            target_is_directory=True,
+        )
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
+            str(cache_root),
+        ), patch("inference.core.cache.air_gapped.USE_INFERENCE_MODELS", False):
+            assert is_model_cached("workspace/project/1") is False
+
+    def test_allows_configured_cache_root_to_be_a_symlink(self, tmp_path):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        real_cache_root = tmp_path / "real-cache"
+        model_directory = real_cache_root / "workspace" / "project" / "1"
+        model_directory.mkdir(parents=True)
+        (model_directory / "weights.onnx").write_text("cached")
+        mounted_cache_root = tmp_path / "mounted-cache"
+        mounted_cache_root.symlink_to(
+            real_cache_root,
+            target_is_directory=True,
+        )
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
+            str(mounted_cache_root),
+        ), patch("inference.core.cache.air_gapped.USE_INFERENCE_MODELS", False):
+            assert is_model_cached("workspace/project/1") is True
 
 
 class TestIsModelCachedInferenceModels:
@@ -499,35 +797,38 @@ class TestIsModelCachedInferenceModels:
 
     def test_returns_true_when_package_dir_found(self, tmp_path):
         from inference.core.cache.air_gapped import is_model_cached
+        from inference_models.models.auto_loaders import core as auto_loaders
 
         cache = str(tmp_path)
-        fake_find = MagicMock(return_value="/some/cached/dir")
-        fake_module = MagicMock()
-        fake_module.find_cached_model_package_dir = fake_find
+        cached_package_dir = tmp_path / "models-cache" / "my-model" / "package"
+        cached_package_dir.mkdir(parents=True)
+        (cached_package_dir / "model_config.json").write_text("{}")
+        fake_find = MagicMock(return_value=str(cached_package_dir))
 
         with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
             "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
-        ), patch.dict(
-            "sys.modules",
-            {"inference_models.models.auto_loaders.core": fake_module},
+        ), patch.object(
+            auto_loaders,
+            "find_cached_model_package_dir",
+            fake_find,
         ):
             assert is_model_cached("my-model") is True
         fake_find.assert_called_once_with(model_id="my-model")
 
     def test_returns_false_when_no_cache_hit(self):
         from inference.core.cache.air_gapped import is_model_cached
+        from inference_models.models.auto_loaders import core as auto_loaders
 
         fake_find = MagicMock(return_value=None)
-        fake_module = MagicMock()
-        fake_module.find_cached_model_package_dir = fake_find
 
         with patch(
             "inference.core.cache.air_gapped.MODEL_CACHE_DIR", "/nonexistent"
         ), patch(
             "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
-        ), patch.dict(
-            "sys.modules",
-            {"inference_models.models.auto_loaders.core": fake_module},
+        ), patch.object(
+            auto_loaders,
+            "find_cached_model_package_dir",
+            fake_find,
         ):
             assert is_model_cached("no-such-model") is False
 

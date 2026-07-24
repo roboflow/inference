@@ -9,7 +9,8 @@ The library uses two types of caching:
 - **Auto-Resolution Cache** - Stores backend selection decisions to avoid repeated API calls and package negotiation
 - **Model Package Cache** - Stores downloaded model files (weights, configs, class names) to avoid re-downloading
 
-Both caches are stored under `$INFERENCE_HOME` (defaults to `/tmp/cache/`).
+Both caches are stored under `$INFERENCE_HOME`. When `INFERENCE_HOME` is unset,
+the library uses `$MODEL_CACHE_DIR`, then falls back to `/tmp/cache/`.
 
 ## 🔄 Auto-Resolution Cache
 
@@ -129,6 +130,20 @@ Files without content hashes are stored directly in the model package directory.
 
 Model package cache **does not expire automatically** - files remain until manually deleted.
 
+### Offline cache compatibility
+
+Current package manifests record source trust, dependency metadata, package
+selection constraints, and a structured runtime compatibility fingerprint.
+`OFFLINE_MODE=True` only loads a package whose manifest matches the current
+request and runtime. Auto-resolution entries may be reused across API-key
+changes, but the normal access manager still authorizes the cached package.
+
+Cache entries created by an older release do not contain this contract and are
+rejected by default. Before disconnecting a deployment, install the matching
+`inference-models` release and warm every required model again under the same
+backend, device, quantization, batch, ONNX-provider, and dependency settings
+that the offline process will use.
+
 **Purge model cache:**
 ```bash
 rm -rf $INFERENCE_HOME/models-cache/
@@ -148,4 +163,3 @@ rm -rf /tmp/cache/shared-blobs/
 - [Understand Core Concepts](understand-core-concepts.md) - Understand the design philosophy
 - [Supported Models](../models/index.md) - Browse available models
 - [How-To: Local Packages](../how-to/local-packages.md) - Working with local model packages
-

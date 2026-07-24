@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 from inference_models.models.base.classification import (
     ClassificationModel,
@@ -57,6 +57,16 @@ class InferenceModelConfig:
     backend_type: Optional[BackendType]
     model_module: Optional[str]
     model_class: Optional[str]
+    model_features: Optional[dict] = None
+    trusted_source: Optional[bool] = None
+    model_dependencies: Optional[List[dict]] = None
+    recommended_parameters: Optional[dict] = None
+    quantization: Optional[str] = None
+    dynamic_batch_size_supported: Optional[bool] = None
+    static_batch_size: Optional[int] = None
+    runtime_compatibility_hash: Optional[str] = None
+    offline_compatibility_hash: Optional[str] = None
+    offline_manifest_version: Optional[int] = None
 
     def is_library_model(self) -> bool:
         return self.model_architecture is not None and self.backend_type is not None

@@ -25,6 +25,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -182,6 +183,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("Seg Preview remote execution")
         predictions = []
         if class_names is None:
             class_names = []

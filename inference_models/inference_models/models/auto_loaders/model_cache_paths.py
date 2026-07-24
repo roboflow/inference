@@ -41,16 +41,56 @@ def generate_models_cache_dir() -> str:
     return os.path.abspath(os.path.join(INFERENCE_HOME, "models-cache"))
 
 
+def _ensure_cache_path_has_no_child_symlinks(
+    cache_root: str,
+    target_path: str,
+    model_id: str,
+) -> None:
+    cache_root = os.path.abspath(cache_root)
+    target_path = os.path.abspath(target_path)
+    try:
+        relative_path = os.path.relpath(target_path, cache_root)
+        if relative_path == os.pardir or relative_path.startswith(
+            os.pardir + os.sep
+        ):
+            raise ValueError
+        expected_resolved_path = os.path.normpath(
+            os.path.join(os.path.realpath(cache_root), relative_path)
+        )
+        if os.path.realpath(target_path) != expected_resolved_path:
+            raise ValueError
+    except ValueError as error:
+        raise InsecureModelIdentifierError(
+            message=(
+                f"Refusing model cache path for {model_id} because it escapes "
+                "its cache root or traverses a symbolic link."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#insecuremodelidentifiererror",
+        ) from error
+
+
 def generate_model_cache_root_for_model_id(model_id: str) -> str:
     model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    return os.path.join(generate_models_cache_dir(), model_id_slug)
+    models_cache_dir = generate_models_cache_dir()
+    result = os.path.join(models_cache_dir, model_id_slug)
+    _ensure_cache_path_has_no_child_symlinks(
+        cache_root=models_cache_dir,
+        target_path=result,
+        model_id=model_id,
+    )
+    return result
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
     ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
-    return os.path.join(
-        generate_model_cache_root_for_model_id(model_id=model_id), package_id
+    model_cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
+    result = os.path.join(model_cache_root, package_id)
+    _ensure_cache_path_has_no_child_symlinks(
+        cache_root=model_cache_root,
+        target_path=result,
+        model_id=model_id,
     )
+    return result
 
 
 def generate_shared_blobs_path() -> str:
