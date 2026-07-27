@@ -831,6 +831,8 @@ def _validate_package_directory_layout(
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
 
+    _remove_generated_bytecode_caches(package_dir=package_dir)
+
     expected_directories: Set[str] = set()
     expected_regular_files = {
         MODEL_CONFIG_FILE_NAME,
@@ -903,6 +905,40 @@ def _validate_package_directory_layout(
                 )
 
     inspect_directory(directory=package_dir)
+
+
+def _remove_generated_bytecode_caches(package_dir: str) -> None:
+    """Remove bytecode caches created by package-local imports in older releases.
+
+    Only real ``__pycache__`` directories containing regular ``.pyc`` files are
+    removed. Any symlink, nested directory, or unexpected file is preserved so
+    the subsequent package-layout validation rejects it.
+    """
+
+    for directory, directory_names, _ in os.walk(
+        package_dir, topdown=False, followlinks=False
+    ):
+        for directory_name in directory_names:
+            if directory_name != "__pycache__":
+                continue
+            bytecode_cache_dir = os.path.join(directory, directory_name)
+            if os.path.islink(bytecode_cache_dir):
+                continue
+            try:
+                entries = list(os.scandir(bytecode_cache_dir))
+                contains_only_bytecode = all(
+                    entry.is_file(follow_symlinks=False) and entry.name.endswith(".pyc")
+                    for entry in entries
+                )
+                if not contains_only_bytecode:
+                    continue
+                for entry in entries:
+                    os.unlink(entry.path)
+                os.rmdir(bytecode_cache_dir)
+            except OSError:
+                # Leave entries that cannot be inspected or removed for the
+                # strict package-layout validation below to reject.
+                continue
 
 
 def _package_has_current_offline_manifest(package_dir: str) -> bool:
