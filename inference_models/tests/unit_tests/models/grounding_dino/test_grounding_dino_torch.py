@@ -1,6 +1,7 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import torch
+from huggingface_hub.errors import LocalEntryNotFoundError
 
 from inference_models.models.grounding_dino import grounding_dino_torch
 
@@ -49,14 +50,51 @@ def test_grounding_dino_resolves_missing_text_encoder_to_dependency_cache(
         )
 
     snapshot_download.assert_called_once_with(
-        repo_id="bert-base-uncased",
+        repo_id="google-bert/bert-base-uncased",
         cache_dir=str(dependency_cache),
         local_files_only=True,
+        allow_patterns=grounding_dino_torch.BERT_SNAPSHOT_ALLOW_PATTERNS,
     )
     assert load_model.call_args.kwargs["text_encoder_type"] == str(
         text_encoder_snapshot
     )
     assert model._model is loaded_model
+
+
+def test_grounding_dino_uses_legacy_bert_cache_as_offline_fallback(
+    tmp_path,
+) -> None:
+    dependency_cache = tmp_path / "hf_home" / "hub"
+    legacy_snapshot = dependency_cache / "legacy-bert-snapshot"
+
+    with (
+        patch.object(
+            grounding_dino_torch,
+            "HF_HUB_CACHE",
+            str(dependency_cache),
+        ),
+        patch.object(grounding_dino_torch, "OFFLINE_MODE", True),
+        patch.object(
+            grounding_dino_torch,
+            "snapshot_download",
+            side_effect=[
+                LocalEntryNotFoundError("canonical snapshot is not cached"),
+                str(legacy_snapshot),
+            ],
+        ) as snapshot_download,
+    ):
+        result = grounding_dino_torch._download_bert_snapshot()
+
+    expected_kwargs = {
+        "cache_dir": str(dependency_cache),
+        "local_files_only": True,
+        "allow_patterns": grounding_dino_torch.BERT_SNAPSHOT_ALLOW_PATTERNS,
+    }
+    assert result == str(legacy_snapshot)
+    assert snapshot_download.call_args_list == [
+        call(repo_id="google-bert/bert-base-uncased", **expected_kwargs),
+        call(repo_id="bert-base-uncased", **expected_kwargs),
+    ]
 
 
 def test_grounding_dino_prefers_packaged_text_encoder(tmp_path) -> None:

@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torchvision
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 from transformers import BertModel
 
 # Monkey-patch BertModel for transformers>=5.0 compatibility.
@@ -70,6 +71,33 @@ from inference_models.models.base.object_detection import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 
+BERT_REPO_ID = "google-bert/bert-base-uncased"
+LEGACY_BERT_REPO_ID = "bert-base-uncased"
+BERT_SNAPSHOT_ALLOW_PATTERNS = [
+    "config.json",
+    "model.safetensors",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.txt",
+]
+
+
+def _download_bert_snapshot() -> str:
+    snapshot_kwargs = {
+        "cache_dir": HF_HUB_CACHE,
+        "local_files_only": OFFLINE_MODE,
+        "allow_patterns": BERT_SNAPSHOT_ALLOW_PATTERNS,
+    }
+    try:
+        return snapshot_download(repo_id=BERT_REPO_ID, **snapshot_kwargs)
+    except LocalEntryNotFoundError:
+        if not OFFLINE_MODE:
+            raise
+        # Before the canonical repository ID was adopted, snapshots were cached
+        # under the Hub alias. Preserve offline access to those existing caches.
+        return snapshot_download(repo_id=LEGACY_BERT_REPO_ID, **snapshot_kwargs)
+
 
 class GroundingDinoForObjectDetectionTorch(
     OpenVocabularyObjectDetectionModel[
@@ -91,11 +119,7 @@ class GroundingDinoForObjectDetectionTorch(
         )
         text_encoder_dir = os.path.join(model_name_or_path, "text_encoder")
         if not os.path.isdir(text_encoder_dir):
-            text_encoder_dir = snapshot_download(
-                repo_id="bert-base-uncased",
-                cache_dir=HF_HUB_CACHE,
-                local_files_only=OFFLINE_MODE,
-            )
+            text_encoder_dir = _download_bert_snapshot()
         model = load_model(
             model_config_path=model_package_content["config.py"],
             model_checkpoint_path=model_package_content["weights.pth"],

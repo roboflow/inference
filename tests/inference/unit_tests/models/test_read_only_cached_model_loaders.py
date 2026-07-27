@@ -170,9 +170,10 @@ def test_grounding_dino_resolves_bert_to_explicit_local_snapshot(
     model = grounding_dino.GroundingDINO()
 
     snapshot_download.assert_called_once_with(
-        repo_id="bert-base-uncased",
+        repo_id="google-bert/bert-base-uncased",
         cache_dir=str(tmp_path / "hf_home" / "hub"),
         local_files_only=True,
+        allow_patterns=grounding_dino.BERT_SNAPSHOT_ALLOW_PATTERNS,
     )
     assert load_model.call_args.kwargs["text_encoder_type"] == str(text_encoder_dir)
     assert load_model.call_args.kwargs["device"] == "cpu"
@@ -181,6 +182,45 @@ def test_grounding_dino_resolves_bert_to_explicit_local_snapshot(
     )
     assert model.model.model is loaded_model
     assert model.model.device == "cpu"
+
+
+def test_grounding_dino_uses_legacy_bert_cache_as_offline_fallback(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    from inference.models.grounding_dino import grounding_dino
+
+    legacy_snapshot = tmp_path / "legacy-bert-snapshot"
+    snapshot_download = MagicMock(
+        side_effect=[
+            LocalEntryNotFoundError("canonical snapshot is not cached"),
+            str(legacy_snapshot),
+        ]
+    )
+    monkeypatch.setattr(
+        grounding_dino,
+        "HF_HUB_CACHE",
+        str(tmp_path / "hf_home" / "hub"),
+    )
+    monkeypatch.setattr(grounding_dino, "OFFLINE_MODE", True)
+    monkeypatch.setattr(
+        grounding_dino,
+        "snapshot_download",
+        snapshot_download,
+    )
+
+    assert grounding_dino._download_bert_snapshot() == str(legacy_snapshot)
+    expected_kwargs = {
+        "cache_dir": str(tmp_path / "hf_home" / "hub"),
+        "local_files_only": True,
+        "allow_patterns": grounding_dino.BERT_SNAPSHOT_ALLOW_PATTERNS,
+    }
+    assert snapshot_download.call_args_list == [
+        call(repo_id="google-bert/bert-base-uncased", **expected_kwargs),
+        call(repo_id="bert-base-uncased", **expected_kwargs),
+    ]
 
 
 def test_interactive_sam3_declares_bpe_as_required_cache_artifact() -> None:

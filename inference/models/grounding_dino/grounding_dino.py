@@ -4,6 +4,7 @@ from typing import Any, List, Optional
 
 import torch
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 from transformers import BertModel
 
 # Monkey-patch BertModel for transformers>=5.0 compatibility.
@@ -59,6 +60,33 @@ from inference.core.env import CLASS_AGNOSTIC_NMS, HF_HUB_CACHE, OFFLINE_MODE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
 
+BERT_REPO_ID = "google-bert/bert-base-uncased"
+LEGACY_BERT_REPO_ID = "bert-base-uncased"
+BERT_SNAPSHOT_ALLOW_PATTERNS = [
+    "config.json",
+    "model.safetensors",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.txt",
+]
+
+
+def _download_bert_snapshot() -> str:
+    snapshot_kwargs = {
+        "cache_dir": HF_HUB_CACHE,
+        "local_files_only": OFFLINE_MODE,
+        "allow_patterns": BERT_SNAPSHOT_ALLOW_PATTERNS,
+    }
+    try:
+        return snapshot_download(repo_id=BERT_REPO_ID, **snapshot_kwargs)
+    except LocalEntryNotFoundError:
+        if not OFFLINE_MODE:
+            raise
+        # Before the canonical repository ID was adopted, snapshots were cached
+        # under the Hub alias. Preserve offline access to those existing caches.
+        return snapshot_download(repo_id=LEGACY_BERT_REPO_ID, **snapshot_kwargs)
+
 
 class GroundingDINO(RoboflowCoreModel):
     """GroundingDINO class for zero-shot object detection.
@@ -87,11 +115,7 @@ class GroundingDINO(RoboflowCoreModel):
         )
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        text_encoder_path = snapshot_download(
-            repo_id="bert-base-uncased",
-            cache_dir=HF_HUB_CACHE,
-            local_files_only=OFFLINE_MODE,
-        )
+        text_encoder_path = _download_bert_snapshot()
         # The installed GroundingDINO wrapper does not expose load_model's
         # keyword overrides, so assemble the wrapper with the local text
         # encoder path explicitly instead of letting its nested Transformers
