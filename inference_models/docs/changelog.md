@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+## `0.34.3`
+
+- Reverted Grounding Dino to 0.20.2
+
 ---
 
 ## `0.34.2`
