@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- Grounding DINO now downloads its BERT text encoder from the canonical
+  `google-bert/bert-base-uncased` repository and limits the snapshot to required model and
+  tokenizer files, avoiding failures from the alias-based Hugging Face Xet token endpoint.
+  Offline deployments can still load snapshots previously cached under the legacy
+  `bert-base-uncased` alias.
+
 ---
 
 ## `0.34.2`
