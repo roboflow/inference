@@ -4,6 +4,12 @@
 
 ---
 
+## `0.34.1`
+
+- Package-local imports also avoid writing bytecode into model package directories.
+
+---
+
 ## `0.34.0`
 
 ### Added
