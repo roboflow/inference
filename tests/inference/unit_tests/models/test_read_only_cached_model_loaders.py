@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
+import pytest
 
 
 def _literal_artifact_list(
@@ -184,9 +185,11 @@ def test_grounding_dino_resolves_bert_to_explicit_local_snapshot(
     assert model.model.device == "cpu"
 
 
-def test_grounding_dino_uses_legacy_bert_cache_as_offline_fallback(
+@pytest.mark.parametrize("offline_mode", [False, True])
+def test_grounding_dino_uses_legacy_bert_cache_as_fallback(
     tmp_path,
     monkeypatch,
+    offline_mode,
 ) -> None:
     from huggingface_hub.errors import LocalEntryNotFoundError
 
@@ -204,7 +207,7 @@ def test_grounding_dino_uses_legacy_bert_cache_as_offline_fallback(
         "HF_HUB_CACHE",
         str(tmp_path / "hf_home" / "hub"),
     )
-    monkeypatch.setattr(grounding_dino, "OFFLINE_MODE", True)
+    monkeypatch.setattr(grounding_dino, "OFFLINE_MODE", offline_mode)
     monkeypatch.setattr(
         grounding_dino,
         "snapshot_download",
@@ -212,14 +215,15 @@ def test_grounding_dino_uses_legacy_bert_cache_as_offline_fallback(
     )
 
     assert grounding_dino._download_bert_snapshot() == str(legacy_snapshot)
-    expected_kwargs = {
+    canonical_kwargs = {
         "cache_dir": str(tmp_path / "hf_home" / "hub"),
-        "local_files_only": True,
+        "local_files_only": offline_mode,
         "allow_patterns": grounding_dino.BERT_SNAPSHOT_ALLOW_PATTERNS,
     }
+    legacy_kwargs = {**canonical_kwargs, "local_files_only": True}
     assert snapshot_download.call_args_list == [
-        call(repo_id="google-bert/bert-base-uncased", **expected_kwargs),
-        call(repo_id="bert-base-uncased", **expected_kwargs),
+        call(repo_id="google-bert/bert-base-uncased", **canonical_kwargs),
+        call(repo_id="bert-base-uncased", **legacy_kwargs),
     ]
 
 

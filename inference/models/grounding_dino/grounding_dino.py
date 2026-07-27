@@ -81,10 +81,10 @@ def _download_bert_snapshot() -> str:
     try:
         return snapshot_download(repo_id=BERT_REPO_ID, **snapshot_kwargs)
     except LocalEntryNotFoundError:
-        if not OFFLINE_MODE:
-            raise
         # Before the canonical repository ID was adopted, snapshots were cached
-        # under the Hub alias. Preserve offline access to those existing caches.
+        # under the Hub alias. Use it only as a local cache key, never as an
+        # online download source.
+        snapshot_kwargs["local_files_only"] = True
         return snapshot_download(repo_id=LEGACY_BERT_REPO_ID, **snapshot_kwargs)
 
 
