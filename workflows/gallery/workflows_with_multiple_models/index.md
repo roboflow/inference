@@ -17,7 +17,7 @@ we apply secondary model.
 Secondary model is supposed to make prediction from dogs breed classifier model
 to assign detailed class for each dog instance.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibng0M2tDUmdUYkg0d0ZGaDZ2NUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY2NzN9.A-tvipq1n5dW5onOiuHCDKhg6OBqKfLUtj0gBJngU9A?showGraph=true" loading="lazy" title="Roboflow Workflow for detection plus classification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibng0M2tDUmdUYkg0d0ZGaDZ2NUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIyNDl9.y5XA2EP2eMfw4TfVzjwcWVR3fZ0OT3wRUETVbScPRLQ?showGraph=true" loading="lazy" title="Roboflow Workflow for detection plus classification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -82,7 +82,7 @@ has level 2 (there are bunch of classification results for each input image). Th
 two inputs and produces result at dimensionality level 1 - exactly the same as predictions from 
 object detection model.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNGpkaHZvbUNNM1g0S3pkQzNrMVkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY2NzR9.7K_CjsRnrdzGrzAM4GHxZYYrZAhdqpZ2SI1V7zTfPTg?showGraph=true" loading="lazy" title="Roboflow Workflow for detections classes replacement" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNGpkaHZvbUNNM1g0S3pkQzNrMVkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIyNTB9.aG3d2-poz-ejnoHL10x596auSpgjkcmjRhZhQ1I-R0o?showGraph=true" loading="lazy" title="Roboflow Workflow for detections classes replacement" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -155,7 +155,7 @@ model vote to add predicted bounding box to the output prediction
 votes to accept bounding box to the output prediction - this way you may improve the quality of 
 predictions
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiR2o4aEpIYUtCQU9MOHp0Y29MQ0EiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY2NzV9.xE7Wc4APYwXmX3wsxUu6rfRXjDIXEnR0OWZYRft2hek?showGraph=true" loading="lazy" title="Roboflow Workflow for detections consensus" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiR2o4aEpIYUtCQU9MOHp0Y29MQ0EiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIyNTF9.BsEpRqqexeWydapmPiXM7pzsU2VZMROJpfSe6gDDxb4?showGraph=true" loading="lazy" title="Roboflow Workflow for detections consensus" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -211,12 +211,89 @@ predictions
 	}
     ```
 
+## Workflow presenting nearest-neighbor detection matching
+
+This workflow runs the same object-detection model against one input image at
+two different confidence thresholds, then feeds the two detection sets into
+the Nearest Neighbor Detection Match block, which reports the nearest target
+detection (or detections, on a tie) for every query detection, along with two
+flat, aligned detection sets covering every matched query-target pair.
+
+This pattern is useful whenever you need to relate detections from two
+separate sources by spatial proximity - a broad detector vs. a stricter one, a
+primary detection set vs. a reference/landmark set, etc.
+
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiME1ldUJoQ3dWNFhGSzZodjVRN3AiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIyNTF9.OM65svGj44Tq7OG4EgWCzt9fiLv_Ott8a9F3SttRzz0?showGraph=true" loading="lazy" title="Roboflow Workflow for detections nearest neighbor" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+
+??? tip "Workflow definition"
+
+    ```json
+    {
+	    "version": "1.0",
+	    "inputs": [
+	        {
+	            "type": "WorkflowImage",
+	            "name": "image"
+	        },
+	        {
+	            "type": "WorkflowParameter",
+	            "name": "model_id",
+	            "default_value": "yolov8n-640"
+	        },
+	        {
+	            "type": "WorkflowParameter",
+	            "name": "target_confidence",
+	            "default_value": 0.5
+	        }
+	    ],
+	    "steps": [
+	        {
+	            "type": "RoboflowObjectDetectionModel",
+	            "name": "query_detection",
+	            "image": "$inputs.image",
+	            "model_id": "$inputs.model_id",
+	            "confidence": 0.3
+	        },
+	        {
+	            "type": "RoboflowObjectDetectionModel",
+	            "name": "target_detection",
+	            "image": "$inputs.image",
+	            "model_id": "$inputs.model_id",
+	            "confidence": "$inputs.target_confidence"
+	        },
+	        {
+	            "type": "roboflow_core/detections_nearest_neighbor@v1",
+	            "name": "nearest_neighbor",
+	            "query_predictions": "$steps.query_detection.predictions",
+	            "target_predictions": "$steps.target_detection.predictions"
+	        }
+	    ],
+	    "outputs": [
+	        {
+	            "type": "JsonField",
+	            "name": "query_predictions",
+	            "selector": "$steps.nearest_neighbor.query_predictions"
+	        },
+	        {
+	            "type": "JsonField",
+	            "name": "matched_query_detections",
+	            "selector": "$steps.nearest_neighbor.matched_query_detections"
+	        },
+	        {
+	            "type": "JsonField",
+	            "name": "matched_target_detections",
+	            "selector": "$steps.nearest_neighbor.matched_target_detections"
+	        }
+	    ]
+	}
+    ```
+
 ## Comparison of detection models predictions
 
 This example showcases how to compare predictions from two different models using Workflows and 
 Model Comparison Visualization block.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZnUzUDBld1BCa1B2VDgwWE5TRksiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY2NzZ9.Ms6ao2dt1205pCZlT6sNRazL3yHHuzVnXGhacccRUGw?showGraph=true" loading="lazy" title="Roboflow Workflow for two detection models comparison" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZnUzUDBld1BCa1B2VDgwWE5TRksiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIyNTJ9.rLQECXrxW_DAp-psHZCZUNa6OGY0REzKIoT0FNCnMpk?showGraph=true" loading="lazy" title="Roboflow Workflow for two detection models comparison" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -294,7 +371,7 @@ separate sources — different models, different processing stages, a "primary"
 detector vs a "context" detector, etc. The relation is not symmetric: the
 denominator is always the reference detection's area.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMmpQeXNIUjRyM2lKRGZqVTZSaloiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY2Nzd9.zOlh7xzA0c2446c3p6cD4Ipo7fAo6zb9YsgeX_BL-Dg?showGraph=true" loading="lazy" title="Roboflow Workflow for overlap analysis" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMmpQeXNIUjRyM2lKRGZqVTZSaloiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIyNTJ9.JVSarRvb7lUV0pU4NKtC4GLiY6jylkoZtJPBPWcrZP4?showGraph=true" loading="lazy" title="Roboflow Workflow for overlap analysis" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

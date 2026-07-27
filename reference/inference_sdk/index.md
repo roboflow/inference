@@ -22,6 +22,8 @@ Internal utilities for request building, image encoding/decoding, response post-
 
 ::: inference_sdk.http.utils.aliases
 
+::: inference_sdk.http.utils.depth_maps
+
 ::: inference_sdk.http.utils.encoding
 
 ::: inference_sdk.http.utils.executors

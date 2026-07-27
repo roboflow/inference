@@ -177,7 +177,7 @@ hide:
               <div class="block">
                 
                 <div class="block_name"> <i class="fal fa-atom" > </i>  Depth Estimation</div>
-                <div class="block_description">Run Depth Estimation on an image.</div>
+                <div class="block_description">Estimate relative scene depth in an image.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>
@@ -1837,6 +1837,21 @@ hide:
                 
                 <div class="block_name"> <i class="far fa-ruler-triangle" > </i>  Distance Measurement</div>
                 <div class="block_description">Calculate the distance between two bounding boxes on a 2D plane.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="nearest_neighbor_detection_match">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-crosshairs" > </i>  Nearest Neighbor Detection Match</div>
+                <div class="block_description">Find the closest target detection for each query detection using pixel distance.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>

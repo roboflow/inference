@@ -914,6 +914,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environmental variables
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="././" class="md-nav__link md-nav__link--active">
         
   
@@ -930,6 +948,37 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#offline-deployment-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline deployment note
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -1286,6 +1335,11 @@
                       
                     
                     
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -1297,6 +1351,25 @@
   
     
   
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#offline-deployment-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline deployment note
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -1449,13 +1522,33 @@
 <td>Not Set</td>
 </tr>
 <tr>
+<td><code>OFFLINE_MODE</code></td>
+<td>Startup-only flag for air-gapped deployments. The first <code>inference</code> or <code>inference_models</code> import latches the process-environment value, or the current working directory's <code>.env</code> value when the process environment does not declare the flag; runtime environment changes and module reloads are ignored, and changing modes requires a process restart. Descendants inherit the latch when they inherit the parent environment, but a child launched with a sanitized environment is a new startup boundary. The flag blocks built-in Roboflow API, model artifact, telemetry, monitoring, remote-execution, URL image-hydration, and configured WebRTC STUN/TURN endpoint traffic; enables the Hugging Face and Ultralytics dependency offline controls before Inference imports those libraries; loads models exclusively from a trusted, compatible local cache; disables cache eviction and TensorRT engine-file writes; and makes auto-resolution entries never expire. Install the matching <code>inference-models</code> release and re-warm all required models and Workflows online before disconnecting—ambiguous legacy Workflow entries and model entries without canonical ownership plus the required trust and compatibility metadata are rejected. Credential-free fallback also requires one unambiguous canonical model identity; changed or rotated non-empty keys require an exact cache entry. Offline mode is rejected with <code>LAMBDA</code>, <code>GCP_SERVERLESS</code>, dedicated-workspace auth, a workspace whitelist, or the vLLM HTTP proxy; remote and Modal execution modes are forced local, Workflow file caching is forced on with single-tenant cache attribution, and WebRTC uses host candidates only. WebRTC peer connectivity, custom providers, local-code packages, Workflow integrations, explicitly configured cache infrastructure, and sanitized child environments may still use the network, so enforce OS/network isolation for a hard air gap</td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>HF_HOME</code></td>
+<td>Hugging Face cache root. When unset, both <code>inference</code> packages set it before heavy imports to <code>$INFERENCE_HOME/hf_home</code>, <code>$MODEL_CACHE_DIR/hf_home</code>, or <code>/tmp/cache/hf_home</code> in that order. The Hub path respects <code>HF_HUB_CACHE</code>, legacy <code>HUGGINGFACE_HUB_CACHE</code>, then legacy <code>TRANSFORMERS_CACHE</code> before defaulting below <code>HF_HOME</code>; <code>HF_MODULES_CACHE</code> is also derived below <code>HF_HOME</code> unless explicitly configured. Built-in repository-ID loaders pass the resolved Hub path explicitly so an earlier third-party Hugging Face import cannot redirect a warm outside the mounted cache. This makes implicit backbone, processor, and checkpoint downloads survive the supported online-warm to fresh-offline restart when the configured cache volume is mounted</td>
+<td>Derived from the configured model cache</td>
+</tr>
+<tr>
+<td><code>YOLO_CONFIG_DIR</code></td>
+<td>Mutable Ultralytics settings directory. Inference sets this before importing Ultralytics and keeps it outside <code>MODEL_CACHE_DIR</code>, allowing the model artifact volume to remain read-only offline. Importing Ultralytics before either Inference package is rejected when <code>OFFLINE_MODE=True</code>, because that import snapshots online state before Inference can disable its connectivity probe</td>
+<td>Platform temporary directory under <code>roboflow-inference/ultralytics</code></td>
+</tr>
+<tr>
+<td><code>ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS</code></td>
+<td>Explicitly permits <code>MODELS_CACHE_AUTH_ENABLED=True</code> with <code>OFFLINE_MODE=True</code>, where remote model authorization cannot be performed. Use only for a trusted single-tenant deployment. Without this opt-in, that configuration fails during startup</td>
+<td><code>False</code></td>
+</tr>
+<tr>
 <td><code>USE_INFERENCE_MODELS</code></td>
 <td>Flag to select <code>inference-models</code> backend</td>
 <td><code>False</code></td>
 </tr>
 <tr>
 <td><code>MAX_INFERENCE_MODELS_CACHE_SIZE_MB</code></td>
-<td>Variable to enable <code>inference-models</code> cache watchdog to run scheduled cycles of verification for disk space occupied by models - when set with value <code>&gt;0</code> - watchdog prunes model artefacts from oldest and biggest - to prevent system running out of space over time. Only applicable when <code>USE_INFERENCE_MODELS=True</code></td>
+<td>Variable to enable <code>inference-models</code> cache watchdog to run scheduled cycles of verification for disk space occupied by models - when set with value <code>&gt;0</code> - watchdog prunes model artefacts from oldest and biggest - to prevent system running out of space over time. Only applicable when <code>USE_INFERENCE_MODELS=True</code>; the watchdog is disabled in <code>OFFLINE_MODE</code> so an immutable warmed cache is never locked or evicted</td>
 <td><code>-1</code></td>
 </tr>
 <tr>
@@ -1505,6 +1598,8 @@
 </tr>
 </tbody>
 </table>
+<h2 id="offline-deployment-note">Offline deployment note<a class="headerlink" href="#offline-deployment-note" title="Permanent link">&para;</a></h2>
+<p>If the deployment includes the separately released Redis usage offloader, upgrade that process to a release that mirrors this version's startup-only <code>OFFLINE_MODE</code> guard and start it with <code>OFFLINE_MODE=True</code> before entering offline operation. Stop the older offloader first and explicitly choose whether to drain or retain any pre-existing <code>UsageCollector</code> records while the deployment is still online. The inference server cannot prevent an older, separately running offloader from transmitting records that were already queued in Redis.</p>
 
 
 

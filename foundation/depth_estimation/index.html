@@ -104,7 +104,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#execution-modes" class="md-skip">
+        <a href="#available-models" class="md-skip">
           Skip to content
         </a>
       
@@ -822,10 +822,32 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#available-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-modes" class="md-nav__link">
     <span class="md-ellipsis">
       
         Execution Modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-response-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Response Format
       
     </span>
   </a>
@@ -1531,10 +1553,32 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#available-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-modes" class="md-nav__link">
     <span class="md-ellipsis">
       
         Execution Modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-response-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Response Format
       
     </span>
   </a>
@@ -1591,17 +1635,64 @@
   <h1 id="__skip">Depth estimation</h1>
 
 <p><a href="https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf" target="_blank">Depth-Anything-V2-Small</a> is a depth estimation model developed by Hugging Face.</p>
-<p>You can use Depth-Anything-V2-Small to estimate the depth of objects in images, creating a depth map where:
-- Each pixel's value represents its relative distance from the camera
-- Lower values (darker colors) indicate closer objects
-- Higher values (lighter colors) indicate further objects</p>
+<p>You can use Depth-Anything-V2-Small to estimate the relative depth of objects
+in images. The served depth map is normalized independently for each image:</p>
+<ul>
+<li>Higher values (lighter colors) indicate nearer objects, with <code>1.0</code> assigned
+  to the nearest prediction in the image.</li>
+<li>Lower values (darker colors) indicate farther objects, with <code>0.0</code> assigned
+  to the farthest prediction in the image.</li>
+<li>Intermediate values are ordinal proximity scores, not physical distances.
+  They should not be compared numerically across different images or model
+  families.</li>
+</ul>
 <p>You can deploy Depth-Anything-V2-Small with Inference.</p>
+<h3 id="available-models">Available Models<a class="headerlink" href="#available-models" title="Permanent link">&para;</a></h3>
+<p>The depth estimation endpoint and the <code>depth_estimation@v1</code> workflow block
+serve two model families through one ordinal-depth contract: an image-sized
+map normalized per image, where <code>1.0</code> is nearest and <code>0.0</code> is farthest.</p>
+<ul>
+<li><strong>Depth Anything</strong> (relative depth): <code>depth-anything-v2/small</code>, <code>depth-anything-v3/small</code>, <code>depth-anything-v3/base</code></li>
+<li><strong>YOLO26 depth</strong> (metric depth, normalized on this path; substantially faster): <code>yolo26n-depth-768</code>, <code>yolo26s-depth-768</code>, <code>yolo26m-depth-768</code>, <code>yolo26l-depth-768</code>, <code>yolo26x-depth-768</code></li>
+</ul>
+<p>This common output preserves shape, range, and near-to-far ordering across
+models. It does not make intermediate values geometrically equivalent between
+model families. For absolute metric depth in meters from the YOLO26
+checkpoints, load them directly with <code>inference_models.AutoModel</code> — see the
+<code>inference-models</code> YOLO26 depth documentation.</p>
 <h3 id="execution-modes">Execution Modes<a class="headerlink" href="#execution-modes" title="Permanent link">&para;</a></h3>
 <p>Depth Estimation supports both local and remote execution modes when used in workflows:</p>
 <ul>
 <li><strong>Local execution</strong>: The model runs directly on your inference server (GPU recommended for faster inference)</li>
 <li><strong>Remote execution</strong>: The model can be invoked via HTTP API on a remote inference server using the <code>depth_estimation()</code> client method</li>
 </ul>
+<h3 id="http-response-format">HTTP Response Format<a class="headerlink" href="#http-response-format" title="Permanent link">&para;</a></h3>
+<p>The <code>/infer/depth-estimation</code> endpoint serializes <code>normalized_depth</code> according to the
+request's <code>depth_map_format</code> field:</p>
+<ul>
+<li><code>json</code> (default): a nested list of floats between 0 and 1 — wire-compatible with
+  older clients, but ~17 MB for a 1080×810 image.</li>
+<li><code>png16</code>: a base64 16-bit grayscale PNG (quantization step 1/65535, typically &gt;10x
+  smaller and much faster to serve).</li>
+<li><code>png8</code>: a base64 8-bit grayscale PNG (256 depth levels, roughly another order of
+  magnitude smaller — fine for visualization and thresholding, lossy for
+  derivative-based geometric use).</li>
+</ul>
+<p>The <code>inference_sdk</code> <code>depth_estimation()</code> client method defaults to <code>json</code>, so existing
+integrations keep receiving the legacy nested list. Pass <code>depth_map_format="png16"</code>
+(or <code>"png8"</code>) to opt in to the compact payload — the SDK decodes it back to a
+<code>numpy.ndarray</code> (note: an <code>ndarray</code>, not a plain list — call <code>.tolist()</code> if you need
+JSON-serializable output).</p>
+<div class="admonition warning">
+<p class="admonition-title">Deprecation notice</p>
+<p>The SDK's <code>json</code> default is deprecated: in one of the first <code>inference</code> releases
+of 2027 the default will switch to <code>png16</code> in a breaking way — <code>normalized_depth</code>
+will then be returned as a <code>numpy.ndarray</code>. The SDK emits an
+<code>InferenceSDKDeprecationWarning</code> when the <code>json</code> format is used (shown once per
+process under default warning filters). Opt in to <code>png16</code> early, or pass
+<code>depth_map_format="json"</code> explicitly to keep the list format after the switch.
+Raw REST callers are unaffected — the server-side default stays <code>json</code>.</p>
+</div>
 <h3 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h3>
 <p>To install inference with the extra dependencies necessary to run Depth-Anything-V2-Small, run</p>
 <p><code>pip install "inference[transformers]"</code></p>
@@ -1651,8 +1742,8 @@
 3. Run inference to get the depth map
 4. Display both the original image and the depth map visualization</p>
 <p>The depth map visualization uses a viridis colormap where:
-- Darker colors (purple/blue) represent objects closer to the camera
-- Lighter colors (yellow/green) represent objects further from the camera</p>
+- Lighter colors (yellow/green) represent objects closer to the camera
+- Darker colors (purple/blue) represent objects further from the camera</p>
 <p>To use Depth-Anything-V2-Small with Inference, you will need a Hugging Face token. If you don't already have a Hugging Face account, <a href="https://huggingface.co/join" target="_blank">sign up for a free Hugging Face account</a>.</p>
 <p>Then, set your Hugging Face token as an environment variable:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">HUGGING_FACE_HUB_TOKEN</span><span class="o">=</span>your_token_here

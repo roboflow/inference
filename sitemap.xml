@@ -616,6 +616,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;distance_measurement&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;nearest_neighbor_detection_match&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;mask_area_measurement&#x2f;</loc>
     </url>
     <url>

@@ -32,7 +32,7 @@ reference parameter (provided via Workflow input `$inputs.reference`). We can us
 that goal - building custom case statements (checking if class names being list of classes 
 extracted from object detection prediction matches reference passed in the input).
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMWZRTDhXQ1ZTdzRCRXo5dFk0QnciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY3NTh9.ki79gYEj1T5V0r1fc7z8OHKmL58OqSHb8_BTh33Nt60?showGraph=true" loading="lazy" title="Roboflow Workflow for business logic 1" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMWZRTDhXQ1ZTdzRCRXo5dFk0QnciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIzMjB9.ILe6xFPWBoAT8SQ76gkUuVrRETU4E8t8x7yzAvqAXB4?showGraph=true" loading="lazy" title="Roboflow Workflow for business logic 1" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -186,7 +186,7 @@ Such prepared output of `empty_values_replacement` step may be now plugged into 
 performing switch-case like logic to deduce if breeds of detected dogs match with reference value 
 passed to workflow execution.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiemVhaFROSWNHRGNKbHFtbDliWWYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODQ3MjY3NTh9.42E2hwt-Nf_PWutLpP4ZL9QW-BEr9iEH2ZIP-HLsbmE?showGraph=true" loading="lazy" title="Roboflow Workflow for business logic 2" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiemVhaFROSWNHRGNKbHFtbDliWWYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODUxNzIzMjF9.3EMCtABQSIFrgxF4NCKivNX3qQlXjw3hH9nqqKHB_zg?showGraph=true" loading="lazy" title="Roboflow Workflow for business logic 2" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

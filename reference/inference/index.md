@@ -210,6 +210,8 @@ Base model classes and common prediction logic shared across model types.
 
 ::: inference.core.models.utils.keypoints
 
+::: inference.core.models.utils.onnx
+
 ## `core/registries`
 
 Model and block registries for dynamic lookup and plugin discovery.
@@ -225,6 +227,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 ::: inference.core.utils.container
 
 ::: inference.core.utils.cuda_health
+
+::: inference.core.utils.depth_encoding
 
 ::: inference.core.utils.environment
 
@@ -315,6 +319,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 ## `core/workflows/core_steps/common`
 
 ::: inference.core.workflows.core_steps.common.entities
+
+::: inference.core.workflows.core_steps.common.keypoints
 
 ::: inference.core.workflows.core_steps.common.openrouter
 
@@ -475,6 +481,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 Workflow execution engine entry points and helpers.
 
 ::: inference.core.workflows.errors
+
+::: inference.core.workflows.offline
 
 ## `core/workflows/execution_engine/introspection`
 
@@ -687,6 +695,10 @@ Parallel HTTP inference via Celery workers for high-throughput deployments.
 ## `models/sam3_3d`
 
 ::: inference.models.sam3_3d.segment_anything_3d
+
+## `models/transformers`
+
+::: inference.models.transformers.transformers
 
 ## `models/vit`
 

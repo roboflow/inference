@@ -215,6 +215,7 @@ Roboflow Inference is an open-source (Apache 2.0) computer vision inference serv
 - [Size Measurement](https://inference.roboflow.com/workflows/blocks/size_measurement/index.md)
 - [Contrast Enhancement](https://inference.roboflow.com/workflows/blocks/contrast_enhancement/index.md)
 - [Distance Measurement](https://inference.roboflow.com/workflows/blocks/distance_measurement/index.md)
+- [Nearest Neighbor Detection Match](https://inference.roboflow.com/workflows/blocks/nearest_neighbor_detection_match/index.md)
 - [Mask Area Measurement](https://inference.roboflow.com/workflows/blocks/mask_area_measurement/index.md)
 - [Mask Edge Snap](https://inference.roboflow.com/workflows/blocks/mask_edge_snap/index.md)
 - [Byte Tracker (Deprecated)](https://inference.roboflow.com/workflows/blocks/byte_tracker/index.md)
