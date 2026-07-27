@@ -1,4 +1,10 @@
+import pytest
 import torch
+
+pytest.importorskip(
+    "onnxruntime",
+    reason="onnxruntime is not installed (requires the onnx-* extra)",
+)
 
 from inference_models.models.common import onnx
 
