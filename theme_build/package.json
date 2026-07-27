@@ -22,6 +22,7 @@
     "gsap": "^3.12.7",
     "swiper": "^12.1.2",
     "shell-quote": "^1.9.0",
-    "brace-expansion": "^2.1.2"
+    "brace-expansion": "^5.0.8",
+    "postcss": "^8.5.18"
   }
 }
