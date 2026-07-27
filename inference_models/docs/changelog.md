@@ -4,6 +4,12 @@
 
 ---
 
+## `0.34.2`
+
+- Dependencies bump due to security issues.
+
+---
+
 ## `0.34.1`
 
 - Package-local imports also avoid writing bytecode into model package directories.
