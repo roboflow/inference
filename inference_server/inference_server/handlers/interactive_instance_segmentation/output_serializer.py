@@ -8,7 +8,6 @@ from inference_model_manager.serializers_typed import (
     serialize_embeddings,
     serialize_passthrough,
     serialize_sam_segmentation_compact,
-    serialize_text,
 )
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.serializers import serialize_json
@@ -64,11 +63,4 @@ def serialize_sam_segmentation(
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
     typed = [serialize_passthrough(p, proxy) for p in items]
-    return _envelope(typed, common)
-
-
-def serialize_sam_text(prediction: Any, common: CommonRequestParams) -> Response:
-    items = prediction if isinstance(prediction, list) else [prediction]
-    proxy = _ModelProxy(class_names=None)
-    typed = [serialize_text(p, proxy) for p in items]
     return _envelope(typed, common)

@@ -210,3 +210,14 @@ def test_sam_and_sam2_segment_configs():
         assert seg[5] == "serialize_sam_segmentation_compact"
         emb = cfgs["embed"]
         assert "image_hashes" in emb[3] and "use_embeddings_cache" in emb[3]
+
+
+def test_sam2_stream_configs_match_signatures():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["SAM2ForStream"]}
+    assert cfgs["prompt"][3]["image"]["required"] is True
+    assert cfgs["prompt"][3]["bboxes"]["required"] is True
+    assert "prompt" not in cfgs["prompt"][3]
+    assert cfgs["track"][3]["image"]["required"] is True
+    assert cfgs["prompt"][5] == "serialize_passthrough"
