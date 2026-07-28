@@ -165,3 +165,17 @@ def test_moondream2_task_configs_match_model_signatures():
     assert cfgs["caption"][3]["length"] == {"type": "str", "required": False}
     for task in ("caption", "detect", "query", "point"):
         assert "max_new_tokens" in cfgs[task][3]
+
+
+def test_florence2_task_configs():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["Florence2HF"]}
+
+    assert cfgs["segment_phrase"][7] == {"prompt": "phrase"}
+    assert cfgs["ground_phrase"][7] == {"prompt": "phrase"}
+    assert cfgs["caption"][3]["granularity"] == {"type": "str", "required": False}
+    assert cfgs["detect"][3]["labels_mode"] == {"type": "str", "required": False}
+    assert cfgs["detect"][3]["classes"] == {"type": "list[str]", "required": False}
+    for task in ("caption", "detect", "ocr", "parse_document"):
+        assert "max_new_tokens" in cfgs[task][3]
