@@ -4,7 +4,9 @@ Downloads are only ever performed for URLs recorded in ``registry.py`` -
 callers must never pass user-provided URLs. The file is streamed to a
 temporary path, verified against the expected SHA-256 checksum and only then
 atomically moved to its destination, so a partially-written or tampered file
-can never be observed at the destination path.
+can never be observed at the destination path. Transient network failures
+are retried with exponential backoff; checksum mismatches and oversized
+responses fail immediately.
 
 IMPORTANT: this module must stay stdlib-only. It is loaded standalone (by
 file path, without importing the ``inference`` package) by
@@ -13,12 +15,15 @@ file path, without importing the ``inference`` package) by
 
 import hashlib
 import shutil
+import time
 import urllib.request
 from pathlib import Path
 
 DOWNLOAD_TIMEOUT_SECONDS = 60
 MAX_FONT_FILE_BYTES = 20 * 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
+DOWNLOAD_MAX_ATTEMPTS = 3
+DOWNLOAD_BACKOFF_SECONDS = 1.0
 
 
 class FontDownloadError(RuntimeError):
@@ -52,6 +57,8 @@ def download_file_with_checksum(
     expected_sha256: str,
     timeout_seconds: int = DOWNLOAD_TIMEOUT_SECONDS,
     max_bytes: int = MAX_FONT_FILE_BYTES,
+    max_attempts: int = DOWNLOAD_MAX_ATTEMPTS,
+    backoff_seconds: float = DOWNLOAD_BACKOFF_SECONDS,
 ) -> Path:
     """Download a pinned asset and verify its SHA-256 checksum.
 
@@ -60,25 +67,60 @@ def download_file_with_checksum(
     partial file is removed and ``FontDownloadError`` is raised - the
     destination path is never left holding unverified bytes.
 
+    Transient network failures are retried up to ``max_attempts`` times with
+    exponential backoff. Permanent failures (non-HTTPS URL, oversized
+    response, checksum mismatch) fail immediately without retry.
+
     Args:
         url: HTTPS URL of the approved asset (must come from the registry).
         destination: Final path for the verified file.
         expected_sha256: Hex-encoded SHA-256 checksum the file must match.
         timeout_seconds: Connect/read timeout for the download.
         max_bytes: Hard cap on the downloaded size.
+        max_attempts: Total attempts for transient network failures.
+        backoff_seconds: Base sleep between attempts, doubled each retry.
 
     Returns:
         The ``destination`` path, once the file is verified.
 
     Raises:
-        FontDownloadError: On non-HTTPS URLs, network errors, oversized
-            responses, or checksum mismatch.
+        FontDownloadError: On non-HTTPS URLs, oversized responses, checksum
+            mismatch, or network errors persisting across all attempts.
     """
     if not url.lower().startswith("https://"):
         raise FontDownloadError(
             f"Refusing to download font asset over non-HTTPS URL: {url}"
         )
 
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return _download_once(
+                url,
+                destination=destination,
+                expected_sha256=expected_sha256,
+                timeout_seconds=timeout_seconds,
+                max_bytes=max_bytes,
+            )
+        except FontDownloadError:
+            # permanent failure (checksum mismatch, size cap) - never retry
+            raise
+        except Exception as error:
+            if attempt == max_attempts:
+                raise FontDownloadError(
+                    f"Could not download font asset from {url} after "
+                    f"{max_attempts} attempts: {error}"
+                ) from error
+            time.sleep(backoff_seconds * 2 ** (attempt - 1))
+
+
+def _download_once(
+    url: str,
+    *,
+    destination: Path,
+    expected_sha256: str,
+    timeout_seconds: int,
+    max_bytes: int,
+) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial_path = destination.with_name(f"{destination.name}.part")
     digest = hashlib.sha256()
@@ -101,14 +143,9 @@ def download_file_with_checksum(
 
                     digest.update(chunk)
                     partial_file.write(chunk)
-    except FontDownloadError:
+    except Exception:
         partial_path.unlink(missing_ok=True)
         raise
-    except Exception as error:
-        partial_path.unlink(missing_ok=True)
-        raise FontDownloadError(
-            f"Could not download font asset from {url}: {error}"
-        ) from error
 
     actual_sha256 = digest.hexdigest()
     if actual_sha256 != expected_sha256:
