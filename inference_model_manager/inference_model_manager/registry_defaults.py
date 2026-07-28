@@ -236,8 +236,25 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(_P_IMAGES),
             "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
+            "serialize_structured_ocr_compact",
+            "roboflow-structured-ocr-compact-v1",
+        ),
+    ],
+    "EasyOCRTorch": [
+        (
+            "infer",
+            "infer",
+            True,
+            _p(
+                _P_IMAGES,
+                {
+                    "confidence": {"type": "float", "required": False},
+                    "text_regions_separator": {"type": "str", "required": False},
+                },
+            ),
+            "validate_images_required",
+            "serialize_structured_ocr_compact",
+            "roboflow-structured-ocr-compact-v1",
         ),
     ],
     # --- Embeddings ---

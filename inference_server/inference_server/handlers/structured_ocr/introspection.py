@@ -9,6 +9,6 @@ def get_structured_ocr_interface() -> ModelInterfaceDescription:
         task="structured-ocr",
         params=_p(_P_IMAGES),
         output_schema={
-            "type": "roboflow-text-v1",
+            "type": "roboflow-structured-ocr-compact-v1",
         },
     )

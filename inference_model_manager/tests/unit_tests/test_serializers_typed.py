@@ -157,3 +157,33 @@ def test_serialize_gaze_compact_batch():
         {"yaw": [0.1], "pitch": [0.2]},
         {"yaw": [0.3], "pitch": [0.4]},
     ]
+
+
+def test_serialize_structured_ocr_compact():
+    from types import SimpleNamespace
+    from inference_model_manager.serializers_typed import (
+        serialize_structured_ocr_compact,
+    )
+
+    det = SimpleNamespace(
+        xyxy=[[0, 0, 10, 10]],
+        class_id=[2],
+        confidence=[0.9],
+        bboxes_metadata=[{"text": "word"}],
+    )
+    model = SimpleNamespace(class_names=["block", "line", "word"])
+    out = (["word"], [det])
+    result = serialize_structured_ocr_compact(out, model)
+    assert result["type"] == "roboflow-structured-ocr-compact-v1"
+    assert result["class_names"] == ["block", "line", "word"]
+    assert result["batch"] == [
+        {
+            "text": "word",
+            "regions": {
+                "xyxy": [[0, 0, 10, 10]],
+                "class_id": [2],
+                "confidence": [0.9],
+                "texts": ["word"],
+            },
+        }
+    ]

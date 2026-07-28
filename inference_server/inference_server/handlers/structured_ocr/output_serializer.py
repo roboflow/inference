@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from fastapi import Response
 
-from inference_model_manager.serializers_typed import serialize_text
+from inference_model_manager.serializers_typed import serialize_structured_ocr_compact
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.serializers import serialize_json
 
@@ -18,7 +18,7 @@ class _ModelProxy:
 
 def _serialize_one(prediction: Any) -> Any:
     proxy = _ModelProxy(class_names=None)
-    return serialize_text(prediction, proxy)
+    return serialize_structured_ocr_compact(prediction, proxy)
 
 
 def serialize_structured_ocr(prediction: Any, common: CommonRequestParams) -> Response:

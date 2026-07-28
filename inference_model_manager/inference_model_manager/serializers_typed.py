@@ -258,6 +258,33 @@ def serialize_text(output: Any, model: Any) -> dict:
     }
 
 
+def serialize_structured_ocr_compact(output: Any, model: Any) -> dict:
+    """(texts, detections) tuple → roboflow-structured-ocr-compact-v1"""
+    if isinstance(output, tuple) and len(output) == 2:
+        texts, detections = output
+    else:
+        texts, detections = output, [None] * len(output)
+
+    def _regions(det: Any) -> Any:
+        if det is None:
+            return None
+        meta = getattr(det, "bboxes_metadata", None)
+        return {
+            "xyxy": _to_list(det.xyxy),
+            "class_id": _to_list(det.class_id),
+            "confidence": _to_list(det.confidence),
+            "texts": [m.get("text") for m in meta] if meta else None,
+        }
+
+    return {
+        "type": "roboflow-structured-ocr-compact-v1",
+        "class_names": _class_names(model),
+        "batch": [
+            {"text": t, "regions": _regions(d)} for t, d in zip(texts, detections)
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Depth estimation
 # ---------------------------------------------------------------------------
