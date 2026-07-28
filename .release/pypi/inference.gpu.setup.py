@@ -57,10 +57,6 @@ setuptools.setup(
         "inference.models.perception_encoder.vision_encoder": [
             "bpe_simple_vocab_16e6.txt.gz"
         ],
-        "inference.core.workflows.core_steps.visualizations.common.fonts": [
-            "assets/*/*",
-            "README.md",
-        ],
     },
     entry_points={
         "console_scripts": [

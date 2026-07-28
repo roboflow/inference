@@ -16,10 +16,6 @@ def test_init_files_present_in_inference_core_workflows_core_steps():
         if "__pycache__" in root:
             continue
 
-        # data-only directories provisioned by build_scripts/download_fonts.py
-        if os.path.join("common", "fonts", "assets") in root:
-            continue
-
         if os.path.basename(root) != "core_steps":
             if "__init__.py" not in files:
                 rel_path = os.path.relpath(root, project_root)

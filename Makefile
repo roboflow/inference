@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts
+.PHONY: style check_code_quality
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -23,9 +23,6 @@ check_code_quality:
 	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics --exclude __init__.py,inference/inference/landing/node_modules
 
 
-download_fonts:
-	${PYTHON} build_scripts/download_fonts.py
-
 start_test_docker_cpu:
 	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
@@ -42,7 +39,7 @@ start_test_docker_jetson:
 stop_test_docker:
 	docker rm -f inference-test
 
-create_wheels: download_fonts
+create_wheels:
 	python -m pip install --upgrade pip
 	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 	rm -f dist/*
@@ -59,7 +56,7 @@ create_wheels: download_fonts
 	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
-create_wheels_for_gpu_notebook: download_fonts
+create_wheels_for_gpu_notebook:
 	python -m pip install --upgrade pip
 	python -m pip install wheel twine requests
 	rm -f dist/*
