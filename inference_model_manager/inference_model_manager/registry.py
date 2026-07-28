@@ -40,6 +40,9 @@ class TaskEntry:
     response_type: str
     """e.g. 'roboflow-object-detection-compact-v1'"""
 
+    param_aliases: dict
+    """Maps external param name -> method kwarg name. Applied at invocation."""
+
 
 class ModelRegistry:
     """Maps (base_class, task_name) → TaskEntry.
@@ -66,6 +69,7 @@ class ModelRegistry:
         validator: Callable[[dict], dict],
         serializer: Callable[[Any, Any], dict],
         response_type: str,
+        param_aliases: Optional[dict] = None,
     ) -> None:
         """Register a task entry for a model class.
 
@@ -79,6 +83,7 @@ class ModelRegistry:
             validator: Validates kwargs before invocation.
             serializer: Converts raw model output to typed dict.
             response_type: Type string for response envelope.
+            param_aliases: Maps external param names to method kwargs.
         """
         entry = TaskEntry(
             method=method or task_name,
@@ -87,6 +92,7 @@ class ModelRegistry:
             validator=validator,
             serializer=serializer,
             response_type=response_type,
+            param_aliases=param_aliases or {},
         )
 
         with self._lock:

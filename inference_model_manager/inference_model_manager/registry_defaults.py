@@ -119,6 +119,12 @@ def _p(*dicts: dict) -> dict:
     return r
 
 
+def _unpack_config(cfg: tuple) -> tuple:
+    task_name, method, default, params, val_name, ser_name, resp_type = cfg[:7]
+    aliases = cfg[7] if len(cfg) > 7 else {}
+    return task_name, method, default, params, val_name, ser_name, resp_type, aliases
+
+
 _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
     # --- Object Detection (base — fallback for all OD models) ---
     "ObjectDetectionModel": [
@@ -694,15 +700,10 @@ def lazy_register_by_names(mro_names: list[str]) -> None:
             if config is None:
                 continue
             placeholder = type(name, (), {})
-            for (
-                task_name,
-                method,
-                default,
-                params,
-                val_name,
-                ser_name,
-                resp_type,
-            ) in config:
+            for cfg in config:
+                task_name, method, default, params, val_name, ser_name, resp_type, aliases = (
+                    _unpack_config(cfg)
+                )
                 registry.register(
                     placeholder,
                     task_name,
@@ -712,6 +713,7 @@ def lazy_register_by_names(mro_names: list[str]) -> None:
                     validator=_resolve_validator(val_name),
                     serializer=_resolve_serializer(ser_name),
                     response_type=resp_type,
+                    param_aliases=aliases,
                 )
 
 
@@ -724,7 +726,10 @@ def _register_from_config(cls: type) -> None:
     if config is None:
         return
     existing = set(registry.registered_tasks(cls))
-    for task_name, method, default, params, val_name, ser_name, resp_type in config:
+    for cfg in config:
+        task_name, method, default, params, val_name, ser_name, resp_type, aliases = (
+            _unpack_config(cfg)
+        )
         if task_name in existing:
             continue
         registry.register(
@@ -736,4 +741,5 @@ def _register_from_config(cls: type) -> None:
             validator=_resolve_validator(val_name),
             serializer=_resolve_serializer(ser_name),
             response_type=resp_type,
+            param_aliases=aliases,
         )

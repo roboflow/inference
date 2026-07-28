@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 from inference_model_manager.registry import TaskEntry
 from inference_model_manager.registry_defaults import (
     _TASK_CONFIGS,
+    _unpack_config,
     lazy_register,
     registry,
 )
@@ -35,7 +36,8 @@ def discover_tasks_by_mro(mro_names: list[str]) -> Dict[str, Dict[str, Any]]:
         config = _TASK_CONFIGS.get(name)
         if config is None:
             continue
-        for task_name, method, default, params, _v, _s, resp_type in config:
+        for cfg in config:
+            task_name, method, default, params, _v, _s, resp_type, _a = _unpack_config(cfg)
             if task_name not in result:
                 result[task_name] = {
                     "method": method,
@@ -97,6 +99,8 @@ def invoke_task(
             f"Model {type(model).__name__} has no method '{entry.method}' "
             f"(registered for task '{task_name}')"
         )
+    if entry.param_aliases:
+        kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
     return method(**kwargs)
 
 

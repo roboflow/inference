@@ -30,3 +30,35 @@ def test_list_tasks_by_mro_names_walks_mro():
         ]
     )
     assert "infer" in tasks
+
+
+def test_invoke_task_applies_param_aliases():
+    from inference_model_manager.dispatch import invoke_task
+    from inference_model_manager.registry_defaults import registry
+
+    class AliasedModel:
+        def ask(self, question):
+            return f"answer:{question}"
+
+    registry.register(
+        AliasedModel,
+        "query",
+        method="ask",
+        default=True,
+        params={"prompt": {"type": "str", "required": True}},
+        validator=lambda kw: kw,
+        serializer=lambda out, m: {"text": out},
+        response_type="roboflow-text-v1",
+        param_aliases={"prompt": "question"},
+    )
+    result = invoke_task(AliasedModel(), task="query", prompt="hi")
+    assert result == "answer:hi"
+
+
+def test_unpack_config_handles_7_and_8_tuples():
+    from inference_model_manager.registry_defaults import _unpack_config
+
+    seven = ("t", "m", True, {}, "v", "s", "r")
+    assert _unpack_config(seven)[7] == {}
+    eight = ("t", "m", True, {}, "v", "s", "r", {"a": "b"})
+    assert _unpack_config(eight)[7] == {"a": "b"}
