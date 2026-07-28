@@ -142,7 +142,6 @@ def recover_tensor_byte_tracker_output(
         ),
         "image_metadata": detections.image_metadata,
         "bboxes_metadata": tracked_metadata or None,
-        "tracker_id": tracker_ids,
     }
     if isinstance(detections, InstanceDetections):
         masks = detections.mask
@@ -161,6 +160,7 @@ def recover_tensor_byte_tracker_output(
         )
     else:
         tracked_detections = Detections(**common_kwargs)
+    tracked_detections.tracker_id = tracker_ids
 
     if seen is None:
         return tracked_detections, None
@@ -187,12 +187,10 @@ def select_tracked_partition(
         "confidence": detections.confidence[selector],
         "image_metadata": detections.image_metadata,
         "bboxes_metadata": metadata,
-        "tracker_id": (
-            detections.tracker_id[selector]
-            if detections.tracker_id is not None
-            else None
-        ),
     }
+    selected_tracker_ids = (
+        detections.tracker_id[selector] if detections.tracker_id is not None else None
+    )
     if isinstance(detections, InstanceDetections):
         masks = detections.mask
         if isinstance(masks, InstancesRLEMasks):
@@ -202,5 +200,11 @@ def select_tracked_partition(
             )
         else:
             selected_masks = masks[selector.to(masks.device)]
-        return InstanceDetections(mask=selected_masks, **common_kwargs)
-    return Detections(**common_kwargs)
+        result: TensorDetections = InstanceDetections(
+            mask=selected_masks,
+            **common_kwargs,
+        )
+    else:
+        result = Detections(**common_kwargs)
+    result.tracker_id = selected_tracker_ids
+    return result

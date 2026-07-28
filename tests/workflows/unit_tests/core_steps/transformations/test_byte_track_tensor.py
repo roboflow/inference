@@ -128,13 +128,23 @@ def test_tensor_byte_tracker_never_calls_numpy_and_preserves_order(
 def test_tensor_byte_tracker_recovery_does_not_require_detections_len(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Support released inference-models Detections without ``__len__``."""
+    """Support released Detections without ``__len__`` or init tracker IDs."""
     detections = _detections()
+    original_init = Detections.__init__
 
     def reject_len(_detections: Detections) -> int:
         raise TypeError("object of type 'Detections' has no len()")
 
+    def legacy_init(
+        instance: Detections,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        assert "tracker_id" not in kwargs
+        original_init(instance, *args, **kwargs)
+
     monkeypatch.setattr(Detections, "__len__", reject_len)
+    monkeypatch.setattr(Detections, "__init__", legacy_init)
 
     tracked, _ = recover_tensor_byte_tracker_output(
         detections=detections,
