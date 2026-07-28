@@ -281,13 +281,15 @@ class MMPClient:
         self,
         *,
         model_id: str,
-        image: bytes,
+        image: Optional[bytes] = None,
         task: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
         raw_pickle: bool = False,
     ) -> Any:
+        if image is None:
+            image = b""
         if len(image) > self.shm_data_size:
             raise PayloadTooLargeError(
                 f"image exceeds slot size ({len(image)} > {self.shm_data_size})"

@@ -34,6 +34,7 @@ def has_handler_for_model_type(model_type: str) -> bool:
 
 import inference_server.handlers.classification.description  # noqa: E402, F401
 import inference_server.handlers.depth.description  # noqa: E402, F401
+import inference_server.handlers.embeddings.description  # noqa: E402, F401
 import inference_server.handlers.gaze.description  # noqa: E402, F401
 import inference_server.handlers.instance_segmentation.description  # noqa: E402, F401
 import inference_server.handlers.interactive_instance_segmentation.description  # noqa: E402, F401

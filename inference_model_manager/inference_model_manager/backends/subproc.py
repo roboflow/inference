@@ -687,9 +687,9 @@ def _process_slots(
     decode_errors: list[bool] = [False] * len(batch)
 
     # Empty slots are params-only requests: no payload to decode, the model
-    # receives images=None and resolves inputs from params (e.g. cached
-    # embeddings referenced by image_hashes). Models that need an image
-    # raise from invoke_task, which errors the slot, not the worker.
+    # is invoked without an images kwarg and resolves inputs from params
+    # (e.g. cached embeddings referenced by image_hashes). Models that need
+    # an image raise from invoke_task, which errors the slot, not the worker.
     is_empty: list[bool] = [len(mv) == 0 for mv in mvs]
 
     # Resolution reject gate — drop oversized images by header dims, no decode.
@@ -785,8 +785,8 @@ def _process_slots(
         # Build a hashable key from the params dict (task + sorted remaining params)
         key = json.dumps(p, sort_keys=True)
         if good_images[idx] is None:
-            # Params-only request: images=None must reach the model as a
-            # scalar, never inside a batched list — one invocation per slot.
+            # Params-only request: the task is invoked without an images
+            # kwarg — one invocation per slot, never a batched list.
             key = f"__params_only__:{idx}:{key}"
         sub_batches.setdefault(key, []).append(idx)
 
@@ -799,8 +799,20 @@ def _process_slots(
         sub_images = [good_images[i] for i in indices]
         try:
             images_arg = sub_images[0] if len(sub_images) == 1 else sub_images
-            raw_out = invoke_task(model, task=task, images=images_arg, **sub_params)
-            sub_results = raw_out if isinstance(raw_out, list) else [raw_out]
+            if images_arg is None:
+                raw_out = invoke_task(model, task=task, **sub_params)
+            else:
+                raw_out = invoke_task(
+                    model, task=task, images=images_arg, **sub_params
+                )
+            if isinstance(raw_out, list):
+                sub_results = raw_out
+            else:
+                shape = getattr(raw_out, "shape", None)
+                if shape and len(indices) > 1 and shape[0] == len(indices):
+                    sub_results = [raw_out[i : i + 1] for i in range(len(indices))]
+                else:
+                    sub_results = [raw_out]
             for i, r in zip(indices, sub_results):
                 results[i] = r
         except ModelInputError as exc:

@@ -1,7 +1,7 @@
 """Params-only (empty-input) slot handling in _process_slots.
 
-A slot written with input_size 0 is a params-only request: the worker calls
-the model with images=None and lets the model resolve inputs from params
+A slot written with input_size 0 is a params-only request: the worker invokes
+the task without an images kwarg and lets the model resolve inputs from params
 (e.g. cached embeddings referenced by image_hashes). Empty slots are never
 grouped into a shared sub-batch.
 """
@@ -89,7 +89,7 @@ def _run(pool, batch, capture_calls, monkeypatch, sock=None):
     )
 
 
-def test_empty_slot_invokes_model_with_images_none(pool, monkeypatch):
+def test_empty_slot_invokes_model_without_images_kwarg(pool, monkeypatch):
     calls = []
     slot = pool.alloc_slot()
     _write_empty_input(pool, slot, req_id=7)
@@ -102,7 +102,7 @@ def test_empty_slot_invokes_model_with_images_none(pool, monkeypatch):
     assert len(calls) == 1
     task, images, kw = calls[0]
     assert task == "segment_with_visual_prompts"
-    assert images is None
+    assert images == "MISSING"
     assert kw["image_hashes"] == ["h1"]
 
 
@@ -126,7 +126,7 @@ def test_two_empty_slots_same_params_invoke_separately(pool, monkeypatch):
     params = b'{"image_hashes": ["h1"]}'
     _run(pool, [(s1, 9, params), (s2, 10, params)], calls, monkeypatch)
     assert len(calls) == 2
-    assert all(images is None for _, images, _ in calls)
+    assert all(images == "MISSING" for _, images, _ in calls)
 
 
 def test_model_input_error_gets_typed_prefix(pool, monkeypatch):

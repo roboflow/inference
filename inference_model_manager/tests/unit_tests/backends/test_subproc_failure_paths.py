@@ -214,6 +214,43 @@ def test_unpicklable_result_errors_slot_without_killing_batch(monkeypatch):
         pool.close()
 
 
+def test_batched_stacked_tensor_output_splits_per_slot(monkeypatch):
+    import torch
+
+    pool = SHMPool.create(n_slots=3, input_mb=0.5)
+    try:
+        sock = _FakeSock()
+        req_ids = (301, 302, 303)
+        slots = [pool.alloc_slot() for _ in req_ids]
+        for slot, req_id in zip(slots, req_ids):
+            _write_npy_input(pool, slot, req_id=req_id)
+
+        stacked = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+        monkeypatch.setattr(
+            subproc,
+            "invoke_task",
+            lambda model, task, images, **kw: stacked,
+        )
+
+        subproc._process_slots(
+            object(),
+            pool,
+            [(slot, req_id, b"{}") for slot, req_id in zip(slots, req_ids)],
+            sock,
+            lambda mvs: [None] * len(mvs),
+            _Log(),
+            _stats(),
+        )
+
+        for i, slot in enumerate(slots):
+            hdr = pool.read_header(slot)
+            assert hdr.status == SlotStatus.DONE
+            row = pickle.loads(bytes(pool.data_memoryview(slot)[: hdr.result_size]))
+            assert np.array_equal(row, stacked.numpy()[i : i + 1])
+    finally:
+        pool.close()
+
+
 class TestCleanUnloadFailsFast:
     def _unloadable_backend(self) -> SubprocessBackend:
         return _bare_backend(

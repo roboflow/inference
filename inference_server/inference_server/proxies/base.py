@@ -95,14 +95,14 @@ class ModelManagerProxy(Protocol):
         self,
         *,
         model_id: str,
-        image: bytes,
+        image: Optional[bytes] = None,
         task: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
         raw_pickle: bool = False,
     ) -> Any:
-        """Run inference on a single image.
+        """Run inference on a single image, or params-only when `image` is None.
 
         Returns the typed prediction object emitted by the backend model
         (e.g. `Detections`, `ClassificationPrediction`, str for text models,

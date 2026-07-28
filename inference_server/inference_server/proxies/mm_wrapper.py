@@ -102,7 +102,7 @@ class MMWrapper:
         self,
         *,
         model_id: str,
-        image: bytes,
+        image: Optional[bytes] = None,
         task: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
@@ -115,7 +115,8 @@ class MMWrapper:
         call_kwargs = dict(params) if params else {}
         # Empty payload = params-only request; the model resolves inputs from
         # params (mirrors the MMP worker contract for zero-byte slots).
-        call_kwargs["images"] = image if image else None
+        if image is not None:
+            call_kwargs["images"] = image if image else None
         # serialize=False: L1 output serializers expect the RAW prediction —
         # the MMP wire carries raw pickles, so bundled mode must match.
         prediction = await self.manager.process_async(
