@@ -8,6 +8,7 @@ from inference_model_manager.serializers_typed import (
     serialize_detections_compact,
     serialize_detections_rich,
     serialize_embeddings,
+    serialize_keypoints_compact,
     serialize_text,
 )
 from inference_server.framework.entities import CommonRequestParams
@@ -28,6 +29,8 @@ def _serialize_text_one(prediction: Any) -> Any:
 
 def _serialize_detections_one(prediction: Any, style: str) -> Any:
     proxy = _ModelProxy(class_names=None)
+    if hasattr(prediction, "xy") and not hasattr(prediction, "xyxy"):
+        return serialize_keypoints_compact(prediction, proxy)
     serializer = (
         serialize_detections_rich if style == "rich" else serialize_detections_compact
     )

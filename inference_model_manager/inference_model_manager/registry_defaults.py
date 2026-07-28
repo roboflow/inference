@@ -119,6 +119,14 @@ def _p(*dicts: dict) -> dict:
     return r
 
 
+_P_MAX_NEW_TOKENS = {"max_new_tokens": {"type": "int", "required": False}}
+_P_IMAGES_CLASSES_GEN = _p(
+    _P_IMAGES,
+    {"classes": {"type": "list[str]", "required": True}},
+    _P_MAX_NEW_TOKENS,
+)
+
+
 def _unpack_config(cfg: tuple) -> tuple:
     task_name, method, default, params, val_name, ser_name, resp_type = cfg[:7]
     aliases = cfg[7] if len(cfg) > 7 else {}
@@ -484,7 +492,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "caption",
             "caption",
             True,
-            _p(_P_IMAGES),
+            _p(_P_IMAGES, {"length": {"type": "str", "required": False}}, _P_MAX_NEW_TOKENS),
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
@@ -493,8 +501,8 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "detect",
             "detect",
             False,
-            _p(_P_IMAGES),
-            "validate_images_required",
+            _P_IMAGES_CLASSES_GEN,
+            "validate_images_and_classes",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
         ),
@@ -506,15 +514,16 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
+            {"prompt": "question"},
         ),
         (
             "point",
             "point",
             False,
-            _p(_P_VLM_PROMPT),
-            "validate_images_and_prompt",
-            "serialize_detections_compact",
-            "roboflow-object-detection-compact-v1",
+            _P_IMAGES_CLASSES_GEN,
+            "validate_images_and_classes",
+            "serialize_keypoints_compact",
+            "roboflow-keypoints-compact-v1",
         ),
         (
             "encode",

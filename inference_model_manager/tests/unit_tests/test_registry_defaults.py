@@ -146,3 +146,22 @@ class TestRegistryThreadSafety:
             t.join(timeout=5)
 
         assert errors == []
+
+
+def test_moondream2_task_configs_match_model_signatures():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["MoonDream2HF"]}
+
+    assert cfgs["detect"][3]["classes"] == {"type": "list[str]", "required": True}
+    assert cfgs["detect"][4] == "validate_images_and_classes"
+
+    assert cfgs["query"][7] == {"prompt": "question"}
+
+    assert cfgs["point"][3]["classes"] == {"type": "list[str]", "required": True}
+    assert cfgs["point"][5] == "serialize_keypoints_compact"
+    assert cfgs["point"][6] == "roboflow-keypoints-compact-v1"
+
+    assert cfgs["caption"][3]["length"] == {"type": "str", "required": False}
+    for task in ("caption", "detect", "query", "point"):
+        assert "max_new_tokens" in cfgs[task][3]

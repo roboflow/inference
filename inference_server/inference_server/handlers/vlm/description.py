@@ -77,7 +77,7 @@ _register("vlm", "recognize_formula", _TEXT_IMAGE_ONLY)
 _register("vlm", "detect", _DETECTIONS_IMAGE_ONLY)
 _register("vlm", "detect_objects", _DETECTIONS_IMAGE_ONLY)
 
-_register("vlm", "point", _DETECTIONS_PROMPT)
+_register("vlm", "point", _DETECTIONS_IMAGE_ONLY)
 
 _register("vlm", "encode", _EMBEDDINGS_IMAGE_ONLY)
 _register("vlm", "encode_images", _EMBEDDINGS_IMAGE_ONLY)
