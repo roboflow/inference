@@ -128,3 +128,32 @@ class TestSingleOutputsUnchanged:
 
     def test_text_single(self):
         assert serialize_text("hello", _MODEL)["text"] == "hello"
+
+
+def test_serialize_gaze_compact():
+    from types import SimpleNamespace
+    from inference_model_manager.serializers_typed import serialize_gaze_compact
+
+    out = SimpleNamespace(yaw=[0.1, 0.2], pitch=[-0.3, 0.0])
+    result = serialize_gaze_compact(out, model=None)
+    assert result == {
+        "type": "roboflow-gaze-compact-v1",
+        "yaw": [0.1, 0.2],
+        "pitch": [-0.3, 0.0],
+    }
+
+
+def test_serialize_gaze_compact_batch():
+    from types import SimpleNamespace
+    from inference_model_manager.serializers_typed import serialize_gaze_compact
+
+    outs = [
+        SimpleNamespace(yaw=[0.1], pitch=[0.2]),
+        SimpleNamespace(yaw=[0.3], pitch=[0.4]),
+    ]
+    result = serialize_gaze_compact(outs, model=None)
+    assert result["type"] == "roboflow-gaze-compact-v1"
+    assert result["batch"] == [
+        {"yaw": [0.1], "pitch": [0.2]},
+        {"yaw": [0.3], "pitch": [0.4]},
+    ]

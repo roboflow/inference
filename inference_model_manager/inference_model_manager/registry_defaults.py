@@ -261,8 +261,8 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(_P_IMAGES),
             "validate_images_required",
-            "serialize_detections_compact",
-            "roboflow-object-detection-compact-v1",
+            "serialize_gaze_compact",
+            "roboflow-gaze-compact-v1",
         ),
     ],
     # --- VLM / Prompt models ---

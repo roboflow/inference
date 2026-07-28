@@ -271,6 +271,23 @@ def serialize_depth_compact(output: Any, model: Any) -> dict:
     }
 
 
+def serialize_gaze_compact(output: Any, model: Any) -> dict:
+    """L2CSGazeDetection → roboflow-gaze-compact-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-gaze-compact-v1",
+            "batch": [
+                {"yaw": _to_list(o.yaw), "pitch": _to_list(o.pitch)} for o in output
+            ],
+        }
+    return {
+        "type": "roboflow-gaze-compact-v1",
+        "yaw": _to_list(output.yaw),
+        "pitch": _to_list(output.pitch),
+    }
+
+
 # ===========================================================================
 # Rich serializers (per-object dicts, human-readable)
 # ===========================================================================
