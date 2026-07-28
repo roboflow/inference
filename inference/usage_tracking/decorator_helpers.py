@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 
+from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
@@ -173,6 +174,9 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
-    if "countinference" in func_kwargs:
+    if func_kwargs.get("countinference") is not None:
         resource_details["billable"] = func_kwargs["countinference"]
+    model_id = getattr(func_kwargs.get("inference_request"), "model_id", None)
+    if isinstance(model_id, str) and model_id.startswith("sam3/"):
+        resource_details["execution_mode"] = SAM3_EXEC_MODE
     return resource_details
