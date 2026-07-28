@@ -75,7 +75,9 @@ ARG PYTORCH_VERSION=2.13.0
 ARG TORCHVISION_VERSION=0.28.0
 ARG TRITON_VERSION=3.7.1
 ARG TRITON_WHEEL_SHA256=9497f2e696ee368862a181a90b2dcc03ca978cc4f602abd67c7d81022a6988e1
-ARG BITSANDBYTES_VERSION=0.48.0
+ARG BITSANDBYTES_VERSION=0.47.0
+ARG BITSANDBYTES_CUDA13_PATCH_SHA=bdb8b2b7f1bd1a56d20889e87d56302e46000ad8
+ARG BITSANDBYTES_CUDA13_PATCH_SHA256=4dca9cb0f0adf390555149ff51b62303c3c6506800f5b17acd115ec0e1f2a0e3
 ARG SUPERIORVISION_VERSION=0.30.0.dev3
 ARG SUPERIORVISION_WHEEL_SHA256=f78f5585689ed4c6dbc6cfa357deaecce0d3db0fd2bb87ae517395239075a48e
 ARG TRACKTORS_VERSION=2.6.0.dev2
@@ -407,15 +409,23 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     rm -rf ~/.cache/uv /tmp/overrides.txt
 
-# The PyPI AArch64 bitsandbytes wheel does not ship a CUDA 13.2 backend. It
-# imports with a traceback and every quantized Qwen path fails before model
-# execution. Build the resolved package version against the JP7.2 toolkit and
-# retain both Orin and Thor kernels for the shared runtime image.
+# inference-models requires bitsandbytes <0.48, while 0.47 predates CUDA 13.
+# Apply upstream's CUDA 13 support commit from 0.48 to the required 0.47 source,
+# then build the missing CUDA 13.2 backend for both Orin and Thor.
 RUN test "$(python3 -c "import importlib.metadata as m; print(m.version('bitsandbytes'))")" = "${BITSANDBYTES_VERSION}" && \
     git clone --depth 1 --branch "${BITSANDBYTES_VERSION}" \
         https://github.com/bitsandbytes-foundation/bitsandbytes.git \
         /build/bitsandbytes-src && \
+    curl -fsSL \
+        "https://github.com/bitsandbytes-foundation/bitsandbytes/commit/${BITSANDBYTES_CUDA13_PATCH_SHA}.patch" \
+        -o /tmp/bitsandbytes-cuda13.patch && \
+    echo "${BITSANDBYTES_CUDA13_PATCH_SHA256}  /tmp/bitsandbytes-cuda13.patch" | sha256sum -c - && \
     cd /build/bitsandbytes-src && \
+    git apply \
+        --include=CMakeLists.txt \
+        --include=csrc/kernels.cu \
+        --include=csrc/pythonInterface.cpp \
+        /tmp/bitsandbytes-cuda13.patch && \
     cmake \
         -DCOMPUTE_BACKEND=cuda \
         -DCOMPUTE_CAPABILITY="${BITSANDBYTES_CUDA_ARCHITECTURES}" \
@@ -425,7 +435,7 @@ RUN test "$(python3 -c "import importlib.metadata as m; print(m.version('bitsand
     cuobjdump --list-elf bitsandbytes/libbitsandbytes_cuda132.so | grep -q 'sm_87' && \
     cuobjdump --list-elf bitsandbytes/libbitsandbytes_cuda132.so | grep -q 'sm_110' && \
     cp bitsandbytes/libbitsandbytes_cuda132.so /opt/wheels/ && \
-    cd / && rm -rf /build/bitsandbytes-src
+    cd / && rm -rf /build/bitsandbytes-src /tmp/bitsandbytes-cuda13.patch
 
 WORKDIR /build/inference
 COPY . .
