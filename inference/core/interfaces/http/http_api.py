@@ -3525,6 +3525,8 @@ class HttpInterface(BaseInterface):
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
 
+                    inference_request.model_id = "sam3/sam3_interactive"
+
                     if SAM3_EXEC_MODE == "remote":
                         raise HTTPException(
                             status_code=501,
@@ -3747,6 +3749,8 @@ class HttpInterface(BaseInterface):
                         inference_request.source = request_source
                     if request_source_info is not None:
                         inference_request.source_info = request_source_info
+
+                    inference_request.model_id = "sam3/sam3_interactive"
 
                     if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
