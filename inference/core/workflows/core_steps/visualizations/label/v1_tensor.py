@@ -1,8 +1,15 @@
-from typing import List, Literal, Optional, Type, Union
+from collections import OrderedDict
+from functools import lru_cache
+from threading import Lock
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
+import cv2
+import numpy as np
 import supervision as sv
+import torch
 from pydantic import ConfigDict, Field
 
+from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -68,6 +75,185 @@ The annotated image from this block can be connected to:
 - **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with labels as visual evidence in alerts or reports
 - **Video output blocks** to create annotated video streams or recordings with labels for live monitoring, tracking visualization, or post-processing analysis
 """
+
+
+@lru_cache(maxsize=512)
+def _render_label_patch(
+    label: str,
+    background_rgb: Tuple[int, int, int],
+    text_rgb: Tuple[int, int, int],
+    text_scale: float,
+    text_thickness: int,
+    text_padding: int,
+    border_radius: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Rasterise one small cached label patch; the video frame never leaves CUDA."""
+
+    (text_w, text_h) = cv2.getTextSize(
+        text=label,
+        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        fontScale=text_scale,
+        thickness=text_thickness,
+    )[0]
+    # Supervision passes (x1, y1, x1 + width, y1 + height) to OpenCV, whose
+    # filled rectangle/circle endpoints are inclusive. Keep that final row and
+    # column so the tensor renderer is pixel-identical.
+    background_width = max(1, text_w + 2 * text_padding)
+    background_height = max(1, text_h + 2 * text_padding)
+    patch_width = background_width + 1
+    patch_height = background_height + 1
+    radius = min(max(0, border_radius), background_width // 2, background_height // 2)
+    alpha = np.zeros((patch_height, patch_width), dtype=np.uint8)
+    for first, second in (
+        ((radius, 0), (background_width - radius, background_height)),
+        ((0, radius), (background_width, background_height - radius)),
+    ):
+        cv2.rectangle(alpha, first, second, 255, -1)
+    for center in (
+        (radius, radius),
+        (background_width - radius, radius),
+        (radius, background_height - radius),
+        (background_width - radius, background_height - radius),
+    ):
+        cv2.circle(alpha, center, radius, 255, -1)
+    patch = np.empty((patch_height, patch_width, 3), dtype=np.uint8)
+    patch[...] = background_rgb
+    cv2.putText(
+        img=patch,
+        text=label,
+        org=(text_padding, text_padding + text_h),
+        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        fontScale=text_scale,
+        color=text_rgb,
+        thickness=text_thickness,
+        lineType=cv2.LINE_AA,
+    )
+    patch.setflags(write=False)
+    alpha.setflags(write=False)
+    return patch, alpha
+
+
+_DEVICE_PATCH_CACHE_SIZE = 512
+_DEVICE_PATCH_CACHE: Dict[
+    Tuple[object, ...], Tuple[torch.Tensor, Optional[torch.Tensor]]
+] = OrderedDict()
+_DEVICE_PATCH_CACHE_LOCK = Lock()
+
+
+def _get_device_label_patch(
+    device: torch.device,
+    label: str,
+    background_rgb: Tuple[int, int, int],
+    text_rgb: Tuple[int, int, int],
+    text_scale: float,
+    text_thickness: int,
+    text_padding: int,
+    border_radius: int,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """Return an immutable, bounded-cache CHW patch and optional rounded mask."""
+
+    key = (
+        device.type,
+        device.index,
+        label,
+        background_rgb,
+        text_rgb,
+        text_scale,
+        text_thickness,
+        text_padding,
+        border_radius,
+    )
+    with _DEVICE_PATCH_CACHE_LOCK:
+        cached = _DEVICE_PATCH_CACHE.get(key)
+        if cached is not None:
+            _DEVICE_PATCH_CACHE.move_to_end(key)
+            return cached
+        patch, alpha = _render_label_patch(
+            label=label,
+            background_rgb=background_rgb,
+            text_rgb=text_rgb,
+            text_scale=text_scale,
+            text_thickness=text_thickness,
+            text_padding=text_padding,
+            border_radius=border_radius,
+        )
+        patch_tensor = (
+            torch.from_numpy(patch.copy()).to(device).permute(2, 0, 1).contiguous()
+        )
+        visible_tensor = None
+        if not np.all(alpha):
+            visible_tensor = torch.from_numpy((alpha != 0).copy()).to(device)
+        result = (patch_tensor, visible_tensor)
+        _DEVICE_PATCH_CACHE[key] = result
+        _DEVICE_PATCH_CACHE.move_to_end(key)
+        while len(_DEVICE_PATCH_CACHE) > _DEVICE_PATCH_CACHE_SIZE:
+            _DEVICE_PATCH_CACHE.popitem(last=False)
+        return result
+
+
+def gpu_draw_labels(
+    scene_chw: torch.Tensor,
+    labels: List[str],
+    label_properties: np.ndarray,
+    background_colors_rgb: np.ndarray,
+    text_color_rgb: Tuple[int, int, int],
+    text_scale: float,
+    text_thickness: int,
+    text_padding: int,
+    border_radius: int,
+) -> torch.Tensor:
+    """Composite cached text patches directly into a CHW RGB device tensor.
+
+    Only small label patches cross host-to-device on cache misses. The full
+    video frame remains device-resident. Patches are painted in detection order,
+    preserving Supervision's later-label-wins behavior for overlaps.
+    """
+
+    if int(scene_chw.shape[0]) != 3:
+        raise ValueError("GPU label compositor requires a 3-channel image")
+    height, width = int(scene_chw.shape[1]), int(scene_chw.shape[2])
+    for label, prop, background_color in zip(
+        labels, label_properties, background_colors_rgb
+    ):
+        x1, y1, background_x2, background_y2, _ = (int(value) for value in prop)
+        patch_tensor, visible_tensor = _get_device_label_patch(
+            device=scene_chw.device,
+            label=label,
+            background_rgb=tuple(int(value) for value in background_color),
+            text_rgb=text_color_rgb,
+            text_scale=float(text_scale),
+            text_thickness=int(text_thickness),
+            text_padding=int(text_padding),
+            border_radius=int(border_radius),
+        )
+        clipped_x1, clipped_y1 = max(0, x1), max(0, y1)
+        clipped_x2 = min(width, background_x2 + 1)
+        clipped_y2 = min(height, background_y2 + 1)
+        if clipped_x1 >= clipped_x2 or clipped_y1 >= clipped_y2:
+            continue
+        patch_x1, patch_y1 = clipped_x1 - x1, clipped_y1 - y1
+        patch_x2 = patch_x1 + clipped_x2 - clipped_x1
+        patch_y2 = patch_y1 + clipped_y2 - clipped_y1
+        patch_region = patch_tensor[:, patch_y1:patch_y2, patch_x1:patch_x2]
+        scene_region = scene_chw[:, clipped_y1:clipped_y2, clipped_x1:clipped_x2]
+        if visible_tensor is None:
+            scene_region.copy_(patch_region)
+            continue
+        visible_region = visible_tensor[patch_y1:patch_y2, patch_x1:patch_x2]
+        scene_region[:, visible_region] = patch_region[:, visible_region]
+    return scene_chw
+
+
+def _gpu_label_draw_eligible(
+    predictions: sv.Detections,
+    color_axis: str,
+    image: WorkflowImageData,
+) -> bool:
+    return (
+        color_axis in ("CLASS", "INDEX", "TRACK")
+        and image.is_tensor_materialised()
+        and int(len(predictions)) > 0
+    )
 
 
 class LabelManifest(ColorableVisualizationManifest):
@@ -265,6 +451,16 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             predictions, materialise_masks=needs_masks
         )
         if len(predictions) == 0:
+            if image.is_tensor_materialised():
+                tensor_image = image.tensor_image
+                if copy_image:
+                    tensor_image = tensor_image.clone()
+                return {
+                    OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                        origin_image_data=image,
+                        tensor_image=tensor_image,
+                    )
+                }
             return {
                 OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
                     origin_image_data=image,
@@ -302,7 +498,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                     for t in predictions.data["time_in_zone"]
                 ]
             else:
-                labels = [f"In zone: N/A"] * len(predictions)
+                labels = ["In zone: N/A"] * len(predictions)
         elif text == "Confidence":
             labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
         elif text == "Class and Confidence":
@@ -345,6 +541,64 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                 labels = [str(d) if d else "" for d in predictions[text]]
             except Exception:
                 raise ValueError(f"Invalid text type: {text}")
+        if _gpu_label_draw_eligible(predictions, color_axis, image):
+            try:
+                palette = self.getPalette(color_palette, palette_size, custom_colors)
+                if not isinstance(palette, sv.ColorPalette):
+                    raise TypeError("expected sv.ColorPalette")
+                if color_axis == "CLASS":
+                    color_ids = predictions.class_id.astype(int)
+                elif color_axis == "TRACK":
+                    if predictions.tracker_id is None:
+                        raise ValueError("TRACK color axis requires tracker IDs")
+                    color_ids = predictions.tracker_id.astype(int)
+                else:
+                    color_ids = np.arange(len(predictions))
+                pending_gray = (128, 128, 128)
+                background_colors_rgb = np.asarray(
+                    [
+                        (
+                            pending_gray
+                            if color_axis == "TRACK" and color_id == -1
+                            else palette.by_idx(int(color_id)).as_rgb()
+                        )
+                        for color_id in color_ids
+                    ],
+                    dtype=np.uint8,
+                )
+                text_rgb = tuple(str_to_color(text_color).as_rgb())
+                properties = annotator._get_label_properties(
+                    detections=predictions,
+                    labels=labels,
+                )
+                scene_t = image.tensor_image
+                if copy_image:
+                    scene_t = scene_t.clone()
+                annotated_tensor = gpu_draw_labels(
+                    scene_chw=scene_t,
+                    labels=labels,
+                    label_properties=properties,
+                    background_colors_rgb=background_colors_rgb,
+                    text_color_rgb=text_rgb,
+                    text_scale=float(text_scale),
+                    text_thickness=int(text_thickness),
+                    text_padding=int(text_padding),
+                    border_radius=int(border_radius),
+                )
+                if not copy_image:
+                    image.declare_tensor_image_mutated()
+                return {
+                    OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                        origin_image_data=image,
+                        tensor_image=annotated_tensor,
+                    )
+                }
+            except Exception as gpu_error:
+                logger.debug(
+                    "GPU label compositor failed (%s); falling back to "
+                    "sv.LabelAnnotator path.",
+                    gpu_error,
+                )
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()
