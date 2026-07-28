@@ -97,7 +97,7 @@ class MoonDream2HF:
 
         model_class.__init__ = _patched_init
         model = model_class.from_pretrained(
-            model_name_or_path
+            model_name_or_path,
             local_files_only=local_files_only,
         ).to(device)
         _recompute_non_persistent_buffers(model_name_or_path, model)
