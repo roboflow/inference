@@ -83,16 +83,31 @@ def test_frame_info_abi_includes_tensor_specific_timing() -> None:
     assert ctypes.sizeof(jetson_tensor_bridge._FrameInfo) == 56
 
 
-def test_bridge_probe_requires_timing_aware_abi(monkeypatch) -> None:
-    """Refuse an older native library whose frame-info struct is shorter."""
+def test_bridge_probe_rejects_ambiguous_v5_abi(monkeypatch) -> None:
+    """Refuse either independently developed v5 native struct layout."""
 
     monkeypatch.setattr(
         jetson_tensor_bridge,
         "_load_bridge_library",
-        lambda: _VersionLibrary(b"4"),
+        lambda: _VersionLibrary(b"5"),
     )
 
     available, reason = jetson_tensor_bridge.jetson_tensor_bridge_available()
 
     assert not available
-    assert "b'4'" in reason
+    assert "b'5'" in reason
+
+
+def test_bridge_probe_accepts_combined_v6_abi(monkeypatch) -> None:
+    """Accept the ABI containing both frame and phase timing structures."""
+
+    monkeypatch.setattr(
+        jetson_tensor_bridge,
+        "_load_bridge_library",
+        lambda: _VersionLibrary(b"6"),
+    )
+
+    available, reason = jetson_tensor_bridge.jetson_tensor_bridge_available()
+
+    assert available
+    assert reason == "ok"
