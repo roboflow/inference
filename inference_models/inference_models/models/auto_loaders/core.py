@@ -2696,13 +2696,6 @@ def attempt_loading_model_with_auto_load_cache(
             )
             and not allow_loading_dependency_models
         ):
-            raise CorruptedModelPackageError(
-                message=f"Could not load model {cache_entry.model_id} as it defines another models which are "
-                f"it's dependency, but the auto-loader prevents loading dependencies at certain "
-                f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
-                f"current implementation. Provide us the context of your use-case to get help.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
             return None
         package_config = parse_model_config(
             config_path=os.path.join(
