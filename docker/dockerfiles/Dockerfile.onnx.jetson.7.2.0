@@ -396,7 +396,6 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     /opt/wheels/triton-*.whl \
     "setuptools>=77.0.3,<82" \
     "transformers>=4.57.3,<5.9.0" \
-    "bitsandbytes==${BITSANDBYTES_VERSION}" \
     packaging && \
     # Requirements also name torch==2.13.0. Reinstall from the wheel bundle
     # after resolution so an equally-versioned index wheel cannot replace our
@@ -404,6 +403,11 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -m pip install --break-system-packages --no-deps --force-reinstall \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl && \
+    # Install the exact bitsandbytes Python package after the broad resolution.
+    # Its declared dependencies are already present and its CUDA 13.2 backend
+    # is compiled and installed below.
+    python3 -m pip install --break-system-packages --no-deps \
+        "bitsandbytes==${BITSANDBYTES_VERSION}" && \
     python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     rm -rf ~/.cache/uv /tmp/overrides.txt
 
