@@ -858,7 +858,7 @@ class UsageCollector:
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
 
-        roboflow_service_name = func_kwargs.get("source_info")
+        roboflow_service_name = func_kwargs.get("source_info") or source_info
         roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {
