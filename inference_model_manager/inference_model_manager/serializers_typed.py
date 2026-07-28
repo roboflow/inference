@@ -169,6 +169,24 @@ def serialize_instance_segmentation_compact(output: Any, model: Any) -> dict:
     }
 
 
+def serialize_sam_segmentation_compact(output: Any, model: Any) -> dict:
+    """SAMPrediction/SAM2Prediction → roboflow-sam-segmentation-compact-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-sam-segmentation-compact-v1",
+            "batch": [
+                {"masks": _to_list(o.masks), "scores": _to_list(o.scores)}
+                for o in output
+            ],
+        }
+    return {
+        "type": "roboflow-sam-segmentation-compact-v1",
+        "masks": _to_list(output.masks),
+        "scores": _to_list(output.scores),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Semantic segmentation
 # ---------------------------------------------------------------------------

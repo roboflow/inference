@@ -7,6 +7,7 @@ from fastapi import Response
 from inference_model_manager.serializers_typed import (
     serialize_embeddings,
     serialize_passthrough,
+    serialize_sam_segmentation_compact,
     serialize_text,
 )
 from inference_server.framework.entities import CommonRequestParams
@@ -47,6 +48,13 @@ def serialize_sam_embeddings(prediction: Any, common: CommonRequestParams) -> Re
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
     typed = [_embeddings_or_passthrough(p, proxy) for p in items]
+    return _envelope(typed, common)
+
+
+def serialize_sam_masks(prediction: Any, common: CommonRequestParams) -> Response:
+    items = prediction if isinstance(prediction, list) else [prediction]
+    proxy = _ModelProxy(class_names=None)
+    typed = [serialize_sam_segmentation_compact(p, proxy) for p in items]
     return _envelope(typed, common)
 
 

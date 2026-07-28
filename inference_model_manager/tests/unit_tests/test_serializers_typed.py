@@ -187,3 +187,36 @@ def test_serialize_structured_ocr_compact():
             },
         }
     ]
+
+
+def test_serialize_sam_segmentation_compact():
+    from types import SimpleNamespace
+    from inference_model_manager.serializers_typed import (
+        serialize_sam_segmentation_compact,
+    )
+
+    preds = [
+        SimpleNamespace(masks="m0", scores="s0"),
+        SimpleNamespace(masks="m1", scores="s1"),
+    ]
+    result = serialize_sam_segmentation_compact(preds, model=None)
+    assert result["type"] == "roboflow-sam-segmentation-compact-v1"
+    assert result["batch"] == [
+        {"masks": "m0", "scores": "s0"},
+        {"masks": "m1", "scores": "s1"},
+    ]
+
+
+def test_serialize_sam_segmentation_compact_single():
+    from types import SimpleNamespace
+    from inference_model_manager.serializers_typed import (
+        serialize_sam_segmentation_compact,
+    )
+
+    pred = SimpleNamespace(masks="m0", scores="s0")
+    result = serialize_sam_segmentation_compact(pred, model=None)
+    assert result == {
+        "type": "roboflow-sam-segmentation-compact-v1",
+        "masks": "m0",
+        "scores": "s0",
+    }

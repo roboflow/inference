@@ -55,12 +55,9 @@ _P_FLORENCE2_REGION = {
     "max_new_tokens": {"type": "int", "required": False},
 }
 _P_TEXTS = {"texts": {"type": "list[str]", "required": True}}
-_P_EMBEDDINGS_POINTS = {
-    "embeddings": {"type": "tensor", "required": True},
-    "points": {"type": "list", "required": True},
-}
 _P_SAM3_VISUAL_PROMPTS = {
-    "images": {"type": "image", "required": True},
+    "images": {"type": "image", "required": False},
+    "embeddings": {"type": "tensor", "required": False},
     "point_coordinates": {"type": "list", "required": False},
     "point_labels": {"type": "list", "required": False},
     "boxes": {"type": "list", "required": False},
@@ -124,6 +121,39 @@ _P_IMAGES_CLASSES_GEN = _p(
     _P_IMAGES,
     {"classes": {"type": "list[str]", "required": True}},
     _P_MAX_NEW_TOKENS,
+)
+
+_P_SAM_EMBED = {
+    "images": {"type": "image", "required": True},
+    "image_hashes": {"type": "list[str]", "required": False},
+    "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
+}
+_P_SAM_SEGMENT_COMMON = {
+    "images": {"type": "image", "required": False},
+    "embeddings": {"type": "tensor", "required": False},
+    "image_hashes": {"type": "list[str]", "required": False},
+    "point_coordinates": {"type": "list", "required": False},
+    "point_labels": {"type": "list", "required": False},
+    "boxes": {"type": "list", "required": False},
+    "mask_input": {"type": "list", "required": False},
+    "multi_mask_output": {"type": "bool", "required": False, "default": True},
+    "return_logits": {"type": "bool", "required": False, "default": False},
+    "mask_threshold": {"type": "float", "required": False},
+    "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
+}
+_P_SAM_SEGMENT = _p(
+    _P_SAM_SEGMENT_COMMON,
+    {
+        "enforce_mask_input": {"type": "bool", "required": False, "default": False},
+        "use_mask_input_cache": {"type": "bool", "required": False, "default": True},
+    },
+)
+_P_SAM2_SEGMENT = _p(
+    _P_SAM_SEGMENT_COMMON,
+    {
+        "load_from_mask_input_cache": {"type": "bool", "required": False, "default": False},
+        "save_to_mask_input_cache": {"type": "bool", "required": False, "default": False},
+    },
 )
 
 
@@ -477,19 +507,19 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "embed",
             "embed_images",
             True,
-            _p(_P_IMAGES),
+            _p(_P_SAM_EMBED),
             "validate_images_required",
-            "serialize_embeddings",
-            "roboflow-embeddings-compact-v1",
+            "serialize_passthrough",
+            "roboflow-sam-embeddings-v1",
         ),
         (
             "segment",
             "segment_images",
             False,
-            _p(_P_EMBEDDINGS_POINTS),
-            "validate_passthrough",
-            "serialize_instance_segmentation_compact",
-            "roboflow-instance-segmentation-compact-v1",
+            _p(_P_SAM_SEGMENT),
+            "validate_sam_segment",
+            "serialize_sam_segmentation_compact",
+            "roboflow-sam-segmentation-compact-v1",
         ),
     ],
     "SAM2Torch": [
@@ -497,19 +527,19 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "embed",
             "embed_images",
             True,
-            _p(_P_IMAGES),
+            _p(_P_SAM_EMBED),
             "validate_images_required",
-            "serialize_embeddings",
-            "roboflow-embeddings-compact-v1",
+            "serialize_passthrough",
+            "roboflow-sam-embeddings-v1",
         ),
         (
             "segment",
             "segment_images",
             False,
-            _p(_P_EMBEDDINGS_POINTS),
-            "validate_passthrough",
-            "serialize_instance_segmentation_compact",
-            "roboflow-instance-segmentation-compact-v1",
+            _p(_P_SAM2_SEGMENT),
+            "validate_sam_segment",
+            "serialize_sam_segmentation_compact",
+            "roboflow-sam-segmentation-compact-v1",
         ),
     ],
     # --- Moondream2 ---
@@ -637,7 +667,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "segment_with_visual_prompts",
             False,
             _p(_P_SAM3_VISUAL_PROMPTS),
-            "validate_images_required",
+            "validate_sam_segment",
             "serialize_passthrough",
             "roboflow-sam3-segmentation-v1",
         ),

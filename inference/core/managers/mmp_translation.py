@@ -85,6 +85,7 @@ NEW_WORLD_HANDLERS = frozenset(
         ("interactive-instance-segmentation", "embed"),
         ("interactive-instance-segmentation", "embed_images"),
         ("interactive-instance-segmentation", "prompt"),
+        ("interactive-instance-segmentation", "segment"),
         ("interactive-instance-segmentation", "segment_with_text_prompts"),
         ("interactive-instance-segmentation", "segment_with_visual_prompts"),
         ("interactive-instance-segmentation", "track"),

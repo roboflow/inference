@@ -44,3 +44,15 @@ def validate_prompt_only(kwargs: dict) -> dict:
 def validate_passthrough(kwargs: dict) -> dict:
     """No validation — accept any kwargs."""
     return kwargs
+
+
+def validate_sam_segment(kwargs: dict) -> dict:
+    def _is_empty(key: str) -> bool:
+        value = kwargs.get(key)
+        return value is None or (hasattr(value, "__len__") and len(value) == 0)
+
+    if all(_is_empty(k) for k in ("images", "embeddings", "image_hashes")):
+        raise ValueError(
+            "one of 'images', 'embeddings', 'image_hashes' required for segmentation"
+        )
+    return kwargs

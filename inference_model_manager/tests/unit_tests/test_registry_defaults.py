@@ -179,3 +179,34 @@ def test_florence2_task_configs():
     assert cfgs["detect"][3]["classes"] == {"type": "list[str]", "required": False}
     for task in ("caption", "detect", "ocr", "parse_document"):
         assert "max_new_tokens" in cfgs[task][3]
+
+
+def test_sam_and_sam2_segment_configs():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    for key, cache_flags in (
+        ("SAMTorch", {"enforce_mask_input", "use_mask_input_cache"}),
+        ("SAM2Torch", {"load_from_mask_input_cache", "save_to_mask_input_cache"}),
+    ):
+        cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS[key]}
+        seg = cfgs["segment"]
+        assert "points" not in seg[3]
+        assert seg[3]["embeddings"]["required"] is False
+        for p in (
+            "images",
+            "image_hashes",
+            "point_coordinates",
+            "point_labels",
+            "boxes",
+            "mask_input",
+            "multi_mask_output",
+            "return_logits",
+            "mask_threshold",
+            "use_embeddings_cache",
+            *cache_flags,
+        ):
+            assert p in seg[3], p
+        assert seg[4] == "validate_sam_segment"
+        assert seg[5] == "serialize_sam_segmentation_compact"
+        emb = cfgs["embed"]
+        assert "image_hashes" in emb[3] and "use_embeddings_cache" in emb[3]

@@ -12,11 +12,13 @@ from inference_server.handlers.interactive_instance_segmentation.introspection i
     get_sam3_text_prompts_interface,
     get_sam3_visual_prompts_interface,
     get_sam_embeddings_image_only_interface,
+    get_sam_segment_interface,
     get_sam_text_image_only_interface,
     get_sam_text_prompt_interface,
 )
 from inference_server.handlers.interactive_instance_segmentation.output_serializer import (
     serialize_sam_embeddings,
+    serialize_sam_masks,
     serialize_sam_segmentation,
     serialize_sam_text,
 )
@@ -57,10 +59,18 @@ _SAM3_TEXT = ModelHandlerDescription(
     interface_provider=get_sam3_text_prompts_interface,
 )
 
+_SEGMENT = ModelHandlerDescription(
+    input_parser=parse_interactive_instance_segmentation_input,
+    handler=handle_interactive_instance_segmentation,
+    output_serializer=serialize_sam_masks,
+    interface_provider=get_sam_segment_interface,
+)
+
 
 _register("interactive-instance-segmentation", "embed", _EMBEDDINGS_IMAGE_ONLY)
 _register("interactive-instance-segmentation", "embed_images", _EMBEDDINGS_IMAGE_ONLY)
 _register("interactive-instance-segmentation", "prompt", _TEXT_PROMPT)
+_register("interactive-instance-segmentation", "segment", _SEGMENT)
 _register("interactive-instance-segmentation", "track", _TEXT_IMAGE_ONLY)
 _register(
     "interactive-instance-segmentation",
