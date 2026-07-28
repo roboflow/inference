@@ -75,6 +75,7 @@ ARG PYTORCH_VERSION=2.13.0
 ARG TORCHVISION_VERSION=0.28.0
 ARG TRITON_VERSION=3.7.1
 ARG TRITON_WHEEL_SHA256=9497f2e696ee368862a181a90b2dcc03ca978cc4f602abd67c7d81022a6988e1
+ARG BITSANDBYTES_VERSION=0.48.0
 ARG SUPERIORVISION_VERSION=0.30.0.dev3
 ARG SUPERIORVISION_WHEEL_SHA256=f78f5585689ed4c6dbc6cfa357deaecce0d3db0fd2bb87ae517395239075a48e
 ARG TRACKTORS_VERSION=2.6.0.dev2
@@ -395,6 +396,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     /opt/wheels/triton-*.whl \
     "setuptools>=77.0.3,<82" \
     "transformers>=4.57.3,<5.9.0" \
+    "bitsandbytes==${BITSANDBYTES_VERSION}" \
     packaging && \
     # Requirements also name torch==2.13.0. Reinstall from the wheel bundle
     # after resolution so an equally-versioned index wheel cannot replace our
@@ -409,8 +411,8 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
 # imports with a traceback and every quantized Qwen path fails before model
 # execution. Build the resolved package version against the JP7.2 toolkit and
 # retain both Orin and Thor kernels for the shared runtime image.
-RUN BNB_VERSION="$(python3 -c "import importlib.metadata as m; print(m.version('bitsandbytes'))")" && \
-    git clone --depth 1 --branch "${BNB_VERSION}" \
+RUN test "$(python3 -c "import importlib.metadata as m; print(m.version('bitsandbytes'))")" = "${BITSANDBYTES_VERSION}" && \
+    git clone --depth 1 --branch "${BITSANDBYTES_VERSION}" \
         https://github.com/bitsandbytes-foundation/bitsandbytes.git \
         /build/bitsandbytes-src && \
     cd /build/bitsandbytes-src && \
@@ -491,6 +493,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/wheels/triton-*.whl \
         "setuptools>=77.0.3" \
         "transformers>=4.57.3,<5.9.0" \
+        "bitsandbytes==${BITSANDBYTES_VERSION}" \
         packaging && \
     rm -rf \
         /opt/python-runtime/functorch \
