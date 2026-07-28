@@ -83,6 +83,7 @@ ARG ONNXRUNTIME_VERSION=1.26.0
 ARG PYTORCH_MAX_JOBS=12
 ARG ORT_BUILD_PARALLEL=8
 ARG FLASH_ATTN_MAX_JOBS=8
+ARG BITSANDBYTES_CUDA_ARCHITECTURES=87;110
 ARG USE_PREBUILT_WHEELS=1
 ARG TORCH_CUDA_ARCH_LIST=8.7;11.0
 ARG ORT_CUDA_ARCHITECTURES=87-real;110-real;110-virtual
@@ -404,6 +405,26 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     rm -rf ~/.cache/uv /tmp/overrides.txt
 
+# The PyPI AArch64 bitsandbytes wheel does not ship a CUDA 13.2 backend. It
+# imports with a traceback and every quantized Qwen path fails before model
+# execution. Build the resolved package version against the JP7.2 toolkit and
+# retain both Orin and Thor kernels for the shared runtime image.
+RUN BNB_VERSION="$(python3 -c "import importlib.metadata as m; print(m.version('bitsandbytes'))")" && \
+    git clone --depth 1 --branch "${BNB_VERSION}" \
+        https://github.com/bitsandbytes-foundation/bitsandbytes.git \
+        /build/bitsandbytes-src && \
+    cd /build/bitsandbytes-src && \
+    cmake \
+        -DCOMPUTE_BACKEND=cuda \
+        -DCOMPUTE_CAPABILITY="${BITSANDBYTES_CUDA_ARCHITECTURES}" \
+        . && \
+    cmake --build . --parallel 4 && \
+    test -s bitsandbytes/libbitsandbytes_cuda132.so && \
+    cuobjdump --list-elf bitsandbytes/libbitsandbytes_cuda132.so | grep -q 'sm_87' && \
+    cuobjdump --list-elf bitsandbytes/libbitsandbytes_cuda132.so | grep -q 'sm_110' && \
+    cp bitsandbytes/libbitsandbytes_cuda132.so /opt/wheels/ && \
+    cd / && rm -rf /build/bitsandbytes-src
+
 WORKDIR /build/inference
 COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
@@ -482,6 +503,10 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -m pip install --no-deps --target /opt/python-runtime \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl && \
+    test -d /opt/python-runtime/bitsandbytes && \
+    install -m 0644 \
+        /opt/wheels/libbitsandbytes_cuda132.so \
+        /opt/python-runtime/bitsandbytes/libbitsandbytes_cuda132.so && \
     # The index Torch candidate pulled 2.9 GB of duplicate CUDA libraries.
     # Our pinned wheel is built against the JP7.2 libraries installed above,
     # and NCCL/CUPTI are disabled, so retain nvidia-ml-py but remove the unused

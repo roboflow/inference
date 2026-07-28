@@ -13,6 +13,7 @@ test -x /usr/local/bin/inference
 test -x /usr/local/bin/run_uvicorn.sh
 test -x /usr/local/bin/verify_tensor_tracking_runtime
 test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1
+test -s /usr/local/lib/python3.12/dist-packages/bitsandbytes/libbitsandbytes_cuda132.so
 test -f /usr/include/python3.12/Python.h
 command -v gcc >/dev/null
 command -v python3-config >/dev/null
