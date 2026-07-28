@@ -63,6 +63,7 @@ from inference.core.entities.requests.inference import (
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
+    ensure_wire_safe_mask_format,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
@@ -1436,6 +1437,7 @@ class HttpInterface(BaseInterface):
             """
             if api_key is not None:
                 inference_request.api_key = api_key
+            ensure_wire_safe_mask_format(inference_request)
             requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=requested_model_id

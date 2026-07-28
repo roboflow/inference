@@ -1645,6 +1645,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[SemanticSegmentationInferenceResponse]:
+        numpy_masks = kwargs.get("response_mask_format") == "numpy"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         segmentation_results = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
@@ -1661,11 +1662,22 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             # for certain pre-processing, we end up with -1 values which will be wrapped to 255 - second of all,
             # we can support only 256 classes - those constraints should be fine until inference 2.0
             segmentation_map_u8 = segmentation.segmentation_map.to(torch.uint8)
+            confidence_u8 = (segmentation.confidence * 255).to(torch.uint8)
+            if numpy_masks:
+                # In-process fast path: skip the full-resolution PNG encode.
+                # json-mode serialization (model_dump_json / FastAPI
+                # response_model) lazily encodes these arrays to base64 PNG,
+                # but the python-dump + orjson wire boundaries do NOT run
+                # field serializers - they must coerce the request first via
+                # ensure_wire_safe_mask_format (entities/requests/inference).
+                segmentation_mask = segmentation_map_u8.cpu().numpy()
+                confidence_mask = confidence_u8.cpu().numpy()
+            else:
+                segmentation_mask = self.img_to_b64_str(segmentation_map_u8)
+                confidence_mask = self.img_to_b64_str(confidence_u8)
             response_predictions = SemanticSegmentationPrediction(
-                segmentation_mask=self.img_to_b64_str(segmentation_map_u8),
-                confidence_mask=self.img_to_b64_str(
-                    (segmentation.confidence * 255).to(torch.uint8)
-                ),
+                segmentation_mask=segmentation_mask,
+                confidence_mask=confidence_mask,
                 class_map=self.class_map,
                 present_class_ids=present_class_ids_from_label_map(segmentation_map_u8),
                 image=dict(response_image),

@@ -60,3 +60,24 @@ def test_legacy_make_response_present_class_ids_matches_decoded_mask() -> None:
     prediction = responses[0].predictions
     seg = _decode_b64_png(prediction.segmentation_mask)
     assert prediction.present_class_ids == np.unique(seg).tolist()
+
+
+def test_legacy_make_response_numpy_format_matches_base64_path() -> None:
+    model = _model_shell()
+    img_dim = (16, 20)
+    logits = _synthetic_logits()
+
+    via_b64 = model.make_response(logits, [img_dim])[0].predictions
+    via_numpy = model.make_response(logits, [img_dim], response_mask_format="numpy")[
+        0
+    ].predictions
+
+    assert isinstance(via_numpy.segmentation_mask, np.ndarray)
+    assert isinstance(via_numpy.confidence_mask, np.ndarray)
+    assert np.array_equal(
+        via_numpy.segmentation_mask, _decode_b64_png(via_b64.segmentation_mask)
+    )
+    assert np.array_equal(
+        via_numpy.confidence_mask, _decode_b64_png(via_b64.confidence_mask)
+    )
+    assert via_numpy.present_class_ids == via_b64.present_class_ids
