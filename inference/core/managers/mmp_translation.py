@@ -80,6 +80,7 @@ NEW_WORLD_HANDLERS = frozenset(
     [
         ("classification", "infer"),
         ("depth-estimation", "infer"),
+        ("gaze-detection", "infer"),
         ("instance-segmentation", "infer"),
         ("interactive-instance-segmentation", "embed"),
         ("interactive-instance-segmentation", "embed_images"),
