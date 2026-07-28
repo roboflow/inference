@@ -125,6 +125,28 @@ def test_tensor_byte_tracker_never_calls_numpy_and_preserves_order(
     assert partitions is None
 
 
+def test_tensor_byte_tracker_recovery_does_not_require_detections_len(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Support released inference-models Detections without ``__len__``."""
+    detections = _detections()
+
+    def reject_len(_detections: Detections) -> int:
+        raise TypeError("object of type 'Detections' has no len()")
+
+    monkeypatch.setattr(Detections, "__len__", reject_len)
+
+    tracked, _ = recover_tensor_byte_tracker_output(
+        detections=detections,
+        kept_indices=torch.tensor([0, 1]),
+        tracker_ids=torch.tensor([101, 102]),
+    )
+
+    assert torch.equal(tracked.xyxy, detections.xyxy)
+    assert tracked.tracker_id is not None
+    assert tracked.tracker_id.tolist() == [101, 102]
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_tensor_byte_tracker_keeps_cuda_input_and_output_on_device() -> None:
     """Keep boxes, row indices, IDs, and recovered numeric fields on CUDA."""

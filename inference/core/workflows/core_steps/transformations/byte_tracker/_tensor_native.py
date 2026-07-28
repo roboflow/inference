@@ -122,7 +122,8 @@ def recover_tensor_byte_tracker_output(
             new_metadata.append(dict(metadata))
 
     selector = kept_indices.to(device=detections.xyxy.device, dtype=torch.long)
-    identity_selection = host_source_rows == list(range(len(detections)))
+    row_count = int(detections.xyxy.shape[0])
+    identity_selection = host_source_rows == list(range(row_count))
     common_kwargs = {
         "xyxy": (
             detections.xyxy
