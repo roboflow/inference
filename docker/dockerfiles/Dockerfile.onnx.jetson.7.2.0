@@ -495,7 +495,6 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/wheels/triton-*.whl \
         "setuptools>=77.0.3" \
         "transformers>=4.57.3,<5.9.0" \
-        "bitsandbytes==${BITSANDBYTES_VERSION}" \
         packaging && \
     rm -rf \
         /opt/python-runtime/functorch \
@@ -508,6 +507,8 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -m pip install --no-deps --target /opt/python-runtime \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl && \
+    python3 -m pip install --no-deps --target /opt/python-runtime \
+        "bitsandbytes==${BITSANDBYTES_VERSION}" && \
     test -d /opt/python-runtime/bitsandbytes && \
     install -m 0644 \
         /opt/wheels/libbitsandbytes_cuda132.so \
