@@ -507,9 +507,13 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     python3 -m pip install --no-deps --target /opt/python-runtime \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl && \
+    rm -rf \
+        /opt/python-runtime/bitsandbytes \
+        /opt/python-runtime/bitsandbytes-*.dist-info && \
     python3 -m pip install --no-deps --target /opt/python-runtime \
         "bitsandbytes==${BITSANDBYTES_VERSION}" && \
     test -d /opt/python-runtime/bitsandbytes && \
+    PYTHONPATH=/opt/python-runtime python3 -c 'import bitsandbytes; import importlib.metadata as m; import sys; expected = sys.argv[1]; assert bitsandbytes.__version__ == expected, bitsandbytes.__version__; assert m.version("bitsandbytes") == expected, m.version("bitsandbytes")' "${BITSANDBYTES_VERSION}" && \
     install -m 0644 \
         /opt/wheels/libbitsandbytes_cuda132.so \
         /opt/python-runtime/bitsandbytes/libbitsandbytes_cuda132.so && \

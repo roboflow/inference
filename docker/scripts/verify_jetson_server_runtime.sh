@@ -72,6 +72,7 @@ done
 
 python3 - <<'PY'
 import cv2
+import bitsandbytes
 import flash_attn
 import importlib.metadata
 import importlib.util
@@ -102,6 +103,7 @@ assert hasattr(torch.ops.image, "decode_jpegs_cuda")
 assert importlib.metadata.version("superiorvision") == "0.30.0.dev3"
 assert importlib.metadata.version("tracktors") == "2.6.0.dev2"
 assert importlib.metadata.version("bitsandbytes") == "0.48.2"
+assert bitsandbytes.__version__ == "0.48.2"
 assert supervision.__file__
 assert trackers.__file__
 assert cv2.__file__.startswith("/opt/opencv/python/"), cv2.__file__
