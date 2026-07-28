@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <set>
 #include <vector>
 
 namespace {
@@ -92,6 +93,27 @@ struct RfBridgeStats {
     int32_t last_nvbuf_memory_type;
     int32_t last_egl_frame_type;
     int32_t last_egl_color_format;
+    // --- ABI v5: per-phase timing of the streaming-thread conversion (ns). ---
+    // Under concurrent TRT/torch GPU load individual native calls in
+    // convert_sample_to_tensor() intermittently stall for hundreds of ms;
+    // these accumulators (total + observed max per phase) name the stalling
+    // call. Totals include failed conversion attempts (phases that ran).
+    uint64_t egl_map_ns;
+    uint64_t egl_map_max_ns;
+    uint64_t cuda_register_ns;
+    uint64_t cuda_register_max_ns;
+    uint64_t texture_create_ns;
+    uint64_t texture_create_max_ns;
+    uint64_t kernel_launch_ns;
+    uint64_t kernel_launch_max_ns;
+    uint64_t sync_ns;
+    uint64_t sync_max_ns;
+    uint64_t cleanup_ns;
+    uint64_t cleanup_max_ns;
+    // Distinct dmabuf fds (NvBufSurfaceParams.bufferDesc) seen on this
+    // pipeline — the decoder capture-pool size. A small, stable set is the
+    // prerequisite for caching EGL/CUDA registrations per pool surface.
+    uint64_t unique_buffer_fds;
 };
 
 // Recycles fixed-size device allocations so the hot retrieve()/free path never
@@ -214,6 +236,10 @@ struct RfJetsonPipeline {
     char conversion_error[1024] = {0};
     RfFrameInfo last_frame_info{};
     bool frame_info_valid = false;
+    // dmabuf fds observed on this pipeline (guarded by `mutex`); its size is
+    // exported as stats.unique_buffer_fds. Decoder capture pools are small
+    // (single digits), so an ordered set is fine.
+    std::set<uint64_t> seen_buffer_fds;
 };
 
 using NvBufSurfaceMapEglImageFn = int (*)(NvBufSurface*, int);
@@ -601,6 +627,27 @@ struct RfEglDiagnostics {
     int32_t color_format = -1;
 };
 
+// Per-attempt phase durations measured inside convert_sample_to_tensor(),
+// accumulated into RfBridgeStats under the handle mutex by the caller (the
+// conversion itself runs lock-free on the streaming thread).
+struct RfPhaseTimings {
+    uint64_t egl_map_ns = 0;
+    uint64_t cuda_register_ns = 0;
+    uint64_t texture_create_ns = 0;
+    uint64_t kernel_launch_ns = 0;
+    uint64_t sync_ns = 0;
+    uint64_t cleanup_ns = 0;
+    uint64_t buffer_fd = 0;
+    bool buffer_fd_valid = false;
+};
+
+uint64_t monotonic_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
 // Convert one appsink sample into a pooled CHW RGB CUDA tensor. Runs on the
 // GStreamer STREAMING thread (the jetson-utils consume model): the sample is
 // fully consumed here and the caller unrefs it immediately afterwards, so the
@@ -614,6 +661,7 @@ RfTensorContext* convert_sample_to_tensor(
     GstSample* sample,
     RfFrameInfo* frame_info_out,
     RfEglDiagnostics* diagnostics,
+    RfPhaseTimings* timings,
     char* error,
     size_t error_capacity) {
     GstBuffer* buffer = gst_sample_get_buffer(sample);
@@ -624,6 +672,7 @@ RfTensorContext* convert_sample_to_tensor(
     cudaTextureObject_t textures[2] = {0, 0};
     RfTensorContext* tensor = nullptr;
     RfTensorContext* result = nullptr;
+    uint64_t phase_start = 0;
 
     // Bind the device on this streaming thread (it has made no prior CUDA
     // runtime call); the driver-API EGL registration below needs a context.
@@ -665,6 +714,8 @@ RfTensorContext* convert_sample_to_tensor(
                 "Frame is not a populated NvBufSurface SURFACE_ARRAY");
             goto cleanup;
         }
+        timings->buffer_fd = surface->surfaceList[0].bufferDesc;
+        timings->buffer_fd_valid = true;
         const NvBufSurfaceColorFormat surface_format =
             surface->surfaceList[0].colorFormat;
         const bool is_rgba = surface_format == NVBUF_COLOR_FORMAT_RGBA;
@@ -678,16 +729,19 @@ RfTensorContext* convert_sample_to_tensor(
                 static_cast<int>(surface_format));
             goto cleanup;
         }
+        phase_start = monotonic_ns();
         if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
             write_error(error, error_capacity, "NvBufSurface EGL mapping failed");
             goto cleanup;
         }
+        timings->egl_map_ns = monotonic_ns() - phase_start;
         egl_mapped = true;
         void* egl_image = surface->surfaceList[0].mappedAddr.eglImage;
         if (egl_image == nullptr) {
             write_error(error, error_capacity, "NvBufSurface EGL image is null");
             goto cleanup;
         }
+        phase_start = monotonic_ns();
         CUresult driver_status = cuGraphicsEGLRegisterImage(
             &graphics_resource,
             reinterpret_cast<EGLImageKHR>(egl_image),
@@ -716,6 +770,7 @@ RfTensorContext* convert_sample_to_tensor(
                 driver_error == nullptr ? "unknown error" : driver_error);
             goto cleanup;
         }
+        timings->cuda_register_ns = monotonic_ns() - phase_start;
         diagnostics->frame_type = static_cast<int32_t>(egl_frame.frameType);
         diagnostics->color_format = static_cast<int32_t>(egl_frame.eglColorFormat);
         const uint32_t expected_planes = is_rgba ? 1 : 2;
@@ -764,6 +819,7 @@ RfTensorContext* convert_sample_to_tensor(
             (frame_info.width + threads.x - 1) / threads.x,
             (frame_info.height + threads.y - 1) / threads.y);
         if (egl_frame.frameType == CU_EGL_FRAME_TYPE_PITCH) {
+            phase_start = monotonic_ns();
             if (is_rgba) {
                 rgba_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
                     static_cast<const uint8_t*>(egl_frame.frame.pPitch[0]),
@@ -782,8 +838,10 @@ RfTensorContext* convert_sample_to_tensor(
                     frame_info.height,
                     yuv_coeffs);
             }
+            timings->kernel_launch_ns = monotonic_ns() - phase_start;
         } else if (egl_frame.frameType == CU_EGL_FRAME_TYPE_ARRAY) {
             const uint32_t texture_count = is_rgba ? 1 : 2;
+            phase_start = monotonic_ns();
             for (uint32_t plane = 0; plane < texture_count; ++plane) {
                 cudaResourceDesc resource_description{};
                 resource_description.resType = cudaResourceTypeArray;
@@ -809,6 +867,8 @@ RfTensorContext* convert_sample_to_tensor(
                     goto cleanup;
                 }
             }
+            timings->texture_create_ns = monotonic_ns() - phase_start;
+            phase_start = monotonic_ns();
             if (is_rgba) {
                 rgba_array_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
                     textures[0],
@@ -825,14 +885,19 @@ RfTensorContext* convert_sample_to_tensor(
                     frame_info.height,
                     yuv_coeffs);
             }
+            timings->kernel_launch_ns = monotonic_ns() - phase_start;
         } else {
             write_error(error, error_capacity, "CUDA EGL frame storage is unsupported");
             goto cleanup;
         }
+        // Timed as one phase: the sync is where the streaming thread parks on
+        // the GPU behind whatever else (TRT/torch) currently occupies it.
+        phase_start = monotonic_ns();
         cuda_status = cudaGetLastError();
         if (cuda_status == cudaSuccess) {
             cuda_status = cudaStreamSynchronize(handle->stream);
         }
+        timings->sync_ns = monotonic_ns() - phase_start;
         if (cuda_status != cudaSuccess) {
             write_error(
                 error,
@@ -858,6 +923,7 @@ RfTensorContext* convert_sample_to_tensor(
     }
 
 cleanup:
+    phase_start = monotonic_ns();
     for (cudaTextureObject_t texture : textures) {
         if (texture != 0) {
             cudaDestroyTextureObject(texture);
@@ -876,6 +942,7 @@ cleanup:
     if (tensor != nullptr) {
         delete_managed_tensor(&tensor->managed);
     }
+    timings->cleanup_ns = monotonic_ns() - phase_start;
     return result;
 }
 
@@ -892,8 +959,9 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
     char error[1024] = {0};
     RfFrameInfo frame_info{};
     RfEglDiagnostics diagnostics{};
+    RfPhaseTimings timings{};
     RfTensorContext* tensor = convert_sample_to_tensor(
-        handle, sample, &frame_info, &diagnostics, error, sizeof(error));
+        handle, sample, &frame_info, &diagnostics, &timings, error, sizeof(error));
     gst_sample_unref(sample);
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
@@ -901,6 +969,42 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
         handle->stats.last_nvbuf_memory_type = diagnostics.memory_type;
         handle->stats.last_egl_frame_type = diagnostics.frame_type;
         handle->stats.last_egl_color_format = diagnostics.color_format;
+        const auto accumulate_phase =
+            [](uint64_t* total, uint64_t* max_value, uint64_t sample_ns) {
+                *total += sample_ns;
+                if (sample_ns > *max_value) {
+                    *max_value = sample_ns;
+                }
+            };
+        accumulate_phase(
+            &handle->stats.egl_map_ns,
+            &handle->stats.egl_map_max_ns,
+            timings.egl_map_ns);
+        accumulate_phase(
+            &handle->stats.cuda_register_ns,
+            &handle->stats.cuda_register_max_ns,
+            timings.cuda_register_ns);
+        accumulate_phase(
+            &handle->stats.texture_create_ns,
+            &handle->stats.texture_create_max_ns,
+            timings.texture_create_ns);
+        accumulate_phase(
+            &handle->stats.kernel_launch_ns,
+            &handle->stats.kernel_launch_max_ns,
+            timings.kernel_launch_ns);
+        accumulate_phase(
+            &handle->stats.sync_ns,
+            &handle->stats.sync_max_ns,
+            timings.sync_ns);
+        accumulate_phase(
+            &handle->stats.cleanup_ns,
+            &handle->stats.cleanup_max_ns,
+            timings.cleanup_ns);
+        if (timings.buffer_fd_valid &&
+            handle->seen_buffer_fds.insert(timings.buffer_fd).second) {
+            handle->stats.unique_buffer_fds =
+                static_cast<uint64_t>(handle->seen_buffer_fds.size());
+        }
         if (tensor == nullptr) {
             handle->conversion_failed = true;
             std::snprintf(
@@ -951,10 +1055,13 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
+    // v5: per-phase conversion timing (egl_map/cuda_register/texture_create/
+    // kernel_launch/sync/cleanup, total+max ns each) and unique_buffer_fds
+    // appended to RfBridgeStats (ABI change — python mirror must match).
     // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
     // model), direct NV12 path, frames_dropped_by_consumer added to
-    // RfBridgeStats (ABI change — python mirror must match).
-    return "4";
+    // RfBridgeStats.
+    return "5";
 }
 
 __attribute__((visibility("default")))

@@ -40,6 +40,22 @@ class _BridgeStats(ctypes.Structure):
         ("last_nvbuf_memory_type", ctypes.c_int32),
         ("last_egl_frame_type", ctypes.c_int32),
         ("last_egl_color_format", ctypes.c_int32),
+        # ABI v5: per-phase streaming-thread conversion timing (total + max
+        # ns per phase) and the count of distinct decoder dmabuf fds. Field
+        # order and widths mirror RfBridgeStats in jetson_tensor_bridge.cu.
+        ("egl_map_ns", ctypes.c_uint64),
+        ("egl_map_max_ns", ctypes.c_uint64),
+        ("cuda_register_ns", ctypes.c_uint64),
+        ("cuda_register_max_ns", ctypes.c_uint64),
+        ("texture_create_ns", ctypes.c_uint64),
+        ("texture_create_max_ns", ctypes.c_uint64),
+        ("kernel_launch_ns", ctypes.c_uint64),
+        ("kernel_launch_max_ns", ctypes.c_uint64),
+        ("sync_ns", ctypes.c_uint64),
+        ("sync_max_ns", ctypes.c_uint64),
+        ("cleanup_ns", ctypes.c_uint64),
+        ("cleanup_max_ns", ctypes.c_uint64),
+        ("unique_buffer_fds", ctypes.c_uint64),
     ]
 
 
@@ -58,9 +74,10 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
-    # v4 = streaming-thread conversion + tensor handoff; the RfBridgeStats ABI
-    # gained frames_dropped_by_consumer, so older .so versions must be refused.
-    if version != b"4":
+    # v5 = per-phase conversion timing + unique_buffer_fds appended to
+    # RfBridgeStats; the struct layout changed, so older .so versions must be
+    # refused (and a v5 .so is refused by older wrappers symmetrically).
+    if version != b"5":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
