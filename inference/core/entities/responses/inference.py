@@ -132,6 +132,15 @@ class SemanticSegmentationPrediction(BaseModel):
     confidence_mask: str = Field(
         description="base64-encoded PNG of predicted class confidence at each pixel"
     )
+    present_class_ids: Optional[List[int]] = Field(
+        default=None,
+        description=(
+            "Sorted list of pixel values present in segmentation_mask, including "
+            "background (0) when present. Optimization hint that lets consumers "
+            "skip scanning the full-resolution mask; consumers must fall back to "
+            "scanning when this field is absent."
+        ),
+    )
 
 
 class ClassificationPrediction(BaseModel):
