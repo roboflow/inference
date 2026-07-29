@@ -474,6 +474,8 @@ GstPadProbeReturn configure_sdes_srtp_caps(
     GST_PAD_PROBE_INFO_DATA(info) = secure_event;
     (void)pad;
     return GST_PAD_PROBE_OK;
+}
+
 RfEglCacheEntry* find_egl_cache_entry(
     RfJetsonPipeline* handle, uint64_t buffer_desc) {
     for (auto& entry : handle->egl_cache) {
