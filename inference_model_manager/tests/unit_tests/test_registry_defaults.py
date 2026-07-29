@@ -243,6 +243,31 @@ def test_owlv2_few_shot_task_config():
     assert few_shot[6] == "roboflow-object-detection-compact-v1"
 
 
+def test_cosmos3_edge_reasoner_task_config():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["Cosmos3EdgeReasoner"]}
+    prompt_task = cfgs["prompt"]
+
+    assert prompt_task[1] == "prompt"
+    assert prompt_task[2] is True
+    assert prompt_task[3]["images"] == {"type": "image", "required": True}
+    assert prompt_task[3]["prompt"] == {"type": "str", "required": True}
+    for param in ("max_new_tokens", "do_sample", "skip_special_tokens", "return_thinking"):
+        assert param in prompt_task[3], param
+        assert prompt_task[3][param]["required"] is False
+    assert prompt_task[3]["max_new_tokens"]["type"] == "int"
+    assert prompt_task[3]["do_sample"]["type"] == "bool"
+    assert prompt_task[3]["skip_special_tokens"]["type"] == "bool"
+    assert prompt_task[3]["return_thinking"]["type"] == "bool"
+    assert "default" not in prompt_task[3]["max_new_tokens"]
+    assert "default" not in prompt_task[3]["do_sample"]
+    assert prompt_task[4] == "validate_images_and_prompt"
+    assert prompt_task[5] == "serialize_text"
+    assert prompt_task[6] == "roboflow-text-v1"
+    assert prompt_task[7] == {}
+
+
 def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     test_registry = ModelRegistry()
     monkeypatch.setattr(registry_defaults, "registry", test_registry)

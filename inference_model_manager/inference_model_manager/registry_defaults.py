@@ -407,6 +407,24 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "roboflow-text-v1",
         ),
     ],
+    "Cosmos3EdgeReasoner": [
+        (
+            "prompt",
+            "prompt",
+            True,
+            _p(
+                _P_VLM_PROMPT,
+                {
+                    "do_sample": {"type": "bool", "required": False},
+                    "skip_special_tokens": {"type": "bool", "required": False},
+                    "return_thinking": {"type": "bool", "required": False},
+                },
+            ),
+            "validate_images_and_prompt",
+            "serialize_text",
+            "roboflow-text-v1",
+        ),
+    ],
     # --- Florence2 ---
     "Florence2HF": [
         (
