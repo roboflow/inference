@@ -19,6 +19,7 @@ from typing import (
 
 from inference.core import logger
 from inference.core.env import RESTART_ATTEMPT_DELAY
+from inference.core.interfaces.camera.collection_policy import CollectionPolicy
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
@@ -174,6 +175,49 @@ class VideoSourcesManager:
         self._last_batch_yielded_time = datetime.now()
         return batch_frames
 
+    def retrieve_frames_from_sources_with_policy(
+        self,
+        collection_policy: CollectionPolicy,
+    ) -> Optional[List[VideoFrame]]:
+        """Policy-driven sibling of `retrieve_frames_from_sources`.
+
+        Mirrors the legacy loop (stop signal, inactive sources, EOS
+        registration, reconnection-thread joins, the
+        `_last_batch_yielded_time`-anchored budget) but the per-round budget
+        comes from the policy's self-tuning window and per-source reads go
+        through the policy (bounded-staleness FIFO for live sources, plain
+        reads for files).
+        """
+        batch_frames = []
+        window = collection_policy.collection_window()
+        batch_timeout_moment = self._last_batch_yielded_time + timedelta(seconds=window)
+        for source_ord, (source, source_should_reconnect) in enumerate(
+            zip(self._video_sources.all_sources, self._video_sources.allow_reconnection)
+        ):
+            if self._external_should_stop():
+                self.join_all_reconnection_threads(include_not_finished=True)
+                collection_policy.note_collection_result(batch_frames=[])
+                return None
+            if self._is_source_inactive(source_ord=source_ord):
+                continue
+            batch_time_left = max(
+                (batch_timeout_moment - datetime.now()).total_seconds(), 0.0
+            )
+            try:
+                frame = collection_policy.read_frame(
+                    source_ord=source_ord,
+                    source=source,
+                    timeout=batch_time_left,
+                )
+                if frame is not None:
+                    batch_frames.append(frame)
+            except EndOfStreamError:
+                self._register_end_of_stream(source_ord=source_ord)
+        self.join_all_reconnection_threads()
+        self._last_batch_yielded_time = datetime.now()
+        collection_policy.note_collection_result(batch_frames=batch_frames)
+        return batch_frames
+
     def all_sources_ended(self) -> bool:
         return len(self._ended_sources) >= len(self._video_sources.all_sources)
 
@@ -246,6 +290,7 @@ def multiplex_videos(
     on_reconnection_error: Callable[
         [Optional[int], SourceConnectionError], None
     ] = log_error,
+    collection_policy: Optional[CollectionPolicy] = None,
 ) -> Generator[List[VideoFrame], None, None]:
     """
     Function that is supposed to provide a generator over frames from multiple video sources. It is capable to
@@ -284,6 +329,10 @@ def multiplex_videos(
         on_reconnection_error (Callable[[Optional[int], SourceConnectionError], None]): Function that will be
             called whenever source cannot re-connect after disconnection. First parameter is source_id, second
             is connection error instance.
+        collection_policy (Optional[CollectionPolicy]): When given, batch collection is driven by the policy
+            (self-tuning collection window + bounded-staleness FIFO reads - see
+            `inference.core.interfaces.camera.collection_policy`) and `batch_collection_timeout` is ignored.
+            When `None` (default) - the legacy collection behavior is used, unchanged.
 
     Returns Generator[List[VideoFrame], None, None]: allowing to iterate through frames from multiple video sources.
 
@@ -310,6 +359,7 @@ def multiplex_videos(
         batch_collection_timeout=batch_collection_timeout,
         should_stop=should_stop,
         on_reconnection_error=on_reconnection_error,
+        collection_policy=collection_policy,
     )
     if max_fps is None:
         yield from generator
@@ -329,6 +379,7 @@ def _multiplex_videos(
     batch_collection_timeout: Optional[float],
     should_stop: Callable[[], bool],
     on_reconnection_error: Callable[[Optional[int], SourceConnectionError], None],
+    collection_policy: Optional[CollectionPolicy] = None,
 ) -> Generator[List[VideoFrame], None, None]:
     sources_manager = VideoSourcesManager.init(
         video_sources=video_sources,
@@ -336,9 +387,14 @@ def _multiplex_videos(
         on_reconnection_error=on_reconnection_error,
     )
     while not sources_manager.all_sources_ended():
-        batch_frames = sources_manager.retrieve_frames_from_sources(
-            batch_collection_timeout=batch_collection_timeout,
-        )
+        if collection_policy is not None:
+            batch_frames = sources_manager.retrieve_frames_from_sources_with_policy(
+                collection_policy=collection_policy,
+            )
+        else:
+            batch_frames = sources_manager.retrieve_frames_from_sources(
+                batch_collection_timeout=batch_collection_timeout,
+            )
         if batch_frames is None:
             break
         if len(batch_frames) > 0:
