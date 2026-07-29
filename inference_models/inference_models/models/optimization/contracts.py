@@ -106,8 +106,8 @@ class InputCompatibility:
 class ValidationRecord:
     """Reproducible identity of one successfully validated workload.
 
-    ``docker_image`` should contain an immutable image digest rather than a mutable
-    tag. Failed and inconclusive attempts are not validation records.
+    ``docker_image`` contains the repository and tag representation used for profiling.
+    Failed and inconclusive attempts are not validation records.
     """
 
     device_kind: Literal["cpu", "gpu"]
