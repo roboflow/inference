@@ -98,7 +98,7 @@ class BaseEngineAdjacentPlugin:
             pre_processed_images=request.pre_processed_images,
             trt_config=request.trt_config,
             engine=request.engine,
-            context=request.execution_context,
+            context=request.trt_execution_context,
             device=request.device,
             input_name=request.input_name,
             outputs=request.output_names,

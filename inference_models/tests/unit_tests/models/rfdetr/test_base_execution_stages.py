@@ -191,7 +191,7 @@ def test_base_engine_plugin_delegates_to_existing_trt_boundary(monkeypatch) -> N
         pre_processed_images=torch.zeros((1, 3, 4, 4)),
         trt_config=object(),
         engine=object(),
-        execution_context=object(),
+        trt_execution_context=object(),
         device=torch.device("cuda:0"),
         input_name="images",
         output_names=["dets", "labels"],

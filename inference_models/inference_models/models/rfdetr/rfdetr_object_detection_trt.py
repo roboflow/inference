@@ -206,7 +206,7 @@ class RFDetrForObjectDetectionTRT(
                 model_path=model_package_content["engine.plan"],
                 engine_host_code_allowed=engine_host_code_allowed,
             )
-            execution_context = engine.create_execution_context()
+            trt_execution_context = engine.create_execution_context()
         inputs, outputs = get_trt_engine_inputs_and_outputs(engine=engine)
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
@@ -237,7 +237,7 @@ class RFDetrForObjectDetectionTRT(
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
-            execution_context=execution_context,
+            trt_execution_context=trt_execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             rfdetr_execution_plan=rfdetr_execution_plan,
@@ -255,7 +255,7 @@ class RFDetrForObjectDetectionTRT(
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
-        execution_context: trt.IExecutionContext,
+        trt_execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
@@ -269,7 +269,7 @@ class RFDetrForObjectDetectionTRT(
         self._classes_re_mapping = classes_re_mapping
         self._device = device
         self._cuda_context = cuda_context
-        self._execution_context = execution_context
+        self._trt_execution_context = trt_execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
@@ -598,7 +598,7 @@ class RFDetrForObjectDetectionTRT(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
-                    execution_context=self._execution_context,
+                    trt_execution_context=self._trt_execution_context,
                     device=self._device,
                     input_name=self._input_name,
                     output_names=self._output_names,

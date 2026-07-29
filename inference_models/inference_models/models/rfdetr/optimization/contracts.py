@@ -77,7 +77,7 @@ class EngineExecutionRequest:
     pre_processed_images: torch.Tensor
     trt_config: Any
     engine: Any
-    execution_context: Any
+    trt_execution_context: Any
     device: torch.device
     input_name: str
     output_names: List[str]
