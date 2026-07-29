@@ -15,7 +15,7 @@ flowchart TD
     load["AutoModel.from_pretrained(...)"] --> init["RFDetrForObjectDetectionTRT.__init__"]
     init --> explicit{"Explicit RFDetrExecutionPlan?"}
     explicit -->|yes| use_plan["Use plan<br/>do not read selection environment"]
-    explicit -->|no| precedence["Resolve each stage<br/>environment → optimized default"]
+    explicit -->|no| precedence["Resolve each stage<br/>environment → auto"]
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
 
@@ -64,10 +64,10 @@ arguments:
 
 An explicit plan has the clearest provenance and takes precedence over environment
 variables. Environment values are read only when no plan is supplied. When neither an
-explicit plan nor environment overrides are present, RF-DETR selects
-`triton-universal-v1` preprocessing and `triton-fused-v1` postprocessing. A declared
-contract mismatch or unavailable Triton dependency follows the implementation's
-`base` fallback before execution.
+explicit plan nor environment overrides are present, RF-DETR requests `auto` for
+preprocessing and postprocessing. The registry applies the model-path priority lists
+described below and selects `base` when none of their optimized candidates are
+compatible.
 
 Triton availability is reported once in the model-level `ExecutionContext`. The
 registry checks it before constructing either Triton implementation, so an unavailable

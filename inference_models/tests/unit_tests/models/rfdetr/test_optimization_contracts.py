@@ -22,6 +22,7 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
     immutable_mapping,
 )
+from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
@@ -132,7 +133,7 @@ def _network_input() -> NetworkInputDefinition:
     )
 
 
-def test_execution_plan_defaults_to_optimized_implementations(monkeypatch) -> None:
+def test_execution_plan_defaults_to_auto_selection(monkeypatch) -> None:
     monkeypatch.delenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR", raising=False)
     monkeypatch.delenv("INFERENCE_MODELS_RFDETR_POSTPROCESSOR", raising=False)
 
@@ -140,8 +141,8 @@ def test_execution_plan_defaults_to_optimized_implementations(monkeypatch) -> No
     resolved_plan = RFDetrExecutionPlan.resolve()
 
     for plan in (default_plan, resolved_plan):
-        assert plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
-        assert plan.postprocessor_id == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+        assert plan.preprocessor_id == AUTO_IMPLEMENTATION_ID
+        assert plan.postprocessor_id == AUTO_IMPLEMENTATION_ID
 
 
 def test_execution_plan_reads_environment_overrides(monkeypatch) -> None:

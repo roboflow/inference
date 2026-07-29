@@ -7,11 +7,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
+from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_ENV_NAME,
-    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_ENV_NAME,
-    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 
 
@@ -19,8 +18,8 @@ from inference_models.models.rfdetr.optimization.ids import (
 class RFDetrExecutionPlan(InferenceExecutionPlan):
     """Independent implementation selections for the RF-DETR inference path."""
 
-    preprocessor_id: str = RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
-    postprocessor_id: str = RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    preprocessor_id: str = AUTO_IMPLEMENTATION_ID
+    postprocessor_id: str = AUTO_IMPLEMENTATION_ID
 
     @classmethod
     def resolve(
@@ -44,11 +43,11 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
             plan = cls(
                 preprocessor_id=os.getenv(
                     RFDETR_PREPROCESSOR_ENV_NAME,
-                    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+                    AUTO_IMPLEMENTATION_ID,
                 ),
                 postprocessor_id=os.getenv(
                     RFDETR_POSTPROCESSOR_ENV_NAME,
-                    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+                    AUTO_IMPLEMENTATION_ID,
                 ),
             )
 
