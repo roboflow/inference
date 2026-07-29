@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -32,6 +33,10 @@ constexpr const char* kNvmmCapsFeature = "memory:NVMM";
 // one or two); this cap only bounds a slow or bursty consumer. Buffers are
 // allocated lazily on demand, so a small cap costs nothing until it is hit.
 constexpr size_t kJetsonTensorPoolBuffers = 8;
+// Handoff queue depth in lossless (file) mode: enough to absorb consumer
+// jitter without noticeably delaying backpressure. Must stay below
+// kJetsonTensorPoolBuffers or the pool would starve the converter.
+constexpr size_t kLosslessHandoffCapacity = 4;
 
 enum DLDeviceType : int32_t {
     kDLCUDA = 2,
@@ -224,13 +229,23 @@ struct RfJetsonPipeline {
     std::mutex mutex;
     // Streaming-thread handoff (the jetson-utils consume model): the appsink
     // new-sample callback converts each frame on the GStreamer streaming
-    // thread, releases the GStreamer buffer immediately (the decoder pool is
-    // never held hostage by a slow consumer), and publishes the finished CUDA
-    // tensor here. grab() waits on `frame_ready`; retrieve() takes the tensor.
-    // A newer frame replaces an uncollected one (latest-wins, like appsink
-    // drop=true, but the drop happens AFTER decode so nothing stalls).
+    // thread and publishes the finished CUDA tensor here. grab() waits on
+    // `frame_ready`; retrieve() pops the oldest tensor. Two modes:
+    //  * live (lossless_handoff=false, capacity 1): a newer frame replaces an
+    //    uncollected one (latest-wins, like appsink drop=true, but the drop
+    //    happens AFTER decode so nothing stalls) - correct for live streams
+    //    where a source cannot be paused;
+    //  * lossless (lossless_handoff=true, capacity kLosslessHandoffCapacity):
+    //    the callback BLOCKS on `handoff_space` while the queue is full,
+    //    holding the appsink sample - appsink (drop=false) queues up, the
+    //    non-leaky queue fills, the decoder and demuxer stall and filesrc
+    //    pauses. Decode is demand-paced and no frame is ever dropped -
+    //    required for every-frame video-file processing.
     std::condition_variable frame_ready;
-    RfTensorContext* ready_tensor = nullptr;
+    std::condition_variable handoff_space;
+    std::deque<RfTensorContext*> ready_tensors;
+    bool lossless_handoff = false;
+    size_t handoff_capacity = 1;
     std::atomic<bool> eos{false};
     bool conversion_failed = false;
     char conversion_error[1024] = {0};
@@ -956,6 +971,21 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
         gst_sample_unref(sample);
         return GST_FLOW_OK;
     }
+    if (handle->lossless_handoff) {
+        // Lossless (file) mode: park BEFORE converting, holding the appsink
+        // sample - that is what backs the queue up and stalls the decoder,
+        // so decode is demand-paced instead of frames being overwritten.
+        std::unique_lock<std::mutex> lock(handle->mutex);
+        handle->handoff_space.wait(lock, [handle]() {
+            return handle->ready_tensors.size() < handle->handoff_capacity ||
+                   handle->interrupted.load(std::memory_order_acquire);
+        });
+        if (handle->interrupted.load(std::memory_order_acquire)) {
+            lock.unlock();
+            gst_sample_unref(sample);
+            return GST_FLOW_OK;
+        }
+    }
     char error[1024] = {0};
     RfFrameInfo frame_info{};
     RfEglDiagnostics diagnostics{};
@@ -1013,13 +1043,16 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
                 "%s",
                 error);
         } else {
-            if (handle->ready_tensor != nullptr) {
-                // Latest-wins: the consumer never collected the previous
-                // frame. Its buffer goes straight back to the pool.
-                delete_managed_tensor(&handle->ready_tensor->managed);
+            if (!handle->lossless_handoff && !handle->ready_tensors.empty()) {
+                // Latest-wins (live mode): the consumer never collected the
+                // previous frame. Its buffer goes straight back to the pool.
+                // Never taken in lossless mode: only this streaming thread
+                // pushes, so the space awaited above cannot vanish.
+                delete_managed_tensor(&handle->ready_tensors.front()->managed);
+                handle->ready_tensors.pop_front();
                 handle->stats.frames_dropped_by_consumer += 1;
             }
-            handle->ready_tensor = tensor;
+            handle->ready_tensors.push_back(tensor);
             handle->last_frame_info = frame_info;
             handle->frame_info_valid = true;
             handle->stats.frames += 1;
@@ -1055,19 +1088,25 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
+    // v6: lossless (file) handoff mode — rf_jetson_pipeline_create() gained
+    // the lossless_handoff parameter (ABI change — python wrapper must
+    // match); bounded blocking FIFO replaces the latest-wins slot for
+    // non-live sources so every file frame is served, live behavior
+    // unchanged.
     // v5: per-phase conversion timing (egl_map/cuda_register/texture_create/
     // kernel_launch/sync/cleanup, total+max ns each) and unique_buffer_fds
-    // appended to RfBridgeStats (ABI change — python mirror must match).
+    // appended to RfBridgeStats.
     // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
     // model), direct NV12 path, frames_dropped_by_consumer added to
     // RfBridgeStats.
-    return "5";
+    return "6";
 }
 
 __attribute__((visibility("default")))
 RfJetsonPipeline* rf_jetson_pipeline_create(
     const char* pipeline_description,
     int device_id,
+    int lossless_handoff,
     char* error,
     size_t error_capacity) {
     if (pipeline_description == nullptr || pipeline_description[0] == '\0') {
@@ -1155,6 +1194,9 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
     handle->pipeline = pipeline;
     handle->sink = GST_APP_SINK(sink_element);
     handle->device_id = device_id;
+    handle->lossless_handoff = lossless_handoff != 0;
+    handle->handoff_capacity =
+        handle->lossless_handoff ? kLosslessHandoffCapacity : 1;
     handle->tensor_pool =
         std::make_shared<RfBufferPool>(device_id, kJetsonTensorPoolBuffers);
     if (handle->tensor_pool == nullptr) {
@@ -1218,7 +1260,7 @@ int rf_jetson_pipeline_grab(
     {
         std::unique_lock<std::mutex> lock(handle->mutex);
         const auto frame_or_terminal = [handle]() {
-            return handle->ready_tensor != nullptr || handle->conversion_failed ||
+            return !handle->ready_tensors.empty() || handle->conversion_failed ||
                    handle->interrupted.load(std::memory_order_acquire) ||
                    handle->eos.load(std::memory_order_acquire);
         };
@@ -1234,7 +1276,9 @@ int rf_jetson_pipeline_grab(
             handle->conversion_failed = false;
             return -1;
         }
-        if (handle->ready_tensor != nullptr) {
+        if (!handle->ready_tensors.empty()) {
+            // In lossless mode queued frames are served BEFORE EOS is
+            // reported, so the tail of a video file is never lost.
             return 1;
         }
     }
@@ -1300,16 +1344,22 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
         write_error(error, error_capacity, "Pipeline handle is null");
         return nullptr;
     }
-    std::lock_guard<std::mutex> lock(handle->mutex);
-    if (handle->ready_tensor == nullptr) {
-        write_error(error, error_capacity, "No grabbed frame is available");
-        return nullptr;
+    RfTensorContext* tensor = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        if (handle->ready_tensors.empty()) {
+            write_error(error, error_capacity, "No grabbed frame is available");
+            return nullptr;
+        }
+        // The tensor was fully converted on the streaming thread; hand it
+        // over. No CUDA call happens on the consumer thread (the DLPack
+        // deleter binds the device itself when the consumer eventually drops
+        // the tensor).
+        tensor = handle->ready_tensors.front();
+        handle->ready_tensors.pop_front();
     }
-    // The tensor was fully converted on the streaming thread; hand it over.
-    // No CUDA call happens on the consumer thread (the DLPack deleter binds
-    // the device itself when the consumer eventually drops the tensor).
-    RfTensorContext* tensor = handle->ready_tensor;
-    handle->ready_tensor = nullptr;
+    // Wake a lossless-mode streaming thread parked on a full handoff queue.
+    handle->handoff_space.notify_all();
     return &tensor->managed;
 }
 
@@ -1338,8 +1388,10 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
         return -1;
     }
     handle->interrupted.store(true, std::memory_order_release);
-    // Wake a grab() parked on the handoff slot so interrupt is prompt.
+    // Wake a grab() parked on the handoff queue - and a lossless-mode
+    // streaming thread parked on a full queue - so interrupt is prompt.
     handle->frame_ready.notify_all();
+    handle->handoff_space.notify_all();
     if (handle->sink != nullptr) {
         gst_app_sink_set_drop(handle->sink, TRUE);
         GstSample* queued_sample = nullptr;
@@ -1362,12 +1414,12 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
     rf_jetson_pipeline_interrupt(handle);
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
-        if (handle->ready_tensor != nullptr) {
+        while (!handle->ready_tensors.empty()) {
             // interrupt() already reached GST_STATE_NULL, so the streaming
             // thread is joined and no further callback can repopulate the
-            // slot; return the uncollected frame's buffer to the pool.
-            delete_managed_tensor(&handle->ready_tensor->managed);
-            handle->ready_tensor = nullptr;
+            // queue; return the uncollected frames' buffers to the pool.
+            delete_managed_tensor(&handle->ready_tensors.front()->managed);
+            handle->ready_tensors.pop_front();
         }
         if (handle->sink != nullptr) {
             gst_app_sink_set_drop(handle->sink, TRUE);
