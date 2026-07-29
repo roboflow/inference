@@ -14,6 +14,8 @@ def detect_max_batch_size(model) -> Optional[int]:
         or getattr(model, "_max_batch_size", None)
         or getattr(model, "_input_batch_size", None)
     )
+    if callable(bs):
+        bs = None
     if bs is not None:
         return bs
     # TorchScript/TRT models store it in inference_config

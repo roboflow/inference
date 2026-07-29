@@ -235,6 +235,7 @@ class InstanceSegmentationModel(
         """
         return False
 
+    @property
     def max_batch_size(self) -> Optional[int]:
         """Maximum batch size the model supports, or ``None`` if unlimited."""
         return getattr(self, "_max_batch_size", None)
