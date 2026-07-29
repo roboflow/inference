@@ -115,7 +115,9 @@ nav:
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
-      - Inference-Path Optimization Architecture: contributors/inference-path-optimization-architecture.md
+      - Inference-Path Optimization Architecture:
+          - Component Overview: contributors/inference-path-optimization-architecture.md
+          - RF-DETR Integration: contributors/inference-path-optimization-architectures/rfdetr.md
       - Dependencies and Backends: contributors/dependencies-and-backends.md
       - Adding a Model: contributors/adding-model.md
       - Writing Tests: contributors/writing-tests.md
