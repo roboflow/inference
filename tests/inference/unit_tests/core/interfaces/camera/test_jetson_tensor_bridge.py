@@ -98,13 +98,13 @@ def test_bridge_probe_rejects_ambiguous_v5_abi(monkeypatch) -> None:
     assert "b'5'" in reason
 
 
-def test_bridge_probe_accepts_combined_v6_abi(monkeypatch) -> None:
-    """Accept the ABI containing both frame and phase timing structures."""
+def test_bridge_probe_accepts_combined_v7_abi(monkeypatch) -> None:
+    """Accept the ABI containing timing, lossless handoff, and EGL caching."""
 
     monkeypatch.setattr(
         jetson_tensor_bridge,
         "_load_bridge_library",
-        lambda: _VersionLibrary(b"6"),
+        lambda: _VersionLibrary(b"7"),
     )
 
     available, reason = jetson_tensor_bridge.jetson_tensor_bridge_available()

@@ -231,18 +231,13 @@ def build_hw_producer(
                 )
 
                 return PyNvVideoCodecFrameProducer(video, **producer_kwargs)
-        except (
-            Exception
-        ) as error:  # noqa: BLE001 - probe said ok but construction failed; try next
-            # Without this log a hardware-backend failure is invisible: the
-            # probe result still reads "ok" and the source lands on the cv2
-            # CPU path with no trace of why.
+        except Exception as error:  # noqa: BLE001 - try the next candidate
+            # Without this line the caller only ever sees the (passing) probe
+            # results and the fallback to cv2 looks inexplicable.
             logger.warning(
-                "Hardware video producer %s failed to construct for %r: %r. "
-                "Trying the next candidate.",
-                name,
-                video,
-                error,
+                f"Constructing the '{name}' hardware decoder for source "
+                f"reference {video} failed: {error!r}. Trying the next "
+                "candidate decoder."
             )
             continue
     return None
@@ -259,9 +254,11 @@ def _resolution_order(
     An explicit ``prefer`` always wins, with the remaining backends kept as
     fallbacks. Otherwise the backend is chosen from (platform, source type):
 
-    - **Jetson** (aarch64 Linux): GStreamer for live/stream/camera sources and for
-      local files when CUDA tensor output is requested. Numpy file consumers retain
-      the cv2 CPU decoder fallback.
+    - **Jetson** (aarch64 Linux): GStreamer for every source type. Live sources
+      use the bridge's latest-wins slot; local files use its lossless handoff
+      (bridge ABI v7), so NVDEC decode is backpressured to consumption speed
+      and every file frame is served - cv2 remains only the construction-failure
+      fallback.
     - **dGPU / x86**: GStreamer for live/stream sources; PyNvVideoCodec (``dgpu``) for
       local FILES (its ``SimpleDecoder`` is seekable-file only).
 
@@ -275,18 +272,16 @@ def _resolution_order(
 
     is_file = _is_file_source(video)
     if platform.machine() == "aarch64" and platform.system() == "Linux":
-        # Jetson files are lossless in the tensor bridge. Keep the established
-        # cv2 route for CPU/Numpy callers, which do not benefit from CUDA output.
-        return [JETSON] if output_tensor or not is_file else []
+        return [JETSON]
     # dGPU / x86: streams -> GStreamer; local files -> PyNvVideoCodec.
     return [DGPU] if is_file else [GSTREAMER_CUDA]
 
 
 def _is_file_source(video: Optional[Union[str, int]]) -> bool:
-    """A seekable local FILE path (routed to opencv on Jetson / PyNvVideoCodec on
-    dGPU), as opposed to a live/stream/camera source (routed to GStreamer). URI
-    schemes (rtsp/http/...), ``/dev/video*``, ``csi://`` and integer camera indices
-    are NOT files."""
+    """A seekable local FILE path (routed to PyNvVideoCodec on dGPU; on Jetson
+    files share the GStreamer producer via its lossless handoff), as opposed to a
+    live/stream/camera source (routed to GStreamer). URI schemes (rtsp/http/...),
+    ``/dev/video*``, ``csi://`` and integer camera indices are NOT files."""
     return (
         isinstance(video, str)
         and "://" not in video

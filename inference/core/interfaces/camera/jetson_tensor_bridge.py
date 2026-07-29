@@ -60,6 +60,10 @@ class _BridgeStats(ctypes.Structure):
         ("cleanup_ns", ctypes.c_uint64),
         ("cleanup_max_ns", ctypes.c_uint64),
         ("unique_buffer_fds", ctypes.c_uint64),
+        # ABI v7: per-fd EGL registration cache effectiveness (hits skip the
+        # per-frame map/register/texture-create/unregister sequence).
+        ("egl_cache_hits", ctypes.c_uint64),
+        ("egl_cache_misses", ctypes.c_uint64),
     ]
 
 
@@ -82,17 +86,28 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
-    # v6 = frame-specific source/arrival timing in RfFrameInfo plus per-phase
-    # conversion timing and unique_buffer_fds in RfBridgeStats. Both ctypes
-    # layouts differ from the independently developed v5 ABIs, so older .so
-    # versions must be refused.
-    if version != b"6":
+    # v7 combines frame-specific source/arrival timing, per-phase conversion
+    # timing, lossless file handoff, unique dmabuf-FD accounting, and the
+    # per-FD EGL registration cache. The ctypes layouts and create() signature
+    # differ from older ABIs, so native and Python versions must match exactly.
+    if version != b"7":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
 
 class NativeJetsonTensorPipeline:
-    def __init__(self, pipeline: str, *, device_id: int = 0) -> None:
+    def __init__(
+        self,
+        pipeline: str,
+        *,
+        device_id: int = 0,
+        lossless_handoff: bool = False,
+    ) -> None:
+        # ``lossless_handoff`` selects the file-mode handoff: a bounded
+        # blocking FIFO in the native bridge that backpressures decode so no
+        # frame is ever dropped (required for every-frame video-file
+        # processing). Live sources keep the latest-wins slot (False).
+        #
         # Created before anything that can raise so __del__ -> close() can always
         # acquire it. This lock serializes interrupt()/close() so that a native
         # release() (which unrefs sink/pipeline and frees the handle) can never
@@ -106,6 +121,7 @@ class NativeJetsonTensorPipeline:
         self._handle = self._library.rf_jetson_pipeline_create(
             pipeline.encode("utf-8"),
             device_id,
+            1 if lossless_handoff else 0,
             error,
             len(error),
         )
@@ -281,6 +297,7 @@ def _configure_library(library) -> None:
     library.rf_jetson_tensor_bridge_version.restype = ctypes.c_char_p
     library.rf_jetson_pipeline_create.argtypes = [
         ctypes.c_char_p,
+        ctypes.c_int,
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_size_t,

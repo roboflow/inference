@@ -37,10 +37,10 @@ constexpr const char* kNvmmCapsFeature = "memory:NVMM";
 // one or two); this cap only bounds a slow or bursty consumer. Buffers are
 // allocated lazily on demand, so a small cap costs nothing until it is hit.
 constexpr size_t kJetsonTensorPoolBuffers = 8;
-// File sources must preserve ordering and every decoded frame. Bound their
-// device handoff queue and backpressure the streaming callback once it fills;
-// live sources continue to use a single latest-wins slot.
-constexpr size_t kJetsonTensorHandoffBuffers = 4;
+// Handoff queue depth in lossless (file) mode: enough to absorb consumer
+// jitter without noticeably delaying backpressure. Must stay below
+// kJetsonTensorPoolBuffers or the pool would starve the converter.
+constexpr size_t kLosslessHandoffCapacity = 4;
 
 enum DLDeviceType : int32_t {
     kDLCUDA = 2,
@@ -133,6 +133,13 @@ struct RfBridgeStats {
     // pipeline — the decoder capture-pool size. A small, stable set is the
     // prerequisite for caching EGL/CUDA registrations per pool surface.
     uint64_t unique_buffer_fds;
+    // --- ABI v7: EGL registration cache effectiveness. Hits skip the
+    // per-frame NvBufSurfaceMapEglImage/cuGraphicsEGLRegisterImage/texture
+    // creation/unregister sequence whose process-global locks measured
+    // 13-19 ms mean (max 97 ms) under GPU saturation. Expected hit rate
+    // after warmup: >99% (decoder pools recycle ~11 stable fds).
+    uint64_t egl_cache_hits;
+    uint64_t egl_cache_misses;
 };
 
 // Recycles fixed-size device allocations so the hot retrieve()/free path never
@@ -233,6 +240,19 @@ struct RfTensorContext {
     DLManagedTensor managed{};
 };
 
+// One cached EGL/CUDA registration for a decoder-pool surface, keyed by its
+// dmabuf fd. `egl_image` doubles as the validity token: if the surface comes
+// back with a different (or cleared) mappedAddr.eglImage, the fd was reused
+// for a new surface and the entry is rebuilt.
+struct RfEglCacheEntry {
+    uint64_t buffer_desc = 0;
+    void* egl_image = nullptr;
+    CUgraphicsResource resource = nullptr;
+    CUeglFrame frame{};
+    cudaTextureObject_t textures[2] = {0, 0};
+    uint32_t texture_count = 0;
+};
+
 struct RfJetsonPipeline {
     GstElement* pipeline = nullptr;
     GstAppSink* sink = nullptr;
@@ -242,15 +262,29 @@ struct RfJetsonPipeline {
     RfBridgeStats stats{};
     std::atomic<bool> interrupted{false};
     std::mutex mutex;
-    // Streaming-thread handoff (the jetson-utils consume model): live sources
-    // publish into a latest-wins slot, while file sources use a bounded FIFO
-    // and backpressure the callback. This keeps live latency bounded without
-    // violating the lossless, ordered semantics expected when reading files.
+    // Streaming-thread handoff (the jetson-utils consume model): the appsink
+    // new-sample callback converts each frame on the GStreamer streaming
+    // thread and publishes the finished CUDA tensor here. grab() waits on
+    // `frame_ready`; retrieve() pops the oldest tensor. Two modes:
+    //  * live (lossless_handoff=false, capacity 1): a newer frame replaces an
+    //    uncollected one (latest-wins, like appsink drop=true, but the drop
+    //    happens AFTER decode so nothing stalls) - correct for live streams
+    //    where a source cannot be paused;
+    //  * lossless (lossless_handoff=true, capacity kLosslessHandoffCapacity):
+    //    the callback BLOCKS on `handoff_space` while the queue is full,
+    //    holding the appsink sample - appsink (drop=false) queues up, the
+    //    non-leaky queue fills, the decoder and demuxer stall and filesrc
+    //    pauses. Decode is demand-paced and no frame is ever dropped -
+    //    required for every-frame video-file processing.
     std::condition_variable frame_ready;
     std::condition_variable handoff_space;
     std::deque<RfTensorContext*> ready_tensors;
+    // The frame claimed by grab() but not yet transferred by retrieve().
+    // Keeping this explicit binds frame-specific timing metadata to the exact
+    // tensor the consumer receives, even if a live source publishes again.
     RfTensorContext* grabbed_tensor = nullptr;
-    bool latest_only = true;
+    bool lossless_handoff = false;
+    size_t handoff_capacity = 1;
     std::atomic<bool> eos{false};
     bool conversion_failed = false;
     char conversion_error[1024] = {0};
@@ -267,6 +301,14 @@ struct RfJetsonPipeline {
     // exported as stats.unique_buffer_fds. Decoder capture pools are small
     // (single digits), so an ordered set is fine.
     std::set<uint64_t> seen_buffer_fds;
+    // EGL/CUDA registration cache keyed by dmabuf fd (the DeepStream
+    // pattern): decoder pools recycle a small stable set of surfaces, so
+    // the EGL image mapping, CUDA graphics registration and texture objects
+    // survive across frames instead of paying the process-global-lock
+    // sequence per frame. Touched only on the streaming thread inside
+    // convert_sample_to_tensor(); release() tears it down after the
+    // streaming thread is joined (GST_STATE_NULL).
+    std::vector<RfEglCacheEntry> egl_cache;
 };
 
 void signal_pipeline_error(RfJetsonPipeline* handle, const char* message) {
@@ -432,6 +474,33 @@ GstPadProbeReturn configure_sdes_srtp_caps(
     GST_PAD_PROBE_INFO_DATA(info) = secure_event;
     (void)pad;
     return GST_PAD_PROBE_OK;
+RfEglCacheEntry* find_egl_cache_entry(
+    RfJetsonPipeline* handle, uint64_t buffer_desc) {
+    for (auto& entry : handle->egl_cache) {
+        if (entry.buffer_desc == buffer_desc) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+// Frees the CUDA-side resources of an entry (textures + graphics
+// registration). The surface's EGL mapping itself is deliberately left in
+// place: it belongs to the decoder-pool surface and dies with it.
+void destroy_egl_cache_entry_resources(RfEglCacheEntry* entry) {
+    for (uint32_t plane = 0; plane < entry->texture_count; ++plane) {
+        if (entry->textures[plane] != 0) {
+            cudaDestroyTextureObject(entry->textures[plane]);
+        }
+    }
+    if (entry->resource != nullptr) {
+        cuGraphicsUnregisterResource(entry->resource);
+    }
+    entry->resource = nullptr;
+    entry->egl_image = nullptr;
+    entry->textures[0] = 0;
+    entry->textures[1] = 0;
+    entry->texture_count = 0;
 }
 
 using NvBufSurfaceMapEglImageFn = int (*)(NvBufSurface*, int);
@@ -868,6 +937,8 @@ struct RfPhaseTimings {
     uint64_t cleanup_ns = 0;
     uint64_t buffer_fd = 0;
     bool buffer_fd_valid = false;
+    uint32_t egl_cache_hit = 0;
+    uint32_t egl_cache_miss = 0;
 };
 
 uint64_t monotonic_ns() {
@@ -902,6 +973,8 @@ RfTensorContext* convert_sample_to_tensor(
     RfTensorContext* tensor = nullptr;
     RfTensorContext* result = nullptr;
     uint64_t phase_start = 0;
+    bool egl_resources_cached = false;
+    RfEglCacheEntry* egl_cache_entry = nullptr;
 
     // Bind the device on this streaming thread (it has made no prior CUDA
     // runtime call); the driver-API EGL registration below needs a context.
@@ -1083,48 +1156,68 @@ RfTensorContext* convert_sample_to_tensor(
             tensor = nullptr;
             goto cleanup;
         }
-        phase_start = monotonic_ns();
-        if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
-            write_error(error, error_capacity, "NvBufSurface EGL mapping failed");
-            goto cleanup;
+        egl_cache_entry = find_egl_cache_entry(handle, timings->buffer_fd);
+        if (egl_cache_entry != nullptr) {
+            void* current_egl_image = surface->surfaceList[0].mappedAddr.eglImage;
+            if (current_egl_image != nullptr &&
+                egl_cache_entry->egl_image == current_egl_image) {
+                egl_resources_cached = true;
+                timings->egl_cache_hit = 1;
+            } else {
+                // The fd was reused for a different surface (pool
+                // reallocation) - free the stale registration and rebuild
+                // into the same slot below.
+                destroy_egl_cache_entry_resources(egl_cache_entry);
+            }
         }
-        timings->egl_map_ns = monotonic_ns() - phase_start;
-        egl_mapped = true;
-        void* egl_image = surface->surfaceList[0].mappedAddr.eglImage;
-        if (egl_image == nullptr) {
-            write_error(error, error_capacity, "NvBufSurface EGL image is null");
-            goto cleanup;
-        }
-        phase_start = monotonic_ns();
-        CUresult driver_status = cuGraphicsEGLRegisterImage(
-            &graphics_resource,
-            reinterpret_cast<EGLImageKHR>(egl_image),
-            CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
-        if (driver_status != CUDA_SUCCESS) {
-            const char* driver_error = nullptr;
-            cuGetErrorString(driver_status, &driver_error);
-            write_error(
-                error,
-                error_capacity,
-                "CUDA EGL registration failed: %s",
-                driver_error == nullptr ? "unknown error" : driver_error);
-            goto cleanup;
-        }
-
         CUeglFrame egl_frame{};
-        driver_status = cuGraphicsResourceGetMappedEglFrame(
-            &egl_frame, graphics_resource, 0, 0);
-        if (driver_status != CUDA_SUCCESS) {
-            const char* driver_error = nullptr;
-            cuGetErrorString(driver_status, &driver_error);
-            write_error(
-                error,
-                error_capacity,
-                "CUDA EGL frame mapping failed: %s",
-                driver_error == nullptr ? "unknown error" : driver_error);
-            goto cleanup;
+        if (egl_resources_cached) {
+            egl_frame = egl_cache_entry->frame;
+        } else {
+            timings->egl_cache_miss = 1;
+            phase_start = monotonic_ns();
+            if (g_nvbufsurface.map_egl_image(surface, 0) != 0) {
+                write_error(
+                    error, error_capacity, "NvBufSurface EGL mapping failed");
+                goto cleanup;
+            }
+            timings->egl_map_ns = monotonic_ns() - phase_start;
+            egl_mapped = true;
+            void* egl_image = surface->surfaceList[0].mappedAddr.eglImage;
+            if (egl_image == nullptr) {
+                write_error(
+                    error, error_capacity, "NvBufSurface EGL image is null");
+                goto cleanup;
+            }
+            phase_start = monotonic_ns();
+            CUresult driver_status = cuGraphicsEGLRegisterImage(
+                &graphics_resource,
+                reinterpret_cast<EGLImageKHR>(egl_image),
+                CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
+            if (driver_status != CUDA_SUCCESS) {
+                const char* driver_error = nullptr;
+                cuGetErrorString(driver_status, &driver_error);
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA EGL registration failed: %s",
+                    driver_error == nullptr ? "unknown error" : driver_error);
+                goto cleanup;
+            }
+            driver_status = cuGraphicsResourceGetMappedEglFrame(
+                &egl_frame, graphics_resource, 0, 0);
+            if (driver_status != CUDA_SUCCESS) {
+                const char* driver_error = nullptr;
+                cuGetErrorString(driver_status, &driver_error);
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA EGL frame mapping failed: %s",
+                    driver_error == nullptr ? "unknown error" : driver_error);
+                goto cleanup;
+            }
+            timings->cuda_register_ns = monotonic_ns() - phase_start;
         }
-        timings->cuda_register_ns = monotonic_ns() - phase_start;
         diagnostics->frame_type = static_cast<int32_t>(egl_frame.frameType);
         diagnostics->color_format = static_cast<int32_t>(egl_frame.eglColorFormat);
         const uint32_t expected_planes = is_rgba ? 1 : 2;
@@ -1195,8 +1288,14 @@ RfTensorContext* convert_sample_to_tensor(
             timings->kernel_launch_ns = monotonic_ns() - phase_start;
         } else if (egl_frame.frameType == CU_EGL_FRAME_TYPE_ARRAY) {
             const uint32_t texture_count = is_rgba ? 1 : 2;
+            if (egl_resources_cached) {
+                textures[0] = egl_cache_entry->textures[0];
+                textures[1] = egl_cache_entry->textures[1];
+            }
             phase_start = monotonic_ns();
-            for (uint32_t plane = 0; plane < texture_count; ++plane) {
+            for (uint32_t plane = 0;
+                 !egl_resources_cached && plane < texture_count;
+                 ++plane) {
                 cudaResourceDesc resource_description{};
                 resource_description.resType = cudaResourceTypeArray;
                 resource_description.res.array.array =
@@ -1272,6 +1371,32 @@ RfTensorContext* convert_sample_to_tensor(
         tensor->managed.dl_tensor.strides = nullptr;
         tensor->managed.dl_tensor.byte_offset = 0;
         tensor->frame_info = frame_info;
+        if (!egl_resources_cached) {
+            RfEglCacheEntry fresh_entry{};
+            fresh_entry.buffer_desc = timings->buffer_fd;
+            fresh_entry.egl_image = surface->surfaceList[0].mappedAddr.eglImage;
+            fresh_entry.resource = graphics_resource;
+            fresh_entry.frame = egl_frame;
+            fresh_entry.textures[0] = textures[0];
+            fresh_entry.textures[1] = textures[1];
+            fresh_entry.texture_count =
+                egl_frame.frameType == CU_EGL_FRAME_TYPE_ARRAY
+                    ? (is_rgba ? 1u : 2u)
+                    : 0u;
+            if (egl_cache_entry != nullptr) {
+                *egl_cache_entry = fresh_entry;
+            } else {
+                handle->egl_cache.push_back(fresh_entry);
+            }
+            // Ownership moved to the cache: neutralise the locals so the
+            // cleanup section leaves the registration/textures alive, and
+            // keep the surface EGL-mapped for reuse on the next frame.
+            graphics_resource = nullptr;
+            textures[0] = 0;
+            textures[1] = 0;
+            egl_mapped = false;
+            egl_resources_cached = true;
+        }
         *frame_info_out = frame_info;
         result = tensor;
         tensor = nullptr;
@@ -1279,9 +1404,13 @@ RfTensorContext* convert_sample_to_tensor(
 
 cleanup:
     phase_start = monotonic_ns();
-    for (cudaTextureObject_t texture : textures) {
-        if (texture != 0) {
-            cudaDestroyTextureObject(texture);
+    if (!egl_resources_cached) {
+        // On a cache hit `textures` alias the cached objects - they must
+        // survive this frame (even a failed one) for reuse.
+        for (cudaTextureObject_t texture : textures) {
+            if (texture != 0) {
+                cudaDestroyTextureObject(texture);
+            }
         }
     }
     if (graphics_resource != nullptr) {
@@ -1310,6 +1439,21 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
     if (handle->interrupted.load(std::memory_order_acquire)) {
         gst_sample_unref(sample);
         return GST_FLOW_OK;
+    }
+    if (handle->lossless_handoff) {
+        // Lossless (file) mode: park BEFORE converting, holding the appsink
+        // sample - that is what backs the queue up and stalls the decoder,
+        // so decode is demand-paced instead of frames being overwritten.
+        std::unique_lock<std::mutex> lock(handle->mutex);
+        handle->handoff_space.wait(lock, [handle]() {
+            return handle->ready_tensors.size() < handle->handoff_capacity ||
+                   handle->interrupted.load(std::memory_order_acquire);
+        });
+        if (handle->interrupted.load(std::memory_order_acquire)) {
+            lock.unlock();
+            gst_sample_unref(sample);
+            return GST_FLOW_OK;
+        }
     }
     char error[1024] = {0};
     RfFrameInfo frame_info{};
@@ -1360,6 +1504,8 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
             handle->stats.unique_buffer_fds =
                 static_cast<uint64_t>(handle->seen_buffer_fds.size());
         }
+        handle->stats.egl_cache_hits += timings.egl_cache_hit;
+        handle->stats.egl_cache_misses += timings.egl_cache_miss;
         if (tensor == nullptr) {
             handle->conversion_failed = true;
             std::snprintf(
@@ -1385,31 +1531,19 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
                 handle->caps_changed = true;
                 delete_managed_tensor(&tensor->managed);
             } else {
-                // Conversion accounting is complete before a lossless file
-                // source potentially waits for FIFO space, keeping the
-                // counters coherent even when stats are sampled while the
-                // callback is backpressured.
+                if (!handle->lossless_handoff &&
+                    !handle->ready_tensors.empty()) {
+                    // Latest-wins (live mode): the consumer never collected
+                    // the previous frame. Return its buffer to the pool.
+                    delete_managed_tensor(
+                        &handle->ready_tensors.front()->managed);
+                    handle->ready_tensors.pop_front();
+                    handle->stats.frames_dropped_by_consumer += 1;
+                }
+                handle->ready_tensors.push_back(tensor);
                 handle->stats.frames += 1;
                 handle->stats.conversion_kernels += 1;
                 handle->stats.nvmm_frames += 1;
-                if (handle->latest_only && !handle->ready_tensors.empty()) {
-                    // Live sources keep latency bounded by replacing the frame
-                    // that the consumer has not collected yet.
-                    delete_managed_tensor(&handle->ready_tensors.back()->managed);
-                    handle->ready_tensors.pop_back();
-                    handle->stats.frames_dropped_by_consumer += 1;
-                } else if (!handle->latest_only) {
-                    handle->handoff_space.wait(lock, [handle]() {
-                        return handle->ready_tensors.size() <
-                                   kJetsonTensorHandoffBuffers ||
-                               handle->interrupted.load(std::memory_order_acquire);
-                    });
-                    if (handle->interrupted.load(std::memory_order_acquire)) {
-                        delete_managed_tensor(&tensor->managed);
-                        return GST_FLOW_FLUSHING;
-                    }
-                }
-                handle->ready_tensors.push_back(tensor);
             }
         }
     }
@@ -1441,22 +1575,22 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
-    // v6: combines v5 frame-specific source-clock/arrival timing with
-    // RfBridgeStats per-phase conversion timing
-    // (egl_map/cuda_register/texture_create/kernel_launch/sync/cleanup,
-    // total+max ns each) and unique_buffer_fds. Both structs differ from the
-    // independently developed v5 layouts, so the Python mirror and native
-    // library must move in lockstep.
+    // v7: per-fd EGL/CUDA registration cache (map/register/texture objects
+    // survive across frames; the per-frame global-lock sequence is paid only
+    // on pool warmup), plus frame-specific source/arrival timing, per-phase
+    // conversion timing, unique dmabuf-FD accounting, and lossless file
+    // handoff. The native and Python layouts/signatures must match exactly.
     // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
     // model), direct NV12 path, frames_dropped_by_consumer added to
     // RfBridgeStats.
-    return "6";
+    return "7";
 }
 
 __attribute__((visibility("default")))
 RfJetsonPipeline* rf_jetson_pipeline_create(
     const char* pipeline_description,
     int device_id,
+    int lossless_handoff,
     char* error,
     size_t error_capacity) {
     if (pipeline_description == nullptr || pipeline_description[0] == '\0') {
@@ -1544,10 +1678,9 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
     handle->pipeline = pipeline;
     handle->sink = GST_APP_SINK(sink_element);
     handle->device_id = device_id;
-    // Python marks live pipelines with appsink drop=true. The callback drains
-    // appsink immediately, so this property acts as the explicit handoff-mode
-    // signal rather than allowing GStreamer itself to discard queued samples.
-    handle->latest_only = gst_app_sink_get_drop(handle->sink);
+    handle->lossless_handoff = lossless_handoff != 0;
+    handle->handoff_capacity =
+        handle->lossless_handoff ? kLosslessHandoffCapacity : 1;
     handle->tensor_pool =
         std::make_shared<RfBufferPool>(device_id, kJetsonTensorPoolBuffers);
     if (handle->tensor_pool == nullptr) {
@@ -1820,6 +1953,9 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
             handle->grabbed_tensor = nullptr;
         }
         while (!handle->ready_tensors.empty()) {
+            // interrupt() already reached GST_STATE_NULL, so the streaming
+            // thread is joined and no further callback can repopulate the
+            // queue; return the uncollected frames' buffers to the pool.
             delete_managed_tensor(&handle->ready_tensors.front()->managed);
             handle->ready_tensors.pop_front();
         }
@@ -1834,6 +1970,21 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
         }
         if (handle->pipeline != nullptr) {
             gst_element_set_state(handle->pipeline, GST_STATE_NULL);
+        }
+        if (!handle->egl_cache.empty()) {
+            // The streaming thread is joined (GST_STATE_NULL above), so the
+            // cache is exclusively ours. Free the CUDA-side registrations;
+            // the surfaces' EGL mappings die with the decoder pool.
+            int previous_device = -1;
+            cudaGetDevice(&previous_device);
+            cudaSetDevice(handle->device_id);
+            for (auto& entry : handle->egl_cache) {
+                destroy_egl_cache_entry_resources(&entry);
+            }
+            handle->egl_cache.clear();
+            if (previous_device >= 0 && previous_device != handle->device_id) {
+                cudaSetDevice(previous_device);
+            }
         }
         if (handle->stream != nullptr) {
             cudaStreamDestroy(handle->stream);

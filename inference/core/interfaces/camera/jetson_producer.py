@@ -468,8 +468,13 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         bridge_ok, bridge_reason = jetson_tensor_bridge_available()
         if not bridge_ok:
             raise RuntimeError(bridge_reason)
+        # Files (and other non-live sources) use the bridge's lossless
+        # handoff: decode is backpressured to consumption speed and every
+        # frame is served. Live sources keep the latest-wins slot.
         self._native_pipeline = NativeJetsonTensorPipeline(
-            self._pipeline, device_id=device_id
+            self._pipeline,
+            device_id=device_id,
+            lossless_handoff=not _is_live_source(video),
         )
         self._closed = False
         self._eos = False

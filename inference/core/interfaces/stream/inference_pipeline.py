@@ -26,6 +26,13 @@ from inference.core.env import (
     WORKFLOWS_PROFILER_BUFFER_SIZE,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
+from inference.core.interfaces.camera.collection_policy import (
+    FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT,
+    STALENESS_DROP_CAUSE,
+    CollectionPolicy,
+    VideoProcessingMode,
+    resolve_video_processing_mode,
+)
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
@@ -34,6 +41,7 @@ from inference.core.interfaces.camera.entities import (
 )
 from inference.core.interfaces.camera.utils import multiplex_videos
 from inference.core.interfaces.camera.video_source import (
+    FRAME_DROPPED_EVENT,
     BufferConsumptionStrategy,
     BufferFillingStrategy,
     VideoSource,
@@ -113,6 +121,8 @@ class InferencePipeline:
         ] = None,
         active_learning_target_dataset: Optional[str] = None,
         batch_collection_timeout: Optional[float] = None,
+        video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
+        max_staleness: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
@@ -217,6 +227,17 @@ class InferencePipeline:
                 to grab frames from multiple sources can wait for batch to be filled before yielding already collected
                 frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
                 unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            video_processing_mode (Optional[Union[str, VideoProcessingMode]]): High-level intent for live
+                multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
+                window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
+                collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
+                `inference.core.interfaces.camera.collection_policy` for details.
+            max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
+                than this are dropped (reported as FRAME_DROPPED status updates with cause
+                STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.
             sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
                 handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
                 in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
@@ -309,6 +330,8 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
+            video_processing_mode=video_processing_mode,
+            max_staleness=max_staleness,
             sink_mode=sink_mode,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
@@ -333,6 +356,8 @@ class InferencePipeline:
         max_detections: Optional[int] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
+        video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
+        max_staleness: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
@@ -396,6 +421,17 @@ class InferencePipeline:
                 to grab frames from multiple sources can wait for batch to be filled before yielding already collected
                 frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
                 unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            video_processing_mode (Optional[Union[str, VideoProcessingMode]]): High-level intent for live
+                multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
+                window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
+                collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
+                `inference.core.interfaces.camera.collection_policy` for details.
+            max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
+                than this are dropped (reported as FRAME_DROPPED status updates with cause
+                STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.
             sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
                 handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
                 in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
@@ -457,6 +493,8 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
+            video_processing_mode=video_processing_mode,
+            max_staleness=max_staleness,
             sink_mode=sink_mode,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
@@ -488,6 +526,8 @@ class InferencePipeline:
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
         batch_collection_timeout: Optional[float] = None,
+        video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
+        max_staleness: Optional[float] = None,
         profiling_directory: str = "./inference_profiling",
         use_workflow_definition_cache: bool = True,
         serialize_results: bool = False,
@@ -563,6 +603,17 @@ class InferencePipeline:
                 to grab frames from multiple sources can wait for batch to be filled before yielding already collected
                 frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
                 unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            video_processing_mode (Optional[Union[str, VideoProcessingMode]]): High-level intent for live
+                multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
+                window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
+                collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
+                `inference.core.interfaces.camera.collection_policy` for details.
+            max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
+                than this are dropped (reported as FRAME_DROPPED status updates with cause
+                STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.
             profiling_directory (str): Directory where workflows profiler traces will be dumped. To enable profiling
                 export `ENABLE_WORKFLOWS_PROFILING=True` environmental variable. You may specify number of workflow
                 runs in a buffer with environmental variable `WORKFLOWS_PROFILER_BUFFER_SIZE=n` - making last `n`
@@ -698,6 +749,8 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
+            video_processing_mode=video_processing_mode,
+            max_staleness=max_staleness,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
             allow_tensor_frames=ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -718,6 +771,8 @@ class InferencePipeline:
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
+        video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
+        max_staleness: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
@@ -777,6 +832,17 @@ class InferencePipeline:
                 to grab frames from multiple sources can wait for batch to be filled before yielding already collected
                 frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
                 unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            video_processing_mode (Optional[Union[str, VideoProcessingMode]]): High-level intent for live
+                multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
+                window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
+                collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
+                `inference.core.interfaces.camera.collection_policy` for details.
+            max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
+                than this are dropped (reported as FRAME_DROPPED status updates with cause
+                STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.
             sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
                 handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
                 in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
@@ -807,6 +873,36 @@ class InferencePipeline:
             watchdog = NullPipelineWatchdog()
         status_update_handlers = list(status_update_handlers or [])
         status_update_handlers.append(watchdog.on_status_update)
+        resolved_processing_mode = resolve_video_processing_mode(
+            explicit_mode=video_processing_mode
+        )
+        collection_policy = None
+        if resolved_processing_mode is VideoProcessingMode.FRESHEST:
+            if source_buffer_consumption_strategy is None:
+                source_buffer_consumption_strategy = BufferConsumptionStrategy.EAGER
+            if batch_collection_timeout is None:
+                batch_collection_timeout = FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT
+        elif resolved_processing_mode is not None:
+            if source_buffer_consumption_strategy is None:
+                source_buffer_consumption_strategy = BufferConsumptionStrategy.LAZY
+
+            def _report_stale_frame_dropped(frame: VideoFrame) -> None:
+                send_inference_pipeline_status_update(
+                    severity=UpdateSeverity.DEBUG,
+                    event_type=FRAME_DROPPED_EVENT,
+                    status_update_handlers=status_update_handlers,
+                    payload={
+                        "source_id": frame.source_id,
+                        "frame_id": frame.frame_id,
+                        "cause": STALENESS_DROP_CAUSE,
+                    },
+                )
+
+            collection_policy = CollectionPolicy(
+                mode=resolved_processing_mode,
+                max_staleness=max_staleness,
+                on_frame_dropped=_report_stale_frame_dropped,
+            )
         desired_source_fps = None
         if ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING:
             desired_source_fps = max_fps
@@ -846,6 +942,7 @@ class InferencePipeline:
             on_pipeline_end=on_pipeline_end,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            collection_policy=collection_policy,
         )
 
     def __init__(
@@ -861,6 +958,7 @@ class InferencePipeline:
         max_fps: Optional[float] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        collection_policy: Optional[CollectionPolicy] = None,
     ):
         self._on_video_frame = on_video_frame
         self._video_sources = video_sources
@@ -878,6 +976,7 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
+        self._collection_policy = collection_policy
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -1158,6 +1257,7 @@ class InferencePipeline:
             max_fps=max_fps,
             batch_collection_timeout=self._batch_collection_timeout,
             should_stop=lambda: self._stop,
+            collection_policy=self._collection_policy,
         )
 
 
