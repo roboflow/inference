@@ -260,9 +260,7 @@ def test_policy_minimum_period_tracks_fastest_source_and_skips_files() -> None:
         policy.read_frame(source_ord=2, source=file_source, timeout=0.1)
 
     # then - the fastest LIVE source binds; the 120 fps file never counts
-    assert policy.minimum_live_arrival_period() == pytest.approx(
-        1 / 30.0, rel=0.05
-    )
+    assert policy.minimum_live_arrival_period() == pytest.approx(1 / 30.0, rel=0.05)
 
 
 def test_policy_feeds_estimator_with_staleness_drained_frames() -> None:
@@ -282,9 +280,7 @@ def test_policy_feeds_estimator_with_staleness_drained_frames() -> None:
 
     # then - every drained arrival counted: period known despite 0 returns
     assert frame is None
-    assert policy.minimum_live_arrival_period() == pytest.approx(
-        1 / 15.0, rel=0.05
-    )
+    assert policy.minimum_live_arrival_period() == pytest.approx(1 / 15.0, rel=0.05)
 
 
 def _fake_frame(age_seconds: float, frame_id: int = 1, source_id: int = 0):
