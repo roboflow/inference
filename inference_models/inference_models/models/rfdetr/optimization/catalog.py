@@ -5,7 +5,10 @@ from typing import Mapping
 
 import torch
 
-from inference_models.models.optimization.contracts import OptimizationMetadata
+from inference_models.models.optimization.contracts import (
+    OptimizationMetadata,
+    OptimizationStage,
+)
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.buffer_strategies import (
     BaseBufferStrategy,
@@ -121,14 +124,14 @@ def build_rfdetr_implementation_registry(
         factory=BaseEngineAdjacentPlugin,
     )
     registry.set_auto_preferences(
-        stage=TritonUniversalPreprocessor.metadata.stage,
+        stage=OptimizationStage.PREPROCESS,
         implementation_ids=(
             TritonUniversalPreprocessor.metadata.implementation_id,
             ThreadedExactPreprocessor.metadata.implementation_id,
         ),
     )
     registry.set_auto_preferences(
-        stage=TritonFusedPostprocessor.metadata.stage,
+        stage=OptimizationStage.POSTPROCESS,
         implementation_ids=(TritonFusedPostprocessor.metadata.implementation_id,),
     )
 
