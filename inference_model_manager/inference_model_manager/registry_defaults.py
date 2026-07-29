@@ -90,27 +90,23 @@ _P_OWLV2_REFERENCE_EXAMPLES = {
 
 # Common kwargs for object detection models
 _K_OD = {
-    "confidence": {"type": "float", "required": False, "default": 0.4},
-    "iou_threshold": {"type": "float", "required": False, "default": 0.3},
-    "max_detections": {"type": "int", "required": False, "default": 300},
-    "class_agnostic_nms": {"type": "bool", "required": False, "default": False},
+    "confidence": {"type": "float", "required": False},
+    "iou_threshold": {"type": "float", "required": False},
+    "max_detections": {"type": "int", "required": False},
+    "class_agnostic_nms": {"type": "bool", "required": False},
 }
 
 # Instance segmentation adds mask params
 _K_ISEG = {
     **_K_OD,
-    "masks_smoothing_enabled": {"type": "bool", "required": False, "default": True},
-    "masks_binarization_threshold": {
-        "type": "float",
-        "required": False,
-        "default": 0.5,
-    },
+    "masks_smoothing_enabled": {"type": "bool", "required": False},
+    "masks_binarization_threshold": {"type": "float", "required": False},
 }
 
 # Keypoints adds threshold
 _K_KP = {
     **_K_OD,
-    "key_points_threshold": {"type": "float", "required": False, "default": 0.0},
+    "key_points_threshold": {"type": "float", "required": False},
 }
 
 

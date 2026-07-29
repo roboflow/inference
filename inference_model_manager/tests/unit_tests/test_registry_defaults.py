@@ -268,6 +268,14 @@ def test_cosmos3_edge_reasoner_task_config():
     assert prompt_task[7] == {}
 
 
+def test_model_owned_defaults_not_injected():
+    from inference_model_manager.registry_defaults import _K_ISEG, _K_KP, _K_OD
+
+    for frag in (_K_OD, _K_ISEG, _K_KP):
+        for name, spec in frag.items():
+            assert "default" not in spec, name
+
+
 def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     test_registry = ModelRegistry()
     monkeypatch.setattr(registry_defaults, "registry", test_registry)
