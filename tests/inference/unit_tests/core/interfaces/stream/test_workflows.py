@@ -1,3 +1,4 @@
+import logging
 from concurrent.futures import Future
 from datetime import datetime
 from types import SimpleNamespace
@@ -356,7 +357,7 @@ def _make_async_placeholder(
     return response
 
 
-def _make_frame(frame_id: int) -> VideoFrame:
+def _make_frame(frame_id: int, comes_from_video_file: bool = True) -> VideoFrame:
     return VideoFrame(
         image=np.zeros((8, 8, 3), dtype=np.uint8),
         frame_id=frame_id,
@@ -364,7 +365,7 @@ def _make_frame(frame_id: int) -> VideoFrame:
         fps=30.0,
         measured_fps=None,
         source_id=0,
-        comes_from_video_file=True,
+        comes_from_video_file=comes_from_video_file,
     )
 
 
@@ -404,6 +405,76 @@ def test_index_list_parameters_by_frame_id_clamps_negative_frame_ids() -> None:
     indexed = _index_list_parameters_by_frame_id(params, frames)
 
     assert indexed["cached_preds"] == ["p0", "p2"]
+
+
+def test_index_list_parameters_by_frame_id_passes_through_non_int_frame_ids() -> None:
+    frames = [_make_frame(1.5)]
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames)
+
+    assert indexed["cached_preds"] == ["p0", "p1", "p2"]
+
+
+def test_index_list_parameters_by_frame_id_returns_input_for_empty_batch() -> None:
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, [])
+
+    assert indexed is params
+
+
+def test_index_list_parameters_by_frame_id_warns_once_per_key(caplog) -> None:
+    frames = [_make_frame(5)]
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+    warned_keys = set()
+
+    with caplog.at_level(logging.WARNING):
+        _index_list_parameters_by_frame_id(params, frames, warned_keys=warned_keys)
+        _index_list_parameters_by_frame_id(params, frames, warned_keys=warned_keys)
+
+    warnings = [
+        record for record in caplog.records if "cached_preds" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+
+
+def test_index_list_parameters_by_frame_id_passes_through_on_live_streams() -> None:
+    # Block-cache is only valid for finite video files - on a live stream
+    # frame ids grow unbounded and clamping would serve stale cache forever.
+    frames = [_make_frame(2, comes_from_video_file=False)]
+    params = {"cached_preds": ["p0", "p1", "p2", "p3", "p4"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames)
+
+    assert indexed is params
+
+
+def test_build_workflows_parameters_indexes_lists_only_in_preview() -> None:
+    frames = [_make_frame(1)]
+    params = {"cached_preds": ["p0", "p1", "p2", "p3", "p4"]}
+    non_preview_runner = WorkflowRunner(
+        workflows_parameters=params,
+        execution_engine=_FakeExecutionEngine(stream_buffer_depth=0),
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+        _is_preview=False,
+    )
+    preview_runner = WorkflowRunner(
+        workflows_parameters=params,
+        execution_engine=_FakeExecutionEngine(stream_buffer_depth=0),
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+        _is_preview=True,
+    )
+
+    non_preview_params, _ = non_preview_runner._build_workflows_parameters(
+        video_frames=frames
+    )
+    preview_params, _ = preview_runner._build_workflows_parameters(video_frames=frames)
+
+    assert non_preview_params["cached_preds"] == ["p0", "p1", "p2", "p3", "p4"]
+    assert preview_params["cached_preds"] == ["p1"]
 
 
 def test_workflow_runner_without_stream_buffering_returns_current_frame() -> None:

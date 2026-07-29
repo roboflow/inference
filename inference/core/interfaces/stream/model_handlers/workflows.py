@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
@@ -31,6 +31,7 @@ class WorkflowRunner:
         self._video_metadata_input_name = video_metadata_input_name
         self._serialize_results = serialize_results
         self._is_preview = _is_preview
+        self._clamp_warned_keys: Set[str] = set()
 
     def __call__(self, video_frames: List[VideoFrame]) -> List[dict]:
         return self._run_workflow(video_frames=video_frames)
@@ -76,13 +77,19 @@ class WorkflowRunner:
         if fps is None:
             # for FPS reporting we expect 0 when FPS cannot be determined
             fps = 0
-        # Preview block-cache (and similar) may pass full per-video lists via
-        # workflows_parameters while the stream runs one frame / small batch at
-        # a time. Index those lists by frame_id so WorkflowBatchInput length
-        # matches the current image batch.
-        workflows_parameters = _index_list_parameters_by_frame_id(
-            workflows_parameters, video_frames
-        )
+        if self._is_preview:
+            # Preview block-cache may pass full per-video lists via
+            # workflows_parameters while the stream runs one frame / small
+            # batch at a time. Index those lists by frame_id so
+            # WorkflowBatchInput length matches the current image batch. Only
+            # preview opts in - outside preview a list parameter of mismatched
+            # length is an ordinary workflow parameter and must pass through
+            # untouched.
+            workflows_parameters = _index_list_parameters_by_frame_id(
+                workflows_parameters,
+                video_frames,
+                warned_keys=self._clamp_warned_keys,
+            )
         video_metadata_for_images = [
             VideoMetadata(
                 video_identifier=(
@@ -117,26 +124,36 @@ class WorkflowRunner:
 def _index_list_parameters_by_frame_id(
     workflows_parameters: Dict[str, Any],
     video_frames: List[VideoFrame],
+    warned_keys: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
-    batch_size = len(video_frames)
-    if batch_size == 0:
+    # Cached lists are assumed to be keyed by raw frame_id. Frame ids are
+    # 1-based (both VideoSource and the webrtc worker increment their counter
+    # before emitting a frame), so the producer is expected to align the list
+    # with those ids - e.g. leave index 0 unused or pad accordingly.
+    # Only finite video files qualify: on a live stream frame ids grow
+    # unbounded and indexing would pin every frame to the last cached element.
+    if not video_frames:
         return workflows_parameters
+    if any(not frame.comes_from_video_file for frame in video_frames):
+        return workflows_parameters
+    frame_ids = [frame.frame_id for frame in video_frames]
+    if any(not isinstance(frame_id, int) for frame_id in frame_ids):
+        return workflows_parameters
+    batch_size = len(video_frames)
+    if warned_keys is None:
+        warned_keys = set()
     indexed: Dict[str, Any] = {}
     for key, value in workflows_parameters.items():
-        if not isinstance(value, list):
-            indexed[key] = value
-            continue
-        if len(value) in (0, 1, batch_size):
-            indexed[key] = value
-            continue
-        frame_ids = [frame.frame_id for frame in video_frames]
-        if any(not isinstance(frame_id, int) for frame_id in frame_ids):
+        if not isinstance(value, list) or len(value) in (0, 1, batch_size):
             indexed[key] = value
             continue
         # Out-of-range frame ids clamp to the nearest cached element. Passing
         # the full list through would make the execution engine treat its
         # length as the batch size and broadcast the single image across it.
-        if any(frame_id < 0 or frame_id >= len(value) for frame_id in frame_ids):
+        if key not in warned_keys and any(
+            frame_id < 0 or frame_id >= len(value) for frame_id in frame_ids
+        ):
+            warned_keys.add(key)
             logger.warning(
                 "Parameter '%s' holds %d cached elements but frame ids reach %d - "
                 "clamping to the nearest cached value.",
