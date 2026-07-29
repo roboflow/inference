@@ -202,7 +202,9 @@ def main() -> None:
             "device_plan_batches": 1,
             "resident_count_batches": 1,
             "host_sync_boundaries": 1,
-            "count_export_boundaries": 1,
+            # Tracktors 2.6.0.dev3 keeps speculative accepted counts resident
+            # for this steady-state corpus instead of exporting them to host.
+            "count_export_boundaries": 0,
             "packed_batches": 0,
         }
         assert batch_execution == expected_batch_execution, batch_execution
