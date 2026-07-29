@@ -81,6 +81,12 @@ _P_SAM3_EMBED = {
     "image_hashes": {"type": "list[str]", "required": False},
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
 }
+_P_OWLV2_REFERENCE_EXAMPLES = {
+    "reference_examples": {"type": "list", "required": True},
+    "confidence": {"type": "float", "required": False},
+    "iou_threshold": {"type": "float", "required": False},
+    "max_detections": {"type": "int", "required": False},
+}
 
 # Common kwargs for object detection models
 _K_OD = {
@@ -183,6 +189,17 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(_P_IMAGES_CLASSES, _K_OD),
             "validate_images_and_classes",
+            "serialize_detections_compact",
+            "roboflow-object-detection-compact-v1",
+        ),
+    ],
+    "OWLv2HF": [
+        (
+            "infer_with_reference_examples",
+            "infer_with_reference_examples",
+            False,
+            _p(_P_IMAGES, _P_OWLV2_REFERENCE_EXAMPLES),
+            "validate_images_required",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
         ),

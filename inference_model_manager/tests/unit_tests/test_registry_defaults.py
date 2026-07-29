@@ -221,3 +221,47 @@ def test_sam2_stream_configs_match_signatures():
     assert "prompt" not in cfgs["prompt"][3]
     assert cfgs["track"][3]["image"]["required"] is True
     assert cfgs["prompt"][5] == "serialize_passthrough"
+
+
+def test_owlv2_few_shot_task_config():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["OWLv2HF"]}
+    few_shot = cfgs["infer_with_reference_examples"]
+
+    assert few_shot[1] == "infer_with_reference_examples"
+    assert few_shot[2] is False
+    assert few_shot[3]["images"] == {"type": "image", "required": True}
+    assert few_shot[3]["reference_examples"] == {"type": "list", "required": True}
+    for param in ("confidence", "iou_threshold", "max_detections"):
+        assert few_shot[3][param]["required"] is False
+        assert "default" not in few_shot[3][param]
+    assert "classes" not in few_shot[3]
+    assert "class_agnostic_nms" not in few_shot[3]
+    assert few_shot[4] == "validate_images_required"
+    assert few_shot[5] == "serialize_detections_compact"
+    assert few_shot[6] == "roboflow-object-detection-compact-v1"
+
+
+def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
+    test_registry = ModelRegistry()
+    monkeypatch.setattr(registry_defaults, "registry", test_registry)
+
+    class OpenVocabularyObjectDetectionModel:
+        pass
+
+    class OWLv2HF(OpenVocabularyObjectDetectionModel):
+        pass
+
+    for cls in OWLv2HF.__mro__:
+        registry_defaults._register_from_config(cls)
+
+    model = OWLv2HF()
+    zero_shot = test_registry.get_entry(model, "infer")
+    few_shot = test_registry.get_entry(model, "infer_with_reference_examples")
+
+    assert zero_shot is not None
+    assert zero_shot.default is True
+    assert few_shot is not None
+    assert few_shot.default is False
+    assert few_shot.method == "infer_with_reference_examples"

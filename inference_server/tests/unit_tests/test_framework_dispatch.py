@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -349,6 +350,68 @@ async def test_param_validation_skips_non_coercible_types(fake_handler_entry):
     with _stat_returns(("fake-task", "infer")):
         r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_param_validation_rejects_missing_required_list(fake_handler_entry):
+    fake_handler_entry["interface"].params["reference_examples"] = {
+        "type": "list",
+        "required": True,
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"reference_examples" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_validation_accepts_required_list_from_body(fake_handler_entry):
+    fake_handler_entry["interface"].params["reference_examples"] = {
+        "type": "list",
+        "required": True,
+    }
+    examples = [{"image": "https://x/img.jpg", "boxes": []}]
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"reference_examples": examples},
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["reference_examples"] is examples
+
+
+@pytest.mark.asyncio
+async def test_few_shot_missing_reference_examples_returns_400():
+    body = json.dumps(
+        {
+            "inputs": {
+                "image": {
+                    "type": "base64",
+                    "value": base64.b64encode(_JPEG).decode(),
+                }
+            }
+        }
+    ).encode()
+    req = _request(
+        query=b"model_id=m&action=infer_with_reference_examples",
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-type", b"application/json"),
+        ],
+        body=body,
+    )
+    with _stat_returns(("open-vocabulary-object-detection", "infer")):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"reference_examples" in r.body
 
 
 @pytest.mark.asyncio

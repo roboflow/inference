@@ -80,15 +80,15 @@ def _apply_param_defaults(params_spec: dict, params: dict) -> None:
 def _validate_action_params(params_spec: dict, params: dict) -> Response | None:
     for name, spec in params_spec.items():
         type_name = spec.get("type", "str")
-        if type_name not in _COERCIBLE_QUERY_TYPES:
-            continue
         if name not in params:
-            if spec.get("required"):
+            if spec.get("required") and type_name != "image":
                 return error_response(
                     400,
                     "MISSING_PARAM",
                     f"required param missing: {name}",
                 )
+            continue
+        if type_name not in _COERCIBLE_QUERY_TYPES:
             continue
         value = params[name]
         if isinstance(value, str):

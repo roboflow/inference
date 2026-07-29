@@ -94,6 +94,7 @@ NEW_WORLD_HANDLERS = frozenset(
         ("multi-label-classification", "infer"),
         ("object-detection", "infer"),
         ("open-vocabulary-object-detection", "infer"),
+        ("open-vocabulary-object-detection", "infer_with_reference_examples"),
         ("passthrough", "infer"),
         ("semantic-segmentation", "infer"),
         ("structured-ocr", "infer"),

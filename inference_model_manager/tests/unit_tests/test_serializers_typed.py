@@ -220,3 +220,60 @@ def test_serialize_sam_segmentation_compact_single():
         "masks": "m0",
         "scores": "s0",
     }
+
+
+def _det_with_metadata():
+    return SimpleNamespace(
+        xyxy=[[0, 0, 1, 1]],
+        class_id=[0],
+        confidence=[0.9],
+        image_metadata={"class_names": ["bolt", "screw"]},
+    )
+
+
+def _det_without_metadata():
+    return SimpleNamespace(xyxy=[[0, 0, 1, 1]], class_id=[0], confidence=[0.9])
+
+
+class TestDetectionsClassNamesMetadataFallback:
+    def test_compact_falls_back_to_image_metadata_when_model_lacks_class_names(self):
+        from inference_model_manager.serializers_typed import (
+            serialize_detections_compact,
+        )
+
+        out = serialize_detections_compact(_det_with_metadata(), None)
+        assert out["class_names"] == ["bolt", "screw"]
+
+    def test_compact_model_class_names_win_over_metadata(self):
+        from inference_model_manager.serializers_typed import (
+            serialize_detections_compact,
+        )
+
+        out = serialize_detections_compact(_det_with_metadata(), _MODEL)
+        assert out["class_names"] == ["a", "b"]
+
+    def test_compact_batch_falls_back_to_first_detection_with_metadata(self):
+        from inference_model_manager.serializers_typed import (
+            serialize_detections_compact,
+        )
+
+        out = serialize_detections_compact(
+            [_det_without_metadata(), _det_with_metadata()], None
+        )
+        assert out["class_names"] == ["bolt", "screw"]
+
+    def test_compact_class_names_stay_none_without_model_or_metadata(self):
+        from inference_model_manager.serializers_typed import (
+            serialize_detections_compact,
+        )
+
+        out = serialize_detections_compact(
+            [_det_without_metadata(), _det_without_metadata()], None
+        )
+        assert out["class_names"] is None
+
+    def test_rich_falls_back_to_image_metadata(self):
+        from inference_model_manager.serializers_typed import serialize_detections_rich
+
+        out = serialize_detections_rich(_det_with_metadata(), None)
+        assert out["detections"][0]["class_name"] == "bolt"

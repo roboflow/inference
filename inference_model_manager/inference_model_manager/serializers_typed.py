@@ -18,6 +18,20 @@ def _class_names(model: Any) -> list | None:
     return getattr(model, "class_names", None)
 
 
+def _detections_class_names(model: Any, output: Any) -> list | None:
+    names = _class_names(model)
+    if names is not None:
+        return names
+    detections = output if isinstance(output, list) else [output]
+    for detection in detections:
+        metadata = getattr(detection, "image_metadata", None)
+        if metadata:
+            names = metadata.get("class_names")
+            if names is not None:
+                return names
+    return None
+
+
 def _to_list(tensor_or_array: Any) -> Any:
     """Leave as-is — orjson serializes numpy/torch directly."""
     return tensor_or_array
@@ -59,7 +73,7 @@ def serialize_detections_compact(output: Any, model: Any) -> dict:
     if isinstance(output, list):
         return {
             "type": "roboflow-object-detection-compact-v1",
-            "class_names": _class_names(model),
+            "class_names": _detections_class_names(model, output),
             "batch": [
                 {
                     "xyxy": _to_list(d.xyxy),
@@ -71,7 +85,7 @@ def serialize_detections_compact(output: Any, model: Any) -> dict:
         }
     return {
         "type": "roboflow-object-detection-compact-v1",
-        "class_names": _class_names(model),
+        "class_names": _detections_class_names(model, output),
         "xyxy": _to_list(output.xyxy),
         "class_id": _to_list(output.class_id),
         "confidence": _to_list(output.confidence),
@@ -348,7 +362,7 @@ def _to_py(val: Any) -> Any:
 def serialize_detections_rich(output: Any, model: Any) -> dict:
     """Detections → roboflow-object-detection-rich-v1"""
     output = _unwrap_batch(output)
-    names = _class_names(model)
+    names = _detections_class_names(model, output)
 
     def _det(d, i):
         xyxy = d.xyxy[i]
