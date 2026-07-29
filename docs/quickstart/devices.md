@@ -9,7 +9,7 @@ You can set up a server to use computer vision models with Inference on the foll
 - ARM CPU (macOS, Raspberry Pi)
 - x86 CPU (macOS, Linux, Windows)
 - NVIDIA GPU
-- NVIDIA Jetson (JetPack 4.5.x, JetPack 4.6.x, JetPack 5.x, JetPack 6.x)
+- NVIDIA Jetson — JetPack 7.2 (Orin and Thor) recommended; JetPack 6.2 and 5.1.x are also supported, but support for both ends in 2027 (5.1.x is deprecated)
 
 ## Self-Hosted on Cloud
 

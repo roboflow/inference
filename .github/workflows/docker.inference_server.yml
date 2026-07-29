@@ -21,10 +21,6 @@ on:
         type: boolean
         description: "Build Jetson JP5.1.1 (arm64)"
         default: false
-      jetson_6_0_0:
-        type: boolean
-        description: "Build Jetson JP6.0 (arm64)"
-        default: false
       jetson_6_2_0:
         type: boolean
         description: "Build Jetson JP6.2 (arm64)"
@@ -62,7 +58,6 @@ jobs:
           GPU: ${{ inputs.gpu }}
           CPU: ${{ inputs.cpu }}
           J511: ${{ inputs.jetson_5_1_1 }}
-          J600: ${{ inputs.jetson_6_0_0 }}
           J620: ${{ inputs.jetson_6_2_0 }}
         run: |
           set -euo pipefail
@@ -71,7 +66,6 @@ jobs:
             {"name":"gpu","dockerfile":"inference_server/docker/Dockerfile.gpu","platform":"linux/amd64","depot_project":"grl7ffzxd7","sel":"$GPU"},
             {"name":"cpu","dockerfile":"inference_server/docker/Dockerfile.cpu","platform":"linux/amd64","depot_project":"grl7ffzxd7","sel":"$CPU"},
             {"name":"jetson-5.1.1","dockerfile":"inference_server/docker/Dockerfile.jetson.5.1.1","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J511"},
-            {"name":"jetson-6.0.0","dockerfile":"inference_server/docker/Dockerfile.jetson.6.0.0","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J600"},
             {"name":"jetson-6.2.0","dockerfile":"inference_server/docker/Dockerfile.jetson.6.2.0","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J620"}
           ]
           EOF

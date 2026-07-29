@@ -71,6 +71,8 @@ repository_root$ docker compose -f ./docker/dockerfiles/stream-management-api.co
 
 #### Jetson devices (`JetPack 5.1.1`)
 
+**Note:** JetPack 5.1.x is deprecated and support will be removed in 2027. Migrate to JetPack 7.2.
+
 ```bash
 repository_root$ docker-compose -f ./docker/dockerfiles/stream-management-api.compose-jetson.5.1.1.yaml up
 ```
@@ -99,6 +101,8 @@ docker run -d --name stream_management_api --network host roboflow/roboflow-infe
 ```
 
 ##### Jetson devices (`JetPack 5.1.1`)
+
+**Note:** JetPack 5.1.x is deprecated and support will be removed in 2027. Migrate to JetPack 7.2.
 
 ```bash
 docker run -d --name stream_manager --network host --runtime nvidia roboflow/roboflow-inference-stream-manager-jetson-5.1.1:latest
