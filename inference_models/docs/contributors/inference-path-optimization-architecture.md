@@ -45,7 +45,7 @@ They include:
 
 - `OptimizationMetadata`, including the stable implementation ID, stage, version,
   target, input constraints, dependencies, numerical behavior, stream behavior,
-  output contract, fallback ID, and validation history;
+  output contract, fallback ID, and informational validation records;
 - `ExecutionContext`, which describes the actual device, scenario, resolved input
   axes, compute capability, available runtime components, and current stream;
 - the common `InferenceStage` compatibility protocol.
@@ -95,8 +95,9 @@ constructs only the effective compatible stage objects. Resolution follows these
 1. `base` selects the preserved reference implementation.
 2. An explicit implementation ID selects that implementation when compatible. A
    declared compatibility miss may follow its observable `fallback_id`.
-3. `auto` selects a compatible implementation only when it has a matching validated
-   environment; otherwise it selects `base`.
+3. `auto` checks the model path's ordered preference list and selects the first
+   compatible implementation; unlisted implementations remain explicit-only, and
+   `base` is the terminal fallback.
 4. Unknown IDs and failures during implementation execution never fall back.
 
 Compatibility fallback is decided before execution and records the requested ID,
@@ -106,6 +107,9 @@ unexpected runtime failures.
 Static target and runtime-component compatibility belongs to registry resolution.
 Request selectors handle only constraints that depend on concrete request values, such
 as input dtype, layout, shape, or preprocessing overrides.
+
+Validation records describe where an implementation was measured and with what result.
+They are provenance and do not participate in compatibility or automatic resolution.
 
 The same policy applies to every selectable stage. Set
 `allow_compatibility_fallback=False` when an explicitly requested implementation must
@@ -151,8 +155,9 @@ integration document rather than this shared overview.
 5. Register the implementation in `catalog.py`.
 6. Add contract, compatibility, numerical-parity, and selection tests.
 7. Profile and compare snapshots on the target device.
-8. Add validated environment records only after the target results justify automatic
-   selection.
+8. Add validation records for the measured environments and results.
+9. Add the implementation to the model path's ordered `auto` preference list only when
+   the target results justify automatic selection.
 
 This sequence keeps a new optimization independently selectable, attributable in
 profiling, and removable without changing the semantic model forward pass.

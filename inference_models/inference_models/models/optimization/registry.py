@@ -92,6 +92,7 @@ class ImplementationRegistry:
         self._registrations: DefaultDict[
             OptimizationStage, Dict[str, _ImplementationRegistration]
         ] = defaultdict(dict)
+        self._auto_preferences: Dict[OptimizationStage, Tuple[str, ...]] = {}
 
     def register(self, implementation: InferenceStage) -> None:
         """Register one implementation by stage and stable ID.
@@ -129,6 +130,45 @@ class ImplementationRegistry:
                 factory=factory,
             )
         )
+
+    def set_auto_preferences(
+        self,
+        *,
+        stage: OptimizationStage,
+        implementation_ids: Tuple[str, ...],
+    ) -> None:
+        """Configure ordered model-path preferences for automatic selection.
+
+        Implementations absent from this list remain explicitly selectable but are not
+        considered by ``auto``. The base implementation is an implicit terminal
+        fallback and must not appear in the list.
+
+        Args:
+            stage: Stage category whose automatic policy is being configured.
+            implementation_ids: Compatible candidates in descending preference order.
+
+        Raises:
+            ValueError: If IDs are duplicated, reserved, or not registered.
+        """
+        if len(set(implementation_ids)) != len(implementation_ids):
+            raise ValueError(f"Duplicate {stage.value} auto preference IDs.")
+        reserved = {self._base_id, self._auto_id}.intersection(implementation_ids)
+        if reserved:
+            raise ValueError(
+                f"Reserved {stage.value} auto preference IDs: {sorted(reserved)}."
+            )
+        stage_registrations = self._registrations.get(stage, {})
+        unknown = [
+            implementation_id
+            for implementation_id in implementation_ids
+            if implementation_id not in stage_registrations
+        ]
+        if unknown:
+            raise ValueError(
+                f"Unknown {stage.value} auto preference IDs: {sorted(unknown)}."
+            )
+
+        self._auto_preferences[stage] = tuple(implementation_ids)
 
     def _register(self, registration: _ImplementationRegistration) -> None:
         metadata = registration.metadata
@@ -333,18 +373,11 @@ class ImplementationRegistry:
         stage: OptimizationStage,
         context: ExecutionContext,
     ) -> _ImplementationRegistration:
-        registrations = tuple(self._registrations.get(stage, {}).values())
-        for registration in registrations:
-            metadata = registration.metadata
-            if metadata.implementation_id == self._base_id:
-                continue
-            validated = any(
-                environment.matches(context)
-                for environment in metadata.validated_environments
-            )
+        stage_registrations = self._registrations.get(stage, {})
+        for implementation_id in self._auto_preferences.get(stage, ()):
+            registration = stage_registrations[implementation_id]
             if (
-                validated
-                and self._registration_incompatibility_reason(
+                self._registration_incompatibility_reason(
                     registration=registration,
                     context=context,
                 )
@@ -354,14 +387,7 @@ class ImplementationRegistry:
                 if implementation.is_compatible(context):
                     return registration
 
-        base = next(
-            (
-                registration
-                for registration in registrations
-                if registration.metadata.implementation_id == self._base_id
-            ),
-            None,
-        )
+        base = stage_registrations.get(self._base_id)
         if base is None:
             raise ModelRuntimeError(
                 message=(

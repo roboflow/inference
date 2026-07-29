@@ -20,7 +20,6 @@ from inference_models.models.optimization.contracts import (
     InputCompatibility,
     OptimizationMetadata,
     OptimizationStage,
-    ValidationEnvironment,
     immutable_mapping,
 )
 from inference_models.models.optimization.registry import ImplementationRegistry
@@ -30,6 +29,7 @@ from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
     RFDETR_SCHEDULER_IMPLEMENTATIONS,
+    build_rfdetr_implementation_registry,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
@@ -42,6 +42,7 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.optimization.readiness import (
@@ -60,28 +61,10 @@ class _Stage:
         implementation_id: str,
         *,
         compatible: bool = True,
-        validated: bool = False,
         model_supported: bool = True,
         request_supported: bool = True,
         stage: OptimizationStage = OptimizationStage.PREPROCESS,
     ) -> None:
-        validation_environments = (
-            (
-                ValidationEnvironment(
-                    machine_type="test",
-                    device_kind="gpu",
-                    device_name="test-gpu",
-                    scenario="runtime",
-                    resolved_axes={},
-                    runtime_versions={},
-                    source_commit="test",
-                    profiling_bundle="test-bundle",
-                    status="validated",
-                ),
-            )
-            if validated
-            else ()
-        )
         self.metadata = OptimizationMetadata(
             implementation_id=implementation_id,
             stage=stage,
@@ -93,7 +76,6 @@ class _Stage:
             changes_numerics=False,
             supports_concurrency=True,
             supports_cuda_graphs=False,
-            validated_environments=validation_environments,
         )
         self._compatible = compatible
         self._model_supported = model_supported
@@ -233,12 +215,16 @@ def test_registry_resolves_explicit_and_auto_base() -> None:
     )
 
 
-def test_registry_auto_selects_a_validated_compatible_candidate() -> None:
+def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
     registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")
-    candidate = _Stage("candidate", validated=True)
+    candidate = _Stage("candidate")
     registry.register(base)
     registry.register(candidate)
+    registry.set_auto_preferences(
+        stage=OptimizationStage.PREPROCESS,
+        implementation_ids=("candidate",),
+    )
 
     assert (
         registry.resolve(
@@ -248,6 +234,37 @@ def test_registry_auto_selects_a_validated_compatible_candidate() -> None:
         )
         is candidate
     )
+
+
+def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cuda:0"),
+        preprocessor_max_workers=2,
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda:0",
+        device_name="test-gpu",
+        machine_type="test",
+        scenario="runtime",
+        runtime_components={"triton": False},
+    )
+
+    preprocessor = registry.resolve(
+        stage=OptimizationStage.PREPROCESS,
+        requested_id="auto",
+        context=context,
+    )
+    postprocessor = registry.resolve(
+        stage=OptimizationStage.POSTPROCESS,
+        requested_id="auto",
+        context=context,
+    )
+
+    assert (
+        preprocessor.metadata.implementation_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
+    )
+    assert postprocessor.metadata.implementation_id == RFDETR_POSTPROCESSOR_BASE
 
 
 def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
@@ -295,8 +312,12 @@ def test_auto_selection_is_not_reported_as_fallback_when_candidate_is_supported(
 ):
     registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register(_Stage("base"))
-    candidate = _Stage("candidate", validated=True)
+    candidate = _Stage("candidate")
     registry.register(candidate)
+    registry.set_auto_preferences(
+        stage=OptimizationStage.PREPROCESS,
+        implementation_ids=("candidate",),
+    )
 
     selection = resolve_preprocessor_for_model(
         registry=registry,

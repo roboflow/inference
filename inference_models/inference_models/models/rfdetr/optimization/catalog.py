@@ -94,9 +94,7 @@ def build_rfdetr_implementation_registry(
     )
     registry.register_factory(
         metadata=ThreadedExactPreprocessor.metadata,
-        factory=lambda: ThreadedExactPreprocessor(
-            max_workers=preprocessor_max_workers
-        ),
+        factory=lambda: ThreadedExactPreprocessor(max_workers=preprocessor_max_workers),
     )
     registry.register_factory(
         metadata=TritonUniversalPreprocessor.metadata,
@@ -121,6 +119,17 @@ def build_rfdetr_implementation_registry(
     registry.register_factory(
         metadata=BaseEngineAdjacentPlugin.metadata,
         factory=BaseEngineAdjacentPlugin,
+    )
+    registry.set_auto_preferences(
+        stage=TritonUniversalPreprocessor.metadata.stage,
+        implementation_ids=(
+            TritonUniversalPreprocessor.metadata.implementation_id,
+            ThreadedExactPreprocessor.metadata.implementation_id,
+        ),
+    )
+    registry.set_auto_preferences(
+        stage=TritonFusedPostprocessor.metadata.stage,
+        implementation_ids=(TritonFusedPostprocessor.metadata.implementation_id,),
     )
 
     return registry

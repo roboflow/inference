@@ -197,8 +197,11 @@ TensorRT forward does not need to know which preprocessor produced its input.
   reuse across engine outputs and postprocessing requires a contract extension.
 - `auto` resolves those base-only categories to `base`; an unknown explicit ID raises a
   registry error listing the available implementations.
-- `auto` remains on `base` until machine-readable validation records are added for a
-  matching runtime environment.
+- Preprocessing `auto` prefers `triton-universal-v1`, then `threaded-exact-v1`;
+  postprocessing `auto` prefers `triton-fused-v1`. Each stage uses `base` when no listed
+  candidate is compatible.
+- Validation records remain informational provenance and do not participate in
+  compatibility or `auto` resolution.
 - Static target, dependency, and model incompatibilities resolve the stored plan
   through the implementation's declared fallback. Request-only incompatibilities use
   the fallback for that request.

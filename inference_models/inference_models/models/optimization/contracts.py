@@ -103,8 +103,8 @@ class InputCompatibility:
 
 
 @dataclass(frozen=True)
-class ValidationEnvironment:
-    """One measured environment for an implementation."""
+class ValidationRecord:
+    """One measured validation result for an implementation."""
 
     machine_type: str
     device_kind: Literal["cpu", "gpu"]
@@ -124,24 +124,6 @@ class ValidationEnvironment:
             immutable_mapping(self.runtime_versions),
         )
 
-    def matches(self, context: "ExecutionContext") -> bool:
-        """Return whether this validation record matches a runtime context.
-
-        Args:
-            context: Runtime context being resolved.
-
-        Returns:
-            Whether validated target and scenario identity match.
-        """
-        target_matches = (
-            self.status == "validated"
-            and self.device_kind == context.device_kind
-            and self.device_name == context.device_name
-        )
-        scenario_matches = self.scenario in {context.scenario, "*"}
-
-        return target_matches and scenario_matches
-
 
 @dataclass(frozen=True)
 class OptimizationMetadata:
@@ -160,7 +142,7 @@ class OptimizationMetadata:
     output_contract: Mapping[str, Any] = field(default_factory=immutable_mapping)
     numerical_behavior: str = ""
     stream_behavior: str = ""
-    validated_environments: Tuple[ValidationEnvironment, ...] = ()
+    validation_records: Tuple[ValidationRecord, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -175,19 +157,19 @@ class OptimizationMetadata:
         Returns:
             JSON-compatible metadata dictionary.
         """
-        environments = [
+        validation_records = [
             {
-                "machine_type": environment.machine_type,
-                "device_kind": environment.device_kind,
-                "device_name": environment.device_name,
-                "scenario": environment.scenario,
-                "resolved_axes": dict(environment.resolved_axes),
-                "runtime_versions": dict(environment.runtime_versions),
-                "source_commit": environment.source_commit,
-                "profiling_bundle": environment.profiling_bundle,
-                "status": environment.status,
+                "machine_type": record.machine_type,
+                "device_kind": record.device_kind,
+                "device_name": record.device_name,
+                "scenario": record.scenario,
+                "resolved_axes": dict(record.resolved_axes),
+                "runtime_versions": dict(record.runtime_versions),
+                "source_commit": record.source_commit,
+                "profiling_bundle": record.profiling_bundle,
+                "status": record.status,
             }
-            for environment in self.validated_environments
+            for record in self.validation_records
         ]
         serialized = {
             "implementation_id": self.implementation_id,
@@ -212,7 +194,7 @@ class OptimizationMetadata:
             "output_contract": dict(self.output_contract),
             "numerical_behavior": self.numerical_behavior,
             "stream_behavior": self.stream_behavior,
-            "validated_environments": environments,
+            "validation_records": validation_records,
         }
 
         return serialized

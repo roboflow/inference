@@ -11,7 +11,7 @@ from inference_models.models.optimization.contracts import (
     InputCompatibility,
     OptimizationMetadata,
     OptimizationStage,
-    ValidationEnvironment,
+    ValidationRecord,
 )
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
@@ -30,7 +30,7 @@ class _Stage:
         *,
         compatible: bool = True,
         dependencies=(),
-        validated_environments=(),
+        validation_records=(),
     ) -> None:
         self.metadata = OptimizationMetadata(
             implementation_id=implementation_id,
@@ -43,7 +43,7 @@ class _Stage:
             changes_numerics=False,
             supports_concurrency=True,
             supports_cuda_graphs=False,
-            validated_environments=validated_environments,
+            validation_records=validation_records,
         )
         self._compatible = compatible
 
@@ -83,8 +83,8 @@ def test_compatibility_result_preserves_actionable_reasons() -> None:
     assert result.reason == "static crop, grayscale"
 
 
-def test_validation_environment_matches_target_and_scenario() -> None:
-    validation = ValidationEnvironment(
+def test_validation_record_is_serialized_as_informational_metadata() -> None:
+    validation = ValidationRecord(
         machine_type="test-machine",
         device_kind="gpu",
         device_name="test-gpu",
@@ -95,18 +95,10 @@ def test_validation_environment_matches_target_and_scenario() -> None:
         profiling_bundle="test-bundle",
         status="validated",
     )
+    metadata = _Stage("candidate", validation_records=(validation,)).metadata
 
-    assert validation.matches(_context())
-    assert not validation.matches(
-        ExecutionContext(
-            device_kind="gpu",
-            device="cuda:0",
-            device_name="other-gpu",
-            machine_type="test-machine",
-            scenario="batch",
-            resolved_axes={"batch": 1},
-        )
-    )
+    assert metadata.validation_records == (validation,)
+    assert metadata.to_dict()["validation_records"][0]["device_name"] == "test-gpu"
 
 
 def test_registry_uses_scope_in_actionable_errors() -> None:
@@ -121,23 +113,18 @@ def test_registry_uses_scope_in_actionable_errors() -> None:
         )
 
 
-def test_registry_auto_selects_only_matching_validated_candidate() -> None:
-    validation = ValidationEnvironment(
-        machine_type="test-machine",
-        device_kind="gpu",
-        device_name="test-gpu",
-        scenario="batch",
-        resolved_axes={"batch": 1},
-        runtime_versions={},
-        source_commit="test",
-        profiling_bundle="test-bundle",
-        status="validated",
-    )
+def test_registry_auto_selects_first_compatible_preference() -> None:
     registry = ImplementationRegistry(scope_name="Example model")
     base = _Stage("base")
-    candidate = _Stage("candidate", validated_environments=(validation,))
+    first = _Stage("first", compatible=False)
+    candidate = _Stage("candidate")
     registry.register(base)
+    registry.register(first)
     registry.register(candidate)
+    registry.set_auto_preferences(
+        stage=OptimizationStage.PREPROCESS,
+        implementation_ids=("first", "candidate"),
+    )
 
     selected = registry.resolve(
         stage=OptimizationStage.PREPROCESS,
@@ -146,6 +133,27 @@ def test_registry_auto_selects_only_matching_validated_candidate() -> None:
     )
 
     assert selected is candidate
+
+
+@pytest.mark.parametrize(
+    "implementation_ids",
+    [
+        ("base",),
+        ("auto",),
+        ("candidate", "candidate"),
+        ("missing",),
+    ],
+)
+def test_registry_rejects_invalid_auto_preferences(implementation_ids) -> None:
+    registry = ImplementationRegistry(scope_name="Example model")
+    registry.register(_Stage("base"))
+    registry.register(_Stage("candidate"))
+
+    with pytest.raises(ValueError):
+        registry.set_auto_preferences(
+            stage=OptimizationStage.PREPROCESS,
+            implementation_ids=implementation_ids,
+        )
 
 
 def test_registry_static_dependency_fallback_is_lazy() -> None:
@@ -162,7 +170,8 @@ def test_registry_static_dependency_fallback_is_lazy() -> None:
     )
     registry.register_factory(
         metadata=candidate_metadata,
-        factory=lambda: constructed.append("candidate") or _Stage(
+        factory=lambda: constructed.append("candidate")
+        or _Stage(
             "candidate",
             dependencies=("triton",),
         ),
