@@ -15,14 +15,15 @@ from inference.core.interfaces.camera.discoverability import (
 
 @patch("platform.system", return_value="Linux")
 @patch("platform.machine", return_value="aarch64")
-def test_jetson_routes_gstreamer_for_streams_and_cv2_for_files(
+def test_jetson_routes_gstreamer_for_streams_and_files(
     machine_mock,
     system_mock,
 ) -> None:
-    # Streams / cameras -> Jetson HW GStreamer.
+    # Streams / cameras -> Jetson HW GStreamer (latest-wins slot).
     assert _resolution_order(prefer=None, video="rtsp://cam/stream") == [JETSON]
-    # Local files -> no HW producer selected (cv2 CPU decode, tensorised lazily).
-    assert _resolution_order(prefer=None, video="sample.mp4") == []
+    # Local files -> the same producer via the bridge's lossless handoff
+    # (bridge v6+); cv2 remains only the construction-failure fallback.
+    assert _resolution_order(prefer=None, video="sample.mp4") == [JETSON]
 
 
 @patch("platform.system", return_value="Linux")
@@ -100,6 +101,37 @@ def test_jetson_numpy_probe_requires_the_native_cuda_bridge(
     required_elements = probe_gstreamer_elements_mock.call_args.args[0]
     assert "nvvidconv" in required_elements
     assert "videoconvert" not in required_elements
+
+
+@patch("platform.system", return_value="Linux")
+@patch("platform.machine", return_value="aarch64")
+@patch(
+    "inference.core.interfaces.camera.jetson_producer.JetsonVideoFrameProducer",
+    side_effect=RuntimeError("preroll failed"),
+)
+@patch(
+    "inference.core.interfaces.camera.discoverability.available_producers",
+    return_value={
+        GSTREAMER_CUDA: ProducerAvailability(GSTREAMER_CUDA, False, "unavailable"),
+        JETSON: ProducerAvailability(JETSON, True, "ok"),
+        DGPU: ProducerAvailability(DGPU, False, "unavailable"),
+    },
+)
+def test_factory_logs_construction_failures_before_falling_back(
+    available_producers_mock,
+    producer_class_mock,
+    machine_mock,
+    system_mock,
+    caplog,
+) -> None:
+    # given - the probe passes but the producer constructor raises; without a
+    # log line the caller-side fallback to cv2 is undiagnosable
+    with caplog.at_level("WARNING"):
+        producer = build_hw_producer("sample.mp4")
+
+    assert producer is None
+    assert "Constructing the 'jetson' hardware decoder" in caplog.text
+    assert "preroll failed" in caplog.text
 
 
 @patch(
