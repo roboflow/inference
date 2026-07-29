@@ -160,6 +160,54 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
     ), "Source description must denote NOT_STARTED state and invalid source reference"
 
 
+def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
+    credentialed_url = "rtsps://user:secret@192.168.1.1:554/stream"
+    with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
+        with patch(
+            "inference.core.interfaces.camera.gstreamer_rtsp_producer.gstreamer_rtsp_capture_available",
+            return_value=True,
+        ):
+            with patch(
+                "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
+            ) as mock_producer_cls:
+                mock_producer_cls.return_value.isOpened.return_value = True
+                mock_producer_cls.return_value.discover_source_properties.return_value = (
+                    SourceProperties(
+                        width=640,
+                        height=480,
+                        fps=30.0,
+                        total_frames=0,
+                        is_file=False,
+                    )
+                )
+                source = VideoSource.init(video_reference=credentialed_url)
+                source.start()
+
+    mock_producer_cls.assert_called_once_with(credentialed_url)
+
+
+def test_video_source_keeps_cv2_producer_for_plain_rtsp_on_jetson() -> None:
+    url = "rtsp://user:secret@192.168.1.1:554/stream"
+    with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
+        with patch(
+            "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+        ) as mock_producer_cls:
+            mock_producer_cls.return_value.isOpened.return_value = True
+            mock_producer_cls.return_value.discover_source_properties.return_value = (
+                SourceProperties(
+                    width=640,
+                    height=480,
+                    fps=30.0,
+                    total_frames=0,
+                    is_file=False,
+                )
+            )
+            source = VideoSource.init(video_reference=url)
+            source.start()
+
+    mock_producer_cls.assert_called_once_with(url)
+
+
 def test_video_source_describe_source_when_invalid_video_reference_consumption_started() -> (
     None
 ):

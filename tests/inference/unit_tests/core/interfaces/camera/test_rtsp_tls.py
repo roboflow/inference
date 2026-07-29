@@ -31,6 +31,11 @@ def test_tls_suffix_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert rtsp_tls_validation_flags_gstreamer_suffix() == " tls-validation-flags=0"
 
 
+def test_tls_suffix_allow_self_signed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, "126")
+    assert rtsp_tls_validation_flags_gstreamer_suffix() == " tls-validation-flags=126"
+
+
 def test_tls_suffix_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, "nope")
     with pytest.raises(ValueError):
