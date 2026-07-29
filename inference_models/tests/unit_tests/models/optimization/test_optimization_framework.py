@@ -29,6 +29,7 @@ class _Stage:
         implementation_id: str,
         *,
         compatible: bool = True,
+        dependencies=(),
         validated_environments=(),
     ) -> None:
         self.metadata = OptimizationMetadata(
@@ -37,7 +38,7 @@ class _Stage:
             version="1",
             target=DeviceCompatibility(device_kind="gpu"),
             inputs=InputCompatibility(scenarios=("*",)),
-            dependencies=(),
+            dependencies=dependencies,
             fallback_id="base",
             changes_numerics=False,
             supports_concurrency=True,
@@ -145,6 +146,68 @@ def test_registry_auto_selects_only_matching_validated_candidate() -> None:
     )
 
     assert selected is candidate
+
+
+def test_registry_static_dependency_fallback_is_lazy() -> None:
+    registry = ImplementationRegistry(scope_name="Example model")
+    constructed = []
+    base_metadata = _Stage("base").metadata
+    candidate_metadata = _Stage(
+        "candidate",
+        dependencies=("triton",),
+    ).metadata
+    registry.register_factory(
+        metadata=base_metadata,
+        factory=lambda: constructed.append("base") or _Stage("base"),
+    )
+    registry.register_factory(
+        metadata=candidate_metadata,
+        factory=lambda: constructed.append("candidate") or _Stage(
+            "candidate",
+            dependencies=("triton",),
+        ),
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda:0",
+        device_name="test-gpu",
+        machine_type="test-machine",
+        scenario="batch",
+        runtime_components={"triton": False},
+    )
+
+    selection = registry.resolve_selection(
+        stage=OptimizationStage.PREPROCESS,
+        requested_id="candidate",
+        context=context,
+        allow_fallback=True,
+    )
+
+    assert selection.effective_id == "base"
+    assert selection.fallback_reason == "unavailable runtime components: triton"
+    assert constructed == ["base"]
+
+
+def test_registry_can_reject_static_dependency_fallback() -> None:
+    registry = ImplementationRegistry(scope_name="Example model")
+    registry.register(_Stage("base"))
+    registry.register(_Stage("candidate", dependencies=("triton",)))
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda:0",
+        device_name="test-gpu",
+        machine_type="test-machine",
+        scenario="batch",
+        runtime_components={"triton": False},
+    )
+
+    with pytest.raises(ModelRuntimeError, match="unavailable runtime components"):
+        registry.resolve_selection(
+            stage=OptimizationStage.PREPROCESS,
+            requested_id="candidate",
+            context=context,
+            allow_fallback=False,
+        )
 
 
 def test_tensor_readiness_tracker_uses_exact_tensor_identity() -> None:

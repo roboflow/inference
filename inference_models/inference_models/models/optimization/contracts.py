@@ -231,9 +231,76 @@ class ExecutionContext:
     current_stream: Optional[Any] = None
     device_family: Optional[str] = None
     compute_capability: Optional[Tuple[int, int]] = None
+    runtime_components: Mapping[str, bool] = field(default_factory=immutable_mapping)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "resolved_axes", immutable_mapping(self.resolved_axes))
+        object.__setattr__(
+            self,
+            "runtime_components",
+            immutable_mapping(self.runtime_components),
+        )
+
+
+def metadata_compatibility(
+    metadata: OptimizationMetadata,
+    context: ExecutionContext,
+) -> CompatibilityResult:
+    """Check declared target and dependency constraints against a runtime context.
+
+    Runtime components are rejected only when the context explicitly reports them as
+    unavailable. Components absent from the context remain unknown so existing model
+    paths can adopt capability reporting incrementally.
+
+    Args:
+        metadata: Implementation compatibility metadata.
+        context: Runtime target and available-component context.
+
+    Returns:
+        Compatibility result with actionable static-runtime reasons.
+    """
+    reasons = []
+    target = metadata.target
+    if target.device_kind != context.device_kind:
+        reasons.append(
+            f"requires device_kind={target.device_kind!r}, "
+            f"received {context.device_kind!r}"
+        )
+    if (
+        target.device_families
+        and context.device_family is not None
+        and context.device_family not in target.device_families
+    ):
+        reasons.append(
+            f"device_family={context.device_family!r} is not in "
+            f"{target.device_families!r}"
+        )
+    if (
+        target.minimum_compute_capability is not None
+        and context.compute_capability is not None
+        and context.compute_capability < target.minimum_compute_capability
+    ):
+        reasons.append(
+            f"compute_capability={context.compute_capability!r} is below "
+            f"{target.minimum_compute_capability!r}"
+        )
+    unavailable_dependencies = [
+        dependency
+        for dependency in metadata.dependencies
+        if context.runtime_components.get(dependency) is False
+    ]
+    if unavailable_dependencies:
+        reasons.append(
+            "unavailable runtime components: "
+            + ", ".join(sorted(unavailable_dependencies))
+        )
+
+    if reasons:
+        compatibility = CompatibilityResult.incompatible(*reasons)
+    else:
+        compatibility = CompatibilityResult.compatible()
+
+    return compatibility
 
 
 def metadata_supports_context(
@@ -249,23 +316,9 @@ def metadata_supports_context(
     Returns:
         Whether the target constraints match.
     """
-    target = metadata.target
-    if target.device_kind != context.device_kind:
-        return False
-    if (
-        target.device_families
-        and context.device_family is not None
-        and context.device_family not in target.device_families
-    ):
-        return False
-    if (
-        target.minimum_compute_capability is not None
-        and context.compute_capability is not None
-        and context.compute_capability < target.minimum_compute_capability
-    ):
-        return False
+    compatibility = metadata_compatibility(metadata=metadata, context=context)
 
-    return True
+    return compatibility.supported
 
 
 class InferenceStage(Protocol):

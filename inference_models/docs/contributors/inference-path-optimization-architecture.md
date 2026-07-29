@@ -47,7 +47,7 @@ They include:
   target, input constraints, dependencies, numerical behavior, stream behavior,
   output contract, fallback ID, and validation history;
 - `ExecutionContext`, which describes the actual device, scenario, resolved input
-  axes, compute capability, and current stream;
+  axes, compute capability, available runtime components, and current stream;
 - the common `InferenceStage` compatibility protocol.
 
 Stage-specific requests, results, and protocols stay in the model namespace because
@@ -60,8 +60,8 @@ can be attached to profiling results.
 ### Catalog
 
 The catalog is the inventory of available choices. It exposes read-only metadata maps
-for introspection and constructs a registry containing the corresponding runtime
-objects. It does not decide which choice should run.
+for introspection and registers metadata plus lazy implementation factories. It does
+not construct every choice eagerly or decide which choice should run.
 
 Keeping construction in the catalog avoids importing one concrete implementation from
 another and gives the model a single place to assemble all available stages.
@@ -89,8 +89,8 @@ selectable boundaries differ.
 
 ### Implementation registry
 
-The registry owns the constructed stage objects and resolves a requested ID against an
-`ExecutionContext`. Resolution follows these rules:
+The registry resolves a requested ID against an `ExecutionContext`, then lazily
+constructs only the effective compatible stage objects. Resolution follows these rules:
 
 1. `base` selects the preserved reference implementation.
 2. An explicit implementation ID selects that implementation when compatible. A
@@ -102,6 +102,10 @@ The registry owns the constructed stage objects and resolves a requested ID agai
 Compatibility fallback is decided before execution and records the requested ID,
 effective ID, and reason. It does not catch compilation, CUDA, allocation, or other
 unexpected runtime failures.
+
+Static target and runtime-component compatibility belongs to registry resolution.
+Request selectors handle only constraints that depend on concrete request values, such
+as input dtype, layout, shape, or preprocessing overrides.
 
 The same policy applies to every selectable stage. Set
 `allow_compatibility_fallback=False` when an explicitly requested implementation must

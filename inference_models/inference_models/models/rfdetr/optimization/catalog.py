@@ -88,13 +88,39 @@ def build_rfdetr_implementation_registry(
         Registry containing every available preprocessing and postprocessing choice.
     """
     registry = ImplementationRegistry(scope_name="RF-DETR")
-    registry.register(BasePreprocessor(max_workers=preprocessor_max_workers))
-    registry.register(ThreadedExactPreprocessor(max_workers=preprocessor_max_workers))
-    registry.register(TritonUniversalPreprocessor(device=device))
-    registry.register(BaseBufferStrategy())
-    registry.register(BaseExecutionScheduler(device=device))
-    registry.register(BasePostprocessor())
-    registry.register(TritonFusedPostprocessor(device=device))
-    registry.register(BaseEngineAdjacentPlugin())
+    registry.register_factory(
+        metadata=BasePreprocessor.metadata,
+        factory=lambda: BasePreprocessor(max_workers=preprocessor_max_workers),
+    )
+    registry.register_factory(
+        metadata=ThreadedExactPreprocessor.metadata,
+        factory=lambda: ThreadedExactPreprocessor(
+            max_workers=preprocessor_max_workers
+        ),
+    )
+    registry.register_factory(
+        metadata=TritonUniversalPreprocessor.metadata,
+        factory=lambda: TritonUniversalPreprocessor(device=device),
+    )
+    registry.register_factory(
+        metadata=BaseBufferStrategy.metadata,
+        factory=BaseBufferStrategy,
+    )
+    registry.register_factory(
+        metadata=BaseExecutionScheduler.metadata,
+        factory=lambda: BaseExecutionScheduler(device=device),
+    )
+    registry.register_factory(
+        metadata=BasePostprocessor.metadata,
+        factory=BasePostprocessor,
+    )
+    registry.register_factory(
+        metadata=TritonFusedPostprocessor.metadata,
+        factory=lambda: TritonFusedPostprocessor(device=device),
+    )
+    registry.register_factory(
+        metadata=BaseEngineAdjacentPlugin.metadata,
+        factory=BaseEngineAdjacentPlugin,
+    )
 
     return registry

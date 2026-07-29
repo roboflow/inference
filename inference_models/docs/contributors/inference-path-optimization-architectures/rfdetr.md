@@ -19,7 +19,7 @@ flowchart TD
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
 
-    requested --> build["build_rfdetr_implementation_registry<br/>(device, max_workers)"]
+    requested --> build["Register metadata + lazy factories<br/>(device, max_workers)"]
 
     subgraph preprocessors["Preprocessor implementations"]
         pre_base["base"]
@@ -47,8 +47,9 @@ flowchart TD
     scheduler_base --> build
     plugin_base --> build
 
-    build --> resolve["Resolve all five stages<br/>with ExecutionContext"]
-    resolve --> store["Store resolved plan"]
+    build --> resolve["Resolve static target + dependencies<br/>with ExecutionContext"]
+    resolve --> construct["Construct only effective stages"]
+    construct --> store["Store resolved plan"]
     store --> metadata["Expose optimization_runtime_metadata"]
 ```
 
@@ -67,6 +68,11 @@ explicit plan nor environment overrides are present, RF-DETR selects
 `triton-universal-v1` preprocessing and `triton-fused-v1` postprocessing. A declared
 contract mismatch or unavailable Triton dependency follows the implementation's
 `base` fallback before execution.
+
+Triton availability is reported once in the model-level `ExecutionContext`. The
+registry checks it before constructing either Triton implementation, so an unavailable
+optional dependency cannot fail while the catalog is being assembled. Request-time
+selection remains responsible for concrete input constraints, not installed packages.
 
 ## Per-request execution
 
@@ -167,7 +173,7 @@ TensorRT forward does not need to know which preprocessor produced its input.
 | `models/optimization/execution_plan.py` | Reusable immutable execution-plan representation |
 | `models/optimization/fallback_warnings.py` | Thread-safe per-model de-duplication of request fallback warnings |
 | `models/optimization/ids.py` | Conventional `base` and `auto` implementation IDs |
-| `models/optimization/registry.py` | Strict explicit and conservative automatic resolution |
+| `models/optimization/registry.py` | Lazy construction, static compatibility fallback, and conservative automatic resolution |
 | `models/optimization/torch_readiness.py` | Generic one-shot state handoff tied to exact tensor identity |
 | `models/rfdetr/optimization/contracts.py` | RF-DETR requests, results, and stage-specific protocols |
 | `models/rfdetr/optimization/ids.py` | Stable implementation IDs and environment-variable names |
@@ -193,8 +199,9 @@ TensorRT forward does not need to know which preprocessor produced its input.
   registry error listing the available implementations.
 - `auto` remains on `base` until machine-readable validation records are added for a
   matching runtime environment.
-- Static model incompatibilities resolve the stored plan through the implementation's
-  declared fallback. Request-only incompatibilities use the fallback for that request.
+- Static target, dependency, and model incompatibilities resolve the stored plan
+  through the implementation's declared fallback. Request-only incompatibilities use
+  the fallback for that request.
 - Fallback decisions are logged and carried with preprocessing readiness metadata;
   execution failures still propagate.
 - Target-device profiling and output-snapshot parity checks remain required before an

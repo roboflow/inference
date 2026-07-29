@@ -67,7 +67,6 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
 from inference_models.models.rfdetr.optimization.selection import (
-    ImplementationSelection,
     resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
@@ -75,6 +74,7 @@ from inference_models.models.rfdetr.optimization.selection import (
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
+from inference_models.models.rfdetr.triton_preprocess import TRITON_AVAILABLE
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -292,45 +292,45 @@ class RFDetrForObjectDetectionTRT(
             allow_fallback=requested_plan.allow_compatibility_fallback,
         )
         self._preprocessor = preprocessor_selection.implementation
-        self._preprocessor_model_selection = preprocessor_selection.to_dict()
-        if preprocessor_selection.used_fallback:
-            LOGGER.warning(
-                "RF-DETR preprocessor fallback requested=%s effective=%s reason=%s",
-                preprocessor_selection.requested_id,
-                preprocessor_selection.effective_id,
-                preprocessor_selection.fallback_reason,
-            )
+        postprocessor_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.POSTPROCESS,
+            requested_id=requested_plan.postprocessor_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
+        )
         self._postprocessor = cast(
             Postprocessor,
-            self._implementation_registry.resolve(
-                stage=OptimizationStage.POSTPROCESS,
-                requested_id=requested_plan.postprocessor_id,
-                context=resolution_context,
-            ),
+            postprocessor_selection.implementation,
+        )
+        buffer_strategy_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.BUFFER_STRATEGY,
+            requested_id=requested_plan.buffer_strategy_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
         )
         self._buffer_strategy = cast(
             BufferStrategy,
-            self._implementation_registry.resolve(
-                stage=OptimizationStage.BUFFER_STRATEGY,
-                requested_id=requested_plan.buffer_strategy_id,
-                context=resolution_context,
-            ),
+            buffer_strategy_selection.implementation,
+        )
+        scheduler_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.SCHEDULER,
+            requested_id=requested_plan.scheduler_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
         )
         self._scheduler = cast(
             ExecutionScheduler,
-            self._implementation_registry.resolve(
-                stage=OptimizationStage.SCHEDULER,
-                requested_id=requested_plan.scheduler_id,
-                context=resolution_context,
-            ),
+            scheduler_selection.implementation,
+        )
+        engine_plugin_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.ENGINE_PLUGIN,
+            requested_id=requested_plan.engine_plugin_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
         )
         self._engine_plugin = cast(
             EngineAdjacentPlugin,
-            self._implementation_registry.resolve(
-                stage=OptimizationStage.ENGINE_PLUGIN,
-                requested_id=requested_plan.engine_plugin_id,
-                context=resolution_context,
-            ),
+            engine_plugin_selection.implementation,
         )
         self._rfdetr_execution_plan = RFDetrExecutionPlan(
             preprocessor_id=self._preprocessor.metadata.implementation_id,
@@ -340,25 +340,26 @@ class RFDetrForObjectDetectionTRT(
             engine_plugin_id=self._engine_plugin.metadata.implementation_id,
             allow_compatibility_fallback=(requested_plan.allow_compatibility_fallback),
         )
-        self._model_selections = {
-            "preprocessor": dict(self._preprocessor_model_selection),
-            "buffer_strategy": ImplementationSelection(
-                implementation=self._buffer_strategy,
-                requested_id=requested_plan.buffer_strategy_id,
-            ).to_dict(),
-            "scheduler": ImplementationSelection(
-                implementation=self._scheduler,
-                requested_id=requested_plan.scheduler_id,
-            ).to_dict(),
-            "postprocessor": ImplementationSelection(
-                implementation=self._postprocessor,
-                requested_id=requested_plan.postprocessor_id,
-            ).to_dict(),
-            "engine_plugin": ImplementationSelection(
-                implementation=self._engine_plugin,
-                requested_id=requested_plan.engine_plugin_id,
-            ).to_dict(),
+        model_selections = {
+            "preprocessor": preprocessor_selection,
+            "buffer_strategy": buffer_strategy_selection,
+            "scheduler": scheduler_selection,
+            "postprocessor": postprocessor_selection,
+            "engine_plugin": engine_plugin_selection,
         }
+        self._model_selections = {
+            stage: selection.to_dict()
+            for stage, selection in model_selections.items()
+        }
+        for stage, selection in model_selections.items():
+            if selection.used_fallback:
+                LOGGER.warning(
+                    "RF-DETR %s fallback requested=%s effective=%s reason=%s",
+                    stage,
+                    selection.requested_id,
+                    selection.effective_id,
+                    selection.fallback_reason,
+                )
         self._request_fallback_warnings = FallbackWarningTracker()
         if self.preprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
             LOGGER.info(
@@ -732,6 +733,7 @@ class RFDetrForObjectDetectionTRT(
             resolved_axes=resolved_axes or {},
             current_stream=current_stream,
             compute_capability=torch.cuda.get_device_capability(device_index),
+            runtime_components={"triton": TRITON_AVAILABLE},
         )
 
         return context

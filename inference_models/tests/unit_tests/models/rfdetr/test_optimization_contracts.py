@@ -261,7 +261,7 @@ def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
             requested_id="unknown",
             context=_context(),
         )
-    with pytest.raises(ModelRuntimeError, match="not compatible"):
+    with pytest.raises(ModelRuntimeError, match="is incompatible"):
         registry.resolve(
             stage=OptimizationStage.PREPROCESS,
             requested_id="incompatible",
