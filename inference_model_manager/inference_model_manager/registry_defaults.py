@@ -96,11 +96,14 @@ _K_OD = {
     "class_agnostic_nms": {"type": "bool", "required": False},
 }
 
+_P_MASK_FORMAT = {"mask_format": {"type": "str", "required": False}}
+
 # Instance segmentation adds mask params
 _K_ISEG = {
     **_K_OD,
     "masks_smoothing_enabled": {"type": "bool", "required": False},
     "masks_binarization_threshold": {"type": "float", "required": False},
+    **_P_MASK_FORMAT,
 }
 
 # Keypoints adds threshold
@@ -158,6 +161,116 @@ _P_SAM2_SEGMENT = _p(
     },
 )
 
+_E_OD_CONF_ONLY = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}),
+        "validate_images_required",
+        "serialize_detections_compact",
+        "roboflow-object-detection-compact-v1",
+    ),
+]
+_E_OD_CONF_MAXDET = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(
+            _P_IMAGES,
+            {
+                "confidence": {"type": "float", "required": False},
+                "max_detections": {"type": "int", "required": False},
+            },
+        ),
+        "validate_images_required",
+        "serialize_detections_compact",
+        "roboflow-object-detection-compact-v1",
+    ),
+]
+_E_OD_IMAGES_ONLY = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(_P_IMAGES),
+        "validate_images_required",
+        "serialize_detections_compact",
+        "roboflow-object-detection-compact-v1",
+    ),
+]
+_E_ISEG_NO_SMOOTHING = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(
+            _P_IMAGES,
+            {"confidence": {"type": "float", "required": False}},
+            _P_MASK_FORMAT,
+        ),
+        "validate_images_required",
+        "serialize_instance_segmentation_compact",
+        "roboflow-instance-segmentation-compact-v1",
+    ),
+]
+_E_ISEG_CONF_MAXDET = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(
+            _P_IMAGES,
+            {
+                "confidence": {"type": "float", "required": False},
+                "max_detections": {"type": "int", "required": False},
+            },
+            _P_MASK_FORMAT,
+        ),
+        "validate_images_required",
+        "serialize_instance_segmentation_compact",
+        "roboflow-instance-segmentation-compact-v1",
+    ),
+]
+_E_ISEG_NMS_NO_SMOOTHING = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(
+            _P_IMAGES,
+            {
+                "confidence": {"type": "float", "required": False},
+                "iou_threshold": {"type": "float", "required": False},
+                "max_detections": {"type": "int", "required": False},
+                "class_agnostic_nms": {"type": "bool", "required": False},
+            },
+            _P_MASK_FORMAT,
+        ),
+        "validate_images_required",
+        "serialize_instance_segmentation_compact",
+        "roboflow-instance-segmentation-compact-v1",
+    ),
+]
+_E_KP_CONF_THRESH = [
+    (
+        "infer",
+        "infer",
+        True,
+        _p(
+            _P_IMAGES,
+            {
+                "confidence": {"type": "float", "required": False},
+                "key_points_threshold": {"type": "float", "required": False},
+            },
+        ),
+        "validate_images_required",
+        "serialize_keypoints_compact",
+        "roboflow-keypoints-compact-v1",
+    ),
+]
+
 
 def _unpack_config(cfg: tuple) -> tuple:
     task_name, method, default, params, val_name, ser_name, resp_type = cfg[:7]
@@ -200,6 +313,53 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "roboflow-object-detection-compact-v1",
         ),
     ],
+    "RFDetrForObjectDetectionTorch": _E_OD_CONF_ONLY,
+    "RFDetrForObjectDetectionONNX": _E_OD_CONF_ONLY,
+    "RFDetrForObjectDetectionTRT": _E_OD_CONF_ONLY,
+    "YOLO26ForObjectDetectionOnnx": _E_OD_CONF_ONLY,
+    "YOLO26ForObjectDetectionTorchScript": _E_OD_CONF_ONLY,
+    "YOLO26ForObjectDetectionTRT": _E_OD_CONF_ONLY,
+    "YOLOv10ForObjectDetectionOnnx": _E_OD_CONF_MAXDET,
+    "YOLOv10ForObjectDetectionTRT": _E_OD_CONF_MAXDET,
+    "PPOCRv6DetectionOnnx": _E_OD_IMAGES_ONLY,
+    "RoboflowInstantHF": [
+        (
+            "infer",
+            "infer",
+            True,
+            _p(
+                _P_IMAGES,
+                {
+                    "confidence": {"type": "float", "required": False},
+                    "iou_threshold": {"type": "float", "required": False},
+                    "max_detections": {"type": "int", "required": False},
+                },
+            ),
+            "validate_images_required",
+            "serialize_detections_compact",
+            "roboflow-object-detection-compact-v1",
+        ),
+    ],
+    "GroundingDinoForObjectDetectionTorch": [
+        (
+            "infer",
+            "infer",
+            True,
+            _p(
+                _P_IMAGES_CLASSES,
+                {
+                    "box_confidence": {"type": "float", "required": False},
+                    "text_confidence": {"type": "float", "required": False},
+                    "iou_threshold": {"type": "float", "required": False},
+                    "max_detections": {"type": "int", "required": False},
+                    "class_agnostic_nms": {"type": "bool", "required": False},
+                },
+            ),
+            "validate_images_and_classes",
+            "serialize_detections_compact",
+            "roboflow-object-detection-compact-v1",
+        ),
+    ],
     # --- Classification ---
     "ClassificationModel": [
         (
@@ -217,7 +377,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES),
+            _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}),
             "validate_images_required",
             "serialize_multilabel_classification_compact",
             "roboflow-classification-compact-v1",
@@ -235,13 +395,25 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "roboflow-instance-segmentation-compact-v1",
         ),
     ],
+    "YOLOv5ForInstanceSegmentationOnnx": _E_ISEG_NMS_NO_SMOOTHING,
+    "YOLOv5ForInstanceSegmentationTRT": _E_ISEG_NMS_NO_SMOOTHING,
+    "YOLOv7ForInstanceSegmentationOnnx": _E_ISEG_NMS_NO_SMOOTHING,
+    "YOLOv7ForInstanceSegmentationTRT": _E_ISEG_NMS_NO_SMOOTHING,
+    "YOLOACTForInstanceSegmentationOnnx": _E_ISEG_NMS_NO_SMOOTHING,
+    "YOLOACTForInstanceSegmentationTRT": _E_ISEG_NMS_NO_SMOOTHING,
+    "RFDetrForInstanceSegmentationTorch": _E_ISEG_CONF_MAXDET,
+    "RFDetrForInstanceSegmentationOnnx": _E_ISEG_CONF_MAXDET,
+    "RFDetrForInstanceSegmentationTRT": _E_ISEG_CONF_MAXDET,
+    "YOLO26ForInstanceSegmentationOnnx": _E_ISEG_NO_SMOOTHING,
+    "YOLO26ForInstanceSegmentationTorchScript": _E_ISEG_NO_SMOOTHING,
+    "YOLO26ForInstanceSegmentationTRT": _E_ISEG_NO_SMOOTHING,
     # --- Semantic Segmentation ---
     "SemanticSegmentationModel": [
         (
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES),
+            _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}),
             "validate_images_required",
             "serialize_semantic_segmentation_compact",
             "roboflow-semantic-segmentation-compact-v1",
@@ -259,6 +431,10 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "roboflow-keypoints-compact-v1",
         ),
     ],
+    "RFDetrForKeyPointsONNX": _E_KP_CONF_THRESH,
+    "YOLO26ForKeyPointsDetectionOnnx": _E_KP_CONF_THRESH,
+    "YOLO26ForKeyPointsDetectionTorchScript": _E_KP_CONF_THRESH,
+    "YOLO26ForKeyPointsDetectionTRT": _E_KP_CONF_THRESH,
     # --- Depth Estimation ---
     "DepthEstimationModel": [
         (

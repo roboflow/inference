@@ -276,6 +276,140 @@ def test_model_owned_defaults_not_injected():
             assert "default" not in spec, name
 
 
+def test_per_family_detector_contracts():
+    from inference_model_manager.registry_defaults import _K_ISEG, _TASK_CONFIGS, _unpack_config
+
+    def params_of(key):
+        return _unpack_config(_TASK_CONFIGS[key][0])[3]
+
+    for key in (
+        "RFDetrForObjectDetectionTorch",
+        "RFDetrForObjectDetectionONNX",
+        "RFDetrForObjectDetectionTRT",
+        "YOLO26ForObjectDetectionOnnx",
+        "YOLO26ForObjectDetectionTorchScript",
+        "YOLO26ForObjectDetectionTRT",
+    ):
+        p = params_of(key)
+        assert set(p) == {"images", "confidence"}, key
+
+    for key in (
+        "YOLOv10ForObjectDetectionOnnx",
+        "YOLOv10ForObjectDetectionTRT",
+    ):
+        p = params_of(key)
+        assert set(p) == {"images", "confidence", "max_detections"}, key
+
+    p = params_of("RoboflowInstantHF")
+    assert set(p) == {"images", "confidence", "iou_threshold", "max_detections"}
+
+    p = params_of("PPOCRv6DetectionOnnx")
+    assert set(p) == {"images"}
+
+    p = params_of("GroundingDinoForObjectDetectionTorch")
+    assert "confidence" not in p
+    assert set(p) == {
+        "images",
+        "classes",
+        "box_confidence",
+        "text_confidence",
+        "iou_threshold",
+        "max_detections",
+        "class_agnostic_nms",
+    }
+
+    assert "mask_format" in _K_ISEG
+    assert "default" not in _K_ISEG["mask_format"]
+
+    for key in (
+        "YOLOv5ForInstanceSegmentationOnnx",
+        "YOLOv5ForInstanceSegmentationTRT",
+        "YOLOv7ForInstanceSegmentationOnnx",
+        "YOLOv7ForInstanceSegmentationTRT",
+        "YOLOACTForInstanceSegmentationOnnx",
+        "YOLOACTForInstanceSegmentationTRT",
+    ):
+        p = params_of(key)
+        assert set(p) == {
+            "images",
+            "confidence",
+            "iou_threshold",
+            "max_detections",
+            "class_agnostic_nms",
+            "mask_format",
+        }, key
+
+    for key in (
+        "RFDetrForInstanceSegmentationTorch",
+        "RFDetrForInstanceSegmentationOnnx",
+        "RFDetrForInstanceSegmentationTRT",
+    ):
+        p = params_of(key)
+        assert set(p) == {"images", "confidence", "mask_format", "max_detections"}, key
+
+    for key in (
+        "YOLO26ForInstanceSegmentationOnnx",
+        "YOLO26ForInstanceSegmentationTorchScript",
+        "YOLO26ForInstanceSegmentationTRT",
+    ):
+        p = params_of(key)
+        assert set(p) == {"images", "confidence", "mask_format"}, key
+
+    for key in (
+        "RFDetrForKeyPointsONNX",
+        "YOLO26ForKeyPointsDetectionOnnx",
+        "YOLO26ForKeyPointsDetectionTorchScript",
+        "YOLO26ForKeyPointsDetectionTRT",
+    ):
+        p = params_of(key)
+        assert set(p) == {"images", "confidence", "key_points_threshold"}, key
+
+    for key in ("SemanticSegmentationModel", "MultiLabelClassificationModel"):
+        p = params_of(key)
+        assert set(p) == {"images", "confidence"}, key
+        assert p["confidence"] == {"type": "float", "required": False}, key
+
+
+def test_per_family_contracts_have_no_default_keys():
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+
+    keys = (
+        "RFDetrForObjectDetectionTorch",
+        "RFDetrForObjectDetectionONNX",
+        "RFDetrForObjectDetectionTRT",
+        "YOLO26ForObjectDetectionOnnx",
+        "YOLO26ForObjectDetectionTorchScript",
+        "YOLO26ForObjectDetectionTRT",
+        "YOLOv10ForObjectDetectionOnnx",
+        "YOLOv10ForObjectDetectionTRT",
+        "PPOCRv6DetectionOnnx",
+        "RoboflowInstantHF",
+        "GroundingDinoForObjectDetectionTorch",
+        "YOLOv5ForInstanceSegmentationOnnx",
+        "YOLOv5ForInstanceSegmentationTRT",
+        "YOLOv7ForInstanceSegmentationOnnx",
+        "YOLOv7ForInstanceSegmentationTRT",
+        "YOLOACTForInstanceSegmentationOnnx",
+        "YOLOACTForInstanceSegmentationTRT",
+        "RFDetrForInstanceSegmentationTorch",
+        "RFDetrForInstanceSegmentationOnnx",
+        "RFDetrForInstanceSegmentationTRT",
+        "YOLO26ForInstanceSegmentationOnnx",
+        "YOLO26ForInstanceSegmentationTorchScript",
+        "YOLO26ForInstanceSegmentationTRT",
+        "RFDetrForKeyPointsONNX",
+        "YOLO26ForKeyPointsDetectionOnnx",
+        "YOLO26ForKeyPointsDetectionTorchScript",
+        "YOLO26ForKeyPointsDetectionTRT",
+        "SemanticSegmentationModel",
+        "MultiLabelClassificationModel",
+    )
+    for key in keys:
+        for cfg in _TASK_CONFIGS[key]:
+            for name, spec in _unpack_config(cfg)[3].items():
+                assert "default" not in spec, (key, name)
+
+
 def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     test_registry = ModelRegistry()
     monkeypatch.setattr(registry_defaults, "registry", test_registry)
