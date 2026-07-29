@@ -56,6 +56,10 @@ class _BridgeStats(ctypes.Structure):
         ("cleanup_ns", ctypes.c_uint64),
         ("cleanup_max_ns", ctypes.c_uint64),
         ("unique_buffer_fds", ctypes.c_uint64),
+        # ABI v7: per-fd EGL registration cache effectiveness (hits skip the
+        # per-frame map/register/texture-create/unregister sequence).
+        ("egl_cache_hits", ctypes.c_uint64),
+        ("egl_cache_misses", ctypes.c_uint64),
     ]
 
 
@@ -74,10 +78,11 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
-    # v6 = lossless (file) handoff mode; rf_jetson_pipeline_create() gained
-    # the lossless_handoff parameter, so older .so versions must be refused
-    # (and a v6 .so is refused by older wrappers symmetrically).
-    if version != b"6":
+    # v7 = per-fd EGL registration cache; RfBridgeStats gained
+    # egl_cache_hits/egl_cache_misses (struct layout change) on top of v6's
+    # lossless_handoff create() parameter, so older .so versions must be
+    # refused (and a v7 .so is refused by older wrappers symmetrically).
+    if version != b"7":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
