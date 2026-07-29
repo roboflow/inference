@@ -40,7 +40,7 @@ def test_build_pipeline_uses_user_id_not_location_creds(
     assert 'user-pw="ent1544-secret"' in pipeline
     assert "ent1544-secret" not in location_value
     assert "rtspsrc" in pipeline
-    assert "parsebin" in pipeline
+    assert "nvv4l2decoder" in pipeline
 
 
 def test_build_pipeline_appends_tls_validation_flags(

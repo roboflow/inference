@@ -18,7 +18,18 @@ RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 50
 _BOUNDED_QUEUE_OPTIONS = "max-size-buffers=64 max-size-bytes=0 max-size-time=50000000"
-_REQUIRED_ELEMENTS = ("rtspsrc", "parsebin", "videoconvert")
+_JETSON_H264_DECODE_CHAIN = (
+    "rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! "
+    "video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR"
+)
+_REQUIRED_ELEMENTS = (
+    "rtspsrc",
+    "rtph264depay",
+    "h264parse",
+    "nvv4l2decoder",
+    "nvvidconv",
+    "videoconvert",
+)
 
 
 def split_rtsp_credentials(url: str) -> tuple[str, str | None, str | None]:
@@ -94,10 +105,33 @@ def build_gstreamer_rtsp_pipeline(url: str) -> str:
     source += (
         f"{tls_suffix} ! application/x-rtp,media=video ! "
         f"queue {_BOUNDED_QUEUE_OPTIONS} ! "
+        f"{_JETSON_H264_DECODE_CHAIN} ! appsink drop=true max-buffers=1 sync=false"
+    )
+    return source
+
+
+def build_gstreamer_rtsp_pipeline_parsebin(url: str) -> str:
+    """Parsebin variant (kept for future NVDEC wiring)."""
+    if not is_rtsp_url(url):
+        raise ValueError(f"Expected an rtsp:// or rtsps:// URL, got {url!r}")
+
+    clean_url, username, password = split_rtsp_credentials(url)
+    tls_suffix = rtsp_tls_validation_flags_gstreamer_suffix()
+    source = (
+        f'rtspsrc location="{quote_gstreamer_value(clean_url)}" '
+        f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
+        " drop-on-latency=true"
+    )
+    if username:
+        source += f' user-id="{quote_gstreamer_value(username)}"'
+    if password:
+        source += f' user-pw="{quote_gstreamer_value(password)}"'
+    source += (
+        f"{tls_suffix} ! application/x-rtp,media=video ! "
+        f"queue {_BOUNDED_QUEUE_OPTIONS} ! "
         "parsebin ! videoconvert ! video/x-raw,format=BGR ! "
         "appsink drop=true max-buffers=1 sync=false"
     )
-    return source
 
 
 def _load_gstreamer_library():
