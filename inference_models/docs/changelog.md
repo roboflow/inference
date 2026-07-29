@@ -2,9 +2,19 @@
 
 ## Unreleased
 
-### Fixed
+### Added
+
+- RF-DETR TensorRT execution plans now resolve all five stage categories through the
+  implementation registry. Buffer strategy, scheduling, and engine-adjacent execution
+  have explicit `base` implementations with typed metadata and runtime selection
+  records, while preserving the existing tensor ownership, CUDA stream/event behavior,
+  and protected TensorRT forward path.
+
+---
 
 ## `0.34.3`
+
+### Fixed
 
 - Reverted Grounding Dino to 0.20.2
 
@@ -12,7 +22,13 @@
 
 ## `0.34.2`
 
+### Fixed
+
 - Dependencies bump due to security issues.
+
+---
+
+### Added
 
 ---
 

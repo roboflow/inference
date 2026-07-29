@@ -25,8 +25,11 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
+    RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
+    RFDETR_ENGINE_PLUGIN_IMPLEMENTATIONS,
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+    RFDETR_SCHEDULER_IMPLEMENTATIONS,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
@@ -190,11 +193,19 @@ def test_explicit_plan_ignores_environment(monkeypatch) -> None:
     assert resolved is plan
 
 
-def test_execution_plan_rejects_unimplemented_stage_category() -> None:
-    with pytest.raises(ModelRuntimeError, match="does not yet provide"):
-        RFDetrExecutionPlan.resolve(
-            execution_plan=RFDetrExecutionPlan(scheduler_id="future-scheduler")
-        )
+def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
+    plan = RFDetrExecutionPlan(
+        buffer_strategy_id="future-buffer",
+        scheduler_id="future-scheduler",
+        engine_plugin_id="future-plugin",
+    )
+
+    resolved = RFDetrExecutionPlan.resolve(execution_plan=plan)
+
+    assert resolved is plan
+    assert resolved.buffer_strategy_id == "future-buffer"
+    assert resolved.scheduler_id == "future-scheduler"
+    assert resolved.engine_plugin_id == "future-plugin"
 
 
 def test_registry_resolves_explicit_and_auto_base() -> None:
@@ -417,6 +428,21 @@ def test_implementation_metadata_is_typed_and_immutable() -> None:
     with pytest.raises(TypeError):
         preprocessor.inputs.axis_constraints["channels"] = 4
     assert json.loads(json.dumps(preprocessor.to_dict()))["stage"] == "preprocess"
+
+
+def test_all_execution_plan_stages_publish_base_metadata() -> None:
+    stage_catalogs = {
+        OptimizationStage.PREPROCESS: RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+        OptimizationStage.BUFFER_STRATEGY: RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
+        OptimizationStage.SCHEDULER: RFDETR_SCHEDULER_IMPLEMENTATIONS,
+        OptimizationStage.POSTPROCESS: RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
+        OptimizationStage.ENGINE_PLUGIN: RFDETR_ENGINE_PLUGIN_IMPLEMENTATIONS,
+    }
+
+    for stage, catalog in stage_catalogs.items():
+        assert "base" in catalog
+        assert catalog["base"].stage is stage
+        assert json.loads(json.dumps(catalog["base"].to_dict()))["stage"] == stage.value
 
 
 def test_readiness_tracker_consumes_only_the_exact_tensor() -> None:
