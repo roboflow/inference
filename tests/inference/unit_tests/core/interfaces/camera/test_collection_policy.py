@@ -125,6 +125,168 @@ def test_adaptive_window_ignores_empty_rounds() -> None:
     assert controller.execution_gap_ema is None
 
 
+def test_arrival_estimator_uniform_arrivals() -> None:
+    estimator = cp._SourceArrivalEstimator()
+    start = datetime(2026, 1, 1, 12, 0, 0)
+
+    for index in range(32):
+        estimator.observe(
+            frame_timestamp=start + timedelta(seconds=index / 15.0), now=100.0
+        )
+
+    assert estimator.period(now=100.0) == pytest.approx(1 / 15.0, rel=1e-6)
+
+
+def test_arrival_estimator_bursty_arrivals_converge_on_mean_rate() -> None:
+    # given - the consumer-camera pattern: clusters of 50 ms spacing with a
+    # 450 ms encoder pause every 30 frames (true mean rate 15 fps-ish)
+    estimator = cp._SourceArrivalEstimator()
+    start = datetime(2026, 1, 1, 12, 0, 0)
+    timestamp = start
+    for index in range(64):
+        gap = 0.450 if index % 30 == 29 else 0.050
+        timestamp = timestamp + timedelta(seconds=gap)
+        estimator.observe(frame_timestamp=timestamp, now=100.0)
+
+    period = estimator.period(now=100.0)
+
+    # then - close to the mean period, NOT the intra-burst 50 ms spacing
+    mean_gap = (0.050 * 29 + 0.450) / 30.0
+    assert period == pytest.approx(mean_gap, rel=0.15)
+    assert period > 0.055
+
+
+def test_arrival_estimator_resets_after_reconnect_gap() -> None:
+    estimator = cp._SourceArrivalEstimator()
+    start = datetime(2026, 1, 1, 12, 0, 0)
+    for index in range(32):
+        estimator.observe(
+            frame_timestamp=start + timedelta(seconds=index / 15.0), now=100.0
+        )
+
+    # when - a 30 s reconnect gap, then only a few fresh samples
+    rejoined = start + timedelta(seconds=40)
+    for index in range(4):
+        estimator.observe(
+            frame_timestamp=rejoined + timedelta(seconds=index / 15.0), now=141.0
+        )
+
+    # then - the pre-gap history is discarded, too few samples to trust
+    assert estimator.period(now=141.0) is None
+
+
+def test_arrival_estimator_dormant_source_reports_no_period() -> None:
+    estimator = cp._SourceArrivalEstimator()
+    start = datetime(2026, 1, 1, 12, 0, 0)
+    for index in range(32):
+        estimator.observe(
+            frame_timestamp=start + timedelta(seconds=index / 15.0), now=100.0
+        )
+
+    assert estimator.period(now=100.0) is not None
+    # then - nothing seen for longer than the activity horizon -> excluded
+    assert estimator.period(now=103.0) is None
+
+
+def test_controller_rate_matches_when_arrival_period_known() -> None:
+    now = {"value": 0.0}
+    controller = AdaptiveWindowController(clock=lambda: now["value"])
+
+    controller.on_collection_start()
+    controller.on_collection_end(collected_any_frame=True)
+    now["value"] += 0.042  # execution takes 42 ms
+    window = controller.on_collection_start(minimum_arrival_period=1 / 15.0)
+
+    # then - window = frame period - exec: rounds lock to the arrival rate
+    assert window == pytest.approx(1 / 15.0 - 0.042, rel=1e-6)
+
+
+def test_controller_floors_under_saturation_with_known_period() -> None:
+    now = {"value": 0.0}
+    controller = AdaptiveWindowController(clock=lambda: now["value"])
+
+    controller.on_collection_end(collected_any_frame=True)
+    now["value"] += 0.129  # x-model regime: exec far above the frame period
+    window = controller.on_collection_start(minimum_arrival_period=1 / 15.0)
+
+    assert window == pytest.approx(cp.MIN_COLLECTION_WINDOW_SECONDS)
+
+
+def test_controller_caps_rate_matched_window() -> None:
+    now = {"value": 0.0}
+    controller = AdaptiveWindowController(clock=lambda: now["value"])
+
+    controller.on_collection_end(collected_any_frame=True)
+    now["value"] += 0.005  # near-instant execution, very slow source (2 fps)
+    window = controller.on_collection_start(minimum_arrival_period=0.5)
+
+    assert window == pytest.approx(cp.RATE_MATCHED_WINDOW_CAP_SECONDS)
+
+
+def test_policy_minimum_period_tracks_fastest_source_and_skips_files() -> None:
+    policy = CollectionPolicy(mode=VideoProcessingMode.AUTO, max_staleness=0.4)
+    start = datetime.now()
+    fast_frames = [
+        SimpleNamespace(
+            frame_id=index,
+            source_id=0,
+            frame_timestamp=start + timedelta(seconds=index / 30.0),
+        )
+        for index in range(32)
+    ]
+    slow_frames = [
+        SimpleNamespace(
+            frame_id=index,
+            source_id=1,
+            frame_timestamp=start + timedelta(seconds=index / 5.0),
+        )
+        for index in range(32)
+    ]
+    file_frames = [
+        SimpleNamespace(
+            frame_id=index,
+            source_id=2,
+            frame_timestamp=start + timedelta(seconds=index / 120.0),
+        )
+        for index in range(32)
+    ]
+    fast = _FakeSource(frames=fast_frames, is_file=False)
+    slow = _FakeSource(frames=slow_frames, is_file=False)
+    file_source = _FakeSource(frames=file_frames, is_file=True)
+
+    for _ in range(32):
+        policy.read_frame(source_ord=0, source=fast, timeout=0.1)
+        policy.read_frame(source_ord=1, source=slow, timeout=0.1)
+        policy.read_frame(source_ord=2, source=file_source, timeout=0.1)
+
+    # then - the fastest LIVE source binds; the 120 fps file never counts
+    assert policy.minimum_live_arrival_period() == pytest.approx(
+        1 / 30.0, rel=0.05
+    )
+
+
+def test_policy_feeds_estimator_with_staleness_drained_frames() -> None:
+    policy = CollectionPolicy(mode=VideoProcessingMode.AUTO, max_staleness=0.4)
+    start = datetime.now() - timedelta(seconds=10)
+    stale_frames = [
+        SimpleNamespace(
+            frame_id=index,
+            source_id=0,
+            frame_timestamp=start + timedelta(seconds=index / 15.0),
+        )
+        for index in range(32)
+    ]
+    source = _FakeSource(frames=stale_frames, is_file=False)
+
+    frame = policy.read_frame(source_ord=0, source=source, timeout=0.1)
+
+    # then - every drained arrival counted: period known despite 0 returns
+    assert frame is None
+    assert policy.minimum_live_arrival_period() == pytest.approx(
+        1 / 15.0, rel=0.05
+    )
+
+
 def _fake_frame(age_seconds: float, frame_id: int = 1, source_id: int = 0):
     return SimpleNamespace(
         frame_id=frame_id,

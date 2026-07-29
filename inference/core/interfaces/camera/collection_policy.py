@@ -8,8 +8,12 @@ stalls on whichever source is inside its pause - throughput collapses to a
 fraction of the aggregate frame rate while decoded frames are silently
 discarded. The policies in this module remove that coupling:
 
-* the batch-collection window self-tunes from the pipeline's own execution
-  rhythm instead of a hand-picked ``batch_collection_timeout``,
+* the batch-collection window self-tunes from the pipeline's own rhythms
+  instead of a hand-picked ``batch_collection_timeout``: once per-source
+  arrival rates are measured, the round period is matched to the fastest
+  live source's frame period (full batches whenever the model has headroom,
+  floor-window under saturation); before estimates exist it falls back to a
+  fraction of the measured execution time,
 * consumption is FIFO with a bounded staleness budget - every frame is served
   while the consumer keeps up, and under overload served frames are never
   older than ``max_staleness`` (drops are counted and reported, not silent).
@@ -20,10 +24,11 @@ frames from a file would silently corrupt every-frame processing guarantees.
 """
 
 import logging
+from collections import deque
 from datetime import datetime
 from enum import Enum
 from time import monotonic
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Callable, Deque, Dict, Optional, Union
 
 from inference.core import env as core_env
 from inference.core.interfaces.camera.entities import VideoFrame
@@ -42,6 +47,15 @@ EXECUTION_GAP_EMA_ALPHA = 0.2
 FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT = 0.02
 STALENESS_DROP_CAUSE = "STALENESS_BUDGET_EXCEEDED"
 LEGACY_MODE_ALIASES = frozenset({"legacy", "none"})
+# Rate-matched window: cap and the arrival-period estimator's shape. The
+# estimator is count-over-span (never an EMA of gaps - bursty encoders like
+# consumer RTSP cameras emit 2-frame clusters around GOP pauses, and gap
+# EMAs oscillate at the burst frequency while a span over several burst
+# cycles converges on the true rate).
+RATE_MATCHED_WINDOW_CAP_SECONDS = 0.1
+ARRIVAL_PERIOD_SAMPLE_WINDOW = 64
+MIN_ARRIVAL_SAMPLES_TO_TRUST = 16
+SOURCE_ACTIVITY_HORIZON_SECONDS = 2.0
 
 
 class VideoProcessingMode(str, Enum):
@@ -87,14 +101,64 @@ def resolve_video_processing_mode(
     return None
 
 
+class _SourceArrivalEstimator:
+    """Count-over-span estimate of one live source's true frame period.
+
+    Fed with ingress capture timestamps (``VideoFrame.frame_timestamp`` is
+    stamped on the decode thread), so downstream queueing cannot distort the
+    span. A gap longer than the activity horizon (reconnect, stall) clears
+    the window - a rejoin gap is not a frame period - and the estimate stays
+    ``None`` until enough fresh samples accumulate again.
+    """
+
+    def __init__(self, sample_window: int = ARRIVAL_PERIOD_SAMPLE_WINDOW):
+        self._timestamps: Deque[datetime] = deque(maxlen=sample_window)
+        self._last_seen_at: Optional[float] = None
+
+    def observe(self, frame_timestamp: datetime, now: float) -> None:
+        if self._timestamps:
+            gap = (frame_timestamp - self._timestamps[-1]).total_seconds()
+            if gap > SOURCE_ACTIVITY_HORIZON_SECONDS or gap < 0:
+                self._timestamps.clear()
+        self._timestamps.append(frame_timestamp)
+        self._last_seen_at = now
+
+    def period(self, now: float) -> Optional[float]:
+        if (
+            self._last_seen_at is None
+            or now - self._last_seen_at > SOURCE_ACTIVITY_HORIZON_SECONDS
+        ):
+            return None
+        if len(self._timestamps) < MIN_ARRIVAL_SAMPLES_TO_TRUST:
+            return None
+        span = (self._timestamps[-1] - self._timestamps[0]).total_seconds()
+        if span <= 0:
+            return None
+        return span / (len(self._timestamps) - 1)
+
+
 class AdaptiveWindowController:
     """Self-tunes the batch-collection window from the collection rhythm.
 
+    Two regimes, picked per round by whether a trustworthy arrival-period
+    estimate exists:
+
+    * RATE-MATCHED (estimate available): ``window = clamp(min live source
+      period - exec EMA, floor, cap)``. The round period then equals the
+      fastest source's frame period, so in the light-load regime every
+      round finds each source with exactly one fresh frame - full batches
+      by construction. Under saturation (exec >= period) the subtraction
+      goes negative and the window floors, which is the correct move: every
+      source already has frames queued when the round starts. The added
+      collection wait is offset by removed queue wait (a frame that misses
+      a round today sits in the LAZY queue for a full round period), so
+      end-to-end latency stays roughly flat while occupancy rises.
+    * FALLBACK (startup, no live estimates): a fraction of the exec-time
+      EMA, clamped - light models get a near-zero window, heavy models a
+      larger alignment window.
+
     The gap between a non-empty collection finishing and the next collection
-    starting is, by construction, the batch execution time. The window is a
-    fraction of its EMA, clamped: light models get a near-zero window
-    (minimal latency, small batches are cheap), heavy models get a larger
-    alignment window that fills batches at negligible relative latency cost.
+    starting is, by construction, the batch execution time.
     """
 
     def __init__(
@@ -104,18 +168,22 @@ class AdaptiveWindowController:
         min_window: float = MIN_COLLECTION_WINDOW_SECONDS,
         max_window: float = MAX_COLLECTION_WINDOW_SECONDS,
         initial_window: float = INITIAL_COLLECTION_WINDOW_SECONDS,
+        rate_matched_cap: float = RATE_MATCHED_WINDOW_CAP_SECONDS,
         clock: Callable[[], float] = monotonic,
     ):
         self._alpha = alpha
         self._execution_fraction = execution_fraction
         self._min_window = min_window
         self._max_window = max_window
+        self._rate_matched_cap = rate_matched_cap
         self._window = initial_window
         self._clock = clock
         self._execution_gap_ema: Optional[float] = None
         self._last_non_empty_collection_end: Optional[float] = None
 
-    def on_collection_start(self) -> float:
+    def on_collection_start(
+        self, minimum_arrival_period: Optional[float] = None
+    ) -> float:
         now = self._clock()
         if self._last_non_empty_collection_end is not None:
             execution_gap = now - self._last_non_empty_collection_end
@@ -125,13 +193,20 @@ class AdaptiveWindowController:
                 self._execution_gap_ema = (
                     1 - self._alpha
                 ) * self._execution_gap_ema + self._alpha * execution_gap
-            self._window = min(
-                max(
-                    self._execution_fraction * self._execution_gap_ema,
-                    self._min_window,
-                ),
-                self._max_window,
-            )
+            if minimum_arrival_period is not None:
+                rate_matched = minimum_arrival_period - self._execution_gap_ema
+                self._window = min(
+                    max(rate_matched, self._min_window),
+                    self._rate_matched_cap,
+                )
+            else:
+                self._window = min(
+                    max(
+                        self._execution_fraction * self._execution_gap_ema,
+                        self._min_window,
+                    ),
+                    self._max_window,
+                )
         return self._window
 
     def on_collection_end(self, collected_any_frame: bool) -> None:
@@ -183,6 +258,7 @@ class CollectionPolicy:
         self._window_controller = window_controller or AdaptiveWindowController()
         self._source_is_file: Dict[int, bool] = {}
         self._frames_dropped_on_staleness: Dict[int, int] = {}
+        self._arrival_estimators: Dict[int, _SourceArrivalEstimator] = {}
 
     @property
     def mode(self) -> VideoProcessingMode:
@@ -197,7 +273,31 @@ class CollectionPolicy:
         return dict(self._frames_dropped_on_staleness)
 
     def collection_window(self) -> float:
-        return self._window_controller.on_collection_start()
+        return self._window_controller.on_collection_start(
+            minimum_arrival_period=self.minimum_live_arrival_period()
+        )
+
+    def minimum_live_arrival_period(self) -> Optional[float]:
+        """Smallest trustworthy frame period across ACTIVE live sources.
+
+        The fastest source is the binding constraint for the rate-matched
+        window: a round period above ANY source's frame period makes that
+        source queue unboundedly. Files never contribute (demand-paced,
+        always ready) and dormant sources drop out via the activity horizon
+        so a dying camera cannot pin the window while it flaps.
+        """
+        now = monotonic()
+        periods = [
+            period
+            for period in (
+                estimator.period(now)
+                for estimator in self._arrival_estimators.values()
+            )
+            if period is not None
+        ]
+        if not periods:
+            return None
+        return min(periods)
 
     def note_collection_result(self, batch_frames: list) -> None:
         self._window_controller.on_collection_end(
@@ -210,20 +310,35 @@ class CollectionPolicy:
         source: "VideoSource",
         timeout: Optional[float],
     ) -> Optional[VideoFrame]:
-        if self._max_staleness is None or self._source_treated_as_file(
+        treated_as_file = self._source_treated_as_file(
             source_ord=source_ord, source=source
-        ):
-            return source.read_frame(timeout=timeout)
+        )
+        if self._max_staleness is None or treated_as_file:
+            frame = source.read_frame(timeout=timeout)
+            if frame is not None and not treated_as_file:
+                self._observe_arrival(source_ord=source_ord, frame=frame)
+            return frame
         deadline = None if timeout is None else monotonic() + timeout
         while True:
             remaining = None if deadline is None else max(deadline - monotonic(), 0.0)
             frame = source.read_frame(timeout=remaining)
             if frame is None:
                 return None
+            # Staleness-drained frames feed the estimator too: they are real
+            # arrivals, and skipping them would bias the period estimate
+            # upward exactly when the pipeline is busiest.
+            self._observe_arrival(source_ord=source_ord, frame=frame)
             frame_age = (datetime.now() - frame.frame_timestamp).total_seconds()
             if frame_age <= self._max_staleness:
                 return frame
             self._register_staleness_drop(source_ord=source_ord, frame=frame)
+
+    def _observe_arrival(self, source_ord: int, frame: VideoFrame) -> None:
+        estimator = self._arrival_estimators.get(source_ord)
+        if estimator is None:
+            estimator = _SourceArrivalEstimator()
+            self._arrival_estimators[source_ord] = estimator
+        estimator.observe(frame_timestamp=frame.frame_timestamp, now=monotonic())
 
     def _source_treated_as_file(self, source_ord: int, source: "VideoSource") -> bool:
         cached = self._source_is_file.get(source_ord)
