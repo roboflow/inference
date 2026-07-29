@@ -65,6 +65,9 @@ RUN dnf makecache -y && dnf install -y \
   && rm -rf /var/cache/dnf /build
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
+COPY build_scripts ${LAMBDA_TASK_ROOT}/build_scripts
+RUN python3 ${LAMBDA_TASK_ROOT}/build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_sdk ${LAMBDA_TASK_ROOT}/inference_sdk
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 

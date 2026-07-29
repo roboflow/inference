@@ -338,8 +338,12 @@ def refactor_adapter_weights_key(key: str) -> str:
 
 def _patch_preprocessor_config(cache_dir: str):
     """
-    Checks and patches the preprocessor_config.json in the given cache directory
-    to ensure the image_processor_type is recognized.
+    Validate the cached processor config and apply the compatibility override
+    in memory.
+
+    Cached package artefacts are content-addressed and may be shared with other
+    model packages. Mutating ``preprocessor_config.json`` in place invalidates
+    that identity and makes later offline loads depend on unverified bytes.
     """
     config_path = os.path.join(cache_dir, "preprocessor_config.json")
     target_key = "image_processor_type"
@@ -351,11 +355,6 @@ def _patch_preprocessor_config(cache_dir: str):
     with open(config_path, "r") as f:
         data = json.load(f)
 
-    if target_key in data and data[target_key] != correct_value:
-        data[target_key] = correct_value
-        with open(config_path, "w") as f:
-            json.dump(data, f, indent=4)
-    elif target_key in data:
-        pass
-    else:
+    if target_key not in data:
         raise ValueError(f"'{target_key}' not found in {config_path}")
+    Qwen2_5_VLProcessor.image_processor_class = correct_value

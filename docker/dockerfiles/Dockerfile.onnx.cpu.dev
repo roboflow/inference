@@ -66,6 +66,8 @@ COPY examples/notebooks .
 
 WORKDIR /app
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
 COPY docker/config/cpu_http.py cpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

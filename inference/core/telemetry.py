@@ -22,6 +22,8 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, Sequence
 
+from inference.core.env import OFFLINE_MODE
+
 logger = logging.getLogger("inference")
 
 # ---------------------------------------------------------------------------
@@ -56,6 +58,10 @@ _force_trace_flag: contextvars.ContextVar[bool] = contextvars.ContextVar(
 )
 
 
+def _otel_enabled() -> bool:
+    return _OTEL_AVAILABLE and not OFFLINE_MODE
+
+
 # ---------------------------------------------------------------------------
 # Public helpers — always safe to call
 # ---------------------------------------------------------------------------
@@ -67,7 +73,7 @@ def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
 
     Yields the span (or None when OTel is not available).
     """
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         yield None
         return
     tracer = _get_tracer()
@@ -80,7 +86,7 @@ def record_error(error: Exception) -> None:
 
     Safe to call when OTel is not installed or there is no active span.
     """
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         return
     span = trace.get_current_span()
     if span and span.is_recording():
@@ -90,7 +96,7 @@ def record_error(error: Exception) -> None:
 
 def get_trace_id() -> Optional[str]:
     """Return the current trace ID as a hex string, or None."""
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         return None
     span = trace.get_current_span()
     ctx = span.get_span_context()
@@ -105,7 +111,7 @@ def set_span_attribute(key: str, value: Any) -> None:
     Noop when OTel is unavailable or there is no recording span.
     Callers never need to check for None spans.
     """
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         return
     span = trace.get_current_span()
     if span and span.is_recording():
@@ -117,7 +123,7 @@ def capture_context() -> Any:
 
     Returns an opaque token (or None). Pass to attach_context() in the target thread.
     """
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         return None
     from opentelemetry import context
 
@@ -129,7 +135,7 @@ def attach_context(ctx: Any) -> Any:
 
     Returns a token that MUST be passed to detach_context() when done.
     """
-    if ctx is None or not _OTEL_AVAILABLE:
+    if ctx is None or not _otel_enabled():
         return None
     from opentelemetry import context
 
@@ -138,7 +144,7 @@ def attach_context(ctx: Any) -> Any:
 
 def detach_context(token: Any) -> None:
     """Detach a previously attached context. Must be called in a finally block."""
-    if token is None or not _OTEL_AVAILABLE:
+    if token is None or not _otel_enabled():
         return
     from opentelemetry import context
 
@@ -150,7 +156,7 @@ def inject_trace_context(headers: dict) -> dict:
 
     Safe to call when OTel is not installed (returns headers unchanged).
     """
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         return headers
     if headers is None:
         headers = {}
@@ -162,7 +168,7 @@ def trace_context_log_processor(
     logger_instance: Any, method_name: str, event_dict: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Structlog processor that injects trace_id and span_id into log entries."""
-    if not _OTEL_AVAILABLE:
+    if not _otel_enabled():
         return event_dict
     span = trace.get_current_span()
     ctx = span.get_span_context()
@@ -336,6 +342,9 @@ def setup_telemetry(app: Any) -> None:
     wraps at the outermost ASGI layer.
     """
     global _provider, _tracer, _meter_provider, _metrics
+
+    if OFFLINE_MODE:
+        return
 
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
         OTLPSpanExporter as GRPCExporter,
@@ -521,7 +530,7 @@ def shutdown_telemetry() -> None:
 
 def _get_tracer():
     global _tracer
-    if _tracer is None and _OTEL_AVAILABLE:
+    if _tracer is None and _otel_enabled():
         _tracer = trace.get_tracer("inference")
     return _tracer
 

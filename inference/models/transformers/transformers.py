@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 import tarfile
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Tuple, Type
 
 from filelock import FileLock
 
@@ -18,7 +19,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
 )
-from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
@@ -39,6 +40,36 @@ if TYPE_CHECKING:
     from transformers import AutoModel, AutoProcessor
 
     from inference.core.entities.responses.inference import InferenceResponseImage
+
+
+def load_compatible_adapter_config(
+    config_file: str,
+    unsupported_keys: Iterable[str],
+) -> Dict[str, Any]:
+    """Load a PEFT config without requiring writes to an offline cache."""
+    with open(config_file, "r") as file:
+        config = json.load(file)
+
+    changed = False
+    for key in unsupported_keys:
+        if key in config:
+            changed = True
+            config.pop(key)
+
+    # Older PEFT releases need these newer fields removed. Persisting the
+    # compatibility form keeps historical online behavior, but offline model
+    # construction must work from an immutable artifact volume. Callers pass
+    # the returned LoraConfig directly to PEFT so it cannot reread stale keys.
+    if changed and not OFFLINE_MODE:
+        with open(config_file, "w") as file:
+            json.dump(config, file, indent=2)
+    return config
+
+
+def remove_extracted_archive_if_online(archive_path: str) -> None:
+    """Keep offline cache trees immutable while retaining online cleanup."""
+    if not OFFLINE_MODE and os.path.exists(archive_path):
+        os.remove(archive_path)
 
 
 class TransformerModel(RoboflowInferenceModel):
@@ -102,13 +133,17 @@ class TransformerModel(RoboflowInferenceModel):
                 device_map=DEVICE,
                 token=self.huggingface_token,
                 torch_dtype=self.default_dtype,
+                local_files_only=OFFLINE_MODE,
             )
             .eval()
             .to(self.dtype)
         )
 
         self.processor = self.processor_class.from_pretrained(
-            model_id, cache_dir=self.cache_dir, token=self.huggingface_token
+            model_id,
+            cache_dir=self.cache_dir,
+            token=self.huggingface_token,
+            local_files_only=OFFLINE_MODE,
         )
 
     def preprocess(
@@ -355,6 +390,7 @@ class LoRATransformerModel(TransformerModel):
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
+            local_files_only=OFFLINE_MODE,
         ).to(self.dtype)
         self.model = (
             PeftModel.from_pretrained(self.base_model, self.cache_dir)
@@ -365,7 +401,11 @@ class LoRATransformerModel(TransformerModel):
         self.model.merge_and_unload()
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token
+            model_load_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=OFFLINE_MODE,
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:

@@ -54,6 +54,9 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     && rm -rf /var/lib/apt/lists/*
 
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/udp_stream_config.py udp_stream_config.py
 
 ENTRYPOINT python3 udp_stream_config.py

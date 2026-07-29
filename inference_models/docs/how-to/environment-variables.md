@@ -17,14 +17,10 @@ export INFERENCE_HOME="/path/to/cache"
 export DEFAULT_DEVICE="cuda:0"
 ```
 
-Or use a `.env` file in your project root:
-
-```bash
-# .env file
-ROBOFLOW_API_KEY=your_api_key_here
-MODEL_CACHE_DIR=/path/to/cache
-DEFAULT_DEVICE=cuda:0
-```
+`inference-models` reads the process environment when it is first imported and
+then loads a `.env` file from the current working directory without overriding
+already-set process values. This matches the `inference` package, so package
+import order cannot change the selected cache or offline mode.
 
 ## Core Configuration
 
@@ -56,11 +52,47 @@ export ROBOFLOW_API_HOST="https://api.roboflow.com"
 ### Model Cache
 
 **`INFERENCE_HOME`**  
-Directory where downloaded models are cached. Default: `/tmp/cache`
+Directory where downloaded models are cached. If it is unset,
+`MODEL_CACHE_DIR` is used; if both are unset, the default is `/tmp/cache`.
 
 ```bash
 export INFERENCE_HOME="/home/user/.cache/inference-models"
 ```
+
+**`OFFLINE_MODE`**
+Startup-only switch for loading network-provider models exclusively from a
+trusted, compatible local cache.
+
+```bash
+export OFFLINE_MODE="True"
+```
+
+The first import of either `inference` or `inference_models` latches this value
+for the process. Changing or removing the variable later does not change the
+mode; restart the process instead. Child processes inherit the latch when they
+inherit the parent environment with Inference's private marker intact. That
+marker is trusted internal process state, not a security boundary against
+arbitrary code already running in the process. A child launched with a
+deliberately rewritten or sanitized environment is a new startup boundary, so
+use operating-system or network-level isolation when a hard air gap is required.
+
+The startup latch also enables the Hugging Face and Ultralytics dependency
+offline controls before Inference imports those libraries, preventing their
+built-in connectivity checks and online-gated behavior.
+If `HF_HOME` is not explicitly configured, both packages set it before heavy
+imports to `$INFERENCE_HOME/hf_home`, `$MODEL_CACHE_DIR/hf_home`, or
+`/tmp/cache/hf_home` in that order. This keeps implicit Hugging Face backbone,
+processor, and checkpoint downloads in the mounted cache across the
+online-warm and fresh-offline phases.
+
+Warm the cache online with the matching `inference-models` release and the same
+model-loading constraints and runtime environment before enabling offline mode.
+Legacy cache manifests do not contain the canonical owner, trust, dependency,
+and compatibility metadata required by the offline loader and must be
+re-warmed. A credential-free offline restart can use a cache warmed with a key
+only when the current metadata proves one unambiguous canonical model identity.
+A changed or rotated non-empty key requires an exact matching cache entry and
+otherwise fails closed.
 
 ### Device Selection
 

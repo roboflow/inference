@@ -2,17 +2,25 @@ import hashlib
 import json
 import os
 from typing import Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from inference_models.models.auto_loaders import core as auto_loader_core
 from inference_models.models.auto_loaders import model_cache_paths
+from inference_models.models.auto_loaders.core import (
+    initialize_model,
+    parse_model_config,
+)
+from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.model_cache_paths import (
     generate_model_cache_root_for_model_id,
     generate_model_package_cache_path,
+    generate_model_package_cache_path_candidates,
     generate_shared_blobs_path,
+    resolve_existing_model_package_cache_path,
 )
-from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.weights_providers import local_trt_packages
 from inference_models.weights_providers.entities import (
     LocalFileArtefactSpecs,
     PackageSourceType,
@@ -38,10 +46,18 @@ def _build_local_trt_layout(
     package_id: str = "localtrtabc123",
     manifest_overrides: Optional[dict] = None,
     files_overrides: Optional[dict] = None,
+    use_legacy_cache_path: bool = False,
+    attributed_model_id: Optional[str] = None,
 ) -> dict:
-    package_dir = generate_model_package_cache_path(
-        model_id=model_id, package_id=package_id
-    )
+    if use_legacy_cache_path:
+        _, package_dir = generate_model_package_cache_path_candidates(
+            model_id=model_id,
+            package_id=package_id,
+        )
+    else:
+        package_dir = generate_model_package_cache_path(
+            model_id=model_id, package_id=package_id
+        )
     shared_blobs_dir = generate_shared_blobs_path()
     os.makedirs(package_dir, exist_ok=True)
     os.makedirs(shared_blobs_dir, exist_ok=True)
@@ -104,6 +120,13 @@ def _build_local_trt_layout(
         os.path.join(package_dir, LOCAL_TRT_MANIFEST_FILE), "w", encoding="utf-8"
     ) as f:
         json.dump(manifest, f)
+    if attributed_model_id is not None:
+        with open(
+            os.path.join(package_dir, "model_config.json"),
+            "w",
+            encoding="utf-8",
+        ) as config_file:
+            json.dump({"model_id": attributed_model_id}, config_file)
 
     return {
         "model_id": model_id,
@@ -143,6 +166,158 @@ def test_discover_local_trt_packages_returns_local_cache_metadata(local_trt_layo
         isinstance(artefact, LocalFileArtefactSpecs)
         for artefact in package.package_artefacts
     )
+    assert LOCAL_TRT_MANIFEST_FILE in {
+        artefact.file_handle for artefact in package.package_artefacts
+    }
+
+
+def test_discovered_local_trt_package_initializes_with_bound_source_manifest(
+    local_trt_layout,
+):
+    package = discover_local_trt_packages(model_id=local_trt_layout["model_id"])[0]
+    model_class = MagicMock()
+    model_class.from_pretrained.return_value = MagicMock()
+
+    with patch.object(
+        auto_loader_core,
+        "resolve_model_class",
+        return_value=model_class,
+    ):
+        _, package_dir = initialize_model(
+            model_id=local_trt_layout["model_id"],
+            model_architecture="rfdetr",
+            task_type="object-detection",
+            model_package=package,
+            model_init_kwargs={},
+            auto_resolution_cache=MagicMock(),
+            auto_negotiation_hash="a" * 64,
+            model_dependencies=[],
+            model_dependencies_instances={},
+            model_dependencies_directories={},
+        )
+
+    manifest = parse_model_config(
+        config_path=os.path.join(package_dir, "model_config.json")
+    )
+    assert LOCAL_TRT_MANIFEST_FILE in {
+        artifact["file_handle"] for artifact in manifest.package_artifacts
+    }
+    model_class.from_pretrained.assert_called_once()
+
+
+def test_discovered_local_trt_package_reloads_offline_without_cache_writes(
+    local_trt_layout,
+):
+    package = discover_local_trt_packages(model_id=local_trt_layout["model_id"])[0]
+    model_class = MagicMock()
+    model_class.from_pretrained.return_value = MagicMock()
+    auto_resolution_cache = MagicMock()
+    initialize_kwargs = {
+        "model_id": local_trt_layout["model_id"],
+        "model_architecture": "rfdetr",
+        "task_type": "object-detection",
+        "model_package": package,
+        "model_init_kwargs": {},
+        "auto_resolution_cache": auto_resolution_cache,
+        "auto_negotiation_hash": "a" * 64,
+        "model_dependencies": [],
+        "model_dependencies_instances": {},
+        "model_dependencies_directories": {},
+    }
+
+    with patch.object(
+        auto_loader_core,
+        "resolve_model_class",
+        return_value=model_class,
+    ):
+        initialize_model(**initialize_kwargs)
+        auto_resolution_cache.reset_mock()
+        with (
+            patch.object(auto_loader_core, "OFFLINE_MODE", True),
+            patch.object(
+                auto_loader_core,
+                "FileLock",
+                side_effect=AssertionError(
+                    "offline initialization attempted to create a lock"
+                ),
+            ),
+            patch.object(
+                auto_loader_core,
+                "dump_model_config_for_offline_use",
+                side_effect=AssertionError(
+                    "offline initialization attempted to publish a manifest"
+                ),
+            ),
+        ):
+            _, package_dir = initialize_model(**initialize_kwargs)
+
+    assert package_dir == local_trt_layout["package_dir"]
+    assert model_class.from_pretrained.call_count == 2
+    auto_resolution_cache.register.assert_not_called()
+
+
+def test_discover_local_trt_packages_from_legacy_v1_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
+    layout = _build_local_trt_layout(
+        model_id="workspace/rfdetr-nano",
+        use_legacy_cache_path=True,
+        attributed_model_id="workspace/rfdetr-nano",
+    )
+
+    discovered = discover_local_trt_packages(model_id=layout["model_id"])
+
+    assert [package.package_id for package in discovered] == [layout["package_id"]]
+    assert (
+        resolve_existing_model_package_cache_path(
+            model_id=layout["model_id"],
+            package_id=layout["package_id"],
+            allow_unattributed_local_cache=True,
+        )
+        == layout["package_dir"]
+    )
+
+
+def test_discover_local_trt_packages_deduplicates_v2_and_legacy(tmp_path, monkeypatch):
+    monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
+    model_id = "workspace/rfdetr-nano"
+    package_id = "localtrtabc123"
+    _build_local_trt_layout(
+        model_id=model_id,
+        package_id=package_id,
+        use_legacy_cache_path=True,
+    )
+    v2_layout = _build_local_trt_layout(
+        model_id=model_id,
+        package_id=package_id,
+    )
+
+    discovered = discover_local_trt_packages(model_id=model_id)
+
+    assert [package.package_id for package in discovered] == [package_id]
+    assert (
+        resolve_existing_model_package_cache_path(
+            model_id=model_id,
+            package_id=package_id,
+            allow_unattributed_local_cache=True,
+        )
+        == v2_layout["package_dir"]
+    )
+
+
+def test_discover_local_trt_packages_rejects_ownerless_v1_slug_collision(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
+    first_model_id = f"{'a' * 48}/36371"
+    second_model_id = f"{'a' * 48}/72629"
+    _build_local_trt_layout(
+        model_id=first_model_id,
+        use_legacy_cache_path=True,
+    )
+
+    assert discover_local_trt_packages(model_id=first_model_id) == []
+    assert discover_local_trt_packages(model_id=second_model_id) == []
 
 
 def test_discover_local_trt_packages_marks_untrusted_and_sets_cache_model_id(
@@ -159,6 +334,45 @@ def test_discover_local_trt_packages_skips_md5_mismatch(local_trt_layout):
     with open(engine_path, "wb") as f:
         f.write(b"tampered-bytes")
     assert discover_local_trt_packages(model_id=local_trt_layout["model_id"]) == []
+
+
+def test_local_trt_md5_is_streamed_in_bounded_chunks(tmp_path):
+    artefact_path = tmp_path / "engine.plan"
+    content = b"a" * (3 * 1024 * 1024 + 17)
+    artefact_path.write_bytes(content)
+    real_fdopen = os.fdopen
+    read_sizes = []
+
+    class TrackingFile:
+        def __init__(self, file_handle):
+            self._file_handle = file_handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self._file_handle.close()
+
+        def read(self, size):
+            read_sizes.append(size)
+            return self._file_handle.read(size)
+
+        def fileno(self):
+            return self._file_handle.fileno()
+
+    def tracking_fdopen(file_descriptor, mode):
+        return TrackingFile(real_fdopen(file_descriptor, mode))
+
+    with patch.object(
+        local_trt_packages.os,
+        "fdopen",
+        side_effect=tracking_fdopen,
+    ):
+        actual_md5 = local_trt_packages._md5_regular_file(str(artefact_path))
+
+    assert actual_md5 == hashlib.md5(content).hexdigest()
+    assert len(read_sizes) > 2
+    assert set(read_sizes) == {1024 * 1024}
 
 
 def test_discover_local_trt_packages_skips_invalid_md5_format(tmp_path, monkeypatch):

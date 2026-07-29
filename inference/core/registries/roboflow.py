@@ -1,4 +1,9 @@
+import hashlib
+import inspect
+import json
 import os
+import re
+import stat
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -6,7 +11,12 @@ from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
-from inference.core.cache.model_artifacts import get_cache_dir
+from inference.core.cache.model_artifacts import (
+    get_cache_dir,
+    get_legacy_model_id_cache_path,
+    get_model_id_cache_path,
+    validate_model_id_for_cache,
+)
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -22,6 +32,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
     USE_INFERENCE_MODELS,
 )
@@ -46,11 +57,16 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_workspace,
 )
-from inference.core.utils.file_system import dump_json, read_json
+from inference.core.utils.file_system import dump_json_atomic, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.auto_loaders import core as inference_models_auto_loaders
 from inference_models.models.auto_loaders.core import parse_model_config
 from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
+from inference_models.models.auto_loaders.model_cache_paths import (
+    generate_model_cache_root_for_model_id,
+    generate_models_cache_dir,
+)
 
 # fallback model_type for local `inference_models` packages that do not declare
 # model_architecture in model_config.json.
@@ -155,6 +171,7 @@ def _get_model_pipeline_definition(model_id: str) -> Optional[ModelPipelineDefin
 
 
 STUB_VERSION_ID = "0"
+MODEL_ID_METADATA_KEY = "model_id"
 
 # In-process cache for model metadata to avoid Redis lock contention on every request.
 _in_process_metadata_cache = LRUCache(capacity=1000)
@@ -163,6 +180,123 @@ FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM3 models are not supported on this deployment. "
     "Please use a workflow or self-host the server."
 )
+
+
+def _get_in_process_metadata_cache_key(
+    dataset_id: Union[DatasetID, ModelID],
+    version_id: Optional[VersionID],
+    api_key: Optional[str],
+) -> Tuple[Union[DatasetID, ModelID], Optional[VersionID], str]:
+    credential_cache_key = hashlib.sha256(
+        f"{api_key is None}:{api_key or ''}".encode("utf-8")
+    ).hexdigest()
+    return dataset_id, version_id, credential_cache_key
+
+
+def _find_cached_model_package_dir_compat(
+    model_id: str,
+    api_key: Optional[str] = None,
+) -> Optional[str]:
+    """Find a cached package when inference-models predates its public helper."""
+    models_cache_root = os.path.realpath(generate_models_cache_dir())
+    try:
+        lexical_model_cache_root = generate_model_cache_root_for_model_id(
+            model_id=model_id
+        )
+    except Exception:
+        return None
+    if os.path.islink(lexical_model_cache_root):
+        return None
+    model_cache_root = os.path.realpath(lexical_model_cache_root)
+    if not model_cache_root.startswith(models_cache_root + os.sep):
+        return None
+    if not os.path.isdir(model_cache_root):
+        return None
+    try:
+        entries = sorted(os.listdir(model_cache_root))
+    except OSError:
+        return None
+    for entry in entries:
+        if entry.startswith(".") or re.fullmatch(r"[A-Za-z0-9]+", entry) is None:
+            continue
+        lexical_package_dir = os.path.join(model_cache_root, entry)
+        if os.path.islink(lexical_package_dir):
+            continue
+        package_dir = os.path.realpath(lexical_package_dir)
+        if not package_dir.startswith(model_cache_root + os.sep):
+            continue
+        config_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
+        if (
+            not os.path.isdir(package_dir)
+            or os.path.islink(config_path)
+            or not os.path.isfile(config_path)
+        ):
+            continue
+        try:
+            config = read_json(path=config_path)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(config, dict):
+            continue
+        cached_model_id = config.get("model_id")
+        if cached_model_id is not None and cached_model_id != model_id:
+            continue
+        task_type = config.get("task_type")
+        if not isinstance(task_type, str) or not task_type:
+            continue
+        model_architecture = config.get("model_architecture")
+        has_library_model = isinstance(model_architecture, str) and bool(
+            model_architecture
+        )
+        has_custom_model = (
+            isinstance(config.get("model_module"), str)
+            and bool(config.get("model_module"))
+            and isinstance(config.get("model_class"), str)
+            and bool(config.get("model_class"))
+        )
+        if not has_library_model and not has_custom_model:
+            continue
+        if not isinstance(config.get("backend_type"), str):
+            # A package without a backend cannot be resolved by the library
+            # model registry. Custom-code packages are handled by their module
+            # and class metadata instead.
+            if not has_custom_model:
+                continue
+        return package_dir
+    return None
+
+
+# Runtime images install the latest released inference-models before inference.
+# Remove this fallback once that release includes find_cached_model_package_dir.
+_find_cached_model_package_dir_impl = getattr(
+    inference_models_auto_loaders,
+    "find_cached_model_package_dir",
+    _find_cached_model_package_dir_compat,
+)
+
+
+def find_cached_model_package_dir(
+    model_id: str,
+    api_key: Optional[str] = None,
+) -> Optional[str]:
+    """Call both current and pre-credential inference-models cache helpers."""
+
+    try:
+        finder_parameters = inspect.signature(
+            _find_cached_model_package_dir_impl
+        ).parameters.values()
+    except (TypeError, ValueError):
+        finder_parameters = ()
+    supports_api_key = any(
+        parameter.name == "api_key" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in finder_parameters
+    )
+    if supports_api_key:
+        return _find_cached_model_package_dir_impl(
+            model_id=model_id,
+            api_key=api_key,
+        )
+    return _find_cached_model_package_dir_impl(model_id=model_id)
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -318,6 +452,7 @@ def get_model_type(
     if pipeline_definition is not None:
         logger.debug(f"Loading model pipeline: {model_id}.")
         return pipeline_definition.task_type, pipeline_definition.model_type
+    validate_model_id_for_cache(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
@@ -329,7 +464,7 @@ def get_model_type(
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
 
-    if MODELS_CACHE_AUTH_ENABLED:
+    if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
         if not _check_if_api_key_has_access_to_model(
             api_key=api_key,
             model_id=model_id,
@@ -341,7 +476,9 @@ def get_model_type(
             )
 
     cached_metadata = get_model_metadata_from_cache(
-        dataset_id=dataset_id, version_id=version_id
+        dataset_id=dataset_id,
+        version_id=version_id,
+        api_key=api_key,
     )
 
     if cached_metadata is not None:
@@ -366,6 +503,7 @@ def get_model_type(
             version_id=version_id,
             project_task_type=project_task_type,
             model_type=model_type,
+            api_key=api_key,
         )
         return project_task_type, model_type
 
@@ -417,6 +555,7 @@ def get_model_type(
         version_id=version_id,
         project_task_type=project_task_type,
         model_type=model_type,
+        api_key=api_key,
     )
 
     return project_task_type, model_type
@@ -441,14 +580,23 @@ def _ensure_model_supported_on_this_deployment(
 def get_model_metadata_from_cache(
     dataset_id: Union[DatasetID, ModelID],
     version_id: Optional[VersionID],
+    api_key: Optional[str] = None,
 ) -> Optional[Tuple[TaskType, ModelType]]:
-    cache_key = (dataset_id, version_id)
+    model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
+    validate_model_id_for_cache(model_id=model_id)
+    cache_key = _get_in_process_metadata_cache_key(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        api_key=api_key,
+    )
     cached = _in_process_metadata_cache.get(cache_key)
     if cached is not None:
         return cached
     if LAMBDA:
         result = _get_model_metadata_from_cache(
-            dataset_id=dataset_id, version_id=version_id
+            dataset_id=dataset_id,
+            version_id=version_id,
+            api_key=api_key,
         )
     else:
         with cache.lock(
@@ -456,7 +604,9 @@ def get_model_metadata_from_cache(
             expire=CACHE_METADATA_LOCK_TIMEOUT,
         ):
             result = _get_model_metadata_from_cache(
-                dataset_id=dataset_id, version_id=version_id
+                dataset_id=dataset_id,
+                version_id=version_id,
+                api_key=api_key,
             )
     if result is not None:
         _in_process_metadata_cache.set(cache_key, result)
@@ -464,23 +614,148 @@ def get_model_metadata_from_cache(
 
 
 def _get_model_metadata_from_cache(
-    dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
+    dataset_id: Union[DatasetID, ModelID],
+    version_id: Optional[VersionID],
+    api_key: Optional[str] = None,
 ) -> Optional[Tuple[TaskType, ModelType]]:
-    model_type_cache_path = construct_model_type_cache_path(
-        dataset_id=dataset_id, version_id=version_id
-    )
-    if not os.path.isfile(model_type_cache_path):
-        return None
+    model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
+    # Layout 1: traditional model_type.json
     try:
-        model_metadata = read_json(path=model_type_cache_path)
-        if model_metadata_content_is_invalid(content=model_metadata):
-            return None
-        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
-    except ValueError as e:
+        model_type_cache_path = construct_model_type_cache_path(
+            dataset_id=dataset_id, version_id=version_id
+        )
+    except ValueError as error:
         logger.warning(
-            f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
+            "Could not load model description from an unsafe cache path for "
+            "%s/%s: %s",
+            dataset_id,
+            version_id,
+            error,
+        )
+    else:
+        cache_dir_root = get_cache_dir()
+        current_cache_key = get_model_id_cache_path(
+            model_id=model_id,
+            cache_dir_root=cache_dir_root,
+        )
+        cached_metadata = _load_model_metadata_from_path(
+            path=model_type_cache_path,
+            # Ownerless historical entries remain compatible only when the
+            # current model ID still maps to its unchanged raw path. Generated
+            # V2 paths can collide with old raw IDs and therefore require exact
+            # attribution.
+            required_model_id=model_id,
+            allow_ownerless=current_cache_key == model_id,
+        )
+        if cached_metadata is not None:
+            return cached_metadata
+
+    # Slugged paths written before the digest was widened remain readable only
+    # when the metadata proves which exact model ID owns the directory.
+    try:
+        legacy_model_type_cache_path = _construct_legacy_model_type_cache_path(
+            model_id=model_id
+        )
+    except ValueError as error:
+        logger.warning(
+            "Could not load legacy model description from an unsafe cache path "
+            "for %s: %s",
+            model_id,
+            error,
+        )
+    else:
+        if legacy_model_type_cache_path is not None:
+            cached_metadata = _load_model_metadata_from_path(
+                path=legacy_model_type_cache_path,
+                required_model_id=model_id,
+            )
+            if cached_metadata is not None:
+                return cached_metadata
+
+    # Layout 2: `inference-models` model_config.json
+    return _get_model_metadata_from_inference_models_cache(
+        model_id=model_id,
+        api_key=api_key,
+    )
+
+
+def _load_model_metadata_from_path(
+    path: str,
+    required_model_id: Optional[str] = None,
+    allow_ownerless: bool = False,
+) -> Optional[Tuple[TaskType, ModelType]]:
+    try:
+        model_metadata = _read_model_metadata_json(path=path)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        logger.warning(
+            "Could not load model description from cache under path: "
+            "%s - read or decoding issue: %s.",
+            path,
+            error,
         )
         return None
+    if model_metadata_content_is_invalid(content=model_metadata):
+        return None
+    if required_model_id is not None:
+        owner_is_absent = MODEL_ID_METADATA_KEY not in model_metadata
+        cached_model_id = model_metadata.get(MODEL_ID_METADATA_KEY)
+        if not (allow_ownerless and owner_is_absent) and (
+            not isinstance(cached_model_id, str)
+            or not cached_model_id
+            or cached_model_id != required_model_id
+        ):
+            logger.warning(
+                "Refusing cached model metadata under path %s because its "
+                "model_id does not exactly match %s.",
+                path,
+                required_model_id,
+            )
+            return None
+    return (
+        model_metadata[PROJECT_TASK_TYPE_KEY],
+        model_metadata[MODEL_TYPE_KEY],
+    )
+
+
+def _get_model_metadata_from_inference_models_cache(
+    model_id: str,
+    api_key: Optional[str] = None,
+) -> Optional[Tuple[TaskType, ModelType]]:
+    """Check the `inference-models` cache layout for model metadata.
+
+    Best-effort fallback used when the traditional ``model_type.json`` is
+    absent (e.g. cache warmed through `inference-models` directly). The
+    ``model_architecture`` stored in ``model_config.json`` is used as the
+    model type - architecture-level keys are registered in
+    ``ROBOFLOW_MODEL_TYPES``.
+    """
+    if not USE_INFERENCE_MODELS:
+        return None
+    cached_dir = find_cached_model_package_dir(
+        model_id=model_id,
+        api_key=api_key,
+    )
+    if cached_dir is None:
+        return None
+    config_path = os.path.join(cached_dir, "model_config.json")
+    try:
+        metadata = read_json(path=config_path)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    task_type = metadata.get("task_type", "")
+    model_architecture = metadata.get("model_architecture", "")
+    if (
+        isinstance(task_type, str)
+        and task_type
+        and isinstance(model_architecture, str)
+        and model_architecture
+    ):
+        return task_type, model_architecture
+    return None
 
 
 def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> bool:
@@ -503,7 +778,10 @@ def save_model_metadata_in_cache(
     version_id: Optional[VersionID],
     project_task_type: TaskType,
     model_type: ModelType,
+    api_key: Optional[str] = None,
 ) -> None:
+    model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
+    validate_model_id_for_cache(model_id=model_id)
     if LAMBDA:
         _save_model_metadata_in_cache(
             dataset_id=dataset_id,
@@ -523,7 +801,12 @@ def save_model_metadata_in_cache(
                 model_type=model_type,
             )
     _in_process_metadata_cache.set(
-        (dataset_id, version_id), (project_task_type, model_type)
+        _get_in_process_metadata_cache_key(
+            dataset_id=dataset_id,
+            version_id=version_id,
+            api_key=api_key,
+        ),
+        (project_task_type, model_type),
     )
 
 
@@ -533,21 +816,207 @@ def _save_model_metadata_in_cache(
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
+    model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
+    )
+    _ensure_current_model_cache_path_can_be_claimed(
+        model_id=model_id,
+        model_type_cache_path=model_type_cache_path,
     )
     metadata = {
         PROJECT_TASK_TYPE_KEY: project_task_type,
         MODEL_TYPE_KEY: model_type,
+        MODEL_ID_METADATA_KEY: model_id,
     }
-    dump_json(
+    dump_json_atomic(
         path=model_type_cache_path, content=metadata, allow_override=True, indent=4
     )
+
+
+def _ensure_current_model_cache_path_can_be_claimed(
+    model_id: str,
+    model_type_cache_path: str,
+) -> None:
+    """Prevent a generated V2 path from claiming an older raw cache tree."""
+
+    cache_dir_root = get_cache_dir()
+    current_cache_key = get_model_id_cache_path(
+        model_id=model_id,
+        cache_dir_root=cache_dir_root,
+    )
+    if current_cache_key == model_id:
+        # Portable raw paths are already injective and retain historical
+        # ownerless compatibility. A present attribution must still agree:
+        # explicit empty or contradictory owners are corruption, not legacy
+        # ownerless metadata.
+        if not os.path.lexists(model_type_cache_path):
+            return
+        try:
+            existing_metadata = _read_model_metadata_json(path=model_type_cache_path)
+        except (OSError, ValueError) as error:
+            raise ModelArtefactError(
+                f"Refusing to replace unreadable metadata in raw cache path "
+                f"for model {model_id}."
+            ) from error
+        if not isinstance(existing_metadata, dict):
+            raise ModelArtefactError(
+                f"Refusing to replace malformed metadata in raw cache path "
+                f"for model {model_id}."
+            )
+        if MODEL_ID_METADATA_KEY not in existing_metadata:
+            return
+        existing_owner = existing_metadata.get(MODEL_ID_METADATA_KEY)
+        if existing_owner != model_id:
+            raise ModelArtefactError(
+                f"Refusing to claim raw cache path for model {model_id}; "
+                "the existing metadata declares a different or invalid owner."
+            )
+        return
+
+    model_cache_dir = os.path.dirname(model_type_cache_path)
+    if not os.path.lexists(model_cache_dir):
+        return
+    if not os.path.isdir(model_cache_dir) or os.path.islink(model_cache_dir):
+        raise ModelArtefactError(
+            f"Refusing to claim unsafe generated cache path for model {model_id}."
+        )
+
+    if os.path.lexists(model_type_cache_path):
+        try:
+            existing_metadata = _read_model_metadata_json(path=model_type_cache_path)
+        except (OSError, ValueError) as error:
+            raise ModelArtefactError(
+                f"Refusing to replace unreadable metadata in generated cache "
+                f"path for model {model_id}."
+            ) from error
+        existing_owner = (
+            existing_metadata.get(MODEL_ID_METADATA_KEY)
+            if isinstance(existing_metadata, dict)
+            else None
+        )
+        if existing_owner != model_id:
+            raise ModelArtefactError(
+                f"Refusing to claim generated cache path for model {model_id}; "
+                "the existing metadata does not prove the same owner."
+            )
+        return
+
+    try:
+        directory_entries = os.listdir(model_cache_dir)
+    except OSError as error:
+        raise ModelArtefactError(
+            f"Refusing to inspect generated cache path for model {model_id}."
+        ) from error
+    if directory_entries:
+        raise ModelArtefactError(
+            f"Refusing to claim non-empty generated cache path for model "
+            f"{model_id} without exact ownership metadata."
+        )
+
+
+def _read_model_metadata_json(path: str) -> Optional[Union[dict, list]]:
+    """Read regular-file metadata without following a final symlink."""
+
+    # The sole caller supplies construct_model_type_cache_path's validated result.
+    path_status = os.lstat(path)
+    if not stat.S_ISREG(path_status.st_mode):
+        raise OSError(f"Refusing to read non-regular metadata file: {path}")
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+    )
+    try:
+        descriptor_status = os.fstat(descriptor)
+        if not stat.S_ISREG(descriptor_status.st_mode):
+            raise OSError(f"Refusing to read non-regular metadata file: {path}")
+        if (path_status.st_dev, path_status.st_ino) != (
+            descriptor_status.st_dev,
+            descriptor_status.st_ino,
+        ):
+            raise OSError(f"Metadata file changed while it was being opened: {path}")
+        file_handle = os.fdopen(descriptor, "r", encoding="utf-8")
+        descriptor = -1
+        with file_handle:
+            return json.load(file_handle)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
-    model_id = dataset_id if version_id is None else f"{dataset_id}/{version_id}"
+    model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     cache_dir = get_cache_dir(model_id=model_id)
-    return os.path.join(cache_dir, "model_type.json")
+    model_type_cache_path = os.path.join(cache_dir, "model_type.json")
+    return _validate_model_type_cache_path(
+        model_id=model_id, model_type_cache_path=model_type_cache_path
+    )
+
+
+def _construct_legacy_model_type_cache_path(model_id: str) -> Optional[str]:
+    cache_dir_root = get_cache_dir()
+    legacy_model_cache_path = get_legacy_model_id_cache_path(
+        model_id=model_id, cache_dir_root=cache_dir_root
+    )
+    if legacy_model_cache_path is None:
+        return None
+    model_type_cache_path = os.path.join(
+        cache_dir_root, legacy_model_cache_path, "model_type.json"
+    )
+    return _validate_model_type_cache_path(
+        model_id=model_id, model_type_cache_path=model_type_cache_path
+    )
+
+
+def _combine_model_id(
+    dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
+) -> str:
+    return str(dataset_id) if version_id is None else f"{dataset_id}/{version_id}"
+
+
+def _validate_model_type_cache_path(model_id: str, model_type_cache_path: str) -> str:
+
+    # MODEL_CACHE_DIR itself may be a mounted symlink. Every component below
+    # that boundary must remain lexical so one model cannot alias another
+    # model's metadata (or a file outside the cache).
+    absolute_cache_root = os.path.abspath(get_cache_dir())
+    absolute_metadata_path = os.path.abspath(model_type_cache_path)
+    cache_prefix = absolute_cache_root.rstrip(os.sep) + os.sep
+    if not absolute_metadata_path.startswith(cache_prefix):
+        raise ValueError(
+            f"Model metadata cache path for model {model_id} escapes the model cache directory."
+        )
+    try:
+        if (
+            os.path.commonpath([absolute_cache_root, absolute_metadata_path])
+            != absolute_cache_root
+        ):
+            raise ValueError
+        relative_metadata_path = os.path.relpath(
+            absolute_metadata_path, absolute_cache_root
+        )
+    except ValueError as error:
+        raise ValueError(
+            f"Model metadata cache path for model {model_id} escapes the model cache directory."
+        ) from error
+
+    current_path = absolute_cache_root
+    for path_part in relative_metadata_path.split(os.sep):
+        current_path = os.path.join(current_path, path_part)
+        if os.path.islink(current_path):
+            raise ValueError(
+                f"Model metadata cache path for model {model_id} traverses a symbolic link."
+            )
+
+    expected_resolved_path = os.path.normpath(
+        os.path.join(os.path.realpath(absolute_cache_root), relative_metadata_path)
+    )
+    if os.path.realpath(absolute_metadata_path) != expected_resolved_path:
+        # Covers Windows junctions and other path aliases that are not reported
+        # by os.path.islink on every supported Python version.
+        raise ValueError(
+            f"Model metadata cache path for model {model_id} traverses a symbolic link."
+        )
+    return absolute_metadata_path

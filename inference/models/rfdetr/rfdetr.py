@@ -15,6 +15,7 @@ from inference.core.env import (
     DISK_CACHE_CLEANUP,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
+    OFFLINE_MODE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     RFDETR_ONNX_MAX_RESOLUTION,
@@ -39,7 +40,10 @@ from inference.core.models.object_detection_base import (
     ObjectDetectionInferenceResponse,
 )
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.models.utils.onnx import has_trt
+from inference.core.models.utils.onnx import (
+    disable_onnxruntime_trt_file_outputs,
+    has_trt,
+)
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import (
     ImageMetaType,
@@ -476,20 +480,27 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     )
                 expanded_execution_providers = []
                 for ep in self.onnxruntime_execution_providers:
+                    if OFFLINE_MODE:
+                        ep = disable_onnxruntime_trt_file_outputs(provider=ep)
                     if ep == "TensorrtExecutionProvider":
+                        provider_options = {
+                            "trt_max_workspace_size": str(1 << 30),
+                            # Never materialize runtime engines inside an
+                            # immutable offline model package.
+                            "trt_engine_cache_enable": not OFFLINE_MODE,
+                            "trt_fp16_enable": True,
+                            "trt_dump_subgraphs": False,
+                            "trt_force_sequential_engine_build": False,
+                            "trt_dla_enable": False,
+                        }
+                        if not OFFLINE_MODE:
+                            provider_options["trt_engine_cache_path"] = os.path.join(
+                                TENSORRT_CACHE_PATH,
+                                self.endpoint,
+                            )
                         ep = (
                             "TensorrtExecutionProvider",
-                            {
-                                "trt_max_workspace_size": str(1 << 30),
-                                "trt_engine_cache_enable": True,
-                                "trt_engine_cache_path": os.path.join(
-                                    TENSORRT_CACHE_PATH, self.endpoint
-                                ),
-                                "trt_fp16_enable": True,
-                                "trt_dump_subgraphs": False,
-                                "trt_force_sequential_engine_build": False,
-                                "trt_dla_enable": False,
-                            },
+                            provider_options,
                         )
                     expanded_execution_providers.append(ep)
 
@@ -502,7 +513,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
+                if not OFFLINE_MODE:
+                    self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e

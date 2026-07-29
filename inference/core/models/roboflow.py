@@ -28,6 +28,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     MODEL_VALIDATION_DISABLED,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
@@ -43,7 +44,7 @@ from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     clear_cache,
     get_cache_dir,
-    get_cache_file_path,
+    get_cache_dir_for_read,
     initialise_cache,
     load_json_from_cache,
     load_text_file_from_cache,
@@ -64,7 +65,10 @@ from inference.core.exceptions import (
 )
 from inference.core.models.base import Model
 from inference.core.models.utils.batching import create_batches
-from inference.core.models.utils.onnx import has_trt
+from inference.core.models.utils.onnx import (
+    disable_onnxruntime_trt_file_outputs,
+    has_trt,
+)
 from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -85,7 +89,7 @@ SLEEP_SECONDS_BETWEEN_RETRIES = 3
 MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT = 3600  # 1 hour
 
 S3_CLIENT = None
-if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
+if not OFFLINE_MODE and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     try:
         import boto3
         from botocore.config import Config
@@ -140,7 +144,7 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-        self.cache_dir = get_cache_dir(
+        self.cache_dir = get_cache_dir_for_read(
             model_id=self.endpoint, cache_dir_root=cache_dir_root
         )
         self.keypoints_metadata: Optional[dict] = None
@@ -155,7 +159,7 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: Full path to the cached file.
         """
-        return get_cache_file_path(file=f, model_id=self.endpoint)
+        return os.path.join(self.cache_dir, f)
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clear the cache directory.
@@ -243,7 +247,7 @@ class RoboflowInferenceModel(Model):
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -271,6 +275,11 @@ class RoboflowInferenceModel(Model):
 
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             return None
+        if OFFLINE_MODE:
+            raise ModelArtefactError(
+                f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
+                "or more required artifacts are missing from the local cache."
+            )
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
@@ -670,7 +679,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
 
         This method includes handling for AWS access keys and error handling.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -685,6 +694,11 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             logger.debug("Model artifacts already downloaded, loading from cache")
             return None
+        if OFFLINE_MODE:
+            raise ModelArtefactError(
+                f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
+                "or more required artifacts are missing from the local cache."
+            )
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
@@ -803,25 +817,36 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
             expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
+                if OFFLINE_MODE:
+                    ep = disable_onnxruntime_trt_file_outputs(provider=ep)
                 if ep == "TensorrtExecutionProvider":
                     engine_cache_path = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
-                    engine_cached = os.path.isdir(engine_cache_path) and any(
-                        f.endswith(".engine") for f in os.listdir(engine_cache_path)
-                    )
-                    if not engine_cached:
-                        logger.warning(
-                            f"No cached TensorRT engine for '{model_id}' in {engine_cache_path}. "
-                            "ONNX Runtime will build one during the first inference; this can take "
-                            "many minutes on embedded devices and blocks requests for this model "
-                            "until it finishes. Persist this directory to avoid rebuilds."
+                    if not OFFLINE_MODE:
+                        engine_cached = os.path.isdir(engine_cache_path) and any(
+                            f.endswith(".engine") for f in os.listdir(engine_cache_path)
+                        )
+                        if not engine_cached:
+                            logger.warning(
+                                f"No cached TensorRT engine for '{model_id}' in {engine_cache_path}. "
+                                "ONNX Runtime will build one during the first inference; this can take "
+                                "many minutes on embedded devices and blocks requests for this model "
+                                "until it finishes. Persist this directory to avoid rebuilds."
+                            )
+                    provider_options = {
+                        # An offline model package is immutable input. TensorRT
+                        # may compile an engine in memory, but must not create
+                        # or replace engine/timing files inside that package.
+                        "trt_engine_cache_enable": not OFFLINE_MODE,
+                        "trt_fp16_enable": True,
+                    }
+                    if not OFFLINE_MODE:
+                        provider_options["trt_engine_cache_path"] = os.path.join(
+                            TENSORRT_CACHE_PATH,
+                            self.endpoint,
                         )
                     ep = (
                         "TensorrtExecutionProvider",
-                        {
-                            "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": engine_cache_path,
-                            "trt_fp16_enable": True,
-                        },
+                        provider_options,
                     )
                 expanded_execution_providers.append(ep)
             self.onnxruntime_execution_providers = expanded_execution_providers
@@ -833,7 +858,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
-            if DISK_CACHE_CLEANUP:
+            if DISK_CACHE_CLEANUP and not OFFLINE_MODE:
                 self.clear_cache(delete_from_disk=True)
             else:
                 logger.error("NOT deleting model from cache, inspect model artifacts")
@@ -963,7 +988,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
+                if not OFFLINE_MODE:
+                    self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e
@@ -1137,7 +1163,8 @@ def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
 def is_model_artefacts_bucket_available() -> bool:
     # TODO: download from GCS directly if GCP_SERVERLESS is true
     return (
-        AWS_ACCESS_KEY_ID is not None
+        not OFFLINE_MODE
+        and AWS_ACCESS_KEY_ID is not None
         and AWS_SECRET_ACCESS_KEY is not None
         and LAMBDA
         and S3_CLIENT is not None
