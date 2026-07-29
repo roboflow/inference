@@ -122,6 +122,41 @@ def test_tracker_input_reuses_immutable_row_index_storage() -> None:
     assert block.tracker_row_data_reuses == 2
 
 
+def test_tracker_input_casts_integral_boxes_without_mutating_native_prediction() -> (
+    None
+):
+    block = _TensorTrackerBlock()
+    source = Detections(
+        xyxy=torch.tensor(
+            [[10, 10, 20, 20], [30, 30, 40, 40]],
+            dtype=torch.int32,
+        ),
+        class_id=torch.tensor([3, 7], dtype=torch.long),
+        confidence=torch.tensor([0.9, 0.8], dtype=torch.float32),
+    )
+    source_pointer = source.xyxy.data_ptr()
+
+    tracker_input = block._assemble_tracker_input(source)
+
+    assert tracker_input.xyxy.dtype == torch.float32
+    assert tracker_input.xyxy.tolist() == source.xyxy.tolist()
+    assert tracker_input.xyxy.data_ptr() != source_pointer
+    assert source.xyxy.dtype == torch.int32
+    assert source.xyxy.data_ptr() == source_pointer
+    assert tracker_input.confidence.data_ptr() == source.confidence.data_ptr()
+    assert tracker_input.class_id.data_ptr() == source.class_id.data_ptr()
+
+
+def test_tracker_input_reuses_float32_boxes_without_copy() -> None:
+    block = _TensorTrackerBlock()
+    source = _native_detections()
+
+    tracker_input = block._assemble_tracker_input(source)
+
+    assert tracker_input.xyxy.dtype == torch.float32
+    assert tracker_input.xyxy.data_ptr() == source.xyxy.data_ptr()
+
+
 def test_packed_tensor_tracker_ids_follow_unmatched_track_filter(
     monkeypatch,
 ) -> None:

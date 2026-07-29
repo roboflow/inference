@@ -44,7 +44,12 @@ def _image(video_id: str) -> WorkflowImageData:
     )
 
 
-def _detections(stream_index: int) -> Detections:
+def _detections(
+    stream_index: int,
+    *,
+    dtype: torch.dtype = torch.float32,
+    device: str = "cpu",
+) -> Detections:
     """Build two native rows whose numeric fields remain tensors."""
     offset = float(stream_index * 10)
     return Detections(
@@ -52,10 +57,12 @@ def _detections(stream_index: int) -> Detections:
             [
                 [offset, 0.0, offset + 2.0, 2.0],
                 [offset + 3.0, 0.0, offset + 5.0, 2.0],
-            ]
+            ],
+            dtype=dtype,
+            device=device,
         ),
-        class_id=torch.zeros(2, dtype=torch.long),
-        confidence=torch.full((2,), 0.95),
+        class_id=torch.zeros(2, dtype=torch.long, device=device),
+        confidence=torch.full((2,), 0.95, device=device),
     )
 
 
@@ -125,3 +132,51 @@ def test_one_workflow_batch_calls_persistent_executor_once(
         [20, 21],
         [30, 31],
     ]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_integral_model_boxes_reach_tracktors_whole_frame_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RF-DETR-style int boxes must become one persistent Tracktors CUDA batch."""
+    stream_count = 8
+    indices = [(index,) for index in range(stream_count)]
+    images = Batch.init(
+        [_image(f"video-{index}") for index in range(stream_count)],
+        indices,
+    )
+    block = ByteTrackBlockV1()
+    scheduler = TrackerBatchScheduler(batch_window_ms=0.0, max_batch_size=8)
+    monkeypatch.setattr(
+        base_tensor,
+        "get_tracker_batch_scheduler",
+        lambda: scheduler,
+    )
+    source_batches = []
+    try:
+        for _ in range(3):
+            sources = [
+                _detections(index, dtype=torch.int32, device="cuda")
+                for index in range(stream_count)
+            ]
+            source_batches.append(sources)
+            results = block.run(
+                image=images,
+                detections=Batch.init(sources, indices),
+                minimum_consecutive_frames=1,
+                track_activation_threshold=0.25,
+            )
+            assert isinstance(results, list)
+            assert len(results) == stream_count
+        torch.cuda.synchronize()
+        executor = scheduler._executor
+        assert isinstance(executor, tracktors.CUDABatchExecutor)
+        assert executor.bytetrack_whole_frame_batches >= 1
+    finally:
+        scheduler.close()
+
+    assert all(
+        prediction.xyxy.dtype == torch.int32
+        for sources in source_batches
+        for prediction in sources
+    )

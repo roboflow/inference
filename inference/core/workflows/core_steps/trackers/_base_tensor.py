@@ -565,10 +565,20 @@ class TrackerBlockBase(WorkflowBlock):
         self,
         bbox: Union[Detections, InstanceDetections],
     ) -> sv.Detections:
-        """Wrap validated native bbox tensors without redundant public validation."""
+        """Wrap native tensors in Tracktors' strict float32 CUDA contract.
+
+        Some model adapters, including RF-DETR, emit integral ``xyxy`` tensors.
+        Tracktors deliberately refuses those inputs when constructing CUDA
+        buckets, so passing them through silently disables its whole-frame batch
+        engine. Cast only the temporary tracker view; output recovery continues
+        to index the original native prediction and preserves its dtype/storage.
+        """
         row_count = int(bbox.xyxy.shape[0])
+        tracker_xyxy = bbox.xyxy
+        if tracker_xyxy.dtype != torch.float32:
+            tracker_xyxy = tracker_xyxy.to(dtype=torch.float32)
         result = object.__new__(sv.Detections)
-        object.__setattr__(result, "xyxy", bbox.xyxy)
+        object.__setattr__(result, "xyxy", tracker_xyxy)
         object.__setattr__(result, "mask", None)
         object.__setattr__(result, "confidence", bbox.confidence)
         object.__setattr__(result, "class_id", bbox.class_id)
@@ -625,7 +635,11 @@ class TrackerBlockBase(WorkflowBlock):
         }:
             return False
         boxes = detections.xyxy
-        if not isinstance(boxes, torch.Tensor) or boxes.device.type != "cuda":
+        if (
+            not isinstance(boxes, torch.Tensor)
+            or boxes.device.type != "cuda"
+            or boxes.dtype != torch.float32
+        ):
             return False
         try:
             import tracktors
