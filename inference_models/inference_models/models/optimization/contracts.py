@@ -78,10 +78,13 @@ class OptimizationStage(str, Enum):
 
 @dataclass(frozen=True)
 class DeviceCompatibility:
-    """Hardware compatibility declared by one implementation."""
+    """Hardware constraints currently enforced by registry resolution.
+
+    Extend this contract only when a concrete implementation requires another
+    reliably observable target property.
+    """
 
     device_kind: Literal["cpu", "gpu"]
-    device_families: Tuple[str, ...] = ()
     minimum_compute_capability: Optional[Tuple[int, int]] = None
 
 
@@ -173,7 +176,6 @@ class OptimizationMetadata:
             "version": self.version,
             "target": {
                 "device_kind": self.target.device_kind,
-                "device_families": list(self.target.device_families),
                 "minimum_compute_capability": self.target.minimum_compute_capability,
             },
             "inputs": {
@@ -198,21 +200,19 @@ class OptimizationMetadata:
 
 @dataclass(frozen=True)
 class ExecutionContext:
-    """Runtime target and request context used for stage resolution."""
+    """Minimal runtime facts used by stage resolution and execution.
+
+    Add context fields only when a concrete compatibility or execution requirement
+    can populate and consume them reliably.
+    """
 
     device_kind: Literal["cpu", "gpu"]
     device: str
-    device_name: str
-    machine_type: str
-    scenario: str
-    resolved_axes: Mapping[str, Any] = field(default_factory=immutable_mapping)
     current_stream: Optional[Any] = None
-    device_family: Optional[str] = None
     compute_capability: Optional[Tuple[int, int]] = None
     runtime_components: Mapping[str, bool] = field(default_factory=immutable_mapping)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "resolved_axes", immutable_mapping(self.resolved_axes))
         object.__setattr__(
             self,
             "runtime_components",
@@ -243,15 +243,6 @@ def metadata_compatibility(
         reasons.append(
             f"requires device_kind={target.device_kind!r}, "
             f"received {context.device_kind!r}"
-        )
-    if (
-        target.device_families
-        and context.device_family is not None
-        and context.device_family not in target.device_families
-    ):
-        reasons.append(
-            f"device_family={context.device_family!r} is not in "
-            f"{target.device_families!r}"
         )
     if (
         target.minimum_compute_capability is not None

@@ -348,8 +348,7 @@ class RFDetrForObjectDetectionTRT(
             "engine_plugin": engine_plugin_selection,
         }
         self._model_selections = {
-            stage: selection.to_dict()
-            for stage, selection in model_selections.items()
+            stage: selection.to_dict() for stage, selection in model_selections.items()
         }
         for stage, selection in model_selections.items():
             if selection.used_fallback:
@@ -526,10 +525,7 @@ class RFDetrForObjectDetectionTRT(
             network_input=self._inference_config.network_input,
             pre_processing_overrides=pre_processing_overrides,
         )
-        context = self._execution_stage_context(
-            current_stream=stream,
-            resolved_axes=self._resolved_preprocess_axes(images),
-        )
+        context = self._execution_stage_context(current_stream=stream)
         selection = resolve_preprocessor_for_request(
             registry=self._implementation_registry,
             implementation=self._preprocessor,
@@ -597,13 +593,7 @@ class RFDetrForObjectDetectionTRT(
             stream: torch.cuda.Stream,
         ) -> Tuple[torch.Tensor, torch.Tensor]:
             with use_cuda_context(context=self._cuda_context):
-                context = self._execution_stage_context(
-                    current_stream=stream,
-                    resolved_axes={
-                        "batch": int(pre_processed_images.shape[0]),
-                        "input_shape": tuple(pre_processed_images.shape),
-                    },
-                )
+                context = self._execution_stage_context(current_stream=stream)
                 request = EngineExecutionRequest(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
@@ -668,14 +658,7 @@ class RFDetrForObjectDetectionTRT(
                 num_classes=len(self.class_names),
                 classes_re_mapping=self._classes_re_mapping,
             )
-            context = self._execution_stage_context(
-                current_stream=stream,
-                resolved_axes={
-                    "batch": int(logits.shape[0]),
-                    "queries": int(logits.shape[1]),
-                    "classes": int(logits.shape[2]),
-                },
-            )
+            context = self._execution_stage_context(current_stream=stream)
             selection = resolve_postprocessor_for_request(
                 registry=self._implementation_registry,
                 implementation=self._postprocessor,
@@ -721,49 +704,18 @@ class RFDetrForObjectDetectionTRT(
         self,
         *,
         current_stream: Optional[torch.cuda.Stream],
-        resolved_axes: Optional[Mapping[str, Any]] = None,
     ) -> ExecutionContext:
-        device_index = self._device.index or 0
         context = ExecutionContext(
             device_kind="gpu",
             device=str(self._device),
-            device_name=torch.cuda.get_device_name(device_index),
-            machine_type="runtime",
-            scenario="runtime",
-            resolved_axes=resolved_axes or {},
             current_stream=current_stream,
-            compute_capability=torch.cuda.get_device_capability(device_index),
+            compute_capability=torch.cuda.get_device_capability(
+                self._device.index or 0
+            ),
             runtime_components={"triton": TRITON_AVAILABLE},
         )
 
         return context
-
-    @staticmethod
-    def _resolved_preprocess_axes(
-        images: Union[
-            torch.Tensor,
-            List[torch.Tensor],
-            np.ndarray,
-            List[np.ndarray],
-        ],
-    ) -> Dict[str, Any]:
-        if isinstance(images, list):
-            batch_size = len(images)
-            first = images[0] if images else None
-        elif isinstance(images, (torch.Tensor, np.ndarray)) and images.ndim == 4:
-            batch_size = int(images.shape[0])
-            first = images[0] if batch_size else None
-        else:
-            batch_size = 1
-            first = images
-        shape = tuple(first.shape) if first is not None else ()
-        axes = {
-            "batch": batch_size,
-            "input_type": type(first).__name__ if first is not None else "empty",
-            "source_shape": shape,
-        }
-
-        return axes
 
     def _record_static_stage_execution(self, *, stage: str) -> None:
         self._record_last_execution(

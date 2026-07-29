@@ -33,10 +33,7 @@ class TritonFusedPostprocessor:
         implementation_id=RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
         stage=OptimizationStage.POSTPROCESS,
         version="1",
-        target=DeviceCompatibility(
-            device_kind="gpu",
-            device_families=("nvidia_jetson", "nvidia_discrete_gpu"),
-        ),
+        target=DeviceCompatibility(device_kind="gpu"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping({"batch": ">=1", "queries": "1..1024"}),

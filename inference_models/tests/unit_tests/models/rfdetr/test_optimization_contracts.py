@@ -114,9 +114,6 @@ def _context() -> ExecutionContext:
     return ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test",
-        scenario="runtime",
     )
 
 
@@ -245,9 +242,6 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
     context = ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test",
-        scenario="runtime",
         runtime_components={"triton": False},
     )
 

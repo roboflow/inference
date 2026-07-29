@@ -19,7 +19,7 @@ flowchart TD
     plan["ExecutionPlan<br/>stage IDs only"]
     catalog["Catalog<br/>metadata + constructors"]
     registry["ImplementationRegistry<br/>registered instances"]
-    context["ExecutionContext<br/>device + scenario + resolved axes + stream"]
+    context["ExecutionContext<br/>device + capability + components + stream"]
     contracts["Contracts<br/>metadata + compatibility + requests + results + protocols"]
     implementations["Implementations<br/>base and optimized choices in separate modules"]
     model["Model<br/>preprocess → protected forward → postprocess"]
@@ -46,8 +46,10 @@ They include:
 - `OptimizationMetadata`, including the stable implementation ID, stage, version,
   target, input constraints, dependencies, numerical behavior, stream behavior,
   output contract, fallback ID, and informational validation records;
-- `ExecutionContext`, which describes the actual device, scenario, resolved input
-  axes, compute capability, available runtime components, and current stream;
+- `ExecutionContext`, which contains only the device kind and selector, compute
+  capability, available runtime components, and current stream currently consumed by
+  resolution or execution. Extend it when another reliably observable runtime fact has
+  a concrete consumer;
 - the common `InferenceStage` compatibility protocol.
 
 Stage-specific requests, results, and protocols stay in the model namespace because

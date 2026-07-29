@@ -55,10 +55,6 @@ def _context() -> ExecutionContext:
     return ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test-machine",
-        scenario="batch",
-        resolved_axes={"batch": 1, "height": 640},
     )
 
 
@@ -191,9 +187,6 @@ def test_registry_static_dependency_fallback_is_lazy() -> None:
     context = ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test-machine",
-        scenario="batch",
         runtime_components={"triton": False},
     )
 
@@ -216,9 +209,6 @@ def test_registry_can_reject_static_dependency_fallback() -> None:
     context = ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test-machine",
-        scenario="batch",
         runtime_components={"triton": False},
     )
 

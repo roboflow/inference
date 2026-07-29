@@ -56,9 +56,6 @@ def _context(*, stream=None) -> ExecutionContext:
     return ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test",
-        scenario="runtime",
         current_stream=stream,
     )
 
