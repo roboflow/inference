@@ -17,7 +17,7 @@ variable "JETSON_MEDIA_IMAGE" {
   # Keep the server coupled to the immutable JP7.2 media-only runtime. This
   # contains FFmpeg, GStreamer, OpenCV, and the native SM87/SM110 tensor bridge
   # without inheriting application or Python layers from an older server image.
-  default = "roboflow/roboflow-inference-media-jetson-7.2.0:1.4.0-mvp-media-srtp-v1@sha256:1429079bdbdae770ea37a41bc8d3675c93370004752b2720ed6a50f41b5a39da"
+  default = "roboflow/roboflow-inference-media-jetson-7.2.0:pr2651-bnb048-8d2cdb305-media@sha256:7dc7549ebf6357169c2ea422ac4cba31e2c137f09bbfba2c75171fc235936da5"
 }
 
 target "jetson-media-jp72" {
