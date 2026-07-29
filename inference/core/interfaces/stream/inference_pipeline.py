@@ -231,8 +231,9 @@ class InferencePipeline:
                 multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
                 window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
                 collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
-                otherwise the legacy collection behavior is preserved unchanged. File sources always keep
-                every-frame semantics regardless of mode. See
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
                 `inference.core.interfaces.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause
@@ -424,8 +425,9 @@ class InferencePipeline:
                 multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
                 window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
                 collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
-                otherwise the legacy collection behavior is preserved unchanged. File sources always keep
-                every-frame semantics regardless of mode. See
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
                 `inference.core.interfaces.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause
@@ -605,8 +607,9 @@ class InferencePipeline:
                 multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
                 window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
                 collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
-                otherwise the legacy collection behavior is preserved unchanged. File sources always keep
-                every-frame semantics regardless of mode. See
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
                 `inference.core.interfaces.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause
@@ -832,8 +835,9 @@ class InferencePipeline:
                 multi-source consumption: "auto" (FIFO with a staleness budget and self-tuning collection
                 window), "every_frame" (strict FIFO) or "freshest" (legacy latest-wins with a small fixed
                 collection timeout). Defaults to "auto" when ENABLE_TENSOR_DATA_REPRESENTATION is set,
-                otherwise the legacy collection behavior is preserved unchanged. File sources always keep
-                every-frame semantics regardless of mode. See
+                otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
+                the legacy behavior explicitly (the escape hatch from the flag-driven default). File
+                sources always keep every-frame semantics regardless of mode. See
                 `inference.core.interfaces.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause

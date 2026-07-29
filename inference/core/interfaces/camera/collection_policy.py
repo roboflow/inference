@@ -41,6 +41,7 @@ COLLECTION_WINDOW_EXECUTION_FRACTION = 0.2
 EXECUTION_GAP_EMA_ALPHA = 0.2
 FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT = 0.02
 STALENESS_DROP_CAUSE = "STALENESS_BUDGET_EXCEEDED"
+LEGACY_MODE_ALIASES = frozenset({"legacy", "none"})
 
 
 class VideoProcessingMode(str, Enum):
@@ -70,9 +71,16 @@ def resolve_video_processing_mode(
     Order: explicit argument > tensor-representation cohort default (AUTO
     when ``ENABLE_TENSOR_DATA_REPRESENTATION`` is set - the same opt-in
     boundary that already gates decoding-buffer depth) > ``None`` meaning
-    the legacy collection behavior, byte-for-byte.
+    the legacy collection behavior, byte-for-byte. The explicit strings
+    ``"legacy"`` / ``"none"`` force the legacy behavior even inside the
+    tensor cohort - the escape hatch from the flag-driven AUTO default.
     """
     if explicit_mode is not None:
+        if (
+            isinstance(explicit_mode, str)
+            and explicit_mode.lower() in LEGACY_MODE_ALIASES
+        ):
+            return None
         return VideoProcessingMode(explicit_mode)
     if core_env.ENABLE_TENSOR_DATA_REPRESENTATION:
         return VideoProcessingMode.AUTO

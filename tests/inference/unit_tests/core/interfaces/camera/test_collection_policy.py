@@ -56,6 +56,19 @@ def test_resolve_mode_rejects_unknown_mode() -> None:
         resolve_video_processing_mode(explicit_mode="turbo")
 
 
+@pytest.mark.parametrize("alias", ["legacy", "none", "LEGACY", "None"])
+def test_resolve_mode_legacy_alias_overrides_tensor_cohort_default(
+    monkeypatch, alias: str
+) -> None:
+    # given - the tensor cohort, where the implicit default is AUTO
+    monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+
+    resolved = resolve_video_processing_mode(explicit_mode=alias)
+
+    # then - the escape hatch forces the legacy path anyway
+    assert resolved is None
+
+
 def test_adaptive_window_starts_at_initial_value() -> None:
     controller = AdaptiveWindowController(initial_window=0.005, clock=lambda: 0.0)
 
