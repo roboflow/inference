@@ -10,14 +10,19 @@ from inference_models.models.optimization.contracts import (
     metadata_supports_context,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
-    BufferedInput,
+    EngineInputBuffer,
     PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.ids import RFDETR_BUFFER_STRATEGY_BASE
 
 
 class BaseBufferStrategy:
-    """Preserve framework-owned preprocessing tensors without copies or reuse."""
+    """Preserve the framework-owned engine-input tensor without copying it.
+
+    This RF-DETR implementation covers only the preprocessing-to-engine boundary.
+    Extending buffer ownership or reuse across engine outputs and postprocessing would
+    require a broader model-path contract.
+    """
 
     metadata = OptimizationMetadata(
         implementation_id=RFDETR_BUFFER_STRATEGY_BASE,
@@ -62,22 +67,22 @@ class BaseBufferStrategy:
 
         return compatible
 
-    def prepare(
+    def prepare_engine_input(
         self,
         result: PreprocessResult,
         context: ExecutionContext,
-    ) -> BufferedInput:
-        """Preserve the exact preprocessing tensor and readiness state.
+    ) -> EngineInputBuffer:
+        """Preserve the exact preprocessing tensor as the engine input.
 
         Args:
             result: Typed preprocessing result.
             context: Runtime context containing the producer stream.
 
         Returns:
-            Engine-ready input aliasing the original preprocessing tensor.
+            Engine-input buffer aliasing the original preprocessing tensor.
         """
         del context
-        buffered_input = BufferedInput(
+        engine_input_buffer = EngineInputBuffer(
             tensor=result.tensor,
             ready_event=result.ready_event,
             input_kind=result.input_kind,
@@ -85,4 +90,4 @@ class BaseBufferStrategy:
             fallback_reason=result.fallback_reason,
         )
 
-        return buffered_input
+        return engine_input_buffer

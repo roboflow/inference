@@ -10,8 +10,8 @@ from inference_models.models.rfdetr.optimization.buffer_strategies import (
     BaseBufferStrategy,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
-    BufferedInput,
     EngineExecutionRequest,
+    EngineInputBuffer,
     PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.engine_plugins import (
@@ -73,7 +73,7 @@ def _scheduler(*, inference_stream) -> BaseExecutionScheduler:
     return scheduler
 
 
-def test_base_buffer_strategy_preserves_tensor_identity_and_readiness() -> None:
+def test_base_buffer_strategy_preserves_engine_input_and_readiness() -> None:
     tensor = torch.zeros((1, 3, 4, 4))
     ready_event = object()
     result = PreprocessResult(
@@ -84,14 +84,14 @@ def test_base_buffer_strategy_preserves_tensor_identity_and_readiness() -> None:
         input_kind="test",
     )
 
-    buffered_input = BaseBufferStrategy().prepare(
+    engine_input_buffer = BaseBufferStrategy().prepare_engine_input(
         result=result,
         context=_context(),
     )
 
-    assert buffered_input.tensor is tensor
-    assert buffered_input.ready_event is ready_event
-    assert buffered_input.preprocessor_implementation_id == "test-preprocessor"
+    assert engine_input_buffer.tensor is tensor
+    assert engine_input_buffer.ready_event is ready_event
+    assert engine_input_buffer.preprocessor_implementation_id == "test-preprocessor"
 
 
 def test_base_scheduler_hands_readiness_to_exact_engine_input() -> None:
@@ -100,7 +100,7 @@ def test_base_scheduler_hands_readiness_to_exact_engine_input() -> None:
     scheduler = _scheduler(inference_stream=inference_stream)
     ready_event = _FakeEvent(calls)
     tensor = torch.zeros((1, 3, 4, 4))
-    buffered_input = BufferedInput(
+    engine_input_buffer = EngineInputBuffer(
         tensor=tensor,
         ready_event=ready_event,
         input_kind="test",
@@ -108,7 +108,7 @@ def test_base_scheduler_hands_readiness_to_exact_engine_input() -> None:
     )
 
     scheduled_tensor = scheduler.finalize_preprocess(
-        buffered_input,
+        engine_input_buffer,
         context=_context(stream=_FakeStream(calls)),
         independent_stage_execution=False,
     )
@@ -135,7 +135,7 @@ def test_base_scheduler_synchronizes_independent_preprocessing() -> None:
     tensor = torch.zeros((1, 3, 4, 4))
 
     scheduled_tensor = scheduler.finalize_preprocess(
-        BufferedInput(
+        EngineInputBuffer(
             tensor=tensor,
             ready_event=ready_event,
             input_kind="test",

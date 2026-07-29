@@ -459,6 +459,7 @@ def test_readiness_tracker_consumes_only_the_exact_tensor() -> None:
     assert tracker.consume(other) is None
     readiness = tracker.consume(tensor)
     assert readiness is not None
+    assert readiness.ready_event is None
     assert readiness.input_kind == "test"
     assert readiness.implementation_id == "candidate"
     assert tracker.consume(tensor) is None

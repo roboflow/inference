@@ -48,8 +48,8 @@ class PreprocessResult:
 
 
 @dataclass(frozen=True)
-class BufferedInput:
-    """Engine-ready tensor and readiness state owned by a buffer strategy."""
+class EngineInputBuffer:
+    """Engine-ready tensor and producer readiness state."""
 
     tensor: torch.Tensor
     ready_event: Optional[torch.cuda.Event]
@@ -148,7 +148,12 @@ class Preprocessor(InferenceStage, Protocol):
 
 
 class BufferStrategy(InferenceStage, Protocol):
-    """RF-DETR intermediate-buffer ownership stage interface."""
+    """RF-DETR buffer-strategy interface.
+
+    The current object-detection TensorRT path applies this stage only at the
+    preprocessing-to-engine boundary. Supporting ownership or reuse across the full
+    inference path may require extending this contract.
+    """
 
     metadata: OptimizationMetadata
 
@@ -162,11 +167,11 @@ class BufferStrategy(InferenceStage, Protocol):
             Whether the buffer strategy is compatible.
         """
 
-    def prepare(
+    def prepare_engine_input(
         self,
         result: PreprocessResult,
         context: ExecutionContext,
-    ) -> BufferedInput:
+    ) -> EngineInputBuffer:
         """Prepare preprocessing output for scheduler and engine consumption.
 
         Args:
@@ -209,7 +214,7 @@ class ExecutionScheduler(InferenceStage, Protocol):
 
     def finalize_preprocess(
         self,
-        buffered_input: BufferedInput,
+        engine_input: EngineInputBuffer,
         *,
         context: ExecutionContext,
         independent_stage_execution: bool,
@@ -217,7 +222,8 @@ class ExecutionScheduler(InferenceStage, Protocol):
         """Publish or synchronize a preprocessed tensor for its consumer.
 
         Args:
-            buffered_input: Tensor and readiness state from the buffer strategy.
+            engine_input: Tensor and readiness state from the engine-input buffer
+                strategy.
             context: Runtime context containing the producer stream.
             independent_stage_execution: Whether the tensor must be ready on return.
 

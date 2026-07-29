@@ -559,14 +559,14 @@ class RFDetrForObjectDetectionTRT(
         )
         if selection.fallback_reason is not None:
             result = replace(result, fallback_reason=selection.fallback_reason)
-        buffered_input = self._buffer_strategy.prepare(
+        engine_input_buffer = self._buffer_strategy.prepare_engine_input(
             result=result,
             context=context,
         )
         self._record_static_stage_execution(stage="buffer_strategy")
         self._record_static_stage_execution(stage="scheduler")
         pre_processed_images = self._scheduler.finalize_preprocess(
-            buffered_input,
+            engine_input_buffer,
             context=context,
             independent_stage_execution=independent_stage_execution,
         )

@@ -108,12 +108,24 @@ flowchart TD
     post_triton --> detections
 ```
 
-The base buffer strategy preserves the exact preprocessing tensor, framework ownership,
-and readiness event without a copy. The base scheduler owns
+The base buffer strategy currently operates only at the preprocessing-to-engine
+boundary. Its `EngineInputBuffer` contract preserves the exact preprocessing tensor,
+framework ownership, and readiness event without a copy. It is not yet a full-path
+buffer-lifecycle contract: an implementation that also owns engine outputs or
+postprocessing buffers would require extending the RF-DETR `BufferStrategy` protocol
+rather than being only a registry substitution.
+
+The base scheduler owns
 `PreprocessReadinessTracker`, which remains deliberately separate from tensors. It uses
-the exact tensor identity and a weak reference to transfer an optional CUDA event from
-preprocessing to the TensorRT consumer without adding dynamic attributes to framework
-tensors.
+the exact tensor identity and a weak reference to transfer an optional CUDA readiness
+event from preprocessing to the TensorRT consumer without adding dynamic attributes to
+framework tensors.
+
+The scheduler protocol currently coordinates the RF-DETR preprocessing, TensorRT
+engine, and postprocessing boundaries exposed by the model's public methods. It is not
+yet a whole-request pipeline contract: a scheduler that owns cross-request pipelining,
+buffer-slot acquisition, or additional model-path boundaries may require extending the
+RF-DETR `ExecutionScheduler` protocol rather than being only a registry substitution.
 
 Public `pre_process()` calls default to `independent_stage_execution=True`: they
 synchronize their producer before returning and do not add a tracker entry. Composed
@@ -175,6 +187,8 @@ TensorRT forward does not need to know which preprocessor produced its input.
 - Preprocessing and postprocessing have optimized alternatives. Buffer strategy,
   scheduler, and engine plugin currently provide real `base` implementations that
   preserve the original storage, stream/event, and TensorRT-boundary behavior.
+- The current buffer-strategy protocol covers engine inputs only; broader ownership or
+  reuse across engine outputs and postprocessing requires a contract extension.
 - `auto` resolves those base-only categories to `base`; an unknown explicit ID raises a
   registry error listing the available implementations.
 - `auto` remains on `base` until machine-readable validation records are added for a

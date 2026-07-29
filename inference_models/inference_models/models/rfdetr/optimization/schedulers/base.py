@@ -17,8 +17,8 @@ from inference_models.models.optimization.contracts import (
     metadata_supports_context,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
-    BufferedInput,
     EngineOperation,
+    EngineInputBuffer,
     PostprocessOperation,
 )
 from inference_models.models.rfdetr.optimization.ids import RFDETR_SCHEDULER_BASE
@@ -96,7 +96,7 @@ class BaseExecutionScheduler:
 
     def finalize_preprocess(
         self,
-        buffered_input: BufferedInput,
+        engine_input: EngineInputBuffer,
         *,
         context: ExecutionContext,
         independent_stage_execution: bool,
@@ -104,7 +104,7 @@ class BaseExecutionScheduler:
         """Publish or synchronize preprocessing output for forward consumption.
 
         Args:
-            buffered_input: Tensor and readiness state from the buffer strategy.
+            engine_input: Tensor and readiness state from the buffer strategy.
             context: Runtime context containing the preprocessing stream.
             independent_stage_execution: Whether the tensor must be ready on return.
 
@@ -124,21 +124,21 @@ class BaseExecutionScheduler:
                 ),
             )
 
-        if buffered_input.ready_event is None:
+        if engine_input.ready_event is None:
             stream.synchronize()
         elif independent_stage_execution:
-            buffered_input.ready_event.synchronize()
+            engine_input.ready_event.synchronize()
 
         if not independent_stage_execution:
             self._preprocess_readiness.record(
-                buffered_input.tensor,
-                ready_event=buffered_input.ready_event,
-                input_kind=buffered_input.input_kind,
-                implementation_id=(buffered_input.preprocessor_implementation_id),
-                fallback_reason=buffered_input.fallback_reason,
+                engine_input.tensor,
+                ready_event=engine_input.ready_event,
+                input_kind=engine_input.input_kind,
+                implementation_id=engine_input.preprocessor_implementation_id,
+                fallback_reason=engine_input.fallback_reason,
             )
 
-        return buffered_input.tensor
+        return engine_input.tensor
 
     def execute_engine(
         self,
