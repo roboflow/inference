@@ -129,7 +129,10 @@ ENV VERSION_CHECK_MODE=continuous \
     HOST=0.0.0.0 \
     PORT=9001 \
     OPENBLAS_CORETYPE=ARMV8 \
-    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    # libGLdispatch must claim its static TLS at process start: loaded late
+    # (torch/ort/cv2 exhaust the r35 glibc surplus first) the tensor bridge's
+    # deferred EGL load dies with 'cannot allocate memory in static TLS block'.
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/lib/aarch64-linux-gnu/libGLdispatch.so.0 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
     API_LOGGING_ENABLED=True \
