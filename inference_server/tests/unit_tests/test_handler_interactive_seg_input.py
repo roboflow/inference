@@ -78,3 +78,44 @@ async def test_empty_images_issues_single_empty_payload_infer():
     assert kwargs["image"] == b""
     assert kwargs["task"] == "segment_with_visual_prompts"
     assert kwargs["params"]["image_hashes"] == ["h1"]
+
+
+from dataclasses import dataclass
+from typing import Tuple
+
+import torch
+
+from inference_server.handlers.interactive_instance_segmentation.output_serializer import (
+    serialize_sam_embeddings,
+)
+
+
+@dataclass(frozen=True)
+class _FakeSAMEmbeddings:
+    image_hash: str
+    image_size_hw: Tuple[int, int]
+    embeddings: torch.Tensor
+
+
+def test_sam_embed_dataclass_labeled_sam_embeddings_v1():
+    emb = _FakeSAMEmbeddings(
+        image_hash="abc123",
+        image_size_hw=(480, 640),
+        embeddings=torch.zeros(1, 4),
+    )
+    resp = serialize_sam_embeddings(emb, _common())
+    body = json.loads(resp.body)
+    assert len(body["predictions"]) == 1
+    p = body["predictions"][0]
+    assert p["type"] == "roboflow-sam-embeddings-v1"
+    assert p["data"]["image_hash"] == "abc123"
+    assert p["data"]["image_size_hw"] == [480, 640]
+    assert p["data"]["embeddings"] == [[0.0, 0.0, 0.0, 0.0]]
+
+
+def test_plain_tensor_embeddings_keep_compact_label():
+    resp = serialize_sam_embeddings(torch.zeros(1, 4), _common())
+    body = json.loads(resp.body)
+    p = body["predictions"][0]
+    assert p["type"] == "roboflow-embeddings-compact-v1"
+    assert p["embeddings"] == [[0.0, 0.0, 0.0, 0.0]]

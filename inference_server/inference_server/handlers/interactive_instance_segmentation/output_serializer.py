@@ -37,10 +37,11 @@ def _envelope(predictions: list, common: CommonRequestParams) -> Response:
 
 
 def _embeddings_or_passthrough(prediction: Any, proxy: _ModelProxy) -> Any:
-    try:
-        return serialize_embeddings(prediction, proxy)
-    except (AttributeError, TypeError, KeyError):
-        return serialize_passthrough(prediction, proxy)
+    if hasattr(prediction, "image_hash"):
+        typed = serialize_passthrough(prediction, proxy)
+        typed["type"] = "roboflow-sam-embeddings-v1"
+        return typed
+    return serialize_embeddings(prediction, proxy)
 
 
 def serialize_sam_embeddings(prediction: Any, common: CommonRequestParams) -> Response:

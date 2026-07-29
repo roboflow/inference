@@ -165,11 +165,11 @@ def _stats() -> dict:
     }
 
 
-def _write_npy_input(pool: SHMPool, slot_id: int, req_id: int) -> None:
+def _write_npy_input(pool: SHMPool, slot_id: int, req_id: int, fill: int = 0) -> None:
     import io
 
     buf = io.BytesIO()
-    np.save(buf, np.zeros((2, 2, 3), dtype=np.uint8))
+    np.save(buf, np.full((2, 2, 3), fill, dtype=np.uint8))
     data = buf.getvalue()
     pool.mark_allocated(slot_id, request_id=req_id)
     pool.data_memoryview(slot_id)[: len(data)] = data
@@ -247,6 +247,92 @@ def test_batched_stacked_tensor_output_splits_per_slot(monkeypatch):
             assert hdr.status == SlotStatus.DONE
             row = pickle.loads(bytes(pool.data_memoryview(slot)[: hdr.result_size]))
             assert np.array_equal(row, stacked.numpy()[i : i + 1])
+    finally:
+        pool.close()
+
+
+def test_fused_object_output_reinvoked_per_slot(monkeypatch):
+    pool = SHMPool.create(n_slots=2, input_mb=0.5)
+    try:
+        sock = _FakeSock()
+        req_ids = (401, 402)
+        slots = [pool.alloc_slot() for _ in req_ids]
+        for i, (slot, req_id) in enumerate(zip(slots, req_ids)):
+            _write_npy_input(pool, slot, req_id=req_id, fill=i + 1)
+
+        calls: list = []
+
+        def _fake_invoke(model, task, images, **kw):
+            calls.append(images)
+            if isinstance(images, list):
+                return SimpleNamespace(yaw=(0.5, 0.6), pitch=(0.7, 0.8))
+            return SimpleNamespace(yaw=float(images[0, 0, 0]), pitch=0.0)
+
+        monkeypatch.setattr(subproc, "invoke_task", _fake_invoke)
+
+        subproc._process_slots(
+            object(),
+            pool,
+            [(slot, req_id, b"{}") for slot, req_id in zip(slots, req_ids)],
+            sock,
+            lambda mvs: [None] * len(mvs),
+            _Log(),
+            _stats(),
+        )
+
+        assert len(calls) == 3
+        assert isinstance(calls[0], list) and len(calls[0]) == 2
+        assert not isinstance(calls[1], list)
+        assert not isinstance(calls[2], list)
+        for i, slot in enumerate(slots):
+            hdr = pool.read_header(slot)
+            assert hdr.status == SlotStatus.DONE
+            result = pickle.loads(
+                bytes(pool.data_memoryview(slot)[: hdr.result_size])
+            )
+            assert result.yaw == float(i + 1)
+    finally:
+        pool.close()
+
+
+def test_fused_tuple_output_reinvoked_per_slot(monkeypatch):
+    pool = SHMPool.create(n_slots=2, input_mb=0.5)
+    try:
+        sock = _FakeSock()
+        req_ids = (501, 502)
+        slots = [pool.alloc_slot() for _ in req_ids]
+        for i, (slot, req_id) in enumerate(zip(slots, req_ids)):
+            _write_npy_input(pool, slot, req_id=req_id, fill=i + 1)
+
+        calls: list = []
+
+        def _fake_invoke(model, task, images, **kw):
+            calls.append(images)
+            if isinstance(images, list):
+                return (["a", "b"], [{"det": 0}, {"det": 1}])
+            v = int(images[0, 0, 0])
+            return ([f"text-{v}"], [{"det": v}])
+
+        monkeypatch.setattr(subproc, "invoke_task", _fake_invoke)
+
+        subproc._process_slots(
+            object(),
+            pool,
+            [(slot, req_id, b"{}") for slot, req_id in zip(slots, req_ids)],
+            sock,
+            lambda mvs: [None] * len(mvs),
+            _Log(),
+            _stats(),
+        )
+
+        assert len(calls) == 3
+        for i, slot in enumerate(slots):
+            hdr = pool.read_header(slot)
+            assert hdr.status == SlotStatus.DONE
+            result = pickle.loads(
+                bytes(pool.data_memoryview(slot)[: hdr.result_size])
+            )
+            assert result == ([f"text-{i + 1}"], [{"det": i + 1}])
     finally:
         pool.close()
 

@@ -627,8 +627,8 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
                 _P_MAX_NEW_TOKENS,
             ),
             "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
+            "serialize_detections_compact",
+            "roboflow-object-detection-compact-v1",
         ),
         (
             "ocr",
@@ -663,8 +663,8 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             False,
             _p(_P_FLORENCE2_PHRASE),
             "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
+            "serialize_instance_segmentation_compact",
+            "roboflow-instance-segmentation-compact-v1",
             {"prompt": "phrase"},
         ),
         (
@@ -673,8 +673,8 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             False,
             _p(_P_FLORENCE2_PHRASE),
             "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
+            "serialize_detections_compact",
+            "roboflow-object-detection-compact-v1",
             {"prompt": "phrase"},
         ),
         (

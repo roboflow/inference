@@ -805,14 +805,25 @@ def _process_slots(
                 raw_out = invoke_task(
                     model, task=task, images=images_arg, **sub_params
                 )
-            if isinstance(raw_out, list):
+            if isinstance(raw_out, list) and (
+                len(indices) == 1 or len(raw_out) == len(indices)
+            ):
                 sub_results = raw_out
             else:
                 shape = getattr(raw_out, "shape", None)
                 if shape and len(indices) > 1 and shape[0] == len(indices):
                     sub_results = [raw_out[i : i + 1] for i in range(len(indices))]
-                else:
+                elif len(indices) == 1:
                     sub_results = [raw_out]
+                else:
+                    sub_results = []
+                    for i in indices:
+                        single_out = invoke_task(
+                            model, task=task, images=good_images[i], **sub_params
+                        )
+                        if isinstance(single_out, list):
+                            single_out = single_out[0] if single_out else None
+                        sub_results.append(single_out)
             for i, r in zip(indices, sub_results):
                 results[i] = r
         except ModelInputError as exc:

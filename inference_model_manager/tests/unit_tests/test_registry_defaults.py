@@ -174,6 +174,12 @@ def test_florence2_task_configs():
 
     assert cfgs["segment_phrase"][7] == {"prompt": "phrase"}
     assert cfgs["ground_phrase"][7] == {"prompt": "phrase"}
+    assert cfgs["segment_phrase"][5] == "serialize_instance_segmentation_compact"
+    assert cfgs["segment_phrase"][6] == "roboflow-instance-segmentation-compact-v1"
+    assert cfgs["ground_phrase"][5] == "serialize_detections_compact"
+    assert cfgs["ground_phrase"][6] == "roboflow-object-detection-compact-v1"
+    assert cfgs["detect"][5] == "serialize_detections_compact"
+    assert cfgs["detect"][6] == "roboflow-object-detection-compact-v1"
     assert cfgs["caption"][3]["granularity"] == {"type": "str", "required": False}
     assert cfgs["detect"][3]["labels_mode"] == {"type": "str", "required": False}
     assert cfgs["detect"][3]["classes"] == {"type": "list[str]", "required": False}
