@@ -155,7 +155,7 @@ integration document rather than this shared overview.
 5. Register the implementation in `catalog.py`.
 6. Add contract, compatibility, numerical-parity, and selection tests.
 7. Profile and compare snapshots on the target device.
-8. Add validation records for the measured environments and results.
+8. Add validation records for successfully validated workloads.
 9. Add the implementation to the model path's ordered `auto` preference list only when
    the target results justify automatic selection.
 

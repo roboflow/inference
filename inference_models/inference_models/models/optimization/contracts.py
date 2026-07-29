@@ -104,25 +104,21 @@ class InputCompatibility:
 
 @dataclass(frozen=True)
 class ValidationRecord:
-    """One measured validation result for an implementation."""
+    """Reproducible identity of one successfully validated workload.
 
-    machine_type: str
+    ``docker_image`` should contain an immutable image digest rather than a mutable
+    tag. Failed and inconclusive attempts are not validation records.
+    """
+
     device_kind: Literal["cpu", "gpu"]
     device_name: str
     scenario: str
-    resolved_axes: Mapping[str, Any]
-    runtime_versions: Mapping[str, str]
-    source_commit: str
-    profiling_bundle: str
-    status: Literal["validated", "failed", "inconclusive"]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "resolved_axes", immutable_mapping(self.resolved_axes))
-        object.__setattr__(
-            self,
-            "runtime_versions",
-            immutable_mapping(self.runtime_versions),
-        )
+    profiler_commit: str
+    runtime_commit: str
+    docker_image: str
+    model_id: str
+    backend: str
+    quantization: str
 
 
 @dataclass(frozen=True)
@@ -159,15 +155,15 @@ class OptimizationMetadata:
         """
         validation_records = [
             {
-                "machine_type": record.machine_type,
                 "device_kind": record.device_kind,
                 "device_name": record.device_name,
                 "scenario": record.scenario,
-                "resolved_axes": dict(record.resolved_axes),
-                "runtime_versions": dict(record.runtime_versions),
-                "source_commit": record.source_commit,
-                "profiling_bundle": record.profiling_bundle,
-                "status": record.status,
+                "profiler_commit": record.profiler_commit,
+                "runtime_commit": record.runtime_commit,
+                "docker_image": record.docker_image,
+                "model_id": record.model_id,
+                "backend": record.backend,
+                "quantization": record.quantization,
             }
             for record in self.validation_records
         ]

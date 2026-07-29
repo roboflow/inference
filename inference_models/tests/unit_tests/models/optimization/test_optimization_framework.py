@@ -85,20 +85,32 @@ def test_compatibility_result_preserves_actionable_reasons() -> None:
 
 def test_validation_record_is_serialized_as_informational_metadata() -> None:
     validation = ValidationRecord(
-        machine_type="test-machine",
         device_kind="gpu",
         device_name="test-gpu",
         scenario="batch",
-        resolved_axes={"batch": 1},
-        runtime_versions={"torch": "test"},
-        source_commit="test",
-        profiling_bundle="test-bundle",
-        status="validated",
+        profiler_commit="profiler-commit",
+        runtime_commit="runtime-commit",
+        docker_image="image@sha256:digest",
+        model_id="model",
+        backend="tensorrt",
+        quantization="none",
     )
     metadata = _Stage("candidate", validation_records=(validation,)).metadata
 
     assert metadata.validation_records == (validation,)
-    assert metadata.to_dict()["validation_records"][0]["device_name"] == "test-gpu"
+    assert metadata.to_dict()["validation_records"] == [
+        {
+            "device_kind": "gpu",
+            "device_name": "test-gpu",
+            "scenario": "batch",
+            "profiler_commit": "profiler-commit",
+            "runtime_commit": "runtime-commit",
+            "docker_image": "image@sha256:digest",
+            "model_id": "model",
+            "backend": "tensorrt",
+            "quantization": "none",
+        }
+    ]
 
 
 def test_registry_uses_scope_in_actionable_errors() -> None:
