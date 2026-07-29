@@ -27,7 +27,7 @@ download_fonts:
 	${PYTHON} build_scripts/download_fonts.py
 
 start_test_docker_cpu:
-	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p $(PORT):$(PORT) --shm-size=2g -e INFERENCE_N_SLOTS=32 -e INFERENCE_INPUT_MB=25 -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e LEGACY_MMP_ADAPTER_ENABLED=$(or $(LEGACY_MMP_ADAPTER_ENABLED),false) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 start_test_docker_gpu:
 	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
