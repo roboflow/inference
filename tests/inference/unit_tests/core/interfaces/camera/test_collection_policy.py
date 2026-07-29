@@ -75,6 +75,12 @@ def test_adaptive_window_starts_at_initial_value() -> None:
     assert controller.on_collection_start() == 0.005
 
 
+def test_default_initial_window_uses_rate_matched_cap() -> None:
+    controller = AdaptiveWindowController(clock=lambda: 0.0)
+
+    assert controller.on_collection_start() == cp.RATE_MATCHED_WINDOW_CAP_SECONDS
+
+
 def test_adaptive_window_tracks_execution_gap() -> None:
     # given - a fake clock advanced manually
     now = {"value": 0.0}
@@ -492,3 +498,30 @@ def test_policy_retrieval_round_collects_and_registers_eos() -> None:
         collection_policy=policy
     )
     assert second_batch == []  # ended source inactive, first source drained
+
+
+def test_policy_retrieval_window_starts_after_execution_gap() -> None:
+    # given - the prior batch was yielded 50 ms ago and the adaptive controller
+    # has already subtracted that execution gap from its 60 ms wait budget
+    source = _FakeSource(frames=[], is_file=False)
+    video_sources = VideoSources(
+        all_sources=[source],
+        allow_reconnection=[False],
+        managed_sources=[],
+    )
+    manager = camera_utils.VideoSourcesManager.init(
+        video_sources=video_sources,
+        should_stop=lambda: False,
+        on_reconnection_error=lambda *_: None,
+    )
+    manager._last_batch_yielded_time = datetime.now() - timedelta(seconds=0.05)
+    policy = MagicMock()
+    policy.collection_window.return_value = 0.06
+    policy.read_frame.return_value = None
+
+    manager.retrieve_frames_from_sources_with_policy(collection_policy=policy)
+
+    # then - the manager preserves the controller's complete wait duration.
+    # Anchoring at the previous yield would incorrectly pass about 10 ms.
+    timeout = policy.read_frame.call_args.kwargs["timeout"]
+    assert timeout == pytest.approx(0.06, abs=0.01)

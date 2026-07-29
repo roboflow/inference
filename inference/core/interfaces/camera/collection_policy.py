@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_STALENESS_SECONDS = 0.5
 MIN_COLLECTION_WINDOW_SECONDS = 0.002
 MAX_COLLECTION_WINDOW_SECONDS = 0.030
-INITIAL_COLLECTION_WINDOW_SECONDS = 0.005
 COLLECTION_WINDOW_EXECUTION_FRACTION = 0.2
 EXECUTION_GAP_EMA_ALPHA = 0.2
 FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT = 0.02
@@ -53,6 +52,11 @@ LEGACY_MODE_ALIASES = frozenset({"legacy", "none"})
 # EMAs oscillate at the burst frequency while a span over several burst
 # cycles converges on the true rate).
 RATE_MATCHED_WINDOW_CAP_SECONDS = 0.1
+# Give the first model invocation a bounded chance to receive the full live
+# cohort. Shape-specialised runtimes such as TensorRT can otherwise spend their
+# cold start preparing a tiny partial-batch plan before arrival estimates exist.
+# After the first non-empty round, the execution/rate controller takes over.
+INITIAL_COLLECTION_WINDOW_SECONDS = RATE_MATCHED_WINDOW_CAP_SECONDS
 ARRIVAL_PERIOD_SAMPLE_WINDOW = 64
 MIN_ARRIVAL_SAMPLES_TO_TRUST = 16
 SOURCE_ACTIVITY_HORIZON_SECONDS = 2.0
