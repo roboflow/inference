@@ -11,9 +11,16 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.label_text import (
+    TEXT_SIZE_MODE_AUTOMATIC,
+    TEXT_SIZE_MODE_MANUAL,
     build_detection_labels,
+    compute_adaptive_label_text_scale,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.core_steps.visualizations.label.v1 import (
+    LONG_DESCRIPTION,
+    SHORT_DESCRIPTION,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -23,53 +30,15 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-TYPE: str = "roboflow_core/label_visualization@v1"
-SHORT_DESCRIPTION = (
-    "Draw labels on an image at specific coordinates based on provided detections."
-)
-LONG_DESCRIPTION = """
-Draw text labels on detected objects with customizable content, position, styling, and background colors to display information like class names, confidence scores, tracking IDs, or other detection metadata.
-
-## How This Block Works
-
-This block takes an image and detection predictions and draws text labels on each detected object. The block:
-
-1. Takes an image and predictions as input
-2. Extracts label text for each detection based on the selected text option (class name, confidence, tracker ID, dimensions, area, time in zone, or index)
-3. Determines label position based on the selected anchor point (center, corners, edges, or center of mass)
-4. Applies background color styling based on the selected color palette, with colors assigned by class, index, or track ID
-5. Renders text labels with customizable text color, scale, thickness, padding, and border radius using Supervision's LabelAnnotator
-6. Returns an annotated image with text labels overlaid on the original image
-
-The block supports various text content options including class names, confidence scores, combination of class and confidence, tracker IDs (for tracked objects), time in zone (for zone analysis), object dimensions (center coordinates and width/height), area, or detection index. Labels are rendered with colored backgrounds that match the object's assigned color from the palette, and text styling (color, size, thickness) can be customized for optimal visibility. The labels can be positioned at any anchor point relative to each detection, allowing flexible placement for different visualization needs.
-
-## Common Use Cases
-
-- **Information Display on Detections**: Add informative text labels showing class names, confidence scores, or other metadata directly on detected objects for quick identification and validation
-- **Model Performance Visualization**: Display confidence scores or class predictions on detected objects to visualize model certainty, identify low-confidence detections, and validate model performance
-- **Object Tracking Visualization**: Show tracker IDs on tracked objects to visualize object tracking across frames, monitor persistent object identities, or debug tracking algorithms
-- **Zone Analysis and Monitoring**: Display "Time In Zone" labels on objects to visualize how long objects have been in specific zones for occupancy monitoring, dwell time analysis, or compliance tracking
-- **Spatial Information Display**: Show object dimensions (center coordinates, width, height) or area measurements directly on detections for spatial analysis, measurement workflows, or quality control
-- **Professional Presentation and Reporting**: Create clean, informative visualizations with labeled detections for reports, dashboards, or presentations that combine visual results with textual information
-
-## Connecting to Other Blocks
-
-The annotated image from this block can be connected to:
-
-- **Other visualization blocks** (e.g., Bounding Box Visualization, Polygon Visualization, Dot Visualization) to combine text labels with geometric annotations for comprehensive visualization
-- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images with labels for documentation, reporting, or analysis
-- **Webhook blocks** to send visualized results with labels to external systems, APIs, or web applications for display in dashboards or monitoring tools
-- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with labels as visual evidence in alerts or reports
-- **Video output blocks** to create annotated video streams or recordings with labels for live monitoring, tracking visualization, or post-processing analysis
-"""
+TYPE: str = "roboflow_core/label_visualization@v2"
 
 
-class LabelManifest(ColorableVisualizationManifest):
-    type: Literal[f"{TYPE}", "LabelVisualization"]
+class LabelManifestV2(ColorableVisualizationManifest):
+    type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Label Visualization",
-            "version": "v1",
+            "version": "v2",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -138,11 +107,25 @@ class LabelManifest(ColorableVisualizationManifest):
     text_color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the label text. Can be a color name (e.g., 'WHITE', 'BLACK') or color code in HEX format (e.g., '#FFFFFF') or RGB format (e.g., 'rgb(255, 255, 255)').",
         default="WHITE",
-        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.text_color"],
+        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.text_color"],
+    )
+
+    text_size_mode: Union[
+        Literal["Manual", "Automatic"],
+        Selector(kind=[STRING_KIND]),
+    ] = Field(  # type: ignore
+        default=TEXT_SIZE_MODE_MANUAL,
+        title="Size mode",
+        description="How label text size is chosen. 'Manual' uses Scale directly. 'Automatic' picks a readable size from image resolution and treats Scale as a multiplier around the 1080p baseline (0.7).",
+        examples=["Manual", "Automatic", "$inputs.text_size_mode"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
 
     text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        description="Scale factor for text size. Higher values create larger text. Default is 1.0.",
+        title="Scale",
+        description="Scale factor for text size. In Manual mode this is the rendered scale. In Automatic mode this multiplies the resolution-derived baseline (0.7 at 1080p min dimension).",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
@@ -170,14 +153,14 @@ class LabelManifest(ColorableVisualizationManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class LabelVisualizationBlockV1(ColorableVisualizationBlock):
+class LabelVisualizationBlockV2(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return LabelManifest
+        return LabelManifestV2
 
     def getAnnotator(
         self,
@@ -239,6 +222,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         text: Optional[str],
         text_position: Optional[str],
         text_color: Optional[str],
+        text_size_mode: Optional[str],
         text_scale: Optional[float],
         text_thickness: Optional[int],
         text_padding: Optional[int],
@@ -253,6 +237,15 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                     ),
                 )
             }
+
+        height, width = image.numpy_image.shape[:2]
+        effective_text_scale = compute_adaptive_label_text_scale(
+            height,
+            width,
+            manual_text_scale=text_scale,
+            text_size_mode=text_size_mode or TEXT_SIZE_MODE_MANUAL,
+        )
+
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
@@ -260,7 +253,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             color_axis,
             text_position,
             text_color,
-            text_scale,
+            effective_text_scale,
             text_thickness,
             text_padding,
             border_radius,

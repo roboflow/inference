@@ -1064,6 +1064,11 @@ ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES = str2bool(
 ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM = str2bool(
     os.getenv("ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", "True")
 )
+# Runtime download of approved (pinned, checksum-verified) Workflows fonts;
+# official Docker images bake fonts at build time and set this to False.
+ALLOW_WORKFLOWS_FONTS_DOWNLOAD = str2bool(
+    os.getenv("ALLOW_WORKFLOWS_FONTS_DOWNLOAD", "True")
+)
 WORKFLOW_BLOCKS_WRITE_DIRECTORY = os.getenv("WORKFLOW_BLOCKS_WRITE_DIRECTORY")
 
 DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
