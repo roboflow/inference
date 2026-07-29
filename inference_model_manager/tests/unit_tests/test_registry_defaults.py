@@ -410,6 +410,101 @@ def test_per_family_contracts_have_no_default_keys():
                 assert "default" not in spec, (key, name)
 
 
+def test_vlm_generation_params():
+    from inference_model_manager.registry_defaults import (
+        _P_VLM_PROMPT,
+        _TASK_CONFIGS,
+        _unpack_config,
+    )
+
+    assert "do_sample" in _P_VLM_PROMPT
+    assert "skip_special_tokens" in _P_VLM_PROMPT
+
+    g4 = _unpack_config(_TASK_CONFIGS["Gemma4HF"][0])[3]
+    assert "enable_thinking" in g4
+
+    sv = _unpack_config(_TASK_CONFIGS["SmolVLMHF"][0])[3]
+    assert "images_to_single_prompt" in sv
+
+    glm = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["GlmOcrHF"]}
+    for task in ("recognize_text", "recognize_table", "recognize_formula"):
+        p = glm[task][3]
+        assert "max_new_tokens" in p and "do_sample" in p and "skip_special_tokens" in p
+
+
+def test_vlm_generation_contracts_match_model_signatures():
+    from inference_model_manager.registry_defaults import (
+        _P_GEN_FLAGS,
+        _TASK_CONFIGS,
+        _unpack_config,
+    )
+
+    assert _P_GEN_FLAGS == {
+        "do_sample": {"type": "bool", "required": False},
+        "skip_special_tokens": {"type": "bool", "required": False},
+    }
+
+    def cfgs_of(key):
+        return {c[0]: _unpack_config(c) for c in _TASK_CONFIGS[key]}
+
+    for key in (
+        "PaliGemmaHF",
+        "Gemma4HF",
+        "Qwen25VLHF",
+        "Qwen3VLHF",
+        "Qwen35HF",
+        "SmolVLMHF",
+    ):
+        p = cfgs_of(key)["prompt"][3]
+        assert p["images"] == {"type": "image", "required": True}, key
+        assert p["prompt"] == {"type": "str", "required": True}, key
+        assert p["do_sample"] == {"type": "bool", "required": False}, key
+        assert p["skip_special_tokens"] == {"type": "bool", "required": False}, key
+
+    g4 = cfgs_of("Gemma4HF")["prompt"][3]
+    assert g4["enable_thinking"] == {"type": "bool", "required": False}
+
+    sv = cfgs_of("SmolVLMHF")["prompt"][3]
+    assert sv["images_to_single_prompt"] == {"type": "bool", "required": False, "default": True}
+
+    q35 = cfgs_of("Qwen35HF")["prompt"][3]
+    assert q35["enable_thinking"] == {"type": "bool", "required": False, "default": False}
+
+    cosmos = cfgs_of("Cosmos3EdgeReasoner")["prompt"][3]
+    assert set(cosmos) == {
+        "images",
+        "prompt",
+        "max_new_tokens",
+        "do_sample",
+        "skip_special_tokens",
+        "return_thinking",
+    }
+
+    florence = cfgs_of("Florence2HF")
+    fp = florence["prompt"][3]
+    assert "do_sample" in fp and "skip_special_tokens" in fp
+    for task in ("segment_phrase", "ground_phrase"):
+        p = florence[task][3]
+        assert set(p) == {"images", "prompt", "max_new_tokens", "do_sample"}, task
+        assert p["do_sample"] == {"type": "bool", "required": False}, task
+        assert florence[task][7] == {"prompt": "phrase"}, task
+    for task, cfg in florence.items():
+        assert "num_beams" not in cfg[3], task
+
+    md_query = cfgs_of("MoonDream2HF")["query"]
+    assert set(md_query[3]) == {"images", "prompt", "max_new_tokens"}
+    assert md_query[7] == {"prompt": "question"}
+
+    glm = cfgs_of("GlmOcrHF")
+    for task in ("recognize_text", "recognize_table", "recognize_formula"):
+        p = glm[task][3]
+        assert set(p) == {"images", "max_new_tokens", "do_sample", "skip_special_tokens"}, task
+        for name, spec in p.items():
+            assert "default" not in spec, (task, name)
+    gp = glm["prompt"][3]
+    assert "do_sample" in gp and "skip_special_tokens" in gp
+
+
 def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     test_registry = ModelRegistry()
     monkeypatch.setattr(registry_defaults, "registry", test_registry)

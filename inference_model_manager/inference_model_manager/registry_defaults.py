@@ -44,10 +44,19 @@ _P_IMAGES_PROMPT = {
     "images": {"type": "image", "required": True},
     "prompt": {"type": "str", "required": True},
 }
-_P_VLM_PROMPT = {
+_P_GEN_FLAGS = {
+    "do_sample": {"type": "bool", "required": False},
+    "skip_special_tokens": {"type": "bool", "required": False},
+}
+_P_VLM_PROMPT_BASIC = {
     "images": {"type": "image", "required": True},
     "prompt": {"type": "str", "required": True},
     "max_new_tokens": {"type": "int", "required": False},
+}
+_P_VLM_PROMPT = {**_P_VLM_PROMPT_BASIC, **_P_GEN_FLAGS}
+_P_FLORENCE2_PHRASE = {
+    **_P_VLM_PROMPT_BASIC,
+    "do_sample": {"type": "bool", "required": False},
 }
 _P_FLORENCE2_REGION = {
     "images": {"type": "image", "required": True},
@@ -127,6 +136,7 @@ _P_IMAGES_CLASSES_GEN = _p(
     {"classes": {"type": "list[str]", "required": True}},
     _P_MAX_NEW_TOKENS,
 )
+_P_VLM_IMAGE_GEN = _p(_P_IMAGES, _P_MAX_NEW_TOKENS, _P_GEN_FLAGS)
 
 _P_SAM_EMBED = {
     "images": {"type": "image", "required": True},
@@ -526,7 +536,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "prompt",
             "prompt",
             True,
-            _p(_P_VLM_PROMPT),
+            _p(_P_VLM_PROMPT, {"enable_thinking": {"type": "bool", "required": False}}),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -573,7 +583,10 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "prompt",
             "prompt",
             True,
-            _p(_P_VLM_PROMPT),
+            _p(
+                _P_VLM_PROMPT,
+                {"images_to_single_prompt": {"type": "bool", "required": False, "default": True}},
+            ),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -584,14 +597,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "prompt",
             "prompt",
             True,
-            _p(
-                _P_VLM_PROMPT,
-                {
-                    "do_sample": {"type": "bool", "required": False},
-                    "skip_special_tokens": {"type": "bool", "required": False},
-                    "return_thinking": {"type": "bool", "required": False},
-                },
-            ),
+            _p(_P_VLM_PROMPT, {"return_thinking": {"type": "bool", "required": False}}),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -655,7 +661,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "segment_phrase",
             "segment_phrase",
             False,
-            _p(_P_VLM_PROMPT),
+            _p(_P_FLORENCE2_PHRASE),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -665,7 +671,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "ground_phrase",
             "ground_phrase",
             False,
-            _p(_P_VLM_PROMPT),
+            _p(_P_FLORENCE2_PHRASE),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -773,7 +779,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "query",
             "query",
             False,
-            _p(_P_VLM_PROMPT),
+            _p(_P_VLM_PROMPT_BASIC),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -804,7 +810,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "recognize_text",
             "recognize_text",
             True,
-            _p(_P_IMAGES),
+            _P_VLM_IMAGE_GEN,
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
@@ -813,7 +819,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "recognize_table",
             "recognize_table",
             False,
-            _p(_P_IMAGES),
+            _P_VLM_IMAGE_GEN,
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
@@ -822,7 +828,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "recognize_formula",
             "recognize_formula",
             False,
-            _p(_P_IMAGES),
+            _P_VLM_IMAGE_GEN,
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
