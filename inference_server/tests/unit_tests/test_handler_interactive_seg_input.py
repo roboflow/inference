@@ -6,6 +6,10 @@ import json
 
 import pytest
 
+from inference_model_manager.hash_namespacing import (
+    namespace_client_hash_id,
+    tenant_namespace,
+)
 from inference_server.framework.entities import CommonRequestParams, InputParseError
 from inference_server.handlers.interactive_instance_segmentation.input_parser import (
     parse_interactive_instance_segmentation_input,
@@ -21,6 +25,14 @@ class _FormData(dict):
 class _QueryParams(dict):
     def getlist(self, key):
         return []
+
+
+class _FilePart:
+    def __init__(self, data):
+        self._data = data
+
+    async def read(self):
+        return self._data
 
 
 class _Req:
@@ -42,7 +54,46 @@ async def test_hash_only_multipart_is_accepted():
     req = _Req(_FormData({"inputs": json.dumps({"image_hashes": ["h1"]})}))
     out = await parse_interactive_instance_segmentation_input(req, _common())
     assert out["images"] == []
-    assert out["params"]["image_hashes"] == ["h1"]
+    assert out["params"]["image_hashes"] == [namespace_client_hash_id("h1", "k")]
+
+
+@pytest.mark.asyncio
+async def test_client_hashes_are_namespaced_per_tenant():
+    req_a = _Req(_FormData({"inputs": json.dumps({"image_hashes": ["h1"]})}))
+    req_b = _Req(_FormData({"inputs": json.dumps({"image_hashes": ["h1"]})}))
+
+    out_a = await parse_interactive_instance_segmentation_input(
+        req_a, CommonRequestParams(model_id="sam3/sam3_final", api_key="key-a")
+    )
+    out_b = await parse_interactive_instance_segmentation_input(
+        req_b, CommonRequestParams(model_id="sam3/sam3_final", api_key="key-b")
+    )
+
+    assert out_a["params"]["image_hashes"] != out_b["params"]["image_hashes"]
+    assert out_a["params"]["image_hashes"] == [f"{tenant_namespace('key-a')}:h1"]
+    assert out_b["params"]["image_hashes"] == [f"{tenant_namespace('key-b')}:h1"]
+
+
+@pytest.mark.asyncio
+async def test_string_shaped_client_hash_is_namespaced():
+    req = _Req(_FormData({"inputs": json.dumps({"image_hashes": "h1"})}))
+    out = await parse_interactive_instance_segmentation_input(req, _common())
+    assert out["params"]["image_hashes"] == namespace_client_hash_id("h1", "k")
+
+
+@pytest.mark.asyncio
+async def test_empty_string_client_hash_with_image_is_namespaced():
+    req = _Req(
+        _FormData(
+            {
+                "image": _FilePart(b"\x93NUMPY" + b"\x00" * 16),
+                "inputs": json.dumps({"image_hashes": ""}),
+            }
+        )
+    )
+    out = await parse_interactive_instance_segmentation_input(req, _common())
+    assert len(out["images"]) == 1
+    assert out["params"]["image_hashes"] == namespace_client_hash_id("", "k")
 
 
 @pytest.mark.asyncio
@@ -119,3 +170,14 @@ def test_plain_tensor_embeddings_keep_compact_label():
     p = body["predictions"][0]
     assert p["type"] == "roboflow-embeddings-compact-v1"
     assert p["embeddings"] == [[0.0, 0.0, 0.0, 0.0]]
+
+
+def test_sam_embed_response_strips_own_tenant_namespace():
+    emb = _FakeSAMEmbeddings(
+        image_hash=namespace_client_hash_id("h1", "k"),
+        image_size_hw=(480, 640),
+        embeddings=torch.zeros(1, 4),
+    )
+    resp = serialize_sam_embeddings(emb, _common())
+    body = json.loads(resp.body)
+    assert body["predictions"][0]["data"]["image_hash"] == "h1"

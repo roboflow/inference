@@ -414,12 +414,24 @@ def build_task_params(task_type: str, action: str, request: Any) -> dict:
     return params
 
 
+def _namespaced_client_hash(image_id: str, request: Any) -> str:
+    from inference_model_manager.hash_namespacing import namespace_client_hash_id
+
+    return namespace_client_hash_id(image_id, getattr(request, "api_key", None))
+
+
+def _strip_client_hash_namespace(hash_id: str, request: Any) -> str:
+    from inference_model_manager.hash_namespacing import strip_tenant_namespace
+
+    return strip_tenant_namespace(hash_id, getattr(request, "api_key", None))
+
+
 def _build_interactive_segmentation_params(action: str, request: Any) -> dict:
     if action in ("embed", "embed_images"):
         params: dict = {}
         image_id = getattr(request, "image_id", None)
         if image_id:
-            params["image_hashes"] = [image_id]
+            params["image_hashes"] = [_namespaced_client_hash(image_id, request)]
         return params
     if action == "segment":
         if type(request).__name__ == "SamSegmentationRequest":
@@ -464,7 +476,7 @@ def _build_sam_segment_params(request: Any) -> dict:
     if point_labels is not None:
         params["point_labels"] = [list(point_labels)]
     if image_id:
-        params["image_hashes"] = [image_id]
+        params["image_hashes"] = [_namespaced_client_hash(image_id, request)]
     response_format = getattr(request, "format", None)
     if response_format == "binary":
         raise ModelDeploymentNotSupportedError(
@@ -526,7 +538,7 @@ def _build_visual_prompt_params(request: Any) -> dict:
         params["boxes"] = [boxes]
     image_id = getattr(request, "image_id", None)
     if image_id:
-        params["image_hashes"] = [image_id]
+        params["image_hashes"] = [_namespaced_client_hash(image_id, request)]
     return params
 
 
@@ -1255,9 +1267,11 @@ def _repack_sam_embeddings(action: str, prediction: Any, request: Any):
             np.save(buffer, embeddings)
             return SamEmbeddingResponse(embeddings=buffer.getvalue(), time=0.0)
         return SamEmbeddingResponse(embeddings=embeddings.tolist(), time=0.0)
-    image_id = getattr(request, "image_id", None) or getattr(
-        embeddings_obj, "image_hash", None
-    )
+    image_id = getattr(request, "image_id", None)
+    if not image_id:
+        image_id = getattr(embeddings_obj, "image_hash", None)
+        if image_id:
+            image_id = _strip_client_hash_namespace(image_id, request)
     if action == "embed_images":
         return Sam3EmbeddingResponse(image_id=image_id, time=0.0)
     return Sam2EmbeddingResponse(image_id=image_id, time=0.0)

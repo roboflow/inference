@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
 from typing import Any, Optional
 
 from fastapi import Response
 
+from inference_model_manager.hash_namespacing import strip_tenant_namespace
 from inference_model_manager.serializers_typed import (
     serialize_embeddings,
     serialize_passthrough,
@@ -36,8 +38,13 @@ def _envelope(predictions: list, common: CommonRequestParams) -> Response:
     )
 
 
-def _embeddings_or_passthrough(prediction: Any, proxy: _ModelProxy) -> Any:
+def _embeddings_or_passthrough(
+    prediction: Any, proxy: _ModelProxy, common: CommonRequestParams
+) -> Any:
     if hasattr(prediction, "image_hash"):
+        stripped = strip_tenant_namespace(prediction.image_hash, common.api_key)
+        if stripped != prediction.image_hash and dataclasses.is_dataclass(prediction):
+            prediction = dataclasses.replace(prediction, image_hash=stripped)
         typed = serialize_passthrough(prediction, proxy)
         typed["type"] = "roboflow-sam-embeddings-v1"
         return typed
@@ -47,7 +54,7 @@ def _embeddings_or_passthrough(prediction: Any, proxy: _ModelProxy) -> Any:
 def serialize_sam_embeddings(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
-    typed = [_embeddings_or_passthrough(p, proxy) for p in items]
+    typed = [_embeddings_or_passthrough(p, proxy, common) for p in items]
     return _envelope(typed, common)
 
 

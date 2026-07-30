@@ -25,6 +25,7 @@ from inference.core.exceptions import (
 )
 from inference.core.managers import mmp_translation as translation
 from inference.core.managers.mmp_adapter import ModelManagerAdapter
+from inference_model_manager.hash_namespacing import namespace_client_hash_id
 
 
 class FakeDetections:
@@ -955,7 +956,7 @@ class TestSamRouting:
         assert params["boxes"] == [[[8.0, 8.0, 12.0, 12.0]]]
         assert params["point_coordinates"] == [[[[1.0, 2.0]]]]
         assert params["point_labels"] == [[[1]]]
-        assert params["image_hashes"] == ["img1"]
+        assert params["image_hashes"] == [namespace_client_hash_id("img1", "key")]
         assert params["multi_mask_output"] is True
         assert len(response.predictions) == 1
         prediction = response.predictions[0]

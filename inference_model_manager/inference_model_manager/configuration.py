@@ -133,6 +133,15 @@ INFERENCE_VRAM_RECENT_WINDOW_S = get_float_from_env(
 
 # ── In-memory model caches (backends/base.py attach_model_caches) ──────────
 # Env names shared with the legacy inference package for deployment parity.
+SAM_MAX_EMBEDDING_CACHE_SIZE = get_integer_from_env(
+    "SAM_MAX_EMBEDDING_CACHE_SIZE", default=10
+)
+SAM2_MAX_EMBEDDING_CACHE_SIZE = get_integer_from_env(
+    "SAM2_MAX_EMBEDDING_CACHE_SIZE", default=100
+)
+SAM2_MAX_LOGITS_CACHE_SIZE = get_integer_from_env(
+    "SAM2_MAX_LOGITS_CACHE_SIZE", default=1000
+)
 SAM3_MAX_EMBEDDING_CACHE_SIZE = get_integer_from_env(
     "SAM3_MAX_EMBEDDING_CACHE_SIZE", default=100
 )

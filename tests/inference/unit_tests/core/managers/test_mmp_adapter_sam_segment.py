@@ -25,6 +25,10 @@ from inference.core.exceptions import ModelDeploymentNotSupportedError
 from inference.core.managers import mmp_translation as translation
 from inference.core.managers.mmp_adapter import ModelManagerAdapter
 from inference.core.utils.postprocess import masks2multipoly, masks2poly
+from inference_model_manager.hash_namespacing import (
+    namespace_client_hash_id,
+    tenant_namespace,
+)
 
 
 class FakeSamClient:
@@ -153,7 +157,7 @@ class TestSamSegmentParams:
             "multi_mask_output": False,
             "point_coordinates": [[[240.0, 195.0]]],
             "point_labels": [[1.0]],
-            "image_hashes": ["test"],
+            "image_hashes": [namespace_client_hash_id("test", "key")],
         }
 
     def test_image_flow_forwards_bytes_and_id(self, running_adapter, interactive_stat):
@@ -169,7 +173,9 @@ class TestSamSegmentParams:
         running_adapter.infer_from_request_sync("sam/vit_h", request)
         call = running_adapter._client.infer_calls[0]
         assert call["image"] == payload
-        assert call["params"]["image_hashes"] == ["test"]
+        assert call["params"]["image_hashes"] == [
+            namespace_client_hash_id("test", "key")
+        ]
         assert call["params"]["point_coordinates"] == [
             [[10.0, 20.0], [30.0, 40.0]]
         ]
@@ -343,7 +349,7 @@ class TestSam2Segment:
         assert params["boxes"] == [[[8.0, 8.0, 12.0, 12.0]]]
         assert params["point_coordinates"] == [[[[1.0, 2.0]]]]
         assert params["point_labels"] == [[[1]]]
-        assert params["image_hashes"] == ["img1"]
+        assert params["image_hashes"] == [namespace_client_hash_id("img1", "key")]
         assert params["multi_mask_output"] is True
         assert params["return_logits"] is True
         assert isinstance(response, Sam2SegmentationResponse)
@@ -484,7 +490,9 @@ class TestEmbedImageIdLifecycle:
         response = running_adapter.infer_from_request_sync("sam/vit_h", request)
         call = running_adapter._client.infer_calls[0]
         assert call["task"] == "embed"
-        assert call["params"] == {"image_hashes": ["test"]}
+        assert call["params"] == {
+            "image_hashes": [namespace_client_hash_id("test", "key")]
+        }
         assert response.embeddings == np.ones((1, 2, 2, 2)).tolist()
 
     def test_sam2_embed_forwards_image_id_and_echoes_it(
@@ -499,8 +507,28 @@ class TestEmbedImageIdLifecycle:
             "sam2/hiera_large", request
         )
         params = running_adapter._client.infer_calls[0]["params"]
-        assert params == {"image_hashes": ["abc"]}
+        assert params == {"image_hashes": [namespace_client_hash_id("abc", "key")]}
         assert response.image_id == "abc"
+
+    def test_sam2_embed_echoes_client_id_starting_with_own_namespace(
+        self, running_adapter, interactive_stat
+    ):
+        running_adapter._client.infer_result = [
+            SimpleNamespace(image_hash="deadbeef")
+        ]
+        image, _ = make_image()
+        client_id = f"{tenant_namespace('key')}:abc"
+        request = Sam2EmbeddingRequest(
+            api_key="key", image=image, image_id=client_id
+        )
+        response = running_adapter.infer_from_request_sync(
+            "sam2/hiera_large", request
+        )
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params == {
+            "image_hashes": [namespace_client_hash_id(client_id, "key")]
+        }
+        assert response.image_id == client_id
 
     def test_sam2_embed_without_id_returns_worker_hash(
         self, running_adapter, interactive_stat

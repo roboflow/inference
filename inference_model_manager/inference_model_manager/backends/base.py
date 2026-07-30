@@ -48,11 +48,69 @@ def attach_model_caches(model) -> None:
     worker re-runs this per head against the same resident base and must not
     wipe its warm cache.
     """
+    _attach_sam_caches(model)
+    _attach_sam2_caches(model)
     _attach_sam3_caches(model)
     _attach_owlv2_caches(model)
     feature_extractor = getattr(model, "_feature_extractor", None)
     if feature_extractor is not None:
         _attach_owlv2_caches(feature_extractor)
+
+
+def _attach_sam_caches(model) -> None:
+    if type(model).__name__ != "SAMTorch":
+        return
+    from inference_model_manager import configuration as cfg
+    from inference_models.models.sam.cache import (
+        SamImageEmbeddingsInMemoryCache,
+        SamLowResolutionMasksInMemoryCache,
+    )
+
+    model._sam_allow_client_generated_hash_ids = True
+
+    if not isinstance(
+        model._sam_image_embeddings_cache, SamImageEmbeddingsInMemoryCache
+    ):
+        model._sam_image_embeddings_cache = SamImageEmbeddingsInMemoryCache.init(
+            size_limit=cfg.SAM_MAX_EMBEDDING_CACHE_SIZE,
+            send_to_cpu=True,
+        )
+    if not isinstance(
+        model._sam_low_resolution_masks_cache, SamLowResolutionMasksInMemoryCache
+    ):
+        model._sam_low_resolution_masks_cache = SamLowResolutionMasksInMemoryCache.init(
+            size_limit=cfg.SAM_MAX_EMBEDDING_CACHE_SIZE,
+            send_to_cpu=True,
+        )
+
+
+def _attach_sam2_caches(model) -> None:
+    if type(model).__name__ != "SAM2Torch":
+        return
+    from inference_model_manager import configuration as cfg
+    from inference_models.models.sam2.cache import (
+        Sam2ImageEmbeddingsInMemoryCache,
+        Sam2LowResolutionMasksInMemoryCache,
+    )
+
+    model._sam2_allow_client_generated_hash_ids = True
+
+    if not isinstance(
+        model._sam2_image_embeddings_cache, Sam2ImageEmbeddingsInMemoryCache
+    ):
+        model._sam2_image_embeddings_cache = Sam2ImageEmbeddingsInMemoryCache.init(
+            size_limit=cfg.SAM2_MAX_EMBEDDING_CACHE_SIZE,
+            send_to_cpu=True,
+        )
+    if not isinstance(
+        model._sam2_low_resolution_masks_cache, Sam2LowResolutionMasksInMemoryCache
+    ):
+        model._sam2_low_resolution_masks_cache = (
+            Sam2LowResolutionMasksInMemoryCache.init(
+                size_limit=cfg.SAM2_MAX_LOGITS_CACHE_SIZE,
+                send_to_cpu=True,
+            )
+        )
 
 
 def _attach_sam3_caches(model) -> None:

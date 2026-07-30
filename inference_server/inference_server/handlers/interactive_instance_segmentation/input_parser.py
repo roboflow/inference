@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
+from inference_model_manager.hash_namespacing import namespace_client_hash_ids
 from inference_server.errors import error_response
 from inference_server.framework.entities import CommonRequestParams, InputParseError
 from inference_server.framework.input_parsers import (
@@ -52,5 +53,11 @@ async def parse_interactive_instance_segmentation_input(
                     f"image[{i}] is not a recognized image format",
                 )
             )
+
+    client_hashes = merged.get("image_hashes")
+    if client_hashes is not None:
+        merged["image_hashes"] = namespace_client_hash_ids(
+            client_hashes, common.api_key
+        )
 
     return {"images": images, "params": merged}
