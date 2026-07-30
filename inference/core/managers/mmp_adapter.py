@@ -181,6 +181,8 @@ class ModelManagerAdapter:
             model_id, getattr(request, "api_key", None)
         )
         action = translation.resolve_request_action(route, request)
+        if route["task_type"] == "embedding":
+            return await self._infer_embedding(model_id, route, action, request)
         if (route["task_type"], action) not in translation.IMPLEMENTED_ROUTES or (
             action not in route["tasks"]
         ):
@@ -208,6 +210,42 @@ class ModelManagerAdapter:
             _set_if_field(response, "inference_id", request.id)
             responses.append(response)
         return responses if is_batch else responses[0]
+
+    async def _infer_embedding(self, model_id: str, route: dict, action: str, request):
+        t_start = time.perf_counter()
+        calls, prompt_keys = translation.build_embedding_calls(action, request)
+        if not {call["task"] for call in calls}.issubset(route["tasks"]):
+            raise _unsupported(model_id)
+        ensure = await self._client.ensure_loaded(
+            route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
+        )
+        translation.raise_for_lifecycle_result(ensure, model_id)
+        concurrency = min(len(calls), max(1, getattr(self._client, "n_slots", 1) or 1))
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def run_call(call: dict):
+            async with semaphore:
+                return await self._client.infer(
+                    model_id=route["mmp_model_id"],
+                    image=call["image"],
+                    task=call["task"],
+                    params=call["params"],
+                )
+
+        results = await asyncio.gather(
+            *(run_call(call) for call in calls), return_exceptions=True
+        )
+        for result in results:
+            if isinstance(result, BaseException):
+                translated = translation.translate_infer_error(result, model_id)
+                if translated is result:
+                    raise result
+                raise translated from result
+        response = translation.repack_embedding_response(
+            action, request, list(results), prompt_keys
+        )
+        _set_if_field(response, "time", time.perf_counter() - t_start)
+        return response
 
     async def _fan_out_infer(
         self, model_id: str, route: dict, action: str, forwarded: list, params: dict

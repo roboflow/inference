@@ -212,16 +212,16 @@ class TestRouting:
 
         async def fake_stat(model_id, api_key):
             calls.append(model_id)
-            return ("embedding", "embed_images")
+            return ("gaze-detection", "infer")
 
         monkeypatch.setattr(translation, "stat_model", fake_stat)
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("clip/1", api_key="key")
+            running_adapter.add_model("l2cs/1", api_key="key")
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("clip/1", api_key="key")
-        assert calls == ["clip/1"]
+            running_adapter.add_model("l2cs/1", api_key="key")
+        assert calls == ["l2cs/1"]
         assert running_adapter._client.loaded == []
-        assert "clip/1" not in running_adapter
+        assert "l2cs/1" not in running_adapter
 
     def test_passthrough_is_unsupported_without_stat(
         self, running_adapter, od_stat
@@ -777,12 +777,6 @@ class TestPhase3aRouting:
         request = od_request(image=image, text=["a"], box_threshold=0.7)
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.infer_from_request_sync("grounding_dino/default", request)
-
-    def test_embedding_task_unsupported(self, running_adapter, monkeypatch):
-        monkeypatch.setattr(translation, "stat_model", make_stat("embedding", "embed_images"))
-        with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("clip/ViT-B-16", api_key="key")
-        assert running_adapter._client.loaded == []
 
 
 class TestVlmRouting:

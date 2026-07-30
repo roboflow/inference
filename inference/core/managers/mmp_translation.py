@@ -36,7 +36,15 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
+from inference.core.entities.responses.clip import (
+    ClipCompareResponse,
+    ClipEmbeddingResponse,
+)
 from inference.core.entities.responses.ocr import OCRInferenceResponse
+from inference.core.entities.responses.perception_encoder import (
+    PerceptionEncoderCompareResponse,
+    PerceptionEncoderEmbeddingResponse,
+)
 from inference.core.entities.responses.sam import SamEmbeddingResponse
 from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
@@ -50,6 +58,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
+from inference.core.env import CLIP_MAX_BATCH_SIZE
 from inference.core.exceptions import (
     InferenceModelNotFound,
     InferencePayloadTooLargeError,
@@ -71,7 +80,12 @@ from inference.core.utils.image_utils import (
     load_image_from_numpy_object,
     load_image_from_numpy_str,
 )
-from inference.core.utils.postprocess import mask2poly, masks2multipoly, masks2poly
+from inference.core.utils.postprocess import (
+    cosine_similarity,
+    mask2poly,
+    masks2multipoly,
+    masks2poly,
+)
 
 # Static mirror of the (model_type, action) pairs registered by
 # inference_server/handlers/*/description.py. Kept as literals so the legacy
@@ -128,6 +142,9 @@ IMPLEMENTED_ROUTES = frozenset(
     [
         ("classification", "infer"),
         ("depth-estimation", "infer"),
+        ("embedding", "compare"),
+        ("embedding", "embed_images"),
+        ("embedding", "embed_text"),
         ("instance-segmentation", "infer"),
         ("keypoint-detection", "infer"),
         ("multi-label-classification", "infer"),
@@ -166,6 +183,12 @@ _ACTION_CANDIDATES_BY_REQUEST_TYPE: Dict[str, Tuple[str, ...]] = {
     "Sam2EmbeddingRequest": ("embed", "embed_images"),
     "Sam2SegmentationRequest": ("segment_with_visual_prompts", "segment"),
     "Sam3SegmentationRequest": ("segment_with_text_prompts",),
+    "ClipImageEmbeddingRequest": ("embed_images",),
+    "ClipTextEmbeddingRequest": ("embed_text",),
+    "ClipCompareRequest": ("compare",),
+    "PerceptionEncoderImageEmbeddingRequest": ("embed_images",),
+    "PerceptionEncoderTextEmbeddingRequest": ("embed_text",),
+    "PerceptionEncoderCompareRequest": ("compare",),
 }
 
 
@@ -508,6 +531,116 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
         message=f"Image type '{image_type}' is not supported on the MMP path.",
         public_message=f"Image type '{image_type}' is not supported on the MMP path.",
     )
+
+
+_EMBEDDING_RESPONSE_CLASSES = {
+    "ClipImageEmbeddingRequest": ClipEmbeddingResponse,
+    "ClipTextEmbeddingRequest": ClipEmbeddingResponse,
+    "ClipCompareRequest": ClipCompareResponse,
+    "PerceptionEncoderImageEmbeddingRequest": PerceptionEncoderEmbeddingResponse,
+    "PerceptionEncoderTextEmbeddingRequest": PerceptionEncoderEmbeddingResponse,
+    "PerceptionEncoderCompareRequest": PerceptionEncoderCompareResponse,
+}
+
+
+def _embedding_response_class(request: Any):
+    response_class = _EMBEDDING_RESPONSE_CLASSES.get(type(request).__name__)
+    if response_class is None:
+        raise ModelDeploymentNotSupportedError(
+            f"Request type {type(request).__name__} is not supported for embedding "
+            f"models on the MMP path."
+        )
+    return response_class
+
+
+def _embed_image_call(image: Any) -> dict:
+    data, _ = forward_image(image)
+    return {"task": "embed_images", "image": data, "params": {}}
+
+
+def _embed_text_call(texts: List[str]) -> dict:
+    return {"task": "embed_text", "image": None, "params": {"texts": list(texts)}}
+
+
+def build_embedding_calls(
+    action: str, request: Any
+) -> Tuple[List[dict], Optional[List[str]]]:
+    """Embedding request -> ordered MMP calls; compare puts the subject first.
+
+    Returns (calls, prompt_keys); prompt_keys is set only for compare requests
+    with a named-prompt mapping, mirroring the legacy dict-similarity variant.
+    """
+    _embedding_response_class(request)
+    if action == "embed_images":
+        if isinstance(request.image, list):
+            if len(request.image) > CLIP_MAX_BATCH_SIZE:
+                raise ValueError(
+                    f"The maximum number of images that can be embedded at once is "
+                    f"{CLIP_MAX_BATCH_SIZE}"
+                )
+            images = request.image
+        else:
+            images = [request.image]
+        return [_embed_image_call(image) for image in images], None
+    if action == "embed_text":
+        texts = request.text if isinstance(request.text, list) else [request.text]
+        return [_embed_text_call(texts)], None
+    if action != "compare":
+        raise ModelDeploymentNotSupportedError(
+            f"Embedding action '{action}' is not supported on the MMP path."
+        )
+    if request.subject_type not in ("image", "text"):
+        raise ValueError("subject_type must be either 'image' or 'text'")
+    prompt = request.prompt
+    prompt_keys = None
+    if isinstance(prompt, dict):
+        prompt_keys = list(prompt.keys())
+        prompt = [prompt[key] for key in prompt_keys]
+    elif not isinstance(prompt, list):
+        prompt = [prompt]
+    if len(prompt) > CLIP_MAX_BATCH_SIZE:
+        raise ValueError(
+            f"The maximum number of prompts that can be compared at once is "
+            f"{CLIP_MAX_BATCH_SIZE}"
+        )
+    if request.subject_type == "image":
+        calls = [_embed_image_call(request.subject)]
+    else:
+        calls = [_embed_text_call([request.subject])]
+    if request.prompt_type == "image":
+        calls.extend(_embed_image_call(image) for image in prompt)
+    elif request.prompt_type == "text":
+        calls.append(_embed_text_call(prompt))
+    else:
+        raise ValueError("prompt_type must be either 'image' or 'text'")
+    return calls, prompt_keys
+
+
+def repack_embedding_response(
+    action: str,
+    request: Any,
+    results: List[Any],
+    prompt_keys: Optional[List[str]] = None,
+):
+    response_class = _embedding_response_class(request)
+    if action in ("embed_images", "embed_text"):
+        return response_class(embeddings=_stack_embeddings(results).tolist())
+    subject = _stack_embeddings(results[:1]).reshape(-1)
+    prompts = _stack_embeddings(results[1:])
+    similarities = [float(cosine_similarity(subject, row)) for row in prompts]
+    if prompt_keys is not None:
+        similarities = dict(zip(prompt_keys, similarities))
+    return response_class(similarity=similarities)
+
+
+def _stack_embeddings(results: List[Any]) -> np.ndarray:
+    arrays = []
+    for result in results:
+        array = np.asarray(result, dtype=float)
+        if array.ndim == 1:
+            array = array.reshape(1, -1)
+        arrays.append(array)
+    return np.concatenate(arrays, axis=0)
 
 
 def repack_prediction(
