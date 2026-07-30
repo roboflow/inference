@@ -294,6 +294,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
         serialise_native_keypoint_detection,
         serialise_native_rle_detections,
         serialise_native_tensor,
+        serialise_numpy_array_kind,
         serialise_rle_sv_detections,
         serialise_sv_detections,
         serialize_wildcard_kind,
@@ -1545,6 +1546,12 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     # Tensor-native embedding/tensor kinds serialise to plain Python lists.
     KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
     KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
+    # `numpy_array` has NO numpy-side serialiser (ndarrays pass through raw to
+    # the HTTP layer). Flag-on, the depth-estimation block carries a
+    # `torch.Tensor` under the same kind name, which the HTTP layer cannot
+    # serialise - materialise it to the flag-off-identical ndarray. Numpy
+    # producers of this kind (SIFT, contours) keep the raw pass-through.
+    KINDS_SERIALIZERS[NUMPY_ARRAY_KIND.name] = serialise_numpy_array_kind
     # The wildcard (`*`) serialiser needs no override here: the same-name symbol
     # swap above already selects serializers_tensor.serialize_wildcard_kind, whose
     # native arms serialise native values routed to `*` outputs to the standard dicts.

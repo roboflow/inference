@@ -735,10 +735,23 @@ def serialise_native_embedding(value: torch.Tensor) -> list:
 
 
 def serialise_native_tensor(value: torch.Tensor) -> list:
-    """C4 serialiser for the tensor kind (e.g. depth-estimation normalized depth,
-    raw model tensors). The native value is a (possibly CUDA/MPS) ``torch.Tensor``;
-    emit a JSON-serialisable nested list."""
+    """C4 serialiser for the tensor kind (e.g. raw model tensors). The native
+    value is a (possibly CUDA/MPS) ``torch.Tensor``; emit a JSON-serialisable
+    nested list."""
     return value.detach().cpu().tolist()
+
+
+def serialise_numpy_array_kind(value: Any) -> Any:
+    """Flag-on serialiser for the ``numpy_array`` kind (e.g. depth-estimation
+    ``normalized_depth``). Flag-off the kind has NO serialiser at all -
+    ``np.ndarray`` payloads pass through raw and the HTTP layer serialises
+    them - so non-tensor values are returned untouched here. Tensor-native
+    producers carry a ``torch.Tensor`` under the same kind name; materialise it
+    to the flag-off-identical ``np.ndarray`` so the wire format matches in both
+    flag directions."""
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy()
+    return value
 
 
 def serialize_wildcard_kind(value: Any) -> Any:

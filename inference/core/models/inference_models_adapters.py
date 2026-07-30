@@ -1807,6 +1807,33 @@ class InferenceModelsDepthEstimationAdapter(Model):
             **kwargs,
         )
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        depth_maps = self._model(images, **kwargs)
+        # Models behind this adapter (YOLO26-depth) emit metric depth, where
+        # larger means FARTHER. The tensor-native depth contract mirrors the
+        # DepthAnything adapters: raw per-image maps in which larger means
+        # CLOSER, with the caller (depth-estimation block) applying
+        # `(map - min) / (max - min)` itself. Negate so that formula reproduces
+        # this adapter's numpy-path `(max - map) / (max - min)` exactly.
+        return [-depth_map for depth_map in depth_maps]
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
+        return kwargs
+
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):
             raise ValueError("Depth estimation does not support batched inference.")

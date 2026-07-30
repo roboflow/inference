@@ -19,11 +19,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.entities.tensor_native_types import (
-    TENSOR_KIND,
-)
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
+    NUMPY_ARRAY_KIND,
     STRING_KIND,
     ImageInputField,
     Selector,
@@ -45,28 +43,30 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Depth Estimation",
             "version": "v1",
-            "short_description": "Run Depth Estimation on an image.",
+            "short_description": "Estimate relative scene depth in an image.",
             "long_description": (
                 """
-                🎯 This workflow block performs depth estimation on images using Apple's DepthPro model. It analyzes the spatial relationships
-                and depth information in images to create a depth map where:
-
-                📊 Each pixel's value represents its relative distance from the camera
-                🔍 Lower values (darker colors) indicate closer objects
-                🔭 Higher values (lighter colors) indicate further objects
+                🎯 This workflow block performs monocular depth estimation with a
+                selected Depth Anything or YOLO26 depth model.
 
                 The model outputs:
-                1. 🗺️ A depth map showing the relative distances of objects in the scene
-                2. 📐 The camera's field of view (in degrees)
-                3. 🔬 The camera's focal length
+                1. 🗺️ A visualization of the estimated scene depth
+                2. 📊 `normalized_depth`, an image-sized ordinal proximity map
+
+                `normalized_depth` is normalized independently for every image:
+                🔍 1.0 indicates the nearest prediction
+                🔭 0.0 indicates the farthest prediction
+
+                Intermediate values preserve relative near-to-far ordering. They are
+                not physical distances and should not be compared numerically across
+                images or model families. YOLO26's metric output is normalized by this
+                block; use `inference_models.AutoModel` directly when meters are needed.
 
                 This is particularly useful for:
                 - 🏗️ Understanding 3D structure from 2D images
                 - 🎨 Creating depth-aware visualizations
-                - 📏 Analyzing spatial relationships in scenes
-                - 🕶️ Applications in augmented reality and 3D reconstruction
-
-                ⚡ The model runs efficiently on Apple Silicon (M1-M4) using Metal Performance Shaders (MPS) for accelerated inference.
+                - 📏 Analyzing relative spatial relationships in scenes
+                - 🕶️ Depth-aware image processing
                 """
             ),
             "license": "Apache-2.0",
@@ -76,6 +76,8 @@ class BlockManifest(WorkflowBlockManifest):
                 "Depth Anything",
                 "Depth Anything V2",
                 "Depth Anything V3",
+                "YOLO26",
+                "YOLO26 Depth",
                 "Hugging Face",
                 "HuggingFace",
             ],
@@ -96,6 +98,11 @@ class BlockManifest(WorkflowBlockManifest):
             "depth-anything-v2/small",
             "depth-anything-v3/small",
             "depth-anything-v3/base",
+            "yolo26n-depth-768",
+            "yolo26s-depth-768",
+            "yolo26m-depth-768",
+            "yolo26l-depth-768",
+            "yolo26x-depth-768",
         ],
         Selector(kind=[STRING_KIND]),
     ] = Field(
@@ -106,9 +113,12 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
+        # Same-name kind as the numpy sibling; flag-on the payload is a
+        # torch.Tensor materialised back to an ndarray at the serialization
+        # boundary (see serializers_tensor.serialise_numpy_array_kind).
         return [
             OutputDefinition(name="image", kind=[IMAGE_KIND]),
-            OutputDefinition(name="normalized_depth", kind=[TENSOR_KIND]),
+            OutputDefinition(name="normalized_depth", kind=[NUMPY_ARRAY_KIND]),
         ]
 
     @classmethod
@@ -152,6 +162,11 @@ class BlockManifest(WorkflowBlockManifest):
             "depth-anything-v2/small",
             "depth-anything-v3/small",
             "depth-anything-v3/base",
+            "yolo26n-depth-768",
+            "yolo26s-depth-768",
+            "yolo26m-depth-768",
+            "yolo26l-depth-768",
+            "yolo26x-depth-768",
         ]
 
 
@@ -229,16 +244,20 @@ class DepthEstimationBlockV1(WorkflowBlock):
             result = client.depth_estimation(
                 inference_input=single_image.base64_image,
                 model_id=model_version,
+                model_id_in_path=True,
+                depth_map_format="png16",
             )
             # Convert the result back to the expected format
-            # Remote returns: {"normalized_depth": [...], "image": hex_string}
+            # Remote returns {"normalized_depth": ..., "image": hex_string}; the
+            # depth map is an ndarray decoded from png16, or a nested float list
+            # from servers that predate depth_map_format - np.array handles both
             image_output = WorkflowImageData.copy_and_replace(
                 origin_image_data=single_image,
                 base64_image=result.get("image", ""),
             )
 
             normalized_depth = torch.as_tensor(
-                result.get("normalized_depth", []), dtype=torch.float32
+                np.array(result.get("normalized_depth", [])), dtype=torch.float32
             )
 
             # Return in the same format as local execution expects
@@ -270,6 +289,12 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 images=[model_image],
                 input_color_format=image_color_format,
             )
+            # Tensor-native depth models return raw per-image maps in which
+            # larger means CLOSER (DepthAnything emits disparity-like maps
+            # natively; the YOLO26 adapter negates its metric output to match -
+            # see InferenceModelsDepthEstimationAdapter). Min-max normalization
+            # therefore yields the endpoint's ordinal proximity map: 1.0 is the
+            # nearest prediction, 0.0 the farthest.
             depth_map = depth_maps[0]
             depth_min = depth_map.min()
             depth_max = depth_map.max()
