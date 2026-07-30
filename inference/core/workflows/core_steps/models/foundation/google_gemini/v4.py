@@ -139,6 +139,13 @@ SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 RELEVANT_TASKS_METADATA = {
     k: v for k, v in VLM_TASKS_METADATA.items() if k in SUPPORTED_TASK_TYPES
 }
+RELEVANT_TASKS_METADATA["object-detection"] = {
+    "name": "Object Detection",
+    "description": "Model detects bounding boxes for the provided classes, "
+    "returning a Gemini-native `box_2d` JSON list (y_min, x_min, y_max, x_max "
+    "integers normalized to 0-1000). Parse the output with "
+    "`roboflow_core/vlm_as_detector@v2`.",
+}
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
     for k, v in RELEVANT_TASKS_METADATA.items()
@@ -192,7 +199,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Google Gemini",
-            "version": "v3",
+            "version": "v4",
             "short_description": "Run Google's Gemini model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -209,7 +216,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemini@v3"]
+    type: Literal["roboflow_core/google_gemini@v4"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -289,7 +296,8 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Controls the depth of internal reasoning for Gemini 3+ models. "
-        "'low' minimizes latency and cost (best for simple tasks), 'high' maximizes reasoning depth (default). "
+        "'low' minimizes latency and cost (best for simple tasks), 'high' maximizes reasoning depth. "
+        "When unset, the Google API default for the selected model is used. "
         "Only supported by Gemini 3 and newer models.",
         json_schema_extra={
             "relevant_for": {
@@ -387,7 +395,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
 
-class GoogleGeminiBlockV3(WorkflowBlock):
+class GoogleGeminiBlockV4(WorkflowBlock):
 
     def __init__(
         self,
@@ -944,20 +952,21 @@ def prepare_object_detection_prompt(
     max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
+    # Gemini is trained to localize with `box_2d` boxes as [y_min, x_min,
+    # y_max, x_max] integers normalized to 0-1000. Requesting any other
+    # coordinate convention (e.g. 0.0-1.0 floats) measurably degrades box
+    # quality and yields mixed pixel/normalized outputs.
     serialised_classes = ", ".join(classes)
+    prompt_text = (
+        "Detect all objects in this image. "
+        "Output a JSON list where each entry contains the 2D bounding box "
+        'in the key "box_2d" and the text label in the key "label". '
+        'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
+        "between 0 and 1000, normalized to the image height and width. "
+        "Return only the JSON list, with no extra text. "
+        f"Only use these labels: {serialised_classes}"
+    )
     return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": "You act as object-detection model. You must provide reasonable predictions. "
-                    "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
-                    "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-                    "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user.",
-                }
-            ],
-        },
         "contents": {
             "parts": [
                 {
@@ -967,7 +976,7 @@ def prepare_object_detection_prompt(
                     }
                 },
                 {
-                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                    "text": prompt_text,
                 },
             ],
             "role": "user",
