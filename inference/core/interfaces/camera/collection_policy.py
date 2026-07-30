@@ -290,8 +290,7 @@ class CollectionPolicy:
         periods = [
             period
             for period in (
-                estimator.period(now)
-                for estimator in self._arrival_estimators.values()
+                estimator.period(now) for estimator in self._arrival_estimators.values()
             )
             if period is not None
         ]

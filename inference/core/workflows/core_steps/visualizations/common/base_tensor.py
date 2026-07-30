@@ -100,6 +100,7 @@ def empty_predictions_passthrough(
         )
     }
 
+
 #: ``sv.Detections.data`` key the supervision annotators read class names from.
 CLASS_NAME_DATA_FIELD: str = "class_name"
 
