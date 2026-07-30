@@ -1,7 +1,11 @@
+import json
 import os
+import re
+import stat
+import tempfile
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from filelock import FileLock
 from pydantic import BaseModel, Field
@@ -9,6 +13,7 @@ from pydantic import BaseModel, Field
 from inference_models.configuration import (
     AUTO_LOADER_CACHE_EXPIRATION_MINUTES,
     INFERENCE_HOME,
+    OFFLINE_MODE,
 )
 from inference_models.logger import LOGGER, verbose_info
 from inference_models.models.auto_loaders.entities import (
@@ -16,7 +21,7 @@ from inference_models.models.auto_loaders.entities import (
     ModelArchitecture,
     TaskType,
 )
-from inference_models.utils.file_system import dump_json, read_json
+from inference_models.utils.file_system import read_json
 from inference_models.weights_providers.entities import (
     ModelDependency,
     RecommendedParameters,
@@ -28,6 +33,13 @@ class AutoResolutionCacheEntry(BaseModel):
     # Model id whose on-disk cache directory holds the package. Differs from
     # model_id for locally-discovered packages resolved under an alias.
     cache_model_id: Optional[str] = Field(default=None)
+    # Provider-resolved identity for the model.  This must be explicit before
+    # an API-key-independent cache lookup can safely attribute an alias.
+    canonical_model_id: Optional[str] = Field(default=None)
+    cache_attribution_version: Optional[int] = Field(default=None, strict=True)
+    # One-way binding to the effective credential used for this resolution.
+    # This lets metadata-only alias discovery avoid crossing API-key scopes.
+    credential_hash: Optional[str] = Field(default=None)
     model_package_id: str
     resolved_files: List[str]
     model_architecture: Optional[ModelArchitecture]
@@ -37,6 +49,15 @@ class AutoResolutionCacheEntry(BaseModel):
     created_at: datetime
     model_features: Optional[dict] = Field(default=None)
     recommended_parameters: Optional[RecommendedParameters] = Field(default=None)
+    # Hash of package-selection inputs that deliberately excludes API
+    # credentials.  It lets an air-gapped restart reuse the exact package that
+    # was warmed online without weakening trust, dependency, runtime, or
+    # package-selection constraints.
+    offline_compatibility_hash: Optional[str] = Field(default=None)
+    trusted_source: Optional[bool] = Field(default=None)
+    # SHA-256 of the exact package manifest published by the successful warm.
+    # Older entries deserialize, but current attribution requires this value.
+    package_manifest_hash: Optional[str] = Field(default=None)
 
 
 class AutoResolutionCache(ABC):
@@ -57,6 +78,43 @@ class AutoResolutionCache(ABC):
     def invalidate(self, auto_negotiation_hash: str) -> None:
         pass
 
+    def find_compatible(
+        self,
+        offline_compatibility_hash: str,
+    ) -> Optional[Tuple[str, AutoResolutionCacheEntry]]:
+        """Return the newest matching entry when the cache can enumerate.
+
+        Custom cache implementations remain source-compatible and may opt in
+        by overriding this method.
+        """
+
+        return None
+
+    def find_compatible_candidates(
+        self,
+        offline_compatibility_hash: str,
+    ) -> List[Tuple[str, AutoResolutionCacheEntry]]:
+        """Return compatible entries in preferred order when supported.
+
+        The default wraps the original single-result extension point so custom
+        cache implementations that only override ``find_compatible`` keep
+        working without changes.
+        """
+
+        compatible_entry = self.find_compatible(
+            offline_compatibility_hash=offline_compatibility_hash
+        )
+        return [] if compatible_entry is None else [compatible_entry]
+
+    def find_model_candidates(
+        self,
+        model_id: str,
+        credential_hash: Optional[str] = None,
+    ) -> List[Tuple[str, AutoResolutionCacheEntry]]:
+        """Return entries for an exact requested identity and credential."""
+
+        return []
+
 
 class BaseAutoLoadMetadataCache(AutoResolutionCache):
 
@@ -75,18 +133,63 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
     def register(
         self, auto_negotiation_hash: str, cache_entry: AutoResolutionCacheEntry
     ) -> None:
+        if OFFLINE_MODE:
+            LOGGER.warning(
+                "Ignoring auto-resolution cache registration in OFFLINE_MODE."
+            )
+            return None
         path_for_cached_content = generate_auto_resolution_cache_path(
             auto_negotiation_hash=auto_negotiation_hash
         )
         target_file_dir, target_file_name = os.path.split(path_for_cached_content)
         lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
         content = cache_entry.model_dump(mode="json")
+        if os.path.islink(target_file_dir):
+            LOGGER.warning(
+                "Refusing to write auto-resolution metadata through a symlinked directory"
+            )
+            return None
+        os.makedirs(target_file_dir, exist_ok=True)
+        if (
+            os.path.islink(target_file_dir)
+            or os.path.islink(path_for_cached_content)
+            or os.path.islink(lock_path)
+        ):
+            LOGGER.warning(
+                "Refusing to write auto-resolution metadata through a symlink"
+            )
+            return None
         with FileLock(lock_path, timeout=self._file_lock_acquire_timeout):
-            dump_json(path=path_for_cached_content, content=content)
+            temporary_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    dir=target_file_dir,
+                    prefix=f".{target_file_name}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as file_handle:
+                    temporary_path = file_handle.name
+                    json.dump(content, file_handle)
+                    file_handle.flush()
+                    os.fsync(file_handle.fileno())
+                if os.path.islink(path_for_cached_content):
+                    LOGGER.warning(
+                        "Refusing to replace auto-resolution metadata through a symlink"
+                    )
+                    return None
+                os.replace(temporary_path, path_for_cached_content)
+                temporary_path = None
+            finally:
+                if temporary_path is not None:
+                    try:
+                        os.unlink(temporary_path)
+                    except OSError:
+                        pass
             if self._on_file_created:
                 self._on_file_created(
                     path_for_cached_content,
-                    cache_entry.model_id,
+                    cache_entry.canonical_model_id or cache_entry.model_id,
                     cache_entry.model_package_id,
                 )
 
@@ -96,42 +199,239 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
         path_for_cached_content = generate_auto_resolution_cache_path(
             auto_negotiation_hash=auto_negotiation_hash
         )
-        if not os.path.exists(path_for_cached_content):
+        target_file_dir, target_file_name = os.path.split(path_for_cached_content)
+        lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
+        if os.path.islink(target_file_dir) or os.path.islink(path_for_cached_content):
             return None
-        try:
-            cache_content = read_json(path=path_for_cached_content)
-            cache_entry = AutoResolutionCacheEntry.model_validate(cache_content)
-            minutes_since_entry_created = (
-                datetime.now() - cache_entry.created_at
-            ).total_seconds() / 60
-            if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
-                self.invalidate(auto_negotiation_hash=auto_negotiation_hash)
-                verbose_info(
-                    message=f"Auto-negotiation cache for hash: {auto_negotiation_hash} is expired - removed its content",
-                    verbose_requested=self._verbose,
+        if OFFLINE_MODE:
+            try:
+                return _read_auto_resolution_cache_entry_without_lock(
+                    path=path_for_cached_content
                 )
+            except FileNotFoundError:
                 return None
-            return cache_entry
-        except Exception as error:
-            LOGGER.warning(
-                f"Encountered error {error} of type {type(error)} when attempted to load model using "
-                f"auto-load cache. This may indicate corrupted cache of inference bug. Contact Roboflow submitting "
-                f"issue under: https://github.com/roboflow/inference/issues/"
-            )
-            self.invalidate(auto_negotiation_hash=auto_negotiation_hash)
+            except Exception as error:
+                self._log_retrieval_error(error=error)
+                # Offline cache trees may be mounted read-only and are treated
+                # as immutable input. Never attempt to lock or delete malformed
+                # metadata while offline.
+                return None
+        if os.path.islink(lock_path) or not os.path.exists(path_for_cached_content):
+            return None
+        with FileLock(lock_path, timeout=self._file_lock_acquire_timeout):
+            if (
+                os.path.islink(target_file_dir)
+                or os.path.islink(path_for_cached_content)
+                or not os.path.exists(path_for_cached_content)
+            ):
+                return None
+            try:
+                cache_content = read_json(path=path_for_cached_content)
+                cache_entry = AutoResolutionCacheEntry.model_validate(cache_content)
+                minutes_since_entry_created = (
+                    datetime.now().timestamp() - cache_entry.created_at.timestamp()
+                ) / 60
+                # In OFFLINE_MODE the API cannot be reached to re-resolve, so
+                # cache entries must never expire.
+                if (
+                    not OFFLINE_MODE
+                    and minutes_since_entry_created
+                    > AUTO_LOADER_CACHE_EXPIRATION_MINUTES
+                ):
+                    self._invalidate_path_while_locked(
+                        path_for_cached_content=path_for_cached_content
+                    )
+                    verbose_info(
+                        message=f"Auto-negotiation cache for hash: {auto_negotiation_hash} is expired - removed its content",
+                        verbose_requested=self._verbose,
+                    )
+                    return None
+                return cache_entry
+            except Exception as error:
+                self._log_retrieval_error(error=error)
+                self._invalidate_path_while_locked(
+                    path_for_cached_content=path_for_cached_content
+                )
+
+    def find_compatible(
+        self,
+        offline_compatibility_hash: str,
+    ) -> Optional[Tuple[str, AutoResolutionCacheEntry]]:
+        candidates = self.find_compatible_candidates(
+            offline_compatibility_hash=offline_compatibility_hash
+        )
+        return candidates[0] if candidates else None
+
+    def find_compatible_candidates(
+        self,
+        offline_compatibility_hash: str,
+    ) -> List[Tuple[str, AutoResolutionCacheEntry]]:
+        cache_dir = os.path.abspath(
+            os.path.join(INFERENCE_HOME, "auto-resolution-cache")
+        )
+        if os.path.islink(cache_dir) or not os.path.isdir(cache_dir):
+            return []
+        try:
+            entries = sorted(os.listdir(cache_dir))
+        except OSError:
+            return []
+        matches: List[Tuple[str, AutoResolutionCacheEntry]] = []
+        for entry_name in entries:
+            if not re.fullmatch(r"[0-9a-f]{64}\.json", entry_name):
+                continue
+            entry_path = os.path.join(cache_dir, entry_name)
+            if os.path.islink(entry_path) or not os.path.isfile(entry_path):
+                continue
+            auto_negotiation_hash = entry_name[:-5]
+            cache_entry = self.retrieve(auto_negotiation_hash=auto_negotiation_hash)
+            if (
+                cache_entry is not None
+                and cache_entry.offline_compatibility_hash == offline_compatibility_hash
+            ):
+                matches.append((auto_negotiation_hash, cache_entry))
+        return sorted(
+            matches,
+            key=lambda match: match[1].created_at.timestamp(),
+            reverse=True,
+        )
+
+    def find_model_candidates(
+        self,
+        model_id: str,
+        credential_hash: Optional[str] = None,
+    ) -> List[Tuple[str, AutoResolutionCacheEntry]]:
+        cache_dir = os.path.abspath(
+            os.path.join(INFERENCE_HOME, "auto-resolution-cache")
+        )
+        if os.path.islink(cache_dir) or not os.path.isdir(cache_dir):
+            return []
+        try:
+            entries = sorted(os.listdir(cache_dir))
+        except OSError:
+            return []
+        matches: List[Tuple[str, AutoResolutionCacheEntry]] = []
+        for entry_name in entries:
+            if not re.fullmatch(r"[0-9a-f]{64}\.json", entry_name):
+                continue
+            entry_path = os.path.join(cache_dir, entry_name)
+            if os.path.islink(entry_path) or not os.path.isfile(entry_path):
+                continue
+            auto_negotiation_hash = entry_name[:-5]
+            cache_entry = self.retrieve(auto_negotiation_hash=auto_negotiation_hash)
+            if (
+                cache_entry is not None
+                and cache_entry.model_id == model_id
+                and (
+                    credential_hash is None
+                    or cache_entry.credential_hash == credential_hash
+                )
+            ):
+                matches.append((auto_negotiation_hash, cache_entry))
+        return sorted(
+            matches,
+            key=lambda match: match[1].created_at.timestamp(),
+            reverse=True,
+        )
 
     def invalidate(self, auto_negotiation_hash: str) -> None:
+        if OFFLINE_MODE:
+            LOGGER.warning(
+                "Ignoring auto-resolution cache invalidation in OFFLINE_MODE."
+            )
+            return None
         path_for_cached_content = generate_auto_resolution_cache_path(
             auto_negotiation_hash=auto_negotiation_hash
         )
-        if not os.path.exists(path=path_for_cached_content):
+        target_file_dir, target_file_name = os.path.split(path_for_cached_content)
+        lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
+        if (
+            os.path.islink(target_file_dir)
+            or os.path.islink(path_for_cached_content)
+            or os.path.islink(lock_path)
+            or not os.path.exists(path=path_for_cached_content)
+        ):
             return None
-        os.remove(path=path_for_cached_content)
+        with FileLock(lock_path, timeout=self._file_lock_acquire_timeout):
+            self._invalidate_path_while_locked(
+                path_for_cached_content=path_for_cached_content
+            )
+
+    def _invalidate_path_while_locked(
+        self,
+        path_for_cached_content: str,
+    ) -> None:
+        if os.path.islink(path_for_cached_content):
+            return None
+        try:
+            os.remove(path=path_for_cached_content)
+        except FileNotFoundError:
+            return None
         if self._on_file_deleted:
             self._on_file_deleted(path_for_cached_content)
 
+    @staticmethod
+    def _log_retrieval_error(error: Exception) -> None:
+        LOGGER.warning(
+            f"Encountered error {error} of type {type(error)} when attempted to load model using "
+            f"auto-load cache. This may indicate corrupted cache of inference bug. Contact Roboflow submitting "
+            f"issue under: https://github.com/roboflow/inference/issues/"
+        )
+
+
+def _read_auto_resolution_cache_entry_without_lock(
+    path: str,
+) -> AutoResolutionCacheEntry:
+    """Read immutable offline metadata without creating a cache-local lock."""
+
+    path_stat = os.lstat(path)
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise OSError(f"Auto-resolution cache entry is not a regular file: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(path, flags)
+    try:
+        opened_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ) != (
+            path_stat.st_dev,
+            path_stat.st_ino,
+            path_stat.st_size,
+            path_stat.st_mtime_ns,
+            path_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Auto-resolution cache entry changed while opening: {path}")
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as file_handle:
+            file_descriptor = -1
+            cache_content = json.load(file_handle)
+            completed_stat = os.fstat(file_handle.fileno())
+        if (
+            completed_stat.st_dev,
+            completed_stat.st_ino,
+            completed_stat.st_size,
+            completed_stat.st_mtime_ns,
+            completed_stat.st_ctime_ns,
+        ) != (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Auto-resolution cache entry changed while reading: {path}")
+        return AutoResolutionCacheEntry.model_validate(cache_content)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+
 
 def generate_auto_resolution_cache_path(auto_negotiation_hash: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", auto_negotiation_hash):
+        raise ValueError("Invalid auto-negotiation cache hash")
     return os.path.abspath(
         os.path.join(
             INFERENCE_HOME, "auto-resolution-cache", f"{auto_negotiation_hash}.json"

@@ -170,6 +170,9 @@ YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/
 YOLO26N_SEM_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-static.zip"
 YOLO26N_SEM_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-dynamic.zip"
 YOLO26N_SEM_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-torch-script.zip"
+YOLO26N_DEPTH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-onnx-static.zip"
+YOLO26N_DEPTH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-onnx-dynamic.zip"
+YOLO26N_DEPTH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-torch-script.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
@@ -1539,6 +1542,30 @@ def yolo26n_sem_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_SEM_TORCH_SCRIPT_URL,
         package_name="yolo26n-sem-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_ONNX_STATIC_URL,
+        package_name="yolo26n-depth-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-depth-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_TORCH_SCRIPT_URL,
+        package_name="yolo26n-depth-torch-script",
     )
 
 

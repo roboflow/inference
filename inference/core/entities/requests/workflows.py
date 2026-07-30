@@ -37,6 +37,10 @@ class WorkflowInferenceRequest(BaseModel):
     workflow_id: Optional[str] = Field(
         default=None, description="Optional identifier of workflow"
     )
+    disable_sinks: bool = Field(
+        default=False,
+        description="Run the workflow with sink writes and outbound notifications/uploads disabled.",
+    )
 
 
 class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):

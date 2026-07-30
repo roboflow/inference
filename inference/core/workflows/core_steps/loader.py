@@ -85,6 +85,9 @@ else:
 
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1 import (
+    AutoRotateOnEdgesBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
     BackgroundSubtractionBlockV1,
 )
@@ -122,7 +125,9 @@ else:
     from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
         ConvertGrayscaleBlockV1,
     )
-
+from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+    DetectionsNearestNeighborBlockV1,
+)
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
         DistanceMeasurementBlockV1,
@@ -403,6 +408,7 @@ else:
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.frame_delay.v1 import FrameDelayBlockV1
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -471,6 +477,10 @@ else:
 
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
+)
+
+from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -1342,7 +1352,9 @@ else:
     from inference.core.workflows.core_steps.visualizations.label.v1_tensor import (
         LabelVisualizationBlockV1,
     )
-
+from inference.core.workflows.core_steps.visualizations.label.v2 import (
+    LabelVisualizationBlockV2,
+)
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
@@ -1393,6 +1405,9 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.rich_label.v1 import (
+    RichLabelVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
@@ -1469,6 +1484,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "disable_sinks": False,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
@@ -1487,6 +1503,7 @@ KINDS_SERIALIZERS = {
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
+    DETECTIONS_OVERLAPS_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
 }
 if ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -1532,6 +1549,7 @@ KINDS_DESERIALIZERS = {
     ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
     LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    DETECTIONS_OVERLAPS_KIND.name: deserialize_list_of_values_kind,
     BOOLEAN_KIND.name: deserialize_boolean_kind,
     INTEGER_KIND.name: deserialize_integer_kind,
     STRING_KIND.name: deserialize_string_kind,
@@ -1635,6 +1653,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
+        FrameDelayBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
@@ -1673,6 +1692,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
+        DetectionsNearestNeighborBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
@@ -1688,6 +1708,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
+        AutoRotateOnEdgesBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         HeatmapVisualizationBlockV1,
@@ -1698,6 +1719,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMBlockV1,
         LMMForClassificationBlockV1,
         LabelVisualizationBlockV1,
+        LabelVisualizationBlockV2,
+        RichLabelVisualizationBlockV1,
         ClassificationLabelVisualizationBlockV1,
         LineCounterBlockV1,
         LineCounterBlockV2,
@@ -1799,6 +1822,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
+        Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,

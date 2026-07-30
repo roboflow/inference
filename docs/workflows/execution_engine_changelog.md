@@ -2,6 +2,29 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Unreleased
+
+**What changed**
+
+Add user-facing compile or execution behavior changes here. Maintainers replace
+this heading with the Execution Engine and inference versions when releasing.
+
+
+## Execution Engine `v1.13.0` | inference `v1.3.7`
+
+**What changed**
+
+* **Offline mode rejects remote Workflow step execution** — When `OFFLINE_MODE`
+  is enabled, the compiler rejects `StepExecutionMode.REMOTE` during step
+  initialisation (`WorkflowEnvironmentConfigurationError`) so Workflows cannot
+  open remote inference clients without network access. Local step execution
+  continues to work against warmed caches.
+
+* **Proper model access failure status codes** - Model-access failures raised while loading local workflow models now preserve HTTP
+  402, 403, and 423 statuses instead of surfacing as generic HTTP 500 errors.
+
+---
+
 ## Execution Engine `v1.12.0` | inference `v1.3.2`
 
 **What changed**

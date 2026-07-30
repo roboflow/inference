@@ -78,6 +78,10 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.core.workflows.execution_engine.v1.executor.utils import resolve_futures
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
+from inference.usage_tracking.stream_session import (
+    mint_stream_session_id,
+    stream_session_id,
+)
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
@@ -126,6 +130,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
+        exec_session_id: Optional[str] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -253,6 +258,8 @@ class InferencePipeline:
                 default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
             decoding_buffer_size (int): size of video source decoding buffer
                 default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
+            exec_session_id (Optional[str]): Usage session identifier for this pipeline. If empty or omitted,
+                a unique identifier is generated for the pipeline.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -335,6 +342,7 @@ class InferencePipeline:
             sink_mode=sink_mode,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
+            exec_session_id=exec_session_id,
         )
 
     @classmethod
@@ -361,6 +369,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
+        exec_session_id: Optional[str] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -447,6 +456,8 @@ class InferencePipeline:
                 default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
             decoding_buffer_size (int): size of video source decoding buffer
                 default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
+            exec_session_id (Optional[str]): Usage session identifier for this pipeline. If empty or omitted,
+                a unique identifier is generated for the pipeline.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -498,6 +509,7 @@ class InferencePipeline:
             sink_mode=sink_mode,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
+            exec_session_id=exec_session_id,
         )
 
     @classmethod
@@ -522,6 +534,7 @@ class InferencePipeline:
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
+        disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
@@ -536,6 +549,7 @@ class InferencePipeline:
         model_manager: Optional[ModelManager] = None,
         _is_preview: bool = False,
         workflow_version_id: Optional[str] = None,
+        exec_session_id: Optional[str] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -591,6 +605,7 @@ class InferencePipeline:
             workflow_init_parameters (Optional[Dict[str, Any]]): Additional init parameters to be used by
                 workflows Execution Engine to init steps of your workflow - may be required when running workflows
                 with custom plugins.
+            disable_sinks (bool): Whether to disable sink writes and outbound notifications/uploads.
             workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
                 by workflows blocks to run background tasks.
             cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
@@ -629,6 +644,8 @@ class InferencePipeline:
                 default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
             model_manager (Optional[ModelManager]): Model manager to be used by InferencePipeline, defaults to
                 BackgroundTaskActiveLearningManager with WithFixedSizeCache
+            exec_session_id (Optional[str]): Usage session identifier for this pipeline. If empty or omitted,
+                a unique identifier is generated for the pipeline.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -705,6 +722,7 @@ class InferencePipeline:
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
             )
+            workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
@@ -753,6 +771,7 @@ class InferencePipeline:
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
             allow_tensor_frames=ENABLE_TENSOR_DATA_REPRESENTATION,
+            exec_session_id=exec_session_id,
         )
 
     @classmethod
@@ -775,6 +794,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
+        exec_session_id: Optional[str] = None,
         allow_tensor_frames: bool = False,
     ) -> "InferencePipeline":
         """
@@ -857,6 +877,8 @@ class InferencePipeline:
                 default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
             decoding_buffer_size (int): size of video source decoding buffer
                 default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
+            exec_session_id (Optional[str]): Usage session identifier for this pipeline. If empty or omitted,
+                a unique identifier is generated for the pipeline.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -942,6 +964,7 @@ class InferencePipeline:
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
             collection_policy=collection_policy,
+            exec_session_id=exec_session_id,
         )
 
     def __init__(
@@ -958,6 +981,7 @@ class InferencePipeline:
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         collection_policy: Optional[CollectionPolicy] = None,
+        exec_session_id: Optional[str] = None,
     ):
         self._on_video_frame = on_video_frame
         self._video_sources = video_sources
@@ -975,6 +999,7 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
+        self._stream_session_id = exec_session_id or mint_stream_session_id()
         self._collection_policy = collection_policy
 
     def start(self, use_main_thread: bool = True) -> None:
@@ -1022,6 +1047,7 @@ class InferencePipeline:
             self._on_pipeline_end()
 
     def _execute_inference(self) -> None:
+        stream_session_id.set(self._stream_session_id)
         send_inference_pipeline_status_update(
             severity=UpdateSeverity.INFO,
             event_type=INFERENCE_THREAD_STARTED_EVENT,

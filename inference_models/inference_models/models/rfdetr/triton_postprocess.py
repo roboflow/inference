@@ -214,6 +214,8 @@ def _release_pinned_host_buffer(buffer: torch.Tensor) -> None:
         buffers.append(buffer)
         _PINNED_HOST_POOL.move_to_end(key)
         _PINNED_HOST_POOL_SIZE += 1
+
+
 def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_bboxes: torch.Tensor,
     image_scores: torch.Tensor,
@@ -221,6 +223,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_meta: PreProcessingMetadata,
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
 ) -> Optional[InstanceDetections]:
     """Run the sparse Triton RF-DETR RLE postprocess path for one image.
@@ -260,6 +263,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_masks = image_masks.contiguous()
     class_mapping = classes_re_mapping.class_mapping.contiguous()
     num_queries, num_classes = image_scores.shape
+    if max_detections is None:
+        max_detections = num_queries
     mask_height, mask_width = image_masks.shape[-2:]
     output_height = image_meta.original_size.height
     output_width = image_meta.original_size.width
@@ -391,7 +396,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
             max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
             height=output_height,
             width=output_width,
-            max_detections=num_queries,
+            max_detections=max_detections,
         )
 
     # First pass: keep the common case small by selecting only the best class
@@ -480,6 +485,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
+        max_detections=max_detections,
     )
     if result is not None:
         return result
@@ -584,7 +590,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_TOPK_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
-        max_detections=num_queries,
+        max_detections=max_detections,
     )
 
 
@@ -793,7 +799,9 @@ def _sparse_query_records_failure_reason(
     active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return "no_failure"
-    metadata_overflows = int(np.count_nonzero(class_metadata_host[active_ranks, 8] > 0.5))
+    metadata_overflows = int(
+        np.count_nonzero(class_metadata_host[active_ranks, 8] > 0.5)
+    )
     total_runs = int(records_host[0, 0])
     overflow_flag = int(records_host[0, 1])
     reasons = []
@@ -1730,9 +1738,7 @@ if triton is not None:
                     y_idx + y_base + 1,
                     mask=row_active,
                     other=0,
-                ).to(
-                    tl.int64
-                )
+                ).to(tl.int64)
                 y_weight0 = tl.load(y_weight + y_base, mask=row_active, other=0.0)
                 y_weight1 = tl.load(
                     y_weight + y_base + 1,
@@ -1780,7 +1786,9 @@ if triton is not None:
                 # current positive after previous background starts a run;
                 # previous positive followed by current background ends it.
                 previous_y = output_y - 1
-                previous_row_active = boundary_row_active & (row_y[:, None] > roi_y_start)
+                previous_row_active = boundary_row_active & (
+                    row_y[:, None] > roi_y_start
+                )
                 previous_active = previous_row_active & column_active[None, :]
                 previous_y_base = previous_y * 2
                 prev_source_y0 = tl.load(

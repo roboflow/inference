@@ -115,12 +115,13 @@ Add a package-URL constant and a `pytest.fixture(scope="module")` in `inference_
 
 Start from loading a **local** package while experimenting, then follow up by uploading that package as a `*.zip` asset and adding a fixture that downloads it at test time, as other integration tests do.
 
-### 5. Version + changelog companion (required)
+### 5. Changelog companion (required)
 
-Any PR that ships model code in `inference_models` must bump the package version and record the change — the sibling `review-inference-models-pkg` skill enforces this:
+Any PR that ships model code in `inference_models` must record the change. The
+package version is selected and bumped later by maintainers:
 
-- Bump `version = "..."` in `inference_models/pyproject.toml`.
-- Add an entry under a new version heading in `inference_models/docs/changelog.md` (follow the existing `## \`<version>\`` → `### Added` format at the top of the file).
+- Add an entry under `## Unreleased` in `inference_models/docs/changelog.md`, using the appropriate `### Added`, `### Changed`, `### Fixed`, or `### Removed` subsection.
+- Do not edit `inference_models/pyproject.toml` solely to bump its version.
 
 ### 6. Workflow block (surface 3, optional)
 
@@ -175,6 +176,8 @@ Add to this list as new surprises surface.
 - **Stateful workflow blocks + remote execution**: if your block keeps per-video or per-request state, raise `NotImplementedError` in `__init__` when the execution mode is `REMOTE`. Failing at compile time beats failing on first frame.
 - **`get_supported_model_variants` order** (workflow-block manifest classmethod, consumed by the air-gapped scanner in `inference/core/cache/air_gapped.py`): the first entry is the display name for the cache scanner. Put your default variant first.
 - **`PYTHONSAFEPATH=1`** when running scripts from the repo root — see step 9.
+- **Never register `model_config.json` as a package artefact** (hit with yolo26-depth): the auto-loader generates that file itself for offline-loader compatibility, and a registered artefact with the same name fails every load with `CorruptedModelPackageError` ("collides with the config file that inference is supposed to create"). Registered packages carry only the weights + `inference_config.json` (+ per-task extras like `class_names.txt`); `model_config.json` belongs only in local/test packages. If it slips in: unseal → `artefacts/remove` → re-seal fixes it without re-uploading.
+- **Ultralytics exports for fixed-size heads**: mirror the predictor's real pre-processing in `inference_config.json` — ultralytics letterboxes with padding value 114 (not 0), RGB, `/255`, no normalization. Also mirror sibling manifests for the dynamic-ONNX `incompatibleProviders: ["CoreMLExecutionProvider"]` exclusion (dynamic-shape graphs break CoreML).
 
 ## Verification checklist
 
@@ -183,7 +186,7 @@ Before declaring done:
 - [ ] Architecture registered in `models_registry.py`; import + class resolve without error
 - [ ] `YourClass.from_pretrained(local_dir)` loads from a flat directory of files (smoke-tested)
 - [ ] `inference_models` unit tests pass (from `inference_models/` cwd)
-- [ ] `inference_models/pyproject.toml` version bumped + `inference_models/docs/changelog.md` entry added
+- [ ] `inference_models/docs/changelog.md` entry added under `## Unreleased` (version bump left to maintainers)
 - [ ] If surface 3: workflow-block unit tests pass (from repo root)
 - [ ] Model packaged & registered via the internal Inference Core team tooling (staging, then production after approval) — coordinate with the team
 - [ ] `AutoModel.from_pretrained("<arch>/<default>")` loads + runs once registered

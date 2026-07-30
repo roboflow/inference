@@ -188,6 +188,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    OFFLINE_MODE,
     OTEL_TRACING_ENABLED,
     PINNED_MODELS,
     PRELOAD_API_KEY,
@@ -196,7 +197,6 @@ from inference.core.env import (
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    ROBOFLOW_SERVICE_SECRET,
     SAM3_3D_OBJECTS_ENABLED,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
@@ -296,6 +296,9 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace_async,
     get_serverless_usage_check_async,
     get_workflow_specification,
+    service_secret_is_valid,
+    workspace_db_id_is_valid,
+    workspace_id_is_valid,
 )
 from inference.core.telemetry import (
     get_trace_id,
@@ -305,6 +308,12 @@ from inference.core.telemetry import (
     start_span,
 )
 from inference.core.utils.container import is_docker_socket_mounted
+from inference.core.utils.depth_encoding import (
+    DEPTH_MAP_FORMAT_JSON,
+    DEPTH_MAP_FORMAT_PNG8,
+    encode_normalized_depth_to_png8,
+    encode_normalized_depth_to_png16,
+)
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.url_utils import wrap_url
 from inference.core.warnings import InferenceDeprecationWarning
@@ -337,7 +346,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
-if LAMBDA:
+if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
 
 import time
@@ -428,11 +437,7 @@ def _is_non_billable_internal_request(
     service_secret = _get_request_param(
         req_params=req_params, json_params=json_params, key="service_secret"
     )
-    return (
-        countinference is False
-        and service_secret is not None
-        and service_secret == ROBOFLOW_SERVICE_SECRET
-    )
+    return countinference is False and service_secret_is_valid(service_secret)
 
 
 def _set_request_header(request: Request, header_name: str, header_value: str) -> None:
@@ -484,7 +489,7 @@ def _attach_observability_headers_to_early_response(
 ) -> None:
     response.headers[CORRELATION_ID_HEADER] = request_id
     response.headers[PROCESSING_TIME_HEADER] = str(processing_time)
-    if workspace_id is not None:
+    if workspace_id_is_valid(workspace_id):
         response.headers[WORKSPACE_ID_HEADER] = workspace_id
     if EXECUTION_ID_HEADER is not None and execution_id_value is not None:
         response.headers[EXECUTION_ID_HEADER] = execution_id_value
@@ -496,7 +501,7 @@ def _attach_observability_headers_to_early_response(
 async def _call_next_with_assume_identity_authorised_workspace_db_id(
     request: Request, call_next, workspace_db_id: Optional[str]
 ) -> Response:
-    if not workspace_db_id:
+    if not workspace_db_id_is_valid(workspace_db_id):
         return await call_next(request)
     token = assume_identity_authorised_workspace_db_id.set(workspace_db_id)
     try:
@@ -574,6 +579,22 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
+        if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with LAMBDA / "
+                "GCP_SERVERLESS deployments because authentication and usage "
+                "accounting require API connectivity."
+            )
+        if OFFLINE_MODE and (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with dedicated or "
+                "workspace-whitelist authentication because API keys cannot be "
+                "mapped to workspaces without API connectivity."
+            )
 
         description = "Roboflow inference server"
 
@@ -963,6 +984,41 @@ class HttpInterface(BaseInterface):
                                 )
                                 if usage_check_result.status_code == 200:
                                     workspace_id = usage_check_result.workspace_id
+                                    if (
+                                        not workspace_id_is_valid(workspace_id)
+                                        or (
+                                            usage_check_result.workspace_db_id
+                                            is not None
+                                            and not workspace_db_id_is_valid(
+                                                usage_check_result.workspace_db_id
+                                            )
+                                        )
+                                        or (
+                                            bool(
+                                                ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN
+                                            )
+                                            and not workspace_db_id_is_valid(
+                                                usage_check_result.workspace_db_id
+                                            )
+                                        )
+                                        or usage_check_result.under_cap is not True
+                                    ):
+                                        if auth_span is not None:
+                                            auth_span.set_attribute(
+                                                "http.status_code", 500
+                                            )
+                                            auth_span.set_attribute(
+                                                "auth.result",
+                                                "invalid_usage_check_response",
+                                            )
+                                        return _authorization_error_response(
+                                            500,
+                                            (
+                                                "Serverless authorization failed because "
+                                                "the usage check returned incomplete data."
+                                            ),
+                                            cache_hit=False,
+                                        )
                                     workspace_db_id = usage_check_result.workspace_db_id
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(
@@ -997,6 +1053,20 @@ class HttpInterface(BaseInterface):
                                         cache_hit=False,
                                     )
                                 elif usage_check_result.status_code == 402:
+                                    denied_workspace_id = (
+                                        usage_check_result.workspace_id
+                                        if workspace_id_is_valid(
+                                            usage_check_result.workspace_id
+                                        )
+                                        else None
+                                    )
+                                    denied_workspace_db_id = (
+                                        usage_check_result.workspace_db_id
+                                        if workspace_db_id_is_valid(
+                                            usage_check_result.workspace_db_id
+                                        )
+                                        else None
+                                    )
                                     message = (
                                         "This workspace cannot currently spend credits for serverless inference. "
                                         "Verify billing or credit cap settings."
@@ -1009,8 +1079,8 @@ class HttpInterface(BaseInterface):
                                         AuthorizationCacheEntry(
                                             expires_at=time.time()
                                             + SHORT_AUTH_CACHE_TTL_SECONDS,
-                                            workspace_id=usage_check_result.workspace_id,
-                                            workspace_db_id=usage_check_result.workspace_db_id,
+                                            workspace_id=denied_workspace_id,
+                                            workspace_db_id=denied_workspace_db_id,
                                             status_code=402,
                                             message=message,
                                         )
@@ -1024,9 +1094,65 @@ class HttpInterface(BaseInterface):
                                     return _authorization_error_response(
                                         402,
                                         cached_api_keys[cache_key].message,
-                                        workspace_id=usage_check_result.workspace_id,
+                                        workspace_id=denied_workspace_id,
                                         cache_hit=False,
                                     )
+                                else:
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 500)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "unexpected_usage_check_status",
+                                        )
+                                    return _authorization_error_response(
+                                        500,
+                                        (
+                                            "Serverless authorization failed because "
+                                            "the usage check returned an unexpected "
+                                            f"status ({usage_check_result.status_code})."
+                                        ),
+                                        cache_hit=False,
+                                    )
+
+                        if not workspace_id_is_valid(workspace_id):
+                            # Never preserve an incomplete success returned by
+                            # an auth-only lookup or left in the in-process
+                            # cache by older code. Retrying is preferable to a
+                            # poisoned authorization grant.
+                            cached_api_keys.pop(cache_key, None)
+                            if auth_span is not None:
+                                auth_span.set_attribute("http.status_code", 500)
+                                auth_span.set_attribute(
+                                    "auth.result",
+                                    "invalid_workspace_response",
+                                )
+                            return _authorization_error_response(
+                                500,
+                                (
+                                    "Serverless authorization failed because "
+                                    "workspace lookup returned an invalid identity."
+                                ),
+                                cache_hit=cache_entry is not None,
+                            )
+                        if (
+                            workspace_db_id is not None
+                            and not workspace_db_id_is_valid(workspace_db_id)
+                        ):
+                            cached_api_keys.pop(cache_key, None)
+                            if auth_span is not None:
+                                auth_span.set_attribute("http.status_code", 500)
+                                auth_span.set_attribute(
+                                    "auth.result",
+                                    "invalid_workspace_db_response",
+                                )
+                            return _authorization_error_response(
+                                500,
+                                (
+                                    "Serverless authorization failed because "
+                                    "workspace lookup returned an invalid internal identity."
+                                ),
+                                cache_hit=cache_entry is not None,
+                            )
 
                         if auth_span is not None:
                             auth_span.set_attribute("http.status_code", 200)
@@ -1044,7 +1170,7 @@ class HttpInterface(BaseInterface):
                         workspace_db_id=workspace_db_id,
                     )
                 )
-                if workspace_id:
+                if workspace_id_is_valid(workspace_id):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
@@ -1257,7 +1383,11 @@ class HttpInterface(BaseInterface):
         self.inference_models_cache_daemon: Optional[InferenceModelsCacheWatchdog] = (
             None
         )
-        if USE_INFERENCE_MODELS and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0:
+        if (
+            USE_INFERENCE_MODELS
+            and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0
+            and not OFFLINE_MODE
+        ):
             from inference_models.configuration import INFERENCE_HOME
 
             self.inference_models_cache_daemon = InferenceModelsCacheWatchdog(
@@ -1347,6 +1477,7 @@ class HttpInterface(BaseInterface):
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
+                "workflows_core.disable_sinks": workflow_request.disable_sinks,
             }
             with start_span(
                 "workflow.init",
@@ -3394,6 +3525,8 @@ class HttpInterface(BaseInterface):
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
 
+                    inference_request.model_id = "sam3/sam3_interactive"
+
                     if SAM3_EXEC_MODE == "remote":
                         raise HTTPException(
                             status_code=501,
@@ -3616,6 +3749,8 @@ class HttpInterface(BaseInterface):
                         inference_request.source = request_source
                     if request_source_info is not None:
                         inference_request.source_info = request_source_info
+
+                    inference_request.model_id = "sam3/sam3_interactive"
 
                     if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
@@ -3878,8 +4013,19 @@ class HttpInterface(BaseInterface):
 
                     # Extract data from nested response structure
                     depth_data = response.response
+                    if inference_request.depth_map_format == DEPTH_MAP_FORMAT_JSON:
+                        serialized_depth = depth_data["normalized_depth"].tolist()
+                    elif inference_request.depth_map_format == DEPTH_MAP_FORMAT_PNG8:
+                        serialized_depth = encode_normalized_depth_to_png8(
+                            depth_data["normalized_depth"]
+                        )
+                    else:
+                        serialized_depth = encode_normalized_depth_to_png16(
+                            depth_data["normalized_depth"]
+                        )
                     return DepthEstimationResponse(
-                        normalized_depth=depth_data["normalized_depth"].tolist(),
+                        normalized_depth=serialized_depth,
+                        depth_map_format=inference_request.depth_map_format,
                         image=depth_data["image"].base64_image,
                     )
 
@@ -4036,6 +4182,12 @@ class HttpInterface(BaseInterface):
                     Returns:
                         OCRInferenceResponse: The response containing the retrieved text.
                     """
+                    if not USE_INFERENCE_MODELS:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="PP-OCR is not supported by this inference server configuration.",
+                        )
+
                     logger.debug(f"Reached /ocr/pp-ocr")
                     pp_ocr_model_id = load_pp_ocr_model(
                         inference_request,
@@ -4315,7 +4467,7 @@ class HttpInterface(BaseInterface):
                             f"Invalid Content-Type: {request.headers['Content-Type']}"
                         )
 
-                if not countinference and service_secret != ROBOFLOW_SERVICE_SECRET:
+                if not countinference and not service_secret_is_valid(service_secret):
                     raise MissingServiceSecretError(
                         "Service secret is required to disable inference usage tracking"
                     )
@@ -4335,7 +4487,7 @@ class HttpInterface(BaseInterface):
                     if countinference:
                         trackUsage(request_model_id, actor)
                     else:
-                        if service_secret != ROBOFLOW_SERVICE_SECRET:
+                        if not service_secret_is_valid(service_secret):
                             raise MissingServiceSecretError(
                                 "Service secret is required to disable inference usage tracking"
                             )

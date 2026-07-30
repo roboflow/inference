@@ -368,11 +368,18 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
     rm -rf /root/.cache/gstreamer-1.0
 
+# Instal Cosmos 3 preview (requires override of transformers, since 21.07.2026 it was not released yet).
+COPY requirements/requirements.cosmos.txt .
+RUN python3 -m pip install -r requirements.cosmos.txt
+
 WORKDIR /notebooks
 COPY examples/notebooks .
 
 WORKDIR /app
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

@@ -10,11 +10,10 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
-from inference.core.workflows.execution_engine.constants import (
-    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
-    AREA_KEY_IN_SV_DETECTIONS,
+from inference.core.workflows.core_steps.visualizations.common.label_text import (
+    build_detection_labels,
 )
+from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -266,66 +265,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
-        if text == "Class":
-            labels = predictions["class_name"]
-        elif text == "Tracker Id":
-            if predictions.tracker_id is not None:
-                labels = [
-                    str(t) if t is not None else "No Tracker ID"
-                    for t in predictions.tracker_id
-                ]
-            else:
-                labels = ["No Tracker ID"] * len(predictions)
-        elif text == "Time In Zone":
-            if "time_in_zone" in predictions.data:
-                labels = [
-                    f"In zone: {round(t, 2)}s" if t else "In zone: N/A"
-                    for t in predictions.data["time_in_zone"]
-                ]
-            else:
-                labels = [f"In zone: N/A"] * len(predictions)
-        elif text == "Confidence":
-            labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
-        elif text == "Class and Confidence":
-            labels = [
-                f"{class_name} {confidence:.2f}"
-                for class_name, confidence in zip(
-                    predictions["class_name"], predictions.confidence
-                )
-            ]
-        elif text == "Index":
-            labels = [str(i) for i in range(len(predictions))]
-        elif text == "Dimensions":
-            # rounded ints: center x, center y wxh from predictions[i].xyxy
-            labels = []
-            for i in range(len(predictions)):
-                x1, y1, x2, y2 = predictions.xyxy[i]
-                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-                w, h = x2 - x1, y2 - y1
-                labels.append(f"{int(cx)}, {int(cy)} {int(w)}x{int(h)}")
-        elif text == "Area":
-            labels = [str(int(area)) for area in predictions.area]
-        elif text == "Area (mask)":
-            if AREA_KEY_IN_SV_DETECTIONS in predictions.data:
-                labels = [
-                    f"Area (mask): {a:.2f}" if a is not None else "Area (mask): N/A"
-                    for a in predictions.data[AREA_KEY_IN_SV_DETECTIONS]
-                ]
-            else:
-                labels = ["Area (mask): N/A"] * len(predictions)
-        elif text == "Area (converted)":
-            if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in predictions.data:
-                labels = [
-                    f"Area (conv): {a:.2f}" if a is not None else "Area (conv): N/A"
-                    for a in predictions.data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
-                ]
-            else:
-                labels = ["Area (conv): N/A"] * len(predictions)
-        else:
-            try:
-                labels = [str(d) if d else "" for d in predictions[text]]
-            except Exception:
-                raise ValueError(f"Invalid text type: {text}")
+        labels = build_detection_labels(predictions, text)
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()

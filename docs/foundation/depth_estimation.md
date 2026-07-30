@@ -1,11 +1,32 @@
 <a href="https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf" target="_blank">Depth-Anything-V2-Small</a> is a depth estimation model developed by Hugging Face.
 
-You can use Depth-Anything-V2-Small to estimate the depth of objects in images, creating a depth map where:
-- Each pixel's value represents its relative distance from the camera
-- Lower values (darker colors) indicate closer objects
-- Higher values (lighter colors) indicate further objects
+You can use Depth-Anything-V2-Small to estimate the relative depth of objects
+in images. The served depth map is normalized independently for each image:
+
+- Higher values (lighter colors) indicate nearer objects, with `1.0` assigned
+  to the nearest prediction in the image.
+- Lower values (darker colors) indicate farther objects, with `0.0` assigned
+  to the farthest prediction in the image.
+- Intermediate values are ordinal proximity scores, not physical distances.
+  They should not be compared numerically across different images or model
+  families.
 
 You can deploy Depth-Anything-V2-Small with Inference.
+
+### Available Models
+
+The depth estimation endpoint and the `depth_estimation@v1` workflow block
+serve two model families through one ordinal-depth contract: an image-sized
+map normalized per image, where `1.0` is nearest and `0.0` is farthest.
+
+- **Depth Anything** (relative depth): `depth-anything-v2/small`, `depth-anything-v3/small`, `depth-anything-v3/base`
+- **YOLO26 depth** (metric depth, normalized on this path; substantially faster): `yolo26n-depth-768`, `yolo26s-depth-768`, `yolo26m-depth-768`, `yolo26l-depth-768`, `yolo26x-depth-768`
+
+This common output preserves shape, range, and near-to-far ordering across
+models. It does not make intermediate values geometrically equivalent between
+model families. For absolute metric depth in meters from the YOLO26
+checkpoints, load them directly with `inference_models.AutoModel` — see the
+`inference-models` YOLO26 depth documentation.
 
 ### Execution Modes
 
@@ -13,6 +34,35 @@ Depth Estimation supports both local and remote execution modes when used in wor
 
 - **Local execution**: The model runs directly on your inference server (GPU recommended for faster inference)
 - **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `depth_estimation()` client method
+
+### HTTP Response Format
+
+The `/infer/depth-estimation` endpoint serializes `normalized_depth` according to the
+request's `depth_map_format` field:
+
+- `json` (default): a nested list of floats between 0 and 1 — wire-compatible with
+  older clients, but ~17 MB for a 1080×810 image.
+- `png16`: a base64 16-bit grayscale PNG (quantization step 1/65535, typically >10x
+  smaller and much faster to serve).
+- `png8`: a base64 8-bit grayscale PNG (256 depth levels, roughly another order of
+  magnitude smaller — fine for visualization and thresholding, lossy for
+  derivative-based geometric use).
+
+The `inference_sdk` `depth_estimation()` client method defaults to `json`, so existing
+integrations keep receiving the legacy nested list. Pass `depth_map_format="png16"`
+(or `"png8"`) to opt in to the compact payload — the SDK decodes it back to a
+`numpy.ndarray` (note: an `ndarray`, not a plain list — call `.tolist()` if you need
+JSON-serializable output).
+
+!!! warning "Deprecation notice"
+
+    The SDK's `json` default is deprecated: in one of the first `inference` releases
+    of 2027 the default will switch to `png16` in a breaking way — `normalized_depth`
+    will then be returned as a `numpy.ndarray`. The SDK emits an
+    `InferenceSDKDeprecationWarning` when the `json` format is used (shown once per
+    process under default warning filters). Opt in to `png16` early, or pass
+    `depth_map_format="json"` explicitly to keep the list format after the switch.
+    Raw REST callers are unaffected — the server-side default stays `json`.
 
 ### Installation
 
@@ -73,8 +123,8 @@ In this code, we:
 4. Display both the original image and the depth map visualization
 
 The depth map visualization uses a viridis colormap where:
-- Darker colors (purple/blue) represent objects closer to the camera
-- Lighter colors (yellow/green) represent objects further from the camera
+- Lighter colors (yellow/green) represent objects closer to the camera
+- Darker colors (purple/blue) represent objects further from the camera
 
 To use Depth-Anything-V2-Small with Inference, you will need a Hugging Face token. If you don't already have a Hugging Face account, <a href="https://huggingface.co/join" target="_blank">sign up for a free Hugging Face account</a>.
 

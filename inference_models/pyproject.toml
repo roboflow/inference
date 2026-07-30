@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.35.0rc1"
+version = "0.35.0rc2"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -12,6 +12,7 @@ dependencies = [
   "requests>=2.33.0,<3.0.0",
   "supervision>=0.29.0",
   "backoff~=2.2.0",
+  "python-dotenv>=1.2.2,<2.0.0",
   "transformers>=5.5.0,<=5.9.0",
   "timm>=1.0.0,<2.0.0",
   "accelerate>=1.0.0,<2.0.0",
@@ -41,8 +42,8 @@ dependencies = [
   "shapely>=2.0.0,<3.0.0",
   # transitive-dependencies pinning
   "urllib3>=2.7.0,<3.0.0",
-  "pillow>=12.2.0,<13.0.0",
-  "GitPython>=3.1.50,<4.0.0",
+  "pillow>=12.3.0,<13.0.0",
+  "GitPython>=3.1.52,<4.0.0",
   "CairoSVG>=2.9.0,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
@@ -148,9 +149,10 @@ docs = [
   "mkdocs-literate-nav~=0.6.2",
   "mkdocs-gen-files~=0.6.0",
   "tornado>=6.5.7",
-  "mistune>=3.2.1,<4.0.0",
+  "mistune>=3.3.0,<4.0.0",
   "pymdown-extensions>=10.21.3",
-  "bleach>=6.4.0"
+  "bleach>=6.4.0",
+  "soupsieve>=2.8.4,<3.0.0"
 ]
 
 [tool.uv.sources]

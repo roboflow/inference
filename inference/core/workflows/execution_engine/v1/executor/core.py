@@ -66,6 +66,7 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.stream_session import stream_session_id
 
 
 def _store_crash_info(
@@ -352,6 +353,7 @@ def execute_steps(
     # set in this thread do not propagate into ThreadPoolExecutor workers.
     debug_collector = current_debug_collector.get()
     debug_trace = current_debug_trace.get()
+    pipeline_stream_session_id = stream_session_id.get()
     # Capture OTel context so it can be re-attached inside worker threads
     otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
@@ -367,6 +369,7 @@ def execute_steps(
             duration_minimum_value=duration_minimum_value,
             debug_collector=debug_collector,
             debug_trace=debug_trace,
+            pipeline_stream_session_id=pipeline_stream_session_id,
             step_error_handler=step_error_handler,
             otel_ctx=otel_ctx,
         )
@@ -392,6 +395,7 @@ def safe_execute_step(
     duration_minimum_value=None,
     debug_collector=None,
     debug_trace=None,
+    pipeline_stream_session_id=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     otel_ctx=None,
 ) -> None:
@@ -406,6 +410,7 @@ def safe_execute_step(
     # this thread, silently accumulating logs on a dead object.
     current_debug_collector.set(debug_collector)
     current_debug_trace.set(debug_trace)
+    stream_session_id.set(pipeline_stream_session_id)
     step_name = get_last_chunk_of_selector(selector=step_selector)
     current_debug_step_name.set(step_name)
     # Re-attach OTel context in worker thread so trace propagation works.

@@ -20,6 +20,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     send_email_using_smtp_server,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -439,15 +440,17 @@ class EmailNotificationBlockV2(WorkflowBlock):
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         api_key: Optional[str],
+        disable_sinks: bool = False,
     ):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._api_key = api_key
+        self._disable_sinks = disable_sinks
         self._last_notification_fired: Optional[datetime] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor", "api_key"]
+        return ["background_tasks", "thread_pool_executor", "api_key", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -472,11 +475,13 @@ class EmailNotificationBlockV2(WorkflowBlock):
         disable_sink: bool,
         cooldown_seconds: int,
     ) -> BlockResult:
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             return {
                 "error_status": False,
                 "throttling_status": False,
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
         seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:

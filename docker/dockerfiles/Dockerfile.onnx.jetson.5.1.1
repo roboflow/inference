@@ -107,6 +107,9 @@ RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src
 
 WORKDIR /app/
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
@@ -142,10 +145,14 @@ ENV VERSION_CHECK_MODE=continuous \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
+# Triton imports in this deprecated JP 5.1.1 image, but cannot JIT-compile the
+# RF-DETR kernels. Keep those stages on their non-Triton implementations.
 ENV CORE_MODEL_SAM3_ENABLED=False \
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True \
     USE_INFERENCE_MODELS=True \
     RUNNING_ON_JETSON=True \
+    INFERENCE_MODELS_RFDETR_PREPROCESSOR=base \
+    INFERENCE_MODELS_RFDETR_POSTPROCESSOR=base \
     L4T_VERSION=35.2.1
 
 ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

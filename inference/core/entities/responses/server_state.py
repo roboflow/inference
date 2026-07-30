@@ -91,6 +91,25 @@ class ModelsDescriptions(BaseModel):
         None,
         description="Total GPU memory available in bytes.",
     )
+    torch_cuda_allocated: Optional[int] = Field(
+        None,
+        description="Live tensor memory allocated by PyTorch's CUDA allocator in bytes.",
+    )
+    torch_cuda_reserved: Optional[int] = Field(
+        None,
+        description="Total memory reserved by PyTorch's CUDA allocator in bytes.",
+    )
+    torch_cuda_allocator_cache: Optional[int] = Field(
+        None,
+        description="Reserved but currently unallocated PyTorch CUDA memory in bytes.",
+    )
+    non_torch_gpu_memory: Optional[int] = Field(
+        None,
+        description=(
+            "Device memory not reserved by PyTorch in bytes. This includes native "
+            "runtimes, CUDA context overhead, and allocations from other processes."
+        ),
+    )
 
     @classmethod
     def from_models_descriptions(
@@ -104,12 +123,23 @@ class ModelsDescriptions(BaseModel):
         ]
         vram_values = [m.vram_bytes for m in model_entities if m.vram_bytes is not None]
         total_vram = sum(vram_values) if vram_values else None
-        gpu_used, gpu_total = _get_gpu_memory_stats()
+        (
+            gpu_used,
+            gpu_total,
+            torch_allocated,
+            torch_reserved,
+        ) = _get_gpu_memory_stats()
+        allocator_cache = _non_negative_difference(torch_reserved, torch_allocated)
+        non_torch_memory = _non_negative_difference(gpu_used, torch_reserved)
         return cls(
             models=model_entities,
             total_vram_bytes=total_vram,
             gpu_memory_used=gpu_used,
             gpu_memory_total=gpu_total,
+            torch_cuda_allocated=torch_allocated,
+            torch_cuda_reserved=torch_reserved,
+            torch_cuda_allocator_cache=allocator_cache,
+            non_torch_gpu_memory=non_torch_memory,
         )
 
 
@@ -119,9 +149,22 @@ def _get_gpu_memory_stats() -> tuple:
 
         if torch.cuda.is_available():
             free, total = torch.cuda.mem_get_info()
-            return total - free, total
+            return (
+                total - free,
+                total,
+                torch.cuda.memory_allocated(),
+                torch.cuda.memory_reserved(),
+            )
     except ImportError:
         pass
     except Exception:
         pass
-    return None, None
+    return None, None, None, None
+
+
+def _non_negative_difference(
+    minuend: Optional[int], subtrahend: Optional[int]
+) -> Optional[int]:
+    if minuend is None or subtrahend is None:
+        return None
+    return max(0, minuend - subtrahend)
