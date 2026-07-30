@@ -414,7 +414,15 @@ else:
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
-from inference.core.workflows.core_steps.fusion.frame_delay.v1 import FrameDelayBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.frame_delay.v1 import (
+        FrameDelayBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.frame_delay.v1_tensor import (
+        FrameDelayBlockV1,
+    )
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
