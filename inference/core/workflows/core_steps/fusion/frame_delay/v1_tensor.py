@@ -59,10 +59,7 @@ from inference.core.workflows.core_steps.fusion.frame_delay.v1 import (
     FrameDelayBlockV1 as NumpyFrameDelayBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TENSOR_MODE_ADDENDUM = """
 ## Tensor Data Representation Behavior
