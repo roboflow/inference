@@ -190,7 +190,16 @@ class ModelManagerAdapter:
         translation.ensure_request_supported(model_id, request)
         is_batch = isinstance(request.image, list)
         images = request.image if is_batch else [request.image]
-        forwarded = [translation.forward_image(image) for image in images]
+        imageless_allowed = (
+            route["task_type"] == "interactive-instance-segmentation"
+            and action == "segment"
+        )
+        forwarded = [
+            (None, (0, 0))
+            if image is None and imageless_allowed
+            else translation.forward_image(image)
+            for image in images
+        ]
         params = translation.build_task_params(route["task_type"], action, request)
         t_start = time.perf_counter()
         ensure = await self._client.ensure_loaded(

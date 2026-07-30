@@ -45,7 +45,10 @@ from inference.core.entities.responses.perception_encoder import (
     PerceptionEncoderCompareResponse,
     PerceptionEncoderEmbeddingResponse,
 )
-from inference.core.entities.responses.sam import SamEmbeddingResponse
+from inference.core.entities.responses.sam import (
+    SamEmbeddingResponse,
+    SamSegmentationResponse,
+)
 from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
     Sam2SegmentationPrediction,
@@ -150,6 +153,7 @@ IMPLEMENTED_ROUTES = frozenset(
         ("multi-label-classification", "infer"),
         ("interactive-instance-segmentation", "embed"),
         ("interactive-instance-segmentation", "embed_images"),
+        ("interactive-instance-segmentation", "segment"),
         ("interactive-instance-segmentation", "segment_with_text_prompts"),
         ("interactive-instance-segmentation", "segment_with_visual_prompts"),
         ("object-detection", "infer"),
@@ -365,14 +369,16 @@ def build_task_params(task_type: str, action: str, request: Any) -> dict:
 
 
 def _build_interactive_segmentation_params(action: str, request: Any) -> dict:
-    if action == "embed":
-        return {}
-    if action == "embed_images":
+    if action in ("embed", "embed_images"):
         params: dict = {}
         image_id = getattr(request, "image_id", None)
         if image_id:
             params["image_hashes"] = [image_id]
         return params
+    if action == "segment":
+        if type(request).__name__ == "SamSegmentationRequest":
+            return _build_sam_segment_params(request)
+        return _build_sam2_segment_params(request)
     if action == "segment_with_visual_prompts":
         return _build_visual_prompt_params(request)
     if action == "segment_with_text_prompts":
@@ -380,6 +386,65 @@ def _build_interactive_segmentation_params(action: str, request: Any) -> dict:
     raise ModelDeploymentNotSupportedError(
         f"SAM action '{action}' is not supported on the MMP path."
     )
+
+
+def _build_sam_segment_params(request: Any) -> dict:
+    if getattr(request, "embeddings", None):
+        raise ModelDeploymentNotSupportedError(
+            "embeddings input is not supported on the MMP path."
+        )
+    image = getattr(request, "image", None)
+    image_id = getattr(request, "image_id", None)
+    if not image and not image_id:
+        raise ValueError("Must provide either image, cached image_id, or embeddings")
+    params: dict = {"multi_mask_output": False}
+    if getattr(request, "has_mask_input", False):
+        if getattr(request, "mask_input", None) is not None:
+            raise ModelDeploymentNotSupportedError(
+                "mask_input is not supported on the MMP path."
+            )
+        if not getattr(request, "use_mask_input_cache", True):
+            raise ModelDeploymentNotSupportedError(
+                "has_mask_input without use_mask_input_cache is not supported on "
+                "the MMP path."
+            )
+        if not image_id:
+            raise ValueError("Must provide either mask_input or cached image_id")
+        params["enforce_mask_input"] = True
+    point_coords = getattr(request, "point_coords", None)
+    if point_coords is not None:
+        params["point_coordinates"] = [[list(point) for point in point_coords]]
+    point_labels = getattr(request, "point_labels", None)
+    if point_labels is not None:
+        params["point_labels"] = [list(point_labels)]
+    if image_id:
+        params["image_hashes"] = [image_id]
+    response_format = getattr(request, "format", None)
+    if response_format == "binary":
+        raise ModelDeploymentNotSupportedError(
+            "format='binary' is not supported on the MMP path."
+        )
+    if response_format != "json":
+        raise ValueError(f"Invalid format {response_format}")
+    return params
+
+
+def _build_sam2_segment_params(request: Any) -> dict:
+    response_format = getattr(request, "format", None)
+    if response_format not in ("json", "rle", "binary"):
+        raise ValueError(f"Invalid format {response_format}")
+    if response_format == "binary":
+        raise ModelDeploymentNotSupportedError(
+            "format='binary' is not supported on the MMP path."
+        )
+    params = _build_visual_prompt_params(request)
+    if not any(
+        key in params for key in ("point_coordinates", "point_labels", "boxes")
+    ):
+        params["point_coordinates"] = [[[0, 0]]]
+        params["point_labels"] = [[-1]]
+    params["return_logits"] = True
+    return params
 
 
 def _build_visual_prompt_params(request: Any) -> dict:
@@ -1097,12 +1162,41 @@ def repack_interactive_segmentation_response(
 ):
     if action in ("embed", "embed_images"):
         return _repack_sam_embeddings(action, prediction, request)
+    if action == "segment":
+        if type(request).__name__ == "SamSegmentationRequest":
+            return _repack_sam_segmentation(prediction)
+        return _repack_sam2_segmentation(prediction, request)
     if action == "segment_with_visual_prompts":
         return _repack_visual_segmentation(prediction, request)
     if action == "segment_with_text_prompts":
         return _repack_text_segmentation(prediction, request)
     raise ModelDeploymentNotSupportedError(
         f"No response translation for SAM action '{action}' on the MMP path."
+    )
+
+
+def _repack_sam2_segmentation(
+    prediction: Any, request: Any
+) -> Sam2SegmentationResponse:
+    result = _unwrap_single_prediction(prediction)
+    masks, scores = _choose_most_confident_sam_masks(result.masks, result.scores)
+    masks = np.asarray(masks) >= 0.0
+    predictions = _sam_masks_to_predictions(
+        masks, scores, getattr(request, "format", "json"), Sam2SegmentationPrediction
+    )
+    return Sam2SegmentationResponse(predictions=predictions, time=0.0)
+
+
+def _repack_sam_segmentation(prediction: Any) -> SamSegmentationResponse:
+    result = _unwrap_single_prediction(prediction)
+    masks = np.asarray(result.masks)
+    if masks.dtype != np.bool_:
+        masks = masks > 0.0
+    low_res_masks = np.asarray(result.logits) > 0.0
+    return SamSegmentationResponse(
+        masks=[polygon.tolist() for polygon in masks2poly(masks)],
+        low_res_masks=[polygon.tolist() for polygon in masks2poly(low_res_masks)],
+        time=0.0,
     )
 
 

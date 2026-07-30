@@ -916,12 +916,6 @@ class TestSamRouting:
         response = running_adapter.infer_from_request_sync("sam/vit_h", request)
         assert response.embeddings == np.ones((1, 2, 2, 2)).tolist()
 
-    def test_sam2_segment_is_unsupported(self, running_adapter, monkeypatch):
-        self._setup(running_adapter, monkeypatch, ["embed", "segment"])
-        request = sam_request(Sam2SegmentationRequest, prompts=None)
-        with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.infer_from_request_sync("sam2/hiera_large", request)
-
     def test_sam3_visual_segment(self, running_adapter, monkeypatch):
         from inference.core.entities.requests.sam2 import (
             Box,
