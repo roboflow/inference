@@ -3197,6 +3197,11 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ObjectDetectionInferenceResponse: The object detection response.
                     """
+                    if LEGACY_MMP_ADAPTER_ENABLED:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="YOLO-World is not supported by this inference server configuration.",
+                        )
                     logger.debug(f"Reached /yolo_world/infer. Loading model")
                     yolo_world_model_id = load_yolo_world_model(
                         inference_request,
