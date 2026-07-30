@@ -354,3 +354,45 @@ def test_check_and_evict_uses_evict_target_for_base_key(monkeypatch):
     assert targeted == [
         "bk-1"
     ]  # base key routed through _evict_target, not _evict_model
+
+
+def test_stats_entry_exposes_mro_names_for_shared_head():
+    import json
+    import struct
+
+    p = _vmmp()
+    p._stats_snapshot = {}
+    p._manager = None
+    p._pool = None
+    p._n_slots = 2
+    p._rejects_pool_full = 0
+    p._cache_hits = 0
+    p._cache_misses = 0
+    p._models = {"head/1": ModelState(loaded=True)}
+
+    class _HeadBackend:
+        _model_mro_names = ["RoboflowInstantHF", "ObjectDetectionModel", "object"]
+        is_healthy = True
+        state = "ready"
+        device = "cuda:0"
+
+        def stats(self):
+            return {"backend_type": "shared-head"}
+
+    p._backends = {"head/1": _HeadBackend()}
+    sent = {}
+
+    async def fake_send(identity, msg_type, payload):
+        sent["payload"] = payload
+
+    p._send = fake_send
+    asyncio.run(p._handle_stats(b"id", [struct.pack(">Q", 1)]))
+    body = json.loads(sent["payload"][12:].decode())
+    entry = body["mmp_models"]["head/1"]
+    assert entry["model_mro_names"] == [
+        "RoboflowInstantHF",
+        "ObjectDetectionModel",
+        "object",
+    ]
+    assert entry["model_class_name"] is None
+    assert entry["backend_type"] == "shared-head"

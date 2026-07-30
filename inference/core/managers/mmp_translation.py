@@ -84,6 +84,7 @@ from inference.core.utils.image_utils import (
     fetch_image_bytes_from_url,
     load_image_from_numpy_object,
     load_image_from_numpy_str,
+    load_image_rgb,
 )
 from inference.core.utils.postprocess import (
     cosine_similarity,
@@ -92,6 +93,7 @@ from inference.core.utils.postprocess import (
     masks2poly,
 )
 from inference.core.utils.roboflow import get_model_id_chunks
+from inference.core.utils.visualisation import draw_detection_predictions
 
 # Static mirror of the (model_type, action) pairs registered by
 # inference_server/handlers/*/description.py. Kept as literals so the legacy
@@ -173,6 +175,8 @@ IMPLEMENTED_ROUTES = frozenset(
 # processor's post_process_generation; the new-world prompt action returns the
 # raw decoded string.
 VLM_UNSUPPORTED_MODEL_CLASSES = frozenset(["Florence2HF"])
+
+OWLV2_BACKED_MODEL_CLASSES = frozenset(["OWLv2HF", "RoboflowInstantHF"])
 
 IMPLEMENTED_TASK_TYPES = frozenset(task_type for task_type, _ in IMPLEMENTED_ROUTES)
 
@@ -340,11 +344,6 @@ def translate_infer_error(error: Exception, model_id: str) -> Exception:
 
 def ensure_request_supported(model_id: str, request: Any) -> None:
     """Reject fidelity-breaking legacy-only params instead of silently drifting."""
-    if getattr(request, "visualize_predictions", False):
-        raise ModelDeploymentNotSupportedError(
-            f"visualize_predictions / format=image is not supported for model "
-            f"'{model_id}' on the MMP path."
-        )
     for field in _DISABLE_PREPROC_FIELDS:
         if getattr(request, field, False):
             raise ModelDeploymentNotSupportedError(
@@ -818,6 +817,160 @@ def repack_prediction(
     raise ModelDeploymentNotSupportedError(
         f"No response translation for task type '{task_type}' on the MMP path."
     )
+
+
+_DETECTION_VISUALIZATION_TASK_TYPES = frozenset(
+    ["object-detection", "instance-segmentation", "keypoint-detection"]
+)
+
+
+def render_visualization(
+    task_type: str, request: Any, response: Any, route: dict
+) -> bytes:
+    if (
+        task_type in _DETECTION_VISUALIZATION_TASK_TYPES
+        or task_type == "open-vocabulary-object-detection"
+    ):
+        if _is_owlv2_backed(route):
+            colors = _class_color_mapping(
+                sorted({p.class_name for p in response.predictions})
+            )
+        else:
+            colors = _model_class_colors(route, request)
+        return draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors=colors,
+        )
+    if task_type in ("classification", "multi-label-classification"):
+        return _draw_classification_predictions(
+            request, response, _model_class_colors(route, request)
+        )
+    raise ModelDeploymentNotSupportedError(
+        f"visualize_predictions / format=image is not supported for task type "
+        f"'{task_type}' on the MMP path."
+    )
+
+
+def _is_owlv2_backed(route: dict) -> bool:
+    if OWLV2_BACKED_MODEL_CLASSES.intersection(route.get("model_mro_names") or []):
+        return True
+    return route.get("model_class_name") in OWLV2_BACKED_MODEL_CLASSES
+
+
+def _class_color_mapping(class_names: Optional[List[str]]) -> Dict[str, str]:
+    from inference.core.models.roboflow import get_color_mapping_from_environment
+
+    return get_color_mapping_from_environment(
+        environment=None, class_names=class_names or []
+    )
+
+
+def _model_class_colors(route: dict, request: Any) -> Dict[str, str]:
+    colors = route.get("class_colors")
+    if colors is None:
+        from inference.core.models.roboflow import get_color_mapping_from_environment
+
+        colors = get_color_mapping_from_environment(
+            environment=_fetch_color_environment(
+                route.get("mmp_model_id"), getattr(request, "api_key", None)
+            ),
+            class_names=route.get("class_names") or [],
+        )
+        route["class_colors"] = colors
+    return colors
+
+
+def _fetch_color_environment(
+    model_id: Optional[str], api_key: Optional[str]
+) -> Optional[dict]:
+    if not model_id:
+        return None
+    try:
+        from inference.core.devices.utils import GLOBAL_DEVICE_ID
+        from inference.core.registries.roboflow import ModelEndpointType
+        from inference.core.roboflow_api import (
+            get_roboflow_instant_model_data,
+            get_roboflow_model_data,
+        )
+
+        _, version_id = get_model_id_chunks(model_id=model_id)
+        if version_id is not None:
+            api_data = (
+                get_roboflow_model_data(
+                    api_key=api_key,
+                    model_id=model_id,
+                    endpoint_type=ModelEndpointType.ORT,
+                    device_id=GLOBAL_DEVICE_ID,
+                ).get("ort")
+                or {}
+            )
+        else:
+            api_data = (
+                get_roboflow_instant_model_data(api_key=api_key, model_id=model_id)
+                or {}
+            )
+        colors = api_data.get("colors")
+        if isinstance(colors, dict):
+            return {"COLORS": colors}
+        return None
+    except Exception:
+        return None
+
+
+def _draw_classification_predictions(
+    request: Any, response: Any, colors: Dict[str, str]
+) -> bytes:
+    from PIL import Image, ImageDraw, ImageFont
+
+    image = Image.fromarray(load_image_rgb(request.image))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    if isinstance(response.predictions, list):
+        prediction = response.predictions[0]
+        color = colors.get(prediction.class_name, "#4892EA")
+        draw.rectangle(
+            [0, 0, image.size[1], image.size[0]],
+            outline=color,
+            width=request.visualization_stroke_width,
+        )
+        text = (
+            f"{prediction.class_id} - {prediction.class_name} "
+            f"{prediction.confidence:.2f}"
+        )
+        text_size = font.getbbox(text)
+        button_size = (text_size[2] + 20, text_size[3] + 20)
+        button_img = Image.new("RGBA", button_size, color)
+        button_draw = ImageDraw.Draw(button_img)
+        button_draw.text((10, 10), text, font=font, fill=(255, 255, 255, 255))
+        image.paste(button_img, (0, 0))
+    else:
+        if len(response.predictions) > 0:
+            draw.rectangle(
+                [0, 0, image.size[1], image.size[0]],
+                outline="#4892EA",
+                width=request.visualization_stroke_width,
+            )
+        row = 0
+        predictions = sorted(
+            response.predictions.items(),
+            key=lambda x: x[1].confidence,
+            reverse=True,
+        )
+        for cls_name, prediction in predictions:
+            color = colors.get(cls_name, "#4892EA")
+            text = f"{cls_name} {prediction.confidence:.2f}"
+            text_size = font.getbbox(text)
+            button_size = (text_size[2] + 20, text_size[3] + 20)
+            button_img = Image.new("RGBA", button_size, color)
+            button_draw = ImageDraw.Draw(button_img)
+            button_draw.text((10, 10), text, font=font, fill=(255, 255, 255, 255))
+            image.paste(button_img, (0, row))
+            row += button_size[1]
+    buffered = io.BytesIO()
+    image = image.convert("RGB")
+    image.save(buffered, format="JPEG")
+    return buffered.getvalue()
 
 
 def repack_object_detection_response(

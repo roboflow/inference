@@ -172,6 +172,8 @@ class ModelManagerAdapter:
             "tasks": tasks,
             "class_names": model_entry.get("class_names"),
             "key_points_classes": key_points_classes,
+            "model_class_name": model_entry.get("model_class_name"),
+            "model_mro_names": model_entry.get("model_mro_names"),
         }
         self._routes[model_id] = route
         return route
@@ -220,6 +222,11 @@ class ModelManagerAdapter:
             _set_if_field(response, "time", elapsed)
             _set_if_field(response, "inference_id", request.id)
             responses.append(response)
+        if getattr(request, "visualize_predictions", False):
+            for response in responses:
+                response.visualization = translation.render_visualization(
+                    route["task_type"], request, response, route
+                )
         return responses if is_batch else responses[0]
 
     async def _infer_embedding(self, model_id: str, route: dict, action: str, request):

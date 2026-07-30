@@ -4,11 +4,15 @@ import io
 import threading
 from types import SimpleNamespace
 
+import cv2
 import numpy as np
 import pytest
 
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
     ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -25,6 +29,8 @@ from inference.core.exceptions import (
 )
 from inference.core.managers import mmp_translation as translation
 from inference.core.managers.mmp_adapter import ModelManagerAdapter
+from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.visualisation import draw_detection_predictions
 from inference_model_manager.hash_namespacing import namespace_client_hash_id
 
 
@@ -57,6 +63,7 @@ class FakeClient:
         ]
         self.infer_error = None
         self.backend_type = None
+        self.model_mro_names = None
 
     async def start(self):
         self.started = True
@@ -85,6 +92,7 @@ class FakeClient:
             "class_names": self.class_names,
             "key_points_classes": self.key_points_classes,
             "model_class_name": self.model_class_name,
+            "model_mro_names": self.model_mro_names,
         }
         if self.backend_type is not None:
             entry["backend_type"] = self.backend_type
@@ -182,6 +190,8 @@ def od_request(image=None, **overrides):
         "class_agnostic_nms": False,
         "class_filter": None,
         "visualize_predictions": False,
+        "visualization_labels": False,
+        "visualization_stroke_width": 1,
         "disable_preproc_auto_orient": False,
         "disable_preproc_contrast": False,
         "disable_preproc_grayscale": False,
@@ -190,6 +200,50 @@ def od_request(image=None, **overrides):
     }
     fields.update(overrides)
     return SimpleNamespace(**fields)
+
+
+def visual_image(width=64, height=48):
+    array = np.zeros((height, width, 3), dtype=np.uint8)
+    array[10:20, 10:30] = (0, 128, 255)
+    _, encoded = cv2.imencode(".png", array)
+    return InferenceRequestImage(
+        type="base64", value=base64.b64encode(encoded.tobytes()).decode()
+    )
+
+
+def legacy_classification_draw(request, response, colors):
+    from PIL import Image, ImageDraw, ImageFont
+
+    image = Image.fromarray(load_image_rgb(request.image))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    prediction = response.predictions[0]
+    color = colors.get(prediction.class_name, "#4892EA")
+    draw.rectangle(
+        [0, 0, image.size[1], image.size[0]],
+        outline=color,
+        width=request.visualization_stroke_width,
+    )
+    text = f"{prediction.class_id} - {prediction.class_name} {prediction.confidence:.2f}"
+    text_size = font.getbbox(text)
+    button_size = (text_size[2] + 20, text_size[3] + 20)
+    button_img = Image.new("RGBA", button_size, color)
+    button_draw = ImageDraw.Draw(button_img)
+    button_draw.text((10, 10), text, font=font, fill=(255, 255, 255, 255))
+    image.paste(button_img, (0, 0))
+    buffered = io.BytesIO()
+    image.convert("RGB").save(buffered, format="JPEG")
+    return buffered.getvalue()
+
+
+@pytest.fixture
+def palette_colors(monkeypatch):
+    monkeypatch.setattr(
+        translation,
+        "_fetch_color_environment",
+        lambda model_id, api_key: None,
+        raising=False,
+    )
 
 
 class TestRouting:
@@ -394,11 +448,110 @@ class TestInfer:
         assert restored.shape == (48, 64, 3)
         assert response.image.width == 64 and response.image.height == 48
 
-    def test_visualize_predictions_errors(self, running_adapter, od_stat, png_image):
+    def test_visualize_predictions_populates_jpeg_visualization(
+        self, running_adapter, od_stat, monkeypatch, palette_colors
+    ):
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        response = running_adapter.infer_from_request_sync("ws/1", request)
+        assert isinstance(response.visualization, bytes)
+        assert response.visualization[:2] == b"\xff\xd8"
+        decoded = cv2.imdecode(
+            np.frombuffer(response.visualization, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        assert decoded.shape == (48, 64, 3)
+
+    def test_visualization_matches_legacy_draw_util(
+        self, running_adapter, od_stat, monkeypatch, palette_colors
+    ):
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        request = od_request(
+            image=visual_image(),
+            visualize_predictions=True,
+            visualization_labels=True,
+            visualization_stroke_width=3,
+        )
+        response = running_adapter.infer_from_request_sync("ws/1", request)
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"cat": "#4892EA", "dog": "#00EEC3"},
+        )
+        assert response.visualization == expected
+
+    def test_platform_colors_override_palette(
+        self, running_adapter, od_stat, monkeypatch
+    ):
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        fetches = []
+
+        def fake_fetch(model_id, api_key):
+            fetches.append((model_id, api_key))
+            return {"COLORS": {"cat": "#FF0000", "dog": "#00FF00"}}
+
+        monkeypatch.setattr(translation, "_fetch_color_environment", fake_fetch)
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        response = running_adapter.infer_from_request_sync("ws/1", request)
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"cat": "#FF0000", "dog": "#00FF00"},
+        )
+        assert response.visualization == expected
+        assert fetches == [("ws/1", "key")]
+
+    def test_platform_color_fetch_cached_per_model(
+        self, running_adapter, od_stat, monkeypatch
+    ):
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        fetches = []
+
+        def fake_fetch(model_id, api_key):
+            fetches.append(model_id)
+            return {"COLORS": {"dog": "#00FF00"}}
+
+        monkeypatch.setattr(translation, "_fetch_color_environment", fake_fetch)
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        first = running_adapter.infer_from_request_sync("ws/1", request)
+        second = running_adapter.infer_from_request_sync("ws/1", request)
+        assert fetches == ["ws/1"]
+        assert first.visualization == second.visualization
+
+    def test_platform_color_fetch_failure_falls_back_to_palette(
+        self, running_adapter, od_stat, monkeypatch
+    ):
+        import inference.core.roboflow_api as roboflow_api
+
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        calls = []
+
+        def failing_fetch(**kwargs):
+            calls.append(kwargs.get("model_id"))
+            raise RuntimeError("colors api down")
+
+        monkeypatch.setattr(roboflow_api, "get_roboflow_model_data", failing_fetch)
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        response = running_adapter.infer_from_request_sync("ws/1", request)
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"cat": "#4892EA", "dog": "#00EEC3"},
+        )
+        assert response.visualization == expected
+        assert calls == ["ws/1"]
+
+    def test_no_visualization_work_without_flag(
+        self, running_adapter, od_stat, png_image, monkeypatch
+    ):
+        def fail(*args, **kwargs):
+            raise AssertionError("visualization rendered")
+
+        monkeypatch.setattr(translation, "render_visualization", fail)
         image, _ = png_image
-        request = od_request(image=image, visualize_predictions=True)
-        with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.infer_from_request_sync("ws/1", request)
+        response = running_adapter.infer_from_request_sync(
+            "ws/1", od_request(image=image)
+        )
+        assert response.visualization is None
 
     def test_disable_preproc_errors(self, running_adapter, od_stat, png_image):
         image, _ = png_image
@@ -565,6 +718,36 @@ class TestPerTypeRepack:
         assert prediction.mask_format == "rle"
         assert isinstance(prediction.rle["counts"], str)
 
+    def test_instance_segmentation_visualization(
+        self, running_adapter, monkeypatch, palette_colors
+    ):
+        mask = np.zeros((1, 48, 64), dtype=np.uint8)
+        mask[0, 10:20, 10:20] = 1
+        result = [
+            FakeInstanceDetections(
+                xyxy=[[10.0, 10.0, 20.0, 20.0]],
+                confidence=[0.8],
+                class_id=[0],
+                mask=mask,
+            )
+        ]
+        request = od_request(
+            image=visual_image(),
+            mask_decode_mode="accurate",
+            tradeoff_factor=0.0,
+            response_mask_format="polygon",
+            visualize_predictions=True,
+        )
+        response = self._run(
+            running_adapter, monkeypatch, "instance-segmentation", result, request
+        )
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"cat": "#4892EA", "dog": "#00EEC3"},
+        )
+        assert response.visualization == expected
+
     def test_instance_segmentation_mask_decode_mode_errors(
         self, running_adapter, monkeypatch
     ):
@@ -605,6 +788,37 @@ class TestPerTypeRepack:
             "key_points_threshold"
         ] == 0.0
 
+    def test_keypoints_visualization(
+        self, running_adapter, monkeypatch, palette_colors
+    ):
+        running_adapter._client.key_points_classes = [["nose", "tail"]]
+        result = (
+            [
+                FakeKeyPoints(
+                    xy=[[[5.0, 6.0], [7.0, 8.0]]],
+                    class_id=[0],
+                    confidence=[[0.9, 0.8]],
+                )
+            ],
+            [
+                FakeDetections(
+                    xyxy=[[0.0, 0.0, 10.0, 10.0]], confidence=[0.7], class_id=[1]
+                )
+            ],
+        )
+        request = od_request(
+            image=visual_image(), keypoint_confidence=0.0, visualize_predictions=True
+        )
+        response = self._run(
+            running_adapter, monkeypatch, "keypoint-detection", result, request
+        )
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"cat": "#4892EA", "dog": "#00EEC3"},
+        )
+        assert response.visualization == expected
+
     def test_keypoints_without_skeleton_names_unsupported(
         self, running_adapter, monkeypatch
     ):
@@ -634,6 +848,56 @@ class TestPerTypeRepack:
         assert response.predicted_classes == ["dog"]
         assert response.predictions["cat"].confidence == 0.7
         assert response.predictions["dog"].class_id == 1
+
+    def test_classification_visualization(
+        self, running_adapter, monkeypatch, palette_colors
+    ):
+        result = FakeClassification(confidence=[0.7, 0.2])
+        request = od_request(
+            image=visual_image(), confidence=0.4, visualize_predictions=True
+        )
+        response = self._run(
+            running_adapter, monkeypatch, "classification", result, request
+        )
+        assert isinstance(response.visualization, bytes)
+        assert response.visualization[:2] == b"\xff\xd8"
+        decoded = cv2.imdecode(
+            np.frombuffer(response.visualization, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        assert decoded.shape == (48, 64, 3)
+
+    def test_classification_visualization_matches_legacy_renderer(
+        self, running_adapter, monkeypatch, palette_colors
+    ):
+        result = FakeClassification(confidence=[0.7, 0.2])
+        request = od_request(
+            image=visual_image(),
+            confidence=0.4,
+            visualize_predictions=True,
+            visualization_stroke_width=3,
+        )
+        response = self._run(
+            running_adapter, monkeypatch, "classification", result, request
+        )
+        expected = legacy_classification_draw(
+            request, response, {"cat": "#4892EA", "dog": "#00EEC3"}
+        )
+        assert response.visualization == expected
+
+    def test_multi_label_classification_visualization(
+        self, running_adapter, monkeypatch, palette_colors
+    ):
+        result = [FakeClassification(confidence=[0.7, 0.9], class_ids=[1])]
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        response = self._run(
+            running_adapter, monkeypatch, "multi-label-classification", result, request
+        )
+        assert isinstance(response.visualization, bytes)
+        assert response.visualization[:2] == b"\xff\xd8"
+        decoded = cv2.imdecode(
+            np.frombuffer(response.visualization, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        assert decoded.shape == (48, 64, 3)
 
     def test_semantic_segmentation(self, running_adapter, monkeypatch):
         seg_map = np.zeros((48, 64), dtype=np.uint8)
@@ -745,6 +1009,94 @@ class TestPhase3aRouting:
         ]
         names = [p.class_name for p in response.predictions]
         assert names == ["dog", "2"]
+
+    def test_owlv2_instant_visualization_uses_response_sorted_colors(
+        self, running_adapter, monkeypatch
+    ):
+        monkeypatch.setattr(translation, "stat_model", make_stat("object-detection"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        client = running_adapter._client
+        client.model_class_name = None
+        client.model_mro_names = [
+            "RoboflowInstantHF",
+            "ObjectDetectionModel",
+            "ABC",
+            "Generic",
+            "object",
+        ]
+        client.backend_type = "shared-head"
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        response = running_adapter.infer_from_request_sync("ws/instant", request)
+        assert [p.class_name for p in response.predictions] == ["dog"]
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"dog": "#4892EA"},
+        )
+        assert response.visualization == expected
+
+    def test_owlv2_visualization_with_owlv2_request_uses_response_sorted_colors(
+        self,
+    ):
+        from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
+
+        request = OwlV2InferenceRequest(
+            api_key="key",
+            image=visual_image(),
+            training_data=[],
+            visualize_predictions=True,
+            visualization_labels=True,
+            visualization_stroke_width=2,
+        )
+        response = ObjectDetectionInferenceResponse(
+            predictions=[
+                ObjectDetectionPrediction(
+                    x=20.0,
+                    y=20.0,
+                    width=10.0,
+                    height=10.0,
+                    confidence=0.9,
+                    **{"class": "dog"},
+                    class_id=1,
+                ),
+                ObjectDetectionPrediction(
+                    x=8.0,
+                    y=8.0,
+                    width=6.0,
+                    height=6.0,
+                    confidence=0.8,
+                    **{"class": "person"},
+                    class_id=0,
+                ),
+            ],
+            image=InferenceResponseImage(width=64, height=48),
+        )
+        route = {
+            "task_type": "open-vocabulary-object-detection",
+            "model_class_name": "OWLv2HF",
+            "class_names": None,
+        }
+        rendered = translation.render_visualization(
+            "open-vocabulary-object-detection", request, response, route
+        )
+        expected = draw_detection_predictions(
+            inference_request=request,
+            inference_response=response,
+            colors={"dog": "#4892EA", "person": "#00EEC3"},
+        )
+        assert rendered == expected
+
+    def test_text_only_ocr_visualize_predictions_errors(
+        self, running_adapter, monkeypatch
+    ):
+        monkeypatch.setattr(translation, "stat_model", make_stat("text-only-ocr"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.infer_result = "printed text"
+        request = od_request(image=visual_image(), visualize_predictions=True)
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync(
+                "trocr/trocr-base-printed", request
+            )
 
     def test_open_vocabulary_without_classes_errors(
         self, running_adapter, monkeypatch

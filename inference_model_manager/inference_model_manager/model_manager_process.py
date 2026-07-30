@@ -1021,6 +1021,9 @@ class ModelManagerProcess:
                     entry["model_class_name"] = getattr(
                         backend, "_model_class_name", None
                     )
+                    entry["model_mro_names"] = getattr(
+                        backend, "_model_mro_names", None
+                    )
                     entry = {**backend.stats(), **entry}
                 except Exception:
                     pass
