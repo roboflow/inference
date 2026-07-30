@@ -37,10 +37,7 @@ class ThreadedExactPreprocessor:
         implementation_id=RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
         stage=OptimizationStage.PREPROCESS,
         version="1",
-        target=DeviceCompatibility(
-            device_kind="gpu",
-            device_families=("nvidia_jetson", "nvidia_discrete_gpu"),
-        ),
+        target=DeviceCompatibility(device_kind="gpu"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping(

@@ -518,7 +518,10 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
 
 plan = RFDetrExecutionPlan(
     preprocessor_id="triton-universal-v1",
+    buffer_strategy_id="base",
+    scheduler_id="base",
     postprocessor_id="triton-fused-v1",
+    engine_plugin_id="base",
     allow_compatibility_fallback=True,
 )
 model = AutoModel.from_pretrained(
@@ -546,10 +549,12 @@ Composed `model(...)` and `infer()` calls pass
 `independent_stage_execution=False` to preprocessing internally, record a CUDA event,
 and let `forward()` wait on that event without a host synchronization.
 
-The plan also reserves independently selectable buffer-strategy, scheduler, and engine
-plugin stages. Those stages currently accept only `base`. When supplied, an explicit
-plan takes precedence and the implementation-selection environment variables are not
-read.
+The buffer-strategy, scheduler, and engine-plugin stages are also registry-backed. They
+currently expose real `base` implementations that preserve framework tensor ownership,
+the existing stream/event schedule, and the existing TensorRT execution boundary.
+`auto` resolves to `base` for these categories until validated alternatives are added;
+unknown explicit IDs raise an error. When supplied, an explicit plan takes precedence
+and the implementation-selection environment variables are not read.
 
 When a selected optimized stage declares that it cannot preserve a model or request
 contract, RF-DETR uses its declared `base` fallback and records the requested

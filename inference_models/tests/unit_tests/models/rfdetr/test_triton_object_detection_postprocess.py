@@ -54,7 +54,7 @@ def test_fused_postprocessor_is_explicitly_selectable() -> None:
     metadata = RFDETR_POSTPROCESSOR_IMPLEMENTATIONS[
         RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
     ]
-    assert metadata.validated_environments == ()
+    assert metadata.validation_records == ()
 
 
 def test_fused_postprocessor_requires_cuda() -> None:

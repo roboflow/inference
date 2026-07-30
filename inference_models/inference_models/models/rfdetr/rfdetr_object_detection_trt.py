@@ -36,7 +36,6 @@ from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
     get_trt_engine_inputs_and_outputs,
-    infer_from_trt_engine,
     load_trt_model,
 )
 from inference_models.models.optimization.contracts import (
@@ -56,15 +55,16 @@ from inference_models.models.rfdetr.optimization.catalog import (
     build_rfdetr_implementation_registry,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
+    BufferStrategy,
+    EngineAdjacentPlugin,
+    EngineExecutionRequest,
+    ExecutionScheduler,
     Postprocessor,
     PostprocessRequest,
     PreprocessRequest,
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
-)
-from inference_models.models.rfdetr.optimization.readiness import (
-    PreprocessReadinessTracker,
 )
 from inference_models.models.rfdetr.optimization.selection import (
     resolve_postprocessor_for_request,
@@ -74,6 +74,7 @@ from inference_models.models.rfdetr.optimization.selection import (
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
+from inference_models.models.rfdetr.triton_preprocess import TRITON_AVAILABLE
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -205,7 +206,7 @@ class RFDetrForObjectDetectionTRT(
                 model_path=model_package_content["engine.plan"],
                 engine_host_code_allowed=engine_host_code_allowed,
             )
-            execution_context = engine.create_execution_context()
+            trt_execution_context = engine.create_execution_context()
         inputs, outputs = get_trt_engine_inputs_and_outputs(engine=engine)
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
@@ -236,7 +237,7 @@ class RFDetrForObjectDetectionTRT(
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
-            execution_context=execution_context,
+            trt_execution_context=trt_execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             rfdetr_execution_plan=rfdetr_execution_plan,
@@ -254,7 +255,7 @@ class RFDetrForObjectDetectionTRT(
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
-        execution_context: trt.IExecutionContext,
+        trt_execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
@@ -268,7 +269,7 @@ class RFDetrForObjectDetectionTRT(
         self._classes_re_mapping = classes_re_mapping
         self._device = device
         self._cuda_context = cuda_context
-        self._execution_context = execution_context
+        self._trt_execution_context = trt_execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
@@ -291,34 +292,74 @@ class RFDetrForObjectDetectionTRT(
             allow_fallback=requested_plan.allow_compatibility_fallback,
         )
         self._preprocessor = preprocessor_selection.implementation
-        self._preprocessor_model_selection = preprocessor_selection.to_dict()
-        if preprocessor_selection.used_fallback:
-            LOGGER.warning(
-                "RF-DETR preprocessor fallback requested=%s effective=%s reason=%s",
-                preprocessor_selection.requested_id,
-                preprocessor_selection.effective_id,
-                preprocessor_selection.fallback_reason,
-            )
+        postprocessor_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.POSTPROCESS,
+            requested_id=requested_plan.postprocessor_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
+        )
         self._postprocessor = cast(
             Postprocessor,
-            self._implementation_registry.resolve(
-                stage=OptimizationStage.POSTPROCESS,
-                requested_id=requested_plan.postprocessor_id,
-                context=resolution_context,
-            ),
+            postprocessor_selection.implementation,
+        )
+        buffer_strategy_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.BUFFER_STRATEGY,
+            requested_id=requested_plan.buffer_strategy_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
+        )
+        self._buffer_strategy = cast(
+            BufferStrategy,
+            buffer_strategy_selection.implementation,
+        )
+        scheduler_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.SCHEDULER,
+            requested_id=requested_plan.scheduler_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
+        )
+        self._scheduler = cast(
+            ExecutionScheduler,
+            scheduler_selection.implementation,
+        )
+        engine_plugin_selection = self._implementation_registry.resolve_selection(
+            stage=OptimizationStage.ENGINE_PLUGIN,
+            requested_id=requested_plan.engine_plugin_id,
+            context=resolution_context,
+            allow_fallback=requested_plan.allow_compatibility_fallback,
+        )
+        self._engine_plugin = cast(
+            EngineAdjacentPlugin,
+            engine_plugin_selection.implementation,
         )
         self._rfdetr_execution_plan = RFDetrExecutionPlan(
             preprocessor_id=self._preprocessor.metadata.implementation_id,
-            buffer_strategy_id=requested_plan.buffer_strategy_id,
-            scheduler_id=requested_plan.scheduler_id,
+            buffer_strategy_id=self._buffer_strategy.metadata.implementation_id,
+            scheduler_id=self._scheduler.metadata.implementation_id,
             postprocessor_id=self._postprocessor.metadata.implementation_id,
-            engine_plugin_id=requested_plan.engine_plugin_id,
+            engine_plugin_id=self._engine_plugin.metadata.implementation_id,
             allow_compatibility_fallback=(requested_plan.allow_compatibility_fallback),
         )
-        self._lock = threading.Lock()
+        model_selections = {
+            "preprocessor": preprocessor_selection,
+            "buffer_strategy": buffer_strategy_selection,
+            "scheduler": scheduler_selection,
+            "postprocessor": postprocessor_selection,
+            "engine_plugin": engine_plugin_selection,
+        }
+        self._model_selections = {
+            stage: selection.to_dict() for stage, selection in model_selections.items()
+        }
+        for stage, selection in model_selections.items():
+            if selection.used_fallback:
+                LOGGER.warning(
+                    "RF-DETR %s fallback requested=%s effective=%s reason=%s",
+                    stage,
+                    selection.requested_id,
+                    selection.effective_id,
+                    selection.fallback_reason,
+                )
         self._request_fallback_warnings = FallbackWarningTracker()
-        self._inference_stream = torch.cuda.Stream(device=self._device)
-        self._preprocess_readiness = PreprocessReadinessTracker()
         if self.preprocessor_implementation_id != BASE_IMPLEMENTATION_ID:
             LOGGER.info(
                 "Selected RF-DETR preprocessor implementation=%s",
@@ -347,6 +388,26 @@ class RFDetrForObjectDetectionTRT(
         return self._preprocessor.metadata
 
     @property
+    def buffer_strategy_implementation_id(self) -> str:
+        """Return the actually selected buffer-strategy implementation ID."""
+        return self._buffer_strategy.metadata.implementation_id
+
+    @property
+    def buffer_strategy_implementation_metadata(self) -> OptimizationMetadata:
+        """Return typed metadata for the selected buffer strategy."""
+        return self._buffer_strategy.metadata
+
+    @property
+    def scheduler_implementation_id(self) -> str:
+        """Return the actually selected scheduler implementation ID."""
+        return self._scheduler.metadata.implementation_id
+
+    @property
+    def scheduler_implementation_metadata(self) -> OptimizationMetadata:
+        """Return typed metadata for the selected scheduler."""
+        return self._scheduler.metadata
+
+    @property
     def postprocessor_implementation_id(self) -> str:
         """Return the actually selected postprocessing implementation ID."""
         return self._postprocessor.metadata.implementation_id
@@ -355,6 +416,16 @@ class RFDetrForObjectDetectionTRT(
     def postprocessor_implementation_metadata(self) -> OptimizationMetadata:
         """Return typed metadata for the selected postprocessor."""
         return self._postprocessor.metadata
+
+    @property
+    def engine_plugin_implementation_id(self) -> str:
+        """Return the actually selected engine-plugin implementation ID."""
+        return self._engine_plugin.metadata.implementation_id
+
+    @property
+    def engine_plugin_implementation_metadata(self) -> OptimizationMetadata:
+        """Return typed metadata for the selected engine plugin."""
+        return self._engine_plugin.metadata
 
     @property
     def rfdetr_execution_plan(self) -> RFDetrExecutionPlan:
@@ -367,13 +438,23 @@ class RFDetrForObjectDetectionTRT(
         metadata = {
             "execution_plan": self.rfdetr_execution_plan.to_dict(),
             "preprocessor": self.preprocessor_implementation_metadata.to_dict(),
+            "buffer_strategy": (self.buffer_strategy_implementation_metadata.to_dict()),
+            "scheduler": self.scheduler_implementation_metadata.to_dict(),
             "postprocessor": self.postprocessor_implementation_metadata.to_dict(),
+            "engine_plugin": self.engine_plugin_implementation_metadata.to_dict(),
             "model_selection": {
-                "preprocessor": dict(self._preprocessor_model_selection),
+                stage: dict(selection)
+                for stage, selection in self._model_selections.items()
             },
         }
         last_execution = {}
-        for stage in ("preprocessor", "postprocessor"):
+        for stage in (
+            "preprocessor",
+            "buffer_strategy",
+            "scheduler",
+            "postprocessor",
+            "engine_plugin",
+        ):
             selection = getattr(
                 self._thread_local_storage,
                 f"last_{stage}_selection",
@@ -436,7 +517,7 @@ class RFDetrForObjectDetectionTRT(
         Raises:
             ModelRuntimeError: If the selected implementation is incompatible.
         """
-        stream = self._pre_process_stream
+        stream = self._scheduler.preprocess_stream()
         request = PreprocessRequest(
             images=images,
             input_color_format=input_color_format,
@@ -444,10 +525,7 @@ class RFDetrForObjectDetectionTRT(
             network_input=self._inference_config.network_input,
             pre_processing_overrides=pre_processing_overrides,
         )
-        context = self._execution_stage_context(
-            current_stream=stream,
-            resolved_axes=self._resolved_preprocess_axes(images),
-        )
+        context = self._execution_stage_context(current_stream=stream)
         selection = resolve_preprocessor_for_request(
             registry=self._implementation_registry,
             implementation=self._preprocessor,
@@ -455,7 +533,10 @@ class RFDetrForObjectDetectionTRT(
             context=context,
             allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
-        self._thread_local_storage.last_preprocessor_selection = selection.to_dict()
+        self._record_last_execution(
+            stage="preprocessor",
+            selection=selection.to_dict(),
+        )
         if selection.used_fallback and self._request_fallback_warnings.claim(
             stage=OptimizationStage.PREPROCESS,
             requested_id=selection.requested_id,
@@ -475,21 +556,19 @@ class RFDetrForObjectDetectionTRT(
         )
         if selection.fallback_reason is not None:
             result = replace(result, fallback_reason=selection.fallback_reason)
-        if result.ready_event is None:
-            stream.synchronize()
-        elif independent_stage_execution:
-            result.ready_event.synchronize()
+        engine_input_buffer = self._buffer_strategy.prepare_engine_input(
+            result=result,
+            context=context,
+        )
+        self._record_static_stage_execution(stage="buffer_strategy")
+        self._record_static_stage_execution(stage="scheduler")
+        pre_processed_images = self._scheduler.finalize_preprocess(
+            engine_input_buffer,
+            context=context,
+            independent_stage_execution=independent_stage_execution,
+        )
 
-        if not independent_stage_execution:
-            self._preprocess_readiness.record(
-                result.tensor,
-                ready_event=result.ready_event,
-                input_kind=result.input_kind,
-                implementation_id=result.implementation_id,
-                fallback_reason=result.fallback_reason,
-            )
-
-        return result.tensor, result.metadata
+        return pre_processed_images, result.metadata
 
     def forward(
         self,
@@ -509,23 +588,37 @@ class RFDetrForObjectDetectionTRT(
             TensorRT detection boxes and logits.
         """
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
-        with self._lock:
+
+        def execute_engine(
+            stream: torch.cuda.Stream,
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
             with use_cuda_context(context=self._cuda_context):
-                readiness = self._preprocess_readiness.consume(pre_processed_images)
-                if readiness is not None and readiness.ready_event is not None:
-                    self._inference_stream.wait_event(readiness.ready_event)
-                detections, labels = infer_from_trt_engine(
+                context = self._execution_stage_context(current_stream=stream)
+                request = EngineExecutionRequest(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
-                    context=self._execution_context,
+                    trt_execution_context=self._trt_execution_context,
                     device=self._device,
                     input_name=self._input_name,
-                    outputs=self._output_names,
-                    stream=self._inference_stream,
+                    output_names=self._output_names,
                     trt_cuda_graph_cache=cache,
                 )
-                return detections, labels
+                self._record_static_stage_execution(stage="engine_plugin")
+                model_results = self._engine_plugin.execute(
+                    request=request,
+                    context=context,
+                )
+
+                return model_results
+
+        self._record_static_stage_execution(stage="scheduler")
+        model_results = self._scheduler.execute_engine(
+            pre_processed_images,
+            operation=execute_engine,
+        )
+
+        return model_results
 
     def post_process(
         self,
@@ -554,10 +647,8 @@ class RFDetrForObjectDetectionTRT(
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
         threshold = confidence_filter.get_threshold(self.class_names)
-        stream = self._post_process_stream
-        with torch.cuda.stream(stream):
-            for result_element in model_results:
-                result_element.record_stream(stream)
+
+        def execute_postprocess(stream: torch.cuda.Stream) -> List[Detections]:
             bboxes, logits = model_results
             request = PostprocessRequest(
                 bboxes=bboxes,
@@ -567,14 +658,7 @@ class RFDetrForObjectDetectionTRT(
                 num_classes=len(self.class_names),
                 classes_re_mapping=self._classes_re_mapping,
             )
-            context = self._execution_stage_context(
-                current_stream=stream,
-                resolved_axes={
-                    "batch": int(logits.shape[0]),
-                    "queries": int(logits.shape[1]),
-                    "classes": int(logits.shape[2]),
-                },
-            )
+            context = self._execution_stage_context(current_stream=stream)
             selection = resolve_postprocessor_for_request(
                 registry=self._implementation_registry,
                 implementation=self._postprocessor,
@@ -584,8 +668,9 @@ class RFDetrForObjectDetectionTRT(
                     self._rfdetr_execution_plan.allow_compatibility_fallback
                 ),
             )
-            self._thread_local_storage.last_postprocessor_selection = (
-                selection.to_dict()
+            self._record_last_execution(
+                stage="postprocessor",
+                selection=selection.to_dict(),
             )
             if selection.used_fallback and self._request_fallback_warnings.claim(
                 stage=OptimizationStage.POSTPROCESS,
@@ -604,7 +689,14 @@ class RFDetrForObjectDetectionTRT(
                 request=request,
                 context=context,
             )
-        stream.synchronize()
+
+            return results
+
+        self._record_static_stage_execution(stage="scheduler")
+        results = self._scheduler.execute_postprocess(
+            model_results,
+            operation=execute_postprocess,
+        )
 
         return results
 
@@ -612,61 +704,33 @@ class RFDetrForObjectDetectionTRT(
         self,
         *,
         current_stream: Optional[torch.cuda.Stream],
-        resolved_axes: Optional[Mapping[str, Any]] = None,
     ) -> ExecutionContext:
-        device_index = self._device.index or 0
         context = ExecutionContext(
             device_kind="gpu",
             device=str(self._device),
-            device_name=torch.cuda.get_device_name(device_index),
-            machine_type="runtime",
-            scenario="runtime",
-            resolved_axes=resolved_axes or {},
             current_stream=current_stream,
-            compute_capability=torch.cuda.get_device_capability(device_index),
+            compute_capability=torch.cuda.get_device_capability(
+                self._device.index or 0
+            ),
+            runtime_components={"triton": TRITON_AVAILABLE},
         )
 
         return context
 
-    @staticmethod
-    def _resolved_preprocess_axes(
-        images: Union[
-            torch.Tensor,
-            List[torch.Tensor],
-            np.ndarray,
-            List[np.ndarray],
-        ],
-    ) -> Dict[str, Any]:
-        if isinstance(images, list):
-            batch_size = len(images)
-            first = images[0] if images else None
-        elif isinstance(images, (torch.Tensor, np.ndarray)) and images.ndim == 4:
-            batch_size = int(images.shape[0])
-            first = images[0] if batch_size else None
-        else:
-            batch_size = 1
-            first = images
-        shape = tuple(first.shape) if first is not None else ()
-        axes = {
-            "batch": batch_size,
-            "input_type": type(first).__name__ if first is not None else "empty",
-            "source_shape": shape,
-        }
+    def _record_static_stage_execution(self, *, stage: str) -> None:
+        self._record_last_execution(
+            stage=stage,
+            selection=self._model_selections[stage],
+        )
 
-        return axes
-
-    @property
-    def _pre_process_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
-
-    @property
-    def _post_process_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "post_process_stream"):
-            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.post_process_stream
+    def _record_last_execution(
+        self,
+        *,
+        stage: str,
+        selection: Mapping[str, Optional[str]],
+    ) -> None:
+        setattr(
+            self._thread_local_storage,
+            f"last_{stage}_selection",
+            dict(selection),
+        )
