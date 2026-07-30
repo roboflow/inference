@@ -29,6 +29,7 @@ from inference.core.workflows.execution_engine.constants import (
     CLASSIFICATION_STYLE_MODEL,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
+    NEAREST_TARGET_DISTANCE_KEY,
     PARENT_ID_KEY,
     PARENT_ORIGIN_KEY,
     PREDICTION_TYPE_KEY,
@@ -253,12 +254,27 @@ def _native_detections_from_serialized(
         detections=detections,
         raw_predictions=raw_predictions,
     )
-    return native_detections_from_inference_predictions(
+    native_detections = native_detections_from_inference_predictions(
         image=placeholder_image,
         predictions=raw_predictions,
         prediction_type=prediction_type,
         device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
     )
+    _attach_optional_nearest_target_distance(
+        raw_predictions=raw_predictions,
+        bboxes_metadata=native_detections.bboxes_metadata,
+    )
+    return native_detections
+
+
+def _attach_optional_nearest_target_distance(
+    raw_predictions: List[dict],
+    bboxes_metadata: Optional[List[dict]],
+) -> None:
+    if not bboxes_metadata or NEAREST_TARGET_DISTANCE_KEY not in raw_predictions[0]:
+        return
+    for prediction, entry in zip(raw_predictions, bboxes_metadata):
+        entry[NEAREST_TARGET_DISTANCE_KEY] = prediction[NEAREST_TARGET_DISTANCE_KEY]
 
 
 def _rebuild_instances_rle_masks(

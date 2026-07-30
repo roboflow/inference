@@ -125,9 +125,14 @@ else:
     from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
         ConvertGrayscaleBlockV1,
     )
-from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
-    DetectionsNearestNeighborBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+        DetectionsNearestNeighborBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1_tensor import (
+        DetectionsNearestNeighborBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
         DistanceMeasurementBlockV1,
@@ -1352,9 +1357,14 @@ else:
     from inference.core.workflows.core_steps.visualizations.label.v1_tensor import (
         LabelVisualizationBlockV1,
     )
-from inference.core.workflows.core_steps.visualizations.label.v2 import (
-    LabelVisualizationBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.label.v2 import (
+        LabelVisualizationBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.label.v2_tensor import (
+        LabelVisualizationBlockV2,
+    )
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
@@ -1406,9 +1416,15 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.rich_label.v1 import (
-    RichLabelVisualizationBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.rich_label.v1 import (
+        RichLabelVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.rich_label.v1_tensor import (
+        RichLabelVisualizationBlockV1,
+    )
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )

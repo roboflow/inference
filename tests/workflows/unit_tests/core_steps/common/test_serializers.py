@@ -1500,3 +1500,107 @@ def test_tensor_wildcard_serializer_keeps_numpy_behavior_for_legacy_values() -> 
         value={"sv": sv_detections, "ts": timestamp, "img": image}
     )
     assert result == expected
+
+
+def test_tensor_serialise_sv_detections_skips_padded_keypoint_slots() -> None:
+    # given the padded per-box keypoint rows the sv -> native conversion carries
+    # (detection 0 has 2 real keypoints, detection 1 has 1 real + 1 padding slot)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.object_detection import Detections
+
+    native_detections = Detections(
+        xyxy=torch.tensor([[0.0, 0.0, 10.0, 10.0], [20.0, 20.0, 30.0, 30.0]]),
+        class_id=torch.tensor([0, 0]),
+        confidence=torch.tensor([0.5, 0.25]),
+        image_metadata={"class_names": {0: "obj"}, "image_dimensions": [192, 168]},
+        bboxes_metadata=[
+            {
+                "detection_id": "first",
+                "keypoints_class_id": np.array([0, 1], dtype=int),
+                "keypoints_class_name": np.array(["nose", "eye"], dtype=object),
+                "keypoints_confidence": np.array([0.5, 0.25], dtype=np.float32),
+                "keypoints_xy": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            },
+            {
+                "detection_id": "second",
+                "keypoints_class_id": np.array([0, 0], dtype=int),
+                "keypoints_class_name": np.array(["nose", ""], dtype=object),
+                "keypoints_confidence": np.array([0.75, 0.0], dtype=np.float32),
+                "keypoints_xy": np.array([[21.0, 22.0], [0.0, 0.0]], dtype=np.float32),
+            },
+        ],
+    )
+    sv_detections = sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10], [20, 20, 30, 30]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.5, 0.25], dtype=np.float64),
+        data={
+            "class_name": np.array(["obj", "obj"]),
+            "detection_id": np.array(["first", "second"]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
+            "keypoints_xy": np.array(
+                [[[1.0, 2.0], [3.0, 4.0]], [[21.0, 22.0], [0.0, 0.0]]],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.5, 0.25], [0.75, 0.0]], dtype=np.float32
+            ),
+            "keypoints_class_id": np.array([[0, 1], [0, 0]], dtype=int),
+            "keypoints_class_name": np.array(
+                [["nose", "eye"], ["nose", ""]], dtype=object
+            ),
+        },
+    )
+
+    # when
+    result = serializers_tensor.serialise_sv_detections(native_detections)
+
+    # then the padding slot must not surface as a fabricated keypoint
+    assert len(result["predictions"][0]["keypoints"]) == 2
+    assert len(result["predictions"][1]["keypoints"]) == 1
+    assert result["predictions"][1]["keypoints"][0]["class"] == "nose"
+    for prediction in result["predictions"]:
+        for keypoint in prediction["keypoints"]:
+            assert keypoint["class"] != "", "No empty-named padding keypoint may leak"
+    assert result == serialise_sv_detections(detections=sv_detections)
+
+
+def test_tensor_serialise_sv_detections_with_nearest_target_distance() -> None:
+    # given: one detection with a real match distance, one unmatched (None)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.object_detection import Detections
+
+    native_detections = Detections(
+        xyxy=torch.tensor([[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]),
+        class_id=torch.tensor([1, 2]),
+        confidence=torch.tensor([0.25, 0.5]),
+        image_metadata={"class_names": {1: "cat", 2: "dog"}},
+        bboxes_metadata=[
+            {"detection_id": "first", "nearest_target_distance": 12.5},
+            {"detection_id": "second", "nearest_target_distance": None},
+        ],
+    )
+    sv_detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.25, 0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "nearest_target_distance": np.array([12.5, None], dtype=object),
+        },
+    )
+
+    # when
+    result = serializers_tensor.serialise_sv_detections(native_detections)
+
+    # then
+    predictions = result["predictions"]
+    assert predictions[0]["nearest_target_distance"] == 12.5
+    assert isinstance(predictions[0]["nearest_target_distance"], float)
+    assert predictions[1]["nearest_target_distance"] is None
+    assert result == serialise_sv_detections(detections=sv_detections)

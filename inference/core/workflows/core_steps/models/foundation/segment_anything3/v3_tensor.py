@@ -93,6 +93,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
@@ -436,6 +437,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: str,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -478,6 +480,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: str,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
         http_prompts = _build_http_prompts(class_names, per_class_confidence)
 

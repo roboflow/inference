@@ -59,6 +59,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     split_key_point_prediction,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.constants import (
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
@@ -310,15 +311,23 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._cache = cache
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["cache", "api_key", "background_tasks", "thread_pool_executor"]
+        return [
+            "cache",
+            "api_key",
+            "background_tasks",
+            "thread_pool_executor",
+            "disable_sinks",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -343,6 +352,14 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return [
+                {
+                    "error_status": False,
+                    "message": disabled_sink_message(disabled_by_execution_policy=True),
+                }
+                for _ in range(len(images))
+            ]
         if self._api_key is None:
             raise ValueError(
                 "RoboflowDataCollector block cannot run without Roboflow API key. "
@@ -354,7 +371,9 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
             return [
                 {
                     "error_status": False,
-                    "message": "Sink was disabled by parameter `disable_sink`",
+                    "message": disabled_sink_message(
+                        disabled_by_execution_policy=False
+                    ),
                 }
                 for _ in range(len(images))
             ]
