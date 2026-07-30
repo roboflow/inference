@@ -19,6 +19,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pybase64
 
+from inference.core.entities.responses.clip import (
+    ClipCompareResponse,
+    ClipEmbeddingResponse,
+)
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponseImage,
@@ -35,10 +39,6 @@ from inference.core.entities.responses.inference import (
     Point,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
-)
-from inference.core.entities.responses.clip import (
-    ClipCompareResponse,
-    ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.perception_encoder import (
@@ -496,9 +496,7 @@ def _build_sam2_segment_params(request: Any) -> dict:
             "format='binary' is not supported on the MMP path."
         )
     params = _build_visual_prompt_params(request)
-    if not any(
-        key in params for key in ("point_coordinates", "point_labels", "boxes")
-    ):
+    if not any(key in params for key in ("point_coordinates", "point_labels", "boxes")):
         params["point_coordinates"] = [[[0, 0]]]
         params["point_labels"] = [[-1]]
     params["return_logits"] = True

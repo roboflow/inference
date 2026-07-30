@@ -195,9 +195,11 @@ class ModelManagerAdapter:
             and action == "segment"
         )
         forwarded = [
-            (None, (0, 0))
-            if image is None and imageless_allowed
-            else translation.forward_image(image)
+            (
+                (None, (0, 0))
+                if image is None and imageless_allowed
+                else translation.forward_image(image)
+            )
             for image in images
         ]
         params = translation.build_task_params(route["task_type"], action, request)
