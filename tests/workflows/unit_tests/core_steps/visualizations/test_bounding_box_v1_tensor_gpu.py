@@ -287,3 +287,75 @@ def _tensor_backed_image_sized(h: int, w: int) -> WorkflowImageData:
         parent_metadata=ImageParentMetadata(parent_id="p"),
         tensor_image=torch.zeros((3, h, w), dtype=torch.uint8),
     )
+
+
+def _empty_detections(device: str = "cpu") -> Detections:
+    return _build_detections(
+        np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=int), device=device
+    )
+
+
+def _run_block(image: WorkflowImageData, detections: Detections, copy_image: bool):
+    from inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor import (
+        BoundingBoxVisualizationBlockV1,
+    )
+
+    return BoundingBoxVisualizationBlockV1().run(
+        image=image,
+        predictions=detections,
+        copy_image=copy_image,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="CLASS",
+        thickness=2,
+        roundness=0.0,
+    )["image"]
+
+
+def test_empty_predictions_take_the_tensor_passthrough_with_copy() -> None:
+    image = _tensor_backed_image()
+
+    out = _run_block(image, _empty_detections(), copy_image=True)
+
+    # then - output stays on-device (an empty annotate must never pay the
+    # full-resolution numpy materialisation) with independent storage
+    assert out._tensor_image is not None and out._numpy_image is None
+    assert out._tensor_image.data_ptr() != image.tensor_image.data_ptr()
+    assert torch.equal(out._tensor_image, image.tensor_image)
+
+
+def test_empty_predictions_passthrough_shares_backing_without_copy() -> None:
+    image = _tensor_backed_image()
+
+    out = _run_block(image, _empty_detections(), copy_image=False)
+
+    assert out._tensor_image is not None and out._numpy_image is None
+    assert out._tensor_image.data_ptr() == image.tensor_image.data_ptr()
+
+
+def test_empty_predictions_on_numpy_sourced_image_stay_numpy() -> None:
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        numpy_image=np.zeros((64, 64, 3), dtype=np.uint8),
+    )
+
+    out = _run_block(image, _empty_detections(), copy_image=True)
+
+    assert out._numpy_image is not None and out._tensor_image is None
+    assert not np.shares_memory(out._numpy_image, image.numpy_image)
+    assert np.array_equal(out._numpy_image, image.numpy_image)
+
+
+def test_empty_passthrough_helper_declines_non_empty_predictions() -> None:
+    from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
+        empty_predictions_passthrough,
+    )
+
+    result = empty_predictions_passthrough(
+        image=_tensor_backed_image(),
+        detections=_eligible_detections(),
+        copy_image=True,
+    )
+
+    assert result is None

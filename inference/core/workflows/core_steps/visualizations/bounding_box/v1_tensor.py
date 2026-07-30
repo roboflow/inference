@@ -18,6 +18,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable_te
 )
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
+    empty_predictions_passthrough,
     to_supervision_for_annotation,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -374,6 +375,11 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
             if isinstance(predictions, tuple)
             else predictions
         )
+        passthrough = empty_predictions_passthrough(
+            image=image, detections=detections, copy_image=copy_image
+        )
+        if passthrough is not None:
+            return passthrough
         if _gpu_box_draw_eligible(detections, color_axis, image):
             try:
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
