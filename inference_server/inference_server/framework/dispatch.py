@@ -197,7 +197,7 @@ async def handle_model_inference_request(
         return exc.response
     except PayloadTooLargeError as exc:
         logger.warning("Payload too large: %s", exc)
-        return error_response(413, "PAYLOAD_TOO_LARGE")
+        return error_response(413, "PAYLOAD_TOO_LARGE", "payload too large")
     except ClientDisconnect:
         logger.debug("[dispatch] client disconnected during body read")
         return Response(status_code=499)
@@ -226,7 +226,7 @@ async def handle_model_inference_request(
         prediction = await description.handler(action, input_data, proxy, server_hooks)
     except PayloadTooLargeError as exc:
         logger.warning("Payload too large: %s", exc)
-        return error_response(413, "PAYLOAD_TOO_LARGE")
+        return error_response(413, "PAYLOAD_TOO_LARGE", "payload too large")
     except ServerBusyError:
         return error_response(
             503,
@@ -237,10 +237,10 @@ async def handle_model_inference_request(
         )
     except ValueError as exc:
         logger.warning("Invalid param: %s", exc)
-        return error_response(400, "INVALID_PARAM")
+        return error_response(400, "INVALID_PARAM", "invalid input")
     except ModelInputError as exc:
         logger.warning("Model input error: %s", exc)
-        return error_response(400, "INVALID_PARAM")
+        return error_response(400, "INVALID_PARAM", "invalid model input")
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "inference timeout")
     except ClientDisconnected:

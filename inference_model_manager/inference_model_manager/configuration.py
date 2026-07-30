@@ -73,7 +73,7 @@ INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S = get_float_from_env(
     "INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S", default=30.0
 )
 INFERENCE_WORKER_START_TIMEOUT_S = get_float_from_env(
-    "INFERENCE_WORKER_START_TIMEOUT_S", default=120.0
+    "INFERENCE_WORKER_START_TIMEOUT_S", default=900.0
 )
 # Liveness limit while the worker has outstanding work (long batches must not
 # be killed by the idle heartbeat timeout).

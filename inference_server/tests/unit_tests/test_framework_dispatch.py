@@ -599,4 +599,5 @@ async def test_model_input_error_maps_to_400(fake_handler_entry):
             _request(query=b"model_id=m"), _mock_proxy()
         )
     assert r.status_code == 400
-    assert b"no embeddings were found in the cache" in r.body
+    assert b"invalid model input" in r.body
+    assert b"no embeddings were found in the cache" not in r.body
