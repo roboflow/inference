@@ -60,7 +60,7 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - GPU
         id: regression_tests_without_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
@@ -74,7 +74,7 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - GPU
         id: regression_tests_with_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
@@ -88,7 +88,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Paligemma - GPU
         id: paligemma_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
@@ -101,7 +101,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Florence - GPU
         id: florence_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
@@ -114,7 +114,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM2
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
@@ -127,7 +127,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM3
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM3
         id: sam3_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
@@ -140,7 +140,7 @@ jobs:
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
 #        run: |
-#          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+#          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
 #      - name: 🧪 Regression Tests - Qwen2.5
 #        id: qwen25_tests
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
@@ -153,7 +153,7 @@ jobs:
       - name: 🔋 Start Test Docker - MoonDream
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
