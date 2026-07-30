@@ -597,6 +597,7 @@ def _execute_direct_gemini_request(
             "key": google_api_key,
         },
         json=prompt,
+        timeout=120,
     )
     response_data = response.json()
     google_api_key_safe_raise_for_status(response=response)
@@ -966,6 +967,37 @@ def prepare_object_detection_prompt(
         "Return only the JSON list, with no extra text. "
         f"Only use these labels: {serialised_classes}"
     )
+    generation_config = prepare_generation_config(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        thinking_level=thinking_level,
+        model_version=model_version,
+        response_mime_type="application/json",
+    )
+    generation_config["response_schema"] = {
+        "type": "ARRAY",
+        "items": {
+            "type": "OBJECT",
+            "properties": {
+                "box_2d": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "INTEGER",
+                        "minimum": 0,
+                        "maximum": 1000,
+                    },
+                    "minItems": 4,
+                    "maxItems": 4,
+                },
+                "label": {
+                    "type": "STRING",
+                    "enum": classes,
+                },
+            },
+            "required": ["box_2d", "label"],
+            "propertyOrdering": ["box_2d", "label"],
+        },
+    }
     return {
         "contents": {
             "parts": [
@@ -981,13 +1013,7 @@ def prepare_object_detection_prompt(
             ],
             "role": "user",
         },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            thinking_level=thinking_level,
-            model_version=model_version,
-            response_mime_type="application/json",
-        ),
+        "generationConfig": generation_config,
     }
 
 
