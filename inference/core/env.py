@@ -325,6 +325,13 @@ CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
 # ModelManagerAdapter, default is False
 LEGACY_MMP_ADAPTER_ENABLED = str2bool(os.getenv("LEGACY_MMP_ADAPTER_ENABLED", False))
 
+# Blocking budgets for the MMP adapter bridge; legacy clients expect the
+# request to block until the model is loaded, default is 600
+LEGACY_MMP_LOAD_WAIT_S = float(os.getenv("LEGACY_MMP_LOAD_WAIT_S", "600"))
+
+# Inference wait budget for the MMP adapter bridge, default is 300
+LEGACY_MMP_INFER_TIMEOUT_S = float(os.getenv("LEGACY_MMP_INFER_TIMEOUT_S", "300"))
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

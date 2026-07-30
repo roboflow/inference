@@ -16,6 +16,7 @@ import io
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+import cv2
 import numpy as np
 import pybase64
 
@@ -247,6 +248,23 @@ _GENERIC_MODEL_TASK_TYPES: Dict[Tuple[str, str], str] = {
 
 _PLATFORM_TASK_TYPE_ALIASES: Dict[str, str] = {}
 
+_MMP_CORE_DATASET_ALIASES: Dict[str, str] = {
+    "perception_encoder": "perception-encoder",
+}
+
+_LEGACY_CORE_DATASET_BY_MMP = {
+    canonical: legacy for legacy, canonical in _MMP_CORE_DATASET_ALIASES.items()
+}
+
+
+def canonical_mmp_model_id(model_id: str) -> str:
+    dataset_id, separator, rest = model_id.partition("/")
+    canonical = _MMP_CORE_DATASET_ALIASES.get(dataset_id)
+    if canonical is None:
+        return model_id
+    return f"{canonical}{separator}{rest}"
+
+
 _DEFAULT_ACTION_BY_TASK_TYPE: Dict[str, str] = {
     "embedding": "embed_images",
     "interactive-instance-segmentation": "embed",
@@ -258,6 +276,10 @@ def _default_action_for(task_type: str) -> str:
 
 
 def _generic_model_task_type(model_id: str) -> Optional[str]:
+    dataset_id, separator, rest = model_id.partition("/")
+    legacy_dataset = _LEGACY_CORE_DATASET_BY_MMP.get(dataset_id)
+    if legacy_dataset is not None:
+        model_id = f"{legacy_dataset}{separator}{rest}"
     entry = GENERIC_MODELS.get(model_id)
     if entry is None:
         try:
@@ -631,8 +653,12 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
     Never decodes pixels adapter-side: dims come from the ndarray shape or a
     header-only read; the MMP worker does the real decode.
     """
-    image_type = getattr(image, "type", None)
-    value = getattr(image, "value", None)
+    if isinstance(image, dict):
+        image_type = image.get("type")
+        value = image.get("value")
+    else:
+        image_type = getattr(image, "type", None)
+        value = getattr(image, "value", None)
     if image_type == "base64":
         data = _decode_base64_payload(value)
         return data, _dims_from_header(data)
@@ -647,6 +673,15 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
         buffer = io.BytesIO()
         np.save(buffer, array, allow_pickle=False)
         return buffer.getvalue(), (int(array.shape[1]), int(array.shape[0]))
+    if image_type == "numpy_object":
+        array = load_image_from_numpy_object(value)
+        success, encoded = cv2.imencode(".png", array)
+        if not success:
+            raise InputImageLoadError(
+                message="Could not encode numpy image as PNG.",
+                public_message="Could not encode input image.",
+            )
+        return encoded.tobytes(), (int(array.shape[1]), int(array.shape[0]))
     raise InvalidImageTypeDeclared(
         message=f"Image type '{image_type}' is not supported on the MMP path.",
         public_message=f"Image type '{image_type}' is not supported on the MMP path.",
@@ -713,7 +748,7 @@ def build_embedding_calls(
         raise ValueError("subject_type must be either 'image' or 'text'")
     prompt = request.prompt
     prompt_keys = None
-    if isinstance(prompt, dict):
+    if isinstance(prompt, dict) and not ("type" in prompt and "value" in prompt):
         prompt_keys = list(prompt.keys())
         prompt = [prompt[key] for key in prompt_keys]
     elif not isinstance(prompt, list):

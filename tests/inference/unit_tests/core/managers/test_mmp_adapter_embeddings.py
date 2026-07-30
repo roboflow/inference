@@ -279,6 +279,63 @@ class TestCompare:
             "embed_images",
         ]
 
+    def test_text_subject_single_image_prompt_dict_payload(
+        self, running_adapter, embedding_stat
+    ):
+        image, payload = make_image("prompt")
+        client = running_adapter._client
+        client.text_results[("dog",)] = np.asarray([[1.0, 0.0]])
+        client.image_results[payload] = np.asarray([[1.0, 0.0]])
+        request = ClipCompareRequest(
+            api_key="key",
+            subject="dog",
+            subject_type="text",
+            prompt={"type": image.type, "value": image.value},
+            prompt_type="image",
+        )
+        assert isinstance(request.prompt, dict)
+        response = running_adapter.infer_from_request_sync("clip/ViT-B-16", request)
+        assert isinstance(response, ClipCompareResponse)
+        assert response.similarity == [pytest.approx(1.0)]
+        assert [call["task"] for call in client.infer_calls] == [
+            "embed_text",
+            "embed_images",
+        ]
+
+    def test_text_subject_url_dict_prompt_forwards_fetched_bytes(
+        self, running_adapter, embedding_stat, monkeypatch
+    ):
+        payload = b"fetched-image-bytes"
+        fetched = []
+
+        def fake_fetch(value):
+            fetched.append(value)
+            return payload
+
+        monkeypatch.setattr(translation, "fetch_image_bytes_from_url", fake_fetch)
+        client = running_adapter._client
+        client.text_results[("The quick brown fox jumps over the lazy dog.",)] = (
+            np.asarray([[1.0, 0.0]])
+        )
+        client.image_results[payload] = np.asarray([[1.0, 0.0]])
+        request = ClipCompareRequest(
+            api_key="key",
+            subject="The quick brown fox jumps over the lazy dog.",
+            subject_type="text",
+            prompt={"type": "url", "value": "https://example.com/original.jpg"},
+            prompt_type="image",
+        )
+        assert isinstance(request.prompt, dict)
+        response = running_adapter.infer_from_request_sync("clip/ViT-B-16", request)
+        assert isinstance(response, ClipCompareResponse)
+        assert response.similarity == [pytest.approx(1.0)]
+        assert fetched == ["https://example.com/original.jpg"]
+        assert [call["task"] for call in client.infer_calls] == [
+            "embed_text",
+            "embed_images",
+        ]
+        assert client.infer_calls[1]["image"] == payload
+
     def test_text_subject_image_prompt_list(self, running_adapter, embedding_stat):
         client = running_adapter._client
         client.text_results[("dog",)] = np.asarray([[1.0, 0.0]])
@@ -381,6 +438,19 @@ class TestPerceptionEncoder:
         )
         assert isinstance(response, PerceptionEncoderEmbeddingResponse)
         assert response.embeddings == [[1.0, 0.5]]
+
+    def test_mmp_calls_use_platform_model_id(self, running_adapter, embedding_stat):
+        image, payload = make_image("a")
+        client = running_adapter._client
+        client.image_results[payload] = np.asarray([[1.0, 2.0]])
+        request = PerceptionEncoderImageEmbeddingRequest(api_key="key", image=image)
+        response = running_adapter.infer_from_request_sync(
+            "perception_encoder/PE-Core-L14-336", request
+        )
+        assert isinstance(response, PerceptionEncoderEmbeddingResponse)
+        assert client.loaded == ["perception-encoder/PE-Core-L14-336"]
+        assert client.infer_calls[0]["model_id"] == "perception-encoder/PE-Core-L14-336"
+        assert "perception_encoder/PE-Core-L14-336" in running_adapter
 
     def test_compare_uses_pe_response(self, running_adapter, embedding_stat):
         image, payload = make_image("subject")

@@ -146,6 +146,69 @@ class TestGenericCoreIdResolution:
         assert platform_stat_spy.calls == [(model_id, "key")]
 
 
+class TestCoreModelIdCanonicalization:
+    @pytest.mark.parametrize(
+        "model_id,expected",
+        [
+            (
+                "perception_encoder/PE-Core-L14-336",
+                "perception-encoder/PE-Core-L14-336",
+            ),
+            ("perception_encoder", "perception-encoder"),
+            ("clip/ViT-B-16", "clip/ViT-B-16"),
+            ("sam/vit_h", "sam/vit_h"),
+            ("ws/1", "ws/1"),
+        ],
+    )
+    def test_canonical_mmp_model_id(self, model_id, expected):
+        assert translation.canonical_mmp_model_id(model_id) == expected
+
+    def test_canonical_pe_id_resolves_without_platform_call(self, platform_stat_spy):
+        result = asyncio.run(
+            translation.stat_model(
+                model_id="perception-encoder/PE-Core-L14-336", api_key="key"
+            )
+        )
+        assert result == ("embedding", "embed_images")
+        assert platform_stat_spy.calls == []
+
+    def test_interface_failure_reports_legacy_id(
+        self, running_adapter, platform_stat_spy
+    ):
+        interface_calls = []
+
+        async def failing_interface(model_id):
+            interface_calls.append(model_id)
+            raise RuntimeError(f"model '{model_id}' is not loaded")
+
+        running_adapter._client.interface = failing_interface
+        with pytest.raises(RuntimeError) as exc_info:
+            running_adapter.add_model(
+                "perception_encoder/PE-Core-L14-336", api_key="key"
+            )
+        assert interface_calls == ["perception-encoder/PE-Core-L14-336"]
+        assert "perception_encoder/PE-Core-L14-336" in str(exc_info.value)
+        assert "perception-encoder" not in str(exc_info.value)
+
+    def test_adapter_sends_platform_id_to_mmp_for_legacy_pe_id(
+        self, running_adapter, platform_stat_spy
+    ):
+        running_adapter.add_model("perception_encoder/PE-Core-L14-336", api_key="key")
+        assert running_adapter._client.loaded == ["perception-encoder/PE-Core-L14-336"]
+        assert (
+            running_adapter.get_task_type("perception_encoder/PE-Core-L14-336")
+            == "embedding"
+        )
+        assert [d.model_id for d in running_adapter.describe_models()] == [
+            "perception_encoder/PE-Core-L14-336"
+        ]
+        assert platform_stat_spy.calls == []
+        running_adapter.remove("perception_encoder/PE-Core-L14-336")
+        assert running_adapter._client.unloaded == [
+            "perception-encoder/PE-Core-L14-336"
+        ]
+
+
 class TestPlatformTaskTypeAliases:
     def test_alias_normalized_to_canonical_task_type(
         self, platform_stat_spy, monkeypatch

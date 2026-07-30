@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from inference_server.proxies.mmp_client import MMPClient
 
+from inference.core.env import LEGACY_MMP_INFER_TIMEOUT_S, LEGACY_MMP_LOAD_WAIT_S
 from inference.core.exceptions import (
     InferenceModelNotFound,
     ModelDeploymentNotSupportedError,
@@ -44,6 +45,18 @@ def _unsupported(model_id: str) -> ModelDeploymentNotSupportedError:
     )
 
 
+def _relabel_model_id(error: BaseException, mmp_model_id: str, model_id: str) -> None:
+    if mmp_model_id == model_id:
+        return
+    args = getattr(error, "args", None)
+    if not args:
+        return
+    error.args = tuple(
+        arg.replace(mmp_model_id, model_id) if isinstance(arg, str) else arg
+        for arg in args
+    )
+
+
 class ModelManagerAdapter:
     """Routes legacy model-manager calls to the ModelManagerProcess.
 
@@ -57,7 +70,10 @@ class ModelManagerAdapter:
         if mmp_client is None:
             from inference_server.proxies.mmp_client import MMPClient
 
-            mmp_client = MMPClient()
+            mmp_client = MMPClient(
+                load_wait_s=LEGACY_MMP_LOAD_WAIT_S,
+                infer_timeout_s=LEGACY_MMP_INFER_TIMEOUT_S,
+            )
         self._client = mmp_client
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._routes: Dict[str, dict] = {}
@@ -116,67 +132,72 @@ class ModelManagerAdapter:
         if model_id == "passthrough" or model_id.startswith("passthrough/"):
             self._routes[model_id] = {"supported": False}
             raise _unsupported(model_id)
-        task_type, default_action = await translation.stat_model(
-            model_id=model_id, api_key=api_key or ""
-        )
-        terminal = {
-            "supported": False,
-            "task_type": task_type,
-            "action": default_action,
-        }
-        if task_type not in translation.IMPLEMENTED_TASK_TYPES:
-            self._routes[model_id] = terminal
-            raise _unsupported(model_id)
-        result = await self._client.load(model_id, api_key or "")
-        translation.raise_for_lifecycle_result(result, model_id)
-        stats = await self._client.stats()
-        model_entry = stats.get("mmp_models", {}).get(model_id, {})
-        if model_entry.get("backend_type") == "shared-base":
-            # Base-only preload: no inferable backend, kept resident so heads
-            # (e.g. roboflow-instant on owlv2) can attach to the shared worker.
-            route = {
-                "supported": True,
-                "mmp_model_id": model_id,
+        mmp_model_id = translation.canonical_mmp_model_id(model_id)
+        try:
+            task_type, default_action = await translation.stat_model(
+                model_id=mmp_model_id, api_key=api_key or ""
+            )
+            terminal = {
+                "supported": False,
                 "task_type": task_type,
                 "action": default_action,
-                "tasks": set(),
-                "class_names": None,
-                "key_points_classes": None,
+            }
+            if task_type not in translation.IMPLEMENTED_TASK_TYPES:
+                self._routes[model_id] = terminal
+                raise _unsupported(model_id)
+            result = await self._client.load(mmp_model_id, api_key or "")
+            translation.raise_for_lifecycle_result(result, model_id)
+            stats = await self._client.stats()
+            model_entry = stats.get("mmp_models", {}).get(mmp_model_id, {})
+            if model_entry.get("backend_type") == "shared-base":
+                # Base-only preload: no inferable backend, kept resident so heads
+                # (e.g. roboflow-instant on owlv2) can attach to the shared worker.
+                route = {
+                    "supported": True,
+                    "mmp_model_id": mmp_model_id,
+                    "task_type": task_type,
+                    "action": default_action,
+                    "tasks": set(),
+                    "class_names": None,
+                    "key_points_classes": None,
+                }
+                self._routes[model_id] = route
+                return route
+            interface = await self._client.interface(mmp_model_id)
+            tasks = set(interface.get("tasks", {}))
+            if not tasks.intersection(translation.implemented_actions(task_type)):
+                await self._client.unload(mmp_model_id)
+                self._routes[model_id] = terminal
+                raise _unsupported(model_id)
+            key_points_classes = model_entry.get("key_points_classes")
+            if task_type == "keypoint-detection" and key_points_classes is None:
+                await self._client.unload(mmp_model_id)
+                self._routes[model_id] = terminal
+                raise _unsupported(model_id)
+            if (
+                task_type == "vlm"
+                and model_entry.get("model_class_name")
+                in translation.VLM_UNSUPPORTED_MODEL_CLASSES
+            ):
+                await self._client.unload(mmp_model_id)
+                self._routes[model_id] = terminal
+                raise _unsupported(model_id)
+            route = {
+                "supported": True,
+                "mmp_model_id": mmp_model_id,
+                "task_type": task_type,
+                "action": default_action,
+                "tasks": tasks,
+                "class_names": model_entry.get("class_names"),
+                "key_points_classes": key_points_classes,
+                "model_class_name": model_entry.get("model_class_name"),
+                "model_mro_names": model_entry.get("model_mro_names"),
             }
             self._routes[model_id] = route
             return route
-        interface = await self._client.interface(model_id)
-        tasks = set(interface.get("tasks", {}))
-        if not tasks.intersection(translation.implemented_actions(task_type)):
-            await self._client.unload(model_id)
-            self._routes[model_id] = terminal
-            raise _unsupported(model_id)
-        key_points_classes = model_entry.get("key_points_classes")
-        if task_type == "keypoint-detection" and key_points_classes is None:
-            await self._client.unload(model_id)
-            self._routes[model_id] = terminal
-            raise _unsupported(model_id)
-        if (
-            task_type == "vlm"
-            and model_entry.get("model_class_name")
-            in translation.VLM_UNSUPPORTED_MODEL_CLASSES
-        ):
-            await self._client.unload(model_id)
-            self._routes[model_id] = terminal
-            raise _unsupported(model_id)
-        route = {
-            "supported": True,
-            "mmp_model_id": model_id,
-            "task_type": task_type,
-            "action": default_action,
-            "tasks": tasks,
-            "class_names": model_entry.get("class_names"),
-            "key_points_classes": key_points_classes,
-            "model_class_name": model_entry.get("model_class_name"),
-            "model_mro_names": model_entry.get("model_mro_names"),
-        }
-        self._routes[model_id] = route
-        return route
+        except Exception as error:
+            _relabel_model_id(error, mmp_model_id, model_id)
+            raise
 
     async def _infer_new_path(self, model_id: str, request, **kwargs):
         route = await self._resolve_route_async(

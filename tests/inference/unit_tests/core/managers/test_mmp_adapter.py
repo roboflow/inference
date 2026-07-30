@@ -448,6 +448,36 @@ class TestInfer:
         assert restored.shape == (48, 64, 3)
         assert response.image.width == 64 and response.image.height == 48
 
+    def test_numpy_object_image_forwarded_as_png(self, running_adapter, od_stat):
+        array = np.zeros((48, 64, 3), dtype=np.uint8)
+        array[:24, :32] = (0, 0, 255)
+        request = od_request(image=SimpleNamespace(type="numpy_object", value=array))
+        response = running_adapter.infer_from_request_sync("ws/1", request)
+        sent = running_adapter._client.infer_calls[0]["image"]
+        assert sent[:8] == b"\x89PNG\r\n\x1a\n"
+        assert response.image.width == 64 and response.image.height == 48
+
+    def test_numpy_object_round_trip_preserves_colors(self):
+        array = np.zeros((48, 64, 3), dtype=np.uint8)
+        array[:24, :32] = (0, 0, 255)
+        data, dims = translation.forward_image(
+            SimpleNamespace(type="numpy_object", value=array)
+        )
+        assert dims == (64, 48)
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+        try:
+            import imagecodecs
+
+            decoded_rgb = imagecodecs.png_decode(data)
+        except ImportError:
+            decoded_bgr = cv2.imdecode(
+                np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR
+            )
+            decoded_rgb = cv2.cvtColor(decoded_bgr, cv2.COLOR_BGR2RGB)
+        assert decoded_rgb[0, 0].tolist() == [255, 0, 0]
+        assert decoded_rgb[47, 63].tolist() == [0, 0, 0]
+        assert np.array_equal(decoded_rgb, cv2.cvtColor(array, cv2.COLOR_BGR2RGB))
+
     def test_visualize_predictions_populates_jpeg_visualization(
         self, running_adapter, od_stat, monkeypatch, palette_colors
     ):
@@ -1510,3 +1540,24 @@ class TestRemoveAndClear:
         running_adapter.clear()
         assert sorted(running_adapter._client.unloaded) == ["a/1", "b/2"]
         assert running_adapter._routes == {}
+
+
+def test_default_client_is_built_with_adapter_budgets(monkeypatch):
+    import sys
+    import types
+
+    captured = {}
+
+    class RecordingClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    leaf = types.ModuleType("inference_server.proxies.mmp_client")
+    leaf.MMPClient = RecordingClient
+    monkeypatch.setitem(sys.modules, "inference_server", types.ModuleType("inference_server"))
+    monkeypatch.setitem(sys.modules, "inference_server.proxies", types.ModuleType("inference_server.proxies"))
+    monkeypatch.setitem(sys.modules, "inference_server.proxies.mmp_client", leaf)
+
+    ModelManagerAdapter(legacy_stack=FakeLegacy(), mmp_client=None)
+
+    assert captured == {"load_wait_s": 600.0, "infer_timeout_s": 300.0}
