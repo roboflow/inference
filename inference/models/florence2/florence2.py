@@ -7,7 +7,7 @@ from peft import get_peft_model, load_peft_weights, set_peft_model_state_dict
 from PIL.Image import Image
 from transformers import AutoModelForCausalLM
 
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
@@ -93,6 +93,7 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
+            local_files_only=OFFLINE_MODE,
         ).to(self.dtype)
         try:
             from peft.mapping import PEFT_TYPE_TO_PREFIX_MAPPING
@@ -161,7 +162,11 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
         self.model.merge_and_unload()
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token
+            model_load_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=OFFLINE_MODE,
         )
 
     def get_lora_base_from_roboflow(self, model_id, revision):

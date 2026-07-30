@@ -11,6 +11,7 @@ from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
     SECURE_GATEWAY,
@@ -21,12 +22,15 @@ LOCAL_API_KEY = "local"
 from inference_models.errors import (
     AssumptionError,
     BaseInferenceModelsError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
     ModelNotFoundError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import BackendType
@@ -115,6 +119,12 @@ def get_roboflow_model(
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     **kwargs,
 ) -> ModelMetadata:
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     proxy_url_builder = None
     if SECURE_GATEWAY:
         proxy_url_builder = roboflow_secure_gateway_proxy_url_builder
@@ -264,6 +274,12 @@ def get_one_page_of_model_metadata(
     extra_headers: Optional[Dict[str, str]] = None,
     proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     query = {
         "modelId": model_id,
     }
@@ -358,18 +374,36 @@ def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code == 401 or response.status_code == 403:
+    if response.status_code == 401:
         raise UnauthorizedModelAccessError(
             message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "
             "export key to `ROBOFLOW_API_KEY` environment variable",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#unauthorizedmodelaccesserror",
         )
+    if response.status_code == 402:
+        raise PaymentRequiredModelAccessError(
+            message=f"Could not {operation_name}. Not enough credits to perform this request. "
+            "Verify your workspace billing page.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#paymentrequiredmodelaccesserror",
+        )
+    if response.status_code == 403:
+        raise ForbiddenModelAccessError(
+            message=f"Could not {operation_name}. Access forbidden. Check that the API key has the required scopes "
+            "and that the workspace is active.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#forbiddenmodelaccesserror",
+        )
     if response.status_code == 404:
         raise ModelNotFoundError(
             message=f"Could not {operation_name}. Model not found. Are you sure that the identifier is correct "
             f"and provided credentials ensure access to the model?",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelnotfounderror",
+        )
+    if response.status_code == 423:
+        raise UsagePausedModelAccessError(
+            message=f"Could not {operation_name}. Roboflow API usage is paused. Contact your workspace administrator "
+            "to re-enable API keys.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#usagepausedmodelaccesserror",
         )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(

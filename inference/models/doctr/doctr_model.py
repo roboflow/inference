@@ -1,5 +1,4 @@
 import os
-import shutil
 import tempfile
 import uuid
 from copy import copy
@@ -17,7 +16,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
 
@@ -63,22 +62,8 @@ class DocTR(RoboflowCoreModel):
         self.det_model = DocTRDet(api_key=kwargs.get("api_key"))
         self.rec_model = DocTRRec(api_key=kwargs.get("api_key"))
 
-        os.makedirs(f"{MODEL_CACHE_DIR}/doctr/models/", exist_ok=True)
-
-        detector_weights_path = (
-            f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
-        )
-        shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model.pt",
-            detector_weights_path,
-        )
-        recognizer_weights_path = (
-            f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
-        )
-        shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model.pt",
-            recognizer_weights_path,
-        )
+        detector_weights_path = self.det_model.cache_file("model.pt")
+        recognizer_weights_path = self.rec_model.cache_file("model.pt")
 
         det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
         det_model.load_state_dict(

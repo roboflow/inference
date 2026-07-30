@@ -24,6 +24,7 @@ from PIL import Image
 from safetensors.torch import load_file as load_safetensors
 from transformers import AutoImageProcessor
 
+from inference.core.env import OFFLINE_MODE
 from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
 from inference.models.depth_anything_v3.architecture import DepthAnything3Net
 
@@ -169,7 +170,10 @@ class DepthAnythingV3(DepthAnythingV2):
         self.model.eval()
 
         # Load processor from cache dir (uses preprocessor_config.json)
-        self.processor = AutoImageProcessor.from_pretrained(self.cache_dir)
+        self.processor = AutoImageProcessor.from_pretrained(
+            self.cache_dir,
+            local_files_only=OFFLINE_MODE,
+        )
 
     def _load_weights(self):
         """Load pretrained weights from the model cache."""

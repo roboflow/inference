@@ -24,15 +24,15 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.semantic_segmentation import (
-    resolve_background_class_id,
-    validate_class_names,
-)
 from inference_models.models.common.roboflow.post_processing import (
     post_process_semantic_segmentation_logits,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
+)
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    resolve_background_class_id,
+    validate_class_names,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 

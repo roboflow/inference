@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 
+from inference_models._offline import OFFLINE_MODE, OFFLINE_MODE_CONTRACT_VERSION
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -73,7 +74,30 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
-INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Fall back to the inference server's MODEL_CACHE_DIR so that both cache
+# layouts live on the same (typically mounted) volume without relying on
+# import order between `inference` and `inference_models`.
+INFERENCE_HOME = (
+    os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
+)
+HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
+# The package initializer establishes the dependency-light process-wide latch
+# before importing this configuration module. Reloads only compare the public
+# environment request with that immutable state.
+try:
+    _requested_offline_mode = get_boolean_from_env(
+        variable_name="OFFLINE_MODE", default=False
+    )
+except InvalidEnvVariable:
+    # Ignore malformed runtime mutations once the process-wide state exists.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,
@@ -154,6 +178,18 @@ INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS",
     default=300,
 )
+INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE",
+    default=16,
+)
+if INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS",
     default=False,
@@ -325,6 +361,10 @@ INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE = get_float_from_env(
 INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
 )
 DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = False
 INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = get_boolean_from_env(

@@ -62,6 +62,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "VITForClassificationHF":
         model_package_content = get_model_package_contents(
@@ -113,9 +114,10 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 message="Expected Softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
-            device
-        )
+        backbone = ViTModel.from_pretrained(
+            os.path.join(model_name_or_path, "vit"),
+            local_files_only=local_files_only,
+        ).to(device)
         classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
         classifier_state_dict = torch.load(
             model_package_content["classifier_layer_weights.pth"],
@@ -219,6 +221,7 @@ class VITForMultiLabelClassificationHF(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "VITForMultiLabelClassificationHF":
         model_package_content = get_model_package_contents(
@@ -270,9 +273,10 @@ class VITForMultiLabelClassificationHF(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
-            device
-        )
+        backbone = ViTModel.from_pretrained(
+            os.path.join(model_name_or_path, "vit"),
+            local_files_only=local_files_only,
+        ).to(device)
         classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
         classifier_state_dict = torch.load(
             model_package_content["classifier_layer_weights.pth"],

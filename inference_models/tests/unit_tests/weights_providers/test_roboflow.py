@@ -1,7 +1,7 @@
 import json
 import re
 import urllib.parse
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Type, Union
 from unittest.mock import patch
 
 import pytest
@@ -12,10 +12,13 @@ from requests_mock import Mocker
 from inference_models.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
 from inference_models.errors import (
     AssumptionError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
@@ -45,6 +48,17 @@ from inference_models.weights_providers.roboflow import (
 )
 
 DUMMY_PROXY_PREFIX = "http://gateway.local/proxy?url="
+
+
+def test_get_roboflow_model_does_not_request_metadata_in_offline_mode() -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), patch.object(
+        roboflow_module,
+        "get_model_metadata",
+    ) as get_model_metadata_mock:
+        with pytest.raises(ModelRetrievalError, match="OFFLINE_MODE"):
+            get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    get_model_metadata_mock.assert_not_called()
 
 
 def test_as_version_when_valid_version_provided() -> None:
@@ -1051,6 +1065,29 @@ def test_handle_response_errors_when_status_code_is_retryable_error() -> None:
         handle_response_errors(response=response, operation_name="some")
 
 
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (402, PaymentRequiredModelAccessError),
+        (403, ForbiddenModelAccessError),
+        (423, UsagePausedModelAccessError),
+    ],
+)
+def test_handle_response_errors_when_model_access_is_denied(
+    status_code: int, expected_error: Type[Exception]
+) -> None:
+    # given
+    response = Response()
+    response.status_code = status_code
+
+    # when
+    with pytest.raises(expected_error) as error:
+        handle_response_errors(response=response, operation_name="get model weights")
+
+    assert error.value.status_code == status_code
+    assert expected_error.__name__.lower() in error.value.help_url
+
+
 def test_handle_response_errors_when_status_code_is_non_retryable_error() -> None:
     # given
     response = Response()
@@ -1161,6 +1198,17 @@ def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
 
     # then
     assert "Authorization" not in requests_mock.last_request.headers
+
+
+def test_get_one_page_of_model_metadata_rejects_offline_mode(
+    requests_mock: Mocker,
+) -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), pytest.raises(
+        ModelRetrievalError, match="OFFLINE_MODE"
+    ):
+        get_one_page_of_model_metadata(model_id="my-model")
+
+    assert not requests_mock.called
 
 
 def test_get_one_page_of_model_metadata_when_retry_not_needed_and_not_parsable_response(

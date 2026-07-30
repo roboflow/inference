@@ -26,7 +26,6 @@ import numpy as np
 import pytest
 import torch
 
-
 EXPECTED_CLASSES_PRESENT: List[int] = [0, 1, 2, 3, 5, 6, 8, 9, 12, 14, 15, 17]
 
 # cv2.imread (BGR) input pathway.

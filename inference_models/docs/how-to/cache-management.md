@@ -9,7 +9,8 @@ The library uses two types of caching:
 - **Auto-Resolution Cache** - Stores backend selection decisions to avoid repeated API calls and package negotiation
 - **Model Package Cache** - Stores downloaded model files (weights, configs, class names) to avoid re-downloading
 
-Both caches are stored under `$INFERENCE_HOME` (defaults to `/tmp/cache/`).
+Both caches are stored under `$INFERENCE_HOME`. When `INFERENCE_HOME` is unset,
+the library uses `$MODEL_CACHE_DIR`, then falls back to `/tmp/cache/`.
 
 ## 🔄 Auto-Resolution Cache
 
@@ -70,12 +71,19 @@ Downloaded model files (weights, configs, class names, etc.) are cached locally 
 
 !!! warning "Cache Access and API Key Assumptions"
 
-    **Important:** The model package cache operates with an implicit assumption that **once a model is stored on the local filesystem, it can be accessed without requiring an API key**, even if the original download required authentication.
+    **Important:** The default local access manager assumes that a canonically
+    attributed model already stored on the local filesystem may be used by a
+    credential-free process, even if the original download required
+    authentication.
 
     This means:
 
-    - If a model was downloaded using an API key and cached locally, subsequent loads from cache will succeed **even without providing the API key**
-    - The library itself does **not implement access control guards** for cached files
+    - A credential-free offline load may reuse it only when current cache
+      metadata resolves the requested alias to one unambiguous canonical model
+    - A non-empty API key uses only its exact auto-resolution entry; changing
+      the key does not use credential-independent fallback
+    - The default library access manager does **not add tenant authorization**
+      for otherwise eligible local files
     - In single-user environments, this is typically the desired behavior for convenience
 
     **Multi-tenant environments:**
@@ -98,13 +106,14 @@ Model IDs are slugified and hashed to create safe, unique, yet human-readable di
 ```
 /tmp/cache/
 ├── models-cache/
-│   ├── yolov8n-640-a1b2c3d4/          # Slugified model ID + hash
+│   ├── v2-yolov8n-640-0123456789abcdef0123456789abcdef/
+│   │                                   # Slugified model ID + 128-bit hash
 │   │   ├── onnxfp32/                   # Package ID from provider
 │   │   │   ├── model.onnx -> ../../shared-blobs/e4f5a6b7...
 │   │   │   └── class_names.txt
 │   │   └── trtfp16/                    # Another package ID
 │   │       └── model.engine -> ../../shared-blobs/c8d9e0f1...
-│   └── rfdetr-base-e5f6g7h8/
+│   └── v2-rfdetr-base-fedcba9876543210fedcba9876543210/
 │       └── torchfp32/
 │           └── model.pt -> ../../shared-blobs/a2b3c4d5...
 └── shared-blobs/                       # Content-addressed blob storage
@@ -129,6 +138,29 @@ Files without content hashes are stored directly in the model package directory.
 
 Model package cache **does not expire automatically** - files remain until manually deleted.
 
+### Offline cache compatibility
+
+Current package manifests record the exact cache owner, provider-resolved
+canonical model ID, source trust, dependency metadata, package-selection
+constraints, and a structured runtime compatibility fingerprint.
+`OFFLINE_MODE=True` only loads a package whose manifest matches the current
+request and runtime.
+
+A request with a non-empty API key may use only the exact auto-resolution entry
+created for that key and set of loading parameters. A changed or rotated key
+does not use credential-independent fallback; reconnect and re-warm it. A
+credential-free offline restart may reuse compatible metadata only when every
+matching current entry is canonically attributed and all of them resolve to one
+canonical model identity. Ambiguous aliases fail closed.
+
+New writes use a V2 model-cache path with a 128-bit identity digest. V1 paths
+with the older 32-bit digest are read-only and accepted only when a regular
+manifest proves the exact model owner. Ownerless or mismatched legacy entries
+are rejected. Before disconnecting a deployment, install the matching
+`inference-models` release and warm every required model again under the same
+backend, device, quantization, batch, ONNX-provider, and dependency settings
+that the offline process will use.
+
 **Purge model cache:**
 ```bash
 rm -rf $INFERENCE_HOME/models-cache/
@@ -148,4 +180,3 @@ rm -rf /tmp/cache/shared-blobs/
 - [Understand Core Concepts](understand-core-concepts.md) - Understand the design philosophy
 - [Supported Models](../models/index.md) - Browse available models
 - [How-To: Local Packages](../how-to/local-packages.md) - Working with local model packages
-

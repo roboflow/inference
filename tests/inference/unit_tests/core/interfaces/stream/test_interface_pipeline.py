@@ -812,6 +812,39 @@ def test_inference_pipeline_factories_expose_optional_exec_session_id(
     assert parameter.default is None
 
 
+@pytest.mark.parametrize("disable_sinks", [False, True])
+def test_init_with_workflow_injects_sink_execution_policy(
+    disable_sinks: bool,
+    monkeypatch,
+) -> None:
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    execution_engine = MagicMock()
+    execution_engine_init = MagicMock(return_value=execution_engine)
+    pipeline = MagicMock()
+    monkeypatch.setattr(ExecutionEngine, "init", execution_engine_init)
+    monkeypatch.setattr(
+        InferencePipeline,
+        "init_with_custom_logic",
+        MagicMock(return_value=pipeline),
+    )
+
+    result = InferencePipeline.init_with_workflow(
+        video_reference="video.mp4",
+        workflow_specification={"version": "1.0"},
+        model_manager=MagicMock(),
+        disable_sinks=disable_sinks,
+    )
+
+    assert result is pipeline
+    assert (
+        execution_engine_init.call_args.kwargs["init_parameters"][
+            "workflows_core.disable_sinks"
+        ]
+        is disable_sinks
+    )
+
+
 def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
     from threading import Thread
     from unittest.mock import MagicMock

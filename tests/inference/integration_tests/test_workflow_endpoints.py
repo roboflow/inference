@@ -71,11 +71,13 @@ def test_getting_blocks_descriptions_using_new_post_endpoint(server_url) -> None
     ), "Expected key `dynamic_block_definition_schema` to be present in response"
 
 
-def test_getting_blocks_descriptions_using_new_post_endpoint_using_existing_execution_engine_version(server_url: str) -> None:
+def test_getting_blocks_descriptions_using_new_post_endpoint_using_existing_execution_engine_version(
+    server_url: str,
+) -> None:
     # when
     response = requests.post(
         f"{server_url}/workflows/blocks/describe",
-        json={"execution_engine_version": "1.0.0"}
+        json={"execution_engine_version": "1.0.0"},
     )
 
     # then
@@ -108,12 +110,12 @@ def test_getting_blocks_descriptions_using_new_post_endpoint_using_existing_exec
 
 
 def test_getting_blocks_descriptions_using_new_post_endpoint_requesting_non_existing_execution_engine_version(
-    server_url: str
+    server_url: str,
 ) -> None:
     # when
     response = requests.post(
         f"{server_url}/workflows/blocks/describe",
-        json={"execution_engine_version": "0.1.0"}
+        json={"execution_engine_version": "0.1.0"},
     )
 
     # then
@@ -217,9 +219,7 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
     ), "Expected key `dynamic_block_definition_schema` to be present in response"
     types_compatible_with_object_detection_predictions = {
         e["manifest_type_identifier"]
-        for e in response_data["kinds_connections"][
-            "object_detection_prediction"
-        ]
+        for e in response_data["kinds_connections"]["object_detection_prediction"]
     }
     assert (
         "DetectionsToCropsAssociation"
@@ -394,7 +394,9 @@ def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_ex
     )
 
     # then
-    assert response.status_code == 400, "Expected BadRequest response on wrong version selection"
+    assert (
+        response.status_code == 400
+    ), "Expected BadRequest response on wrong version selection"
 
 
 def test_compilation_endpoint_when_compilation_succeeds_with_custom_block(
@@ -691,7 +693,7 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.12.0"]
+    assert response_data["versions"] == ["1.13.0"]
 
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:
@@ -802,7 +804,7 @@ def test_describe_workflow_interface_when_incompatible_execution_engine_version_
         json={
             "specification": invalid_definition,
             "api_key": "some",
-        }
+        },
     )
 
     # then
@@ -842,7 +844,7 @@ def test_describe_workflow_interface_when_definition_contains_internal_error(
         json={
             "specification": invalid_definition,
             "api_key": "some",
-        }
+        },
     )
 
     # then
@@ -897,7 +899,7 @@ def test_describe_workflow_interface_when_valid_definition_provided(
         json={
             "specification": valid_definition,
             "api_key": "some",
-        }
+        },
     )
 
     # then
@@ -913,10 +915,12 @@ def test_describe_workflow_interface_when_valid_definition_provided(
         "float_zero_to_one": "float",
         "image": "dict",
         "object_detection_prediction": "dict",
-        "roboflow_model_id": "str"
+        "roboflow_model_id": "str",
     }
-    assert set(response_data["kinds_schemas"].keys()) == {"object_detection_prediction", "image"}, \
-        "Expected image and object_detection_prediction kinds to deliver schema"
+    assert set(response_data["kinds_schemas"].keys()) == {
+        "object_detection_prediction",
+        "image",
+    }, "Expected image and object_detection_prediction kinds to deliver schema"
 
 
 def test_describe_workflow_interface_when_invalid_usage_of_inputs_detected(
@@ -966,7 +970,7 @@ def test_describe_workflow_interface_when_invalid_usage_of_inputs_detected(
         json={
             "specification": valid_definition,
             "api_key": "some",
-        }
+        },
     )
 
     # then

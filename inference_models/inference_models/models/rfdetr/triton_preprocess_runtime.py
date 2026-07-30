@@ -36,6 +36,8 @@ from inference_models.models.rfdetr.triton_jit_fallback import (
 try:
     from inference_models.models.rfdetr.triton_preprocess import (
         TRITON_AVAILABLE as _TRITON_AVAILABLE,
+    )
+    from inference_models.models.rfdetr.triton_preprocess import (
         ResampleTables,
         build_resample_tables,
         resolve_two_pass_launch_config,

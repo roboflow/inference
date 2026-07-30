@@ -35,6 +35,7 @@ from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
+    NEAREST_TARGET_DISTANCE_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -304,6 +305,7 @@ def deserialize_detections_kind(
         (VELOCITY_KEY_IN_INFERENCE_RESPONSE, VELOCITY_KEY_IN_SV_DETECTIONS),
         (AREA_KEY_IN_INFERENCE_RESPONSE, AREA_KEY_IN_SV_DETECTIONS),
         (AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE, AREA_CONVERTED_KEY_IN_SV_DETECTIONS),
+        (NEAREST_TARGET_DISTANCE_KEY, NEAREST_TARGET_DISTANCE_KEY),
     ]
     for raw_detection_key, parsed_detection_key in optional_elements_keys:
         parsed_detections = _attach_optional_detection_element(

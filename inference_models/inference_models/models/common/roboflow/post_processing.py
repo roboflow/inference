@@ -4,7 +4,10 @@ import torch
 import torchvision
 from torchvision.transforms import functional
 
-from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.configuration import (
+    INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
+)
 from inference_models.entities import Confidence, ImageDimensions
 from inference_models.logger import LOGGER
 from inference_models.models.base.semantic_segmentation import (
@@ -400,6 +403,7 @@ def align_instance_segmentation_results(
     inference_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
     binarization_threshold: float = 0.0,
+    mask_chunk_size: int = INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
@@ -459,15 +463,24 @@ def align_instance_segmentation_results(
         masks = masks[
             :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
         ]
-    masks = (
-        functional.resize(
-            masks,
-            [size_after_pre_processing.height, size_after_pre_processing.width],
-            interpolation=functional.InterpolationMode.BILINEAR,
-        )
-        .gt_(binarization_threshold)
-        .to(dtype=torch.bool)
+    # Resize to full resolution in chunks: the float32 working set is
+    # chunk x H x W instead of n x H x W (17+ GiB at 300 masks on a 12MP
+    # image); only the n x H x W bool output is ever materialized whole.
+    mask_chunk_size = max(1, int(mask_chunk_size))
+    target_height = size_after_pre_processing.height
+    target_width = size_after_pre_processing.width
+    binarized_masks = torch.empty(
+        (masks.shape[0], target_height, target_width),
+        dtype=torch.bool,
+        device=masks.device,
     )
+    for start in range(0, masks.shape[0], mask_chunk_size):
+        binarized_masks[start : start + mask_chunk_size] = functional.resize(
+            masks[start : start + mask_chunk_size],
+            [target_height, target_width],
+            interpolation=functional.InterpolationMode.BILINEAR,
+        ).gt_(binarization_threshold)
+    masks = binarized_masks
     if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
         mask_canvas = torch.zeros(
             (
@@ -890,4 +903,102 @@ def post_process_semantic_segmentation_logits(
                 confidence=image_confidence,
             )
         )
+    return results
+
+
+def post_process_depth_estimation_map(
+    model_results: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    device: torch.device,
+) -> List[torch.Tensor]:
+    """Shared post-processing for depth-estimation models that emit dense
+    (B, 1, H, W) or (B, H, W) depth maps. Used by YOLO26-depth.
+
+    Values are preserved as-is (e.g. metric meters). Steps: crop out letterbox
+    padding (offsets scaled to the map resolution, which may differ from the
+    network input size) → resize back to pre-letterbox size → place into a
+    zero-filled original-image canvas if static_crop was applied (depth outside
+    the crop region is unknown and reported as 0.0).
+    """
+    if model_results.ndim == 3:
+        model_results = model_results.unsqueeze(1)
+    results: List[torch.Tensor] = []
+    for image_results, image_metadata in zip(model_results, pre_processing_meta):
+        inference_size = image_metadata.inference_size
+        map_h_scale = model_results.shape[2] / inference_size.height
+        map_w_scale = model_results.shape[3] / inference_size.width
+        map_pad_top, map_pad_bottom, map_pad_left, map_pad_right = (
+            round(map_h_scale * image_metadata.pad_top),
+            round(map_h_scale * image_metadata.pad_bottom),
+            round(map_w_scale * image_metadata.pad_left),
+            round(map_w_scale * image_metadata.pad_right),
+        )
+        _, mh, mw = image_results.shape
+        if (
+            map_pad_top < 0
+            or map_pad_bottom < 0
+            or map_pad_left < 0
+            or map_pad_right < 0
+        ):
+            image_results = torch.nn.functional.pad(
+                image_results,
+                (
+                    abs(min(map_pad_left, 0)),
+                    abs(min(map_pad_right, 0)),
+                    abs(min(map_pad_top, 0)),
+                    abs(min(map_pad_bottom, 0)),
+                ),
+                "constant",
+                0.0,
+            )
+            padded_map_offset_top = max(map_pad_top, 0)
+            padded_map_offset_bottom = max(map_pad_bottom, 0)
+            padded_map_offset_left = max(map_pad_left, 0)
+            padded_map_offset_right = max(map_pad_right, 0)
+            image_results = image_results[
+                :,
+                padded_map_offset_top : image_results.shape[1]
+                - padded_map_offset_bottom,
+                padded_map_offset_left : image_results.shape[2]
+                - padded_map_offset_right,
+            ]
+        else:
+            image_results = image_results[
+                :,
+                map_pad_top : mh - map_pad_bottom,
+                map_pad_left : mw - map_pad_right,
+            ]
+        if (
+            image_results.shape[1] != image_metadata.size_after_pre_processing.height
+            or image_results.shape[2] != image_metadata.size_after_pre_processing.width
+        ):
+            image_results = functional.resize(
+                image_results,
+                [
+                    image_metadata.size_after_pre_processing.height,
+                    image_metadata.size_after_pre_processing.width,
+                ],
+                interpolation=functional.InterpolationMode.BILINEAR,
+            )
+        depth_map = image_results[0].float()
+        if (
+            image_metadata.static_crop_offset.offset_x > 0
+            or image_metadata.static_crop_offset.offset_y > 0
+        ):
+            original_size_canvas = torch.zeros(
+                (
+                    image_metadata.original_size.height,
+                    image_metadata.original_size.width,
+                ),
+                device=device,
+                dtype=depth_map.dtype,
+            )
+            original_size_canvas[
+                image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
+                + depth_map.shape[0],
+                image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
+                + depth_map.shape[1],
+            ] = depth_map
+            depth_map = original_size_canvas
+        results.append(depth_map)
     return results
