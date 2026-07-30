@@ -67,6 +67,7 @@ from inference.core.exceptions import (
     InferencePayloadTooLargeError,
     InputImageLoadError,
     InvalidImageTypeDeclared,
+    InvalidModelIDError,
     ModelArtefactError,
     ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
@@ -76,6 +77,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
 )
+from inference.core.registries.roboflow import GENERIC_MODELS
 from inference.core.utils.image_utils import (
     BASE64_DATA_TYPE_PATTERN,
     encode_image_to_jpeg_bytes,
@@ -89,6 +91,7 @@ from inference.core.utils.postprocess import (
     masks2multipoly,
     masks2poly,
 )
+from inference.core.utils.roboflow import get_model_id_chunks
 
 # Static mirror of the (model_type, action) pairs registered by
 # inference_server/handlers/*/description.py. Kept as literals so the legacy
@@ -228,13 +231,52 @@ _DISABLE_PREPROC_FIELDS = (
 _OD_MAX_CANDIDATES_DEFAULT = 3000
 
 
+_GENERIC_MODEL_TASK_TYPES: Dict[Tuple[str, str], str] = {
+    ("embed", "clip"): "embedding",
+    ("embed", "perception_encoder"): "embedding",
+    ("embed", "sam"): "interactive-instance-segmentation",
+    ("embed", "sam2"): "interactive-instance-segmentation",
+    ("ocr", "doctr"): "structured-ocr",
+    ("ocr", "easy_ocr"): "structured-ocr",
+    ("ocr", "trocr"): "text-only-ocr",
+}
+
+_PLATFORM_TASK_TYPE_ALIASES: Dict[str, str] = {}
+
+_DEFAULT_ACTION_BY_TASK_TYPE: Dict[str, str] = {
+    "embedding": "embed_images",
+    "interactive-instance-segmentation": "embed",
+}
+
+
+def _default_action_for(task_type: str) -> str:
+    return _DEFAULT_ACTION_BY_TASK_TYPE.get(task_type, "infer")
+
+
+def _generic_model_task_type(model_id: str) -> Optional[str]:
+    entry = GENERIC_MODELS.get(model_id)
+    if entry is None:
+        try:
+            dataset_id, _ = get_model_id_chunks(model_id=model_id)
+        except InvalidModelIDError:
+            return None
+        entry = GENERIC_MODELS.get(dataset_id)
+    if entry is None:
+        return None
+    return _GENERIC_MODEL_TASK_TYPES.get(entry)
+
+
 async def stat_model(model_id: str, api_key: str) -> Tuple[str, str]:
-    """Resolve (task_type, default_action) via the new world's stat + auth."""
+    """Resolve (task_type, default_action): generic core ids locally, the
+    rest via the new world's stat + auth."""
+    generic_task_type = _generic_model_task_type(model_id)
+    if generic_task_type is not None:
+        return generic_task_type, _default_action_for(generic_task_type)
     from inference_server.framework.entities import CommonRequestParams
     from inference_server.framework.model_stat import stat_model_while_checking_auth
 
     try:
-        return await stat_model_while_checking_auth(
+        task_type, default_action = await stat_model_while_checking_auth(
             CommonRequestParams(model_id=model_id, api_key=api_key)
         )
     except PermissionError as error:
@@ -243,6 +285,10 @@ async def stat_model(model_id: str, api_key: str) -> Tuple[str, str]:
         raise RoboflowAPINotNotFoundError(str(error)) from error
     except RuntimeError as error:
         raise RoboflowAPIConnectionError(str(error)) from error
+    canonical_task_type = _PLATFORM_TASK_TYPE_ALIASES.get(task_type)
+    if canonical_task_type is not None:
+        return canonical_task_type, _default_action_for(canonical_task_type)
+    return task_type, default_action
 
 
 def raise_for_lifecycle_result(result: tuple, model_id: str) -> None:
