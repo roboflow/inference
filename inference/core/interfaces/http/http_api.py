@@ -181,6 +181,7 @@ from inference.core.env import (
     HTTP_API_THREADPOOL_WORKERS,
     INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
+    LEGACY_MMP_ADAPTER_ENABLED,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
     MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
@@ -4193,7 +4194,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         OCRInferenceResponse: The response containing the retrieved text.
                     """
-                    if not USE_INFERENCE_MODELS:
+                    if not USE_INFERENCE_MODELS or LEGACY_MMP_ADAPTER_ENABLED:
                         raise HTTPException(
                             status_code=404,
                             detail="PP-OCR is not supported by this inference server configuration.",
