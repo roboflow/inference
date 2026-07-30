@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Optional
 
 import aiohttp
@@ -10,6 +11,8 @@ from fastapi import Response
 
 from inference_server import configuration
 from inference_server.errors import error_response
+
+logger = logging.getLogger(__name__)
 
 URL_FETCH_TIMEOUT_S = 10
 URL_FETCH_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -98,6 +101,7 @@ async def fetch_image_from_url(
             f"fetching image URL timed out after {URL_FETCH_TIMEOUT_S}s",
         )
     except aiohttp.ClientError as exc:
+        logger.warning("Fetching image URL failed: %s", exc)
         return None, error_response(
-            502, "URL_FETCH_FAILED", f"fetching image URL failed: {exc}"
+            502, "URL_FETCH_FAILED", f"fetching image URL failed"
         )

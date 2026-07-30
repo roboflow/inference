@@ -95,10 +95,11 @@ def _validate_action_params(params_spec: dict, params: dict) -> Response | None:
             try:
                 params[name] = _coerce_param(value, type_name)
             except ValueError as exc:
+                logger.warning("Invalid param: %s", exc)
                 return error_response(
                     400,
                     "INVALID_PARAM",
-                    f"param {name!r}: {exc}",
+                    f"param {name!r}",
                 )
     return None
 
@@ -166,10 +167,11 @@ async def handle_model_inference_request(
     except LookupError as exc:
         return error_response(404, "MODEL_NOT_FOUND", str(exc) or "unknown model_id")
     except RuntimeError as exc:
+        logger.warning("Runtime error when calling stat_model_while_checking_auth: %s", exc)
         return error_response(
             503,
             "REGISTRY_UNAVAILABLE",
-            str(exc) or "model registry unreachable",
+            "model registry unreachable",
             follow_up="retry shortly",
         )
 
@@ -194,7 +196,8 @@ async def handle_model_inference_request(
     except InputParseError as exc:
         return exc.response
     except PayloadTooLargeError as exc:
-        return error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
+        logger.warning("Payload too large: %s", exc)
+        return error_response(413, "PAYLOAD_TOO_LARGE")
     except ClientDisconnect:
         logger.debug("[dispatch] client disconnected during body read")
         return Response(status_code=499)
@@ -222,7 +225,8 @@ async def handle_model_inference_request(
     try:
         prediction = await description.handler(action, input_data, proxy, server_hooks)
     except PayloadTooLargeError as exc:
-        return error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
+        logger.warning("Payload too large: %s", exc)
+        return error_response(413, "PAYLOAD_TOO_LARGE")
     except ServerBusyError:
         return error_response(
             503,
@@ -232,9 +236,11 @@ async def handle_model_inference_request(
             headers={"Retry-After": "1"},
         )
     except ValueError as exc:
-        return error_response(400, "INVALID_PARAM", str(exc))
+        logger.warning("Invalid param: %s", exc)
+        return error_response(400, "INVALID_PARAM")
     except ModelInputError as exc:
-        return error_response(400, "INVALID_PARAM", str(exc))
+        logger.warning("Model input error: %s", exc)
+        return error_response(400, "INVALID_PARAM")
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "inference timeout")
     except ClientDisconnected:

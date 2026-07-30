@@ -111,7 +111,8 @@ async def _interface_from_registry(
     try:
         model_type, _action_default = await stat_model_while_checking_auth(common)
     except PermissionError as exc:
-        return error_response(401, "UNAUTHORIZED", str(exc) or "invalid api key")
+        logger.warning("Permission error: %s", exc)
+        return error_response(401, "UNAUTHORIZED", "invalid api key")
     except (LookupError, RuntimeError):
         return None
 
