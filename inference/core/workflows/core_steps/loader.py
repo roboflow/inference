@@ -208,6 +208,7 @@ else:
     from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1_tensor import (
         PixelationCountBlockV1,
     )
+
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
@@ -239,6 +240,7 @@ else:
     from inference.core.workflows.core_steps.classical_cv.threshold.v1_tensor import (
         ImageThresholdBlockV1,
     )
+
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,
@@ -423,6 +425,7 @@ else:
     from inference.core.workflows.core_steps.fusion.frame_delay.v1_tensor import (
         FrameDelayBlockV1,
     )
+
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -492,7 +495,6 @@ else:
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
-
 from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
     Cosmos3EdgeBlockV1,
 )
@@ -628,6 +630,7 @@ else:
     from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1_tensor import (
         PPOCRBlockV1,
     )
+
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
@@ -1374,6 +1377,7 @@ else:
     from inference.core.workflows.core_steps.visualizations.label.v2_tensor import (
         LabelVisualizationBlockV2,
     )
+
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
@@ -1434,6 +1438,7 @@ else:
     from inference.core.workflows.core_steps.visualizations.rich_label.v1_tensor import (
         RichLabelVisualizationBlockV1,
     )
+
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
