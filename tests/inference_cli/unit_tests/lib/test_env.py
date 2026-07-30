@@ -52,14 +52,29 @@ def test_api_urls_default_to_us_production(reload_env_modules) -> None:
     assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow.com"
 
 
-def test_api_urls_honor_eu_region(reload_env_modules) -> None:
+@pytest.mark.parametrize(
+    "region, environment, expected_api_url",
+    [
+        ("us", "prod", "https://api.roboflow.com"),
+        ("us", "staging", "https://api.roboflow.one"),
+        ("eu", "prod", "https://api.roboflow.eu"),
+        ("eu", "staging", "https://api.roboflow-eu.one"),
+    ],
+)
+def test_api_urls_follow_region_and_environment_matrix(
+    reload_env_modules,
+    region: str,
+    environment: str,
+    expected_api_url: str,
+) -> None:
     # when
-    env_module, constants_module = reload_env_modules(ROBOFLOW_REGION="eu")
+    env_module, constants_module = reload_env_modules(
+        ROBOFLOW_REGION=region, ROBOFLOW_ENVIRONMENT=environment
+    )
 
     # then
-    assert env_module.ROBOFLOW_REGION == "eu"
-    assert env_module.API_BASE_URL == "https://api.roboflow.eu"
-    assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow.eu"
+    assert env_module.API_BASE_URL == expected_api_url
+    assert constants_module.ROBOFLOW_API_HOST == expected_api_url
 
 
 def test_region_value_is_normalized(reload_env_modules) -> None:
@@ -71,10 +86,13 @@ def test_region_value_is_normalized(reload_env_modules) -> None:
     assert env_module.API_BASE_URL == "https://api.roboflow.eu"
 
 
-def test_explicit_url_overrides_beat_region(reload_env_modules) -> None:
+def test_explicit_url_overrides_beat_region_and_environment(
+    reload_env_modules,
+) -> None:
     # when
     env_module, constants_module = reload_env_modules(
         ROBOFLOW_REGION="eu",
+        ROBOFLOW_ENVIRONMENT="staging",
         API_BASE_URL="https://api.example.com",
         ROBOFLOW_API_HOST="https://api-host.example.com",
     )
@@ -84,34 +102,47 @@ def test_explicit_url_overrides_beat_region(reload_env_modules) -> None:
     assert constants_module.ROBOFLOW_API_HOST == "https://api-host.example.com"
 
 
-def test_unknown_region_warns_and_falls_back_to_us(reload_env_modules, capsys) -> None:
+def test_unknown_region_warns_and_falls_back_to_us(reload_env_modules) -> None:
     # when
-    env_module, constants_module = reload_env_modules(ROBOFLOW_REGION="mars")
+    with pytest.warns(UserWarning, match="Unknown ROBOFLOW_REGION"):
+        env_module, constants_module = reload_env_modules(ROBOFLOW_REGION="mars")
 
     # then
     assert env_module.ROBOFLOW_REGION == "us"
     assert env_module.API_BASE_URL == "https://api.roboflow.com"
     assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow.com"
-    assert "unknown Roboflow region" in capsys.readouterr().err
 
 
-def test_non_platform_project_still_selects_staging_api(reload_env_modules) -> None:
+def test_legacy_project_variable_still_selects_staging(reload_env_modules) -> None:
     # when
-    env_module, constants_module = reload_env_modules(
-        PROJECT="roboflow-staging", ROBOFLOW_ENVIRONMENT="staging"
-    )
+    env_module, constants_module = reload_env_modules(PROJECT="roboflow-staging")
 
     # then
     assert env_module.API_BASE_URL == "https://api.roboflow.one"
     assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow.one"
 
 
-def test_eu_region_beats_project_and_environment_defaults(reload_env_modules) -> None:
+def test_legacy_project_variable_selects_staging_within_eu_region(
+    reload_env_modules,
+) -> None:
     # when
     env_module, constants_module = reload_env_modules(
-        ROBOFLOW_REGION="eu", PROJECT="roboflow-staging", ROBOFLOW_ENVIRONMENT="staging"
+        ROBOFLOW_REGION="eu", PROJECT="roboflow-staging"
     )
 
     # then
-    assert env_module.API_BASE_URL == "https://api.roboflow.eu"
-    assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow.eu"
+    assert env_module.API_BASE_URL == "https://api.roboflow-eu.one"
+    assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow-eu.one"
+
+
+def test_roboflow_environment_beats_legacy_project_variable(
+    reload_env_modules,
+) -> None:
+    # when
+    env_module, constants_module = reload_env_modules(
+        ROBOFLOW_ENVIRONMENT="prod", PROJECT="roboflow-staging"
+    )
+
+    # then
+    assert env_module.API_BASE_URL == "https://api.roboflow.com"
+    assert constants_module.ROBOFLOW_API_HOST == "https://api.roboflow.com"

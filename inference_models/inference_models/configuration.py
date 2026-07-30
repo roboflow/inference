@@ -38,13 +38,29 @@ IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
     )
 )
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", "prod")
+# Region / environment matrix mirroring inference_sdk.regions - inference-models
+# is a standalone distribution and cannot depend on inference_sdk.
+_ROBOFLOW_API_HOSTS = {
+    ("us", "prod"): "https://api.roboflow.com",
+    ("us", "staging"): "https://api.roboflow.one",
+    ("eu", "prod"): "https://api.roboflow.eu",
+    ("eu", "staging"): "https://api.roboflow-eu.one",
+}
+ROBOFLOW_REGION = os.getenv("ROBOFLOW_REGION", "us").strip().lower()
+if ROBOFLOW_REGION not in {region for region, _ in _ROBOFLOW_API_HOSTS}:
+    warnings.warn(
+        f"Unknown ROBOFLOW_REGION {ROBOFLOW_REGION!r} - falling back to 'us'. "
+        "Supported regions: eu, us.",
+    )
+    ROBOFLOW_REGION = "us"
 ROBOFLOW_API_HOST = os.getenv(
     "ROBOFLOW_API_HOST",
-    (
-        "https://api.roboflow.com"
-        if ROBOFLOW_ENVIRONMENT.lower() == "prod"
-        else "https://api.roboflow.one"
-    ),
+    _ROBOFLOW_API_HOSTS[
+        (
+            ROBOFLOW_REGION,
+            "prod" if ROBOFLOW_ENVIRONMENT.lower() == "prod" else "staging",
+        )
+    ],
 )
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
