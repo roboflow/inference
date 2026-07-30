@@ -277,7 +277,7 @@ async def infer(
             content=b"server busy, try again",
         )
     except ValueError as exc:
-        return Response(status_code=400, content=str(exc).encode() or b"bad request")
+        return Response(status_code=400, content=b"bad request")
     except asyncio.TimeoutError:
         return Response(status_code=504, content=b"inference timeout")
     except ClientDisconnected:
