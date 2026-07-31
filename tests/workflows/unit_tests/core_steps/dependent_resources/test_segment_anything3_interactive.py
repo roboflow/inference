@@ -57,17 +57,10 @@ import pytest
 from inference.core.workflows.prototypes.block import ModelExecutionLocation
 
 
-@pytest.mark.parametrize(
-    "sam3_exec_mode,expected_location",
-    [
-        ("local", ModelExecutionLocation.ENVIRONMENT_DEFINED),
-        ("remote", ModelExecutionLocation.REMOTE),
-    ],
-)
-def test_sam3_interactive_declared_execution_location_follows_sam3_exec_mode(
-    sam3_exec_mode, expected_location, monkeypatch
+def test_sam3_interactive_declares_environment_defined_execution_when_local(
+    monkeypatch,
 ) -> None:
-    monkeypatch.setattr(sam3_interactive_module, "SAM3_EXEC_MODE", sam3_exec_mode)
+    monkeypatch.setattr(sam3_interactive_module, "SAM3_EXEC_MODE", "local")
     manifest = SegmentAnything3InteractiveV1Manifest.model_validate(
         {
             "type": "roboflow_core/sam3_interactive@v1",
@@ -78,4 +71,23 @@ def test_sam3_interactive_declared_execution_location_follows_sam3_exec_mode(
 
     (resource,) = manifest.discover_dependent_resources()
 
-    assert resource.metadata.execution_location is expected_location
+    assert (
+        resource.metadata.execution_location
+        is ModelExecutionLocation.ENVIRONMENT_DEFINED
+    )
+
+
+def test_sam3_interactive_declares_nothing_under_proxy_execution_mode(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(sam3_interactive_module, "SAM3_EXEC_MODE", "remote")
+    manifest = SegmentAnything3InteractiveV1Manifest.model_validate(
+        {
+            "type": "roboflow_core/sam3_interactive@v1",
+            "name": "model",
+            "images": "$inputs.image",
+        }
+    )
+
+    # The proxy runs its own fixed SAM3 server-side — nothing to declare.
+    assert manifest.discover_dependent_resources() == []

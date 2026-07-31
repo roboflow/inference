@@ -118,17 +118,10 @@ MANIFEST_VERSIONS_WITH_MODULES = [
 @pytest.mark.parametrize(
     "manifest_class,block_type,module", MANIFEST_VERSIONS_WITH_MODULES, ids=VERSION_IDS
 )
-@pytest.mark.parametrize(
-    "sam3_exec_mode,expected_location",
-    [
-        ("local", ModelExecutionLocation.ENVIRONMENT_DEFINED),
-        ("remote", ModelExecutionLocation.REMOTE),
-    ],
-)
-def test_sam3_declared_execution_location_follows_sam3_exec_mode(
-    manifest_class, block_type, module, sam3_exec_mode, expected_location, monkeypatch
+def test_sam3_declares_environment_defined_execution_when_exec_mode_local(
+    manifest_class, block_type, module, monkeypatch
 ) -> None:
-    monkeypatch.setattr(module, "SAM3_EXEC_MODE", sam3_exec_mode)
+    monkeypatch.setattr(module, "SAM3_EXEC_MODE", "local")
     manifest = manifest_class.model_validate(
         {
             "type": block_type,
@@ -139,4 +132,27 @@ def test_sam3_declared_execution_location_follows_sam3_exec_mode(
 
     (resource,) = manifest.discover_dependent_resources()
 
-    assert resource.metadata.execution_location is expected_location
+    assert (
+        resource.metadata.execution_location
+        is ModelExecutionLocation.ENVIRONMENT_DEFINED
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest_class,block_type,module", MANIFEST_VERSIONS_WITH_MODULES, ids=VERSION_IDS
+)
+def test_sam3_declares_nothing_under_proxy_execution_mode(
+    manifest_class, block_type, module, monkeypatch
+) -> None:
+    monkeypatch.setattr(module, "SAM3_EXEC_MODE", "remote")
+    manifest = manifest_class.model_validate(
+        {
+            "type": block_type,
+            "name": "model",
+            "images": "$inputs.image",
+        }
+    )
+
+    # The proxy ignores the configured model id and runs its own fixed SAM3
+    # server-side — nothing to declare.
+    assert manifest.discover_dependent_resources() == []

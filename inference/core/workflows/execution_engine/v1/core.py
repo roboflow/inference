@@ -403,11 +403,6 @@ class ExecutionEngineV1(BaseExecutionEngine):
             self._pending_runtime_dependencies
             and not self._pending_dependencies_resolution_attempted
         ):
-            # Attempted on the first run only, after input validation — an
-            # invalid request must neither consume the single attempt nor
-            # trigger model downloads. Dependencies declared through
-            # `$inputs.<name>` selectors become resolvable once runtime
-            # parameters (with input defaults applied) are available.
             self._pending_dependencies_resolution_attempted = True
             _resolve_and_pre_load_runtime_dependencies(
                 pending_dependencies=self._pending_runtime_dependencies,
