@@ -33,7 +33,10 @@ this heading with the Execution Engine and inference versions when releasing.
   needs to be reachable on the platform, vs `execution` — the model is executed)
   and, for execution, `execution_location` (`local` / `remote` /
   `environment_defined` when the locality is decided at runtime by
-  `WORKFLOWS_STEP_EXECUTION_MODE`). Returning `None` (the default) means the
+  `WORKFLOWS_STEP_EXECUTION_MODE`). Blocks governed by their own locality
+  override dictate it in place — the SAM3 image blocks declare `remote` when
+  `SAM3_EXEC_MODE=remote` (execution proxies unconditionally, so no local
+  weights are needed) and `environment_defined` otherwise. Returning `None` (the default) means the
   block does not declare its dependencies — distinct from `[]`, which declares
   that no external resources are needed. Field values that are workflow
   selectors (`$inputs.<name>` / `$steps.<name>.<property>`) are reported

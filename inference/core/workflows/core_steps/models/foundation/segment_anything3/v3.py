@@ -61,6 +61,7 @@ from inference.core.workflows.offline import ensure_builtin_remote_execution_all
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     DependentResource,
+    ModelExecutionLocation,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -256,7 +257,18 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         if self.model_id is None:
             return []
-        return [roboflow_platform_model(model_id=self.model_id)]
+        # SAM3 locality is governed by SAM3_EXEC_MODE, not only the workflow
+        # step execution mode: `remote` proxies execution unconditionally.
+        return [
+            roboflow_platform_model(
+                model_id=self.model_id,
+                execution_location=(
+                    ModelExecutionLocation.REMOTE
+                    if SAM3_EXEC_MODE == "remote"
+                    else ModelExecutionLocation.ENVIRONMENT_DEFINED
+                ),
+            )
+        ]
 
 
 class SegmentAnything3BlockV3(WorkflowBlock):

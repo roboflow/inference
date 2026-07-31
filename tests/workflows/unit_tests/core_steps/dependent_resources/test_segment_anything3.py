@@ -97,3 +97,46 @@ def test_sam3_returns_selector_fed_model_id_verbatim(
     assert manifest.discover_dependent_resources() == [
         roboflow_platform_model(model_id="$inputs.model_variant"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# SAM3_EXEC_MODE governs declared execution locality
+# ---------------------------------------------------------------------------
+
+import inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 as sam3_v1_module
+import inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 as sam3_v2_module
+import inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 as sam3_v3_module
+from inference.core.workflows.prototypes.block import ModelExecutionLocation
+
+MANIFEST_VERSIONS_WITH_MODULES = [
+    (SegmentAnything3V1Manifest, "roboflow_core/sam3@v1", sam3_v1_module),
+    (SegmentAnything3V2Manifest, "roboflow_core/sam3@v2", sam3_v2_module),
+    (SegmentAnything3V3Manifest, "roboflow_core/sam3@v3", sam3_v3_module),
+]
+
+
+@pytest.mark.parametrize(
+    "manifest_class,block_type,module", MANIFEST_VERSIONS_WITH_MODULES, ids=VERSION_IDS
+)
+@pytest.mark.parametrize(
+    "sam3_exec_mode,expected_location",
+    [
+        ("local", ModelExecutionLocation.ENVIRONMENT_DEFINED),
+        ("remote", ModelExecutionLocation.REMOTE),
+    ],
+)
+def test_sam3_declared_execution_location_follows_sam3_exec_mode(
+    manifest_class, block_type, module, sam3_exec_mode, expected_location, monkeypatch
+) -> None:
+    monkeypatch.setattr(module, "SAM3_EXEC_MODE", sam3_exec_mode)
+    manifest = manifest_class.model_validate(
+        {
+            "type": block_type,
+            "name": "model",
+            "images": "$inputs.image",
+        }
+    )
+
+    (resource,) = manifest.discover_dependent_resources()
+
+    assert resource.metadata.execution_location is expected_location
