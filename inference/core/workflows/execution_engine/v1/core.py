@@ -137,6 +137,29 @@ def _is_locally_executed_platform_model(
     return True
 
 
+def _verify_pre_loaded_models_presence(
+    model_manager: Any, expected_model_ids: Set[str]
+) -> None:
+    # Registration happens sequentially without capacity reservation — a
+    # size/memory-bounded model manager may evict earlier entries while
+    # loading later ones. Eviction is not an error (models lazily re-load at
+    # execution time), but it silently defeats the purpose of pre-loading, so
+    # it deserves a warning.
+    missing_model_ids = [
+        model_id
+        for model_id in sorted(expected_model_ids)
+        if model_id not in model_manager
+    ]
+    if missing_model_ids:
+        logger.warning(
+            "Pre-loading of workflow dependencies registered models %s, but they "
+            "are no longer present in the model manager — most likely evicted by "
+            "the manager's size or memory limits while subsequent models were "
+            "loading. The workflow will lazily re-load them at execution time.",
+            missing_model_ids,
+        )
+
+
 def _pre_load_roboflow_platform_models(
     dependencies: List[DependentResource],
     model_manager: Any,
@@ -169,6 +192,10 @@ def _pre_load_roboflow_platform_models(
             model_id=metadata.model_id,
             api_key=api_key,
             **(metadata.model_registration_kwargs or {}),
+        )
+    if loaded_model_ids:
+        _verify_pre_loaded_models_presence(
+            model_manager=model_manager, expected_model_ids=loaded_model_ids
         )
     return pending
 
@@ -219,6 +246,10 @@ def _resolve_and_pre_load_runtime_dependencies(
             model_id=resolved_value,
             api_key=api_key,
             **(dependency.metadata.model_registration_kwargs or {}),
+        )
+    if loaded_model_ids:
+        _verify_pre_loaded_models_presence(
+            model_manager=model_manager, expected_model_ids=loaded_model_ids
         )
 
 
@@ -358,11 +389,18 @@ class ExecutionEngineV1(BaseExecutionEngine):
             prevent_local_images_loading=self._prevent_local_images_loading,
             profiler=self._profiler,
         )
+        validate_runtime_input(
+            runtime_parameters=runtime_parameters,
+            input_substitutions=self._compiled_workflow.input_substitutions,
+            profiler=self._profiler,
+        )
         if (
             self._pending_runtime_dependencies
             and not self._pending_dependencies_resolution_attempted
         ):
-            # Attempted on the first run only — dependencies declared through
+            # Attempted on the first run only, after input validation — an
+            # invalid request must neither consume the single attempt nor
+            # trigger model downloads. Dependencies declared through
             # `$inputs.<name>` selectors become resolvable once runtime
             # parameters (with input defaults applied) are available.
             self._pending_dependencies_resolution_attempted = True
@@ -373,11 +411,6 @@ class ExecutionEngineV1(BaseExecutionEngine):
                 api_key=self._pre_init_api_key,
                 step_execution_mode=self._pre_init_step_execution_mode,
             )
-        validate_runtime_input(
-            runtime_parameters=runtime_parameters,
-            input_substitutions=self._compiled_workflow.input_substitutions,
-            profiler=self._profiler,
-        )
         usage_workflow_id = self._internal_id
         if self._workflow_id and not usage_workflow_id:
             logger.debug(

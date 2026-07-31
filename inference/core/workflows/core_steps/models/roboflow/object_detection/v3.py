@@ -179,6 +179,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         resources = [roboflow_platform_model(model_id=self.model_id)]
+        if self.disable_active_learning is True:
+            # Active learning literally disabled (the default) — the target
+            # project is dead configuration, not a dependency.
+            return resources
         if self.active_learning_target_dataset is not None:
             resources.append(
                 roboflow_platform_project(

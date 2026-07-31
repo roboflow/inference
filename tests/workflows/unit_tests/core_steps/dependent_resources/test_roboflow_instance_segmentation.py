@@ -158,6 +158,7 @@ def test_instance_segmentation_v4_declares_model_and_active_learning_project() -
             "name": "segmenter",
             "images": "$inputs.image",
             "model_id": "my_project/3",
+            "disable_active_learning": False,
             "active_learning_target_dataset": "my_dataset",
         }
     )
@@ -165,6 +166,24 @@ def test_instance_segmentation_v4_declares_model_and_active_learning_project() -
     assert manifest.discover_dependent_resources() == [
         roboflow_platform_model(model_id="my_project/3"),
         roboflow_platform_project(project_url="my_dataset"),
+    ]
+
+
+def test_instance_segmentation_v4_ignores_target_dataset_when_active_learning_left_disabled() -> (
+    None
+):
+    manifest = InstanceSegmentationV4Manifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
+            "name": "segmenter",
+            "images": "$inputs.image",
+            "model_id": "my_project/3",
+            "active_learning_target_dataset": "my_dataset",
+        }
+    )
+
+    assert manifest.discover_dependent_resources() == [
+        roboflow_platform_model(model_id="my_project/3"),
     ]
 
 

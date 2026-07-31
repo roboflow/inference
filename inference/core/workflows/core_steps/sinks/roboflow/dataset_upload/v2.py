@@ -257,6 +257,10 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if self.disable_sink is True:
+            # Sink literally disabled — execution returns before the target
+            # project is ever accessed.
+            return []
         return [roboflow_platform_project(project_url=self.target_project)]
 
 

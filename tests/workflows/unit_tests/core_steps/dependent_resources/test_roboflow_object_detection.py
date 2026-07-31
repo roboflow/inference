@@ -50,6 +50,7 @@ def test_object_detection_v1_declares_model_and_active_learning_project() -> Non
             "name": "detector",
             "images": "$inputs.image",
             "model_id": "my_project/3",
+            "disable_active_learning": False,
             "active_learning_target_dataset": "my_dataset",
         }
     )
@@ -57,6 +58,24 @@ def test_object_detection_v1_declares_model_and_active_learning_project() -> Non
     assert manifest.discover_dependent_resources() == [
         roboflow_platform_model(model_id="my_project/3"),
         roboflow_platform_project(project_url="my_dataset"),
+    ]
+
+
+def test_object_detection_v1_ignores_target_dataset_when_active_learning_left_disabled() -> (
+    None
+):
+    manifest = ObjectDetectionV1Manifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "name": "detector",
+            "images": "$inputs.image",
+            "model_id": "my_project/3",
+            "active_learning_target_dataset": "my_dataset",
+        }
+    )
+
+    assert manifest.discover_dependent_resources() == [
+        roboflow_platform_model(model_id="my_project/3"),
     ]
 
 

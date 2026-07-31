@@ -262,6 +262,7 @@ def test_object_detection_v3_declares_model_and_optional_project() -> None:
             "name": "detector",
             "images": "$inputs.image",
             "model_id": "my_project/3",
+            "disable_active_learning": False,
             "active_learning_target_dataset": "my_dataset",
         }
     )
@@ -269,6 +270,26 @@ def test_object_detection_v3_declares_model_and_optional_project() -> None:
     assert manifest.discover_dependent_resources() == [
         roboflow_platform_model(model_id="my_project/3"),
         roboflow_platform_project(project_url="my_dataset"),
+    ]
+
+
+def test_object_detection_v3_ignores_target_project_when_active_learning_disabled() -> (
+    None
+):
+    # `disable_active_learning` defaults to True — a configured target project
+    # is dead configuration then, not a dependency.
+    manifest = ObjectDetectionV3Manifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
+            "name": "detector",
+            "images": "$inputs.image",
+            "model_id": "my_project/3",
+            "active_learning_target_dataset": "my_dataset",
+        }
+    )
+
+    assert manifest.discover_dependent_resources() == [
+        roboflow_platform_model(model_id="my_project/3"),
     ]
 
 
@@ -436,6 +457,21 @@ def test_dataset_upload_v2_declares_target_project() -> None:
     assert manifest.discover_dependent_resources() == [
         roboflow_platform_project(project_url="my_dataset"),
     ]
+
+
+def test_dataset_upload_v2_declares_nothing_when_sink_literally_disabled() -> None:
+    manifest = DatasetUploadV2Manifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_dataset_upload@v2",
+            "name": "sink",
+            "images": "$inputs.image",
+            "target_project": "my_dataset",
+            "usage_quota_name": "quota-1",
+            "disable_sink": True,
+        }
+    )
+
+    assert manifest.discover_dependent_resources() == []
 
 
 # ---------------------------------------------------------------------------

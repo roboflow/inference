@@ -123,6 +123,7 @@ def test_multi_class_classification_v3_declares_model_and_active_learning_projec
             "name": "classifier",
             "images": "$inputs.image",
             "model_id": "my_project/3",
+            "disable_active_learning": False,
             "active_learning_target_dataset": "my_dataset",
         }
     )
@@ -130,6 +131,24 @@ def test_multi_class_classification_v3_declares_model_and_active_learning_projec
     assert manifest.discover_dependent_resources() == [
         roboflow_platform_model(model_id="my_project/3"),
         roboflow_platform_project(project_url="my_dataset"),
+    ]
+
+
+def test_multi_class_classification_v3_ignores_target_dataset_when_active_learning_left_disabled() -> (
+    None
+):
+    manifest = MultiClassClassificationV3Manifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_classification_model@v3",
+            "name": "classifier",
+            "images": "$inputs.image",
+            "model_id": "my_project/3",
+            "active_learning_target_dataset": "my_dataset",
+        }
+    )
+
+    assert manifest.discover_dependent_resources() == [
+        roboflow_platform_model(model_id="my_project/3"),
     ]
 
 

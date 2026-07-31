@@ -7,6 +7,7 @@ declared through `$inputs.<name>` selectors).
 from unittest.mock import MagicMock, NonCallableMagicMock
 
 import networkx as nx
+import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
@@ -407,6 +408,64 @@ def test_runtime_resolution_forwards_model_registration_kwargs() -> None:
     )
 
 
+def test_pre_load_warns_when_registered_models_were_evicted(caplog) -> None:
+    model_manager = MagicMock()
+    # Second registration evicts the first — only the last model remains.
+    model_manager.__contains__ = lambda self, model_id: model_id == "other_project/1"
+
+    with caplog.at_level("WARNING"):
+        _pre_load_roboflow_platform_models(
+            dependencies=[
+                roboflow_platform_model(model_id="my_project/3"),
+                roboflow_platform_model(model_id="other_project/1"),
+            ],
+            model_manager=model_manager,
+            api_key="api-key",
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+
+    assert model_manager.add_model.call_count == 2
+    assert "my_project/3" in caplog.text
+    assert "no longer present in the model manager" in caplog.text
+
+
+def test_pre_load_does_not_warn_when_all_models_are_present(caplog) -> None:
+    model_manager = MagicMock()
+    model_manager.__contains__ = lambda self, model_id: True
+
+    with caplog.at_level("WARNING"):
+        _pre_load_roboflow_platform_models(
+            dependencies=[
+                roboflow_platform_model(model_id="my_project/3"),
+                roboflow_platform_model(model_id="other_project/1"),
+            ],
+            model_manager=model_manager,
+            api_key="api-key",
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+
+    assert "no longer present in the model manager" not in caplog.text
+
+
+def test_runtime_resolution_warns_when_registered_model_was_evicted(caplog) -> None:
+    model_manager = MagicMock()
+    model_manager.__contains__ = lambda self, model_id: False
+
+    with caplog.at_level("WARNING"):
+        _resolve_and_pre_load_runtime_dependencies(
+            pending_dependencies=[
+                roboflow_platform_model(model_id="$inputs.model"),
+            ],
+            runtime_parameters={"model": "my_project/3"},
+            model_manager=model_manager,
+            api_key="api-key",
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+
+    assert "my_project/3" in caplog.text
+    assert "no longer present in the model manager" in caplog.text
+
+
 def test_runtime_resolution_applies_attached_model_id_resolver() -> None:
     model_manager = MagicMock()
 
@@ -511,6 +570,32 @@ def test_execution_engine_init_pre_loads_declared_models() -> None:
         for dependency in engine._pending_runtime_dependencies
     ] == ["$inputs.model"]
     assert engine._pending_dependencies_resolution_attempted is False
+
+
+def test_invalid_runtime_input_does_not_consume_the_preload_attempt() -> None:
+    model_manager = NonCallableMagicMock()
+    engine = ExecutionEngineV1.init(
+        workflow_definition=WORKFLOW_WITH_LITERAL_AND_INPUT_FED_MODELS,
+        init_parameters={
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": "api-key",
+        },
+        dependencies_pre_init=["roboflow_platform_model"],
+    )
+    model_manager.add_model.reset_mock()
+
+    # `model` fails manifest validation (int where a model id string is
+    # expected) — validation must fire before preload resolution.
+    with pytest.raises(RuntimeInputError):
+        engine.run(
+            runtime_parameters={
+                "image": np.zeros((64, 64, 3), dtype=np.uint8),
+                "model": 42,
+            }
+        )
+
+    assert engine._pending_dependencies_resolution_attempted is False
+    model_manager.add_model.assert_not_called()
 
 
 def test_execution_engine_init_with_remote_execution_mode_pre_loads_nothing() -> None:

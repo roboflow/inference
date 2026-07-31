@@ -49,7 +49,14 @@ this heading with the Execution Engine and inference versions when releasing.
   All core blocks that reference models, Roboflow projects or third-party
   hosted models implement the method, and each implementation mirrors the
   model identifier that `run()` actually loads (including ids synthesized
-  from version fields, e.g. `clip/<version>`). Blocks that load their model
+  from version fields, e.g. `clip/<version>`). Project declarations follow
+  their enabling controls, decided from static manifest values: Roboflow
+  model blocks drop the active-learning target when `disable_active_learning`
+  is literally `True` (the default), and dataset-upload blocks declare
+  nothing when `disable_sink` is literally `True`; selector-fed controls
+  keep the conservative may-need declaration. Introspection stops at the
+  `active_learning_target_dataset` property — no project is derived from the
+  model id when active learning is enabled without an explicit target. Blocks that load their model
   weights outside the model manager (the SAM2/SAM3 video trackers, which use
   `AutoModel.from_pretrained`) deliberately do not implement the method for
   now — their dependencies stay undeclared (`None`).
@@ -69,7 +76,9 @@ this heading with the Execution Engine and inference versions when releasing.
   the model manager (both taken from `init_parameters`, as is the API key)
   during `init()` — before any run, for predictable first-inference latency.
   Declarations that reference `$inputs.<name>` cannot be loaded at init; on
-  the **first** `run()` only, the engine resolves them against the provided
+  the **first** `run()` only — after runtime-input validation, so an invalid
+  request neither consumes the single attempt nor triggers downloads — the
+  engine resolves them against the provided
   runtime parameters (with input defaults applied), applies the declaration's
   `model_id_resolver` when attached (so e.g. a substituted CLIP version
   pre-loads `clip/<version>`, exactly the id execution uses), and registers
@@ -78,7 +87,10 @@ this heading with the Execution Engine and inference versions when releasing.
   `RuntimeInputError`. Registration mirrors each block's actual loader:
   declarations may carry non-serializable `model_registration_kwargs`
   (e.g. `endpoint_type=CORE_MODEL` for CLIP / OCR / SAM2 / YOLO-World-style
-  core models, matching `load_core_model()`). Pre-loading honours the effective step
+  core models, matching `load_core_model()`). After each pre-loading pass the
+  engine verifies the registered models are still present in the model
+  manager and logs a warning when a size/memory-bounded manager evicted some
+  of them (they lazily re-load at execution time). Pre-loading honours the effective step
   execution mode (explicit `step_execution_mode` init parameter, or the
   `WORKFLOWS_STEP_EXECUTION_MODE` default): `environment_defined` declarations
   are pre-loaded only when steps execute locally, `local` declarations always
