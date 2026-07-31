@@ -208,6 +208,23 @@ def _is_test_pattern_reference(video: Union[str, int]) -> bool:
     )
 
 
+def _create_video_frame_producer(video: Union[str, int]) -> VideoFrameProducer:
+    if isinstance(video, str):
+        from inference.core.interfaces.camera.gstreamer_rtsp_producer import (
+            GStreamerRtspVideoFrameProducer,
+            gstreamer_rtsp_capture_available,
+            should_use_gstreamer_rtsp_producer,
+        )
+
+        if (
+            RUNS_ON_JETSON
+            and should_use_gstreamer_rtsp_producer(video)
+            and gstreamer_rtsp_capture_available()
+        ):
+            return GStreamerRtspVideoFrameProducer(video)
+    return CV2VideoFrameProducer(video)
+
+
 class VideoSource:
     @classmethod
     def init(
@@ -633,7 +650,7 @@ class VideoSource:
 
                 self._video = TestPatternStreamProducer()
             else:
-                self._video = CV2VideoFrameProducer(self._stream_reference)
+                self._video = _create_video_frame_producer(self._stream_reference)
             if not self._video.isOpened():
                 source_reference = self._stream_reference
                 if callable(source_reference):
