@@ -34,6 +34,9 @@ from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.stream_error_classifier import (
+    wrap_source_connection_error,
+)
 
 VIDEO_SOURCE_CONTEXT = "video_source"
 VIDEO_CONSUMER_CONTEXT = "video_consumer"
@@ -621,8 +624,12 @@ class VideoSource:
             else:
                 self._video = CV2VideoFrameProducer(self._stream_reference)
             if not self._video.isOpened():
-                raise SourceConnectionError(
-                    f"Cannot connect to video source under reference: {self._stream_reference}"
+                source_reference = self._stream_reference
+                if callable(source_reference):
+                    source_reference = str(self._stream_reference)
+                raise wrap_source_connection_error(
+                    f"Cannot connect to video source under reference: {self._stream_reference}",
+                    source_reference=str(source_reference),
                 )
             self._video.initialize_source_properties(self._video_source_properties)
             self._source_properties = self._video.discover_source_properties()
