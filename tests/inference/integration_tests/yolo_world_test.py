@@ -18,6 +18,12 @@ def bool_env(val):
     return val.lower() in ["true", "1", "t", "y", "yes"]
 
 
+pytestmark = pytest.mark.skipif(
+    bool_env(os.getenv("LEGACY_MMP_ADAPTER_ENABLED", False)),
+    reason="Skipping YOLO-World tests (not supported with MMP adapter)",
+)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_server_runs():
     try:
