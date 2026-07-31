@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.34.3"
+version = "0.34.4"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -47,7 +47,8 @@ dependencies = [
   "CairoSVG>=2.9.0,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
-  "idna>=3.15"
+  "idna>=3.15",
+  "setuptools>=83.0.0"
 ]
 
 [project.optional-dependencies]

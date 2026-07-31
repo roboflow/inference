@@ -44,7 +44,7 @@ RUN pip3 install \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     jupyterlab \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -56,7 +56,7 @@ COPY --from=base / /
 WORKDIR /build
 COPY . .
 RUN make create_wheels
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools~=83.0.0"
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
 
