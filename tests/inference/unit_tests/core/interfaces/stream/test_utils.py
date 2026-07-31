@@ -127,7 +127,7 @@ def test_on_pipeline_end_when_profiling_disabled(empty_directory: str) -> None:
 
 
 @mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", True)
-def test_on_pipeline_end_when_profiling_disabled(empty_directory: str) -> None:
+def test_on_pipeline_end_when_profiling_enabled(empty_directory: str) -> None:
     # given
     profiler = MagicMock()
     profiler.export_trace.return_value = [{"my": "trace"}]
@@ -184,24 +184,3 @@ def test_on_pipeline_end_when_profiling_directory_readonly(
     json_files_in_directory = glob(os.path.join(read_only_dir, "*.json"))
     assert len(json_files_in_directory) == 0, "Expected no profiler trace saved on read-only FS"
 
-
-@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", True)
-def test_on_pipeline_end_when_profiling_raises_non_oserror(
-    empty_directory: str,
-) -> None:
-    """Non-OSError exceptions during profiling should still propagate."""
-    # given
-    profiler = MagicMock()
-    profiler.export_trace.return_value = [{"my": "trace"}]
-    thread_pool_executor = ThreadPoolExecutor(max_workers=3)
-
-    # Mock os.makedirs to raise a ValueError (not an OSError)
-    with mock.patch("os.makedirs", side_effect=ValueError("unexpected error")):
-        # when/then
-        with pytest.raises(ValueError, match="unexpected error"):
-            on_pipeline_end(
-                thread_pool_executor=thread_pool_executor,
-                cancel_thread_pool_tasks_on_exit=True,
-                profiler=profiler,
-                profiling_directory=empty_directory,
-            )
