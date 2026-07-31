@@ -10,13 +10,16 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
+from inference.core.utils.regions import (
+    get_roboflow_region,
+    resolve_roboflow_service_url,
+)
 from inference.core.warnings import (
     InferenceConfigurationWarning,
     InferenceDeprecationWarning,
     InferenceModelsStackMissing,
     ModelDependencyMissing,
 )
-from inference_sdk.regions import get_roboflow_region, resolve_roboflow_service_url
 
 load_dotenv(os.getcwd() + "/.env")
 
