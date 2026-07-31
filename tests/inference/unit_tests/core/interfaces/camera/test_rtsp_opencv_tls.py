@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 
 import pytest
 
@@ -32,7 +33,9 @@ def test_build_options_rtsps_default_strict_verify(
 
 
 def test_build_options_rtsps_with_ca(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(GST_SSL_CA_CERTIFICATE_ENV_VAR, "/etc/ssl/certs/ca-certificates.crt")
+    monkeypatch.setenv(
+        GST_SSL_CA_CERTIFICATE_ENV_VAR, "/etc/ssl/certs/ca-certificates.crt"
+    )
     got = build_opencv_ffmpeg_capture_options("rtsps://cam/stream")
     assert got is not None
     assert "cafile;/etc/ssl/certs/ca-certificates.crt" in got
@@ -124,30 +127,48 @@ def test_opencv_rtsps_tls_env_restores_previous(
 
 
 def test_opencv_rtsps_tls_env_serializes_concurrent_opens() -> None:
+    """Concurrent opens must not overlap inside the env context.
+
+    The previous Barrier-based version deadlocked: both workers waited on the
+    barrier while holding ``_opencv_rtsps_tls_lock``, so the second thread never
+    reached the barrier. That hung CI unit tests at this module until the job
+    timeout killed the runner.
+    """
     os.environ.pop(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, None)
-    observed: list[str] = []
-    barrier = threading.Barrier(2)
+    previous_flags = os.environ.pop(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, None)
+    counter_lock = threading.Lock()
+    inside_count = 0
+    max_inside = 0
+    entries = 0
 
-    def worker(video: str, flag_value: str) -> None:
-        previous_flags = os.environ.get(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
-        os.environ[RTSP_TLS_VALIDATION_FLAGS_ENV_VAR] = flag_value
-        try:
-            with opencv_rtsps_tls_env(video):
-                barrier.wait()
-                observed.append(os.environ[OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR])
-        finally:
-            if previous_flags is None:
-                os.environ.pop(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, None)
-            else:
-                os.environ[RTSP_TLS_VALIDATION_FLAGS_ENV_VAR] = previous_flags
+    def worker(video: str) -> None:
+        nonlocal inside_count, max_inside, entries
+        with opencv_rtsps_tls_env(video):
+            with counter_lock:
+                inside_count += 1
+                max_inside = max(max_inside, inside_count)
+                entries += 1
+            # Hold long enough that a non-serialized second enter would
+            # overlap and bump max_inside above 1.
+            time.sleep(0.05)
+            with counter_lock:
+                inside_count -= 1
 
-    strict = threading.Thread(target=worker, args=("rtsps://strict/stream", "1"))
-    relaxed = threading.Thread(target=worker, args=("rtsps://relaxed/stream", "0"))
-    strict.start()
-    relaxed.start()
-    strict.join()
-    relaxed.join()
+    try:
+        first = threading.Thread(target=worker, args=("rtsps://cam-a/stream",))
+        second = threading.Thread(target=worker, args=("rtsps://cam-b/stream",))
+        first.start()
+        second.start()
+        first.join(timeout=5)
+        second.join(timeout=5)
 
-    assert any("tls_verify;1" in value for value in observed)
-    assert any("tls_verify;0" in value for value in observed)
-    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+        assert not first.is_alive(), "worker deadlocked inside opencv_rtsps_tls_env"
+        assert not second.is_alive(), "worker deadlocked inside opencv_rtsps_tls_env"
+        assert entries == 2
+        assert max_inside == 1, "opencv_rtsps_tls_env must serialize concurrent holders"
+        assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+    finally:
+        if previous_flags is None:
+            os.environ.pop(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, None)
+        else:
+            os.environ[RTSP_TLS_VALIDATION_FLAGS_ENV_VAR] = previous_flags
