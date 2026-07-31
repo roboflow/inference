@@ -42,6 +42,25 @@ this heading with the Execution Engine and inference versions when releasing.
   `discover_dependent_resources()`: the python body is opaque to static
   analysis, so "unknown" is the only honest answer.
 
+* **Opt-in pre-loading of declared Roboflow models at engine init** —
+  `ExecutionEngine.init(...)` accepts a new optional parameter
+  `dependencies_pre_init` (default `None`): a list of dependent-resource type
+  names to pre-load, with `roboflow_platform_model` as the only supported
+  value for now. When enabled, the engine deduces the declared dependencies of
+  all compiled steps (`deduce_blocks_dependencies` in the compiler utils) and
+  registers every concrete Roboflow platform model declared for execution in
+  the model manager (both taken from `init_parameters`, as is the API key)
+  during `init()` — before any run, for predictable first-inference latency.
+  Declarations that reference `$inputs.<name>` cannot be loaded at init; on
+  the **first** `run()` only, the engine resolves them against the provided
+  runtime parameters (with input defaults applied) and registers the models
+  whose identifiers became concrete. Pre-loading honours the effective step
+  execution mode (explicit `step_execution_mode` init parameter, or the
+  `WORKFLOWS_STEP_EXECUTION_MODE` default): `environment_defined` declarations
+  are pre-loaded only when steps execute locally, `local` declarations always
+  are, and access-only declarations (no weights pulled), remote execution and
+  `$steps.…`-fed identifiers are never pre-loaded.
+
 
 ## Execution Engine `v1.13.0` | inference `v1.3.7`
 

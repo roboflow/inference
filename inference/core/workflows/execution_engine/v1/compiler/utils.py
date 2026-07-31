@@ -8,10 +8,14 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
     ExecutionGraphNode,
     NodeCategory,
 )
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    DependentResource,
+    WorkflowBlockManifest,
+)
 
 NodeTypeVar = TypeVar("NodeTypeVar", bound=ExecutionGraphNode)
 
@@ -154,3 +158,14 @@ def node_as(
             context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
         )
     return node_data
+
+
+def deduce_blocks_dependencies(
+    compiled_workflow: CompiledWorkflow,
+) -> List[DependentResource]:
+    dependencies = []
+    for step_manifest in compiled_workflow.workflow_definition.steps:
+        declared_dependencies = step_manifest.discover_dependent_resources()
+        if declared_dependencies:
+            dependencies.extend(declared_dependencies)
+    return dependencies
