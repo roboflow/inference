@@ -202,9 +202,17 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
-        # The serving endpoint is user-defined via base_url; provider is generic.
+        # The serving provider IS the user-defined endpoint — carrying it in
+        # `provider` keeps the same model name on different servers distinct.
+        # A selector-fed url is reported verbatim, so
+        # `requires_runtime_resolution()` correctly flags the reference as
+        # unresolved. Trailing slash stripped — the client treats both forms
+        # identically.
         return [
-            third_party_model(provider="openai_compatible", model_id=self.model_name)
+            third_party_model(
+                provider=self.base_url.rstrip("/"),
+                model_id=self.model_name,
+            )
         ]
 
 
