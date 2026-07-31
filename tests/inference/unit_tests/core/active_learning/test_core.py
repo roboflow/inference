@@ -65,13 +65,20 @@ def test_prepare_image_to_registration_when_desired_size_is_not_given(
     result = prepare_image_to_registration(
         image=image_as_numpy, desired_size=None, jpeg_compression_level=95
     )
-    bytes_array = np.frombuffer(result[0], dtype=np.uint8)
+    bytes_array = np.frombuffer(result.encoded_image, dtype=np.uint8)
     decoded_result = cv2.imdecode(bytes_array, flags=cv2.IMREAD_UNCHANGED)
 
     # then
     assert decoded_result.shape == image_as_numpy.shape
     assert np.allclose(decoded_result, image_as_numpy)
-    assert abs(result[1] - 1.0) < 1e-5
+    assert abs(result.scaling_factor - 1.0) < 1e-5
+    assert result.original_size_wh == (
+        image_as_numpy.shape[1],
+        image_as_numpy.shape[0],
+    )
+    assert result.final_size_wh == result.original_size_wh
+    assert abs(result.scale_x - 1.0) < 1e-5
+    assert abs(result.scale_y - 1.0) < 1e-5
 
 
 def test_prepare_image_to_registration_when_desired_size_given(
@@ -83,12 +90,31 @@ def test_prepare_image_to_registration_when_desired_size_given(
         desired_size=ImageDimensions(height=32, width=16),
         jpeg_compression_level=95,
     )
-    bytes_array = np.frombuffer(result[0], dtype=np.uint8)
+    bytes_array = np.frombuffer(result.encoded_image, dtype=np.uint8)
     decoded_result = cv2.imdecode(bytes_array, flags=cv2.IMREAD_UNCHANGED)
 
     # then
     assert decoded_result.shape == (16, 16, 3)
-    assert abs(result[1] - 1 / 8) < 1e-5
+    assert abs(result.scaling_factor - 1 / 8) < 1e-5
+    assert result.final_size_wh == (16, 16)
+    assert abs(result.scale_x - result.scale_y) < 1e-9
+
+
+def test_prepare_image_to_registration_reports_anisotropic_scales() -> None:
+    # Ultra-wide source: width-limited resize + int truncation ⇒ scale_x != scale_y
+    image = np.zeros((1080, 4000, 3), dtype=np.uint8)
+    result = prepare_image_to_registration(
+        image=image,
+        desired_size=ImageDimensions(height=2080, width=2080),
+        jpeg_compression_level=95,
+    )
+    assert result.original_size_wh == (4000, 1080)
+    assert result.final_size_wh == (2080, 561)
+    assert abs(result.scale_x - 2080 / 4000) < 1e-9
+    assert abs(result.scale_y - 561 / 1080) < 1e-9
+    assert abs(result.scale_x - result.scale_y) > 1e-4
+    # Historical single factor remains the height ratio for Active Learning BC
+    assert abs(result.scaling_factor - result.scale_y) < 1e-9
 
 
 @mock.patch.object(core, "ACTIVE_LEARNING_TAGS", None)

@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+import cv2
 import numpy as np
 import pytest
 import supervision as sv
@@ -579,9 +580,16 @@ def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> N
     mask = np.zeros((2, 200, 100), dtype=np.bool_)
     mask[0, 80:121, 30:71] = True
     mask[1, 170:191, 70:91] = True
-    scaled_mask = np.zeros((2, 400, 200), dtype=np.bool_)
-    scaled_mask[0, 160:241, 60:141] = True
-    scaled_mask[1, 340:381, 140:181] = True
+    scaled_mask = np.array(
+        [
+            cv2.resize(
+                detection_mask.astype(np.uint8),
+                (200, 400),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+            for detection_mask in mask
+        ]
+    )
     expected_mask = np.zeros((2, 1024, 512), dtype=np.bool_)
     expected_mask[:, 100:500, 50:250] = scaled_mask
     detections = sv.Detections(
@@ -987,9 +995,16 @@ def test_scale_sv_detections_when_scale_makes_output_bigger() -> None:
     mask = np.zeros((2, 200, 100), dtype=np.bool_)
     mask[0, 80:121, 30:71] = True
     mask[1, 170:191, 70:91] = True
-    expected_mask = np.zeros((2, 400, 200), dtype=np.bool_)
-    expected_mask[0, 160:241, 60:141] = True
-    expected_mask[1, 340:381, 140:181] = True
+    expected_mask = np.array(
+        [
+            cv2.resize(
+                detection_mask.astype(np.uint8),
+                (200, 400),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+            for detection_mask in mask
+        ]
+    )
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
         mask=mask,
@@ -1108,9 +1123,16 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     mask = np.zeros((2, 200, 100), dtype=np.bool_)
     mask[0, 80:121, 30:71] = True
     mask[1, 170:191, 70:91] = True
-    expected_mask = np.zeros((2, 100, 50), dtype=np.bool_)
-    expected_mask[0, 40:61, 15:36] = True
-    expected_mask[1, 85:96, 35:46] = True
+    expected_mask = np.array(
+        [
+            cv2.resize(
+                detection_mask.astype(np.uint8),
+                (50, 100),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+            for detection_mask in mask
+        ]
+    )
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
         mask=mask,
@@ -1225,6 +1247,131 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     assert np.allclose(
         result["image_dimensions"], np.array([[100, 50], [100, 50]])
     ), "Expected image dimensions to decrease 2x"
+
+
+def test_scale_sv_detections_preserves_edge_flush_mask_area_when_downscaling() -> None:
+    """Regression: Dataset Upload downscales >max_image_size images; masks flush
+    to the image edge must survive scale_sv_detections without collapsing."""
+    # given — 4096→2080 style downscale with a right-edge instance + speck
+    orig = 4096
+    target = 2080
+    scale = target / orig
+    mask = np.zeros((orig, orig), dtype=bool)
+    mask[400:1600, 3100:orig] = True
+    mask[820:828, 3088:3096] = True  # detached speck near left of instance
+    detections = sv.Detections(
+        xyxy=np.array([[3088, 400, orig - 1, 1600]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["sill"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[orig, orig]]),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(
+        detections=detections,
+        scale=(scale, scale),
+        target_size_wh=(target, target),
+    )
+
+    # then
+    assert result.mask is not None
+    assert result.mask.shape == (1, target, target)
+    assert np.allclose(result["image_dimensions"], np.array([[target, target]]))
+    # Main body should dominate; speck must not wipe the instance
+    assert result.mask[0].sum() > 200_000
+    # Right edge of canvas should still contain mask pixels
+    assert result.mask[0][:, -1].any()
+
+
+def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
+    """Aspect-preserving resize can make scale_x != scale_y after int truncation.
+    Annotations must land on the exact uploaded JPEG size, not round(dim * sy)."""
+    # 4000x1080 → max 2080x2080 → 2080 x 561 (scale_x=0.52, scale_y≈0.5194)
+    orig_w, orig_h = 4000, 1080
+    target_w, target_h = 2080, 561
+    scale_x = target_w / orig_w
+    scale_y = target_h / orig_h
+    assert abs(scale_x - scale_y) > 1e-4  # the bug case
+
+    mask = np.zeros((orig_h, orig_w), dtype=bool)
+    # Full-height strip flush to the right edge
+    mask[:, orig_w - 200 : orig_w] = True
+    detections = sv.Detections(
+        xyxy=np.array(
+            [[orig_w - 200, 0, orig_w - 1, orig_h - 1]], dtype=np.float64
+        ),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["edge"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[orig_h, orig_w]]),
+            POLYGON_KEY_IN_SV_DETECTIONS: np.array(
+                [
+                    [
+                        [orig_w - 200, 0],
+                        [orig_w - 1, 0],
+                        [orig_w - 1, orig_h - 1],
+                        [orig_w - 200, orig_h - 1],
+                    ]
+                ],
+                dtype=np.int32,
+            ),
+        },
+    )
+
+    result = scale_sv_detections(
+        detections=detections,
+        scale=(scale_x, scale_y),
+        target_size_wh=(target_w, target_h),
+    )
+
+    assert result.mask.shape == (1, target_h, target_w)
+    assert np.allclose(
+        result["image_dimensions"], np.array([[target_h, target_w]])
+    )
+    x1, y1, x2, y2 = result.xyxy[0]
+    assert x2 <= target_w
+    assert y2 <= target_h
+    # Right-edge instance must still touch the destination right edge
+    assert result.mask[0][:, -1].any()
+    assert x2 >= target_w - 2
+    # Height-only isotropic scale maps width to the wrong canvas size
+    isotropic_w = int(round(orig_w * scale_y))
+    assert isotropic_w != target_w
+    polygon = result.data[POLYGON_KEY_IN_SV_DETECTIONS][0]
+    assert polygon[:, 0].max() >= target_w - 2
+
+
+def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
+    # given
+    mask = np.zeros((100, 100), dtype=bool)
+    mask[20:40, 20:40] = True
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+            "rle_mask": np.array([{"size": [100, 100], "counts": "x"}], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+
+    # then
+    assert "rle_mask" not in result.data
+    assert result.mask.shape == (1, 50, 50)
 
 
 def test_remove_unexpected_keys_from_dictionary_when_empty_dict_given() -> None:

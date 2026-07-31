@@ -466,20 +466,26 @@ def execute_registration(
     credit_to_be_returned = False
     try:
         local_image_id = image_name if image_name else str(uuid4())
-        encoded_image, scaling_factor = prepare_image_to_registration(
+        # Scale annotations to the exact JPEG canvas that will be stored. Aspect-
+        # preserving resize can produce different X/Y factors after int truncation;
+        # a single height scale leaves edge detections off-canvas and clipped.
+        prepared_image = prepare_image_to_registration(
             image=image.numpy_image,
             desired_size=ImageDimensions(
                 width=max_image_size[0], height=max_image_size[1]
             ),
             jpeg_compression_level=compression_level,
         )
+        encoded_image = prepared_image.encoded_image
         batch_name = generate_batch_name(
             labeling_batch_prefix=labeling_batch_prefix,
             new_labeling_batch_frequency=new_labeling_batch_frequency,
         )
         if isinstance(prediction, sv.Detections):
             prediction = scale_sv_detections(
-                detections=prediction, scale=scaling_factor
+                detections=prediction,
+                scale=(prepared_image.scale_x, prepared_image.scale_y),
+                target_size_wh=prepared_image.final_size_wh,
             )
         status = register_datapoint(
             target_project=target_project,

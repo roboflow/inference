@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 from uuid import uuid4
 
 import numpy as np
@@ -30,6 +30,35 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 
 
+class PreparedRegistrationImage(NamedTuple):
+    """JPEG bytes plus the exact size transform applied before upload.
+
+    Index 0/1 stay `(encoded_image, scaling_factor)` for backward compatibility.
+    `scaling_factor` is the height ratio (historical Active Learning contract).
+    Prefer `scale_x` / `scale_y` / `final_size_wh` so annotations match the
+    uploaded JPEG at any aspect ratio (int truncation can make axes differ).
+    """
+
+    encoded_image: bytes
+    scaling_factor: float
+    original_size_wh: Tuple[int, int]
+    final_size_wh: Tuple[int, int]
+
+    @property
+    def scale_x(self) -> float:
+        original_width = self.original_size_wh[0]
+        if original_width <= 0:
+            return 1.0
+        return self.final_size_wh[0] / original_width
+
+    @property
+    def scale_y(self) -> float:
+        original_height = self.original_size_wh[1]
+        if original_height <= 0:
+            return 1.0
+        return self.final_size_wh[1] / original_height
+
+
 def execute_sampling(
     image: np.ndarray,
     prediction: Prediction,
@@ -56,14 +85,15 @@ def execute_datapoint_registration(
     inference_id: Optional[str] = None,
 ) -> None:
     local_image_id = str(uuid4())
-    encoded_image, scaling_factor = prepare_image_to_registration(
+    prepared_image = prepare_image_to_registration(
         image=image,
         desired_size=configuration.max_image_size,
         jpeg_compression_level=configuration.jpeg_compression_level,
     )
+    encoded_image = prepared_image.encoded_image
     prediction = adjust_prediction_to_client_scaling_factor(
         prediction=prediction,
-        scaling_factor=scaling_factor,
+        scaling_factor=prepared_image.scaling_factor,
         prediction_type=prediction_type,
     )
     matching_strategies_limits = OrderedDict(
@@ -97,18 +127,27 @@ def prepare_image_to_registration(
     image: np.ndarray,
     desired_size: Optional[ImageDimensions],
     jpeg_compression_level: int,
-) -> Tuple[bytes, float]:
-    scaling_factor = 1.0
+) -> PreparedRegistrationImage:
+    original_size_wh = (int(image.shape[1]), int(image.shape[0]))
     if desired_size is not None:
-        height_before_scale = image.shape[0]
         image = downscale_image_keeping_aspect_ratio(
             image=image,
             desired_size=desired_size.to_wh(),
         )
-        scaling_factor = image.shape[0] / height_before_scale
-    return (
-        encode_image_to_jpeg_bytes(image=image, jpeg_quality=jpeg_compression_level),
-        scaling_factor,
+    final_size_wh = (int(image.shape[1]), int(image.shape[0]))
+    # Height ratio kept for Active Learning callers that still expect a single factor.
+    scaling_factor = (
+        1.0
+        if original_size_wh[1] <= 0
+        else final_size_wh[1] / original_size_wh[1]
+    )
+    return PreparedRegistrationImage(
+        encoded_image=encode_image_to_jpeg_bytes(
+            image=image, jpeg_quality=jpeg_compression_level
+        ),
+        scaling_factor=scaling_factor,
+        original_size_wh=original_size_wh,
+        final_size_wh=final_size_wh,
     )
 
 
