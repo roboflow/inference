@@ -381,9 +381,7 @@ def execute_gemini_request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
         headers={
             "Content-Type": "application/json",
-        },
-        params={
-            "key": google_api_key,
+            "x-goog-api-key": google_api_key,
         },
         json=prompt,
     )
