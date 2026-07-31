@@ -843,7 +843,8 @@ def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropi
 ) -> None:
     # Ultra-wide 4000x1080 → max 2080x2080 yields 2080x561 (scale_x != scale_y)
     api_key = "my_api_key"
-    api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache = MemoryCache()
     cache.set(
         key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
