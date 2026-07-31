@@ -37,7 +37,7 @@ def get_gemini_detection_class_name(detection: dict) -> str:
     return "unknown"
 
 
-def parse_gemini_detection_xyxy(
+def convert_gemini_detection_to_pixel_xyxy(
     detection: dict,
     image_height: int,
     image_width: int,
@@ -82,7 +82,7 @@ def parse_gemini_object_detection_response(
     xyxy, class_id, class_name, confidence = [], [], [], []
     for detection in detections:
         xyxy.append(
-            parse_gemini_detection_xyxy(
+            convert_gemini_detection_to_pixel_xyxy(
                 detection=detection,
                 image_height=image_height,
                 image_width=image_width,

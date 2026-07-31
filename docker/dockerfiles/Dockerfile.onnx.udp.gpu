@@ -29,7 +29,7 @@ RUN pip3 install \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.easyocr.txt \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime

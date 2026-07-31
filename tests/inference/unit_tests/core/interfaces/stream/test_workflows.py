@@ -1,3 +1,4 @@
+import logging
 from concurrent.futures import Future
 from datetime import datetime
 from types import SimpleNamespace
@@ -10,13 +11,19 @@ from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.model_handlers.workflows import (
     PipelinedWorkflowRunner,
     WorkflowRunner,
+    _index_list_parameters_by_frame_id,
     wrap_workflow_runner_for_stream_pipeline,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
 )
-from inference.core.workflows.execution_engine.entities.base import Batch, VideoMetadata
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    VideoMetadata,
+    WorkflowBatchInput,
+    WorkflowParameter,
+)
 from inference_models.models.base.async_handoff import attach_async_response_future
 
 
@@ -41,12 +48,25 @@ class _FakePipelinedStep:
 
 
 class _FakeExecutionEngine:
-    def __init__(self, stream_buffer_depth: int) -> None:
+    def __init__(
+        self,
+        stream_buffer_depth: int,
+        batch_input_names: Optional[list] = None,
+        parameter_names: Optional[list] = None,
+    ) -> None:
         self._stream_buffer_depth = stream_buffer_depth
         self.step = _FakePipelinedStep(stream_buffer_depth=stream_buffer_depth)
+        declared_inputs = [
+            WorkflowBatchInput(type="WorkflowBatchInput", name=name)
+            for name in (batch_input_names or [])
+        ] + [
+            WorkflowParameter(type="WorkflowParameter", name=name)
+            for name in (parameter_names or [])
+        ]
         self._engine = SimpleNamespace(
             _compiled_workflow=SimpleNamespace(
-                steps={"segmentation": SimpleNamespace(step=self.step)}
+                steps={"segmentation": SimpleNamespace(step=self.step)},
+                workflow_definition=SimpleNamespace(inputs=declared_inputs),
             )
         )
         self.calls = []
@@ -355,7 +375,7 @@ def _make_async_placeholder(
     return response
 
 
-def _make_frame(frame_id: int) -> VideoFrame:
+def _make_frame(frame_id: int, comes_from_video_file: bool = True) -> VideoFrame:
     return VideoFrame(
         image=np.zeros((8, 8, 3), dtype=np.uint8),
         frame_id=frame_id,
@@ -363,8 +383,159 @@ def _make_frame(frame_id: int) -> VideoFrame:
         fps=30.0,
         measured_fps=None,
         source_id=0,
-        comes_from_video_file=True,
+        comes_from_video_file=comes_from_video_file,
     )
+
+
+BATCH_INPUT_NAMES = {"cached_preds", "broadcast", "aligned"}
+
+
+def test_index_list_parameters_by_frame_id_selects_matching_elements() -> None:
+    frames = [_make_frame(1), _make_frame(3)]
+    params = {
+        "threshold": 0.5,
+        "broadcast": ["same"],
+        "aligned": ["a", "b"],
+        "cached_preds": ["p0", "p1", "p2", "p3", "p4"],
+    }
+
+    indexed = _index_list_parameters_by_frame_id(params, frames, BATCH_INPUT_NAMES)
+
+    assert indexed["threshold"] == 0.5
+    assert indexed["broadcast"] == ["same"]
+    assert indexed["aligned"] == ["a", "b"]
+    assert indexed["cached_preds"] == ["p1", "p3"]
+
+
+def test_index_list_parameters_by_frame_id_clamps_out_of_range_frame_ids() -> None:
+    # Frame ids beyond the cached list must never pass the full list through -
+    # the execution engine would treat its length as the batch size and
+    # broadcast the single image across it.
+    frames = [_make_frame(5)]
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames, BATCH_INPUT_NAMES)
+
+    assert indexed["cached_preds"] == ["p2"]
+
+
+def test_index_list_parameters_by_frame_id_clamps_negative_frame_ids() -> None:
+    frames = [_make_frame(-1), _make_frame(2)]
+    params = {"cached_preds": ["p0", "p1", "p2", "p3", "p4"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames, BATCH_INPUT_NAMES)
+
+    assert indexed["cached_preds"] == ["p0", "p2"]
+
+
+def test_index_list_parameters_by_frame_id_passes_through_non_int_frame_ids() -> None:
+    frames = [_make_frame(1.5)]
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames, BATCH_INPUT_NAMES)
+
+    assert indexed["cached_preds"] == ["p0", "p1", "p2"]
+
+
+def test_index_list_parameters_by_frame_id_returns_input_for_empty_batch() -> None:
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, [], BATCH_INPUT_NAMES)
+
+    assert indexed is params
+
+
+def test_index_list_parameters_by_frame_id_warns_once_per_key(caplog) -> None:
+    frames = [_make_frame(5)]
+    params = {"cached_preds": ["p0", "p1", "p2"]}
+    warned_keys = set()
+
+    with caplog.at_level(logging.WARNING):
+        _index_list_parameters_by_frame_id(
+            params, frames, BATCH_INPUT_NAMES, warned_keys=warned_keys
+        )
+        _index_list_parameters_by_frame_id(
+            params, frames, BATCH_INPUT_NAMES, warned_keys=warned_keys
+        )
+
+    warnings = [
+        record for record in caplog.records if "cached_preds" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+
+
+def test_index_list_parameters_by_frame_id_passes_through_on_live_streams() -> None:
+    # Block-cache is only valid for finite video files - on a live stream
+    # frame ids grow unbounded and clamping would serve stale cache forever.
+    frames = [_make_frame(2, comes_from_video_file=False)]
+    params = {"cached_preds": ["p0", "p1", "p2", "p3", "p4"]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames, BATCH_INPUT_NAMES)
+
+    assert indexed is params
+
+
+def test_index_list_parameters_by_frame_id_ignores_undeclared_parameters() -> None:
+    # Ordinary list-valued WorkflowParameters (zones, class filters, ...) are
+    # not per-frame caches and must never be re-indexed.
+    frames = [_make_frame(1)]
+    params = {"zone": [[0, 0], [100, 0], [100, 100], [0, 100]]}
+
+    indexed = _index_list_parameters_by_frame_id(params, frames, BATCH_INPUT_NAMES)
+
+    assert indexed["zone"] == [[0, 0], [100, 0], [100, 100], [0, 100]]
+
+
+def test_build_workflows_parameters_leaves_list_valued_parameters_untouched() -> None:
+    frames = [_make_frame(1)]
+    params = {"zone": [[0, 0], [100, 0], [100, 100], [0, 100]]}
+    runner = WorkflowRunner(
+        workflows_parameters=params,
+        execution_engine=_FakeExecutionEngine(
+            stream_buffer_depth=0,
+            parameter_names=["zone"],
+        ),
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+        _is_preview=True,
+    )
+
+    preview_params, _ = runner._build_workflows_parameters(video_frames=frames)
+
+    assert preview_params["zone"] == [[0, 0], [100, 0], [100, 100], [0, 100]]
+
+
+def test_build_workflows_parameters_indexes_lists_only_in_preview() -> None:
+    frames = [_make_frame(1)]
+    params = {"cached_preds": ["p0", "p1", "p2", "p3", "p4"]}
+    non_preview_runner = WorkflowRunner(
+        workflows_parameters=params,
+        execution_engine=_FakeExecutionEngine(
+            stream_buffer_depth=0,
+            batch_input_names=["cached_preds"],
+        ),
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+        _is_preview=False,
+    )
+    preview_runner = WorkflowRunner(
+        workflows_parameters=params,
+        execution_engine=_FakeExecutionEngine(
+            stream_buffer_depth=0,
+            batch_input_names=["cached_preds"],
+        ),
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+        _is_preview=True,
+    )
+
+    non_preview_params, _ = non_preview_runner._build_workflows_parameters(
+        video_frames=frames
+    )
+    preview_params, _ = preview_runner._build_workflows_parameters(video_frames=frames)
+
+    assert non_preview_params["cached_preds"] == ["p0", "p1", "p2", "p3", "p4"]
+    assert preview_params["cached_preds"] == ["p1"]
 
 
 def test_workflow_runner_without_stream_buffering_returns_current_frame() -> None:
