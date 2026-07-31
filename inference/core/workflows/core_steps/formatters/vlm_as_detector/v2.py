@@ -459,7 +459,10 @@ def get_4digit_from_md5(input_string):
 
 REGISTERED_PARSERS = {
     # LLMs
-    ("openai", "object-detection"): parse_llm_object_detection_response,
+    # OpenAI blocks >= v5 emit Gemini-style `box_2d` entries; the Gemini parser
+    # also falls back to the legacy `{"detections": [{"x_min": ...}]}` format
+    # produced by OpenAI blocks v1-v4, so both remain supported.
+    ("openai", "object-detection"): parse_gemini_object_detection_response,
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
     # Florence 2

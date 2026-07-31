@@ -147,6 +147,87 @@ def test_run_method_for_gemini_native_box_2d_output() -> None:
     )
 
 
+def test_run_method_for_openai_box_2d_output() -> None:
+    # given - format produced by roboflow_core/open_ai@v5 object-detection task
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [29, 17, 163, 54], "label": "dog"},
+  {"box_2d": [58, 82, 163, 109], "label": "dog"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="openai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["dog", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([1, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [2.856, 5.568, 9.072, 31.296],
+                [13.776, 11.136, 18.312, 31.296],
+            ]
+        ),
+        atol=1.0,
+    )
+
+
+def test_run_method_for_openai_legacy_detections_output() -> None:
+    # given - format produced by roboflow_core/open_ai@v1-v4 object-detection task
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+{"detections": [
+  {"x_min": 0.01, "y_min": 0.15, "x_max": 0.15, "y_max": 0.85, "class_name": "cat", "confidence": 0.98},
+  {"x_min": 0.17, "y_min": 0.25, "x_max": 0.32, "y_max": 0.85, "class_name": "dog", "confidence": 0.97}
+]}
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="openai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [2, 29, 25, 163],
+                [29, 48, 54, 163],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([0.98, 0.97]))
+
+
 def test_run_method_for_invalid_claude_and_gemini_output() -> None:
     # given
     block = VLMAsDetectorBlockV2()
