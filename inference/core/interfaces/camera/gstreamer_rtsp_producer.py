@@ -9,7 +9,10 @@ from typing import Dict, Tuple, Union
 import cv2
 from numpy import ndarray
 
-from inference.core.interfaces.camera.entities import SourceProperties, VideoFrameProducer
+from inference.core.interfaces.camera.entities import (
+    SourceProperties,
+    VideoFrameProducer,
+)
 from inference.core.interfaces.camera.gstreamer_rtsp_pipeline import (
     build_gstreamer_rtsp_pipeline,
     gstreamer_rtsp_capture_available,
