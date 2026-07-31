@@ -145,7 +145,9 @@ class ModelManagerAdapter:
             if task_type not in translation.IMPLEMENTED_TASK_TYPES:
                 self._routes[model_id] = terminal
                 raise _unsupported(model_id)
-            result = await self._client.load(mmp_model_id, api_key or "")
+            result = await self._client.load(
+                mmp_model_id, api_key or "", timeout_s=self._client.load_wait_s
+            )
             translation.raise_for_lifecycle_result(result, model_id)
             stats = await self._client.stats()
             model_entry = stats.get("mmp_models", {}).get(mmp_model_id, {})

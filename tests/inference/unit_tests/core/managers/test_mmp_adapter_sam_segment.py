@@ -52,7 +52,7 @@ class FakeSamClient:
     async def shutdown(self):
         pass
 
-    async def load(self, model_id, api_key=""):
+    async def load(self, model_id, api_key="", timeout_s=None):
         self.loaded.append(model_id)
         return self.load_result
 

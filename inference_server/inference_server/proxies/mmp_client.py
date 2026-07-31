@@ -261,7 +261,9 @@ class MMPClient:
             self._drop_future(req_id)
             raise
 
-    async def load(self, model_id: str, api_key: str = "") -> tuple:
+    async def load(
+        self, model_id: str, api_key: str = "", timeout_s: Optional[float] = None
+    ) -> tuple:
         mid_bytes = model_id.encode()
         key_bytes = api_key.encode()
         payload = (
@@ -270,7 +272,9 @@ class MMPClient:
             + struct.pack(">H", len(key_bytes))
             + key_bytes
         )
-        return await self._lifecycle_req(T_LOAD, payload)
+        if timeout_s is None:
+            return await self._lifecycle_req(T_LOAD, payload)
+        return await self._lifecycle_req(T_LOAD, payload, timeout_s=timeout_s)
 
     async def unload(self, model_id: str) -> tuple:
         mid_bytes = model_id.encode()

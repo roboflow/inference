@@ -49,6 +49,7 @@ class FakeClient:
     def __init__(self):
         self.started = False
         self.loaded = []
+        self.load_timeouts = []
         self.unloaded = []
         self.infer_calls = []
         self.load_result = ("ok",)
@@ -71,8 +72,9 @@ class FakeClient:
     async def shutdown(self):
         self.started = False
 
-    async def load(self, model_id, api_key=""):
+    async def load(self, model_id, api_key="", timeout_s=None):
         self.loaded.append(model_id)
+        self.load_timeouts.append(timeout_s)
         return self.load_result
 
     async def unload(self, model_id):
@@ -254,6 +256,14 @@ class TestRouting:
         assert running_adapter.get_task_type("ws/1") == "object-detection"
         assert running_adapter.get_class_names("ws/1") == ["cat", "dog"]
         assert od_stat == [("ws/1", "key")]
+
+    def test_add_model_passes_load_wait_budget_to_load(
+        self, running_adapter, od_stat
+    ):
+        running_adapter.add_model("ws/1", api_key="key")
+        assert running_adapter._client.load_timeouts == [
+            running_adapter._client.load_wait_s
+        ]
 
     def test_add_model_alias_shares_route(self, running_adapter, od_stat):
         running_adapter.add_model("ws/1", api_key="key", model_id_alias="alias/1")
