@@ -1,6 +1,8 @@
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.stream_error_classifier import (
+    build_source_connection_error_message,
     classify_stream_error_message,
+    extract_stream_open_error,
     wrap_source_connection_error,
 )
 from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
@@ -104,3 +106,33 @@ def test_wrap_source_connection_error_sets_code_and_reference() -> None:
     assert error.code == StreamErrorCode.STREAM_AUTH_FAILED
     assert error.source_reference == "rtsp://camera.example/stream"
     assert str(error) == "401 Unauthorized"
+
+
+def test_extract_stream_open_error_prefers_actionable_line() -> None:
+    stderr = (
+        "[rtsp @ 0x1] method DESCRIBE failed: 401 Unauthorized\n"
+        "OpenCV: Couldn't read video stream"
+    )
+    assert extract_stream_open_error(stderr) == (
+        "[rtsp @ 0x1] method DESCRIBE failed: 401 Unauthorized"
+    )
+
+
+def test_build_source_connection_error_message_includes_underlying_error() -> None:
+    message = build_source_connection_error_message(
+        source_reference="rtsp://camera.example/stream",
+        underlying_error="401 Unauthorized",
+    )
+    assert message.startswith("401 Unauthorized:")
+    assert "rtsp://camera.example/stream" in message
+
+
+def test_wrap_source_connection_error_classifies_underlying_ffmpeg_error() -> None:
+    error = wrap_source_connection_error(
+        build_source_connection_error_message(
+            source_reference="rtsp://camera.example/stream",
+            underlying_error="TLS handshake failed",
+        ),
+        source_reference="rtsp://camera.example/stream",
+    )
+    assert error.code == StreamErrorCode.STREAM_TLS_HANDSHAKE

@@ -35,6 +35,9 @@ from inference.core.interfaces.camera.exceptions import (
     StreamOperationNotAllowedError,
 )
 from inference.core.interfaces.camera.stream_error_classifier import (
+    build_source_connection_error_message,
+    capture_process_stderr,
+    extract_stream_open_error,
     wrap_source_connection_error,
 )
 
@@ -139,13 +142,21 @@ def lock_state_transition(
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
         self._source_ref = video
-        if _consumes_camera_on_jetson(video=video):
-            self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
-        else:
-            self.stream = cv2.VideoCapture(video)
+        self._connection_error_message = ""
+        with capture_process_stderr() as captured_stderr:
+            if _consumes_camera_on_jetson(video=video):
+                self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
+            else:
+                self.stream = cv2.VideoCapture(video)
+        self._connection_error_message = extract_stream_open_error(
+            "".join(captured_stderr)
+        )
 
     def isOpened(self) -> bool:
         return self.stream.isOpened()
+
+    def connection_error_message(self) -> str:
+        return self._connection_error_message
 
     def grab(self) -> bool:
         return self.stream.grab()
@@ -628,7 +639,10 @@ class VideoSource:
                 if callable(source_reference):
                     source_reference = str(self._stream_reference)
                 raise wrap_source_connection_error(
-                    f"Cannot connect to video source under reference: {self._stream_reference}",
+                    build_source_connection_error_message(
+                        source_reference=str(source_reference),
+                        underlying_error=self._video.connection_error_message(),
+                    ),
                     source_reference=str(source_reference),
                 )
             self._video.initialize_source_properties(self._video_source_properties)
