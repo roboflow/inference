@@ -11,6 +11,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -147,7 +148,10 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [
             roboflow_platform_model(
-                model_id=f"pp_ocr/{self.text_detection}-{self.text_recognition}"
+                model_id=f"pp_ocr/{self.text_detection}-{self.text_recognition}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
             )
         ]
 

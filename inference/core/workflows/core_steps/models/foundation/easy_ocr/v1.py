@@ -16,6 +16,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -165,7 +166,14 @@ class BlockManifest(WorkflowBlockManifest):
         # token taken from the MODELS map. `quantize` does not change the
         # loaded model id.
         version, _ = MODELS[self.language]
-        return [roboflow_platform_model(model_id=f"easy_ocr/{version}")]
+        return [
+            roboflow_platform_model(
+                model_id=f"easy_ocr/{version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class EasyOCRBlockV1(WorkflowBlock):

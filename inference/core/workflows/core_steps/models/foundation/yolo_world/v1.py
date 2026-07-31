@@ -10,6 +10,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -144,9 +145,19 @@ class BlockManifest(WorkflowBlockManifest):
                 roboflow_platform_model(
                     model_id=self.version,
                     model_id_resolver=lambda version: f"yolo_world/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                    },
                 )
             ]
-        return [roboflow_platform_model(model_id=f"yolo_world/{self.version}")]
+        return [
+            roboflow_platform_model(
+                model_id=f"yolo_world/{self.version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):

@@ -364,6 +364,49 @@ def test_runtime_resolution_follows_the_same_eligibility_logic_as_init() -> None
     )
 
 
+def test_pre_load_forwards_model_registration_kwargs() -> None:
+    model_manager = MagicMock()
+
+    pending = _pre_load_roboflow_platform_models(
+        dependencies=[
+            roboflow_platform_model(
+                model_id="clip/ViT-B-32",
+                model_registration_kwargs={"endpoint_type": "core-model"},
+            ),
+        ],
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    assert pending == []
+    model_manager.add_model.assert_called_once_with(
+        model_id="clip/ViT-B-32", api_key="api-key", endpoint_type="core-model"
+    )
+
+
+def test_runtime_resolution_forwards_model_registration_kwargs() -> None:
+    model_manager = MagicMock()
+
+    _resolve_and_pre_load_runtime_dependencies(
+        pending_dependencies=[
+            roboflow_platform_model(
+                model_id="$inputs.variant",
+                model_id_resolver=lambda version: f"clip/{version}",
+                model_registration_kwargs={"endpoint_type": "core-model"},
+            ),
+        ],
+        runtime_parameters={"variant": "ViT-B-16"},
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    model_manager.add_model.assert_called_once_with(
+        model_id="clip/ViT-B-16", api_key="api-key", endpoint_type="core-model"
+    )
+
+
 def test_runtime_resolution_applies_attached_model_id_resolver() -> None:
     model_manager = MagicMock()
 

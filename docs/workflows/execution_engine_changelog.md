@@ -69,7 +69,10 @@ this heading with the Execution Engine and inference versions when releasing.
   pre-loads `clip/<version>`, exactly the id execution uses), and registers
   the models whose identifiers became concrete. A submitted input value the
   resolver cannot handle (e.g. an unknown catalog label) raises
-  `RuntimeInputError`. Pre-loading honours the effective step
+  `RuntimeInputError`. Registration mirrors each block's actual loader:
+  declarations may carry non-serializable `model_registration_kwargs`
+  (e.g. `endpoint_type=CORE_MODEL` for CLIP / OCR / SAM2 / YOLO-World-style
+  core models, matching `load_core_model()`). Pre-loading honours the effective step
   execution mode (explicit `step_execution_mode` init parameter, or the
   `WORKFLOWS_STEP_EXECUTION_MODE` default): `environment_defined` declarations
   are pre-loaded only when steps execute locally, `local` declarations always

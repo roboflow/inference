@@ -12,6 +12,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -115,7 +116,14 @@ class BlockManifest(WorkflowBlockManifest):
         # No version field on this manifest — run() uses the server-level
         # default CLIP variant, so the dependency is server-configuration
         # relative.
-        return [roboflow_platform_model(model_id=f"clip/{CLIP_VERSION_ID}")]
+        return [
+            roboflow_platform_model(
+                model_id=f"clip/{CLIP_VERSION_ID}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class ClipComparisonBlockV1(WorkflowBlock):

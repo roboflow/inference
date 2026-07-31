@@ -16,6 +16,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -117,7 +118,14 @@ class BlockManifest(WorkflowBlockManifest):
         # No version field on this manifest — run() relies on the request-model
         # default DocTR variant ("default", an inline literal on
         # DoctrOCRInferenceRequest), so the loaded id is fixed.
-        return [roboflow_platform_model(model_id="doctr/default")]
+        return [
+            roboflow_platform_model(
+                model_id="doctr/default",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class OCRModelBlockV1(WorkflowBlock):

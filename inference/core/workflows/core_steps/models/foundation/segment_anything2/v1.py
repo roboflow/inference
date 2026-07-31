@@ -24,6 +24,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -194,9 +195,19 @@ class BlockManifest(WorkflowBlockManifest):
                 roboflow_platform_model(
                     model_id=self.version,
                     model_id_resolver=lambda version: f"sam2/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                    },
                 )
             ]
-        return [roboflow_platform_model(model_id=f"sam2/{self.version}")]
+        return [
+            roboflow_platform_model(
+                model_id=f"sam2/{self.version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class SegmentAnything2BlockV1(WorkflowBlock):

@@ -18,6 +18,7 @@ from typing import List, Literal, Optional, get_args
 
 import pytest
 
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     BlockManifest as ClipV1Manifest,
 )
@@ -39,6 +40,9 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 imp
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     BlockManifest as DatasetUploadV2Manifest,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+    BlockManifest as ModelMonitoringV1Manifest,
+)
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
@@ -46,9 +50,6 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
-    BlockManifest as ModelMonitoringV1Manifest,
 )
 from inference.core.workflows.prototypes.block import (
     DependentResource,
@@ -158,6 +159,20 @@ def test_model_id_resolver_is_excluded_from_serialization_and_equality() -> None
     assert with_resolver.to_dict() == plain.to_dict()
     assert "model_id_resolver" not in with_resolver.to_dict()["metadata"]
     assert with_resolver.metadata.model_id_resolver("ViT-B-16") == "clip/ViT-B-16"
+
+
+def test_model_registration_kwargs_are_excluded_from_serialization_and_equality() -> (
+    None
+):
+    plain = roboflow_platform_model(model_id="clip/ViT-B-32")
+    with_kwargs = roboflow_platform_model(
+        model_id="clip/ViT-B-32",
+        model_registration_kwargs={"endpoint_type": "core-model"},
+    )
+
+    assert with_kwargs == plain
+    assert with_kwargs.to_dict() == plain.to_dict()
+    assert "model_registration_kwargs" not in with_kwargs.to_dict()["metadata"]
 
 
 def test_third_party_model_id_resolver_follows_the_same_contract() -> None:
@@ -282,9 +297,16 @@ def test_clip_v1_synthesizes_core_model_id_from_version() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         roboflow_platform_model(model_id="clip/ViT-B-16"),
     ]
+    # Core models must register in the model manager the same way
+    # load_core_model() does.
+    assert resources[0].metadata.model_registration_kwargs == {
+        "endpoint_type": ModelEndpointType.CORE_MODEL
+    }
 
 
 def test_clip_v1_returns_selector_fed_version_verbatim() -> None:

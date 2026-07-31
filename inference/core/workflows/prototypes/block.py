@@ -249,6 +249,13 @@ class RoboflowPlatformModelMetadata(BaseModel):
     model_id_resolver: SkipJsonSchema[Optional[Callable[[str], str]]] = Field(
         default=None, exclude=True, repr=False
     )
+    # Extra kwargs the model manager registration requires for this model —
+    # model id and api key are injected by the Execution Engine, anything
+    # block-specific (e.g. `endpoint_type` for core models) is declared here.
+    # In-process aid — excluded from serialization, JSON schema and equality.
+    model_registration_kwargs: SkipJsonSchema[Optional[Dict[str, Any]]] = Field(
+        default=None, exclude=True, repr=False
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -396,11 +403,13 @@ def roboflow_platform_model(
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION,
     execution_location: Optional[ModelExecutionLocation] = None,
     model_id_resolver: Optional[Callable[[str], str]] = None,
+    model_registration_kwargs: Optional[Dict[str, Any]] = None,
 ) -> DependentResource:
     metadata_kwargs: Dict[str, Any] = {
         "model_id": model_id,
         "required_action": required_action,
         "model_id_resolver": model_id_resolver,
+        "model_registration_kwargs": model_registration_kwargs,
     }
     if execution_location is not None:
         metadata_kwargs["execution_location"] = execution_location

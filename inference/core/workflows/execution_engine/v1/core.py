@@ -165,7 +165,11 @@ def _pre_load_roboflow_platform_models(
         if metadata.model_id in loaded_model_ids:
             continue
         loaded_model_ids.add(metadata.model_id)
-        model_manager.add_model(model_id=metadata.model_id, api_key=api_key)
+        model_manager.add_model(
+            model_id=metadata.model_id,
+            api_key=api_key,
+            **(metadata.model_registration_kwargs or {}),
+        )
     return pending
 
 
@@ -211,7 +215,11 @@ def _resolve_and_pre_load_runtime_dependencies(
         if resolved_value in loaded_model_ids:
             continue
         loaded_model_ids.add(resolved_value)
-        model_manager.add_model(model_id=resolved_value, api_key=api_key)
+        model_manager.add_model(
+            model_id=resolved_value,
+            api_key=api_key,
+            **(dependency.metadata.model_registration_kwargs or {}),
+        )
 
 
 class ExecutionEngineV1(BaseExecutionEngine):

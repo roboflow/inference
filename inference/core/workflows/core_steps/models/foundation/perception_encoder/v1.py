@@ -15,6 +15,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.execution_engine.entities.base import (
@@ -134,9 +135,19 @@ class BlockManifest(WorkflowBlockManifest):
                 roboflow_platform_model(
                     model_id=self.version,
                     model_id_resolver=lambda version: f"perception_encoder/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                    },
                 )
             ]
-        return [roboflow_platform_model(model_id=f"perception_encoder/{self.version}")]
+        return [
+            roboflow_platform_model(
+                model_id=f"perception_encoder/{self.version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 text_cache = LRUCache()
