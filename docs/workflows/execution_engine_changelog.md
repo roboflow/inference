@@ -60,6 +60,9 @@ this heading with the Execution Engine and inference versions when releasing.
   are pre-loaded only when steps execute locally, `local` declarations always
   are, and access-only declarations (no weights pulled), remote execution and
   `$steps.…`-fed identifiers are never pre-loaded.
+  `InferencePipeline.init_with_workflow(...)` exposes this as the opt-in
+  `workflows_dependencies_pre_init` parameter (default `None` — no
+  pre-loading) — video processing benefits most from predictable startup.
 
 
 ## Execution Engine `v1.13.0` | inference `v1.3.7`
