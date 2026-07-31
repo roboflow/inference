@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
+from inference.core import logger
 from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_WORKFLOWS_PROFILING
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
@@ -112,10 +113,17 @@ def on_pipeline_end(
     profiling_directory: str,
 ) -> None:
     if ENABLE_WORKFLOWS_PROFILING:
-        save_workflows_profiler_trace(
-            directory=profiling_directory,
-            profiler_trace=profiler.export_trace(),
-        )
+        try:
+            save_workflows_profiler_trace(
+                directory=profiling_directory,
+                profiler_trace=profiler.export_trace(),
+            )
+        except OSError:
+            logger.warning(
+                f"Could not save workflows profiler trace to "
+                f"'{profiling_directory}' - profiling data will be lost. "
+                f"This may happen when the filesystem is read-only."
+            )
     try:
         thread_pool_executor.shutdown(cancel_futures=cancel_thread_pool_tasks_on_exit)
     except TypeError:

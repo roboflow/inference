@@ -269,6 +269,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
+    GoogleGeminiBlockV4,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
 )
@@ -909,6 +912,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV1,
         GoogleGeminiBlockV2,
         GoogleGeminiBlockV3,
+        GoogleGeminiBlockV4,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
