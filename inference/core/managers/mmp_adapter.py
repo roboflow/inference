@@ -212,7 +212,7 @@ class ModelManagerAdapter:
             action not in route["tasks"]
         ):
             raise _unsupported(model_id)
-        translation.ensure_request_supported(model_id, request)
+        translation.ensure_request_supported(model_id, request, route)
         is_batch = isinstance(request.image, list)
         images = request.image if is_batch else [request.image]
         imageless_allowed = (
@@ -227,7 +227,9 @@ class ModelManagerAdapter:
             )
             for image in images
         ]
-        params = translation.build_task_params(route["task_type"], action, request)
+        params = translation.build_task_params(
+            route["task_type"], action, request, route
+        )
         t_start = time.perf_counter()
         ensure = await self._client.ensure_loaded(
             route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""

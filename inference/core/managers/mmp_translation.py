@@ -78,6 +78,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
 )
+from inference.core.managers import mmp_florence2
 from inference.core.registries.roboflow import GENERIC_MODELS
 from inference.core.utils.image_utils import (
     BASE64_DATA_TYPE_PATTERN,
@@ -171,11 +172,8 @@ IMPLEMENTED_ROUTES = frozenset(
     ]
 )
 
-# VLM model classes whose legacy response contract the adapter cannot satisfy:
-# legacy Florence2 returns a dict keyed by task token built by the HF
-# processor's post_process_generation; the new-world prompt action returns the
-# raw decoded string.
-VLM_UNSUPPORTED_MODEL_CLASSES = frozenset(["Florence2HF"])
+# VLM model classes whose legacy response contract the adapter cannot satisfy.
+VLM_UNSUPPORTED_MODEL_CLASSES = frozenset()
 
 OWLV2_BACKED_MODEL_CLASSES = frozenset(["OWLv2HF", "RoboflowInstantHF"])
 
@@ -364,8 +362,13 @@ def translate_infer_error(error: Exception, model_id: str) -> Exception:
     return error
 
 
-def ensure_request_supported(model_id: str, request: Any) -> None:
+def ensure_request_supported(
+    model_id: str, request: Any, route: Optional[dict] = None
+) -> None:
     """Reject fidelity-breaking legacy-only params instead of silently drifting."""
+    if route is not None and mmp_florence2.is_florence2_route(route):
+        mmp_florence2.ensure_image_input_supported(request)
+        return
     for field in _DISABLE_PREPROC_FIELDS:
         if getattr(request, field, False):
             raise ModelDeploymentNotSupportedError(
@@ -399,11 +402,15 @@ def _numeric_confidence(value: Any) -> Optional[float]:
     return float(value)
 
 
-def build_task_params(task_type: str, action: str, request: Any) -> dict:
+def build_task_params(
+    task_type: str, action: str, request: Any, route: Optional[dict] = None
+) -> dict:
     params: dict = {}
     if task_type == "interactive-instance-segmentation":
         return _build_interactive_segmentation_params(action, request)
     if task_type == "vlm":
+        if route is not None and mmp_florence2.is_florence2_route(route):
+            return mmp_florence2.build_prompt_params(request)
         return _build_vlm_params(request)
     if task_type == "structured-ocr":
         _ensure_ocr_request_supported(request)
@@ -848,6 +855,10 @@ def repack_prediction(
     if task_type == "interactive-instance-segmentation":
         return repack_interactive_segmentation_response(action, prediction, request)
     if task_type == "vlm":
+        if mmp_florence2.is_florence2_route(route):
+            return mmp_florence2.repack_response(
+                _unwrap_single_prediction(prediction), request, dims
+            )
         return repack_vlm_response(prediction, dims)
     raise ModelDeploymentNotSupportedError(
         f"No response translation for task type '{task_type}' on the MMP path."

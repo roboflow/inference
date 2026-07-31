@@ -100,7 +100,9 @@ class FakeClient:
             entry["backend_type"] = self.backend_type
         return {"mmp_models": {m: dict(entry) for m in self.loaded}}
 
-    async def infer(self, *, model_id, image, task=None, instance="", params=None, **kw):
+    async def infer(
+        self, *, model_id, image, task=None, instance="", params=None, **kw
+    ):
         self.infer_calls.append(
             {"model_id": model_id, "image": image, "task": task, "params": params}
         )
@@ -176,9 +178,10 @@ def od_stat(monkeypatch):
 def png_image(monkeypatch):
     monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
     payload = b"\x89PNG fake payload"
-    return SimpleNamespace(
-        type="base64", value=base64.b64encode(payload).decode()
-    ), payload
+    return (
+        SimpleNamespace(type="base64", value=base64.b64encode(payload).decode()),
+        payload,
+    )
 
 
 def od_request(image=None, **overrides):
@@ -226,7 +229,9 @@ def legacy_classification_draw(request, response, colors):
         outline=color,
         width=request.visualization_stroke_width,
     )
-    text = f"{prediction.class_id} - {prediction.class_name} {prediction.confidence:.2f}"
+    text = (
+        f"{prediction.class_id} - {prediction.class_name} {prediction.confidence:.2f}"
+    )
     text_size = font.getbbox(text)
     button_size = (text_size[2] + 20, text_size[3] + 20)
     button_img = Image.new("RGBA", button_size, color)
@@ -257,9 +262,7 @@ class TestRouting:
         assert running_adapter.get_class_names("ws/1") == ["cat", "dog"]
         assert od_stat == [("ws/1", "key")]
 
-    def test_add_model_passes_load_wait_budget_to_load(
-        self, running_adapter, od_stat
-    ):
+    def test_add_model_passes_load_wait_budget_to_load(self, running_adapter, od_stat):
         running_adapter.add_model("ws/1", api_key="key")
         assert running_adapter._client.load_timeouts == [
             running_adapter._client.load_wait_s
@@ -288,16 +291,12 @@ class TestRouting:
         assert running_adapter._client.loaded == []
         assert "l2cs/1" not in running_adapter
 
-    def test_passthrough_is_unsupported_without_stat(
-        self, running_adapter, od_stat
-    ):
+    def test_passthrough_is_unsupported_without_stat(self, running_adapter, od_stat):
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.add_model("passthrough", api_key="key")
         assert od_stat == []
 
-    def test_runtime_tier_mismatch_unloads_and_errors(
-        self, running_adapter, od_stat
-    ):
+    def test_runtime_tier_mismatch_unloads_and_errors(self, running_adapter, od_stat):
         running_adapter._client.tasks = {"embed": {}}
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.add_model("ws/1", api_key="key")
@@ -614,9 +613,7 @@ class TestInfer:
         request = od_request(image=[image, image, image])
         responses = running_adapter.infer_from_request_sync("ws/1", request)
         assert isinstance(responses, list) and len(responses) == 3
-        assert all(
-            isinstance(r, ObjectDetectionInferenceResponse) for r in responses
-        )
+        assert all(isinstance(r, ObjectDetectionInferenceResponse) for r in responses)
         assert len(running_adapter._client.infer_calls) == 3
         assert all(
             call["image"] == payload for call in running_adapter._client.infer_calls
@@ -704,9 +701,7 @@ class TestPerTypeRepack:
         monkeypatch.setattr(translation, "stat_model", make_stat(task_type))
         monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
         running_adapter._client.infer_result = result
-        image = SimpleNamespace(
-            type="base64", value=base64.b64encode(b"fake").decode()
-        )
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"fake").decode())
         return running_adapter.infer_from_request_sync(
             "ws/1", request or od_request(image=image)
         )
@@ -811,8 +806,16 @@ class TestPerTypeRepack:
     def test_keypoints(self, running_adapter, monkeypatch):
         running_adapter._client.key_points_classes = [["nose", "tail"]]
         result = (
-            [FakeKeyPoints(xy=[[[5.0, 6.0], [7.0, 8.0]]], class_id=[0], confidence=[[0.9, 0.0]])],
-            [FakeDetections(xyxy=[[0.0, 0.0, 10.0, 10.0]], confidence=[0.7], class_id=[1])],
+            [
+                FakeKeyPoints(
+                    xy=[[[5.0, 6.0], [7.0, 8.0]]], class_id=[0], confidence=[[0.9, 0.0]]
+                )
+            ],
+            [
+                FakeDetections(
+                    xyxy=[[0.0, 0.0, 10.0, 10.0]], confidence=[0.7], class_id=[1]
+                )
+            ],
         )
         image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
         request = od_request(image=image, keypoint_confidence=0.0)
@@ -824,9 +827,10 @@ class TestPerTypeRepack:
         assert len(prediction.keypoints) == 1
         keypoint = prediction.keypoints[0]
         assert keypoint.class_name == "nose" and keypoint.class_id == 0
-        assert running_adapter._client.infer_calls[0]["params"][
-            "key_points_threshold"
-        ] == 0.0
+        assert (
+            running_adapter._client.infer_calls[0]["params"]["key_points_threshold"]
+            == 0.0
+        )
 
     def test_keypoints_visualization(
         self, running_adapter, monkeypatch, palette_colors
@@ -964,12 +968,12 @@ class TestPerTypeRepack:
     def test_depth_estimation(self, running_adapter, monkeypatch):
         pytest.importorskip("matplotlib")
         depth = np.linspace(0.0, 10.0, 48 * 64, dtype=np.float32).reshape(48, 64)
-        response = self._run(
-            running_adapter, monkeypatch, "depth-estimation", [depth]
-        )
+        response = self._run(running_adapter, monkeypatch, "depth-estimation", [depth])
         normalized = response.response["normalized_depth"]
         assert normalized.min() == 0.0 and normalized.max() == 1.0
-        assert base64.b64decode(response.response["image"].base64_image)[:2] == b"\xff\xd8"
+        assert (
+            base64.b64decode(response.response["image"].base64_image)[:2] == b"\xff\xd8"
+        )
         assert response.inference_id == "req-1"
 
     def test_depth_no_variation_errors(self, running_adapter, monkeypatch):
@@ -983,7 +987,11 @@ class TestPhase3aRouting:
         running_adapter._client.class_names = ["text"]
         result = (
             ["hello world"],
-            [FakeDetections(xyxy=[[1.0, 2.0, 3.0, 4.0]], confidence=[0.9], class_id=[0])],
+            [
+                FakeDetections(
+                    xyxy=[[1.0, 2.0, 3.0, 4.0]], confidence=[0.9], class_id=[0]
+                )
+            ],
         )
         monkeypatch.setattr(translation, "stat_model", make_stat("structured-ocr"))
         monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
@@ -1026,9 +1034,7 @@ class TestPhase3aRouting:
         )
         assert response.result == "printed text"
 
-    def test_open_vocabulary_uses_requested_classes(
-        self, running_adapter, monkeypatch
-    ):
+    def test_open_vocabulary_uses_requested_classes(self, running_adapter, monkeypatch):
         monkeypatch.setattr(
             translation, "stat_model", make_stat("open-vocabulary-object-detection")
         )
@@ -1042,7 +1048,9 @@ class TestPhase3aRouting:
         ]
         image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
         request = od_request(image=image, text=["person", "dog"])
-        response = running_adapter.infer_from_request_sync("grounding_dino/default", request)
+        response = running_adapter.infer_from_request_sync(
+            "grounding_dino/default", request
+        )
         assert running_adapter._client.infer_calls[0]["params"]["classes"] == [
             "person",
             "dog",
@@ -1134,13 +1142,9 @@ class TestPhase3aRouting:
         running_adapter._client.infer_result = "printed text"
         request = od_request(image=visual_image(), visualize_predictions=True)
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.infer_from_request_sync(
-                "trocr/trocr-base-printed", request
-            )
+            running_adapter.infer_from_request_sync("trocr/trocr-base-printed", request)
 
-    def test_open_vocabulary_without_classes_errors(
-        self, running_adapter, monkeypatch
-    ):
+    def test_open_vocabulary_without_classes_errors(self, running_adapter, monkeypatch):
         monkeypatch.setattr(
             translation, "stat_model", make_stat("open-vocabulary-object-detection")
         )
@@ -1198,9 +1202,7 @@ class TestVlmRouting:
     ):
         self._setup(running_adapter, monkeypatch)
         running_adapter._client.model_class_name = "Qwen35HF"
-        running_adapter._client.infer_result = [
-            {"reasoning": "...", "answer": "cat"}
-        ]
+        running_adapter._client.infer_result = [{"reasoning": "...", "answer": "cat"}]
         image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
         request = od_request(image=image, prompt="what?", enable_thinking=True)
         response = running_adapter.infer_from_request_sync("qwen35/1", request)
@@ -1216,12 +1218,19 @@ class TestVlmRouting:
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.infer_from_request_sync("qwen/1", request)
 
-    def test_florence2_terminal_unsupported(self, running_adapter, monkeypatch):
+    def test_unsupported_vlm_class_terminal_unsupported(
+        self, running_adapter, monkeypatch
+    ):
         self._setup(running_adapter, monkeypatch)
-        running_adapter._client.model_class_name = "Florence2HF"
+        monkeypatch.setattr(
+            translation,
+            "VLM_UNSUPPORTED_MODEL_CLASSES",
+            frozenset(["UnsupportedVLMHF"]),
+        )
+        running_adapter._client.model_class_name = "UnsupportedVLMHF"
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("florence-2-base/1", api_key="key")
-        assert running_adapter._client.unloaded == ["florence-2-base/1"]
+            running_adapter.add_model("unsupported-vlm/1", api_key="key")
+        assert running_adapter._client.unloaded == ["unsupported-vlm/1"]
 
     def test_moondream_without_prompt_task_unsupported(
         self, running_adapter, monkeypatch
@@ -1255,9 +1264,7 @@ def sam_request(cls, **overrides):
     fields = {
         "id": "req-1",
         "api_key": "key",
-        "image": SimpleNamespace(
-            type="base64", value=base64.b64encode(b"f").decode()
-        ),
+        "image": SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode()),
         "image_id": None,
         "format": "polygon",
     }
@@ -1268,16 +1275,16 @@ def sam_request(cls, **overrides):
 class TestSamRouting:
     def _setup(self, running_adapter, monkeypatch, tasks):
         monkeypatch.setattr(
-            translation, "stat_model", make_stat("interactive-instance-segmentation", "embed")
+            translation,
+            "stat_model",
+            make_stat("interactive-instance-segmentation", "embed"),
         )
         monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
         running_adapter._client.tasks = {t: {} for t in tasks}
 
     def test_sam2_embed_echoes_image_id(self, running_adapter, monkeypatch):
         self._setup(running_adapter, monkeypatch, ["embed", "segment"])
-        running_adapter._client.infer_result = [
-            SimpleNamespace(image_hash="deadbeef")
-        ]
+        running_adapter._client.infer_result = [SimpleNamespace(image_hash="deadbeef")]
         request = sam_request(Sam2EmbeddingRequest, image_id="abc")
         response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         assert response.image_id == "abc"
@@ -1287,11 +1294,13 @@ class TestSamRouting:
         self._setup(
             running_adapter,
             monkeypatch,
-            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
         )
-        running_adapter._client.infer_result = [
-            SimpleNamespace(image_hash="deadbeef")
-        ]
+        running_adapter._client.infer_result = [SimpleNamespace(image_hash="deadbeef")]
         request = sam_request(Sam2EmbeddingRequest)
         response = running_adapter.infer_from_request_sync(
             "sam3/sam3_interactive", request
@@ -1320,7 +1329,11 @@ class TestSamRouting:
         self._setup(
             running_adapter,
             monkeypatch,
-            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
         )
         masks = np.zeros((1, 3, 16, 16), dtype=np.float32)
         masks[0, 1, 4:8, 4:8] = 1.0
@@ -1364,7 +1377,11 @@ class TestSamRouting:
         self._setup(
             running_adapter,
             monkeypatch,
-            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
         )
         masks = np.zeros((2, 16, 16), dtype=np.uint8)
         masks[0, 2:6, 2:6] = 1
@@ -1392,15 +1409,15 @@ class TestSamRouting:
         self._setup(
             running_adapter,
             monkeypatch,
-            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
         )
-        request = sam_request(
-            Sam2SegmentationRequest, prompts=None, mask_input=[[0.0]]
-        )
+        request = sam_request(Sam2SegmentationRequest, prompts=None, mask_input=[[0.0]])
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.infer_from_request_sync(
-                "sam3/sam3_interactive", request
-            )
+            running_adapter.infer_from_request_sync("sam3/sam3_interactive", request)
 
     def test_nms_iou_threshold_errors(self, running_adapter, monkeypatch):
         from inference.core.entities.requests.sam3 import Sam3Prompt
@@ -1408,7 +1425,11 @@ class TestSamRouting:
         self._setup(
             running_adapter,
             monkeypatch,
-            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
         )
         request = sam_request(
             Sam3SegmentationRequest,
@@ -1564,8 +1585,14 @@ def test_default_client_is_built_with_adapter_budgets(monkeypatch):
 
     leaf = types.ModuleType("inference_server.proxies.mmp_client")
     leaf.MMPClient = RecordingClient
-    monkeypatch.setitem(sys.modules, "inference_server", types.ModuleType("inference_server"))
-    monkeypatch.setitem(sys.modules, "inference_server.proxies", types.ModuleType("inference_server.proxies"))
+    monkeypatch.setitem(
+        sys.modules, "inference_server", types.ModuleType("inference_server")
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "inference_server.proxies",
+        types.ModuleType("inference_server.proxies"),
+    )
     monkeypatch.setitem(sys.modules, "inference_server.proxies.mmp_client", leaf)
 
     ModelManagerAdapter(legacy_stack=FakeLegacy(), mmp_client=None)
