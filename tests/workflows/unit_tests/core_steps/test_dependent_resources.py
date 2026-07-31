@@ -451,6 +451,16 @@ CARRY_ONLY_ALLOWLIST = {
     "roboflow_core/webhook_sink@v1",
 }
 
+# Blocks loading their model weights outside the model manager (e.g. via
+# AutoModel.from_pretrained) — per current policy they do not implement
+# discover_dependent_resources() at all, so dependencies stay undeclared.
+NON_MODEL_MANAGER_LOADERS_ALLOWLIST = {
+    "roboflow_core/segment_anything_2_video@v1",
+    "roboflow_core/sam3_video@v1",
+}
+
+UNDECLARED_BLOCKS_ALLOWLIST = CARRY_ONLY_ALLOWLIST | NON_MODEL_MANAGER_LOADERS_ALLOWLIST
+
 
 def _canonical_block_type(manifest_class) -> str:
     return get_args(manifest_class.model_fields["type"].annotation)[0]
@@ -478,11 +488,11 @@ def test_every_block_with_resource_kind_fields_declares_dependencies() -> None:
             block.manifest_class.discover_dependent_resources
             is not WorkflowBlockManifest.discover_dependent_resources
         )
-        if not overridden and block_type not in CARRY_ONLY_ALLOWLIST:
+        if not overridden and block_type not in UNDECLARED_BLOCKS_ALLOWLIST:
             missing_declarations.append(block_type)
 
     # Guard against the allowlist going stale.
-    assert CARRY_ONLY_ALLOWLIST.issubset(set(flagged_types))
+    assert UNDECLARED_BLOCKS_ALLOWLIST.issubset(set(flagged_types))
     assert not missing_declarations, (
         "Blocks declaring roboflow_model_id / roboflow_project fields without "
         f"discover_dependent_resources() override: {sorted(missing_declarations)}"

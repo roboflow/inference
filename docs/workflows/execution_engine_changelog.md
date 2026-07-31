@@ -46,7 +46,10 @@ this heading with the Execution Engine and inference versions when releasing.
   All core blocks that reference models, Roboflow projects or third-party
   hosted models implement the method, and each implementation mirrors the
   model identifier that `run()` actually loads (including ids synthesized
-  from version fields, e.g. `clip/<version>`).
+  from version fields, e.g. `clip/<version>`). Blocks that load their model
+  weights outside the model manager (the SAM2/SAM3 video trackers, which use
+  `AutoModel.from_pretrained`) deliberately do not implement the method for
+  now — their dependencies stay undeclared (`None`).
 
 * **Dynamic (custom python) blocks report unknown dependencies** — manifests
   synthesized for dynamic blocks return `None` from

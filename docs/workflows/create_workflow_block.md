@@ -2546,5 +2546,10 @@ the `roboflow_model_id` or `roboflow_project` kind must either override
 `discover_dependent_resources()` or be explicitly allowlisted as
 carry-only.
 
+Blocks that load their model weights **outside the model manager** (verify
+what `run()` actually does, not whether `model_manager` appears among init
+parameters) should not implement the method for now — their dependencies
+stay undeclared (`None`).
+
 Custom python blocks always report `None`: their code is opaque to static
 analysis, so *unknown* is the only honest answer.

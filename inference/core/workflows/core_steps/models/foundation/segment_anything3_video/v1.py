@@ -52,13 +52,11 @@ from inference.core.workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
-    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
-    roboflow_platform_model,
 )
 
 SHORT_DESCRIPTION = (
@@ -203,8 +201,9 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return ["sam3video"]
 
-    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
-        return [roboflow_platform_model(model_id=self.model_id)]
+    # `discover_dependent_resources()` deliberately not implemented: this
+    # block loads its weights via AutoModel.from_pretrained, not the model
+    # manager — dependencies stay undeclared (None) for now.
 
 
 class SegmentAnything3VideoBlockV1(WorkflowBlock):
