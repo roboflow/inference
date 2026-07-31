@@ -1446,6 +1446,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#execution-engine-v1140-inference-138" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.14.0 | inference 1.3.8
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-engine-v1130-inference-v137" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1849,6 +1860,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#execution-engine-v1140-inference-138" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.14.0 | inference 1.3.8
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-engine-v1130-inference-v137" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2056,6 +2078,103 @@
 <p><strong>What changed</strong></p>
 <p>Add user-facing compile or execution behavior changes here. Maintainers replace
 this heading with the Execution Engine and inference versions when releasing.</p>
+<h2 id="execution-engine-v1140-inference-138">Execution Engine <code>v1.14.0</code> | inference <code>1.3.8</code><a class="headerlink" href="#execution-engine-v1140-inference-138" title="Permanent link">&para;</a></h2>
+<p><strong>What changed</strong></p>
+<ul>
+<li>
+<p><strong>Output serialization accepts kinds declared as strings</strong> — When an output kind was
+  declared as a plain string (e.g. <code>"string"</code>) instead of a <code>Kind</code> object, output
+  serialization crashed with <code>TypeError: unhashable type: 'list'</code>, surfacing as HTTP 500
+  for the whole Workflow run. Such kinds are now resolved by name, so the matching
+  serializer is applied (or the raw value is passed through when no serializer is
+  registered for that kind).</p>
+</li>
+<li>
+<p><strong>Blocks can declare their dependent resources</strong> — <code>WorkflowBlockManifest</code> gains
+  an instance method <code>discover_dependent_resources() -&gt; Optional[List[DependentResource]]</code>
+  that lets a parsed step declare the external resources its execution will use,
+  so callers (platform, preloading and auth pre-flight tooling) can enumerate
+  them statically from a workflow definition. The envelope is regulated by the
+  Execution Engine: resource types <code>roboflow_platform_model</code>,
+  <code>roboflow_platform_project</code> and <code>third_party_model</code>, each with a typed,
+  serializable (pydantic) metadata entity. Platform-model entries additionally
+  state the nature of usage: <code>required_action</code> (<code>access</code> — the model entity only
+  needs to be reachable on the platform, vs <code>execution</code> — the model is executed)
+  and, for execution, <code>execution_location</code> (<code>local</code> / <code>remote</code> /
+  <code>environment_defined</code> when the locality is decided at runtime by
+  <code>WORKFLOWS_STEP_EXECUTION_MODE</code>). Blocks governed by their own locality
+  override dictate it in place — the SAM3 image blocks declare nothing when
+  <code>SAM3_EXEC_MODE=remote</code> (proxy execution ignores the configured model id
+  and runs a fixed SAM3 server-side) and <code>environment_defined</code> otherwise. Returning <code>None</code> (the default) means the
+  block does not declare its dependencies — distinct from <code>[]</code>, which declares
+  that no external resources are needed. Field values that are workflow
+  selectors (<code>$inputs.&lt;name&gt;</code> / <code>$steps.&lt;name&gt;.&lt;property&gt;</code>) are reported
+  verbatim; each metadata entity exposes <code>requires_runtime_resolution()</code> to
+  tell such references apart from concrete identifiers. Declarations whose
+  final id is synthesized from the field value (family prefixes like
+  <code>clip/&lt;version&gt;</code>, catalog lookups) additionally attach a non-serializable
+  <code>model_id_resolver</code> callable that turns the substituted input value into
+  the executed id — excluded from serialization, JSON schema and equality.
+  All core blocks that reference models, Roboflow projects or third-party
+  hosted models implement the method, and each implementation mirrors the
+  model identifier that <code>run()</code> actually loads (including ids synthesized
+  from version fields, e.g. <code>clip/&lt;version&gt;</code>). Project declarations follow
+  their enabling controls, decided from static manifest values: Roboflow
+  model blocks drop the active-learning target when <code>disable_active_learning</code>
+  is literally <code>True</code> (the default), and dataset-upload blocks declare
+  nothing when <code>disable_sink</code> is literally <code>True</code>; selector-fed controls
+  keep the conservative may-need declaration. Introspection stops at the
+  <code>active_learning_target_dataset</code> property — no project is derived from the
+  model id when active learning is enabled without an explicit target. Blocks that load their model
+  weights outside the model manager (the SAM2/SAM3 video trackers, which use
+  <code>AutoModel.from_pretrained</code>) deliberately do not implement the method for
+  now — their dependencies stay undeclared (<code>None</code>).</p>
+</li>
+<li>
+<p><strong>Dynamic (custom python) blocks report unknown dependencies</strong> — manifests
+  synthesized for dynamic blocks return <code>None</code> from
+  <code>discover_dependent_resources()</code>: the python body is opaque to static
+  analysis, so "unknown" is the only honest answer.</p>
+</li>
+<li>
+<p><strong>Opt-in pre-loading of declared Roboflow models at engine init</strong> —
+  <code>ExecutionEngine.init(...)</code> accepts a new optional parameter
+  <code>dependencies_pre_init</code> (default <code>None</code>): a list of dependent-resource type
+  names to pre-load, with <code>roboflow_platform_model</code> as the only supported
+  value for now. When enabled, the engine deduces the declared dependencies of
+  all compiled steps (<code>deduce_blocks_dependencies</code> in the compiler utils) and
+  registers every concrete Roboflow platform model declared for execution in
+  the model manager (both taken from <code>init_parameters</code>, as is the API key)
+  during <code>init()</code> — before any run, for predictable first-inference latency.
+  Declarations that reference <code>$inputs.&lt;name&gt;</code> cannot be loaded at init; on
+  the <strong>first</strong> <code>run()</code> only — after runtime-input validation, so an invalid
+  request neither consumes the single attempt nor triggers downloads — the
+  engine resolves them against the provided
+  runtime parameters (with input defaults applied), applies the declaration's
+  <code>model_id_resolver</code> when attached (so e.g. a substituted CLIP version
+  pre-loads <code>clip/&lt;version&gt;</code>, exactly the id execution uses), and registers
+  the models whose identifiers became concrete. A resolver returning <code>None</code>
+  declares the substituted value statically unresolvable (e.g. Qwen's
+  fine-tuned sentinel label, whose final id depends on another input) — the
+  dependency is skipped and resolves at execution time; a submitted input
+  value the resolver cannot handle (e.g. an unknown catalog label) raises
+  <code>RuntimeInputError</code>. Registration mirrors each block's actual loader:
+  declarations may carry non-serializable <code>model_registration_kwargs</code>
+  (e.g. <code>endpoint_type=CORE_MODEL</code> for CLIP / OCR / SAM2 / YOLO-World-style
+  core models, matching <code>load_core_model()</code>). After each pre-loading pass the
+  engine verifies the registered models are still present in the model
+  manager and logs a warning when a size/memory-bounded manager evicted some
+  of them (they lazily re-load at execution time). Pre-loading honours the effective step
+  execution mode (explicit <code>step_execution_mode</code> init parameter, or the
+  <code>WORKFLOWS_STEP_EXECUTION_MODE</code> default): <code>environment_defined</code> declarations
+  are pre-loaded only when steps execute locally, <code>local</code> declarations always
+  are, and access-only declarations (no weights pulled), remote execution and
+  <code>$steps.…</code>-fed identifiers are never pre-loaded.
+  <code>InferencePipeline.init_with_workflow(...)</code> exposes this as the opt-in
+  <code>workflows_dependencies_pre_init</code> parameter (default <code>None</code> — no
+  pre-loading) — video processing benefits most from predictable startup.</p>
+</li>
+</ul>
 <h2 id="execution-engine-v1130-inference-v137">Execution Engine <code>v1.13.0</code> | inference <code>v1.3.7</code><a class="headerlink" href="#execution-engine-v1130-inference-v137" title="Permanent link">&para;</a></h2>
 <p><strong>What changed</strong></p>
 <ul>

@@ -1072,6 +1072,73 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inference_sdk.regions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        regions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="regions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions:
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions:">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions.get_roboflow_environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_roboflow_environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions.get_roboflow_region" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_roboflow_region
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions.resolve_roboflow_service_url" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolve_roboflow_service_url
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#http" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5691,6 +5758,73 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inference_sdk.regions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        regions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="regions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions:
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions:">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions.get_roboflow_environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_roboflow_environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions.get_roboflow_region" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_roboflow_region
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference_sdk.regions.resolve_roboflow_service_url" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolve_roboflow_service_url
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#http" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -9940,10 +10074,10 @@
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>inference_sdk/config.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">209</span>
-<span class="normal">210</span>
-<span class="normal">211</span>
-<span class="normal">212</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">InferenceSDKDeprecationWarning</span><span class="p">(</span><span class="ne">Warning</span><span class="p">):</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">InferenceSDKDeprecationWarning</span><span class="p">(</span><span class="ne">Warning</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Class used for warning of deprecated features in the Inference SDK&quot;&quot;&quot;</span>
 
     <span class="k">pass</span>
@@ -9986,8 +10120,7 @@ have completed — so there is no contention in the async context.</p>
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>inference_sdk/config.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 12</span>
-<span class="normal"> 13</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 13</span>
 <span class="normal"> 14</span>
 <span class="normal"> 15</span>
 <span class="normal"> 16</span>
@@ -10095,7 +10228,8 @@ have completed — so there is no contention in the async context.</p>
 <span class="normal">118</span>
 <span class="normal">119</span>
 <span class="normal">120</span>
-<span class="normal">121</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RemoteProcessingTimeCollector</span><span class="p">:</span>
+<span class="normal">121</span>
+<span class="normal">122</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RemoteProcessingTimeCollector</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Thread-safe collector for GPU processing times from remote execution responses.</span>
 
 <span class="sd">    A single instance is shared across all threads handling a single request.</span>
@@ -10239,12 +10373,12 @@ have completed — so there is no contention in the async context.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/config.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">64</span>
-<span class="normal">65</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">65</span>
 <span class="normal">66</span>
 <span class="normal">67</span>
 <span class="normal">68</span>
-<span class="normal">69</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">drain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="normal">69</span>
+<span class="normal">70</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">drain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Atomically return all entries and clear the internal list.&quot;&quot;&quot;</span>
     <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
         <span class="n">entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entries</span>
@@ -10274,8 +10408,7 @@ have completed — so there is no contention in the async context.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/config.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 99</span>
-<span class="normal">100</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">100</span>
 <span class="normal">101</span>
 <span class="normal">102</span>
 <span class="normal">103</span>
@@ -10283,7 +10416,8 @@ have completed — so there is no contention in the async context.</p>
 <span class="normal">105</span>
 <span class="normal">106</span>
 <span class="normal">107</span>
-<span class="normal">108</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">snapshot_summary</span><span class="p">(</span>
+<span class="normal">108</span>
+<span class="normal">109</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">snapshot_summary</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">max_detail_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return (total_time, entries_json_or_none) without clearing entries.&quot;&quot;&quot;</span>
@@ -10319,8 +10453,7 @@ If the JSON exceeds max_detail_bytes, the detail string is omitted (None).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/config.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">110</span>
-<span class="normal">111</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">111</span>
 <span class="normal">112</span>
 <span class="normal">113</span>
 <span class="normal">114</span>
@@ -10330,7 +10463,8 @@ If the JSON exceeds max_detail_bytes, the detail string is omitted (None).</p>
 <span class="normal">118</span>
 <span class="normal">119</span>
 <span class="normal">120</span>
-<span class="normal">121</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">summarize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_detail_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="normal">121</span>
+<span class="normal">122</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">summarize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_detail_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Atomically drain entries and return (total_time, entries_json_or_none).</span>
 
 <span class="sd">    Returns the total processing time and a JSON string of individual entries.</span>
@@ -10356,6 +10490,221 @@ If the JSON exceeds max_detail_bytes, the detail string is omitted (None).</p>
 
 </div>
 <h3 id="inference_sdk.config-functions">Functions:<a href="#inference_sdk.config-functions" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="inference_sdk.regions" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-module"></code>            <span class="doc doc-object-name doc-module-name">inference_sdk.regions</span>
+
+
+<a href="#inference_sdk.regions" class="headerlink" title="Permanent link">&para;</a></h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Canonical Roboflow region / environment selection.</p>
+<p>Single source of truth for resolving default Roboflow service URLs from the
+two public switches:</p>
+<ul>
+<li><code>ROBOFLOW_REGION</code> - <code>us</code> (default) or <code>eu</code></li>
+<li><code>ROBOFLOW_ENVIRONMENT</code> - <code>prod</code> (default) or <code>staging</code></li>
+</ul>
+<p>Explicit URL env variables (<code>API_BASE_URL</code>, <code>ROBOFLOW_API_HOST</code>,
+<code>RF_API_BASE_URL</code>, ...) always take precedence over values resolved here -
+callers apply this module's output only as the default. The legacy
+<code>PROJECT</code> variable (<code>roboflow-platform</code> vs anything else) is honoured as
+an environment signal wherever it was honoured before, with
+<code>ROBOFLOW_ENVIRONMENT</code> taking precedence when both are set.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h3 id="inference_sdk.regions-functions">Functions:<a href="#inference_sdk.regions-functions" class="headerlink" title="Permanent link">&para;</a></h3>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="inference_sdk.regions.get_roboflow_environment" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">get_roboflow_environment</span>
+
+
+<a href="#inference_sdk.regions.get_roboflow_environment" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">get_roboflow_environment</span><span class="p">(</span><span class="n">project</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return the selected Roboflow environment (<code>prod</code> or <code>staging</code>).</p>
+<p><code>ROBOFLOW_ENVIRONMENT</code> wins when set (any value other than <code>prod</code>
+selects staging, matching historical behaviour). Otherwise the legacy
+<code>project</code> signal decides (<code>roboflow-platform</code> means prod), and with
+neither present the environment defaults to prod.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>inference_sdk/regions.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_roboflow_environment</span><span class="p">(</span><span class="n">project</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the selected Roboflow environment (``prod`` or ``staging``).</span>
+
+<span class="sd">    ``ROBOFLOW_ENVIRONMENT`` wins when set (any value other than ``prod``</span>
+<span class="sd">    selects staging, matching historical behaviour). Otherwise the legacy</span>
+<span class="sd">    ``project`` signal decides (``roboflow-platform`` means prod), and with</span>
+<span class="sd">    neither present the environment defaults to prod.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">environment</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ROBOFLOW_ENVIRONMENT&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">environment</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">environment</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">PROD_ENVIRONMENT_NAME</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">PROD_ENVIRONMENT_NAME</span>
+        <span class="k">return</span> <span class="n">STAGING_ENVIRONMENT_NAME</span>
+    <span class="k">if</span> <span class="n">project</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">project</span> <span class="o">!=</span> <span class="n">US_PROD_PROJECT_NAME</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">STAGING_ENVIRONMENT_NAME</span>
+    <span class="k">return</span> <span class="n">DEFAULT_ENVIRONMENT</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="inference_sdk.regions.get_roboflow_region" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">get_roboflow_region</span>
+
+
+<a href="#inference_sdk.regions.get_roboflow_region" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">get_roboflow_region</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return the selected Roboflow region (<code>us</code> or <code>eu</code>).</p>
+<p>Unknown values warn on stderr and fall back to <code>us</code> - never raise at
+import time.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>inference_sdk/regions.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_roboflow_region</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the selected Roboflow region (``us`` or ``eu``).</span>
+
+<span class="sd">    Unknown values warn on stderr and fall back to ``us`` - never raise at</span>
+<span class="sd">    import time.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">region</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ROBOFLOW_REGION&quot;</span><span class="p">,</span> <span class="n">DEFAULT_REGION</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">region</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SUPPORTED_REGIONS</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Unknown ROBOFLOW_REGION </span><span class="si">{</span><span class="n">region</span><span class="si">!r}</span><span class="s2"> - falling back to &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">DEFAULT_REGION</span><span class="si">!r}</span><span class="s2">. Supported regions: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SUPPORTED_REGIONS</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">DEFAULT_REGION</span>
+    <span class="k">return</span> <span class="n">region</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="inference_sdk.regions.resolve_roboflow_service_url" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">resolve_roboflow_service_url</span>
+
+
+<a href="#inference_sdk.regions.resolve_roboflow_service_url" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">resolve_roboflow_service_url</span><span class="p">(</span>
+    <span class="n">service</span><span class="p">,</span> <span class="n">region</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">environment</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Resolve the default URL for a Roboflow service in the selected region / environment.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>inference_sdk/regions.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span>
+<span class="normal">95</span>
+<span class="normal">96</span>
+<span class="normal">97</span>
+<span class="normal">98</span>
+<span class="normal">99</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_roboflow_service_url</span><span class="p">(</span>
+    <span class="n">service</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">region</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">environment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">project</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the default URL for a Roboflow service in the selected region / environment.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">region</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">region</span> <span class="o">=</span> <span class="n">get_roboflow_region</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">environment</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">environment</span> <span class="o">=</span> <span class="n">get_roboflow_environment</span><span class="p">(</span><span class="n">project</span><span class="o">=</span><span class="n">project</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ROBOFLOW_SERVICE_URLS</span><span class="p">[(</span><span class="n">region</span><span class="p">,</span> <span class="n">environment</span><span class="p">)][</span><span class="n">service</span><span class="p">]</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 
 

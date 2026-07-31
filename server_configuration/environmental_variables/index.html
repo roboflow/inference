@@ -1407,6 +1407,16 @@
 </thead>
 <tbody>
 <tr>
+<td><code>ROBOFLOW_REGION</code></td>
+<td>Roboflow region to run against: <code>us</code> or <code>eu</code>. Selects the default API/app hosts across <code>inference</code>, <code>inference-cli</code>, <code>inference-sdk</code> and <code>inference-models</code> (e.g. <code>eu</code> points the API at <code>https://api.roboflow.eu</code>). Explicit URL variables such as <code>API_BASE_URL</code> or <code>ROBOFLOW_API_HOST</code> always take precedence.</td>
+<td><code>us</code></td>
+</tr>
+<tr>
+<td><code>ROBOFLOW_ENVIRONMENT</code></td>
+<td>Roboflow environment to run against: <code>prod</code> or <code>staging</code>. Combines with <code>ROBOFLOW_REGION</code> to pick default hosts (e.g. <code>eu</code> + <code>staging</code> points the API at <code>https://api.roboflow-eu.one</code>). Takes precedence over the legacy <code>PROJECT</code> variable (<code>roboflow-platform</code> vs <code>roboflow-staging</code>).</td>
+<td><code>prod</code></td>
+</tr>
+<tr>
 <td><code>ONNXRUNTIME_EXECUTION_PROVIDERS</code></td>
 <td>List of execution providers in priority order, warning message will be displayed if provider is not supported on user platform</td>
 <td>See <a href="https://github.com/roboflow/inference/blob/main/inference/core/env.py#L262">here</a></td>
@@ -1515,6 +1525,11 @@
 <td><code>DISABLE_VERSION_CHECK</code></td>
 <td>Flag to disable <code>inference</code> version check in background thread. Force-set to <code>True</code> (overriding an explicit <code>False</code>) when <code>SECURE_GATEWAY</code> is configured, since <code>api.github.com</code> is unreachable behind the gateway</td>
 <td><code>False</code></td>
+</tr>
+<tr>
+<td><code>ALLOW_WORKFLOWS_FONTS_DOWNLOAD</code></td>
+<td>Flag allowing runtime download of the approved fonts used by Workflows visualization blocks (e.g. Rich Label Visualization) when a font is not baked into the installation. Downloads only ever target the registry-pinned URLs and are SHA-256 verified. Official Docker images ship with fonts baked in and set this to <code>False</code>. Downloads are also skipped (with an actionable error) when <code>OFFLINE_MODE</code> is enabled or <code>SECURE_GATEWAY</code> is configured, since the fonts' upstream hosts are unreachable there</td>
+<td><code>True</code></td>
 </tr>
 <tr>
 <td><code>SECURE_GATEWAY</code></td>

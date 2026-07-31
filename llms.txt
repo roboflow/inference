@@ -144,6 +144,7 @@ Roboflow Inference is an open-source (Apache 2.0) computer vision inference serv
 - [Label Visualization](https://inference.roboflow.com/workflows/blocks/label_visualization/index.md)
 - [Classification Label Visualization](https://inference.roboflow.com/workflows/blocks/classification_label_visualization/index.md)
 - [Background Color Visualization](https://inference.roboflow.com/workflows/blocks/background_color_visualization/index.md)
+- [Rich Label Visualization](https://inference.roboflow.com/workflows/blocks/rich_label_visualization/index.md)
 - [Text Display](https://inference.roboflow.com/workflows/blocks/text_display/index.md)
 - [Blur Visualization](https://inference.roboflow.com/workflows/blocks/blur_visualization/index.md)
 - [Heatmap Visualization](https://inference.roboflow.com/workflows/blocks/heatmap_visualization/index.md)

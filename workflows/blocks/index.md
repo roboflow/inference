@@ -737,6 +737,21 @@ hide:
 
 
 
+            <a href="rich_label_visualization">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-font" > </i>  Rich Label Visualization</div>
+                <div class="block_description">Draw high-quality, anti-aliased text labels on an image using approved TrueType fonts.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="text_display">
               <div class="block">
                 

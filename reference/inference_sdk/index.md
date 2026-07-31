@@ -6,6 +6,8 @@ Top-level SDK configuration: API URLs, timeouts, environment variable loading, a
 
 ::: inference_sdk.config
 
+::: inference_sdk.regions
+
 ## `http`
 
 Core HTTP client for making inference requests. `InferenceHTTPClient` supports object detection, classification, segmentation, keypoint detection, OCR, CLIP embeddings, and workflow execution.

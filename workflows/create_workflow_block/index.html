@@ -1627,6 +1627,78 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#declaring-dependent-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Declaring dependent resources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Declaring dependent resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-resource-envelope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The resource envelope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selector-values-and-runtime-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selector values and runtime resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mirror-what-run-loads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mirror what run() loads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-not-to-declare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When not to declare
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2421,6 +2493,78 @@
     <span class="md-ellipsis">
       
         Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#declaring-dependent-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Declaring dependent resources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Declaring dependent resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-resource-envelope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The resource envelope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selector-values-and-runtime-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selector values and runtime resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mirror-what-run-loads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mirror what run() loads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-not-to-declare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When not to declare
       
     </span>
   </a>
@@ -6101,6 +6245,159 @@ inline:</p>
 <li>The execution engine, which can choose to fail-fast on <code>Severity.HARD</code>
    restrictions for the current runtime.</li>
 </ol>
+<h3 id="declaring-dependent-resources">Declaring dependent resources<a class="headerlink" href="#declaring-dependent-resources" title="Permanent link">&para;</a></h3>
+<p>Many blocks require external resources when they run: Roboflow-trained or
+foundation model weights, Roboflow projects (e.g. active-learning targets,
+dataset-upload destinations) or third-party hosted models (OpenAI, Anthropic,
+OpenRouter, ...). Until a workflow actually executes, nothing in the system
+knows which resources it will need.</p>
+<p>Overriding <code>discover_dependent_resources()</code> on the block manifest closes that
+gap: the method is called on the <strong>parsed manifest instance</strong>, so it can
+compute the declaration from the concrete field values of a given step. That
+lets callers enumerate the resources of a whole workflow statically — at
+compile time, without executing anything — which enables use cases such as
+pre-loading model weights for predictable execution times or verifying
+upfront that an API key has access to every referenced model and project.</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">discover_dependent_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">DependentResource</span><span class="p">]]:</span>
+    <span class="o">...</span>
+</code></pre></div>
+<p>The default returns <code>None</code>, which means the block <strong>does not declare</strong> its
+dependencies — callers must treat it as <em>unknown</em>. That is deliberately
+distinct from <code>[]</code>, which positively declares that the block needs no
+external resources. Existing blocks need no changes; blocks that use
+resources should override.</p>
+<h4 id="the-resource-envelope">The resource envelope<a class="headerlink" href="#the-resource-envelope" title="Permanent link">&para;</a></h4>
+<p>Blocks do not invent resource shapes — the envelope is regulated by the
+Execution Engine. A <code>DependentResource</code> pairs a <code>resource_type</code> with a typed
+(pydantic) metadata entity registered for that type:</p>
+<ul>
+<li><code>DependentResourceType.ROBOFLOW_PLATFORM_MODEL</code> →
+  <code>RoboflowPlatformModelMetadata(model_id, required_action, execution_location)</code>
+  — models served through the Roboflow platform, including foundation /
+  core models with synthesized ids (e.g. <code>clip/ViT-B-32</code>). <code>required_action</code>
+  states the nature of usage: <code>ModelRequiredAction.EXECUTION</code> (weights are
+  pulled or inference is requested) or <code>ModelRequiredAction.ACCESS</code> (the
+  model entity only needs to be reachable on the platform — e.g. a
+  monitoring sink attaching metadata to it). For execution,
+  <code>execution_location</code> is <code>LOCAL</code>, <code>REMOTE</code>, or <code>ENVIRONMENT_DEFINED</code> when
+  the locality is decided at runtime by <code>WORKFLOWS_STEP_EXECUTION_MODE</code> and
+  cannot be determined at compile time (the default for model blocks that
+  dispatch on step execution mode).</li>
+<li><code>DependentResourceType.ROBOFLOW_PLATFORM_PROJECT</code> →
+  <code>RoboflowPlatformProjectMetadata(project_url)</code> — Roboflow projects the
+  block reads from or writes to.</li>
+<li><code>DependentResourceType.THIRD_PARTY_MODEL</code> →
+  <code>ThirdPartyModelMetadata(provider, model_id)</code> — models executed by an
+  external provider; by definition remote execution.</li>
+</ul>
+<p>Factory helpers keep implementations one-liners: <code>roboflow_platform_model()</code>,
+<code>roboflow_platform_project()</code>, <code>third_party_model()</code>.</p>
+<h4 id="selector-values-and-runtime-resolution">Selector values and runtime resolution<a class="headerlink" href="#selector-values-and-runtime-resolution" title="Permanent link">&para;</a></h4>
+<p>Manifest fields may hold workflow selectors instead of concrete values. The
+declaration returns such values <strong>verbatim</strong> — the block never resolves
+selectors. Callers can substitute <code>$inputs.&lt;name&gt;</code> references once runtime
+parameters are known; <code>$steps.&lt;name&gt;.&lt;property&gt;</code> references are not
+statically resolvable at all. Every metadata entity exposes
+<code>requires_runtime_resolution()</code> so callers can tell a concrete identifier
+from a reference that still needs resolving.</p>
+<p>When the final identifier is a <em>function</em> of the field value (a family
+prefix like <code>clip/&lt;version&gt;</code>, a catalog lookup), the substituted input value
+alone is not the executed id. Such declarations attach a
+<strong><code>model_id_resolver</code></strong> — a callable with everything it needs latched in its
+closure — that turns the substituted value into the final id. The resolver
+is an in-process aid only: it is excluded from serialization, JSON schema
+and equality. In-process callers (e.g. the engine's first-run pre-loading)
+invoke it after substituting the input value. A resolver may return <code>None</code>
+to declare the value statically unresolvable (the final id depends on more
+than that one value) — callers skip such dependencies and execution resolves
+them; raising means the value is genuinely invalid.</p>
+<h4 id="mirror-what-run-loads">Mirror what <code>run()</code> loads<a class="headerlink" href="#mirror-what-run-loads" title="Permanent link">&para;</a></h4>
+<p>The declared identifier must be exactly the one <code>run()</code> will request —
+including ids synthesized from version fields. If your block builds
+<code>f"my_family/{self.version}"</code> at the <code>load_core_model(...)</code> call site, the
+declaration must build the same id (and fall back to the verbatim selector
+when the version field holds one).</p>
+<h4 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h4>
+<p>A model block declaring its model and an optional active-learning target
+project:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.workflows.prototypes.block</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DependentResource</span><span class="p">,</span>
+    <span class="n">WorkflowBlockManifest</span><span class="p">,</span>
+    <span class="n">roboflow_platform_model</span><span class="p">,</span>
+    <span class="n">roboflow_platform_project</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockManifest</span><span class="p">(</span><span class="n">WorkflowBlockManifest</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">discover_dependent_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">DependentResource</span><span class="p">]]:</span>
+        <span class="n">resources</span> <span class="o">=</span> <span class="p">[</span><span class="n">roboflow_platform_model</span><span class="p">(</span><span class="n">model_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">model_id</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">active_learning_target_dataset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">resources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">roboflow_platform_project</span><span class="p">(</span>
+                    <span class="n">project_url</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">active_learning_target_dataset</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">resources</span>
+</code></pre></div>
+<p>A block whose model id is synthesized from a version field:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.workflows.prototypes.block</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DependentResource</span><span class="p">,</span>
+    <span class="n">WorkflowBlockManifest</span><span class="p">,</span>
+    <span class="n">is_workflow_selector</span><span class="p">,</span>
+    <span class="n">roboflow_platform_model</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockManifest</span><span class="p">(</span><span class="n">WorkflowBlockManifest</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">discover_dependent_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">DependentResource</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="n">is_workflow_selector</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">version</span><span class="p">):</span>
+            <span class="c1"># Selector returned verbatim; the resolver produces the final id</span>
+            <span class="c1"># once the input value is substituted.</span>
+            <span class="k">return</span> <span class="p">[</span>
+                <span class="n">roboflow_platform_model</span><span class="p">(</span>
+                    <span class="n">model_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">version</span><span class="p">,</span>
+                    <span class="n">model_id_resolver</span><span class="o">=</span><span class="k">lambda</span> <span class="n">version</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;clip/</span><span class="si">{</span><span class="n">version</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">roboflow_platform_model</span><span class="p">(</span><span class="n">model_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;clip/</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">version</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)]</span>
+</code></pre></div>
+<p>A sink that only references a model entity without executing it:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.workflows.prototypes.block</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DependentResource</span><span class="p">,</span>
+    <span class="n">ModelRequiredAction</span><span class="p">,</span>
+    <span class="n">WorkflowBlockManifest</span><span class="p">,</span>
+    <span class="n">roboflow_platform_model</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockManifest</span><span class="p">(</span><span class="n">WorkflowBlockManifest</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">discover_dependent_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">DependentResource</span><span class="p">]]:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">roboflow_platform_model</span><span class="p">(</span>
+                <span class="n">model_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">model_id</span><span class="p">,</span>
+                <span class="n">required_action</span><span class="o">=</span><span class="n">ModelRequiredAction</span><span class="o">.</span><span class="n">ACCESS</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">]</span>
+</code></pre></div>
+<h4 id="when-not-to-declare">When not to declare<a class="headerlink" href="#when-not-to-declare" title="Permanent link">&para;</a></h4>
+<p>Fields that merely <em>carry</em> a model-id- or project-kind value as generic
+payload (e.g. a webhook sink forwarding values as query parameters) are not
+resource dependencies — such blocks intentionally keep the default. </p>
+<p>Contributors to core repository should acknowledge that unit test 
+(<code>tests/workflows/unit_tests/core_steps/test_dependent_resources.py</code>)
+guards the boundary: every core block whose manifest declares a field with
+the <code>roboflow_model_id</code> or <code>roboflow_project</code> kind must either override
+<code>discover_dependent_resources()</code> or be explicitly allowlisted as
+carry-only.</p>
+<p>Blocks that load their model weights <strong>outside the model manager</strong> (verify
+what <code>run()</code> actually does, not whether <code>model_manager</code> appears among init
+parameters) should not implement the method for now — their dependencies
+stay undeclared (<code>None</code>).</p>
+<p>Custom python blocks always report <code>None</code>: their code is opaque to static
+analysis, so <em>unknown</em> is the only honest answer.</p>
 
 
 

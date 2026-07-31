@@ -110,6 +110,18 @@ High-level inference interfaces: camera, HTTP, and stream processing.
 
 ::: inference.core.interfaces.camera.entities
 
+::: inference.core.interfaces.camera.gstreamer_rtsp_pipeline
+
+::: inference.core.interfaces.camera.gstreamer_rtsp_producer
+
+::: inference.core.interfaces.camera.rtsp_opencv_tls
+
+::: inference.core.interfaces.camera.rtsp_tls
+
+::: inference.core.interfaces.camera.stream_error_classifier
+
+::: inference.core.interfaces.camera.stream_error_codes
+
 ::: inference.core.interfaces.camera.utils
 
 ::: inference.core.interfaces.camera.video_source
@@ -242,6 +254,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.utils.preprocess
 
+::: inference.core.utils.regions
+
 ::: inference.core.utils.rle_to_polygon
 
 ::: inference.core.utils.sqlite_wrapper
@@ -366,6 +380,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.models.foundation.google_gemini.v3
 
+::: inference.core.workflows.core_steps.models.foundation.google_gemini.v4
+
 ## `core/workflows/core_steps/models/foundation/openai`
 
 ::: inference.core.workflows.core_steps.models.foundation.openai.v3
@@ -470,6 +486,18 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.visualizations.common.annotators.polygon
 
+## `core/workflows/core_steps/visualizations/common/fonts`
+
+::: inference.core.workflows.core_steps.visualizations.common.fonts.downloader
+
+::: inference.core.workflows.core_steps.visualizations.common.fonts.registry
+
+::: inference.core.workflows.core_steps.visualizations.common.fonts.schema
+
+## `core/workflows/core_steps/visualizations/common`
+
+::: inference.core.workflows.core_steps.visualizations.common.label_text
+
 ## `core/workflows/core_steps/visualizations/text_display`
 
 ::: inference.core.workflows.core_steps.visualizations.text_display.utils
@@ -499,6 +527,10 @@ Workflow execution engine entry points and helpers.
 ::: inference.core.workflows.execution_engine.v1.compiler.graph_traversal
 
 ::: inference.core.workflows.execution_engine.v1.compiler.syntactic_parser
+
+## `core/workflows/execution_engine/v1`
+
+::: inference.core.workflows.execution_engine.v1.core
 
 ## `core/workflows/execution_engine/v1/dynamic_blocks`
 
