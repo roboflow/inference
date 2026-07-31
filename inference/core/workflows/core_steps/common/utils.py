@@ -486,9 +486,11 @@ def scale_sv_detections(
                     for detection_mask in detections_copy.mask
                 ]
             )
-        # Stale RLE is no longer valid in the scaled coordinate frame.
-        if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
-            del detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
+            # RLE from the source frame no longer matches the resized masks.
+            # Only drop it when a resize actually happened - no-op scales must
+            # keep it, because the RLE-kind serializer requires `rle_mask`.
+            if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
+                del detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
 
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
         polygons = detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS]

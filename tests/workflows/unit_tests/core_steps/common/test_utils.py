@@ -1374,6 +1374,34 @@ def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
     assert result.mask.shape == (1, 50, 50)
 
 
+def test_scale_sv_detections_keeps_rle_when_scale_is_noop() -> None:
+    """No-op scale (e.g. root-coordinates pass with scaling key == 1.0) must not
+    strip `rle_mask` - the RLE-kind output serializer requires it."""
+    # given
+    mask = np.zeros((100, 100), dtype=bool)
+    mask[20:40, 20:40] = True
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+            "rle_mask": np.array([{"size": [100, 100], "counts": "x"}], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=1.0)
+
+    # then
+    assert "rle_mask" in result.data
+    assert result.mask.shape == (1, 100, 100)
+    assert np.array_equal(result.mask, detections.mask)
+
+
 def test_remove_unexpected_keys_from_dictionary_when_empty_dict_given() -> None:
     # when
     result = remove_unexpected_keys_from_dictionary(
