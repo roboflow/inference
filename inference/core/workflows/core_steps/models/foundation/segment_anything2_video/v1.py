@@ -61,11 +61,13 @@ from inference.core.workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
@@ -220,6 +222,9 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2video/large",
             "sam3trackervideo",
         ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_id)]
 
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):

@@ -10,6 +10,39 @@ Add user-facing compile or execution behavior changes here. Maintainers replace
 this heading with the Execution Engine and inference versions when releasing.
 
 
+## Execution Engine `v1.14.0` | inference `1.3.8`
+
+**What changed**
+
+* **Blocks can declare their dependent resources** — `WorkflowBlockManifest` gains
+  an instance method `discover_dependent_resources() -> Optional[List[DependentResource]]`
+  that lets a parsed step declare the external resources its execution will use,
+  so callers (platform, preloading and auth pre-flight tooling) can enumerate
+  them statically from a workflow definition. The envelope is regulated by the
+  Execution Engine: resource types `roboflow_platform_model`,
+  `roboflow_platform_project` and `third_party_model`, each with a typed,
+  serializable (pydantic) metadata entity. Platform-model entries additionally
+  state the nature of usage: `required_action` (`access` — the model entity only
+  needs to be reachable on the platform, vs `execution` — the model is executed)
+  and, for execution, `execution_location` (`local` / `remote` /
+  `environment_defined` when the locality is decided at runtime by
+  `WORKFLOWS_STEP_EXECUTION_MODE`). Returning `None` (the default) means the
+  block does not declare its dependencies — distinct from `[]`, which declares
+  that no external resources are needed. Field values that are workflow
+  selectors (`$inputs.<name>` / `$steps.<name>.<property>`) are reported
+  verbatim; each metadata entity exposes `requires_runtime_resolution()` to
+  tell such references apart from concrete identifiers. All core blocks that
+  reference models, Roboflow projects or third-party hosted models implement
+  the method, and each implementation mirrors the model identifier that
+  `run()` actually loads (including ids synthesized from version fields, e.g.
+  `clip/<version>`).
+
+* **Dynamic (custom python) blocks report unknown dependencies** — manifests
+  synthesized for dynamic blocks return `None` from
+  `discover_dependent_resources()`: the python body is opaque to static
+  analysis, so "unknown" is the only honest answer.
+
+
 ## Execution Engine `v1.13.0` | inference `v1.3.7`
 
 **What changed**

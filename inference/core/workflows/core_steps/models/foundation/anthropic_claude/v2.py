@@ -32,8 +32,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 
 CLAUDE_MODELS = [
@@ -337,6 +340,22 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector — the final id requires the
+            # EXACT_MODEL_VERSIONS lookup after substitution; returned verbatim.
+            return [
+                third_party_model(provider="anthropic", model_id=self.model_version)
+            ]
+        return [
+            third_party_model(
+                provider="anthropic",
+                model_id=EXACT_MODEL_VERSIONS.get(
+                    self.model_version, self.model_version
+                ),
+            )
+        ]
 
 
 class AnthropicClaudeBlockV2(WorkflowBlock):

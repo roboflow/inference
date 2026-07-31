@@ -5,6 +5,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.env import (
+    CLIP_VERSION_ID,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
@@ -37,8 +38,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -107,6 +110,12 @@ class BlockManifest(WorkflowBlockManifest):
         )
 
         return list(CLIP_CACHE_MODEL_IDS)
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # No version field on this manifest — run() uses the server-level
+        # default CLIP variant, so the dependency is server-configuration
+        # relative.
+        return [roboflow_platform_model(model_id=f"clip/{CLIP_VERSION_ID}")]
 
 
 class ClipComparisonBlockV1(WorkflowBlock):

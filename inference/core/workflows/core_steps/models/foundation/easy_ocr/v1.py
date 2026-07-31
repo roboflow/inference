@@ -37,8 +37,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
@@ -156,6 +158,14 @@ class BlockManifest(WorkflowBlockManifest):
             "easy_ocr/telugu_g2",
             "easy_ocr/zh_sim_g2",
         ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # `language` is a pure Literal (no selector support), so the id run()
+        # will load is statically known: `easy_ocr/<version>` with the version
+        # token taken from the MODELS map. `quantize` does not change the
+        # loaded model id.
+        version, _ = MODELS[self.language]
+        return [roboflow_platform_model(model_id=f"easy_ocr/{version}")]
 
 
 class EasyOCRBlockV1(WorkflowBlock):

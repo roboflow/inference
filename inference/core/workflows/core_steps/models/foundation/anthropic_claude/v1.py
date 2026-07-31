@@ -33,8 +33,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -248,6 +251,21 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector — the final id requires the
+            # EXACT_MODELS_VERSIONS_MAPPING lookup after substitution;
+            # returned verbatim.
+            return [
+                third_party_model(provider="anthropic", model_id=self.model_version)
+            ]
+        return [
+            third_party_model(
+                provider="anthropic",
+                model_id=EXACT_MODELS_VERSIONS_MAPPING[self.model_version],
+            )
+        ]
 
 
 class AnthropicClaudeBlockV1(WorkflowBlock):

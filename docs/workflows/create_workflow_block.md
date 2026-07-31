@@ -2375,3 +2375,160 @@ Restrictions declared this way are surfaced in three places:
    compatibility" section right after **Properties**.
 3. The execution engine, which can choose to fail-fast on `Severity.HARD`
    restrictions for the current runtime.
+
+### Declaring dependent resources
+
+Many blocks require external resources when they run: Roboflow-trained or
+foundation model weights, Roboflow projects (e.g. active-learning targets,
+dataset-upload destinations) or third-party hosted models (OpenAI, Anthropic,
+OpenRouter, ...). Until a workflow actually executes, nothing in the system
+knows which resources it will need.
+
+Overriding `discover_dependent_resources()` on the block manifest closes that
+gap: the method is called on the **parsed manifest instance**, so it can
+compute the declaration from the concrete field values of a given step. That
+lets callers enumerate the resources of a whole workflow statically — at
+compile time, without executing anything — which enables use cases such as
+pre-loading model weights for predictable execution times or verifying
+upfront that an API key has access to every referenced model and project.
+
+```python
+def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+    ...
+```
+
+The default returns `None`, which means the block **does not declare** its
+dependencies — callers must treat it as *unknown*. That is deliberately
+distinct from `[]`, which positively declares that the block needs no
+external resources. Existing blocks need no changes; blocks that use
+resources should override.
+
+#### The resource envelope
+
+Blocks do not invent resource shapes — the envelope is regulated by the
+Execution Engine. A `DependentResource` pairs a `resource_type` with a typed
+(pydantic) metadata entity registered for that type:
+
+* `DependentResourceType.ROBOFLOW_PLATFORM_MODEL` →
+  `RoboflowPlatformModelMetadata(model_id, required_action, execution_location)`
+  — models served through the Roboflow platform, including foundation /
+  core models with synthesized ids (e.g. `clip/ViT-B-32`). `required_action`
+  states the nature of usage: `ModelRequiredAction.EXECUTION` (weights are
+  pulled or inference is requested) or `ModelRequiredAction.ACCESS` (the
+  model entity only needs to be reachable on the platform — e.g. a
+  monitoring sink attaching metadata to it). For execution,
+  `execution_location` is `LOCAL`, `REMOTE`, or `ENVIRONMENT_DEFINED` when
+  the locality is decided at runtime by `WORKFLOWS_STEP_EXECUTION_MODE` and
+  cannot be determined at compile time (the default for model blocks that
+  dispatch on step execution mode).
+* `DependentResourceType.ROBOFLOW_PLATFORM_PROJECT` →
+  `RoboflowPlatformProjectMetadata(project_url)` — Roboflow projects the
+  block reads from or writes to.
+* `DependentResourceType.THIRD_PARTY_MODEL` →
+  `ThirdPartyModelMetadata(provider, model_id)` — models executed by an
+  external provider; by definition remote execution.
+
+Factory helpers keep implementations one-liners: `roboflow_platform_model()`,
+`roboflow_platform_project()`, `third_party_model()`.
+
+#### Selector values and runtime resolution
+
+Manifest fields may hold workflow selectors instead of concrete values. The
+declaration returns such values **verbatim** — the block never resolves
+selectors. Callers can substitute `$inputs.<name>` references once runtime
+parameters are known; `$steps.<name>.<property>` references are not
+statically resolvable at all. Every metadata entity exposes
+`requires_runtime_resolution()` so callers can tell a concrete identifier
+from a reference that still needs resolving.
+
+#### Mirror what `run()` loads
+
+The declared identifier must be exactly the one `run()` will request —
+including ids synthesized from version fields. If your block builds
+`f"my_family/{self.version}"` at the `load_core_model(...)` call site, the
+declaration must build the same id (and fall back to the verbatim selector
+when the version field holds one).
+
+#### Examples
+
+A model block declaring its model and an optional active-learning target
+project:
+
+```python
+from inference.core.workflows.prototypes.block import (
+    DependentResource,
+    WorkflowBlockManifest,
+    roboflow_platform_model,
+    roboflow_platform_project,
+)
+
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        resources = [roboflow_platform_model(model_id=self.model_id)]
+        if self.active_learning_target_dataset is not None:
+            resources.append(
+                roboflow_platform_project(
+                    project_url=self.active_learning_target_dataset
+                )
+            )
+        return resources
+```
+
+A block whose model id is synthesized from a version field:
+
+```python
+from inference.core.workflows.prototypes.block import (
+    DependentResource,
+    WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
+)
+
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            return [roboflow_platform_model(model_id=self.version)]
+        return [roboflow_platform_model(model_id=f"clip/{self.version}")]
+```
+
+A sink that only references a model entity without executing it:
+
+```python
+from inference.core.workflows.prototypes.block import (
+    DependentResource,
+    ModelRequiredAction,
+    WorkflowBlockManifest,
+    roboflow_platform_model,
+)
+
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [
+            roboflow_platform_model(
+                model_id=self.model_id,
+                required_action=ModelRequiredAction.ACCESS,
+            )
+        ]
+```
+
+#### When not to declare
+
+Fields that merely *carry* a model-id- or project-kind value as generic
+payload (e.g. a webhook sink forwarding values as query parameters) are not
+resource dependencies — such blocks intentionally keep the default. 
+
+Contributors to core repository should acknowledge that unit test 
+(`tests/workflows/unit_tests/core_steps/test_dependent_resources.py`)
+guards the boundary: every core block whose manifest declares a field with
+the `roboflow_model_id` or `roboflow_project` kind must either override
+`discover_dependent_resources()` or be explicitly allowlisted as
+carry-only.
+
+Custom python blocks always report `None`: their code is opaque to static
+analysis, so *unknown* is the only honest answer.

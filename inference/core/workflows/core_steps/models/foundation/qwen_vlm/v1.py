@@ -67,7 +67,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
+    third_party_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -702,6 +706,38 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         block can run, so the workspace model picker shows Qwen3 fine-tunes.
         """
         return NATIVE_SUPPORTED_VARIANTS
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Mirrors the model-id resolution performed in `run()`.
+        if self.backend == "openrouter":
+            if is_workflow_selector(self.openrouter_model_version):
+                # Friendly-label selector — the final id requires the
+                # MODEL_VARIANTS lookup after substitution; returned verbatim.
+                return [
+                    third_party_model(
+                        provider="openrouter",
+                        model_id=self.openrouter_model_version,
+                    )
+                ]
+            return [
+                third_party_model(
+                    provider="openrouter",
+                    model_id=MODEL_VARIANTS[self.openrouter_model_version]["model_id"],
+                )
+            ]
+        if self.model_version == FINE_TUNED_NATIVE_LABEL:
+            if not self.fine_tuned_model_id:
+                return []
+            return [roboflow_platform_model(model_id=self.fine_tuned_model_id)]
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector — the final id requires the
+            # MODEL_VARIANTS lookup after substitution; returned verbatim.
+            return [roboflow_platform_model(model_id=self.model_version)]
+        return [
+            roboflow_platform_model(
+                model_id=MODEL_VARIANTS[self.model_version]["model_id"]
+            )
+        ]
 
 
 # ---------------------------------------------------------------------------

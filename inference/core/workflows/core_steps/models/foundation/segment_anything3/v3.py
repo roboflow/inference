@@ -60,11 +60,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -250,6 +252,11 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return ["sam3/sam3_final"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if self.model_id is None:
+            return []
+        return [roboflow_platform_model(model_id=self.model_id)]
 
 
 class SegmentAnything3BlockV3(WorkflowBlock):

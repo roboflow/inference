@@ -32,8 +32,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
@@ -140,6 +142,13 @@ class BlockManifest(WorkflowBlockManifest):
             "pp_ocr/medium-medium",
             "pp_ocr/small-none",
             "pp_ocr/none-small",
+        ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [
+            roboflow_platform_model(
+                model_id=f"pp_ocr/{self.text_detection}-{self.text_recognition}"
+            )
         ]
 
 

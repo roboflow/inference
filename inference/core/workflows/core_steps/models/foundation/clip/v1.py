@@ -28,8 +28,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -97,6 +100,13 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return list(CLIP_CACHE_MODEL_IDS)
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # The final id is `clip/<substituted version>` — the selector is
+            # returned verbatim, callers substitute and apply the family prefix.
+            return [roboflow_platform_model(model_id=self.version)]
+        return [roboflow_platform_model(model_id=f"clip/{self.version}")]
 
 
 # All CLIP model_id cache paths.  Shared with clip_comparison blocks.

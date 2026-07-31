@@ -34,8 +34,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.iterables import make_batches
@@ -132,6 +135,14 @@ class BlockManifest(WorkflowBlockManifest):
             "yolo_world/l",
             "yolo_world/x",
         ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # The final id is `yolo_world/<substituted version>` — the selector
+            # is returned verbatim, callers substitute and apply the family
+            # prefix.
+            return [roboflow_platform_model(model_id=self.version)]
+        return [roboflow_platform_model(model_id=f"yolo_world/{self.version}")]
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):

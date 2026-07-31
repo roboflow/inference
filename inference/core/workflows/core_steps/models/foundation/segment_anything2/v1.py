@@ -49,11 +49,14 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -182,6 +185,13 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2/hiera_tiny",
             "sam2/hiera_b_plus",
         ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # The final id is `sam2/<substituted version>` — the selector is
+            # returned verbatim, callers substitute and apply the family prefix.
+            return [roboflow_platform_model(model_id=self.version)]
+        return [roboflow_platform_model(model_id=f"sam2/{self.version}")]
 
 
 class SegmentAnything2BlockV1(WorkflowBlock):
