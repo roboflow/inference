@@ -20,6 +20,7 @@ from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -139,6 +140,24 @@ def test_video_source_throwing_error_when_invalid_video_reference_given() -> Non
     # when
     with pytest.raises(SourceConnectionError):
         source.start()
+
+
+def test_video_source_connection_error_uses_underlying_producer_message() -> None:
+    source = VideoSource.init(video_reference="rtsp://camera.example/stream")
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = (
+            "401 Unauthorized"
+        )
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    assert exc_info.value.code == StreamErrorCode.STREAM_AUTH_FAILED
+    assert "401 Unauthorized" in str(exc_info.value)
+    assert exc_info.value.source_reference == "rtsp://camera.example/stream"
 
 
 def test_video_source_describe_source_when_stream_consumption_not_yet_started() -> None:
