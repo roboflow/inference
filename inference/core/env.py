@@ -10,6 +10,10 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
+from inference.core.utils.regions import (
+    get_roboflow_region,
+    resolve_roboflow_service_url,
+)
 from inference.core.warnings import (
     InferenceConfigurationWarning,
     InferenceDeprecationWarning,
@@ -38,6 +42,9 @@ if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
 
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
+
+# Selected Roboflow region ("us" or "eu"), default is "us"
+ROBOFLOW_REGION = get_roboflow_region()
 
 # Allow numpy input, default is False
 ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", False))
@@ -88,11 +95,7 @@ ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
 # Base URL for the API
 API_BASE_URL = os.getenv(
     "API_BASE_URL",
-    (
-        "https://api.roboflow.com"
-        if PROJECT == "roboflow-platform"
-        else "https://api.roboflow.one"
-    ),
+    resolve_roboflow_service_url("api", region=ROBOFLOW_REGION, project=PROJECT),
 )
 API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
 
@@ -689,7 +692,10 @@ MODEL_ID = os.getenv("MODEL_ID")
 
 # Enable the builder, default is False
 ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
-BUILDER_ORIGIN = os.getenv("BUILDER_ORIGIN", "https://app.roboflow.com")
+BUILDER_ORIGIN = os.getenv(
+    "BUILDER_ORIGIN",
+    resolve_roboflow_service_url("app", region=ROBOFLOW_REGION, project=PROJECT),
+)
 
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
