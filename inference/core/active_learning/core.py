@@ -137,9 +137,7 @@ def prepare_image_to_registration(
     final_size_wh = (int(image.shape[1]), int(image.shape[0]))
     # Height ratio kept for Active Learning callers that still expect a single factor.
     scaling_factor = (
-        1.0
-        if original_size_wh[1] <= 0
-        else final_size_wh[1] / original_size_wh[1]
+        1.0 if original_size_wh[1] <= 0 else final_size_wh[1] / original_size_wh[1]
     )
     return PreparedRegistrationImage(
         encoded_image=encode_image_to_jpeg_bytes(

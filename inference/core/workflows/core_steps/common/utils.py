@@ -427,9 +427,7 @@ def scale_sv_detections(
     # Metadata fields historically store a single factor; use X when isotropic,
     # otherwise the mean (dataset-upload consumers serialize immediately and do
     # not rely on undoing this via root-coordinate recovery).
-    scale_meta = (
-        scale_x if abs(scale_x - scale_y) < 1e-9 else (scale_x + scale_y) / 2.0
-    )
+    scale_meta = scale_x if abs(scale_x - scale_y) < 1e-9 else (scale_x + scale_y) / 2.0
 
     xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
     xyxy[:, [0, 2]] *= scale_x
