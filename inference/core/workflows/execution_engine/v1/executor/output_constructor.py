@@ -505,7 +505,7 @@ def serialize_single_workflow_result_field(
     kinds_without_serializer = set()
     encountered_errors = []
     for single_kind in kind:
-        kind_name = single_kind.name if isinstance(single_kind, Kind) else kind
+        kind_name = single_kind.name if isinstance(single_kind, Kind) else single_kind
         serializer = kinds_serializers.get(kind_name)
         if serializer is None:
             kinds_without_serializer.add(kind_name)

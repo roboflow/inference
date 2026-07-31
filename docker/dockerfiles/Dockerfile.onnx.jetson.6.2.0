@@ -233,7 +233,7 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     git -C src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
-        "setuptools>=40.8.0" \
+        "setuptools~=83.0.0" \
         wheel \
         "cmake>=3.18,<4.0" \
         "ninja>=1.11.1" \
@@ -281,7 +281,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.easyocr.txt \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv
@@ -314,7 +314,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools<=75.5.0"
+        "setuptools~=83.0.0"
 
 # Compile OpenCV from source with GStreamer / FFmpeg / CUDA support.
 # The pip opencv-python wheel ships without GStreamer, which blocks

@@ -10,6 +10,7 @@ from requests import Response
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -19,10 +20,12 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    ROBOFLOW_MANAGED_KEY,
     SECRET_KIND,
     STRING_KIND,
     ImageInputField,
@@ -31,21 +34,94 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
-    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
-    third_party_model,
 )
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
 
-GEMINI_MODEL_ALIASES = {
+MODEL_ALIASES = {
     "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
 }
+
+GEMINI_MODELS = [
+    {
+        "id": "gemini-3.6-flash",
+        "name": "Gemini 3.6 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-3.5-flash",
+        "name": "Gemini 3.5 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-3.5-flash-lite",
+        "name": "Gemini 3.5 Flash-Lite",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-3.1-flash-lite",
+        "name": "Gemini 3.1 Flash-Lite",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-3-flash-preview",
+        "name": "Gemini 3 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-2.5-pro",
+        "name": "Gemini 2.5 Pro",
+        "supports_thinking_level": False,
+        "supports_native_code_execution": False,
+    },
+    {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "supports_thinking_level": False,
+        "supports_native_code_execution": False,
+    },
+    {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Gemini 2.5 Flash-Lite",
+        "supports_thinking_level": False,
+        "supports_native_code_execution": False,
+    },
+]
+
+MODEL_VERSION_IDS = [model["id"] for model in GEMINI_MODELS]
+
+MODEL_VERSION_METADATA = {
+    model["id"]: {"name": model["name"]} for model in GEMINI_MODELS
+}
+
+MODELS_SUPPORTING_THINKING_LEVEL = [
+    model["id"] for model in GEMINI_MODELS if model["supports_thinking_level"]
+]
+
+MODELS_SUPPORTING_NATIVE_CODE_EXECUTION = [
+    model["id"] for model in GEMINI_MODELS if model["supports_native_code_execution"]
+]
+
+MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
+    model["id"] for model in GEMINI_MODELS if not model["supports_thinking_level"]
+]
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -63,10 +139,18 @@ SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 RELEVANT_TASKS_METADATA = {
     k: v for k, v in VLM_TASKS_METADATA.items() if k in SUPPORTED_TASK_TYPES
 }
+RELEVANT_TASKS_METADATA["object-detection"] = {
+    "name": "Object Detection",
+    "description": "Model detects bounding boxes for the provided classes, "
+    "returning a Gemini-native `box_2d` JSON list (y_min, x_min, y_max, x_max "
+    "integers normalized to 0-1000). Parse the output with "
+    "`roboflow_core/vlm_as_detector@v2`.",
+}
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
+
 LONG_DESCRIPTION = f"""
 Ask a question to Google's Gemini model with vision capabilities.
 
@@ -74,11 +158,22 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Google AI API key to use the Gemini model. 
+### API Key Options
+
+This block supports two API key modes:
+
+1. **Roboflow Managed API Key (Default)** - Use `rf_key:account` to proxy requests through Roboflow's API:
+   * **Simplified setup** - no Google AI API key required
+   * **Secure** - your workflow API key is used for authentication
+   * **Usage-based billing** - charged per token based on the model used
+
+2. **Custom Google AI API Key** - Provide your own Google AI API key:
+   * Full control over API usage
+   * You pay Google directly
 
 **WARNING!**
 
-This block makes use of `/v1beta` API of Google Gemini model - the implementation may change 
+This block makes use of `/v1beta` API of Google Gemini model - the implementation may change
 in the future, without guarantee of backward compatibility.
 """
 
@@ -104,13 +199,12 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Google Gemini",
-            "version": "v1",
+            "version": "v4",
             "short_description": "Run Google's Gemini model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "Gemini", "Google"],
-            "beta": True,
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
@@ -122,7 +216,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemini@v1"]
+    type: Literal["roboflow_core/google_gemini@v4"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -131,9 +225,9 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v1",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v1",
-                "object-detection": "roboflow_core/vlm_as_detector@v1",
+                "classification": "roboflow_core/vlm_as_classifier@v2",
+                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
+                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
@@ -175,27 +269,44 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your Google AI API key",
-        examples=["xxx-xxx", "$inputs.google_api_key"],
+    api_key: Union[
+        Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
+    ] = Field(
+        default="rf_key:account",
+        description="Your Google AI API key or 'rf_key:account' to use Roboflow's managed API key",
+        examples=["rf_key:account", "xxx-xxx", "$inputs.google_api_key"],
         private=True,
     )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
-        Literal[
-            "gemini-3.1-pro-preview",
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-        ],
+        Literal[tuple(MODEL_VERSION_IDS)],
     ] = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.1-pro-preview",
         description="Model to be used",
-        examples=["gemini-2.5-pro", "$inputs.gemini_model"],
+        examples=["gemini-3.1-pro-preview", "$inputs.gemini_model"],
+        json_schema_extra={
+            "values_metadata": MODEL_VERSION_METADATA,
+        },
     )
-    max_tokens: int = Field(
-        default=450,
-        description="Maximum number of tokens the model can generate in it's response.",
+    thinking_level: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal["low", "high"],
+        ]
+    ] = Field(
+        default=None,
+        description="Controls the depth of internal reasoning for Gemini 3+ models. "
+        "'low' minimizes latency and cost (best for simple tasks), 'high' maximizes reasoning depth. "
+        "When unset, the Google API default for the selected model is used. "
+        "Only supported by Gemini 3 and newer models.",
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_THINKING_LEVEL,
+                    "required": False,
+                },
+            },
+        },
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
@@ -203,6 +314,31 @@ class BlockManifest(WorkflowBlockManifest):
         'random / "creative" the generations are.',
         ge=0.0,
         le=2.0,
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_NOT_SUPPORTING_THINKING_LEVEL,
+                    "required": False,
+                },
+            },
+        },
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens the model can generate in it's response. "
+        "If not specified, the model will use its default limit.",
+    )
+    google_code_execution: Optional[Union[bool, Selector(kind=[BOOLEAN_KIND])]] = Field(
+        default=False,
+        description="Enable native code execution for the Gemini model.",
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_NATIVE_CODE_EXECUTION,
+                    "required": False,
+                },
+            },
+        },
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
@@ -218,8 +354,8 @@ class BlockManifest(WorkflowBlockManifest):
     @field_validator("model_version", mode="before")
     @classmethod
     def validate_model_version(cls, value):
-        if isinstance(value, str) and value in GEMINI_MODEL_ALIASES:
-            return GEMINI_MODEL_ALIASES[value]
+        if isinstance(value, str) and value in MODEL_ALIASES:
+            return MODEL_ALIASES[value]
         return value
 
     @model_validator(mode="after")
@@ -258,11 +394,8 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
-    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
-        return [third_party_model(provider="google", model_id=self.model_version)]
 
-
-class GoogleGeminiBlockV1(WorkflowBlock):
+class GoogleGeminiBlockV4(WorkflowBlock):
 
     def __init__(
         self,
@@ -291,14 +424,17 @@ class GoogleGeminiBlockV1(WorkflowBlock):
         prompt: Optional[str],
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
-        api_key: str,
         model_version: str,
-        max_tokens: int,
+        max_tokens: Optional[int],
         temperature: Optional[float],
+        thinking_level: Optional[str],
+        google_code_execution: Optional[bool],
         max_concurrent_requests: Optional[int],
+        api_key: str = "rf_key:account",
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gemini_prompting(
+            roboflow_api_key=self._api_key,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -308,6 +444,8 @@ class GoogleGeminiBlockV1(WorkflowBlock):
             model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -316,15 +454,18 @@ class GoogleGeminiBlockV1(WorkflowBlock):
 
 
 def run_gemini_prompting(
+    roboflow_api_key: Optional[str],
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    google_api_key: Optional[str],
+    google_api_key: str,
     model_version: str,
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
+    thinking_level: Optional[str],
+    google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -340,11 +481,21 @@ def run_gemini_prompting(
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            model_version=model_version,
             temperature=temperature,
+            thinking_level=thinking_level,
             max_tokens=max_tokens,
         )
+
+        if (
+            google_code_execution
+            and model_version in MODELS_SUPPORTING_NATIVE_CODE_EXECUTION
+        ):
+            generated_prompt["tools"] = [{"code_execution": {}}]
+
         gemini_prompts.append(generated_prompt)
     return execute_gemini_requests(
+        roboflow_api_key=roboflow_api_key,
         google_api_key=google_api_key,
         gemini_prompts=gemini_prompts,
         model_version=model_version,
@@ -353,6 +504,7 @@ def run_gemini_prompting(
 
 
 def execute_gemini_requests(
+    roboflow_api_key: Optional[str],
     google_api_key: str,
     gemini_prompts: List[dict],
     model_version: str,
@@ -361,9 +513,10 @@ def execute_gemini_requests(
     tasks = [
         partial(
             execute_gemini_request,
+            roboflow_api_key=roboflow_api_key,
+            google_api_key=google_api_key,
             prompt=prompt,
             model_version=model_version,
-            google_api_key=google_api_key,
         )
         for prompt in gemini_prompts
     ]
@@ -378,10 +531,63 @@ def execute_gemini_requests(
 
 
 def execute_gemini_request(
+    roboflow_api_key: Optional[str],
+    google_api_key: str,
     prompt: dict,
     model_version: str,
-    google_api_key: str,
 ) -> str:
+    """Route to proxied or direct execution based on API key format."""
+    if google_api_key.startswith(("rf_key:account", "rf_key:user:")):
+        return _execute_proxied_gemini_request(
+            roboflow_api_key=roboflow_api_key,
+            google_api_key=google_api_key,
+            prompt=prompt,
+            model_version=model_version,
+        )
+    else:
+        return _execute_direct_gemini_request(
+            google_api_key=google_api_key,
+            prompt=prompt,
+            model_version=model_version,
+        )
+
+
+def _execute_proxied_gemini_request(
+    roboflow_api_key: str,
+    google_api_key: str,
+    prompt: dict,
+    model_version: str,
+) -> str:
+    """Execute Gemini request via Roboflow proxy."""
+    payload = {
+        "model": model_version,
+        "google_api_key": google_api_key,
+        **prompt,  # Contains contents, generationConfig, systemInstruction
+    }
+
+    endpoint = "apiproxy/gemini"
+
+    try:
+        response_data = post_to_roboflow_api(
+            endpoint=endpoint,
+            api_key=roboflow_api_key,
+            payload=payload,
+        )
+        return _extract_gemini_response_text(response_data)
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(
+            f"Invalid response structure from Roboflow proxy: {e}"
+        ) from e
+
+
+def _execute_direct_gemini_request(
+    google_api_key: str,
+    prompt: dict,
+    model_version: str,
+) -> str:
+    """Execute Gemini request directly to Google API."""
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
         headers={
@@ -389,17 +595,54 @@ def execute_gemini_request(
             "x-goog-api-key": google_api_key,
         },
         json=prompt,
+        timeout=120,
     )
     response_data = response.json()
     google_api_key_safe_raise_for_status(response=response)
-    return response_data["candidates"][0]["content"]["parts"][0]["text"]
+    return _extract_gemini_response_text(response_data)
+
+
+def _extract_gemini_response_text(response_data: dict) -> str:
+    """Extract text content from Gemini API response."""
+    if "candidates" not in response_data or not response_data["candidates"]:
+        raise ValueError("Gemini API returned no response candidates.")
+
+    candidate = response_data["candidates"][0]
+    finish_reason = candidate.get("finishReason", "FINISH_REASON_UNSPECIFIED")
+
+    if finish_reason == "MAX_TOKENS":
+        raise ValueError(
+            "Gemini API stopped generation because the max_tokens limit was reached. "
+            "Please increase the max_tokens parameter to allow for a complete response."
+        )
+
+    # Check for values different than natural stop or unspecified
+    if finish_reason not in ["STOP", "FINISH_REASON_UNSPECIFIED"]:
+        raise ValueError(
+            f"Gemini API stopped generation with finish reason: {finish_reason}."
+        )
+
+    try:
+        parts = candidate["content"]["parts"]
+        # If code execution is enabled there will be multiple parts (with "executableCode" and "inlineData" fields)
+        for part in parts:
+            if "text" in part:
+                return part["text"]
+
+        # Fallback if no parts are recognized
+        return parts[0]["text"]
+
+    except (KeyError, IndexError, TypeError):
+        raise ValueError("Unable to parse Gemini API response.")
 
 
 def prepare_unconstrained_prompt(
     base64_image: str,
     prompt: str,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     return {
@@ -420,6 +663,8 @@ def prepare_unconstrained_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
@@ -427,8 +672,10 @@ def prepare_unconstrained_prompt(
 def prepare_classification_prompt(
     base64_image: str,
     classes: List[str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     serialised_classes = ", ".join(classes)
@@ -463,6 +710,8 @@ def prepare_classification_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
@@ -471,8 +720,10 @@ def prepare_classification_prompt(
 def prepare_multi_label_classification_prompt(
     base64_image: str,
     classes: List[str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     serialised_classes = ", ".join(classes)
@@ -508,6 +759,8 @@ def prepare_multi_label_classification_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
@@ -516,8 +769,10 @@ def prepare_multi_label_classification_prompt(
 def prepare_vqa_prompt(
     base64_image: str,
     prompt: str,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     return {
@@ -548,14 +803,18 @@ def prepare_vqa_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
 
 def prepare_ocr_prompt(
     base64_image: str,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     return {
@@ -586,6 +845,8 @@ def prepare_ocr_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
@@ -593,8 +854,10 @@ def prepare_ocr_prompt(
 def prepare_caption_prompt(
     base64_image: str,
     short_description: bool,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     caption_detail_level = "Caption should be short."
@@ -627,6 +890,8 @@ def prepare_caption_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
@@ -634,8 +899,10 @@ def prepare_caption_prompt(
 def prepare_structured_answering_prompt(
     base64_image: str,
     output_structure: Dict[str, str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     output_structure_serialised = json.dumps(output_structure, indent=4)
@@ -668,6 +935,8 @@ def prepare_structured_answering_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
@@ -676,24 +945,58 @@ def prepare_structured_answering_prompt(
 def prepare_object_detection_prompt(
     base64_image: str,
     classes: List[str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
+    # Gemini is trained to localize with `box_2d` boxes as [y_min, x_min,
+    # y_max, x_max] integers normalized to 0-1000. Requesting any other
+    # coordinate convention (e.g. 0.0-1.0 floats) measurably degrades box
+    # quality and yields mixed pixel/normalized outputs.
     serialised_classes = ", ".join(classes)
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": "You act as object-detection model. You must provide reasonable predictions. "
-                    "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
-                    "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-                    "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user.",
-                }
-            ],
+    prompt_text = (
+        "Detect all objects in this image. "
+        "Output a JSON list where each entry contains the 2D bounding box "
+        'in the key "box_2d" and the text label in the key "label". '
+        'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
+        "between 0 and 1000, normalized to the image height and width. "
+        "Return only the JSON list, with no extra text. "
+        f"Only use these labels: {serialised_classes}"
+    )
+    generation_config = prepare_generation_config(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        thinking_level=thinking_level,
+        model_version=model_version,
+        response_mime_type="application/json",
+    )
+    generation_config["response_schema"] = {
+        "type": "ARRAY",
+        "items": {
+            "type": "OBJECT",
+            "properties": {
+                "box_2d": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "INTEGER",
+                        "minimum": 0,
+                        "maximum": 1000,
+                    },
+                    "minItems": 4,
+                    "maxItems": 4,
+                },
+                "label": {
+                    "type": "STRING",
+                    "enum": classes,
+                },
+            },
+            "required": ["box_2d", "label"],
+            "propertyOrdering": ["box_2d", "label"],
         },
+    }
+    return {
         "contents": {
             "parts": [
                 {
@@ -703,31 +1006,38 @@ def prepare_object_detection_prompt(
                     }
                 },
                 {
-                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                    "text": prompt_text,
                 },
             ],
             "role": "user",
         },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
+        "generationConfig": generation_config,
     }
 
 
 def prepare_generation_config(
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
+    thinking_level: Optional[str],
+    model_version: str,
     response_mime_type: str = "text/plain",
 ) -> dict:
     result = {
-        "max_output_tokens": max_tokens,
         "response_mime_type": response_mime_type,
         "candidate_count": 1,
     }
-    if temperature is not None:
+
+    if max_tokens is not None:
+        result["max_output_tokens"] = max_tokens
+
+    supports_thinking_level = model_version in MODELS_SUPPORTING_THINKING_LEVEL
+
+    if thinking_level is not None and supports_thinking_level:
+        result["thinking_config"] = {"thinking_level": thinking_level}
+
+    if temperature is not None and not supports_thinking_level:
         result["temperature"] = temperature
+
     return result
 
 

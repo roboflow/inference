@@ -127,7 +127,7 @@ def test_on_pipeline_end_when_profiling_disabled(empty_directory: str) -> None:
 
 
 @mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", True)
-def test_on_pipeline_end_when_profiling_disabled(empty_directory: str) -> None:
+def test_on_pipeline_end_when_profiling_enabled(empty_directory: str) -> None:
     # given
     profiler = MagicMock()
     profiler.export_trace.return_value = [{"my": "trace"}]
@@ -148,3 +148,39 @@ def test_on_pipeline_end_when_profiling_disabled(empty_directory: str) -> None:
     with open(json_files_in_directory[0], "r") as f:
         result = json.load(f)
     assert result == [{"my": "trace"}], "Expected dump to preserve content"
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", True)
+def test_on_pipeline_end_when_profiling_directory_readonly(
+    empty_directory: str,
+) -> None:
+    """Pipeline should stop cleanly even when profiling directory is read-only."""
+    # given
+    profiler = MagicMock()
+    profiler.export_trace.return_value = [{"my": "trace"}]
+    thread_pool_executor = ThreadPoolExecutor(max_workers=3)
+    read_only_dir = os.path.join(empty_directory, "readonly_profiling")
+
+    # Mock os.makedirs to raise OSError (read-only filesystem)
+    original_makedirs = os.makedirs
+
+    def mock_makedirs(name, *args, **kwargs):
+        if name == os.path.abspath(read_only_dir):
+            raise OSError(30, "Read-only file system", name)
+        return original_makedirs(name, *args, **kwargs)
+
+    # when
+    with mock.patch("os.makedirs", side_effect=mock_makedirs):
+        on_pipeline_end(
+            thread_pool_executor=thread_pool_executor,
+            cancel_thread_pool_tasks_on_exit=True,
+            profiler=profiler,
+            profiling_directory=read_only_dir,
+        )
+
+    # then - pipeline should still stop cleanly
+    assert thread_pool_executor._shutdown is True, "Expected pool executor to be closed"
+    # No profiling files should have been created
+    json_files_in_directory = glob(os.path.join(read_only_dir, "*.json"))
+    assert len(json_files_in_directory) == 0, "Expected no profiler trace saved on read-only FS"
+
