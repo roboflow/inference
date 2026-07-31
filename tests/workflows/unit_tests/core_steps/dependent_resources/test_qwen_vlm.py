@@ -95,6 +95,9 @@ def test_qwen_vlm_v1_native_selector_fed_model_version_is_returned_verbatim() ->
     resolver = resources[0].metadata.model_id_resolver
     assert resolver is not None
     assert resolver("Qwen 3.5 VL 2B") == "qwen3_5-2b"
+    # The fine-tuned sentinel is a valid runtime value whose final id depends
+    # on `fine_tuned_model_id` — statically unresolvable, never an error.
+    assert resolver(FINE_TUNED_NATIVE_LABEL) is None
 
 
 def test_qwen_vlm_v1_openrouter_default_label_resolves_to_catalog_slug() -> None:

@@ -244,9 +244,12 @@ class RoboflowPlatformModelMetadata(BaseModel):
     # In-process aid for callers resolving `$inputs`-fed declarations: a
     # closure turning the substituted input value into the final model id
     # (e.g. "ViT-B-16" -> "clip/ViT-B-16"), with everything it needs latched
-    # inside. Deliberately excluded from serialization, JSON schema and
-    # equality — it is not part of the envelope.
-    model_id_resolver: SkipJsonSchema[Optional[Callable[[str], str]]] = Field(
+    # inside. Returning None declares the value statically unresolvable (the
+    # final id depends on more than this one value) — callers must skip and
+    # let execution resolve it; raising means the value is invalid.
+    # Deliberately excluded from serialization, JSON schema and equality —
+    # it is not part of the envelope.
+    model_id_resolver: SkipJsonSchema[Optional[Callable[[str], Optional[str]]]] = Field(
         default=None, exclude=True, repr=False
     )
     # Extra kwargs the model manager registration requires for this model —
@@ -327,7 +330,7 @@ class ThirdPartyModelMetadata(BaseModel):
     provider: str
     model_id: str
     # See RoboflowPlatformModelMetadata.model_id_resolver — same contract.
-    model_id_resolver: SkipJsonSchema[Optional[Callable[[str], str]]] = Field(
+    model_id_resolver: SkipJsonSchema[Optional[Callable[[str], Optional[str]]]] = Field(
         default=None, exclude=True, repr=False
     )
 
@@ -402,7 +405,7 @@ def roboflow_platform_model(
     model_id: str,
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION,
     execution_location: Optional[ModelExecutionLocation] = None,
-    model_id_resolver: Optional[Callable[[str], str]] = None,
+    model_id_resolver: Optional[Callable[[str], Optional[str]]] = None,
     model_registration_kwargs: Optional[Dict[str, Any]] = None,
 ) -> DependentResource:
     metadata_kwargs: Dict[str, Any] = {
@@ -429,7 +432,7 @@ def roboflow_platform_project(project_url: str) -> DependentResource:
 def third_party_model(
     provider: str,
     model_id: str,
-    model_id_resolver: Optional[Callable[[str], str]] = None,
+    model_id_resolver: Optional[Callable[[str], Optional[str]]] = None,
 ) -> DependentResource:
     return DependentResource(
         resource_type=DependentResourceType.THIRD_PARTY_MODEL,

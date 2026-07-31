@@ -487,6 +487,35 @@ def test_runtime_resolution_applies_attached_model_id_resolver() -> None:
     )
 
 
+def test_runtime_resolution_skips_dependency_when_resolver_returns_none() -> None:
+    model_manager = MagicMock()
+    catalog = {"known-label": "provider/known"}
+
+    _resolve_and_pre_load_runtime_dependencies(
+        pending_dependencies=[
+            roboflow_platform_model(
+                model_id="$inputs.model",
+                model_id_resolver=lambda label: catalog.get(label),
+            ),
+            roboflow_platform_model(model_id="$inputs.other_model"),
+        ],
+        runtime_parameters={
+            "model": "statically-unresolvable-label",
+            "other_model": "my_project/3",
+        },
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # A resolver returning None declares the value statically unresolvable —
+    # the dependency is skipped without failing the run (execution resolves
+    # it); other dependencies still pre-load.
+    model_manager.add_model.assert_called_once_with(
+        model_id="my_project/3", api_key="api-key"
+    )
+
+
 def test_runtime_resolution_raises_runtime_input_error_when_resolver_fails() -> None:
     model_manager = MagicMock()
     catalog = {"known-label": "provider/known"}

@@ -239,6 +239,11 @@ def _resolve_and_pre_load_runtime_dependencies(
                     context="workflow_execution | runtime_input_validation",
                     inner_error=error,
                 ) from error
+            if resolved_value is None:
+                # Resolver declared the value statically unresolvable (the
+                # final id depends on more than this one input) — skip
+                # pre-loading and let execution resolve it.
+                continue
         if resolved_value in loaded_model_ids:
             continue
         loaded_model_ids.add(resolved_value)

@@ -82,8 +82,11 @@ this heading with the Execution Engine and inference versions when releasing.
   runtime parameters (with input defaults applied), applies the declaration's
   `model_id_resolver` when attached (so e.g. a substituted CLIP version
   pre-loads `clip/<version>`, exactly the id execution uses), and registers
-  the models whose identifiers became concrete. A submitted input value the
-  resolver cannot handle (e.g. an unknown catalog label) raises
+  the models whose identifiers became concrete. A resolver returning `None`
+  declares the substituted value statically unresolvable (e.g. Qwen's
+  fine-tuned sentinel label, whose final id depends on another input) — the
+  dependency is skipped and resolves at execution time; a submitted input
+  value the resolver cannot handle (e.g. an unknown catalog label) raises
   `RuntimeInputError`. Registration mirrors each block's actual loader:
   declarations may carry non-serializable `model_registration_kwargs`
   (e.g. `endpoint_type=CORE_MODEL` for CLIP / OCR / SAM2 / YOLO-World-style

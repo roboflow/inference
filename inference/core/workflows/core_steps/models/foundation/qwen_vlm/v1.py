@@ -736,11 +736,18 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         if is_workflow_selector(self.model_version):
             # Friendly-label selector returned verbatim; the attached resolver
             # performs the MODEL_VARIANTS lookup once the input value is
-            # substituted.
+            # substituted. The fine-tuned sentinel label is valid at runtime
+            # but its final id depends on `fine_tuned_model_id` — statically
+            # unresolvable, so the resolver returns None and pre-loading
+            # skips (execution resolves it).
             return [
                 roboflow_platform_model(
                     model_id=self.model_version,
-                    model_id_resolver=lambda label: MODEL_VARIANTS[label]["model_id"],
+                    model_id_resolver=lambda label: (
+                        MODEL_VARIANTS[label]["model_id"]
+                        if label in MODEL_VARIANTS
+                        else None
+                    ),
                 )
             ]
         return [

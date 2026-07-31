@@ -2448,7 +2448,10 @@ alone is not the executed id. Such declarations attach a
 closure — that turns the substituted value into the final id. The resolver
 is an in-process aid only: it is excluded from serialization, JSON schema
 and equality. In-process callers (e.g. the engine's first-run pre-loading)
-invoke it after substituting the input value.
+invoke it after substituting the input value. A resolver may return `None`
+to declare the value statically unresolvable (the final id depends on more
+than that one value) — callers skip such dependencies and execution resolves
+them; raising means the value is genuinely invalid.
 
 #### Mirror what `run()` loads
 
