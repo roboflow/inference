@@ -358,7 +358,14 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
-        return [third_party_model(provider="anthropic", model_id=self.model_version)]
+        return [
+            third_party_model(
+                provider="anthropic",
+                model_id=EXACT_MODEL_VERSIONS.get(
+                    self.model_version, self.model_version
+                ),
+            )
+        ]
 
 
 class AnthropicClaudeBlockV3(WorkflowBlock):

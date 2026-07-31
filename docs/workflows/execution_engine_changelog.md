@@ -9,17 +9,17 @@ Below you can find the changelog for Execution Engine.
 Add user-facing compile or execution behavior changes here. Maintainers replace
 this heading with the Execution Engine and inference versions when releasing.
 
+
+## Execution Engine `v1.14.0` | inference `1.3.8`
+
+**What changed**
+
 * **Output serialization accepts kinds declared as strings** — When an output kind was
   declared as a plain string (e.g. `"string"`) instead of a `Kind` object, output
   serialization crashed with `TypeError: unhashable type: 'list'`, surfacing as HTTP 500
   for the whole Workflow run. Such kinds are now resolved by name, so the matching
   serializer is applied (or the raw value is passed through when no serializer is
   registered for that kind).
-
-
-## Execution Engine `v1.14.0` | inference `1.3.8`
-
-**What changed**
 
 * **Blocks can declare their dependent resources** — `WorkflowBlockManifest` gains
   an instance method `discover_dependent_resources() -> Optional[List[DependentResource]]`
