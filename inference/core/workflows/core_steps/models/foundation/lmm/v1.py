@@ -43,11 +43,14 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -171,6 +174,18 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.lmm_type):
+            # LMM type fed by selector — provider/model unknown statically.
+            return None
+        if self.lmm_type == "gpt_4v":
+            return [
+                third_party_model(
+                    provider="openai", model_id=self.lmm_config.gpt_model_version
+                )
+            ]
+        return []
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
