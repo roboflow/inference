@@ -54,6 +54,11 @@ def test_perception_encoder_v1_selector_fed_version_is_returned_verbatim() -> No
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         roboflow_platform_model(model_id="$inputs.variant"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("PE-Core-B16-224") == "perception_encoder/PE-Core-B16-224"

@@ -147,6 +147,32 @@ def test_dependent_resource_round_trips_through_serialization() -> None:
         assert type(parsed.metadata) is type(resource.metadata)
 
 
+def test_model_id_resolver_is_excluded_from_serialization_and_equality() -> None:
+    plain = roboflow_platform_model(model_id="$inputs.variant")
+    with_resolver = roboflow_platform_model(
+        model_id="$inputs.variant",
+        model_id_resolver=lambda version: f"clip/{version}",
+    )
+
+    assert with_resolver == plain
+    assert with_resolver.to_dict() == plain.to_dict()
+    assert "model_id_resolver" not in with_resolver.to_dict()["metadata"]
+    assert with_resolver.metadata.model_id_resolver("ViT-B-16") == "clip/ViT-B-16"
+
+
+def test_third_party_model_id_resolver_follows_the_same_contract() -> None:
+    plain = third_party_model(provider="openrouter", model_id="$inputs.label")
+    with_resolver = third_party_model(
+        provider="openrouter",
+        model_id="$inputs.label",
+        model_id_resolver=lambda label: f"provider/{label}",
+    )
+
+    assert with_resolver == plain
+    assert "model_id_resolver" not in with_resolver.to_dict()["metadata"]
+    assert with_resolver.metadata.model_id_resolver("x") == "provider/x"
+
+
 def test_roboflow_platform_model_metadata_enforces_action_location_consistency() -> (
     None
 ):

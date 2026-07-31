@@ -66,9 +66,14 @@ def test_kimi_openrouter_v1_returns_selector_fed_model_version_verbatim() -> Non
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.kimi_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Kimi K2.5 - OpenRouter") == "moonshotai/kimi-k2.5"
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +123,11 @@ def test_kimi_openrouter_v2_returns_selector_fed_model_version_verbatim() -> Non
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.kimi_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Kimi K2.5 - OpenRouter") == "moonshotai/kimi-k2.5"

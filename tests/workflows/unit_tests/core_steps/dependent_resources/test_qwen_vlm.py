@@ -87,9 +87,14 @@ def test_qwen_vlm_v1_native_selector_fed_model_version_is_returned_verbatim() ->
         _build_payload(model_version="$inputs.qwen_variant")
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         roboflow_platform_model(model_id="$inputs.qwen_variant"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Qwen 3.5 VL 2B") == "qwen3_5-2b"
 
 
 def test_qwen_vlm_v1_openrouter_default_label_resolves_to_catalog_slug() -> None:
@@ -111,9 +116,14 @@ def test_qwen_vlm_v1_openrouter_selector_fed_label_is_returned_verbatim() -> Non
         )
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.qwen_label"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Qwen 3.6 27B") == "qwen/qwen3.6-27b"
 
 
 def test_qwen_vlm_v1_rejects_fine_tuned_sentinel_without_model_id() -> None:

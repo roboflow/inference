@@ -711,12 +711,16 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         # Mirrors the model-id resolution performed in `run()`.
         if self.backend == "openrouter":
             if is_workflow_selector(self.openrouter_model_version):
-                # Friendly-label selector — the final id requires the
-                # MODEL_VARIANTS lookup after substitution; returned verbatim.
+                # Friendly-label selector returned verbatim; the attached
+                # resolver performs the MODEL_VARIANTS lookup once the input
+                # value is substituted.
                 return [
                     third_party_model(
                         provider="openrouter",
                         model_id=self.openrouter_model_version,
+                        model_id_resolver=lambda label: MODEL_VARIANTS[label][
+                            "model_id"
+                        ],
                     )
                 ]
             return [
@@ -730,9 +734,15 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 return []
             return [roboflow_platform_model(model_id=self.fine_tuned_model_id)]
         if is_workflow_selector(self.model_version):
-            # Friendly-label selector — the final id requires the
-            # MODEL_VARIANTS lookup after substitution; returned verbatim.
-            return [roboflow_platform_model(model_id=self.model_version)]
+            # Friendly-label selector returned verbatim; the attached resolver
+            # performs the MODEL_VARIANTS lookup once the input value is
+            # substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.model_version,
+                    model_id_resolver=lambda label: MODEL_VARIANTS[label]["model_id"],
+                )
+            ]
         return [
             roboflow_platform_model(
                 model_id=MODEL_VARIANTS[self.model_version]["model_id"]

@@ -80,6 +80,11 @@ def test_clip_comparison_v2_selector_fed_version_is_returned_verbatim() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         roboflow_platform_model(model_id="$inputs.variant"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("ViT-B-16") == "clip/ViT-B-16"

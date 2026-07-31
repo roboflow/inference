@@ -57,6 +57,11 @@ def test_yolo_world_v1_selector_fed_version_is_returned_verbatim() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         roboflow_platform_model(model_id="$inputs.variant"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("v2-s") == "yolo_world/v2-s"

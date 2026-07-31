@@ -59,6 +59,11 @@ def test_qwen3_6_openrouter_v1_returns_selector_fed_model_version_verbatim() -> 
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.qwen_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Qwen 3.6 Flash - OpenRouter") == "qwen/qwen3.6-flash"

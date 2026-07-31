@@ -132,9 +132,17 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         if is_workflow_selector(self.model):
-            # Friendly-label selector — the final id requires the ENDPOINT
-            # lookup after substitution; returned verbatim.
-            return [third_party_model(provider="stability_ai", model_id=self.model)]
+            # Selector returned verbatim; the attached resolver mirrors run()'s
+            # coercion of unknown values to the "core" endpoint.
+            return [
+                third_party_model(
+                    provider="stability_ai",
+                    model_id=self.model,
+                    model_id_resolver=lambda value: (
+                        value if value in ENDPOINT else "core"
+                    ),
+                )
+            ]
         # run() coerces unset/unknown values to the "core" endpoint.
         return [
             third_party_model(

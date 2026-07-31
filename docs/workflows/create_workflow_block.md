@@ -2441,6 +2441,15 @@ statically resolvable at all. Every metadata entity exposes
 `requires_runtime_resolution()` so callers can tell a concrete identifier
 from a reference that still needs resolving.
 
+When the final identifier is a *function* of the field value (a family
+prefix like `clip/<version>`, a catalog lookup), the substituted input value
+alone is not the executed id. Such declarations attach a
+**`model_id_resolver`** — a callable with everything it needs latched in its
+closure — that turns the substituted value into the final id. The resolver
+is an in-process aid only: it is excluded from serialization, JSON schema
+and equality. In-process callers (e.g. the engine's first-run pre-loading)
+invoke it after substituting the input value.
+
 #### Mirror what `run()` loads
 
 The declared identifier must be exactly the one `run()` will request —
@@ -2491,7 +2500,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         if is_workflow_selector(self.version):
-            return [roboflow_platform_model(model_id=self.version)]
+            # Selector returned verbatim; the resolver produces the final id
+            # once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"clip/{version}",
+                )
+            ]
         return [roboflow_platform_model(model_id=f"clip/{self.version}")]
 ```
 

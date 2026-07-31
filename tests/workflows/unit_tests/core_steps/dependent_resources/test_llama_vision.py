@@ -74,9 +74,17 @@ def test_llama_vision_v1_returns_selector_fed_model_version_verbatim() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.llama_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert (
+        resolver("90B (Regular) - OpenRouter")
+        == "meta-llama/llama-3.2-90b-vision-instruct"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +142,11 @@ def test_llama_vision_v2_returns_selector_fed_model_version_verbatim() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.llama_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("11B - OpenRouter") == "meta-llama/llama-3.2-11b-vision-instruct"

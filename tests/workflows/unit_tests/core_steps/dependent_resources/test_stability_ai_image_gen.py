@@ -61,6 +61,12 @@ def test_stability_ai_image_gen_v1_coerces_explicit_none_to_core() -> None:
 def test_stability_ai_image_gen_v1_returns_selector_fed_model_verbatim() -> None:
     manifest = _build_manifest(model="$inputs.model")
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="stability_ai", model_id="$inputs.model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("ultra") == "ultra"
+    assert resolver("bogus-endpoint") == "core"

@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
@@ -240,6 +241,14 @@ class RoboflowPlatformModelMetadata(BaseModel):
     model_id: str
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION
     execution_location: Optional[ModelExecutionLocation] = None
+    # In-process aid for callers resolving `$inputs`-fed declarations: a
+    # closure turning the substituted input value into the final model id
+    # (e.g. "ViT-B-16" -> "clip/ViT-B-16"), with everything it needs latched
+    # inside. Deliberately excluded from serialization, JSON schema and
+    # equality — it is not part of the envelope.
+    model_id_resolver: SkipJsonSchema[Optional[Callable[[str], str]]] = Field(
+        default=None, exclude=True, repr=False
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -283,6 +292,18 @@ class RoboflowPlatformModelMetadata(BaseModel):
     def requires_runtime_resolution(self) -> bool:
         return is_workflow_selector(self.model_id)
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, RoboflowPlatformModelMetadata):
+            return NotImplemented
+        return (self.model_id, self.required_action, self.execution_location) == (
+            other.model_id,
+            other.required_action,
+            other.execution_location,
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.model_id, self.required_action, self.execution_location))
+
 
 class RoboflowPlatformProjectMetadata(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -298,11 +319,23 @@ class ThirdPartyModelMetadata(BaseModel):
 
     provider: str
     model_id: str
+    # See RoboflowPlatformModelMetadata.model_id_resolver — same contract.
+    model_id_resolver: SkipJsonSchema[Optional[Callable[[str], str]]] = Field(
+        default=None, exclude=True, repr=False
+    )
 
     def requires_runtime_resolution(self) -> bool:
         return is_workflow_selector(self.provider) or is_workflow_selector(
             self.model_id
         )
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ThirdPartyModelMetadata):
+            return NotImplemented
+        return (self.provider, self.model_id) == (other.provider, other.model_id)
+
+    def __hash__(self) -> int:
+        return hash((self.provider, self.model_id))
 
 
 REGISTERED_RESOURCE_METADATA_TYPES: Dict[DependentResourceType, Type[BaseModel]] = {
@@ -362,10 +395,12 @@ def roboflow_platform_model(
     model_id: str,
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION,
     execution_location: Optional[ModelExecutionLocation] = None,
+    model_id_resolver: Optional[Callable[[str], str]] = None,
 ) -> DependentResource:
     metadata_kwargs: Dict[str, Any] = {
         "model_id": model_id,
         "required_action": required_action,
+        "model_id_resolver": model_id_resolver,
     }
     if execution_location is not None:
         metadata_kwargs["execution_location"] = execution_location
@@ -382,10 +417,18 @@ def roboflow_platform_project(project_url: str) -> DependentResource:
     )
 
 
-def third_party_model(provider: str, model_id: str) -> DependentResource:
+def third_party_model(
+    provider: str,
+    model_id: str,
+    model_id_resolver: Optional[Callable[[str], str]] = None,
+) -> DependentResource:
     return DependentResource(
         resource_type=DependentResourceType.THIRD_PARTY_MODEL,
-        metadata=ThirdPartyModelMetadata(provider=provider, model_id=model_id),
+        metadata=ThirdPartyModelMetadata(
+            provider=provider,
+            model_id=model_id,
+            model_id_resolver=model_id_resolver,
+        ),
     )
 
 

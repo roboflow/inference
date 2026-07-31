@@ -38,11 +38,15 @@ this heading with the Execution Engine and inference versions when releasing.
   that no external resources are needed. Field values that are workflow
   selectors (`$inputs.<name>` / `$steps.<name>.<property>`) are reported
   verbatim; each metadata entity exposes `requires_runtime_resolution()` to
-  tell such references apart from concrete identifiers. All core blocks that
-  reference models, Roboflow projects or third-party hosted models implement
-  the method, and each implementation mirrors the model identifier that
-  `run()` actually loads (including ids synthesized from version fields, e.g.
-  `clip/<version>`).
+  tell such references apart from concrete identifiers. Declarations whose
+  final id is synthesized from the field value (family prefixes like
+  `clip/<version>`, catalog lookups) additionally attach a non-serializable
+  `model_id_resolver` callable that turns the substituted input value into
+  the executed id — excluded from serialization, JSON schema and equality.
+  All core blocks that reference models, Roboflow projects or third-party
+  hosted models implement the method, and each implementation mirrors the
+  model identifier that `run()` actually loads (including ids synthesized
+  from version fields, e.g. `clip/<version>`).
 
 * **Dynamic (custom python) blocks report unknown dependencies** — manifests
   synthesized for dynamic blocks return `None` from
@@ -60,8 +64,12 @@ this heading with the Execution Engine and inference versions when releasing.
   during `init()` — before any run, for predictable first-inference latency.
   Declarations that reference `$inputs.<name>` cannot be loaded at init; on
   the **first** `run()` only, the engine resolves them against the provided
-  runtime parameters (with input defaults applied) and registers the models
-  whose identifiers became concrete. Pre-loading honours the effective step
+  runtime parameters (with input defaults applied), applies the declaration's
+  `model_id_resolver` when attached (so e.g. a substituted CLIP version
+  pre-loads `clip/<version>`, exactly the id execution uses), and registers
+  the models whose identifiers became concrete. A submitted input value the
+  resolver cannot handle (e.g. an unknown catalog label) raises
+  `RuntimeInputError`. Pre-loading honours the effective step
   execution mode (explicit `step_execution_mode` init parameter, or the
   `WORKFLOWS_STEP_EXECUTION_MODE` default): `environment_defined` declarations
   are pre-loaded only when steps execute locally, `local` declarations always

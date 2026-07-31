@@ -12,7 +12,10 @@ import pytest
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
     BlockManifest as ObjectDetectionV3Manifest,
 )
-from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
+from inference.core.workflows.errors import (
+    RuntimeInputError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
     ParsedWorkflowDefinition,
@@ -359,6 +362,48 @@ def test_runtime_resolution_follows_the_same_eligibility_logic_as_init() -> None
     model_manager.add_model.assert_called_once_with(
         model_id="local_only/1", api_key="api-key"
     )
+
+
+def test_runtime_resolution_applies_attached_model_id_resolver() -> None:
+    model_manager = MagicMock()
+
+    _resolve_and_pre_load_runtime_dependencies(
+        pending_dependencies=[
+            roboflow_platform_model(
+                model_id="$inputs.variant",
+                model_id_resolver=lambda version: f"clip/{version}",
+            ),
+        ],
+        runtime_parameters={"variant": "ViT-B-16"},
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    model_manager.add_model.assert_called_once_with(
+        model_id="clip/ViT-B-16", api_key="api-key"
+    )
+
+
+def test_runtime_resolution_raises_runtime_input_error_when_resolver_fails() -> None:
+    model_manager = MagicMock()
+    catalog = {"known-label": "provider/known"}
+
+    with pytest.raises(RuntimeInputError):
+        _resolve_and_pre_load_runtime_dependencies(
+            pending_dependencies=[
+                roboflow_platform_model(
+                    model_id="$inputs.model",
+                    model_id_resolver=lambda label: catalog[label],
+                ),
+            ],
+            runtime_parameters={"model": "unknown-label"},
+            model_manager=model_manager,
+            api_key=None,
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+
+    model_manager.add_model.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

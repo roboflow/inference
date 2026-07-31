@@ -55,6 +55,11 @@ def test_segment_anything2_v1_selector_fed_version_is_returned_verbatim() -> Non
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         roboflow_platform_model(model_id="$inputs.variant"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("hiera_small") == "sam2/hiera_small"

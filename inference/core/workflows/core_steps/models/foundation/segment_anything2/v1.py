@@ -188,9 +188,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         if is_workflow_selector(self.version):
-            # The final id is `sam2/<substituted version>` — the selector is
-            # returned verbatim, callers substitute and apply the family prefix.
-            return [roboflow_platform_model(model_id=self.version)]
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"sam2/{version}",
+                )
+            ]
         return [roboflow_platform_model(model_id=f"sam2/{self.version}")]
 
 

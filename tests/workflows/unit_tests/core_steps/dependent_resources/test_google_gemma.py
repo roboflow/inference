@@ -67,9 +67,14 @@ def test_google_gemma_v1_returns_selector_fed_model_version_verbatim() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.gemma_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Gemma 4 26B A4B - OpenRouter") == "google/gemma-4-26b-a4b-it"
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +124,11 @@ def test_google_gemma_v2_returns_selector_fed_model_version_verbatim() -> None:
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="openrouter", model_id="$inputs.gemma_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("Gemma 4 26B A4B - OpenRouter") == "google/gemma-4-26b-a4b-it"

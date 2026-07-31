@@ -6,7 +6,10 @@ from packaging.version import Version
 
 from inference.core.env import WORKFLOWS_STEP_EXECUTION_MODE
 from inference.core.logger import logger
-from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
+from inference.core.workflows.errors import (
+    RuntimeInputError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
@@ -190,6 +193,21 @@ def _resolve_and_pre_load_runtime_dependencies(
             continue
         if is_workflow_selector(resolved_value):
             continue
+        model_id_resolver = dependency.metadata.model_id_resolver
+        if model_id_resolver is not None:
+            # Declarations of synthesized ids (e.g. `clip/<version>`) attach a
+            # resolver turning the substituted input value into the final id.
+            try:
+                resolved_value = model_id_resolver(resolved_value)
+            except Exception as error:
+                raise RuntimeInputError(
+                    public_message=f"Could not resolve model id of dependent resource "
+                    f"declared as `{dependency.metadata.model_id}` while pre-loading "
+                    f"workflow dependencies - value `{resolved_value}` submitted for "
+                    f"input `{input_name}` is invalid. Details: {error}",
+                    context="workflow_execution | runtime_input_validation",
+                    inner_error=error,
+                ) from error
         if resolved_value in loaded_model_ids:
             continue
         loaded_model_ids.add(resolved_value)

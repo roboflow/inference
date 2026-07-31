@@ -74,9 +74,14 @@ def test_anthropic_claude_v1_returns_selector_fed_model_version_verbatim() -> No
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="anthropic", model_id="$inputs.claude_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("claude-3-opus") == "claude-3-opus-20240229"
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +135,15 @@ def test_anthropic_claude_v2_returns_selector_fed_model_version_verbatim() -> No
         }
     )
 
-    assert manifest.discover_dependent_resources() == [
+    resources = manifest.discover_dependent_resources()
+
+    assert resources == [
         third_party_model(provider="anthropic", model_id="$inputs.claude_model"),
     ]
+    resolver = resources[0].metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("claude-opus-4-1") == "claude-opus-4-1-20250805"
+    assert resolver("unknown-label") == "unknown-label"
 
 
 # ---------------------------------------------------------------------------
@@ -165,3 +176,22 @@ def test_anthropic_claude_v3_discovery_maps_labels_to_exact_model_versions() -> 
         assert manifest.discover_dependent_resources() == [
             third_party_model(provider="anthropic", model_id=expected_model_id)
         ]
+
+
+def test_anthropic_claude_v3_selector_declaration_attaches_resolver() -> None:
+    manifest = AnthropicClaudeV3Manifest.model_validate(
+        {
+            "type": "roboflow_core/anthropic_claude@v3",
+            "name": "vlm",
+            "images": "$inputs.image",
+            "prompt": "What is in the image?",
+            "model_version": "$inputs.claude_model",
+        }
+    )
+
+    (resource,) = manifest.discover_dependent_resources()
+
+    resolver = resource.metadata.model_id_resolver
+    assert resolver is not None
+    assert resolver("claude-haiku-4-5") == "claude-haiku-4-5-20251001"
+    assert resolver("unknown-label") == "unknown-label"
