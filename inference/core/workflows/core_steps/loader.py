@@ -197,6 +197,9 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     DetectionsConsensusBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.detections_difference.v1 import (
+    DetectionsDifferenceBlockV1,
+)
 from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
     DetectionsListRollUpBlockV1,
 )
@@ -897,6 +900,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
+        DetectionsDifferenceBlockV1,
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
