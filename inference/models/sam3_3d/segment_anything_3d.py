@@ -14,10 +14,7 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from PIL import Image, ImageDraw
 
-from inference.core.cache.model_artifacts import (
-    are_all_files_cached,
-    get_cache_dir,
-)
+from inference.core.cache.model_artifacts import are_all_files_cached, get_cache_dir
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.responses.sam3_3d import (

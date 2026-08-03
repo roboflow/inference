@@ -144,12 +144,16 @@ def get_model_download_lock_path(cache_dir: str) -> str:
     KNOWN GAP 1 - lock keys collide across models (accepted):
     ``basename(cache_dir)`` is the version suffix, so ``dataset-a/1`` and
     ``dataset-b/1`` both resolve to ``1.lock``. Unrelated models therefore
-    serialize their cold downloads behind one lock. This only costs latency, not
-    correctness: a waiter re-checks its OWN model's cache after acquiring (that
+    serialize their cold downloads behind one lock. Correctness of the cache is
+    preserved - a waiter re-checks its OWN model's cache after acquiring (that
     check is keyed by model_id, not by the lock name) and downloads if still
-    cold. Note this interacts with MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT - raising
-    the timeout also raises how long a colliding model can be stalled. Fixing it
-    means changing the lock name, which is gated on the migration above.
+    cold - but availability is not unconditionally: a colliding model can stall
+    for up to MODEL_WEIGHTS_DOWNLOAD_LOCK_TIMEOUT x
+    MODEL_WEIGHTS_DOWNLOAD_LOCK_MAX_ATTEMPTS (default 3 x 600s) while unrelated
+    downloads hold the lock, and if that budget is exhausted it still fails with
+    ``filelock.Timeout``. Many models sharing a version suffix on a cold boot is
+    the realistic worst case. Fixing it means changing the lock name, which is
+    gated on the migration above.
 
     KNOWN GAP 2 - eviction does not share this lock (tracked separately):
     ``clear_cache()`` in ``inference/core/cache/model_artifacts.py`` builds its
