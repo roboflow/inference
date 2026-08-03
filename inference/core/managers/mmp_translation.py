@@ -1523,8 +1523,14 @@ def _repack_visual_segmentation(
 def _repack_text_segmentation(
     prediction: Any, request: Any
 ) -> Sam3SegmentationResponse:
-    prompt_outputs = _unwrap_single_prediction(prediction)
-    if not isinstance(prompt_outputs, list):
+    # The per-image worker result IS the per-prompt list — a single-prompt
+    # request arrives as a one-element list that must not be unwrapped.
+    prompt_outputs = prediction
+    if isinstance(prompt_outputs, dict):
+        prompt_outputs = [prompt_outputs]
+    if not isinstance(prompt_outputs, list) or not all(
+        isinstance(output, dict) for output in prompt_outputs
+    ):
         raise ModelArtefactError(
             "Unexpected SAM3 text-prompt prediction shape from the inference backend."
         )

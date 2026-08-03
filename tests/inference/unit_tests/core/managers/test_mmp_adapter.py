@@ -1394,7 +1394,7 @@ class TestSamRouting:
         masks[0, 2:6, 2:6] = 1
         masks[1, 8:12, 8:12] = 1
         running_adapter._client.infer_result = [
-            [{"prompt_index": 0, "masks": masks, "scores": [0.9, 0.3]}]
+            {"prompt_index": 0, "masks": masks, "scores": [0.9, 0.3]}
         ]
         prompt = Sam3Prompt(type="text", text="cat", output_prob_thresh=0.5)
         request = sam_request(
@@ -1499,7 +1499,10 @@ class TestSamRouting:
                 "segment_with_text_prompts",
             ],
         )
-        running_adapter._client.infer_result = [[]]
+        running_adapter._client.infer_result = [
+            {"prompt_index": 0, "masks": [], "scores": []},
+            {"prompt_index": 1, "masks": [], "scores": []},
+        ]
         request = sam_request(
             Sam3SegmentationRequest,
             prompts=[
@@ -1509,9 +1512,11 @@ class TestSamRouting:
             output_prob_thresh=0.5,
             nms_iou_threshold=None,
         )
-        running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        response = running_adapter.infer_from_request_sync("sam3/sam3_final", request)
         params = running_adapter._client.infer_calls[0]["params"]
         assert params["output_prob_thresh"] == 0.3
+        assert len(response.prompt_results) == 2
+        assert [r.prompt_index for r in response.prompt_results] == [0, 1]
 
     def test_sam3_text_segment_rle_wire_shape(self, running_adapter, monkeypatch):
         from pycocotools import mask as mask_utils
@@ -1531,15 +1536,11 @@ class TestSamRouting:
         dense[2:6, 2:6] = 1
         rle = mask_utils.encode(np.asfortranarray(dense))
         running_adapter._client.infer_result = [
-            [
-                {
-                    "prompt_index": 0,
-                    "masks": [
-                        {"size": [12, 16], "counts": rle["counts"].decode("utf-8")}
-                    ],
-                    "scores": [0.89],
-                }
-            ]
+            {
+                "prompt_index": 0,
+                "masks": [{"size": [12, 16], "counts": rle["counts"].decode("utf-8")}],
+                "scores": [0.89],
+            }
         ]
         request = sam_request(
             Sam3SegmentationRequest,
