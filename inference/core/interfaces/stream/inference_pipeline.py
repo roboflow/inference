@@ -550,6 +550,7 @@ class InferencePipeline:
         _is_preview: bool = False,
         workflow_version_id: Optional[str] = None,
         exec_session_id: Optional[str] = None,
+        workflows_dependencies_pre_init: Optional[List[str]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -646,6 +647,15 @@ class InferencePipeline:
                 BackgroundTaskActiveLearningManager with WithFixedSizeCache
             exec_session_id (Optional[str]): Usage session identifier for this pipeline. If empty or omitted,
                 a unique identifier is generated for the pipeline.
+            workflows_dependencies_pre_init (Optional[List[str]]): Opt-in pre-loading of dependent
+                resources declared by workflow blocks (`discover_dependent_resources()`). Pass a list
+                of dependent-resource type names to pre-load — `"roboflow_platform_model"` is the only
+                supported value for now. When enabled, Roboflow models declared with concrete ids are
+                registered in the model manager at pipeline init (weights fetched upfront, giving
+                predictable startup instead of lazy loading on the first frame); model ids fed from
+                workflow inputs are resolved and registered on the first frame. Pre-loading honours
+                the effective step execution mode — nothing is fetched when steps execute remotely.
+                Defaults to None — no pre-loading.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -728,6 +738,7 @@ class InferencePipeline:
                 init_parameters=workflow_init_parameters,
                 workflow_id=workflow_id,
                 profiler=profiler,
+                dependencies_pre_init=workflows_dependencies_pre_init,
             )
             workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,

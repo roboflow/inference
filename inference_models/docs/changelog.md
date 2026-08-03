@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.34.4`
+
 ### Added
 
 - RF-DETR TensorRT execution plans now resolve all five stage categories through the
@@ -12,6 +16,10 @@
 - Adjustment to `KeyPoints` interface to expose `__len__(...)` method.
 - Adjustment to `InstanceDetections` interface to expose `__len__(...)` and `__iter__(...)` method.
 - Adjustment to `Detections` interface to expose `__len__(...)` and `__iter__(...)` method.
+
+### Fixed
+
+- Add `setuptools>=83.0.0` requirement for transitive dependencies to mitigate security risk.
 
 ---
 

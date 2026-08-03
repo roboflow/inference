@@ -33,11 +33,13 @@ from inference.core.workflows.offline import ensure_builtin_remote_execution_all
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -139,6 +141,10 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Mirrors the constant model id used in run().
+        return [roboflow_platform_model(model_id="sam3-3d-objects")]
 
 
 class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):

@@ -201,6 +201,10 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return ["sam3video"]
 
+    # `discover_dependent_resources()` deliberately not implemented: this
+    # block loads its weights via AutoModel.from_pretrained, not the model
+    # manager — dependencies stay undeclared (None) for now.
+
 
 class SegmentAnything3VideoBlockV1(WorkflowBlock):
     """Stateful SAM3 streaming concept tracking block."""

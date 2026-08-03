@@ -1,14 +1,12 @@
 import os
 
+from inference_cli.lib.env import PROJECT
+from inference_sdk.regions import resolve_roboflow_service_url
+
 PROD_ENVIRONMENT_NAME = "prod"
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", PROD_ENVIRONMENT_NAME)
 ROBOFLOW_API_HOST = os.getenv(
-    "ROBOFLOW_API_HOST",
-    (
-        "https://api.roboflow.com"
-        if ROBOFLOW_ENVIRONMENT == PROD_ENVIRONMENT_NAME
-        else "https://api.roboflow.one"
-    ),
+    "ROBOFLOW_API_HOST", resolve_roboflow_service_url("api", project=PROJECT)
 )
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", None)
 HTTP_CODES_TO_RETRY = {408, 429, 500, 502, 503, 504}

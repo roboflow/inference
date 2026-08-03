@@ -110,5 +110,8 @@ class VideoFrameProducer:
     def initialize_source_properties(self, properties: Dict[str, float]):
         pass
 
+    def connection_error_message(self) -> str:
+        return ""
+
 
 VideoSourceIdentifier = Union[str, int, Callable[[], VideoFrameProducer]]

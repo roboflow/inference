@@ -35,6 +35,12 @@ from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.stream_error_classifier import (
+    build_source_connection_error_message,
+    capture_process_stderr,
+    extract_stream_open_error,
+    wrap_source_connection_error,
+)
 
 VIDEO_SOURCE_CONTEXT = "video_source"
 VIDEO_CONSUMER_CONTEXT = "video_consumer"
@@ -137,13 +143,21 @@ def lock_state_transition(
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
         self._source_ref = video
-        if _consumes_camera_on_jetson(video=video):
-            self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
-        else:
-            self.stream = cv2.VideoCapture(video)
+        self._connection_error_message = ""
+        with capture_process_stderr() as captured_stderr:
+            if _consumes_camera_on_jetson(video=video):
+                self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
+            else:
+                self.stream = cv2.VideoCapture(video)
+        self._connection_error_message = extract_stream_open_error(
+            "".join(captured_stderr)
+        )
 
     def isOpened(self) -> bool:
         return self.stream.isOpened()
+
+    def connection_error_message(self) -> str:
+        return self._connection_error_message
 
     def grab(self) -> bool:
         return self.stream.grab()
@@ -207,8 +221,8 @@ def _build_default_producer(
     the consumer. Construction failures fall back to the general cv2 decoder.
     """
     if not ENABLE_TENSOR_DATA_REPRESENTATION:
-        logger.debug("Using cv2 decoder for source " f"reference: {stream_reference}")
-        return CV2VideoFrameProducer(stream_reference)
+        logger.debug("Using legacy decoder for source " f"reference: {stream_reference}")
+        return _create_video_frame_producer(stream_reference)
     # Local import: the discoverability layer pulls optional GPU-decode deps lazily.
     from inference.core.interfaces.camera.discoverability import (
         available_producers,
@@ -249,6 +263,21 @@ def _build_default_producer(
     )
     return CV2VideoFrameProducer(stream_reference)
 
+def _create_video_frame_producer(video: Union[str, int]) -> VideoFrameProducer:
+    if isinstance(video, str):
+        from inference.core.interfaces.camera.gstreamer_rtsp_producer import (
+            GStreamerRtspVideoFrameProducer,
+            gstreamer_rtsp_capture_available,
+            should_use_gstreamer_rtsp_producer,
+        )
+
+        if (
+            RUNS_ON_JETSON
+            and should_use_gstreamer_rtsp_producer(video)
+            and gstreamer_rtsp_capture_available()
+        ):
+            return GStreamerRtspVideoFrameProducer(video)
+    return CV2VideoFrameProducer(video)
 
 class VideoSource:
     @classmethod
@@ -718,8 +747,15 @@ class VideoSource:
 
     def _initialise_selected_video(self) -> None:
         if not self._video.isOpened():
-            raise SourceConnectionError(
-                f"Cannot connect to video source under reference: {self._stream_reference}"
+            source_reference = self._stream_reference
+            if callable(source_reference):
+                source_reference = str(self._stream_reference)
+            raise wrap_source_connection_error(
+                build_source_connection_error_message(
+                    source_reference=str(source_reference),
+                    underlying_error=self._video.connection_error_message(),
+                ),
+                source_reference=str(source_reference),
             )
         self._video.initialize_source_properties(self._video_source_properties)
         self._source_properties = self._video.discover_source_properties()
