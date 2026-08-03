@@ -89,6 +89,7 @@ _P_SAM3_EMBED = {
     "images": {"type": "image", "required": True},
     "image_hashes": {"type": "list[str]", "required": False},
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
+    "return_embeddings": {"type": "bool", "required": False, "default": True},
 }
 _P_OWLV2_REFERENCE_EXAMPLES = {
     "reference_examples": {"type": "list", "required": True},

@@ -1289,6 +1289,9 @@ class TestSamRouting:
         response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         assert response.image_id == "abc"
         assert running_adapter._client.infer_calls[0]["task"] == "embed"
+        assert (
+            "return_embeddings" not in running_adapter._client.infer_calls[0]["params"]
+        )
 
     def test_sam3_embed_images_uses_hash_fallback(self, running_adapter, monkeypatch):
         self._setup(
@@ -1308,6 +1311,10 @@ class TestSamRouting:
         assert response.image_id == "deadbeef"
         assert running_adapter._client.infer_calls[0]["task"] == "embed_images"
         assert "image_hashes" not in running_adapter._client.infer_calls[0]["params"]
+        assert (
+            running_adapter._client.infer_calls[0]["params"]["return_embeddings"]
+            is False
+        )
 
     def test_sam1_embed_returns_embeddings(self, running_adapter, monkeypatch):
         self._setup(running_adapter, monkeypatch, ["embed", "segment"])
@@ -1404,6 +1411,149 @@ class TestSamRouting:
         assert result.echo.type == "text" and result.echo.text == "cat"
         assert len(result.predictions) == 1
         assert result.predictions[0].confidence == 0.9
+
+    def test_sam3_visual_segment_rle_wire_shape(self, running_adapter, monkeypatch):
+        from pycocotools import mask as mask_utils
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
+        )
+        dense = np.zeros((12, 16), dtype=np.uint8)
+        dense[2:5, 9:15] = 1
+        rle = mask_utils.encode(np.asfortranarray(dense))
+        running_adapter._client.infer_result = [
+            {
+                "masks": [
+                    {
+                        "format": "rle",
+                        "size": [12, 16],
+                        "counts": rle["counts"].decode("utf-8"),
+                    }
+                ],
+                "scores": [0.9],
+            }
+        ]
+        request = sam_request(Sam2SegmentationRequest, prompts=None)
+        response = running_adapter.infer_from_request_sync(
+            "sam3/sam3_interactive", request
+        )
+        assert len(response.predictions) == 1
+        prediction = response.predictions[0]
+        assert prediction.confidence == 0.9
+        assert prediction.format == "polygon"
+        assert len(prediction.masks) > 0
+        points = np.asarray(prediction.masks[0])
+        assert points[:, 0].min() >= 9 and points[:, 0].max() <= 15
+        assert points[:, 1].min() >= 2 and points[:, 1].max() <= 5
+
+    def test_sam3_visual_segment_rle_wire_shape_rle_format(
+        self, running_adapter, monkeypatch
+    ):
+        from pycocotools import mask as mask_utils
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
+        )
+        dense = np.zeros((12, 16), dtype=np.uint8)
+        dense[4:8, 4:8] = 1
+        rle = mask_utils.encode(np.asfortranarray(dense))
+        counts = rle["counts"].decode("utf-8")
+        running_adapter._client.infer_result = [
+            {
+                "masks": [{"format": "rle", "size": [12, 16], "counts": counts}],
+                "scores": [0.9],
+            }
+        ]
+        request = sam_request(Sam2SegmentationRequest, prompts=None, format="rle")
+        response = running_adapter.infer_from_request_sync(
+            "sam3/sam3_interactive", request
+        )
+        prediction = response.predictions[0]
+        assert prediction.format == "rle"
+        assert list(prediction.masks["size"]) == [12, 16]
+        assert prediction.masks["counts"] == counts
+
+    def test_sam3_text_segment_forwards_min_prompt_threshold(
+        self, running_adapter, monkeypatch
+    ):
+        from inference.core.entities.requests.sam3 import Sam3Prompt
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
+        )
+        running_adapter._client.infer_result = [[]]
+        request = sam_request(
+            Sam3SegmentationRequest,
+            prompts=[
+                Sam3Prompt(type="text", text="cat", output_prob_thresh=0.3),
+                Sam3Prompt(type="text", text="dog"),
+            ],
+            output_prob_thresh=0.5,
+            nms_iou_threshold=None,
+        )
+        running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params["output_prob_thresh"] == 0.3
+
+    def test_sam3_text_segment_rle_wire_shape(self, running_adapter, monkeypatch):
+        from pycocotools import mask as mask_utils
+
+        from inference.core.entities.requests.sam3 import Sam3Prompt
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
+        )
+        dense = np.zeros((12, 16), dtype=np.uint8)
+        dense[2:6, 2:6] = 1
+        rle = mask_utils.encode(np.asfortranarray(dense))
+        running_adapter._client.infer_result = [
+            [
+                {
+                    "prompt_index": 0,
+                    "masks": [
+                        {"size": [12, 16], "counts": rle["counts"].decode("utf-8")}
+                    ],
+                    "scores": [0.89],
+                }
+            ]
+        ]
+        request = sam_request(
+            Sam3SegmentationRequest,
+            prompts=[Sam3Prompt(type="text", text="dog")],
+            output_prob_thresh=0.5,
+            nms_iou_threshold=None,
+        )
+        response = running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        result = response.prompt_results[0]
+        assert result.echo.type == "text" and result.echo.text == "dog"
+        assert len(result.predictions) == 1
+        assert result.predictions[0].confidence == 0.89
+        assert result.predictions[0].format == "polygon"
+        assert len(result.predictions[0].masks) > 0
 
     def test_mask_input_errors(self, running_adapter, monkeypatch):
         self._setup(

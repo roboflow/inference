@@ -2,6 +2,7 @@ import hashlib
 import json
 import os.path
 from copy import copy, deepcopy
+from dataclasses import replace
 from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
@@ -196,6 +197,7 @@ class SAM3Torch:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         use_embeddings_cache: bool = True,
         image_hashes: Optional[Union[str, List[str]]] = None,
+        return_embeddings: bool = True,
         **kwargs,
     ) -> List[SAM3ImageEmbeddings]:
         if not self._sam3_allow_client_generated_hash_ids and image_hashes is not None:
@@ -274,6 +276,10 @@ class SAM3Torch:
                     key=embeddings.image_hash, embeddings=embeddings
                 )
 
+        if not return_embeddings:
+            return [
+                replace(embeddings, embeddings=None) for embeddings in result_embeddings
+            ]
         return result_embeddings
 
     @torch.inference_mode()
@@ -532,7 +538,7 @@ class SAM3Torch:
         )
 
         if not return_logits:
-            masks_tensor = masks_tensor > 0
+            masks_tensor = masks_tensor >= 0
 
         return SAM3Prediction(
             masks=masks_tensor,
@@ -658,7 +664,8 @@ def _prediction_to_rle_dict(prediction: SAM3Prediction) -> Dict:
         masks = masks[None, ...]
     rle_masks = []
     for mask in masks:
-        rle = coco_mask_utils.encode(np.asfortranarray((mask > 0).astype(np.uint8)))
+        binary = mask if mask.dtype == np.bool_ else mask >= 0
+        rle = coco_mask_utils.encode(np.asfortranarray(binary.astype(np.uint8)))
         rle_masks.append(
             {
                 "format": "rle",

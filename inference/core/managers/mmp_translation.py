@@ -460,6 +460,11 @@ def _build_interactive_segmentation_params(action: str, request: Any) -> dict:
         image_id = getattr(request, "image_id", None)
         if image_id:
             params["image_hashes"] = [_namespaced_client_hash(image_id, request)]
+        if action == "embed_images":
+            # SAM3 processor state is far larger than an SHM slot; the legacy
+            # response only echoes the image id, so leave embeddings in the
+            # worker-side cache.
+            params["return_embeddings"] = False
         return params
     if action == "segment":
         if type(request).__name__ == "SamSegmentationRequest":
@@ -593,11 +598,17 @@ def _build_text_prompt_params(request: Any) -> dict:
         raise ModelDeploymentNotSupportedError(
             "SAM3 concept segmentation requires prompts on the MMP path."
         )
+    # The worker applies a single threshold floor; forward the min of the
+    # request and per-prompt thresholds so per-prompt refinement in the
+    # repack still has the masks to filter.
+    threshold = float(getattr(request, "output_prob_thresh", None) or 0.5)
+    for prompt in prompts:
+        prompt_threshold = getattr(prompt, "output_prob_thresh", None)
+        if prompt_threshold is not None:
+            threshold = min(threshold, float(prompt_threshold))
     return {
         "prompts": [prompt.dict() for prompt in prompts],
-        "output_prob_thresh": float(
-            getattr(request, "output_prob_thresh", None) or 0.5
-        ),
+        "output_prob_thresh": threshold,
     }
 
 
@@ -1474,11 +1485,35 @@ def _repack_sam_embeddings(action: str, prediction: Any, request: Any):
     return Sam2EmbeddingResponse(image_id=image_id, time=0.0)
 
 
+def _decode_coco_rle_masks(mask_dicts: List[dict]) -> np.ndarray:
+    from pycocotools import mask as mask_utils
+
+    decoded = []
+    for mask_dict in mask_dicts:
+        counts = mask_dict["counts"]
+        if isinstance(counts, str):
+            counts = counts.encode("utf-8")
+        decoded.append(
+            mask_utils.decode({"size": mask_dict["size"], "counts": counts}).astype(
+                bool
+            )
+        )
+    if not decoded:
+        return np.zeros((0, 0, 0), dtype=bool)
+    return np.stack(decoded)
+
+
 def _repack_visual_segmentation(
     prediction: Any, request: Any
 ) -> Sam2SegmentationResponse:
     result = _unwrap_single_prediction(prediction)
-    masks, scores = _choose_most_confident_sam_masks(result.masks, result.scores)
+    if isinstance(result, dict):
+        # mask_format=rle wire shape: {"masks": [coco-rle dicts], "scores": [...]},
+        # already reduced to the most confident mask per prompt worker-side.
+        masks = _decode_coco_rle_masks(result.get("masks") or [])
+        scores = [float(score) for score in result.get("scores") or []]
+    else:
+        masks, scores = _choose_most_confident_sam_masks(result.masks, result.scores)
     predictions = _sam_masks_to_predictions(
         masks, scores, getattr(request, "format", "polygon"), Sam2SegmentationPrediction
     )
@@ -1499,7 +1534,13 @@ def _repack_text_segmentation(
     for output in prompt_outputs:
         index = int(output.get("prompt_index", len(prompt_results)))
         prompt = prompts[index] if index < len(prompts) else None
-        masks = np.asarray(output.get("masks"))
+        raw_masks = output.get("masks")
+        if raw_masks is None:
+            raw_masks = []
+        if isinstance(raw_masks, list) and raw_masks and isinstance(raw_masks[0], dict):
+            masks = _decode_coco_rle_masks(raw_masks)
+        else:
+            masks = np.asarray(raw_masks)
         scores = [float(score) for score in output.get("scores", [])]
         prompt_threshold = getattr(prompt, "output_prob_thresh", None)
         if prompt_threshold is not None:
