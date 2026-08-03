@@ -5,6 +5,7 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.utils import (
+    DETECTION_MAX_EDGE_PIXELS,
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_sv_detections,
     attach_prediction_type_info,
@@ -14,6 +15,7 @@ from inference.core.workflows.core_steps.common.utils import (
     grab_batch_parameters,
     grab_non_batch_parameters,
     remove_unexpected_keys_from_dictionary,
+    scale_dimensions_to_max_edge,
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
@@ -1259,3 +1261,59 @@ def test_remove_unexpected_keys_from_dictionary_when_part_of_keys_are_not_expect
 
     # then
     assert result == {"a": 1}
+
+
+@pytest.mark.parametrize(
+    "width, height, max_edge, expected",
+    [
+        pytest.param(100, 50, 2048, (100, 50), id="below-limit-noop"),
+        pytest.param(2048, 1024, 2048, (2048, 1024), id="landscape-at-limit-noop"),
+        pytest.param(4096, 2048, 2048, (2048, 1024), id="landscape-downscale"),
+        pytest.param(1000, 4000, 2048, (512, 2048), id="portrait-downscale"),
+        pytest.param(4096, 4096, 2048, (2048, 2048), id="square-downscale"),
+        pytest.param(3000, 2000, 2048, (2048, 1365), id="rounds-down-1365.33"),
+        pytest.param(4097, 2048, 2048, (2048, 1024), id="rounds-up-1023.75"),
+        pytest.param(4096, 1021, 2048, (2048, 510), id="half-510.5-rounds-to-even-510"),
+        pytest.param(10000, 1, 2048, (2048, 1), id="wide-short-edge-clamps-to-1px"),
+        pytest.param(1, 10000, 2048, (1, 2048), id="tall-short-edge-clamps-to-1px"),
+        pytest.param(300, 200, 1, (1, 1), id="max-edge-of-1"),
+    ],
+)
+def test_scale_dimensions_to_max_edge(
+    width: int, height: int, max_edge: int, expected: tuple
+) -> None:
+    # when
+    result = scale_dimensions_to_max_edge(width=width, height=height, max_edge=max_edge)
+
+    # then
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "width, height",
+    [
+        (2899, 2841),
+        (1920, 2560),
+        (2164, 1868),
+    ],
+)
+def test_scale_dimensions_to_max_edge_preserves_invariants(
+    width: int, height: int
+) -> None:
+    # when
+    scaled_width, scaled_height = scale_dimensions_to_max_edge(
+        width=width, height=height, max_edge=DETECTION_MAX_EDGE_PIXELS
+    )
+
+    # then
+    assert max(scaled_width, scaled_height) <= DETECTION_MAX_EDGE_PIXELS
+    assert scaled_width >= 1 and scaled_height >= 1
+    # aspect ratio preserved within the error introduced by rounding one edge
+    original_ratio = width / height
+    scaled_ratio = scaled_width / scaled_height
+    assert abs(scaled_ratio - original_ratio) <= original_ratio / min(
+        scaled_width, scaled_height
+    )
+    assert scale_dimensions_to_max_edge(
+        width=scaled_width, height=scaled_height, max_edge=DETECTION_MAX_EDGE_PIXELS
+    ) == (scaled_width, scaled_height)

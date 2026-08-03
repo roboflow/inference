@@ -147,18 +147,62 @@ def test_run_method_for_gemini_native_box_2d_output() -> None:
     )
 
 
-def test_run_method_for_openai_box_2d_output() -> None:
-    # given - format produced by roboflow_core/open_ai@v5 object-detection task
+def test_run_method_for_openai_box_2d_output_with_resize() -> None:
+    # given - original 4096x2048 image is uploaded at 2048x1024 (max edge 2048),
+    # so absolute pixel coordinates must be scaled up by 2x on both axes
     block = VLMAsDetectorBlockV2()
     image = WorkflowImageData(
-        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        numpy_image=np.zeros((2048, 4096, 3), dtype=np.uint8),
         parent_metadata=ImageParentMetadata(parent_id="parent"),
     )
     vlm_output = """
 [
-  {"box_2d": [29, 17, 163, 54], "label": "dog"},
-  {"box_2d": [58, 82, 163, 109], "label": "dog"}
+  {"box_2d": [100, 200, 300, 400], "label": "cat", "confidence": 0.9},
+  {"box_2d": [500, 600, 2100, 1100], "label": "dog"}
 ]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="openai",
+        task_type="object-detection",
+    )
+
+    # then - second box exceeds the 2048x1024 upload and is clamped before scaling
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [200, 400, 600, 800],
+                [1000, 1200, 4096, 2048],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([0.9, 1.0]))
+
+
+def test_run_method_for_openai_structured_detections_output_with_resize() -> None:
+    # given - format produced by roboflow_core/open_ai@v5 structured-absolute
+    # style: box_2d entries wrapped in a "detections" object; original
+    # 4096x2048 image uploads at 2048x1024, so coordinates scale up by 2x
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((2048, 4096, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+{"detections": [
+  {"box_2d": [100, 200, 300, 400], "label": "cat"},
+  {"box_2d": [500, 600, 1000, 900], "label": "dog"}
+]}
     """
 
     # when
@@ -173,18 +217,42 @@ def test_run_method_for_openai_box_2d_output() -> None:
     # then
     assert result["error_status"] is False
     assert isinstance(result["predictions"], sv.Detections)
-    assert result["predictions"].data["class_name"].tolist() == ["dog", "dog"]
-    assert np.allclose(result["predictions"].class_id, np.array([1, 1]))
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, 1]))
     assert np.allclose(
         result["predictions"].xyxy,
         np.array(
             [
-                [2.856, 5.568, 9.072, 31.296],
-                [13.776, 11.136, 18.312, 31.296],
+                [200, 400, 600, 800],
+                [1000, 1200, 2000, 1800],
             ]
         ),
         atol=1.0,
     )
+
+
+def test_run_method_for_openai_structured_empty_detections_output() -> None:
+    # given - structured outputs guarantee the wrapper even with no objects
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = '{"detections": []}'
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="openai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert len(result["predictions"]) == 0
 
 
 def test_run_method_for_openai_legacy_detections_output() -> None:

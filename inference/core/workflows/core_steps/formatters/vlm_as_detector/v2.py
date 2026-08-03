@@ -18,6 +18,9 @@ from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     parse_gemini_object_detection_response,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.openai_detection_parsing import (
+    parse_openai_object_detection_response,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -457,12 +460,61 @@ def get_4digit_from_md5(input_string):
     return integer_value % 10000
 
 
+def parse_openai_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> sv.Detections:
+    """Parse OpenAI object-detection output, dispatching on response format.
+
+    OpenAI blocks v1-v4 (and the v5 normalized-legacy style) produce
+    ``{"detections": [{"x_min": ...}]}`` with coordinates normalized to
+    0.0-1.0. The v5 plain-absolute style produces a JSON list of ``box_2d``
+    entries and the v5 structured-absolute style wraps the same entries in a
+    ``{"detections": [...]}`` object; both use absolute pixel coordinates of
+    the resized upload.
+
+    Args:
+        image: Workflow image the detections refer to.
+        parsed_data: JSON payload extracted from the VLM output.
+        classes: Class names used to map labels onto class ids.
+        inference_id: Identifier attached to every parsed detection.
+
+    Returns:
+        Parsed detections in the original image's coordinate space.
+    """
+    if isinstance(parsed_data, dict) and "detections" in parsed_data:
+        detections = parsed_data["detections"]
+        if (
+            isinstance(detections, list)
+            and len(detections) > 0
+            and isinstance(detections[0], dict)
+            and "box_2d" in detections[0]
+        ):
+            return parse_openai_object_detection_response(
+                image=image,
+                parsed_data=detections,
+                classes=classes,
+                inference_id=inference_id,
+            )
+        return parse_llm_object_detection_response(
+            image=image,
+            parsed_data=parsed_data,
+            classes=classes,
+            inference_id=inference_id,
+        )
+    return parse_openai_object_detection_response(
+        image=image,
+        parsed_data=parsed_data,
+        classes=classes,
+        inference_id=inference_id,
+    )
+
+
 REGISTERED_PARSERS = {
     # LLMs
-    # OpenAI blocks >= v5 emit Gemini-style `box_2d` entries; the Gemini parser
-    # also falls back to the legacy `{"detections": [{"x_min": ...}]}` format
-    # produced by OpenAI blocks v1-v4, so both remain supported.
-    ("openai", "object-detection"): parse_gemini_object_detection_response,
+    ("openai", "object-detection"): parse_openai_detection_response,
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
     # Florence 2
