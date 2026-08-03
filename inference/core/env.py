@@ -1039,6 +1039,13 @@ STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES",
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
 
+# Opt-out from the GStreamer-based legacy video sources (e.g. the Jetson RTSP
+# producer) — when True, plain (non-tensor) source references always decode
+# through the cv2 producer. Default is False.
+DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
+    os.getenv("DISABLE_GSTREAMER_VIDEO_SOURCES", "False")
+)
+
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))

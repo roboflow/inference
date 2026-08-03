@@ -19,6 +19,7 @@ from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+    DISABLE_GSTREAMER_VIDEO_SOURCES,
     ENABLE_TENSOR_DATA_REPRESENTATION,
     RUNS_ON_JETSON,
 )
@@ -32,7 +33,6 @@ from inference.core.interfaces.camera.entities import (
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
-    SourceConnectionError,
     StreamOperationNotAllowedError,
 )
 from inference.core.interfaces.camera.stream_error_classifier import (
@@ -267,7 +267,7 @@ def _build_default_producer(
 
 
 def _create_video_frame_producer(video: Union[str, int]) -> VideoFrameProducer:
-    if isinstance(video, str):
+    if isinstance(video, str) and not DISABLE_GSTREAMER_VIDEO_SOURCES:
         from inference.core.interfaces.camera.gstreamer_rtsp_producer import (
             GStreamerRtspVideoFrameProducer,
             gstreamer_rtsp_capture_available,
