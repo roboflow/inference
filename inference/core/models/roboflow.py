@@ -48,6 +48,7 @@ from inference.core.cache.model_artifacts import (
     get_cache_dir,
     get_cache_dir_for_read,
     initialise_cache,
+    is_file_cached,
     load_json_from_cache,
     load_text_file_from_cache,
     save_bytes_in_cache,
@@ -210,6 +211,31 @@ def acquire_model_download_lock(lock_file: str, model_id: str) -> FileLock:
             )
     # Exhausted retries - surface the timeout to the caller.
     raise last_error
+
+
+MODEL_DOWNLOAD_COMPLETE_MARKER_FILE = ".rf_weights_download_complete"
+
+
+def mark_model_download_complete(model_id: str) -> None:
+    """Record that a weight download finished writing every artifact.
+
+    Written under the download lock as the very last step of a successful
+    download. Its absence while artifact files exist means the writer died
+    mid-way (cache writes are not atomic unless ``ATOMIC_CACHE_WRITES_ENABLED``)
+    or ran a release predating the marker; either way a waiter must download
+    rather than trust the files. The marker lives inside the model's cache dir
+    so ``clear_cache()`` removes it together with the artifacts it vouches for.
+    """
+    save_bytes_in_cache(
+        content=b"",
+        file=MODEL_DOWNLOAD_COMPLETE_MARKER_FILE,
+        model_id=model_id,
+    )
+
+
+def is_model_download_marked_complete(model_id: str) -> bool:
+    """Whether a marker-writing release completed this model's download."""
+    return is_file_cached(file=MODEL_DOWNLOAD_COMPLETE_MARKER_FILE, model_id=model_id)
 
 
 class RoboflowInferenceModel(Model):
@@ -433,18 +459,21 @@ class RoboflowInferenceModel(Model):
             try:
                 # A sibling pipeline may have completed the download while we
                 # waited on the lock - reload from the now-warm cache instead of
-                # downloading again.
-                # NOTE: this check is existence-only (`are_all_files_cached` stats
-                # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
-                # killed mid-write can leave a truncated artifact that passes it.
-                # Accepted deliberately: the caller already gates on this exact
-                # predicate before we are reached, so a partial cache is a
-                # pre-existing hazard, not one introduced here. The alternatives are
-                # worse - a completion marker forces every already-warm deployment to
-                # re-download once on upgrade (through the slow gateway this fix
-                # exists for), and dropping the recheck makes each waiter re-download
-                # serially under the lock. Fix belongs with atomic cache writes.
-                if are_all_files_cached(
+                # downloading again. Requiring the completion marker (written as
+                # the download's last step) distinguishes that from a sibling
+                # killed mid-write: with ATOMIC_CACHE_WRITES_ENABLED off a dead
+                # writer leaves truncated artifacts that pass the existence-only
+                # file check, and trusting them would poison the cache with no
+                # self-repair. Only this post-wait recheck requires the marker -
+                # the caller's outer warm-cache gate still keys on file
+                # existence alone, so already-warm deployments do not
+                # re-download on upgrade. If the sibling ran a pre-marker
+                # release, no marker exists and we re-download redundantly
+                # under the lock, which is safe and matches the old
+                # always-download behavior.
+                if is_model_download_marked_complete(
+                    model_id=self.endpoint
+                ) and are_all_files_cached(
                     files=self.get_all_required_infer_bucket_file(),
                     model_id=self.endpoint,
                 ):
@@ -536,6 +565,7 @@ class RoboflowInferenceModel(Model):
                         file="keypoints_metadata.json",
                         model_id=self.endpoint,
                     )
+                mark_model_download_complete(model_id=self.endpoint)
             except Exception as e:
                 logger.error(f"Error downloading model artifacts: {e}")
                 raise
@@ -824,18 +854,20 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         try:
             # A sibling pipeline may have completed the download while we waited
             # on the lock - reload from the now-warm cache instead of downloading
-            # again.
-            # NOTE: this check is existence-only (`are_all_files_cached` stats
-            # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
-            # killed mid-write can leave a truncated artifact that passes it.
-            # Accepted deliberately: the caller already gates on this exact
-            # predicate before we are reached, so a partial cache is a
-            # pre-existing hazard, not one introduced here. The alternatives are
-            # worse - a completion marker forces every already-warm deployment to
-            # re-download once on upgrade (through the slow gateway this fix
-            # exists for), and dropping the recheck makes each waiter re-download
-            # serially under the lock. Fix belongs with atomic cache writes.
-            if are_all_files_cached(
+            # again. Requiring the completion marker (written as the download's
+            # last step) distinguishes that from a sibling killed mid-write:
+            # with ATOMIC_CACHE_WRITES_ENABLED off a dead writer leaves
+            # truncated artifacts that pass the existence-only file check, and
+            # trusting them would poison the cache with no self-repair. Only
+            # this post-wait recheck requires the marker - the caller's outer
+            # warm-cache gate still keys on file existence alone, so
+            # already-warm deployments do not re-download on upgrade. If the
+            # sibling ran a pre-marker release, no marker exists and we
+            # re-download redundantly under the lock, which is safe and matches
+            # the old always-download behavior.
+            if is_model_download_marked_complete(
+                model_id=self.endpoint
+            ) and are_all_files_cached(
                 files=self.get_infer_bucket_file_list(), model_id=self.endpoint
             ):
                 logger.debug(
@@ -875,6 +907,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                         endpoint_type=ModelEndpointType.CORE_MODEL,
                         device_id=self.device_id,
                     )
+            mark_model_download_complete(model_id=self.endpoint)
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise

@@ -352,18 +352,22 @@ def test_acquire_model_download_lock_raises_after_exhausting_attempts(
 
 
 # --- End-to-end lock behavior, exercising the REAL FileLock across threads. ---
-# The mocked tests above cover the helpers in isolation; these cover the contract
-# the four download implementations actually depend on: exactly one downloader
-# runs, waiters reuse the warmed cache instead of re-downloading, and the lock is
-# released even when the guarded block raises.
+# The mocked tests above cover the helpers in isolation; these cover the shared
+# contract all five download implementations inline: exactly one downloader
+# runs, waiters reuse the warmed-and-marked cache instead of re-downloading, and
+# the lock is released even when the guarded block raises. The production
+# methods driven directly further below are the base and core-model ones (this
+# module); the OWLv2/transformers/SAM3-3D copies inline the identical pattern
+# but need their heavyweight dependency stacks, so they are not imported here.
 
 
 class _FakeDownloader:
     """Minimal stand-in for a model performing a guarded weight download.
 
-    Mirrors the production shape: acquire the per-model lock, re-check the cache,
-    then download only if still cold - writing artifacts the way a real download
-    would so a concurrent waiter observes a warm cache.
+    Mirrors the production shape: acquire the per-model lock, re-check the cache
+    (completion marker plus files), then download only if still cold - writing
+    artifacts and the marker the way a real download would so a concurrent
+    waiter observes a warm cache.
     """
 
     def __init__(self, cache_dir: str, endpoint: str, download_seconds: float = 0.0):
@@ -380,7 +384,9 @@ class _FakeDownloader:
         lock_file = get_model_download_lock_path(cache_dir=self.cache_dir)
         lock = acquire_model_download_lock(lock_file, model_id=self.endpoint)
         try:
-            if model_artifacts.are_all_files_cached(
+            if roboflow.is_model_download_marked_complete(
+                model_id=self.endpoint
+            ) and model_artifacts.are_all_files_cached(
                 files=self.required_files(), model_id=self.endpoint
             ):
                 self.skipped_because_warm = True
@@ -393,6 +399,7 @@ class _FakeDownloader:
             for file_name in self.required_files():
                 with open(os.path.join(self.cache_dir, file_name), "wb") as f:
                     f.write(b"payload")
+            roboflow.mark_model_download_complete(model_id=self.endpoint)
         finally:
             lock.release()
 
@@ -441,6 +448,7 @@ def test_concurrent_downloads_serialize_and_waiter_reuses_warm_cache(
     assert sum(1 for d in downloaders if d.skipped_because_warm) == 1
     for file_name in downloaders[0].required_files():
         assert os.path.isfile(os.path.join(model_cache_dir, file_name))
+    assert roboflow.is_model_download_marked_complete(model_id=endpoint)
 
 
 def test_download_lock_is_released_when_guarded_block_raises(
@@ -506,7 +514,8 @@ def test_real_download_method_skips_network_when_cache_warmed_while_waiting(
     honors the post-acquisition cache check - i.e. a waiter that wakes up to a
     cache another pipeline just warmed performs no API call or download at all.
     """
-    # given - a model whose artifacts a sibling already finished downloading
+    # given - a model whose artifacts a sibling already finished downloading,
+    # including the completion marker it writes as its final step
     endpoint = "dataset/1"
     model_cache_dir = os.path.join(isolated_model_cache, endpoint)
     os.makedirs(model_cache_dir, exist_ok=True)
@@ -514,6 +523,7 @@ def test_real_download_method_skips_network_when_cache_warmed_while_waiting(
     for file_name in required:
         with open(os.path.join(model_cache_dir, file_name), "wb") as f:
             f.write(b"payload")
+    roboflow.mark_model_download_complete(model_id=endpoint)
 
     model = mock.Mock()
     model.endpoint = endpoint
@@ -577,6 +587,128 @@ def test_real_download_method_releases_lock_when_download_fails(
     probe = FileLock(lock_file, timeout=1)
     probe.acquire()  # raises filelock.Timeout if the failed download leaked it
     probe.release()
+
+
+def test_download_marker_helpers_roundtrip(isolated_model_cache) -> None:
+    # given
+    endpoint = "dataset/1"
+
+    # then - absent until written, present afterwards
+    assert not roboflow.is_model_download_marked_complete(model_id=endpoint)
+    roboflow.mark_model_download_complete(model_id=endpoint)
+    assert roboflow.is_model_download_marked_complete(model_id=endpoint)
+
+
+def test_real_download_method_redownloads_when_files_exist_without_marker(
+    isolated_model_cache,
+) -> None:
+    """A cache with artifacts but no completion marker must NOT be trusted.
+
+    That state means the previous writer died mid-download (non-atomic writes
+    can leave truncated artifacts that pass the existence check) or ran a
+    pre-marker release. Trusting it would load corrupt weights and, worse,
+    remove the only self-repair path: before the post-wait recheck existed, a
+    waiter always re-downloaded and overwrote the truncated files.
+    """
+    # given - artifact files present, marker absent (interrupted writer)
+    endpoint = "dataset/1"
+    model_cache_dir = os.path.join(isolated_model_cache, endpoint)
+    os.makedirs(model_cache_dir, exist_ok=True)
+    required = ["weights.onnx", "environment.json"]
+    for file_name in required:
+        with open(os.path.join(model_cache_dir, file_name), "wb") as f:
+            f.write(b"truncated")
+
+    model = mock.Mock()
+    model.endpoint = endpoint
+    model.cache_dir = model_cache_dir
+    model.version_id = "1"
+    model.api_key = "key"
+    model.device_id = "device"
+    model.weights_file = "weights.onnx"
+    model.get_all_required_infer_bucket_file.return_value = list(required)
+
+    # when - the download path must be taken, not short-circuited
+    with mock.patch.object(
+        roboflow, "get_roboflow_model_data", side_effect=ModelArtefactError("boom")
+    ) as api_mock:
+        with pytest.raises(ModelArtefactError):
+            roboflow.RoboflowInferenceModel.download_model_artifacts_from_roboflow_api(
+                model
+            )
+
+    # then
+    api_mock.assert_called_once()
+
+
+def test_core_model_download_method_skips_network_when_cache_warmed_while_waiting(
+    isolated_model_cache,
+) -> None:
+    """Same waiter contract, driven through the core-model production method."""
+    # given - a sibling finished the download and wrote the marker
+    endpoint = "core-dataset/1"
+    model_cache_dir = os.path.join(isolated_model_cache, endpoint)
+    os.makedirs(model_cache_dir, exist_ok=True)
+    required = ["L2CSNet_gaze360_resnet50_90bins.pkl"]
+    for file_name in required:
+        with open(os.path.join(model_cache_dir, file_name), "wb") as f:
+            f.write(b"payload")
+    roboflow.mark_model_download_complete(model_id=endpoint)
+
+    model = mock.Mock()
+    model.endpoint = endpoint
+    model.cache_dir = model_cache_dir
+    model.api_key = "key"
+    model.device_id = "device"
+    model.countinference = None
+    model.service_secret = None
+    model.get_infer_bucket_file_list.return_value = list(required)
+
+    # when
+    with mock.patch.object(
+        roboflow, "get_roboflow_model_data"
+    ) as api_mock, mock.patch.object(
+        roboflow, "get_from_url"
+    ) as url_mock, mock.patch.object(
+        roboflow, "save_bytes_in_cache"
+    ) as save_mock:
+        roboflow.RoboflowCoreModel.download_model_from_roboflow_api(model)
+
+    # then - no network call, no disk write
+    api_mock.assert_not_called()
+    url_mock.assert_not_called()
+    save_mock.assert_not_called()
+
+
+def test_core_model_download_method_releases_lock_when_download_fails(
+    isolated_model_cache,
+) -> None:
+    # given - a cold cache and an API call that blows up mid-download
+    endpoint = "core-dataset/1"
+    model_cache_dir = os.path.join(isolated_model_cache, endpoint)
+
+    model = mock.Mock()
+    model.endpoint = endpoint
+    model.cache_dir = model_cache_dir
+    model.api_key = "key"
+    model.device_id = "device"
+    model.countinference = None
+    model.service_secret = None
+    model.get_infer_bucket_file_list.return_value = ["weights.pkl"]
+
+    # when
+    with mock.patch.object(
+        roboflow, "get_roboflow_model_data", side_effect=ModelArtefactError("boom")
+    ):
+        with pytest.raises(ModelArtefactError):
+            roboflow.RoboflowCoreModel.download_model_from_roboflow_api(model)
+
+    # then - the lock is free for the next attempt, and no marker was written
+    lock_file = get_model_download_lock_path(cache_dir=model_cache_dir)
+    probe = FileLock(lock_file, timeout=1)
+    probe.acquire()
+    probe.release()
+    assert not roboflow.is_model_download_marked_complete(model_id=endpoint)
 
 
 def test_get_model_download_lock_path_keeps_the_legacy_lock_name(tmp_path) -> None:

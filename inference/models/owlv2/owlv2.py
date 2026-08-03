@@ -47,6 +47,8 @@ from inference.core.models.roboflow import (
     acquire_model_download_lock,
     draw_detection_predictions,
     get_model_download_lock_path,
+    is_model_download_marked_complete,
+    mark_model_download_complete,
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -975,18 +977,20 @@ class SerializedOwlV2(RoboflowInferenceModel):
         try:
             # A sibling process may have completed the download while we waited
             # on the lock - reload from the now-warm cache instead of downloading
-            # again.
-            # NOTE: this check is existence-only (`are_all_files_cached` stats
-            # each file). With `ATOMIC_CACHE_WRITES_ENABLED` off, a process
-            # killed mid-write can leave a truncated artifact that passes it.
-            # Accepted deliberately: the caller already gates on this exact
-            # predicate before we are reached, so a partial cache is a
-            # pre-existing hazard, not one introduced here. The alternatives are
-            # worse - a completion marker forces every already-warm deployment to
-            # re-download once on upgrade (through the slow gateway this fix
-            # exists for), and dropping the recheck makes each waiter re-download
-            # serially under the lock. Fix belongs with atomic cache writes.
-            if are_all_files_cached(
+            # again. Requiring the completion marker (written as the download's
+            # last step) distinguishes that from a sibling killed mid-write:
+            # with ATOMIC_CACHE_WRITES_ENABLED off a dead writer leaves
+            # truncated artifacts that pass the existence-only file check, and
+            # trusting them would poison the cache with no self-repair. Only
+            # this post-wait recheck requires the marker - the caller's outer
+            # warm-cache gate still keys on file existence alone, so
+            # already-warm deployments do not re-download on upgrade. If the
+            # sibling ran a pre-marker release, no marker exists and we
+            # re-download redundantly under the lock, which is safe and matches
+            # the old always-download behavior.
+            if is_model_download_marked_complete(
+                model_id=self.endpoint
+            ) and are_all_files_cached(
                 files=self.get_all_required_infer_bucket_file(), model_id=self.endpoint
             ):
                 logger.info(
@@ -1037,6 +1041,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 file=self.weights_file,
                 model_id=self.endpoint,
             )
+            mark_model_download_complete(model_id=self.endpoint)
             logger.info("OWLv2 model weights saved to cache")
         except Exception as e:
             logger.error("Error downloading OWLv2 model artifacts: %s", e)
