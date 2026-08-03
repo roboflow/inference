@@ -91,8 +91,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_project,
 )
 from inference_models.models.base.classification import (
     ClassificationPrediction,
@@ -301,6 +303,13 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if self.disable_sink is True:
+            # Sink literally disabled — execution returns before the target
+            # project is ever accessed.
+            return []
+        return [roboflow_platform_project(project_url=self.target_project)]
 
 
 class RoboflowDatasetUploadBlockV1(WorkflowBlock):

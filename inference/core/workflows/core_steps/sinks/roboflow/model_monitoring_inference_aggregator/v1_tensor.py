@@ -45,12 +45,15 @@ from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
+    ModelRequiredAction,
     Runtime,
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_models.models.base.classification import (
     ClassificationPrediction,
@@ -251,6 +254,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # References the platform model entity for monitoring; no weights are pulled.
+        return [
+            roboflow_platform_model(
+                model_id=self.model_id,
+                required_action=ModelRequiredAction.ACCESS,
+            )
+        ]
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
