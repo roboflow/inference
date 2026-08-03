@@ -332,6 +332,14 @@ LEGACY_MMP_LOAD_WAIT_S = float(os.getenv("LEGACY_MMP_LOAD_WAIT_S", "600"))
 # Inference wait budget for the MMP adapter bridge, default is 300
 LEGACY_MMP_INFER_TIMEOUT_S = float(os.getenv("LEGACY_MMP_INFER_TIMEOUT_S", "300"))
 
+# Transport behind the adapter: `mmp` talks ZMQ/SHM to a separate
+# ModelManagerProcess; `bundled` runs an in-process ModelManager with
+# subprocess model workers (no MMP process), default is mmp.
+# Bundled deltas vs mmp: no idle eviction or VRAM-admission orchestration
+# (explicit unloads only), and owlv2/instant heads load as plain models
+# (no shared-base worker reuse).
+LEGACY_MMP_ADAPTER_MODE = os.getenv("LEGACY_MMP_ADAPTER_MODE", "mmp")
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

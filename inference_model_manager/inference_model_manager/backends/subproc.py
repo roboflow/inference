@@ -127,7 +127,9 @@ def _write_error_to_slot(
     mv = pool.data_memoryview(slot_id)
     mv[: len(err_bytes)] = err_bytes
     mv.release()
-    pool.mark_error(slot_id, error_code=1, error_size=len(err_bytes), request_id=request_id)
+    pool.mark_error(
+        slot_id, error_code=1, error_size=len(err_bytes), request_id=request_id
+    )
 
 
 def _to_bytes(raw_input: Any) -> bytes:
@@ -205,9 +207,7 @@ def _maybe_empty_cuda_cache(
     log,
 ) -> float:
     batch_due = (
-        every_n_batches > 0
-        and batch_count > 0
-        and batch_count % every_n_batches == 0
+        every_n_batches > 0 and batch_count > 0 and batch_count % every_n_batches == 0
     )
     time_due = every_n_seconds > 0 and now - last_check_ts >= every_n_seconds
     if not batch_due and not time_due:
@@ -802,9 +802,7 @@ def _process_slots(
             if images_arg is None:
                 raw_out = invoke_task(model, task=task, **sub_params)
             else:
-                raw_out = invoke_task(
-                    model, task=task, images=images_arg, **sub_params
-                )
+                raw_out = invoke_task(model, task=task, images=images_arg, **sub_params)
             if isinstance(raw_out, list) and (
                 len(indices) == 1 or len(raw_out) == len(indices)
             ):
@@ -1383,7 +1381,7 @@ class SubprocessBackend(Backend):
                     except Exception as exc:
                         future.set_exception(exc)
                 else:
-                    future.set_exception(RuntimeError("worker inference error"))
+                    future.set_exception(self._read_slot_error(slot_id))
 
         # Notify owner (MMP or ModelManager)
         if self._on_result_callback is not None:
@@ -1391,6 +1389,27 @@ class SubprocessBackend(Backend):
                 self._on_result_callback(req_id, slot_id, result_sz)
             except Exception:
                 logger.exception("SubprocessBackend: on_result_callback raised")
+
+    def _read_slot_error(self, slot_id: int) -> RuntimeError:
+        """Recover the worker's error text from the slot data area.
+
+        The worker writes the message before mark_error; without this the
+        standalone-submit path collapses every failure (input rejection
+        included) into an opaque 'worker inference error'.
+        """
+        try:
+            header = self._pool.read_header(slot_id)
+            if header.status == SlotStatus.ERROR and header.result_size > 0:
+                mv = self._pool.data_memoryview(slot_id)
+                message = bytes(mv[: header.result_size]).decode(
+                    "utf-8", errors="replace"
+                )
+                mv.release()
+                if message:
+                    return RuntimeError(message)
+        except Exception:
+            pass
+        return RuntimeError("worker inference error")
 
     # ------------------------------------------------------------------
     # Standalone inference

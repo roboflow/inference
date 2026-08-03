@@ -1803,3 +1803,20 @@ def test_default_client_is_built_with_adapter_budgets(monkeypatch):
     ModelManagerAdapter(legacy_stack=FakeLegacy(), mmp_client=None)
 
     assert captured == {"load_wait_s": 600.0, "infer_timeout_s": 300.0}
+
+
+def test_bundled_mode_builds_mmwrapper_with_subprocess_backend(monkeypatch):
+    from inference.core.managers import mmp_adapter as adapter_module
+
+    monkeypatch.setattr(adapter_module, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+    adapter = ModelManagerAdapter(legacy_stack=FakeLegacy(), mmp_client=None)
+    try:
+        from inference_server.proxies.mm_wrapper import MMWrapper
+
+        assert isinstance(adapter._client, MMWrapper)
+        assert adapter._client._backend_choice == "subprocess"
+        assert adapter._client.load_wait_s == 600.0
+        assert adapter._client.infer_timeout_s == 300.0
+        assert adapter._client.n_slots >= 1
+    finally:
+        adapter._client.manager.shutdown()

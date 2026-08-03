@@ -50,13 +50,20 @@ if is_truthy "$ENABLE_HTTPS"; then
     fi
 fi
 
+if is_truthy "$LEGACY_MMP_ADAPTER_ENABLED" && [ "${LEGACY_MMP_ADAPTER_MODE:-mmp}" = "bundled" ] && [ "$NUM_WORKERS" -gt 1 ]; then
+    # Each uvicorn worker would own a full in-process ModelManager (N x VRAM,
+    # N x model workers) — bundled mode shares nothing between processes.
+    echo "bundled adapter mode requires NUM_WORKERS=1; forcing 1" >&2
+    NUM_WORKERS=1
+fi
+
 if command -v uvicorn >/dev/null 2>&1; then
     set -- uvicorn "$APP" --workers "$NUM_WORKERS" --host "$HOST" --port "$PORT" $SSL_ARGS "$@"
 else
     set -- python3 -m uvicorn "$APP" --workers "$NUM_WORKERS" --host "$HOST" --port "$PORT" $SSL_ARGS "$@"
 fi
 
-if is_truthy "$LEGACY_MMP_ADAPTER_ENABLED"; then
+if is_truthy "$LEGACY_MMP_ADAPTER_ENABLED" && [ "${LEGACY_MMP_ADAPTER_MODE:-mmp}" != "bundled" ]; then
     # Run the ModelManagerProcess supervisor next to uvicorn. Workers reach it
     # via INFERENCE_MMP_ADDR; the SHM pool name is discovered over T_SHM_INFO.
     INFERENCE_MMP_ADDR="${INFERENCE_MMP_ADDR:-ipc:///tmp/inference_mmp.sock}"

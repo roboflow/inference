@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from inference_server.proxies.mmp_client import MMPClient
 
-from inference.core.env import LEGACY_MMP_INFER_TIMEOUT_S, LEGACY_MMP_LOAD_WAIT_S
+from inference.core.env import (
+    LEGACY_MMP_ADAPTER_MODE,
+    LEGACY_MMP_INFER_TIMEOUT_S,
+    LEGACY_MMP_LOAD_WAIT_S,
+)
 from inference.core.exceptions import (
     InferenceModelNotFound,
     ModelDeploymentNotSupportedError,
@@ -68,12 +72,32 @@ class ModelManagerAdapter:
     def __init__(self, legacy_stack, mmp_client: Optional["MMPClient"] = None):
         self._legacy = legacy_stack
         if mmp_client is None:
-            from inference_server.proxies.mmp_client import MMPClient
+            if LEGACY_MMP_ADAPTER_MODE == "bundled":
+                from inference_model_manager.model_manager import (
+                    ModelManager as InProcessModelManager,
+                )
+                from inference_server import configuration as server_configuration
+                from inference_server.proxies.mm_wrapper import MMWrapper
 
-            mmp_client = MMPClient(
-                load_wait_s=LEGACY_MMP_LOAD_WAIT_S,
-                infer_timeout_s=LEGACY_MMP_INFER_TIMEOUT_S,
-            )
+                # Subprocess model workers keep the MMP wire contract
+                # (worker-side decode + result marshalling) without a
+                # separate ModelManagerProcess.
+                mmp_client = MMWrapper(
+                    InProcessModelManager(
+                        n_slots=server_configuration.SERVER_N_SLOTS,
+                        input_mb=server_configuration.SERVER_INPUT_MB,
+                    ),
+                    backend="subprocess",
+                    load_wait_s=LEGACY_MMP_LOAD_WAIT_S,
+                    infer_timeout_s=LEGACY_MMP_INFER_TIMEOUT_S,
+                )
+            else:
+                from inference_server.proxies.mmp_client import MMPClient
+
+                mmp_client = MMPClient(
+                    load_wait_s=LEGACY_MMP_LOAD_WAIT_S,
+                    infer_timeout_s=LEGACY_MMP_INFER_TIMEOUT_S,
+                )
         self._client = mmp_client
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._routes: Dict[str, dict] = {}

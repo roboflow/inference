@@ -818,6 +818,29 @@ class ModelManager:
         for model_id, backend in backends_snapshot:
             s = backend.stats()
             s["model_id"] = model_id
+            # Route-resolution fields the MMP overlays on its stats; kept here
+            # too so in-process consumers (MMWrapper) see one shape.
+            try:
+                mro_names = getattr(backend, "_model_mro_names", None)
+                if not mro_names:
+                    model = getattr(backend, "model", None)
+                    if model is not None:
+                        mro_names = [cls.__name__ for cls in type(model).__mro__]
+            except Exception:
+                mro_names = None
+            s["model_mro_names"] = mro_names
+            try:
+                s["class_names"] = backend.class_names
+            except Exception:
+                s["class_names"] = None
+            try:
+                s["key_points_classes"] = getattr(backend, "key_points_classes", None)
+            except Exception:
+                s["key_points_classes"] = None
+            try:
+                s["tasks"] = self.get_supported_tasks(model_id)
+            except Exception:
+                s["tasks"] = {}
             models.append(s)
 
         return {
@@ -893,6 +916,19 @@ class ModelManager:
     @property
     def loaded_models(self) -> List[str]:
         return [mid for mid, b in self._backends.items() if b.state == "loaded"]
+
+    @property
+    def n_slots(self) -> int:
+        return self._n_slots
+
+    def is_healthy(self, model_id: str) -> bool:
+        backend = self._backends.get(model_id)
+        if backend is None:
+            return False
+        try:
+            return bool(backend.is_healthy)
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------
     # Shutdown
