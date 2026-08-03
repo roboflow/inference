@@ -221,7 +221,9 @@ def _build_default_producer(
     the consumer. Construction failures fall back to the general cv2 decoder.
     """
     if not ENABLE_TENSOR_DATA_REPRESENTATION:
-        logger.debug("Using legacy decoder for source " f"reference: {stream_reference}")
+        logger.debug(
+            "Using legacy decoder for source " f"reference: {stream_reference}"
+        )
         return _create_video_frame_producer(stream_reference)
     # Local import: the discoverability layer pulls optional GPU-decode deps lazily.
     from inference.core.interfaces.camera.discoverability import (
@@ -263,6 +265,7 @@ def _build_default_producer(
     )
     return CV2VideoFrameProducer(stream_reference)
 
+
 def _create_video_frame_producer(video: Union[str, int]) -> VideoFrameProducer:
     if isinstance(video, str):
         from inference.core.interfaces.camera.gstreamer_rtsp_producer import (
@@ -278,6 +281,7 @@ def _create_video_frame_producer(video: Union[str, int]) -> VideoFrameProducer:
         ):
             return GStreamerRtspVideoFrameProducer(video)
     return CV2VideoFrameProducer(video)
+
 
 class VideoSource:
     @classmethod
