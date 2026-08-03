@@ -721,9 +721,11 @@ class VideoSource:
             try:
                 self._initialise_selected_video()
             except Exception as hardware_error:
-                if not uses_default_producer or isinstance(
-                    self._video, CV2VideoFrameProducer
-                ):
+                can_fall_back_to_cv2 = (
+                    uses_default_producer
+                    and type(self._video) is not CV2VideoFrameProducer
+                )
+                if not can_fall_back_to_cv2:
                     raise
                 self._release_video()
                 logger.warning(

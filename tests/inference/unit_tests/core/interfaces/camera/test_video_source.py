@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.interfaces.camera import video_source
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
@@ -35,6 +36,13 @@ from inference.core.interfaces.camera.video_source import (
     drop_single_frame_from_buffer,
     get_fps_if_tick_happens_now,
     get_from_queue,
+)
+
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="Exercises legacy (flag-off) producer selection; under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION sources route through the hardware "
+    "decoder discovery covered by test_discoverability.py",
 )
 
 
@@ -289,7 +297,7 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
     assert result == SourceMetadata(
         source_properties=None,
         source_reference="invalid",
-        buffer_size=64,
+        buffer_size=DEFAULT_BUFFER_SIZE,
         state=StreamState.NOT_STARTED,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
@@ -297,6 +305,7 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
     ), "Source description must denote NOT_STARTED state and invalid source reference"
 
 
+@_NUMPY_ONLY
 def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
     credentialed_url = "rtsps://user:secret@192.168.1.1:554/stream"
     with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
@@ -308,14 +317,12 @@ def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
                 "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
             ) as mock_producer_cls:
                 mock_producer_cls.return_value.isOpened.return_value = True
-                mock_producer_cls.return_value.discover_source_properties.return_value = (
-                    SourceProperties(
-                        width=640,
-                        height=480,
-                        fps=30.0,
-                        total_frames=0,
-                        is_file=False,
-                    )
+                mock_producer_cls.return_value.discover_source_properties.return_value = SourceProperties(
+                    width=640,
+                    height=480,
+                    fps=30.0,
+                    total_frames=0,
+                    is_file=False,
                 )
                 source = VideoSource.init(video_reference=credentialed_url)
                 source.start()
@@ -360,7 +367,7 @@ def test_video_source_describe_source_when_invalid_video_reference_consumption_s
     assert result == SourceMetadata(
         source_properties=None,
         source_reference="invalid",
-        buffer_size=64,
+        buffer_size=DEFAULT_BUFFER_SIZE,
         state=StreamState.ERROR,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
