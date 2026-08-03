@@ -137,6 +137,18 @@ See [Model Weights Download](../using_inference/offline_weights_download.md) for
 
 Sets the number of workers used by HTTP interfaces. 
 
+!!! note "Interaction with `ENABLE_STREAM_API`"
+
+    The Stream Management API runs as a single Stream Manager process per container, bound to
+    `STREAM_MANAGER_HOST`:`STREAM_MANAGER_PORT` (`127.0.0.1:7070` by default), and every worker
+    connects to it as a client. When `NUM_WORKERS > 1`, each worker attempts to start a manager and
+    only the first one to bind the port keeps running - the rest exit and log that a manager is
+    already serving the container. This is expected and the shared manager serves all workers.
+
+    Note that some options are incompatible with multiple workers. `PRELOAD_HF_IDS`, for example,
+    causes every inference process to preload the models and requires `NUM_WORKERS=1` together with
+    `ENABLE_STREAM_API=False`.
+
 ## HTTPS / TLS
 
 **ENABLE_HTTPS**: Boolean (default = `False`)
