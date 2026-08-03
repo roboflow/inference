@@ -37,7 +37,7 @@ start_test_docker_gpu_with_roboflow_staging:
 
 
 start_test_docker_jetson:
-	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p $(PORT):$(PORT) --shm-size=1g -e INFERENCE_N_SLOTS=8 -e INFERENCE_INPUT_MB=25 -e INFERENCE_VRAM_ADMISSION_CONTROL=true -e INFERENCE_MODEL_IDLE_TIMEOUT_S=0 -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e LEGACY_MMP_ADAPTER_ENABLED=$(or $(LEGACY_MMP_ADAPTER_ENABLED),false) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 stop_test_docker:
 	docker rm -f inference-test
