@@ -1971,6 +1971,75 @@ def test_scheme_qualified_gateway_keeps_port_and_strips_trailing_slash():
     assert outer.path == "/proxy"
 
 
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
+def test_proxy_url_builder_is_idempotent():
+    # given - a download_url that already came back wrapped, which happens when the
+    # metadata API that returned it was itself reached through the gateway
+    original_url = "https://api.roboflow.com/weights"
+
+    # when
+    wrapped_once = roboflow_secure_gateway_proxy_url_builder(
+        url=original_url, query=None
+    )
+    wrapped_twice = roboflow_secure_gateway_proxy_url_builder(
+        url=wrapped_once, query=None
+    )
+
+    # then - wrapping twice must not proxy the proxy
+    assert wrapped_twice == wrapped_once
+    assert _extract_proxied_url(wrapped_twice) == original_url
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge")
+def test_proxy_url_builder_preserves_gateway_base_path():
+    # given - a gateway published under a base path
+    # when
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+
+    # then - the path must survive, otherwise weights traffic goes to gw.local/proxy
+    # while server traffic goes to gw.local/edge/proxy
+    outer = _parse_proxy_result(result)
+    assert outer.netloc == "gw.local"
+    assert outer.path == "/edge/proxy"
+    assert _extract_proxied_url(result) == "https://api.roboflow.com/weights"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge/")
+def test_proxy_url_builder_preserves_gateway_base_path_with_trailing_slash():
+    # when
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+
+    # then
+    outer = _parse_proxy_result(result)
+    assert outer.path == "/edge/proxy"
+    assert "//proxy" not in result
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge")
+def test_proxy_url_builder_is_idempotent_under_a_gateway_base_path():
+    # given - the two fixes interact: the guard has to compare against the prefix
+    # that includes the base path, or an already-wrapped url is wrapped again
+    original_url = "https://api.roboflow.com/weights"
+
+    # when
+    wrapped_once = roboflow_secure_gateway_proxy_url_builder(
+        url=original_url, query=None
+    )
+    wrapped_twice = roboflow_secure_gateway_proxy_url_builder(
+        url=wrapped_once, query=None
+    )
+
+    # then
+    assert wrapped_twice == wrapped_once
+    assert _extract_proxied_url(wrapped_twice) == original_url
+
+
 @patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_roundtrip_preserves_query_with_special_characters():
     result = roboflow_secure_gateway_proxy_url_builder(

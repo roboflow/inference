@@ -215,11 +215,21 @@ def roboflow_secure_gateway_proxy_url_builder(
         url = _add_query_params_to_url(url=url, query=query)
     if not SECURE_GATEWAY:
         return url
-    parts = urllib.parse.urlsplit(
-        SECURE_GATEWAY if "://" in SECURE_GATEWAY else f"http://{SECURE_GATEWAY}"
-    )
-    gateway_base = f"{parts.scheme}://{parts.netloc}"
-    return f"{gateway_base}/proxy?url=" + urllib.parse.quote(url, safe="~()*!'")
+    # Kept behaviour-identical to inference.core.utils.url_utils.wrap_url: both
+    # implement the same /proxy?url= contract, and a divergence between them sends
+    # weights traffic somewhere the server traffic does not go.
+    gateway = SECURE_GATEWAY.rstrip("/")
+    if "://" in gateway:
+        gateway_base = gateway
+    else:
+        gateway_base = f"http://{gateway}"
+    gateway_prefix = f"{gateway_base}/proxy?url="
+    # Idempotent: values may already be wrapped (e.g. a download_url returned by an
+    # API that is itself reached through the gateway) - wrapping twice would proxy
+    # the proxy.
+    if url.startswith(gateway_prefix):
+        return url
+    return gateway_prefix + urllib.parse.quote(url, safe="~()*!'")
 
 
 def get_model_metadata(
