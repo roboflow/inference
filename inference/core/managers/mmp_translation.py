@@ -168,6 +168,7 @@ IMPLEMENTED_ROUTES = frozenset(
         ("semantic-segmentation", "infer"),
         ("structured-ocr", "infer"),
         ("text-only-ocr", "infer"),
+        ("vlm", "detect"),
         ("vlm", "prompt"),
     ]
 )
@@ -176,6 +177,11 @@ IMPLEMENTED_ROUTES = frozenset(
 VLM_UNSUPPORTED_MODEL_CLASSES = frozenset()
 
 OWLV2_BACKED_MODEL_CLASSES = frozenset(["OWLv2HF", "RoboflowInstantHF"])
+
+# Moondream2 registers typed actions (caption/detect/query/point) and no
+# generic prompt action; the legacy /infer/lmm surface routes every request
+# through predict -> detect, so the adapter mirrors that single path.
+MOONDREAM_BACKED_MODEL_CLASSES = frozenset(["MoonDream2HF"])
 
 IMPLEMENTED_TASK_TYPES = frozenset(task_type for task_type, _ in IMPLEMENTED_ROUTES)
 
@@ -203,6 +209,8 @@ _ACTION_CANDIDATES_BY_REQUEST_TYPE: Dict[str, Tuple[str, ...]] = {
 
 
 def resolve_request_action(route: dict, request: Any) -> str:
+    if _is_moondream_backed(route) and "detect" in (route.get("tasks") or set()):
+        return "detect"
     candidates = _ACTION_CANDIDATES_BY_REQUEST_TYPE.get(type(request).__name__)
     if not candidates:
         return route["action"]
@@ -411,6 +419,8 @@ def build_task_params(
     if task_type == "vlm":
         if route is not None and mmp_florence2.is_florence2_route(route):
             return mmp_florence2.build_prompt_params(request)
+        if route is not None and _is_moondream_backed(route):
+            return {"classes": [getattr(request, "prompt", None)]}
         return _build_vlm_params(request)
     if task_type == "structured-ocr":
         _ensure_ocr_request_supported(request)
@@ -870,6 +880,8 @@ def repack_prediction(
             return mmp_florence2.repack_response(
                 _unwrap_single_prediction(prediction), request, dims
             )
+        if _is_moondream_backed(route):
+            return _repack_moondream_detection(prediction, request, dims)
         return repack_vlm_response(prediction, dims)
     raise ModelDeploymentNotSupportedError(
         f"No response translation for task type '{task_type}' on the MMP path."
@@ -913,6 +925,38 @@ def _is_owlv2_backed(route: dict) -> bool:
     if OWLV2_BACKED_MODEL_CLASSES.intersection(route.get("model_mro_names") or []):
         return True
     return route.get("model_class_name") in OWLV2_BACKED_MODEL_CLASSES
+
+
+def _is_moondream_backed(route: dict) -> bool:
+    if MOONDREAM_BACKED_MODEL_CLASSES.intersection(route.get("model_mro_names") or []):
+        return True
+    return route.get("model_class_name") in MOONDREAM_BACKED_MODEL_CLASSES
+
+
+def _repack_moondream_detection(
+    prediction: Any, request: Any, dims: Tuple[int, int]
+) -> ObjectDetectionInferenceResponse:
+    detections = _unwrap_single_prediction(prediction)
+    xyxy = np.asarray(detections.xyxy, dtype=float).reshape(-1, 4)
+    prompt = getattr(request, "prompt", None)
+    predictions: List[ObjectDetectionPrediction] = []
+    for x1, y1, x2, y2 in xyxy:
+        predictions.append(
+            ObjectDetectionPrediction(
+                x=(float(x1) + float(x2)) / 2.0,
+                y=(float(y1) + float(y2)) / 2.0,
+                width=float(x2) - float(x1),
+                height=float(y2) - float(y1),
+                confidence=1.0,
+                **{"class": prompt if prompt is not None else ""},
+                class_id=0,
+            )
+        )
+    width, height = dims
+    return ObjectDetectionInferenceResponse(
+        predictions=predictions,
+        image=InferenceResponseImage(width=width, height=height),
+    )
 
 
 def _class_color_mapping(class_names: Optional[List[str]]) -> Dict[str, str]:

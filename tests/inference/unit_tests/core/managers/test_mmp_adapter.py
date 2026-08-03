@@ -1232,16 +1232,70 @@ class TestVlmRouting:
             running_adapter.add_model("unsupported-vlm/1", api_key="key")
         assert running_adapter._client.unloaded == ["unsupported-vlm/1"]
 
-    def test_moondream_without_prompt_task_unsupported(
-        self, running_adapter, monkeypatch
-    ):
+    def _setup_moondream(self, running_adapter, monkeypatch):
         self._setup(
             running_adapter,
             monkeypatch,
             tasks=("caption", "detect", "query", "point", "encode"),
         )
-        with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("moondream2/2b", api_key="key")
+        running_adapter._client.model_class_name = "MoonDream2HF"
+
+    def test_moondream_grounded_detection_routes_to_detect(
+        self, running_adapter, monkeypatch
+    ):
+        self._setup_moondream(running_adapter, monkeypatch)
+        running_adapter._client.infer_result = SimpleNamespace(
+            xyxy=np.array([[10.0, 20.0, 30.0, 60.0]])
+        )
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(
+            image=image, prompt="dog", task_type="phrase-grounded-object-detection"
+        )
+        response = running_adapter.infer_from_request_sync("moondream2", request)
+        assert running_adapter._client.infer_calls[0]["task"] == "detect"
+        assert running_adapter._client.infer_calls[0]["params"] == {"classes": ["dog"]}
+        prediction = response.predictions[0]
+        assert (prediction.x, prediction.y) == (20.0, 40.0)
+        assert (prediction.width, prediction.height) == (20.0, 40.0)
+        assert prediction.confidence == 1.0
+        assert prediction.class_name == "dog"
+        assert prediction.class_id == 0
+        assert response.image.width == 64 and response.image.height == 48
+
+    def test_moondream_caption_routes_to_detect_like_legacy(
+        self, running_adapter, monkeypatch
+    ):
+        self._setup_moondream(running_adapter, monkeypatch)
+        running_adapter._client.infer_result = SimpleNamespace(
+            xyxy=np.array([[0.0, 0.0, 4.0, 8.0]])
+        )
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, prompt=None, task_type="caption")
+        response = running_adapter.infer_from_request_sync("moondream2", request)
+        assert running_adapter._client.infer_calls[0]["task"] == "detect"
+        assert running_adapter._client.infer_calls[0]["params"] == {"classes": [None]}
+        prediction = response.predictions[0]
+        assert prediction.class_name == ""
+        assert (prediction.x, prediction.y) == (2.0, 4.0)
+        assert prediction.confidence == 1.0
+
+    def test_moondream_query_routes_to_detect_like_legacy(
+        self, running_adapter, monkeypatch
+    ):
+        self._setup_moondream(running_adapter, monkeypatch)
+        running_adapter._client.infer_result = SimpleNamespace(
+            xyxy=np.array([[0.0, 0.0, 4.0, 4.0]])
+        )
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(
+            image=image, prompt="describe the image", task_type="query"
+        )
+        response = running_adapter.infer_from_request_sync("moondream2", request)
+        assert running_adapter._client.infer_calls[0]["task"] == "detect"
+        assert running_adapter._client.infer_calls[0]["params"] == {
+            "classes": ["describe the image"]
+        }
+        assert response.predictions[0].class_name == "describe the image"
 
 
 class SamEmbeddingRequest(SimpleNamespace):
