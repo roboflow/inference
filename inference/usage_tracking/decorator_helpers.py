@@ -19,6 +19,30 @@ def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
         return func_kwargs["model_id"]
     if "kwargs" in func_kwargs and "model_id" in func_kwargs["kwargs"]:
         return func_kwargs["kwargs"]["model_id"]
+    for request_key in ("inference_request", "request", "workflow_request"):
+        request = func_kwargs.get(request_key)
+        model_id = getattr(request, "model_id", None)
+        if model_id:
+            return str(model_id)
+    if "self" in func_kwargs:
+        model_id = getattr(func_kwargs["self"], "model_id", None)
+        if model_id:
+            return str(model_id)
+    return None
+
+
+def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
+    api_key = func_kwargs.get("api_key")
+    if api_key:
+        return api_key
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict) and nested_kwargs.get("api_key"):
+        return nested_kwargs["api_key"]
+    for request_key in ("inference_request", "request", "workflow_request"):
+        request = func_kwargs.get(request_key)
+        api_key = getattr(request, "api_key", None)
+        if api_key:
+            return api_key
     return None
 
 
