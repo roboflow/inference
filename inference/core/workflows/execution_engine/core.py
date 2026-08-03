@@ -43,6 +43,7 @@ class ExecutionEngine(BaseExecutionEngine):
         step_error_handler: Optional[
             Union[str, Callable[[str, Exception], None]]
         ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
+        dependencies_pre_init: Optional[List[str]] = None,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -59,6 +60,7 @@ class ExecutionEngine(BaseExecutionEngine):
             profiler=profiler,
             executor=executor,
             step_error_handler=step_error_handler,
+            dependencies_pre_init=dependencies_pre_init,
         )
         return cls(engine=engine)
 

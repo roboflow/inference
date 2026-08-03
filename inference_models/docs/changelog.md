@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.34.4`
+
 ### Added
 
 - RF-DETR TensorRT execution plans now resolve all five stage categories through the
@@ -9,6 +13,10 @@
   have explicit `base` implementations with typed metadata and runtime selection
   records, while preserving the existing tensor ownership, CUDA stream/event behavior,
   and protected TensorRT forward path.
+
+### Fixed
+
+- Add `setuptools>=83.0.0` requirement for transitive dependencies to mitigate security risk.
 
 ---
 
