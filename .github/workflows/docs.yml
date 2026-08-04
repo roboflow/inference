@@ -27,23 +27,6 @@ jobs:
           path: inference_repo
           fetch-depth: 0
 
-      - name: Create GitHub App token (enterprise blocks)
-        id: enterprise_blocks_token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.ENTERPRISE_BLOCKS_APP_ID }}
-          private-key: ${{ secrets.ENTERPRISE_BLOCKS_PEM }}
-          owner: roboflow
-          repositories: workflows-enterprise-blocks
-
-      - name: Check out enterprise blocks
-        uses: actions/checkout@v6
-        with:
-          repository: roboflow/workflows-enterprise-blocks
-          ref: main
-          path: roboflow_enterprise_blocks
-          token: ${{ steps.enterprise_blocks_token.outputs.token }}
-
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
@@ -69,51 +52,9 @@ jobs:
           # Upgrade pip and setuptools
           python -m pip install --upgrade pip setuptools
 
-          # Install doc requirements
+          # The site is now a landing page plus redirects, so the build no
+          # longer imports the inference package.
           pip install -r requirements/requirements.docs.txt
-
-          # Install remaining dependencies
-          pip install -r requirements/_requirements.txt \
-                      -r requirements/requirements.cpu.txt \
-                      -r requirements/requirements.sdk.http.txt \
-                      -r requirements/requirements.test.unit.txt \
-                      -r requirements/requirements.test.integration.txt \
-                      -r requirements/requirements.http.txt \
-                      -r requirements/requirements.cli.txt
-
-          pip install -e .
-        working-directory: ./inference_repo
-
-      - name: Install enterprise blocks
-        run: pip install .
-        working-directory: ./roboflow_enterprise_blocks
-
-      - name: Generate API reference pages
-        run: python docs/scripts/gen_ref_pages.py
-        working-directory: ./inference_repo
-
-      - name: Build block docs
-        env:
-          LOAD_ENTERPRISE_BLOCKS: "TRUE"
-        run: python -m development.docs.build_block_docs
-        working-directory: ./inference_repo
-
-      - name: Build workflows gallery
-        env:
-          WORKFLOWS_GALLERY_API_KEY: ${{ secrets.WORKFLOWS_GALLERY_API_KEY }}
-        run: python -m development.docs.workflows_gallery_builder
-        working-directory: ./inference_repo
-
-      - name: Write CLI docs
-        run: python -m development.docs.write_cli_docs
-        working-directory: ./inference_repo
-
-      - name: Write OpenAPI spec
-        run: python -m development.docs.write_openapi_spec
-        working-directory: ./inference_repo
-
-      - name: Expand literate-nav SUMMARY.md into mkdocs.yml
-        run: python docs/scripts/expand_literate_nav.py
         working-directory: ./inference_repo
 
       - name: Replace template variables (VERSION, etc.)
@@ -138,11 +79,11 @@ jobs:
           test -f site/static/styles.css || { echo "ERROR: site/static/styles.css missing!"; exit 1; }
           test -f site/static/dist/home.js || { echo "ERROR: site/static/dist/home.js missing!"; exit 1; }
           echo "Theme assets OK."
-          echo "Checking for API reference pages..."
-          test -d site/reference/inference || { echo "ERROR: site/reference/inference/ missing!"; exit 1; }
-          test -d site/reference/inference_sdk || { echo "ERROR: site/reference/inference_sdk/ missing!"; exit 1; }
-          test -d site/reference/inference_cli || { echo "ERROR: site/reference/inference_cli/ missing!"; exit 1; }
-          echo "API reference OK."
+          echo "Checking redirect pages..."
+          test -f site/404.html || { echo "ERROR: site/404.html missing!"; exit 1; }
+          grep -q "docs.roboflow.com" site/install/index.html || { echo "ERROR: /install/ does not redirect!"; exit 1; }
+          grep -q "docs.roboflow.com" site/workflows/about/index.html || { echo "ERROR: /workflows/about/ does not redirect!"; exit 1; }
+          echo "Redirects OK."
           echo "Checking for llms.txt..."
           test -f site/llms.txt || { echo "ERROR: site/llms.txt missing!"; exit 1; }
           test -f site/llms-full.txt || { echo "ERROR: site/llms-full.txt missing!"; exit 1; }
