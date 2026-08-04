@@ -1809,6 +1809,9 @@ def test_bundled_mode_builds_mmwrapper_with_subprocess_backend(monkeypatch):
     from inference.core.managers import mmp_adapter as adapter_module
 
     monkeypatch.setattr(adapter_module, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+    monkeypatch.setattr(
+        adapter_module, "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "subprocess"
+    )
     adapter = ModelManagerAdapter(legacy_stack=FakeLegacy(), mmp_client=None)
     try:
         from inference_server.proxies.mm_wrapper import MMWrapper
@@ -1818,5 +1821,17 @@ def test_bundled_mode_builds_mmwrapper_with_subprocess_backend(monkeypatch):
         assert adapter._client.load_wait_s == 600.0
         assert adapter._client.infer_timeout_s == 300.0
         assert adapter._client.n_slots >= 1
+    finally:
+        adapter._client.manager.shutdown()
+
+
+def test_bundled_mode_backend_env_selects_direct(monkeypatch):
+    from inference.core.managers import mmp_adapter as adapter_module
+
+    monkeypatch.setattr(adapter_module, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+    monkeypatch.setattr(adapter_module, "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "direct")
+    adapter = ModelManagerAdapter(legacy_stack=FakeLegacy(), mmp_client=None)
+    try:
+        assert adapter._client._backend_choice == "direct"
     finally:
         adapter._client.manager.shutdown()

@@ -340,6 +340,13 @@ LEGACY_MMP_INFER_TIMEOUT_S = float(os.getenv("LEGACY_MMP_INFER_TIMEOUT_S", "300"
 # (no shared-base worker reuse).
 LEGACY_MMP_ADAPTER_MODE = os.getenv("LEGACY_MMP_ADAPTER_MODE", "mmp")
 
+# Model backend for bundled mode: `subprocess` isolates each model in a
+# worker process; `direct` runs models in the main process (snapshottable,
+# no crash isolation), default is subprocess
+LEGACY_MMP_ADAPTER_BUNDLED_BACKEND = os.getenv(
+    "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "subprocess"
+)
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

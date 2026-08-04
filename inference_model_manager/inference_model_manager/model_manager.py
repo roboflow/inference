@@ -548,12 +548,66 @@ class ModelManager:
     # Processing — unified task dispatch
     # ------------------------------------------------------------------
 
+    def _wire_marshal_inputs(self, backend: Any, kwargs: dict) -> tuple:
+        """Direct-backend half of the subprocess worker's input handling:
+        decode encoded image bytes and inject mask_format=rle for models
+        that support it. Returns (kwargs, n_images) for result mapping."""
+        images = kwargs.get("images")
+        n_images = len(images) if isinstance(images, list) else 1
+        if images is None:
+            # The worker invokes params-only requests WITHOUT an images kwarg
+            # (zero-byte slot); mirror that exactly.
+            kwargs.pop("images", None)
+        else:
+            decode = getattr(backend, "_decode_input", None)
+            if decode is not None:
+                if isinstance(images, list):
+                    kwargs["images"] = [decode(image) for image in images]
+                else:
+                    kwargs["images"] = decode(images)
+        from inference_model_manager.backends.subproc import _model_supports_rle
+
+        if _model_supports_rle(backend.model) and "mask_format" not in kwargs:
+            kwargs["mask_format"] = "rle"
+        return kwargs, n_images
+
+    @staticmethod
+    def _wire_marshal_result(
+        raw_out: Any, n_images: int, retry_single: Optional[Callable] = None
+    ) -> Any:
+        """Direct-backend half of the worker's result handling: the same
+        per-image mapping as the worker's sub_results block (including the
+        per-image retry when a batched call returns a mismatched shape),
+        then tensors -> CPU numpy."""
+        from inference_model_manager.backends.subproc import _tensors_to_numpy
+
+        if isinstance(raw_out, list) and (n_images == 1 or len(raw_out) == n_images):
+            results = raw_out
+        else:
+            shape = getattr(raw_out, "shape", None)
+            if shape and n_images > 1 and shape[0] == n_images:
+                results = [raw_out[i : i + 1] for i in range(n_images)]
+            elif n_images == 1:
+                results = [raw_out]
+            elif retry_single is not None:
+                results = []
+                for index in range(n_images):
+                    single_out = retry_single(index)
+                    if isinstance(single_out, list):
+                        single_out = single_out[0] if single_out else None
+                    results.append(single_out)
+            else:
+                results = [raw_out]
+        results = [_tensors_to_numpy(result) for result in results]
+        return results[0] if n_images == 1 else results
+
     def process(
         self,
         model_id: str,
         task: Optional[str] = None,
         *,
         serialize: bool = True,
+        wire_marshalling: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Process a task on a loaded model. Blocks until result is ready.
@@ -606,6 +660,10 @@ class ModelManager:
         # Resolve task (validates it exists, raises ValueError if not)
         task_name, _entry = resolve_task(backend.model, task)
 
+        n_images = 1
+        if wire_marshalling:
+            kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
+
         # Validate kwargs through registry (if entry exists)
         kwargs = _get_registry().validate(backend.model, task_name, kwargs)
 
@@ -615,6 +673,22 @@ class ModelManager:
             _begin()
         try:
             result = invoke_task(backend.model, task=task, **kwargs)
+            if wire_marshalling:
+                # Inside the inflight/accounting window: per-image retries are
+                # inference too — unload drains must wait for them and their
+                # failures must count as errors.
+                images = kwargs.get("images")
+
+                def _retry_single(index: int) -> Any:
+                    single_kwargs = dict(kwargs)
+                    single_kwargs["images"] = images[index]
+                    return invoke_task(backend.model, task=task, **single_kwargs)
+
+                result = self._wire_marshal_result(
+                    result,
+                    n_images,
+                    retry_single=_retry_single if isinstance(images, list) else None,
+                )
         except Exception:
             backend.record_inference(t0, error=True)
             raise
@@ -637,6 +711,7 @@ class ModelManager:
         task: Optional[str] = None,
         *,
         serialize: bool = True,
+        wire_marshalling: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Process a task asynchronously.
@@ -649,7 +724,13 @@ class ModelManager:
         """
         return await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: self.process(model_id, task=task, serialize=serialize, **kwargs),
+            lambda: self.process(
+                model_id,
+                task=task,
+                serialize=serialize,
+                wire_marshalling=wire_marshalling,
+                **kwargs,
+            ),
         )
 
     def submit(

@@ -270,9 +270,15 @@ class MMWrapper:
             try:
                 # serialize=False: L1 output serializers expect the RAW
                 # prediction — the MMP wire carries raw pickles, so bundled
-                # mode must match.
+                # mode must match. wire_marshalling: direct backends get the
+                # worker-equivalent decode/rle/numpy/unwrap handling
+                # (no-op on subprocess backends — the worker does it).
                 return await self.manager.process_async(
-                    model_id, task=task, serialize=False, **call_kwargs
+                    model_id,
+                    task=task,
+                    serialize=False,
+                    wire_marshalling=True,
+                    **call_kwargs,
                 )
             except asyncio.CancelledError:
                 raise

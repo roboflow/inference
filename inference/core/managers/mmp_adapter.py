@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from inference_server.proxies.mmp_client import MMPClient
 
 from inference.core.env import (
+    LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
     LEGACY_MMP_ADAPTER_MODE,
     LEGACY_MMP_INFER_TIMEOUT_S,
     LEGACY_MMP_LOAD_WAIT_S,
@@ -79,15 +80,15 @@ class ModelManagerAdapter:
                 from inference_server import configuration as server_configuration
                 from inference_server.proxies.mm_wrapper import MMWrapper
 
-                # Subprocess model workers keep the MMP wire contract
-                # (worker-side decode + result marshalling) without a
-                # separate ModelManagerProcess.
+                # subprocess workers keep the MMP wire contract worker-side;
+                # direct runs models in the main process (snapshottable) with
+                # the manager's wire_marshalling providing the same contract.
                 mmp_client = MMWrapper(
                     InProcessModelManager(
                         n_slots=server_configuration.SERVER_N_SLOTS,
                         input_mb=server_configuration.SERVER_INPUT_MB,
                     ),
-                    backend="subprocess",
+                    backend=LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
                     load_wait_s=LEGACY_MMP_LOAD_WAIT_S,
                     infer_timeout_s=LEGACY_MMP_INFER_TIMEOUT_S,
                 )

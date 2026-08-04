@@ -473,6 +473,203 @@ def test_subprocess_backend_reads_worker_error_text_from_slot():
     assert str(error) == INPUT_ERROR_PREFIX + "bad boxes"
 
 
+def _make_wire_manager(model_result, supports_rle=True):
+    from inference_model_manager.dispatch import _get_registry
+    from inference_model_manager.model_manager import ModelManager
+
+    class _WireModel:
+        def __init__(self):
+            self.calls = []
+
+        def segment(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            return model_result
+
+    if supports_rle:
+        _WireModel.supported_mask_formats = {"rle"}
+
+    _get_registry().register(
+        _WireModel,
+        "segment",
+        default=True,
+        validator=lambda kwargs: kwargs,
+        serializer=lambda out, model: {"raw": out},
+        response_type="test-v1",
+    )
+
+    class _WireBackend:
+        state = "loaded"
+        is_accepting = True
+
+        def __init__(self):
+            self.model = _WireModel()
+            self.decoded = []
+
+        def _decode_input(self, raw):
+            self.decoded.append(raw)
+            return "DECODED"
+
+        def record_inference(self, t0, error=False):
+            pass
+
+    manager = ModelManager()
+    backend = _WireBackend()
+    manager._backends["wire/1"] = backend
+    return manager, backend
+
+
+def test_wire_marshalling_decodes_injects_rle_and_unwraps():
+    manager, backend = _make_wire_manager(model_result=[["prompt-result"]])
+    try:
+        result = manager.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=b"jpegbytes",
+        )
+        assert backend.decoded == [b"jpegbytes"]
+        call = backend.model.calls[0]
+        assert call["images"] == "DECODED"
+        assert call["mask_format"] == "rle"
+        assert result == ["prompt-result"]
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+def test_wire_marshalling_respects_explicit_mask_format_and_no_rle_support():
+    manager, backend = _make_wire_manager(model_result=["r"], supports_rle=True)
+    try:
+        manager.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=b"x",
+            mask_format="dense",
+        )
+        assert backend.model.calls[0]["mask_format"] == "dense"
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+    manager2, backend2 = _make_wire_manager(model_result=["r"], supports_rle=False)
+    try:
+        manager2.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=b"x",
+        )
+        assert "mask_format" not in backend2.model.calls[0]
+    finally:
+        manager2._backends.clear()
+        manager2.shutdown()
+
+
+def test_wire_marshalling_off_is_passthrough():
+    manager, backend = _make_wire_manager(model_result=[["prompt-result"]])
+    try:
+        result = manager.process(
+            "wire/1", task="segment", serialize=False, images=b"rawbytes"
+        )
+        assert backend.decoded == []
+        call = backend.model.calls[0]
+        assert call["images"] == b"rawbytes"
+        assert "mask_format" not in call
+        assert result == [["prompt-result"]]
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+def test_wire_marshalling_decodes_image_lists_and_maps_per_image():
+    manager, backend = _make_wire_manager(model_result=["r1", "r2"])
+    try:
+        result = manager.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=[b"a", b"b"],
+        )
+        assert backend.decoded == [b"a", b"b"]
+        assert backend.model.calls[0]["images"] == ["DECODED", "DECODED"]
+        assert result == ["r1", "r2"]
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+def test_wire_marshalling_retries_per_image_on_mismatched_batch():
+    manager, backend = _make_wire_manager(model_result=["only-one"])
+    try:
+        result = manager.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=[b"a", b"b", b"c"],
+        )
+        # Batched call returned 1 result for 3 images -> worker semantics
+        # retry each image individually (3 extra single-image calls).
+        assert len(backend.model.calls) == 4
+        assert result == ["only-one", "only-one", "only-one"]
+        single_calls = backend.model.calls[1:]
+        assert all(call["images"] == "DECODED" for call in single_calls)
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+def test_wire_marshalling_params_only_omits_images_kwarg():
+    manager, backend = _make_wire_manager(model_result=["r"])
+    try:
+        manager.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=None,
+            image_hashes=["h1"],
+        )
+        call = backend.model.calls[0]
+        assert "images" not in call
+        assert call["image_hashes"] == ["h1"]
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+def test_wire_marshalling_converts_tensors_to_numpy():
+    torch = pytest.importorskip("torch")
+    import numpy as np
+
+    manager, _backend = _make_wire_manager(model_result=[{"masks": torch.ones(2, 2)}])
+    try:
+        result = manager.process(
+            "wire/1",
+            task="segment",
+            serialize=False,
+            wire_marshalling=True,
+            images=b"x",
+        )
+        assert isinstance(result["masks"], np.ndarray)
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_infer_passes_wire_marshalling_to_manager():
+    mgr = _fake_manager(process_return="ok")
+    wrapper = MMWrapper(mgr)
+    await wrapper.infer(model_id="m", image=b"x")
+    assert mgr.process_async.await_args.kwargs["wire_marshalling"] is True
+
+
 @pytest.mark.asyncio
 async def test_real_manager_stats_shape_for_route_resolution():
     """The adapter resolves routes from stats()['mmp_models'][id]: tasks,
