@@ -16,6 +16,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable_te
 )
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
+    empty_predictions_passthrough,
     to_supervision_for_annotation,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -439,6 +440,11 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
         color_axis: Optional[str],
         opacity: Optional[float],
     ) -> BlockResult:
+        passthrough = empty_predictions_passthrough(
+            image=image, detections=predictions, copy_image=copy_image
+        )
+        if passthrough is not None:
+            return passthrough
         # is_tensor_materialised(): never force a CHW tensor out of a
         # numpy-sourced image — that conversion is pure CPU overhead and the
         # sv path is faster on such frames.
