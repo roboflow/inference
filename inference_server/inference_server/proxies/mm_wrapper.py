@@ -274,7 +274,7 @@ class MMWrapper:
         self,
         *,
         model_id: str,
-        image: Optional[bytes] = None,
+        image: Any = None,
         task: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
@@ -299,7 +299,7 @@ class MMWrapper:
         self,
         *,
         model_id: str,
-        image: Optional[bytes] = None,
+        image: Any = None,
         task: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
@@ -313,7 +313,11 @@ class MMWrapper:
         # Empty payload = params-only request; the model resolves inputs from
         # params (mirrors the MMP worker contract for zero-byte slots).
         if image is not None:
-            call_kwargs["images"] = image if image else None
+            call_kwargs["images"] = (
+                None
+                if isinstance(image, (bytes, bytearray, memoryview)) and not image
+                else image
+            )
 
         async def _run() -> Any:
             try:

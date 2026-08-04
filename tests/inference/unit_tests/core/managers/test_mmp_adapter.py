@@ -517,7 +517,11 @@ class TestInfer:
         assert sent[:8] == b"\x89PNG\r\n\x1a\n"
         assert response.image.width == 64 and response.image.height == 48
 
-    def test_numpy_object_round_trip_preserves_colors(self):
+    def test_bundled_subprocess_numpy_object_stays_png(self, monkeypatch):
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+        monkeypatch.setattr(
+            translation, "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "subprocess"
+        )
         array = np.zeros((48, 64, 3), dtype=np.uint8)
         array[:24, :32] = (0, 0, 255)
         data, dims = translation.forward_image(
@@ -537,6 +541,46 @@ class TestInfer:
         assert decoded_rgb[0, 0].tolist() == [255, 0, 0]
         assert decoded_rgb[47, 63].tolist() == [0, 0, 0]
         assert np.array_equal(decoded_rgb, cv2.cvtColor(array, cv2.COLOR_BGR2RGB))
+
+    def test_numpy_object_bypasses_png_for_bundled_direct(self, monkeypatch):
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "direct")
+        array = np.zeros((48, 64, 3), dtype=np.uint8)
+        array[:24, :32] = (0, 0, 255)
+
+        data, dims = translation.forward_image(
+            SimpleNamespace(type="numpy_object", value=array)
+        )
+
+        assert data is array
+        assert dims == (64, 48)
+        assert data[0, 0].tolist() == [0, 0, 255]
+
+    def test_bundled_direct_makes_numpy_views_contiguous(self, monkeypatch):
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "direct")
+        array = np.zeros((48, 64, 3), dtype=np.uint8)[:, ::-1]
+
+        data, dims = translation.forward_image(
+            SimpleNamespace(type="numpy_object", value=array)
+        )
+
+        assert data.flags.c_contiguous
+        assert np.array_equal(data, array)
+        assert dims == (64, 48)
+
+    def test_bundled_direct_expands_single_channel_numpy_object(self, monkeypatch):
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "bundled")
+        monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "direct")
+        array = np.full((48, 64, 1), 17, dtype=np.uint8)
+
+        data, dims = translation.forward_image(
+            SimpleNamespace(type="numpy_object", value=array)
+        )
+
+        assert data.shape == (48, 64, 3)
+        assert dims == (64, 48)
+        assert np.all(data == 17)
 
     def test_visualize_predictions_populates_jpeg_visualization(
         self, running_adapter, od_stat, monkeypatch, palette_colors

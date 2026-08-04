@@ -1,7 +1,7 @@
 """Legacy <-> new-world translation for ModelManagerAdapter.
 
 Everything the adapter needs to speak both dialects: the static mirror of the
-new-world handler registry, request forwarding (image -> bytes), per-task
+new-world handler registry, request forwarding (image -> manager input), per-task
 param mapping, native-prediction -> legacy-response repack, and error
 translation. Imports from the new packages are lazy so the legacy stack never
 pays for them while the gate is off.
@@ -62,7 +62,11 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import CLIP_MAX_BATCH_SIZE
+from inference.core.env import (
+    CLIP_MAX_BATCH_SIZE,
+    LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
+    LEGACY_MMP_ADAPTER_MODE,
+)
 from inference.core.exceptions import (
     InferenceModelNotFound,
     InferencePayloadTooLargeError,
@@ -82,6 +86,7 @@ from inference.core.managers import mmp_florence2
 from inference.core.registries.roboflow import GENERIC_MODELS
 from inference.core.utils.image_utils import (
     BASE64_DATA_TYPE_PATTERN,
+    convert_gray_image_to_bgr,
     encode_image_to_jpeg_bytes,
     fetch_image_bytes_from_url,
     load_image_from_numpy_object,
@@ -686,11 +691,13 @@ def _build_open_vocabulary_params(request: Any) -> dict:
     return params
 
 
-def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
-    """InferenceRequestImage -> (compressed bytes for the SHM slot, (width, height)).
+def forward_image(
+    image: Any,
+) -> Tuple[Union[bytes, np.ndarray], Tuple[int, int]]:
+    """InferenceRequestImage -> (manager input, (width, height)).
 
-    Never decodes pixels adapter-side: dims come from the ndarray shape or a
-    header-only read; the MMP worker does the real decode.
+    Bundled/direct preserves a ``numpy_object`` as a contiguous BGR array.
+    Other paths keep the compressed-byte contract expected by SHM transport.
     """
     started = performance_profiler.start()
     performance_profiler.increment("adapter.image_forward.calls")
@@ -728,6 +735,16 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
             performance_profiler.record(
                 "adapter.image.input_bytes", array.nbytes, "bytes"
             )
+            dims = (int(array.shape[1]), int(array.shape[0]))
+            if (
+                LEGACY_MMP_ADAPTER_MODE == "bundled"
+                and LEGACY_MMP_ADAPTER_BUNDLED_BACKEND == "direct"
+            ):
+                array = np.ascontiguousarray(convert_gray_image_to_bgr(array))
+                performance_profiler.record(
+                    "adapter.image.pixels", dims[0] * dims[1], "pixels"
+                )
+                return array, dims
             png_started = performance_profiler.start()
             performance_profiler.increment("adapter.png_encode.calls")
             try:
@@ -740,7 +757,6 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
                 data = encoded.tobytes()
             finally:
                 performance_profiler.stop("adapter.png_encode", png_started)
-            dims = (int(array.shape[1]), int(array.shape[0]))
             _record_forwarded_image(data, dims)
             return data, dims
         raise InvalidImageTypeDeclared(

@@ -51,6 +51,20 @@ async def test_infer_with_no_params_still_includes_images_kwarg():
 
 
 @pytest.mark.asyncio
+async def test_infer_forwards_numpy_image_to_manager_without_copying():
+    import numpy as np
+
+    mgr = _fake_manager(process_return="ok")
+    wrapper = MMWrapper(mgr, backend="direct")
+    image = np.zeros((48, 64, 3), dtype=np.uint8)
+
+    await wrapper.infer(model_id="m", image=image, task="infer")
+
+    kwargs = mgr.process_async.await_args.kwargs
+    assert kwargs["images"] is image
+
+
+@pytest.mark.asyncio
 async def test_infer_raw_pickle_returns_bytes():
     fake_pred = {"foo": "bar"}
     mgr = _fake_manager(process_return=fake_pred)
