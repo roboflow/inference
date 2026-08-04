@@ -497,6 +497,7 @@ def execute_registration(
                 detections=prediction,
                 scale=(prepared_image.scale_x, prepared_image.scale_y),
                 target_size_wh=prepared_image.final_size_wh,
+                update_scaling_metadata=False,
             )
         status = register_datapoint(
             target_project=target_project,

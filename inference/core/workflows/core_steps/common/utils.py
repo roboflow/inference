@@ -402,6 +402,7 @@ def scale_sv_detections(
     scale: Union[float, Tuple[float, float]],
     keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     target_size_wh: Optional[Tuple[int, int]] = None,
+    update_scaling_metadata: bool = True,
 ) -> sv.Detections:
     """Scale detection geometry into a new image coordinate frame.
 
@@ -414,6 +415,10 @@ def scale_sv_detections(
             image (e.g. the JPEG that will be uploaded). When set, dense masks
             and ``image_dimensions`` are forced to this canvas so annotations
             stay intact relative to the stored image.
+        update_scaling_metadata: Whether to update the scalar workflow coordinate
+            lineage metadata. Set to ``False`` for terminal consumers, such as
+            Dataset Upload, when using different X/Y scales. An anisotropic
+            transform cannot be represented by the existing scalar metadata.
     """
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
@@ -424,10 +429,13 @@ def scale_sv_detections(
     else:
         scale_x = scale_y = float(scale)
 
-    # Metadata fields historically store a single factor; use X when isotropic,
-    # otherwise the mean (dataset-upload consumers serialize immediately and do
-    # not rely on undoing this via root-coordinate recovery).
-    scale_meta = scale_x if abs(scale_x - scale_y) < 1e-9 else (scale_x + scale_y) / 2.0
+    scales_are_isotropic = abs(scale_x - scale_y) < 1e-9
+    if update_scaling_metadata and not scales_are_isotropic:
+        raise ValueError(
+            "Anisotropic scaling cannot be represented by scalar workflow "
+            "coordinate metadata. Set update_scaling_metadata=False for a "
+            "terminal result that will not undergo root-coordinate recovery."
+        )
 
     xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
     xyxy[:, [0, 2]] *= scale_x
@@ -513,22 +521,23 @@ def scale_sv_detections(
                 scaled_polygons, dtype=object
             )
 
-    if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale_meta
-        )
-    else:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
-            [scale_meta] * len(detections_copy)
-        )
-    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale_meta
-        )
-    else:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
-            [scale_meta] * len(detections_copy)
-        )
+    if update_scaling_metadata:
+        if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
+                detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale_x
+            )
+        else:
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+                [scale_x] * len(detections_copy)
+            )
+        if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+                detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale_x
+            )
+        else:
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+                [scale_x] * len(detections_copy)
+            )
     return detections_copy
 
 

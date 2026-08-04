@@ -20,6 +20,8 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY_IN_SV_DETECTIONS,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -1323,6 +1325,8 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
                 ],
                 dtype=np.int32,
             ),
+            SCALING_RELATIVE_TO_PARENT_KEY: np.array([0.5]),
+            SCALING_RELATIVE_TO_ROOT_PARENT_KEY: np.array([0.25]),
         },
     )
 
@@ -1330,6 +1334,7 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
         detections=detections,
         scale=(scale_x, scale_y),
         target_size_wh=(target_w, target_h),
+        update_scaling_metadata=False,
     )
 
     assert result.mask.shape == (1, target_h, target_w)
@@ -1347,6 +1352,32 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
     assert isotropic_w != target_w
     polygon = result.data[POLYGON_KEY_IN_SV_DETECTIONS][0]
     assert polygon[:, 0].max() >= target_w - 2
+    assert np.array_equal(result[SCALING_RELATIVE_TO_PARENT_KEY], np.array([0.5]))
+    assert np.array_equal(
+        result[SCALING_RELATIVE_TO_ROOT_PARENT_KEY], np.array([0.25])
+    )
+
+
+def test_scale_sv_detections_rejects_anisotropic_scalar_metadata() -> None:
+    detections = sv.Detections(
+        xyxy=np.array([[10, 10, 20, 20]], dtype=np.float64),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Anisotropic scaling cannot be represented",
+    ):
+        scale_sv_detections(
+            detections=detections,
+            scale=(0.5, 0.6),
+        )
 
 
 def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
