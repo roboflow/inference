@@ -95,6 +95,158 @@ _PENDING_TRACK_COLOR_BGR = (128, 128, 128)
 #: instead of an unbounded device-memory leak.
 _SPRITE_CACHE_MAX_ENTRIES = 512
 
+#: Slots in the per-block pinned staging ring for the per-frame paste tables.
+#: Must be >= 2x the pipeline batch size: on slot reuse the previous copy from
+#: that slot was enqueued a whole batch (one model step) earlier, so its event
+#: has fired long before the slot comes around again — the reuse-wait below is
+#: a pathological-backpressure guard, never the steady state.
+_TABLE_RING_DEPTH = 8
+
+#: Initial per-slot slab capacity (int64 elements). Covers 32 labels per frame
+#: (2 table entries per label); grown geometrically on capacity misses.
+_TABLE_SLAB_MIN_CAPACITY = 64
+
+
+def _staged_upload(
+    host_values: np.ndarray,
+    device: torch.device,
+    pending: Optional[List[Tuple[torch.Tensor, "torch.cuda.Event"]]] = None,
+) -> torch.Tensor:
+    """One-shot host→device upload that never drains the device queue.
+
+    A pageable ``torch.from_numpy(...).to(device)`` follows cudaMemcpy
+    semantics: the driver first waits for every kernel already queued on the
+    stream before the bytes move (measured 55-65 ms per first label upload of
+    a batch on Jetson, queued behind the mask-composite kernels). Staging
+    through pinned memory with ``copy_(non_blocking=True)`` enqueues the
+    transfer asynchronously instead.
+
+    On CUDA the pinned staging tensor plus a recorded event is appended to
+    ``pending`` so the caller provably keeps the host memory intact until the
+    copy has executed (entries may be dropped only once ``event.query()`` is
+    True). Callers that pass no ``pending`` (the ring-less direct-call path of
+    ``gpu_paste_label_sprites``) fall back on torch's caching host allocator,
+    which event-guards a freed pinned block internally before reusing it —
+    safe, just not explicit.
+
+    On CPU devices there is nothing to pin and the copy is a plain memcpy,
+    but the identical ``copy_(..., non_blocking=True)`` is still dispatched
+    (a same-device ``.to`` would short-circuit without dispatching) so the op
+    trace carries the flag on every platform — the viz-phase transfer audit
+    asserts it on the CPU test host too.
+    """
+    source = torch.from_numpy(np.ascontiguousarray(host_values))
+    if device.type == "cuda":
+        source = source.pin_memory()
+    staged = torch.empty(tuple(source.shape), dtype=source.dtype, device=device)
+    staged.copy_(source, non_blocking=True)
+    if device.type == "cuda" and pending is not None:
+        event = torch.cuda.Event()
+        event.record(torch.cuda.current_stream(device))
+        pending.append((source, event))
+    return staged
+
+
+class _TableRingSlot:
+    __slots__ = ("host_slab", "host_view", "device_slab", "event", "capacity")
+
+    def __init__(self):
+        self.host_slab: Optional[torch.Tensor] = None
+        self.host_view: Optional[np.ndarray] = None
+        self.device_slab: Optional[torch.Tensor] = None
+        self.event = None
+        self.capacity = 0
+
+
+class _PinnedSlabRing:
+    """Reusable pinned staging ring for the per-frame packed paste tables.
+
+    Every warm-path ``gpu_paste_label_sprites`` call uploads one small int64
+    table (the per-label paste offsets + lengths). Uploading it as a pageable
+    copy would synchronize the stream (see ``_staged_upload``); allocating and
+    pinning a fresh buffer per frame would thrash the pinned allocator. This
+    ring keeps ``depth`` pre-pinned host slabs, each paired with a same-size
+    device slab and a reuse event. ``upload_int64``:
+
+    1. takes the next slot round-robin;
+    2. waits on the slot's recorded event ONLY when the copy issued on the
+       slot's previous use has not executed yet (``event.query()`` False) —
+       with ``depth`` >= 2x the pipeline batch size that copy ran during an
+       earlier model step, so the wait is a pathological-backpressure guard,
+       never the steady state;
+    3. grows the slab geometrically on a capacity miss (rare realloc, then
+       re-pin — safe because step 2 just proved no copy is in flight from the
+       old slab);
+    4. writes the table into the pinned host slab (a plain numpy write, no
+       torch dispatch) and enqueues ONE full-slab ``copy_(non_blocking=True)``
+       into the device slab, then records the slot's event behind it.
+
+    The returned device slab is safe for consumers enqueued later on the same
+    stream (stream order puts the copy before them); the recorded event only
+    guards the HOST slab against being overwritten while its copy is pending.
+    On CPU devices pinning and events are skipped entirely — plain tensors and
+    the same single ``copy_`` (still flagged ``non_blocking=True``), so the
+    code runs identically on the CPU test host.
+    """
+
+    __slots__ = ("_depth", "_min_capacity", "_slots", "_cursor", "_initialised")
+
+    def __init__(
+        self,
+        depth: int = _TABLE_RING_DEPTH,
+        min_capacity: int = _TABLE_SLAB_MIN_CAPACITY,
+    ):
+        self._depth = int(depth)
+        self._min_capacity = int(min_capacity)
+        self._slots = [_TableRingSlot() for _ in range(self._depth)]
+        self._cursor = 0
+        self._initialised = False
+
+    def _ensure_slot(
+        self, slot: _TableRingSlot, needed: int, device: torch.device
+    ) -> None:
+        if (
+            slot.device_slab is not None
+            and slot.capacity >= needed
+            and slot.device_slab.device == device
+        ):
+            return
+        capacity = max(self._min_capacity, slot.capacity)
+        while capacity < needed:
+            capacity *= 2
+        pin = device.type == "cuda"
+        slot.host_slab = torch.empty(capacity, dtype=torch.int64, pin_memory=pin)
+        slot.host_view = slot.host_slab.numpy()
+        slot.device_slab = torch.empty(capacity, dtype=torch.int64, device=device)
+        slot.capacity = capacity
+        slot.event = None
+
+    def upload_int64(self, values: np.ndarray, device: torch.device) -> torch.Tensor:
+        """Stage 1-D int64 ``values`` and return the slot's device slab (its
+        first ``len(values)`` elements hold the table; callers slice it)."""
+        slot = self._slots[self._cursor]
+        self._cursor = (self._cursor + 1) % self._depth
+        if slot.event is not None and not slot.event.query():
+            # Pathological backpressure only (the device is more than a whole
+            # ring — >= 2 batches — behind the host); steady state never waits.
+            slot.event.synchronize()
+        needed = int(values.shape[0])
+        if not self._initialised:
+            # First touch sizes EVERY slot so steady-state frames (any ring
+            # phase) never dispatch an allocation.
+            for other in self._slots:
+                self._ensure_slot(other, needed, device)
+            self._initialised = True
+        else:
+            self._ensure_slot(slot, needed, device)
+        slot.host_view[:needed] = values
+        slot.device_slab.copy_(slot.host_slab, non_blocking=True)
+        if device.type == "cuda":
+            if slot.event is None:
+                slot.event = torch.cuda.Event()
+            slot.event.record(torch.cuda.current_stream(device))
+        return slot.device_slab
+
 
 class _SceneDependentLabelError(ValueError):
     """Raised when a label patch cannot be pre-rendered scene-independently.
@@ -182,6 +334,7 @@ class _LabelSprite:
         "col_max",
         "colors_dev",
         "_flat_by_width",
+        "_pending",
     )
 
     def __init__(
@@ -202,22 +355,35 @@ class _LabelSprite:
         self.col_max = int(cols.max()) if cols.size else -1
         self.colors_dev = colors_dev  # (K, 3) uint8 RGB on the pipeline device
         self._flat_by_width: dict = {}
+        # (pinned staging tensor, recorded event) pairs for this sprite's
+        # in-flight non-blocking uploads: the pinned source provably outlives
+        # the async copy — dropped only once the event has fired.
+        self._pending: List = []
 
     @property
     def pixel_count(self) -> int:
         return int(self.rows.shape[0])
 
+    def _release_completed_staging(self) -> None:
+        """Drop pinned staging buffers whose uploads provably executed (their
+        recorded events query True). Never blocks; events recorded on one
+        stream fire in order, so popping from the front suffices."""
+        while self._pending and self._pending[0][1].query():
+            self._pending.pop(0)
+
     def flat_template(self, frame_width: int) -> torch.Tensor:
         """Device-resident ``rows * frame_width + cols`` template, cached per
         frame width (streams keep a constant width, so this is a one-time
-        upload). Callers must add the paste offset out of place — the cached
-        tensor is shared across frames."""
+        staged non-blocking upload — a pageable ``.to(device)`` here would
+        drain the queued viz kernels). Callers must add the paste offset out
+        of place — the cached tensor is shared across frames."""
+        self._release_completed_staging()
         flat = self._flat_by_width.get(frame_width)
         if flat is None:
             flat_np = self.rows.astype(np.int64) * frame_width + self.cols.astype(
                 np.int64
             )
-            flat = torch.from_numpy(flat_np).to(self.colors_dev.device)
+            flat = _staged_upload(flat_np, self.colors_dev.device, self._pending)
             self._flat_by_width[frame_width] = flat
         return flat
 
@@ -350,19 +516,28 @@ def _render_label_sprite(
         )
     rows, cols = np.nonzero(opaque)
     colors_rgb = np.ascontiguousarray(on_black[rows, cols][:, ::-1])  # BGR -> RGB
-    return _LabelSprite(
+    # Cache-miss pixel payload: staged through pinned memory + a non-blocking
+    # copy (a pageable upload would synchronize the stream and drain queued
+    # viz kernels — measured 55-62 ms per miss on Jetson under load); the
+    # staging buffer is parked on the sprite until its event fires.
+    pending: List = []
+    colors_dev = _staged_upload(colors_rgb, device, pending)
+    sprite = _LabelSprite(
         offset_x=int(box_in_canvas[0]),
         offset_y=int(box_in_canvas[1]),
         rows=rows.astype(np.int32),
         cols=cols.astype(np.int32),
-        colors_dev=torch.from_numpy(colors_rgb).to(device),
+        colors_dev=colors_dev,
     )
+    sprite._pending.extend(pending)
+    return sprite
 
 
 def gpu_paste_label_sprites(
     scene_chw: torch.Tensor,
     sprites: List[_LabelSprite],
     canvas_origins: List[Tuple[int, int]],
+    table_ring: Optional[_PinnedSlabRing] = None,
 ) -> torch.Tensor:
     """Composite pre-rendered label sprites into a CHW RGB uint8 tensor, in
     place, with a device-op budget that is flat in the label count.
@@ -376,9 +551,15 @@ def gpu_paste_label_sprites(
        computed from the sprite's canvas origin — the cached color tensor is
        reused untouched, so a cache-hit frame does no per-pixel host work and
        no pixel-payload H2D at all.
-    2. One packed H2D upload of the per-label (offset, length) table, one
+    2. One packed upload of the per-label (offset, length) table, staged
+       through ``table_ring`` (the block's pinned slab ring) as a single
+       NON-BLOCKING copy — a pageable upload here follows cudaMemcpy
+       semantics and drains every queued kernel first (measured 62-65 ms per
+       first label of a batch on Jetson behind the mask compositor). Then one
        ``repeat_interleave`` expansion, one ``cat`` + offset add — flat pixel
-       indices for every sprite pixel of every label.
+       indices for every sprite pixel of every label. Ring-less direct calls
+       stage through a one-shot pinned buffer instead
+       (``_staged_upload``).
     3. sv draws labels sequentially, so a later label's patch overwrites an
        earlier one. When the pasted rectangles overlap, that order is
        reproduced deterministically with a ``scatter_reduce_(amax)`` of the
@@ -432,10 +613,14 @@ def gpu_paste_label_sprites(
         return scene_chw
     pieces = len(flat_parts)
     total = int(sum(piece_lengths))
-    packed = torch.from_numpy(
-        np.asarray(piece_offsets + piece_lengths, dtype=np.int64)
-    ).to(device)
-    offsets_t, lengths_t = packed[:pieces], packed[pieces:]
+    packed_host = np.empty(2 * pieces, dtype=np.int64)
+    packed_host[:pieces] = piece_offsets
+    packed_host[pieces:] = piece_lengths
+    if table_ring is not None:
+        packed = table_ring.upload_int64(packed_host, device)
+    else:
+        packed = _staged_upload(packed_host, device)
+    offsets_t, lengths_t = packed[:pieces], packed[pieces : 2 * pieces]
     piece_of_px = torch.repeat_interleave(
         torch.arange(pieces, device=device), lengths_t, output_size=total
     )
@@ -623,6 +808,10 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
         self._sprite_cache: "OrderedDict" = OrderedDict()
+        # Pinned staging ring for the per-frame packed paste tables — the
+        # steady-state path allocates/pins nothing per frame and its single
+        # upload never blocks the stream (see _PinnedSlabRing).
+        self._table_ring = _PinnedSlabRing()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -926,7 +1115,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                 if copy_image:
                     scene_t = scene_t.clone()
                 annotated_tensor = gpu_paste_label_sprites(
-                    scene_t, sprites, canvas_origins
+                    scene_t, sprites, canvas_origins, table_ring=self._table_ring
                 )
                 if not copy_image:
                     # The paste mutated `image.tensor_image` storage in place
