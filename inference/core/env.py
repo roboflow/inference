@@ -1046,6 +1046,15 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
     os.getenv("DISABLE_GSTREAMER_VIDEO_SOURCES", "False")
 )
 
+# Instance-segmentation tensor blocks request dense (on-device) masks from the
+# inference_models adapter instead of the default RLE carrier. Dense masks let
+# GPU consumers (e.g. the mask-visualization compositor) skip the host-side
+# RLE decode entirely; RLE remains preferable when predictions are mostly
+# serialized to the wire. Default is False (RLE).
+WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS = str2bool(
+    os.getenv("WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS", "False")
+)
+
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))

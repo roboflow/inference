@@ -473,6 +473,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 "enforce_dense_masks_in_inference_models",
                 False,
             )
+        # Consumed here — must not leak into the model call, whose deeper
+        # pre/post stages do not accept arbitrary kwargs.
+        kwargs.pop("enforce_dense_masks_in_inference_models", None)
         kwargs["pre_processing_overrides"] = pre_processing_overrides
         if (
             "rle" in self._model.supported_mask_formats

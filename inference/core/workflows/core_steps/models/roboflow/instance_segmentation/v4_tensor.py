@@ -42,6 +42,7 @@ from pydantic import ConfigDict, Field, PositiveInt, model_validator
 from inference.core.env import (
     HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
@@ -397,6 +398,7 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
                 model_id=model_id,
                 images=model_inputs,
                 input_color_format=image_color_format,
+                enforce_dense_masks_in_inference_models=WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 class_agnostic_nms=class_agnostic_nms,

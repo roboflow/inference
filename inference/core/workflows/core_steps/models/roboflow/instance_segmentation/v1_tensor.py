@@ -44,6 +44,7 @@ from pydantic import ConfigDict, Field, PositiveInt
 from inference.core.env import (
     HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
@@ -378,7 +379,10 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
                 tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
-                enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+                enforce_dense_masks_in_inference_models=(
+                    enforce_dense_masks_in_inference_models
+                    or WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS
+                ),
             )
         )
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
