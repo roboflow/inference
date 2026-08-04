@@ -56,6 +56,96 @@ TensorNativePrediction = Union[
     Detections, InstanceDetections, KeyPoints, KeyPointPrediction
 ]
 
+# --- Per-box host mirror of the detection tensors -----------------------------
+#
+# ``attach_native_detection_metadata`` stores a host-side copy of each box's
+# ``xyxy`` / ``class_id`` / ``confidence`` in its ``bboxes_metadata`` entry.
+# Rationale: visualization blocks need these tiny values on the host, but a
+# ``.cpu()`` there queues behind unrelated kernels on the default CUDA stream
+# (measured up to ~65 ms per batch on Jetson under load) even though the values
+# are ready; at attach time (model block, execution-engine thread, queue empty)
+# the same read costs microseconds. Consumers PREFER the mirror when every box
+# carries it and fall back to tensor reads otherwise (remote/deserialized/
+# transformed predictions).
+#
+# The keys are underscore-private because two sv-view builders generically copy
+# arbitrary ``bboxes_metadata`` keys into ``sv.Detections.data``
+# (``base_tensor._materialise_data`` and
+# ``representation_boundary._attach_per_box_columns``) — both explicitly
+# exclude these keys. The wire serializers (``serializers_tensor``) copy only
+# specific keys, so serialized output is unaffected by construction.
+#
+# STALENESS CONTRACT: any code that changes ``xyxy`` / ``class_id`` /
+# ``confidence`` of a prediction while carrying its ``bboxes_metadata`` forward
+# MUST either re-run ``attach_native_detection_metadata`` (which overwrites the
+# mirror from the current tensors) or drop the mirror via
+# ``strip_host_mirror_metadata`` — a stale mirror would be silently preferred.
+HOST_XYXY_KEY = "_host_xyxy"
+HOST_CLASS_ID_KEY = "_host_class_id"
+HOST_CONFIDENCE_KEY = "_host_confidence"
+HOST_MIRROR_KEYS = (HOST_XYXY_KEY, HOST_CLASS_ID_KEY, HOST_CONFIDENCE_KEY)
+
+
+def read_host_mirror(
+    bboxes_metadata: Optional[List[dict]],
+    expected_rows: int,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Assemble ``(xyxy float32 (N, 4), class_id int (N,), confidence float32
+    (N,))`` from the per-box host mirror WITHOUT touching any tensor.
+
+    Returns ``None`` (caller falls back to device reads) unless ``bboxes_metadata``
+    has exactly ``expected_rows`` entries and EVERY entry carries all three
+    mirror keys with a well-formed 4-element ``xyxy``. The dtypes match the
+    tensor-read path (``.cpu().numpy().astype(...)``) exactly, so downstream
+    output is bit-identical either way."""
+    if bboxes_metadata is None or len(bboxes_metadata) != expected_rows:
+        return None
+    if expected_rows == 0:
+        return None
+    if not all(
+        isinstance(entry, dict) and all(key in entry for key in HOST_MIRROR_KEYS)
+        for entry in bboxes_metadata
+    ):
+        return None
+    try:
+        xyxy = np.asarray(
+            [entry[HOST_XYXY_KEY] for entry in bboxes_metadata], dtype=np.float32
+        ).reshape(expected_rows, 4)
+        class_id = np.asarray(
+            [int(entry[HOST_CLASS_ID_KEY]) for entry in bboxes_metadata], dtype=int
+        )
+        confidence = np.asarray(
+            [float(entry[HOST_CONFIDENCE_KEY]) for entry in bboxes_metadata],
+            dtype=np.float32,
+        )
+    except (TypeError, ValueError):
+        return None
+    return xyxy, class_id, confidence
+
+
+def strip_host_mirror_metadata(
+    bboxes_metadata: Optional[List[dict]],
+) -> Optional[List[dict]]:
+    """Return ``bboxes_metadata`` without the per-box host-mirror keys.
+
+    Call whenever ``xyxy`` / ``class_id`` / ``confidence`` are recomputed
+    without re-running ``attach_native_detection_metadata`` — consumers then
+    fall back to tensor reads instead of trusting a stale mirror. Entries that
+    carry mirror keys are shallow-copied (caller-shared dicts are never
+    mutated); mirror-free entries are reused as-is. ``None`` passes through."""
+    if bboxes_metadata is None:
+        return None
+    stripped: List[dict] = []
+    for entry in bboxes_metadata:
+        if entry and any(key in entry for key in HOST_MIRROR_KEYS):
+            entry = {
+                key: value
+                for key, value in entry.items()
+                if key not in HOST_MIRROR_KEYS
+            }
+        stripped.append(entry)
+    return stripped
+
 
 def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
     """Convert a boolean mask (numpy array, list, or torch tensor) into the list
@@ -402,7 +492,9 @@ def _shift_bboxes_metadata_to_root_coordinates(
     """Copy the per-box metadata entries, shifting the geometry payloads the
     tensor-native serialiser reads back (``keypoints_xy``, ``polygon``) - the
     mirror of the per-row shifts numpy's ``sv_detections_to_root_coordinates``
-    applies to ``sv.Detections.data``."""
+    applies to ``sv.Detections.data``. The per-box host mirror is dropped: the
+    ``xyxy`` tensor is shifted by the caller, so a carried mirror would be
+    stale — consumers fall back to tensor reads."""
     if bboxes_metadata is None:
         return None
     offset_xy = np.asarray([shift_x, shift_y])
@@ -412,6 +504,8 @@ def _shift_bboxes_metadata_to_root_coordinates(
         for key in _GEOMETRY_KEYS_SHIFTED_TO_ROOT:
             if key in entry:
                 entry[key] = _add_offset(entry[key], offset_xy)
+        for key in HOST_MIRROR_KEYS:
+            entry.pop(key, None)
         shifted_entries.append(entry)
     return shifted_entries
 
@@ -690,6 +784,15 @@ def attach_native_detection_metadata(
     detection carries a ``detection_id`` (generated when missing), preserving any
     keys the model already set (e.g. EasyOCR's per-box ``text``). Mutates and
     returns the same object.
+
+    Each entry additionally receives the host mirror of its box
+    (``HOST_XYXY_KEY`` / ``HOST_CLASS_ID_KEY`` / ``HOST_CONFIDENCE_KEY``) read
+    via ONE batched device->host transfer per tensor — this runs on the
+    execution-engine thread right after the model synchronised its streams, so
+    the read costs microseconds; downstream host consumers (visualization
+    blocks) then never touch the device for these values. The mirror is always
+    OVERWRITTEN from the current tensors (never ``setdefault``), so re-attaching
+    after a geometry rewrite (e.g. perspective correction) refreshes it.
     """
     detections.image_metadata = build_native_image_metadata(
         image=image,
@@ -701,6 +804,14 @@ def attach_native_detection_metadata(
     if number_of_detections == 0:
         detections.bboxes_metadata = None
         return detections
+    # One batched read per tensor (`.numpy().tolist()` adds no further device
+    # traffic) — never a per-box `.item()` loop, which would issue N blocking
+    # device round-trips each.
+    xyxy_host = (
+        detections.xyxy.detach().reshape(number_of_detections, 4).cpu().numpy().tolist()
+    )
+    class_id_host = detections.class_id.detach().reshape(-1).cpu().numpy().tolist()
+    confidence_host = detections.confidence.detach().reshape(-1).cpu().numpy().tolist()
     existing = detections.bboxes_metadata
     bboxes_metadata = []
     for index in range(number_of_detections):
@@ -710,6 +821,9 @@ def attach_native_detection_metadata(
             else {}
         )
         entry.setdefault(DETECTION_ID_KEY, str(uuid4()))
+        entry[HOST_XYXY_KEY] = [float(value) for value in xyxy_host[index]]
+        entry[HOST_CLASS_ID_KEY] = int(class_id_host[index])
+        entry[HOST_CONFIDENCE_KEY] = float(confidence_host[index])
         bboxes_metadata.append(entry)
     detections.bboxes_metadata = bboxes_metadata
     return detections

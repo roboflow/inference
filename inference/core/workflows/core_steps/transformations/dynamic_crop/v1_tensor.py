@@ -18,6 +18,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    HOST_MIRROR_KEYS,
     take_prediction_by_indices,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -425,13 +426,17 @@ def _offset_metadata_geometry(
     """Translate the flattened geometry entries in per-box metadata —
     ``keypoints_xy``, ``polygon``, and the OBB ``xyxyxyxy`` corners — writing
     values back in their original list/array container so the serialiser keeps
-    working."""
+    working. The per-box host mirror is dropped: the caller shifted ``xyxy``
+    into the crop frame, so a carried mirror would be stale — consumers fall
+    back to tensor reads."""
     if not bboxes_metadata:
         return
     offset_xy = np.array([x_min, y_min])
     for entry in bboxes_metadata:
         if not entry:
             continue
+        for key in HOST_MIRROR_KEYS:
+            entry.pop(key, None)
         if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in entry:
             entry[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = _subtract_offset(
                 entry[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS], offset_xy

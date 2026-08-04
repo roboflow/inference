@@ -10,8 +10,10 @@ from inference.core.workflows.core_steps.common.rle_compact import (
     instances_rle_to_compact_mask,
 )
 from inference.core.workflows.core_steps.common.tensor_native import (
+    HOST_MIRROR_KEYS,
     TensorNativeDetections,
     TensorNativePrediction,
+    read_host_mirror,
     split_key_point_prediction,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -147,9 +149,20 @@ def to_supervision_for_annotation(
     if bboxes_metadata is None:
         bboxes_metadata = [{} for _ in range(detections_number)]
     class_names_mapping = image_metadata.get(CLASS_NAMES_KEY) or {}
-    xyxy = detections.xyxy.detach().cpu().numpy().astype(np.float32)
-    class_id = detections.class_id.detach().cpu().numpy().astype(int)
-    confidence = detections.confidence.detach().cpu().numpy().astype(np.float32)
+    # Prefer the per-box host mirror written by
+    # ``attach_native_detection_metadata``: when EVERY box carries it, the sv
+    # view's xyxy/class_id/confidence are assembled on the host with ZERO device
+    # reads — a ``.cpu()`` here queues behind unrelated kernels on the default
+    # CUDA stream (up to ~65 ms per batch measured on Jetson under load).
+    # Mirror-less predictions (remote/deserialized/transformed) keep the
+    # tensor-read path unchanged; both paths produce bit-identical arrays.
+    host_mirror = read_host_mirror(bboxes_metadata, detections_number)
+    if host_mirror is not None:
+        xyxy, class_id, confidence = host_mirror
+    else:
+        xyxy = detections.xyxy.detach().cpu().numpy().astype(np.float32)
+        class_id = detections.class_id.detach().cpu().numpy().astype(int)
+        confidence = detections.confidence.detach().cpu().numpy().astype(np.float32)
     mask = (
         _materialise_mask(detections, detections_number, xyxy)
         if materialise_masks
@@ -244,6 +257,9 @@ def _materialise_data(
         extra_keys.update(per_box.keys())
     extra_keys.discard(DETECTION_ID_KEY)
     extra_keys.discard(TRACKER_ID_KEY)
+    # The private host mirror of the box tensors is an internal transport
+    # channel, not per-box user data — it must never surface in ``.data``.
+    extra_keys.difference_update(HOST_MIRROR_KEYS)
     for key in extra_keys:
         data[key] = np.asarray(
             [per_box.get(key) for per_box in bboxes_metadata], dtype=object

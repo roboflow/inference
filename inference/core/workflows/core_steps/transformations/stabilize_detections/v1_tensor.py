@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
+    strip_host_mirror_metadata,
     take_detections_by_indices,
 )
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
@@ -326,11 +327,14 @@ def _set_row_xyxy(
     device: torch.device,
 ) -> None:
     """Overwrite the single box of a one-row native detection in place, keeping
-    the tensor on ``device`` with the existing dtype."""
+    the tensor on ``device`` with the existing dtype. The row's host mirror is
+    dropped — the smoothed/predicted box no longer matches it, and consumers
+    fall back to tensor reads when any row lacks the mirror."""
     flat = np.asarray(xyxy, dtype=float).reshape(-1)[:4]
     detection.xyxy = torch.as_tensor(
         flat, dtype=detection.xyxy.dtype, device=device
     ).reshape(1, 4)
+    detection.bboxes_metadata = strip_host_mirror_metadata(detection.bboxes_metadata)
 
 
 def _merge_native_detections(

@@ -5,6 +5,7 @@ import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    HOST_MIRROR_KEYS,
     TensorNativeDetections,
     TensorNativePrediction,
 )
@@ -258,13 +259,17 @@ def _offset_bboxes_metadata(
     detection_id_key: str,
 ) -> List[dict]:
     """Set each box's parent_id to its prior detection_id and mint a fresh
-    detection_id."""
+    detection_id. The per-box host mirror is dropped: the boxes are inflated by
+    the caller, so a carried mirror would be stale — consumers fall back to
+    tensor reads."""
     existing = detections.bboxes_metadata or [{} for _ in range(number_of_detections)]
     new_metadata = []
     for index in range(number_of_detections):
         entry = dict(existing[index] or {}) if index < len(existing) else {}
         entry[parent_id_key] = entry.get(detection_id_key)
         entry[detection_id_key] = str(uuid4())
+        for key in HOST_MIRROR_KEYS:
+            entry.pop(key, None)
         new_metadata.append(entry)
     return new_metadata
 

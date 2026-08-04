@@ -13,6 +13,7 @@ from supervision.config import ORIENTED_BOX_COORDINATES
 from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     embed_rle_masks_in_larger_canvas,
+    strip_host_mirror_metadata,
     take_prediction_by_indices,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -356,6 +357,10 @@ def move_detections(
         device=detections.xyxy.device,
     )
     detections.xyxy = detections.xyxy + xyxy_shift
+    # Drop the per-box host mirror: xyxy just moved from slice-local to image
+    # coordinates, so a carried mirror would be stale — consumers fall back to
+    # tensor reads.
+    detections.bboxes_metadata = strip_host_mirror_metadata(detections.bboxes_metadata)
     bboxes_metadata = detections.bboxes_metadata
     if bboxes_metadata is not None and any(
         ORIENTED_BOX_COORDINATES in (box_metadata or {})

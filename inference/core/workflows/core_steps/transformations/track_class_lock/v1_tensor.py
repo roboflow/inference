@@ -23,6 +23,7 @@ import numpy as np
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    HOST_MIRROR_KEYS,
     split_key_point_prediction,
 )
 from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
@@ -288,6 +289,11 @@ def _repack_native(
             entry[CLASS_NAME_KEY] = str(name)
             class_names_map[cid] = str(name)
         entry[CLASS_LOCKED_KEY] = bool(locked_flags[index])
+        # Drop the per-box host mirror: class_id / confidence were rebuilt
+        # above, so a carried mirror would be stale — consumers fall back to
+        # tensor reads.
+        for mirror_key in HOST_MIRROR_KEYS:
+            entry.pop(mirror_key, None)
         new_bboxes_metadata.append(entry)
     result.bboxes_metadata = new_bboxes_metadata if n else None
 

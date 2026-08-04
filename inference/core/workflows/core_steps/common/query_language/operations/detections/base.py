@@ -29,6 +29,9 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.common.serializers_tensor import (
     serialise_sv_detections as serialise_tensor_native_detections,
 )
+from inference.core.workflows.core_steps.common.tensor_native import (
+    strip_host_mirror_metadata,
+)
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -934,6 +937,11 @@ def _offset_detections_impl_tensor_native(
         dtype=detections_copy.xyxy.dtype,
         device=detections_copy.xyxy.device,
     )
+    # Boxes changed -> the per-box host mirror would be stale; drop it so
+    # consumers fall back to tensor reads.
+    detections_copy.bboxes_metadata = strip_host_mirror_metadata(
+        detections_copy.bboxes_metadata
+    )
     return detections_copy
 
 
@@ -963,6 +971,11 @@ def _shift_detections_impl_tensor_native(
         [shift_x, shift_y, shift_x, shift_y],
         dtype=detections_copy.xyxy.dtype,
         device=detections_copy.xyxy.device,
+    )
+    # Boxes changed -> the per-box host mirror would be stale; drop it so
+    # consumers fall back to tensor reads.
+    detections_copy.bboxes_metadata = strip_host_mirror_metadata(
+        detections_copy.bboxes_metadata
     )
     return detections_copy
 
@@ -1275,6 +1288,11 @@ def _rename_detections_tensor_native(
         new_class_ids,
         dtype=detections.class_id.dtype,
         device=detections.class_id.device,
+    )
+    # class_id changed -> the per-box host mirror would be stale; drop it so
+    # consumers fall back to tensor reads.
+    detections_copy.bboxes_metadata = strip_host_mirror_metadata(
+        detections_copy.bboxes_metadata
     )
     if detections_copy.bboxes_metadata is not None:
         # Present-only rewrite: rows that carried an override keep the channel,

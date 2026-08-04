@@ -10,6 +10,7 @@ from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
+    read_host_mirror,
     split_key_point_prediction,
 )
 from inference.core.workflows.core_steps.visualizations.common.base_colorable_tensor import (
@@ -385,13 +386,25 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                 palette = self.getPalette(color_palette, palette_size, custom_colors)
                 if not isinstance(palette, sv.ColorPalette):
                     raise TypeError("expected sv.ColorPalette")
+                # The per-box host mirror (attach_native_detection_metadata)
+                # serves class ids and box coordinates without a device read —
+                # a `.cpu()` here queues behind unrelated kernels on the
+                # default CUDA stream. Mirror-less predictions keep the
+                # tensor-read path; both produce bit-identical arrays.
+                host_mirror = read_host_mirror(
+                    detections.bboxes_metadata, int(detections.xyxy.shape[0])
+                )
                 # Same colors sv's resolve_color would pick: CLASS ->
                 # by_idx(class_id), INDEX -> by_idx(det index), TRACK ->
                 # by_idx(tracker_id) with sv's gray for pending tracks (-1).
                 # Missing tracker ids raise here -> the sv path raises the
                 # same ValueError sv.resolve_color would.
                 if color_axis == "CLASS":
-                    ids = detections.class_id.detach().cpu().numpy().astype(int)
+                    ids = (
+                        host_mirror[1]
+                        if host_mirror is not None
+                        else detections.class_id.detach().cpu().numpy().astype(int)
+                    )
                 elif color_axis == "TRACK":
                     ids = np.asarray(
                         [
@@ -414,8 +427,13 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                     dtype=np.uint8,
                 )
                 # Same int conversion as the sv annotator loop (truncation
-                # toward zero, incl. negative coords).
-                xyxy = detections.xyxy.detach().cpu().numpy().astype(int)
+                # toward zero, incl. negative coords). The mirror is float32
+                # exactly like the tensor read, so the truncation matches.
+                xyxy = (
+                    host_mirror[0].astype(int)
+                    if host_mirror is not None
+                    else detections.xyxy.detach().cpu().numpy().astype(int)
+                )
                 # Tensor pipeline contract: the image is a CHW RGB device
                 # tensor — zero-copy in, tensor out (downstream materialises
                 # numpy lazily only if something asks for it).

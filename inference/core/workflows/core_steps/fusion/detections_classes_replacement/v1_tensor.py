@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
+    HOST_MIRROR_KEYS,
     TensorNativeDetections,
     TensorNativePrediction,
     split_key_point_prediction,
@@ -451,9 +452,18 @@ def _select_native_prediction(
     }
     selected_detections.image_metadata = image_metadata
     # Mint fresh detection IDs (the numpy block regenerates them to avoid
-    # collisions after class replacement).
+    # collisions after class replacement). The per-box host mirror is dropped:
+    # class_id / confidence were replaced above, so a carried mirror would be
+    # stale — consumers fall back to tensor reads.
     selected_detections.bboxes_metadata = [
-        {**(box or {}), DETECTION_ID_KEY: f"{uuid4()}"}
+        {
+            **{
+                key: value
+                for key, value in (box or {}).items()
+                if key not in HOST_MIRROR_KEYS
+            },
+            DETECTION_ID_KEY: f"{uuid4()}",
+        }
         for box in (
             selected_detections.bboxes_metadata
             if selected_detections.bboxes_metadata is not None

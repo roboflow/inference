@@ -37,6 +37,7 @@ from inference.core.workflows.core_steps.common.serializers_tensor import (
     serialise_native_classification,
 )
 from inference.core.workflows.core_steps.common.tensor_native import (
+    HOST_MIRROR_KEYS,
     build_native_key_points,
 )
 from inference.core.workflows.errors import DynamicBlockError
@@ -659,6 +660,11 @@ def _attach_per_box_columns(
     extra_keys.discard(DETECTION_ID_KEY)
     extra_keys.discard(TRACKER_ID_KEY)
     extra_keys.discard(CLASS_NAME_KEY)  # resolved into data['class_name'] already
+    # The private per-box host mirror of the detection tensors (tensor_native)
+    # is an internal transport channel — never surfaced to legacy user code.
+    # Excluding it here also keeps the sv->native round-trip from re-attaching
+    # a mirror the user code may have invalidated by editing xyxy/class_id.
+    extra_keys.difference_update(HOST_MIRROR_KEYS)
     keypoint_keys_present = extra_keys & set(_KEYPOINT_PAYLOAD_KEYS)
     if keypoint_keys_present == set(_KEYPOINT_PAYLOAD_KEYS):
         _attach_padded_keypoint_columns(
