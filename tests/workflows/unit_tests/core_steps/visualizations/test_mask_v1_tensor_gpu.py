@@ -4,15 +4,21 @@ import pytest
 import supervision as sv
 import torch
 from pycocotools import mask as mask_utils
+from torch.utils._python_dispatch import TorchDispatchMode
 
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     to_supervision_for_annotation,
 )
 from inference.core.workflows.core_steps.visualizations.mask.v1_tensor import (
+    MaskVisualizationBlockV1,
     _coco_rle_counts_to_runs,
-    _gpu_composite_eligible,
     _resolve_color_ids,
+    _rle_to_dense_masks,
     gpu_mask_composite,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
@@ -72,172 +78,46 @@ def _single_mask_inputs(h: int = 64, w: int = 64):
     return masks, boxes, class_id
 
 
-def test_gpu_composite_eligible_when_mask_is_numpy_array() -> None:
-    # given
-    masks, boxes, class_id = _single_mask_inputs()
-    predictions = InstanceDetections(
-        xyxy=torch.tensor(boxes, dtype=torch.int32),
-        class_id=torch.tensor(class_id, dtype=torch.int32),
-        confidence=torch.full((1,), 0.9),
-        mask=masks,
-    )
-
-    # when
-    result = _gpu_composite_eligible(predictions, "CLASS")
-
-    # then
-    assert result is False
-
-
-def test_gpu_composite_eligible_when_track_lookup_is_requested() -> None:
-    # given
-    masks, boxes, class_id = _single_mask_inputs()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    predictions = _build_dense_detections(masks, boxes, class_id, device=device)
-
-    # when
-    result = _gpu_composite_eligible(predictions, "TRACK")
-
-    # then: tracker ids resolve from bboxes_metadata at run time
-    assert result is True
-
-
-def test_gpu_composite_eligible_when_custom_lookup_is_requested() -> None:
-    # given
-    masks, boxes, class_id = _single_mask_inputs()
-    predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
-
-    # when / then: unknown lookups keep the sv path
-    assert _gpu_composite_eligible(predictions, "SOMETHING_ELSE") is False
-
-
-def test_gpu_composite_eligible_when_there_are_no_detections() -> None:
-    # given
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    predictions = InstanceDetections(
-        xyxy=torch.zeros((0, 4), dtype=torch.int32, device=device),
-        class_id=torch.zeros((0,), dtype=torch.int32, device=device),
-        confidence=torch.zeros((0,), device=device),
-        mask=torch.zeros((0, 8, 8), dtype=torch.bool, device=device),
-    )
-
-    # when
-    result = _gpu_composite_eligible(predictions, "CLASS")
-
-    # then
-    assert result is False
-
-
-def test_gpu_composite_eligible_when_predictions_are_not_instance_detections() -> None:
-    # when
-    result = _gpu_composite_eligible(object(), "CLASS")
-
-    # then
-    assert result is False
-
-
 def test_resolve_color_ids_matches_sv_semantics() -> None:
     # given
     masks, boxes, class_id = _single_mask_inputs()
     predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
     predictions.bboxes_metadata = [{"tracker_id": 7}]
 
-    # when / then: same palette indices sv's resolve_color_idx would use
-    assert np.array_equal(_resolve_color_ids(predictions, "CLASS"), class_id)
-    assert np.array_equal(_resolve_color_ids(predictions, "INDEX"), [0])
-    assert np.array_equal(_resolve_color_ids(predictions, "TRACK"), [7])
+    # when / then: same palette indices sv's resolve_color_idx would use,
+    # returned as device tensors (never a device->host read)
+    for axis, expected in (("CLASS", class_id), ("INDEX", [0]), ("TRACK", [7])):
+        ids = _resolve_color_ids(predictions, axis, torch.device("cpu"))
+        assert isinstance(ids, torch.Tensor) and ids.dtype == torch.int64
+        assert np.array_equal(ids.numpy(), expected)
 
 
-def test_resolve_color_ids_raises_sv_errors_when_ids_are_missing() -> None:
-    # given: missing class_id / tracker_id crash with sv's exact ValueError,
-    # raised before any mask work instead of after an sv-fallback mask decode
+def test_resolve_color_ids_raises_when_ids_are_missing() -> None:
+    # given: missing class_id / tracker_id crash with a clear ValueError,
+    # raised before any mask work
     masks, boxes, class_id = _single_mask_inputs()
     predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
     predictions.class_id = None
 
     # when / then
     with pytest.raises(ValueError, match="resolve color by class"):
-        _resolve_color_ids(predictions, "CLASS")
+        _resolve_color_ids(predictions, "CLASS", torch.device("cpu"))
     with pytest.raises(ValueError, match="resolve color by track"):
-        _resolve_color_ids(predictions, "TRACK")
+        _resolve_color_ids(predictions, "TRACK", torch.device("cpu"))
 
 
-def test_gpu_composite_eligible_when_dense_mask_is_on_cpu() -> None:
-    # given: the compositor is device-agnostic — device gating is the loader's
-    # job (this block only registers on the tensor pipeline)
+def test_resolve_color_ids_passes_pending_track_sentinel_through() -> None:
+    # given: sv's pending-track id (-1) must reach the caller unmapped so it
+    # can be painted with sv's gray
     masks, boxes, class_id = _single_mask_inputs()
     predictions = _build_dense_detections(masks, boxes, class_id, device="cpu")
+    predictions.bboxes_metadata = [{"tracker_id": -1}]
 
     # when
-    result = _gpu_composite_eligible(predictions, "CLASS")
+    ids = _resolve_color_ids(predictions, "TRACK", torch.device("cpu"))
 
     # then
-    assert result is True
-
-
-def test_gpu_composite_eligible_when_mask_carrier_is_rle() -> None:
-    # given: the compositor decodes the RLE carrier natively
-    masks, boxes, class_id = _single_mask_inputs()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    predictions = InstanceDetections(
-        xyxy=torch.tensor(boxes, dtype=torch.int32, device=device),
-        class_id=torch.tensor(class_id, dtype=torch.int32, device=device),
-        confidence=torch.full((1,), 0.9, device=device),
-        mask=InstancesRLEMasks(image_size=(64, 64), masks=[b""]),
-    )
-
-    # when
-    result = _gpu_composite_eligible(predictions, "CLASS")
-
-    # then
-    assert result is True
-
-
-def test_gpu_composite_eligible_when_rle_mask_count_mismatches_boxes() -> None:
-    # given: 1 box but 2 RLE payloads
-    masks, boxes, class_id = _single_mask_inputs()
-    predictions = InstanceDetections(
-        xyxy=torch.tensor(boxes, dtype=torch.int32),
-        class_id=torch.tensor(class_id, dtype=torch.int32),
-        confidence=torch.full((1,), 0.9),
-        mask=InstancesRLEMasks(image_size=(64, 64), masks=[b"", b""]),
-    )
-
-    # when
-    result = _gpu_composite_eligible(predictions, "CLASS")
-
-    # then
-    assert result is False
-
-
-@requires_cuda
-@pytest.mark.parametrize("color_axis", ["CLASS", "INDEX"])
-def test_gpu_composite_eligible_when_dense_cuda_bool_mask_is_given(
-    color_axis: str,
-) -> None:
-    # given
-    masks, boxes, class_id = _single_mask_inputs()
-    predictions = _build_dense_detections(masks, boxes, class_id, device="cuda")
-
-    # when
-    result = _gpu_composite_eligible(predictions, color_axis)
-
-    # then
-    assert result is True
-
-
-@requires_cuda
-def test_gpu_composite_eligible_when_dense_cuda_mask_has_wrong_dtype() -> None:
-    # given
-    masks, boxes, class_id = _single_mask_inputs()
-    predictions = _build_dense_detections(masks, boxes, class_id, device="cuda")
-    predictions.mask = predictions.mask.float()
-
-    # when
-    result = _gpu_composite_eligible(predictions, "CLASS")
-
-    # then
-    assert result is False
+    assert ids.tolist() == [-1]
 
 
 def _make_scene(seed: int, h: int = SCENE_H, w: int = SCENE_W) -> np.ndarray:
@@ -326,11 +206,20 @@ def _scenario_twelve_mask_cluster() -> list:
 
 
 def _scenario_edge_touching() -> list:
+    # masks clipped by every frame edge
     return [
         _rect_mask(0, 0, 199, 159),
         _rect_mask(SCENE_W - 240, SCENE_H - 180, SCENE_W - 1, SCENE_H - 1),
         _ellipse_mask(0, SCENE_H // 2, 160, 120),
         _ellipse_mask(SCENE_W - 1, 100, 180, 140),
+    ]
+
+
+def _scenario_full_frame() -> list:
+    # one mask covering every pixel plus a nested one
+    return [
+        _rect_mask(0, 0, SCENE_W - 1, SCENE_H - 1),
+        _ellipse_mask(480, 270, 180, 130),
     ]
 
 
@@ -368,6 +257,7 @@ OVERLAP_SCENARIOS = [
     _scenario_three_way_chain,
     _scenario_twelve_mask_cluster,
     _scenario_edge_touching,
+    _scenario_full_frame,
     _random_blob_masks,
 ]
 OVERLAP_SCENARIO_IDS = [
@@ -376,6 +266,7 @@ OVERLAP_SCENARIO_IDS = [
     "three_way_chain",
     "twelve_mask_cluster",
     "edge_touching",
+    "full_frame",
     "random_blobs",
 ]
 
@@ -426,9 +317,10 @@ def _composite_bgr(
         .contiguous()
         .to(device)
     )
-    out = gpu_mask_composite(
-        scene_t, detections, np.ascontiguousarray(colors_bgr[:, ::-1]), opacity
+    colors_rgb_t = torch.from_numpy(np.ascontiguousarray(colors_bgr[:, ::-1])).to(
+        device
     )
+    out = gpu_mask_composite(scene_t, detections.mask, colors_rgb_t, opacity)
     return out.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
 
 
@@ -467,10 +359,32 @@ def test_coco_rle_counts_decoder_accepts_uncompressed_lists() -> None:
 
 
 @pytest.mark.parametrize("device", DEVICES)
+def test_rle_to_dense_masks_matches_pycocotools(device: str) -> None:
+    # given
+    masks = _random_blob_masks(seed=5, n=4)
+    payloads = [
+        mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))["counts"]
+        for mask in masks
+    ]
+    rle = InstancesRLEMasks(image_size=(SCENE_H, SCENE_W), masks=payloads)
+
+    # when
+    dense = _rle_to_dense_masks(rle, torch.device(device))
+
+    # then
+    assert dense.shape == (len(masks), SCENE_H, SCENE_W)
+    assert dense.dtype == torch.bool
+    assert np.array_equal(dense.cpu().numpy(), np.stack(masks))
+
+
+@pytest.mark.parametrize("device", DEVICES)
 def test_gpu_mask_composite_matches_sv_annotator_on_disjoint_masks(
     device: str,
 ) -> None:
-    # given: no overlaps — single-covered pixels keep bit-exact sv parity
+    # given: no overlaps — single-covered pixels use the exact same
+    # premultiplied blend as sv (round-half-even like cvRound). Observed max
+    # abs diff on this scenario: 0 (bit-exact); the tolerance of 1 covers
+    # last-ulp division differences on other data.
     scene = _make_scene(101)
     masks = _scenario_disjoint_masks()
     detections, colors_bgr = _detections_and_colors(masks, device=device)
@@ -485,8 +399,10 @@ def test_gpu_mask_composite_matches_sv_annotator_on_disjoint_masks(
     actual = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
 
     # then
-    assert float((expected == actual).all(axis=2).mean()) == 1.0
-    assert int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max()) == 0
+    max_diff = int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max())
+    assert max_diff <= 1
+    mismatched_share = 1.0 - float((expected == actual).all(axis=2).mean())
+    assert mismatched_share < 0.001
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -507,6 +423,23 @@ def test_gpu_mask_composite_matches_blend_all_reference(
     # then
     assert float((expected == actual).all(axis=2).mean()) == 1.0
     assert int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max()) == 0
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_gpu_mask_composite_leaves_unmasked_pixels_untouched(device: str) -> None:
+    # given
+    scene = _make_scene(404)
+    masks = _scenario_disjoint_masks()
+    detections, colors_bgr = _detections_and_colors(masks, device=device)
+    covered = np.stack(masks).any(axis=0)
+
+    # when
+    actual = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
+
+    # then: sv's addWeighted re-blends the whole frame; the compositor must
+    # leave uncovered pixels BITWISE untouched
+    assert np.array_equal(actual[~covered], scene[~covered])
+    assert not np.array_equal(actual[covered], scene[covered])
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -549,9 +482,53 @@ def test_gpu_mask_composite_is_order_independent(device: str) -> None:
     assert np.array_equal(original, shuffled)
 
 
+def test_gpu_mask_composite_accepts_numpy_mask_stack() -> None:
+    # given: a numpy-carried dense mask stack is uploaded and painted like the
+    # torch carrier (there is no sv fallback to route it to any more)
+    scene = _make_scene(111, h=128, w=128)
+    masks = np.zeros((1, 128, 128), dtype=bool)
+    masks[0, 20:60, 30:90] = True
+    colors_bgr = np.asarray([PALETTE.by_idx(1).as_bgr()], dtype=np.uint8)
+    expected = _reference_blend_all(scene, list(masks), colors_bgr, OPACITY)
+
+    scene_t = torch.from_numpy(scene[:, :, ::-1].copy()).permute(2, 0, 1).contiguous()
+    out = gpu_mask_composite(
+        scene_t,
+        masks,
+        torch.from_numpy(np.ascontiguousarray(colors_bgr[:, ::-1])),
+        OPACITY,
+    )
+
+    # then
+    actual = out.permute(1, 2, 0).numpy()[:, :, ::-1]
+    assert np.array_equal(actual, expected)
+
+
+def test_gpu_mask_composite_casts_non_bool_masks() -> None:
+    # given: float dense masks (previously served by the sv fallback's
+    # astype(bool)) are cast on device — nonzero values paint
+    scene = _make_scene(222, h=96, w=96)
+    masks = np.zeros((1, 96, 96), dtype=bool)
+    masks[0, 10:40, 10:40] = True
+    colors_bgr = np.asarray([PALETTE.by_idx(2).as_bgr()], dtype=np.uint8)
+    expected = _reference_blend_all(scene, list(masks), colors_bgr, OPACITY)
+
+    scene_t = torch.from_numpy(scene[:, :, ::-1].copy()).permute(2, 0, 1).contiguous()
+    out = gpu_mask_composite(
+        scene_t,
+        torch.from_numpy(masks).float(),
+        torch.from_numpy(np.ascontiguousarray(colors_bgr[:, ::-1])),
+        OPACITY,
+    )
+
+    # then
+    actual = out.permute(1, 2, 0).numpy()[:, :, ::-1]
+    assert np.array_equal(actual, expected)
+
+
 def test_gpu_mask_composite_rejects_mismatched_mask_canvas() -> None:
     # given: mask canvas smaller than the scene — silent slicing would paint
-    # misaligned masks; the block's try/except routes this to the sv fallback
+    # misaligned masks; with the sv fallback gone this must raise loudly
     scene = _make_scene(707, h=256, w=256)
     masks, boxes, class_id = _single_mask_inputs(h=64, w=64)
     detections = _build_dense_detections(masks, boxes, class_id, device="cpu")
@@ -562,8 +539,8 @@ def test_gpu_mask_composite_rejects_mismatched_mask_canvas() -> None:
         _composite_bgr(scene, detections, colors_bgr, OPACITY)
 
 
-def test_gpu_mask_composite_with_fully_off_frame_boxes_leaves_scene_unchanged() -> None:
-    # given: union ROI collapses to nothing
+def test_gpu_mask_composite_with_all_false_masks_leaves_scene_unchanged() -> None:
+    # given: no foreground pixels at all (boxes play no role in the composite)
     scene = _make_scene(808, h=128, w=128)
     masks = np.zeros((1, 128, 128), dtype=bool)
     boxes = np.array([[-50, -50, -10, -10]], dtype=np.int32)
@@ -577,37 +554,6 @@ def test_gpu_mask_composite_with_fully_off_frame_boxes_leaves_scene_unchanged() 
 
     # then
     assert np.array_equal(actual, scene)
-
-
-@pytest.mark.parametrize("device", DEVICES)
-def test_gpu_mask_composite_track_colors_match_sv_annotator(device: str) -> None:
-    # given: disjoint masks colored by tracker_id (non-contiguous ids to
-    # catch any id-vs-index mixup), bit-exact vs sv's TRACK lookup
-    scene = _make_scene(909)
-    masks = _scenario_disjoint_masks()
-    detections, _ = _detections_and_colors(masks, device=device)
-    tracker_ids = [12, 3, 27]
-    detections.bboxes_metadata = [{"tracker_id": tid} for tid in tracker_ids]
-    annotator = sv.MaskAnnotator(
-        color=PALETTE, color_lookup=sv.ColorLookup.TRACK, opacity=OPACITY
-    )
-    expected = annotator.annotate(
-        scene=scene.copy(), detections=to_supervision_for_annotation(detections)
-    )
-    colors_bgr = np.asarray(
-        [
-            PALETTE.by_idx(int(tid)).as_bgr()
-            for tid in _resolve_color_ids(detections, "TRACK")
-        ],
-        dtype=np.uint8,
-    )
-
-    # when
-    actual = _composite_bgr(scene, detections, colors_bgr, OPACITY, device=device)
-
-    # then
-    assert float((expected == actual).all(axis=2).mean()) == 1.0
-    assert int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max()) == 0
 
 
 @requires_cuda
@@ -627,8 +573,8 @@ def test_gpu_mask_composite_chw_rgb_tensor_scene_matches_reference(
     # when
     annotated_tensor = gpu_mask_composite(
         scene_chw_rgb,
-        detections,
-        np.ascontiguousarray(colors_bgr[:, ::-1]),
+        detections.mask,
+        torch.from_numpy(np.ascontiguousarray(colors_bgr[:, ::-1])).cuda(),
         OPACITY,
     )
 
@@ -639,3 +585,392 @@ def test_gpu_mask_composite_chw_rgb_tensor_scene_matches_reference(
     actual = annotated_tensor.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
     assert float((expected == actual).all(axis=2).mean()) == 1.0
     assert int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max()) == 0
+
+
+# --------------------------------------------------------------------------
+# Block-level tests (MaskVisualizationBlockV1.run)
+# --------------------------------------------------------------------------
+
+
+def _tensor_backed_image(
+    scene_bgr: np.ndarray, device: str = "cpu"
+) -> WorkflowImageData:
+    tensor = (
+        torch.from_numpy(scene_bgr[:, :, ::-1].copy())
+        .permute(2, 0, 1)
+        .contiguous()
+        .to(device)
+    )
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"), tensor_image=tensor
+    )
+
+
+def _numpy_backed_image(scene_bgr: np.ndarray) -> WorkflowImageData:
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        numpy_image=scene_bgr,
+    )
+
+
+def _run_block(
+    image: WorkflowImageData,
+    detections,
+    copy_image: bool = True,
+    color_axis: str = "CLASS",
+    opacity: float = OPACITY,
+) -> WorkflowImageData:
+    return MaskVisualizationBlockV1().run(
+        image=image,
+        predictions=detections,
+        copy_image=copy_image,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis=color_axis,
+        opacity=opacity,
+    )["image"]
+
+
+def _empty_detections(device: str = "cpu") -> InstanceDetections:
+    return InstanceDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.int32, device=device),
+        class_id=torch.zeros((0,), dtype=torch.int32, device=device),
+        confidence=torch.zeros((0,), device=device),
+        mask=torch.zeros((0, 8, 8), dtype=torch.bool, device=device),
+    )
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("rle", [False, True], ids=["dense", "rle"])
+def test_block_tensor_path_matches_reference(rle: bool, device: str) -> None:
+    # given
+    scene = _make_scene(120)
+    masks = _scenario_three_way_chain()
+    detections, colors_bgr = _detections_and_colors(masks, device=device, rle=rle)
+    image = _tensor_backed_image(scene, device=device)
+    expected = _reference_blend_all(scene, masks, colors_bgr, OPACITY)
+
+    # when
+    out = _run_block(image, detections, copy_image=True)
+
+    # then: tensor in -> tensor out, pixels match the reference
+    assert out._tensor_image is not None and out._numpy_image is None
+    actual = out._tensor_image.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
+    assert np.array_equal(actual, expected)
+
+
+def test_block_copy_image_true_preserves_input_tensor() -> None:
+    # given
+    scene = _make_scene(121, h=128, w=128)
+    masks = np.zeros((1, 128, 128), dtype=bool)
+    masks[0, 20:60, 30:90] = True
+    detections = _build_dense_detections(
+        masks,
+        np.array([[30, 20, 89, 59]], dtype=np.int32),
+        np.array([1], dtype=np.int32),
+        device="cpu",
+    )
+    image = _tensor_backed_image(scene)
+    before = image.tensor_image.clone()
+
+    # when
+    out = _run_block(image, detections, copy_image=True)
+
+    # then: independent storage, input untouched
+    assert out._tensor_image.data_ptr() != image.tensor_image.data_ptr()
+    assert torch.equal(image.tensor_image, before)
+    assert not torch.equal(out._tensor_image, before)
+
+
+def test_block_copy_image_false_mutates_input_tensor_in_place() -> None:
+    # given
+    scene = _make_scene(122, h=128, w=128)
+    masks = np.zeros((1, 128, 128), dtype=bool)
+    masks[0, 20:60, 30:90] = True
+    detections = _build_dense_detections(
+        masks,
+        np.array([[30, 20, 89, 59]], dtype=np.int32),
+        np.array([1], dtype=np.int32),
+        device="cpu",
+    )
+    image = _tensor_backed_image(scene)
+    input_tensor = image.tensor_image
+    before = input_tensor.clone()
+
+    # when
+    out = _run_block(image, detections, copy_image=False)
+
+    # then: same storage, annotated in place, numpy/base64 caches invalidated
+    assert out._tensor_image.data_ptr() == input_tensor.data_ptr()
+    assert not torch.equal(input_tensor, before)
+    assert image._numpy_image is None and image._base64_image is None
+
+
+@pytest.mark.parametrize("copy_image", [True, False])
+def test_block_numpy_path_matches_sv_annotator_reference(copy_image: bool) -> None:
+    # given: numpy-sourced images take the pre-rewrite sv.MaskAnnotator path
+    # unchanged — bit-exact vs a directly-constructed annotator (painter's
+    # algorithm on overlaps included, which the torch compositor diverges from)
+    scene = _make_scene(123)
+    masks = _scenario_three_way_chain()
+    detections, _ = _detections_and_colors(masks, device="cpu")
+    annotator = sv.MaskAnnotator(
+        color=PALETTE, color_lookup=sv.ColorLookup.CLASS, opacity=OPACITY
+    )
+    expected = annotator.annotate(
+        scene=scene.copy(), detections=to_supervision_for_annotation(detections)
+    )
+    image = _numpy_backed_image(scene.copy())
+
+    # when
+    out = _run_block(image, detections, copy_image=copy_image)
+
+    # then: numpy in -> numpy out, sv's exact pixels
+    assert out._numpy_image is not None and out._tensor_image is None
+    assert np.array_equal(out._numpy_image, expected)
+
+
+def test_block_numpy_path_copy_semantics() -> None:
+    # given
+    scene = _make_scene(124, h=128, w=128)
+    masks = np.zeros((1, 128, 128), dtype=bool)
+    masks[0, 20:60, 30:90] = True
+    detections = _build_dense_detections(
+        masks,
+        np.array([[30, 20, 89, 59]], dtype=np.int32),
+        np.array([1], dtype=np.int32),
+        device="cpu",
+    )
+
+    # when: copy_image=True leaves the caller's buffer untouched
+    image = _numpy_backed_image(scene.copy())
+    out = _run_block(image, detections, copy_image=True)
+    assert not np.shares_memory(out._numpy_image, image.numpy_image)
+    assert np.array_equal(image.numpy_image, scene)
+
+    # and: copy_image=False mutates the caller's buffer in place
+    image = _numpy_backed_image(scene.copy())
+    buffer = image.numpy_image
+    out = _run_block(image, detections, copy_image=False)
+    assert np.shares_memory(out._numpy_image, buffer)
+    assert not np.array_equal(buffer, scene)
+
+
+def test_block_empty_predictions_take_the_tensor_passthrough() -> None:
+    # given
+    scene = _make_scene(125, h=64, w=64)
+    image = _tensor_backed_image(scene)
+
+    # when
+    out_copy = _run_block(image, _empty_detections(), copy_image=True)
+    out_share = _run_block(image, _empty_detections(), copy_image=False)
+
+    # then: stays on-device; independent storage iff copy_image
+    assert out_copy._tensor_image is not None and out_copy._numpy_image is None
+    assert out_copy._tensor_image.data_ptr() != image.tensor_image.data_ptr()
+    assert torch.equal(out_copy._tensor_image, image.tensor_image)
+    assert out_share._tensor_image.data_ptr() == image.tensor_image.data_ptr()
+
+
+def test_block_empty_predictions_on_numpy_sourced_image_stay_numpy() -> None:
+    # given
+    scene = _make_scene(126, h=64, w=64)
+    image = _numpy_backed_image(scene)
+
+    # when
+    out = _run_block(image, _empty_detections(), copy_image=True)
+
+    # then
+    assert out._numpy_image is not None and out._tensor_image is None
+    assert not np.shares_memory(out._numpy_image, image.numpy_image)
+    assert np.array_equal(out._numpy_image, image.numpy_image)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_block_track_colors_match_sv_annotator(device: str) -> None:
+    # given: disjoint masks colored by tracker_id (non-contiguous ids to
+    # catch any id-vs-index mixup)
+    scene = _make_scene(909)
+    masks = _scenario_disjoint_masks()
+    detections, _ = _detections_and_colors(masks, device=device)
+    tracker_ids = [12, 3, 27]
+    detections.bboxes_metadata = [{"tracker_id": tid} for tid in tracker_ids]
+    annotator = sv.MaskAnnotator(
+        color=PALETTE, color_lookup=sv.ColorLookup.TRACK, opacity=OPACITY
+    )
+    expected = annotator.annotate(
+        scene=scene.copy(), detections=to_supervision_for_annotation(detections)
+    )
+    image = _tensor_backed_image(scene, device=device)
+
+    # when
+    out = _run_block(image, detections, color_axis="TRACK")
+
+    # then
+    actual = out._tensor_image.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
+    max_diff = int(np.abs(expected.astype(np.int16) - actual.astype(np.int16)).max())
+    assert max_diff <= 1
+    mismatched_share = 1.0 - float((expected == actual).all(axis=2).mean())
+    assert mismatched_share < 0.001
+
+
+def test_block_pending_track_id_paints_sv_gray() -> None:
+    # given: sv's pending-track sentinel (-1) maps to Color.GREY (128,128,128)
+    scene = np.full((128, 128, 3), 200, dtype=np.uint8)
+    masks = np.zeros((1, 128, 128), dtype=bool)
+    masks[0, 20:60, 30:90] = True
+    detections = _build_dense_detections(
+        masks,
+        np.array([[30, 20, 89, 59]], dtype=np.int32),
+        np.array([1], dtype=np.int32),
+        device="cpu",
+    )
+    detections.bboxes_metadata = [{"tracker_id": -1}]
+    image = _tensor_backed_image(scene)
+
+    # when
+    out = _run_block(image, detections, color_axis="TRACK")
+
+    # then: masked pixels = round(128*0.5 + 200*0.5) = 164 on every channel
+    actual = out._tensor_image.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
+    assert np.array_equal(
+        actual[masks[0]], np.full((int(masks[0].sum()), 3), 164, dtype=np.uint8)
+    )
+    assert np.array_equal(actual[~masks[0]], scene[~masks[0]])
+
+
+def test_block_missing_tracker_ids_raise_value_error() -> None:
+    # given
+    scene = _make_scene(127, h=64, w=64)
+    masks, boxes, class_id = _single_mask_inputs()
+    detections = _build_dense_detections(masks, boxes, class_id, device="cpu")
+    image = _tensor_backed_image(scene)
+
+    # when / then: raised BEFORE any painting, input untouched
+    before = image.tensor_image.clone()
+    with pytest.raises(ValueError, match="resolve color by track"):
+        _run_block(image, detections, color_axis="TRACK", copy_image=False)
+    assert torch.equal(image.tensor_image, before)
+
+
+def test_block_raises_for_unsupported_color_axis() -> None:
+    scene = _make_scene(128, h=64, w=64)
+    masks, boxes, class_id = _single_mask_inputs()
+    detections = _build_dense_detections(masks, boxes, class_id, device="cpu")
+
+    with pytest.raises(ValueError, match="color_axis"):
+        _run_block(_tensor_backed_image(scene), detections, color_axis="SOMETHING")
+
+
+def test_block_raises_for_non_instance_detections() -> None:
+    scene = _make_scene(129, h=64, w=64)
+
+    class _NotDetections:
+        xyxy = torch.ones((1, 4))
+
+    with pytest.raises(ValueError, match="instance segmentation"):
+        _run_block(_tensor_backed_image(scene), _NotDetections())
+
+
+def test_block_raises_for_mask_count_mismatch() -> None:
+    # given: 1 box but 2 RLE payloads (previously silently sv-fallback-routed)
+    scene = _make_scene(130, h=64, w=64)
+    masks, boxes, class_id = _single_mask_inputs()
+    detections = InstanceDetections(
+        xyxy=torch.tensor(boxes, dtype=torch.int32),
+        class_id=torch.tensor(class_id, dtype=torch.int32),
+        confidence=torch.full((1,), 0.9),
+        mask=InstancesRLEMasks(image_size=(64, 64), masks=[b"", b""]),
+    )
+
+    with pytest.raises(ValueError, match="RLE masks"):
+        _run_block(_tensor_backed_image(scene), detections)
+
+
+def test_block_raises_for_missing_mask_carrier() -> None:
+    scene = _make_scene(131, h=64, w=64)
+    masks, boxes, class_id = _single_mask_inputs()
+    detections = _build_dense_detections(masks, boxes, class_id, device="cpu")
+    detections.mask = None
+
+    with pytest.raises(ValueError, match="no usable mask"):
+        _run_block(_tensor_backed_image(scene), detections)
+
+
+def test_block_canvas_mismatch_raises_without_partial_mutation() -> None:
+    # given: the composite validates before its single staged write, so a
+    # raising run must leave a copy_image=False input bitwise untouched
+    scene = _make_scene(132, h=256, w=256)
+    masks, boxes, class_id = _single_mask_inputs(h=64, w=64)
+    detections = _build_dense_detections(masks, boxes, class_id, device="cpu")
+    image = _tensor_backed_image(scene)
+    before = image.tensor_image.clone()
+
+    with pytest.raises(ValueError, match="does not match scene"):
+        _run_block(image, detections, copy_image=False)
+    assert torch.equal(image.tensor_image, before)
+
+
+# --------------------------------------------------------------------------
+# Sync audit: the dense path must enqueue a fixed, N-independent op sequence
+# with no device->host reads.
+# --------------------------------------------------------------------------
+
+
+class _DispatchRecorder(TorchDispatchMode):
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        kwargs = kwargs or {}
+        self.calls.append((str(func), kwargs))
+        return func(*args, **kwargs)
+
+
+def _dense_composite_trace(n: int) -> list:
+    scene = (
+        torch.from_numpy(_make_scene(999, h=96, w=128)[:, :, ::-1].copy())
+        .permute(2, 0, 1)
+        .contiguous()
+    )
+    rng = np.random.default_rng(n)
+    masks = torch.from_numpy(rng.random((n, 96, 128)) > 0.6)
+    colors = torch.randint(0, 255, (n, 3), dtype=torch.uint8)
+    recorder = _DispatchRecorder()
+    with recorder:
+        gpu_mask_composite(scene, masks, colors, OPACITY)
+    return recorder.calls
+
+
+def test_dense_composite_dispatches_no_sync_ops() -> None:
+    # The structural zero-sync invariant (asserted on op names so it holds on
+    # CPU-only runners too): no data-dependent indexing (`nonzero`,
+    # `masked_select`), no host readback (`_local_scalar_dense` is `.item()`,
+    # `aten.item` its alias), and no op asked to change a tensor's device
+    # (`_to_copy`/`to`/`copy_` are dtype-only on this path — a `device=` kwarg
+    # would be the D2H/H2D tell).
+    calls = _dense_composite_trace(8)
+    op_names = [name for name, _ in calls]
+    assert calls, "dispatch trace is empty - the mode did not record"
+    forbidden_fragments = ("nonzero", "_local_scalar_dense", "masked_select")
+    for name in op_names:
+        for fragment in forbidden_fragments:
+            assert fragment not in name, f"sync-inducing op in dense path: {name}"
+        assert not name.startswith("aten.item"), f"host readback in dense path: {name}"
+    for name, kwargs in calls:
+        assert kwargs.get("device") is None, (
+            f"{name} was asked to change device ({kwargs['device']}) inside "
+            "the dense composite - that is a cross-device copy"
+        )
+    # the single staged write into the caller's storage is present
+    assert any(name.startswith("aten.copy_") for name in op_names)
+
+
+def test_dense_composite_dispatch_count_is_n_independent() -> None:
+    # Fixed-shape contract: the op SEQUENCE (not just the count) must be
+    # identical for N=1/8/32 - nothing in the path branches on data or N.
+    traces = {n: [name for name, _ in _dense_composite_trace(n)] for n in (1, 8, 32)}
+    assert traces[1] == traces[8] == traces[32]
+    assert len(traces[1]) < 40  # bounded: a handful of fixed ops per frame

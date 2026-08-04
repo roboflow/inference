@@ -5,7 +5,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -71,6 +70,15 @@ The annotated image from this block can be connected to:
 - **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with mask overlays as visual evidence in alerts or reports
 - **Video output blocks** to create annotated video streams or recordings with mask fills for live monitoring, segmentation visualization, or post-processing analysis
 """
+
+#: supervision's pending-track sentinel and its color (``PENDING_TRACK_ID`` /
+#: ``PENDING_TRACK_COLOR = Color.GREY``, supervision 0.29.0
+#: ``annotators/utils.py``). Values are copied so the runtime path never
+#: touches supervision.
+_PENDING_TRACK_ID = -1
+_PENDING_TRACK_COLOR_RGB = (128, 128, 128)
+
+_SUPPORTED_COLOR_AXES = ("CLASS", "INDEX", "TRACK")
 
 
 def _coco_rle_counts_to_runs(counts) -> np.ndarray:
@@ -158,186 +166,254 @@ def _rle_foreground_pixels_in_roi(
     return (rows - uy1) * (ux2 - ux1) + (cols - ux1), run_dets[run_ids][inside]
 
 
+def _rle_to_dense_masks(
+    masks: "InstancesRLEMasks", device: torch.device
+) -> torch.Tensor:
+    """Decode COCO-RLE payloads into a dense bool ``(N, H, W)`` mask stack on
+    ``device``, feeding the same fixed-shape composite the dense carrier uses.
+
+    The RLE bytes live on the host, so the varint decode is inherently host
+    work; the per-run tables cross the bus once (H2D upload — it does not
+    drain the device queue) and the run→pixel expansion plus the scatter into
+    the dense stack happen on the device with host-known sizes: no
+    device→host sync anywhere.
+    """
+    height, width = (int(size) for size in masks.image_size)
+    n = len(masks.masks)
+    flat_idx, det_ids = _rle_foreground_pixels_in_roi(
+        masks, (0, 0, height, width), device
+    )
+    dense = torch.zeros(n * height * width, dtype=torch.bool, device=device)
+    dense[det_ids * (height * width) + flat_idx] = True
+    return dense.view(n, height, width)
+
+
 def gpu_mask_composite(
     scene: torch.Tensor,
-    predictions: "InstanceDetections",
-    colors_rgb: "np.ndarray",
+    mask: Union[torch.Tensor, "InstancesRLEMasks", np.ndarray],
+    colors_rgb: Union[torch.Tensor, np.ndarray],
     opacity: float,
 ) -> torch.Tensor:
-    """GPU-native, tensor-only replacement for ``sv.MaskAnnotator.annotate``.
+    """Torch-native mask compositor replicating ``sv.MaskAnnotator.annotate``
+    with a ZERO-SYNC dense hot path.
 
-    Tensor pipeline contract on both ends: ``scene`` is a CHW RGB uint8 torch
-    tensor (``WorkflowImageData.tensor_image``), mutated IN PLACE and returned
-    — no numpy, no layout conversion, no host round-trip. Callers that need
-    the original must pass a clone.
+    ``scene`` is a CHW RGB uint8 torch tensor (``WorkflowImageData``'s
+    ``tensor_image`` layout), mutated IN PLACE and returned. The function is
+    device-agnostic: the same code runs on CUDA tensors (the tensor pipeline)
+    and CPU tensors (the numpy-image path of the block).
 
-    Accepts both tensor-pipeline mask carriers:
+    Sync-freedom contract (the whole point of this block): for a dense bool
+    ``(N, H, W)`` mask on the scene's device, the composite enqueues a FIXED,
+    N-independent number of device ops and never reads a device value back to
+    the host — no ``.cpu()``, no ``.item()``, no ``nonzero``, no data-dependent
+    shapes. A sync-free viz phase queues a whole batch back-to-back instead of
+    serialising each image against the previous one's kernels (measured ~35 ms
+    of pure queue-wait per batch on Jetson NX before this rewrite). There is
+    deliberately NO ROI narrowing (the old union-of-boxes crop needed an
+    ``xyxy`` device→host read) and NO large-N scatter branch: full-frame fp32
+    bandwidth at realistic N (a few dozen instances) is far cheaper than one
+    default-stream sync, and the GEMM formulation below keeps the traffic at
+    one bool read of the mask stack plus a fixed number of full-frame fp32
+    passes.
 
-    * a dense bool ``torch.Tensor`` ``(N, H, W)`` on the pipeline device, and
-    * ``InstancesRLEMasks`` (COCO compressed RLE, column-major) — decoded
-      straight into the per-pixel accumulators on the device. The dense
-      ``(N, H, W)`` stack is never materialised: the RLE path is
-      ``O(total foreground pixels)`` in memory, not ``O(N·H·W)``.
+    Compositing math — identical to the previous revision, kept on purpose:
 
-    Overlap semantics — intentionally simpler than supervision's: every mask
-    covering a pixel contributes equally, i.e. the overlay color is the MEAN
-    of the covering masks' colors, alpha-composited once with the scene:
+        count      = Σ_i mask_i                       # (H·W,)
+        color_sum  = colorsᵀ·opacity @ masks          # (3, H·W) — one GEMM
+        out        = round(color_sum / count + (1-opacity) · scene)  where count > 0
 
-        count      = Σ_i mask_i                       # (h, w)
-        color_sum  = Σ_i mask_i · color_i · opacity   # (h, w, 3)
-        out        = color_sum / count + (1-opacity) · scene   where count > 0
+    Overlap semantics are intentionally simpler than supervision's: every mask
+    covering a pixel contributes equally (MEAN of the covering colors,
+    alpha-composited once), which is order-independent and diverges from
+    supervision's smallest-area-on-top painter's algorithm on OVERLAPPING
+    pixels only. Pixels covered by exactly one mask match ``sv.MaskAnnotator``
+    bit-for-bit: same premultiplied blend, and ``torch.round_`` is
+    round-half-to-even like ``cv2.addWeighted``'s ``cvRound``. A convex
+    combination of uint8 values needs no clamp. fp32 accumulation is exact for
+    any realistic N (counts and premultiplied sums stay far below 2^24) and
+    the GEMM is deterministic — note it assumes the default
+    ``torch.backends.cuda.matmul.allow_tf32 = False``; enabling TF32 globally
+    may shift overlap pixels by ±1.
 
-    This is order-independent and diverges from supervision's
-    smallest-area-owns-the-pixel painter's algorithm on OVERLAPPING pixels
-    only; pixels covered by exactly one mask still match ``sv.MaskAnnotator``
-    bit-for-bit (same premultiplied blend; ``torch.round_`` is
-    round-half-to-even, matching ``cv2.addWeighted``'s ``cvRound``; a convex
-    combination of uint8 values needs no clamp). Both carriers share the same
-    accumulate-and-blend core (dense masks via one ``nonzero``, RLE via the
-    run scatter), and fp32 accumulation keeps counts and color sums exact for
-    any realistic N.
+    Accepted mask carriers:
 
-    Masks' True pixels are assumed to lie inside their detection boxes (the
-    tensor pipeline decodes masks per-box), so all work is restricted to the
-    union ROI of the boxes; one tiny ``xyxy`` D2H is the only mandatory host
-    sync (the dense path's ``nonzero`` adds one more).
+    * dense bool ``torch.Tensor`` ``(N, H, W)`` — the zero-sync hot path
+      (non-bool dtypes are cast on device; a carrier on another device is
+      moved to the scene's device, which is only ever paid on the host-bound
+      numpy-image path);
+    * ``np.ndarray`` ``(N, H, W)`` — uploaded once, then the dense path;
+    * ``InstancesRLEMasks`` (COCO compressed RLE, column-major — the SAM3 /
+      semantic-segmentation carrier) — decoded host-side (inherent: the bytes
+      live on the host) and scattered into a dense stack on device, then the
+      identical fixed-shape composite. No device→host sync either.
+
+    All validation happens before any write; the single in-place write to
+    ``scene`` is staged last, so a raising call never leaves a partially
+    painted image.
 
     Args:
-        scene: CHW RGB uint8 torch tensor on the pipeline device. Mutated in
-            place. (No ``.contiguous()`` is taken: it could silently copy and
-            break the in-place contract — ``copy_image=False`` operates on the
-            caller's storage.)
-        predictions: ``InstanceDetections`` whose ``mask`` is a dense bool
-            ``torch.Tensor`` ``(N, H, W)`` or an ``InstancesRLEMasks`` whose
-            ``image_size`` matches the scene.
-        colors_rgb: ``(N, 3)`` uint8 per-detection colors (RGB), resolved with
-            the same palette logic the sv annotator would use.
+        scene: CHW RGB uint8 torch tensor, any device. Mutated in place —
+            callers that need the original must pass a clone.
+        mask: one of the carriers above; the mask canvas must match the scene.
+        colors_rgb: ``(N, 3)`` uint8 per-detection RGB colors (device tensor
+            preferred; numpy is uploaded).
         opacity: overlay opacity, matches ``sv.MaskAnnotator(opacity=...)``.
 
     Returns:
         ``scene`` (same tensor, annotated in place).
     """
-    mask_carrier = predictions.mask
-    is_rle = isinstance(mask_carrier, InstancesRLEMasks)
-    device = scene.device
-    # All painting/blending below works on an HWC view; the permute is a
-    # zero-copy view, so in-place writes land in the CHW storage.
-    scene_hwc = scene.permute(1, 2, 0)
-
-    H, W = int(scene_hwc.shape[0]), int(scene_hwc.shape[1])
-    mask_hw = (
-        tuple(int(s) for s in mask_carrier.image_size)
-        if is_rle
-        else (int(mask_carrier.shape[1]), int(mask_carrier.shape[2]))
-    )
-    if mask_hw != (H, W):
-        # Silent slicing on a mismatched canvas would paint misaligned masks;
-        # raising sends the block to the sv fallback instead.
-        raise ValueError(f"mask canvas {mask_hw} does not match scene {(H, W)}")
-    # Union ROI of all boxes — one tiny D2H of xyxy (the only host sync).
-    # supervision xyxy has inclusive max coords, hence the +1.
-    xy = predictions.xyxy.detach().cpu().numpy()
-    ux1 = max(0, int(np.floor(xy[:, 0].min())))
-    uy1 = max(0, int(np.floor(xy[:, 1].min())))
-    ux2 = min(W, int(np.floor(xy[:, 2].max())) + 1)
-    uy2 = min(H, int(np.floor(xy[:, 3].max())) + 1)
-    if ux2 > ux1 and uy2 > uy1:
-        roi_h, roi_w = uy2 - uy1, ux2 - ux1
-        # fp32 accumulation: counts and premultiplied color sums are integers
-        # and halves well below 2^24, so sums stay exact regardless of the
-        # (nondeterministic) atomic add order.
-        acc_dtype = torch.float32
-        lut_premul = (
-            torch.from_numpy(np.ascontiguousarray(colors_rgb))
-            .to(device=device, dtype=acc_dtype)
-            .mul_(opacity)
-        )  # (N, 3)
-        if is_rle:
-            flat_idx, det_ids = _rle_foreground_pixels_in_roi(
-                mask_carrier, (uy1, ux1, uy2, ux2), device
-            )
-        else:
-            det_ids, rows, cols = mask_carrier[:, uy1:uy2, ux1:ux2].nonzero(
-                as_tuple=True
-            )
-            flat_idx = rows * roi_w + cols
-        count = torch.zeros(roi_h * roi_w, dtype=acc_dtype, device=device)
-        count.index_add_(0, flat_idx, torch.ones_like(flat_idx, dtype=acc_dtype))
-        color_sum = torch.zeros(roi_h * roi_w, 3, dtype=acc_dtype, device=device)
-        color_sum.index_add_(0, flat_idx, lut_premul[det_ids])
-        hit = (count > 0).view(roi_h, roi_w, 1)
-        scene_roi = scene_hwc[uy1:uy2, ux1:ux2]
-        # mean premultiplied mask color, then fused axpy with the scene
-        blended = color_sum.div_(count.clamp_(min=1.0).unsqueeze(1)).view(
-            roi_h, roi_w, 3
+    if scene.ndim != 3 or int(scene.shape[0]) != 3:
+        raise ValueError(
+            "mask visualization requires a 3-channel CHW RGB scene tensor, "
+            f"got shape {tuple(scene.shape)}"
         )
-        blended.add_(scene_roi.to(acc_dtype), alpha=1.0 - opacity)
-        blended_u8 = blended.round_().to(torch.uint8)
-        # where() = one full-ROI write; boolean indexing would need 2 nonzero
-        # passes + gather/scatter.
-        scene_roi.copy_(torch.where(hit, blended_u8, scene_roi))
-
+    height, width = int(scene.shape[1]), int(scene.shape[2])
+    if isinstance(mask, InstancesRLEMasks):
+        canvas = tuple(int(size) for size in mask.image_size)
+        if canvas != (height, width):
+            raise ValueError(
+                f"mask canvas {canvas} does not match scene {(height, width)}"
+            )
+        mask = _rle_to_dense_masks(mask, scene.device)
+    else:
+        if isinstance(mask, np.ndarray):
+            mask = torch.from_numpy(np.ascontiguousarray(mask))
+        if not isinstance(mask, torch.Tensor) or mask.ndim != 3:
+            raise ValueError(
+                "mask visualization requires a dense (N, H, W) mask tensor, "
+                "a (N, H, W) numpy array or InstancesRLEMasks, got "
+                f"{type(mask).__name__}"
+            )
+        canvas = (int(mask.shape[1]), int(mask.shape[2]))
+        if canvas != (height, width):
+            raise ValueError(
+                f"mask canvas {canvas} does not match scene {(height, width)}"
+            )
+        if mask.device != scene.device:
+            # Only reachable on the host-bound numpy-image path (device masks
+            # with a CPU scene); the tensor pipeline keeps everything on one
+            # device and never dispatches a device change here.
+            mask = mask.to(scene.device)
+        if mask.dtype != torch.bool:
+            mask = mask != 0
+    if isinstance(colors_rgb, np.ndarray):
+        colors_rgb = torch.from_numpy(np.ascontiguousarray(colors_rgb)).to(scene.device)
+    n = int(mask.shape[0])
+    if int(colors_rgb.shape[0]) != n:
+        raise ValueError(
+            f"got {int(colors_rgb.shape[0])} colors for {n} masks — one RGB "
+            "color per detection is required"
+        )
+    pixels = height * width
+    masks_flat = mask.reshape(n, pixels).to(torch.float32)  # (N, P)
+    count = masks_flat.sum(dim=0)  # (P,)
+    hit = (count > 0).unsqueeze(0)  # (1, P)
+    colors_premul = colors_rgb.to(dtype=torch.float32).mul_(float(opacity))  # (N, 3)
+    # One deterministic GEMM instead of an (N, 3, H, W) broadcast or an
+    # index_add scatter: (3, N) @ (N, P) → the premultiplied color sum per
+    # pixel, with no giant intermediate and no data-dependent indexing.
+    color_sum = colors_premul.t() @ masks_flat  # (3, P)
+    scene_flat = scene.reshape(3, pixels)
+    blended = color_sum.div_(count.clamp_(min=1.0))
+    blended = blended.add_(scene_flat.to(torch.float32), alpha=1.0 - float(opacity))
+    blended_u8 = blended.round_().to(torch.uint8)
+    # Single staged write: `where` materialises the full output first, then
+    # one in-place copy lands it in the caller's storage.
+    scene.copy_(torch.where(hit, blended_u8, scene_flat).view(3, height, width))
     return scene
 
 
 def _resolve_color_ids(
-    predictions: "InstanceDetections", color_axis: str
-) -> np.ndarray:
-    """The palette indices sv's ``resolve_color_idx`` would use, raising its
-    exact ``ValueError``s when the ids are missing — but BEFORE any mask work,
-    so a doomed run doesn't densify RLE masks on the sv fallback path just to
-    crash on the same check."""
+    predictions: "InstanceDetections",
+    color_axis: str,
+    device: torch.device,
+) -> torch.Tensor:
+    """Palette ids as an ``(N,)`` int64 tensor on ``device`` — the same ids
+    supervision's ``resolve_color_idx`` would produce, without any
+    device→host sync:
+
+    * ``INDEX`` → ``arange(n)`` built on device (``n`` comes from
+      ``xyxy.shape[0]`` — shape metadata, no sync);
+    * ``CLASS`` → ``class_id`` stays a device tensor (dtype cast only, never a
+      ``.cpu()``);
+    * ``TRACK`` → tracker ids read from the host-side ``bboxes_metadata``
+      dicts and uploaded H2D (uploads do not drain the device queue). The
+      pending-track sentinel ``-1`` is passed through for the caller to map to
+      supervision's gray.
+
+    Missing ids raise ``ValueError`` BEFORE any mask work, so a doomed run
+    never pays a mask decode first.
+    """
     n = int(predictions.xyxy.shape[0])
     if color_axis == "INDEX":
-        return np.arange(n)
+        return torch.arange(n, dtype=torch.int64, device=device)
     if color_axis == "CLASS":
-        if predictions.class_id is None:
+        class_id = predictions.class_id
+        if class_id is None:
             raise ValueError(
                 "Could not resolve color by class because "
                 "Detections do not have class_id. If using an annotator, "
                 "try setting color_lookup to sv.ColorLookup.INDEX or "
                 "sv.ColorLookup.TRACK."
             )
-        return predictions.class_id.detach().cpu().numpy().astype(int)
-    # TRACK: the tensor pipeline carries tracker ids in per-box metadata (the
-    # same place to_supervision_for_annotation reads them from).
-    metadata = predictions.bboxes_metadata or []
-    tracker_ids = [box.get("tracker_id") for box in metadata]
-    if len(tracker_ids) != n or any(tid is None for tid in tracker_ids):
-        raise ValueError(
-            "Could not resolve color by track because "
-            "Detections do not have tracker_id. Did you call "
-            "tracker.update_with_detections(...) before annotating?"
+        return class_id.detach().to(device=device, dtype=torch.int64)
+    if color_axis == "TRACK":
+        metadata = predictions.bboxes_metadata or []
+        tracker_ids = [box.get("tracker_id") for box in metadata]
+        if len(tracker_ids) != n or any(
+            tracker_id is None for tracker_id in tracker_ids
+        ):
+            raise ValueError(
+                "Could not resolve color by track because "
+                "Detections do not have tracker_id. Did you call "
+                "tracker.update_with_detections(...) before annotating?"
+            )
+        return torch.tensor(
+            [int(tracker_id) for tracker_id in tracker_ids],
+            dtype=torch.int64,
+            device=device,
         )
-    return np.asarray([int(tid) for tid in tracker_ids])
-
-
-def _gpu_composite_eligible(predictions, color_axis: str) -> bool:
-    """True when the torch compositor supports the inputs."""
-    if color_axis not in ("CLASS", "INDEX", "TRACK"):
-        # Custom lookups keep the battle-tested sv path.
-        return False
-    if not isinstance(predictions, InstanceDetections):
-        return False
-    n = int(predictions.xyxy.shape[0])
-    if n == 0:
-        # Nothing to paint; the sv path is a trivial no-op and avoids an
-        # empty-crop edge case in the compositor.
-        return False
-    # Both tensor-pipeline carriers are supported: a dense (N, H, W) bool
-    # torch.Tensor and COCO-RLE (InstancesRLEMasks). Crop views are built from
-    # xyxy on whatever device the mask lives on (the loader only registers
-    # this block for the tensor pipeline, so device gating is not this
-    # block's job).
-    mask_carrier = getattr(predictions, "mask", None)
-    if isinstance(mask_carrier, InstancesRLEMasks):
-        return len(mask_carrier.masks) == n
-    return (
-        isinstance(mask_carrier, torch.Tensor)
-        and mask_carrier.ndim == 3
-        and mask_carrier.dtype == torch.bool
-        and int(mask_carrier.shape[0]) == n
+    raise ValueError(
+        f"mask visualization supports color_axis in {_SUPPORTED_COLOR_AXES}, "
+        f"got {color_axis!r}"
     )
+
+
+def _validate_inputs(predictions, color_axis: str) -> None:
+    """Raise a clear ``ValueError`` for inputs the torch compositor cannot
+    paint — the previous silent supervision fallback is gone, so invalid
+    inputs now fail loudly instead of quietly taking a different code path."""
+    if color_axis not in _SUPPORTED_COLOR_AXES:
+        raise ValueError(
+            f"mask visualization supports color_axis in {_SUPPORTED_COLOR_AXES}, "
+            f"got {color_axis!r}"
+        )
+    if not isinstance(predictions, InstanceDetections):
+        raise ValueError(
+            "mask visualization requires instance segmentation predictions "
+            f"(InstanceDetections with masks), got {type(predictions).__name__}"
+        )
+    n = int(predictions.xyxy.shape[0])
+    mask = predictions.mask
+    if isinstance(mask, InstancesRLEMasks):
+        if len(mask.masks) != n:
+            raise ValueError(
+                f"predictions carry {len(mask.masks)} RLE masks for {n} boxes — "
+                "one mask per detection is required"
+            )
+    elif isinstance(mask, (torch.Tensor, np.ndarray)):
+        if mask.ndim != 3 or int(mask.shape[0]) != n:
+            raise ValueError(
+                "predictions must carry a dense (N, H, W) mask stack with one "
+                f"mask per detection; got shape {tuple(mask.shape)} for {n} boxes"
+            )
+    else:
+        raise ValueError(
+            "predictions carry no usable mask (expected a dense (N, H, W) "
+            "tensor/array or InstancesRLEMasks, got "
+            f"{type(mask).__name__}) — mask visualization requires "
+            "segmentation masks"
+        )
 
 
 class MaskManifest(ColorableVisualizationManifest):
@@ -392,6 +468,12 @@ class MaskManifest(ColorableVisualizationManifest):
 class MaskVisualizationBlockV1(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # (color_palette, palette_size, custom_colors, device) → (P, 3) uint8
+        # RGB LUT. supervision's ColorPalette is consulted ONCE here, at
+        # cache-build time (pure configuration); the per-frame tensor path is
+        # supervision-free.
+        self._palette_lut_cache = {}
+        # sv.MaskAnnotator cache for the numpy-sourced-image path.
         self.annotatorCache = {}
 
     @classmethod
@@ -429,6 +511,63 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
 
         return self.annotatorCache[key]
 
+    def _get_palette_lut(
+        self,
+        color_palette: Optional[str],
+        palette_size: Optional[int],
+        custom_colors: Optional[List[str]],
+        device: torch.device,
+    ) -> torch.Tensor:
+        key = (
+            color_palette,
+            int(palette_size) if palette_size is not None else None,
+            tuple(custom_colors or ()),
+            str(device),
+        )
+        lut = self._palette_lut_cache.get(key)
+        if lut is None:
+            palette = self.getPalette(color_palette, palette_size, custom_colors)
+            palette_colors = getattr(palette, "colors", None)
+            if not palette_colors:
+                raise ValueError(
+                    f"color palette {color_palette!r} did not resolve to a "
+                    "color palette with at least one color"
+                )
+            lut = torch.tensor(
+                [color.as_rgb() for color in palette_colors],
+                dtype=torch.uint8,
+                device=device,
+            )
+            self._palette_lut_cache[key] = lut
+        return lut
+
+    def _annotate_scene(
+        self,
+        scene: torch.Tensor,
+        predictions: "InstanceDetections",
+        color_palette: Optional[str],
+        palette_size: Optional[int],
+        custom_colors: Optional[List[str]],
+        color_axis: str,
+        opacity: float,
+    ) -> torch.Tensor:
+        device = scene.device
+        ids = _resolve_color_ids(predictions, color_axis, device)
+        lut = self._get_palette_lut(color_palette, palette_size, custom_colors, device)
+        # Same color sv's `by_idx` picks: idx % palette size, on device. (For
+        # negative ids torch's remainder wraps instead of raising like sv's
+        # by_idx — checking would require a device→host read.)
+        colors_rgb = lut[ids.remainder(int(lut.shape[0]))]
+        if color_axis == "TRACK":
+            # sv resolve_color: the pending-track id (-1) gets Color.GREY.
+            pending = torch.tensor(
+                _PENDING_TRACK_COLOR_RGB, dtype=torch.uint8, device=device
+            )
+            colors_rgb = torch.where(
+                (ids == _PENDING_TRACK_ID).unsqueeze(1), pending, colors_rgb
+            )
+        return gpu_mask_composite(scene, predictions.mask, colors_rgb, float(opacity))
+
     def run(
         self,
         image: WorkflowImageData,
@@ -445,56 +584,36 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
         )
         if passthrough is not None:
             return passthrough
-        # is_tensor_materialised(): never force a CHW tensor out of a
-        # numpy-sourced image — that conversion is pure CPU overhead and the
-        # sv path is faster on such frames.
-        if _gpu_composite_eligible(predictions, color_axis) and (
-            image.is_tensor_materialised()
-        ):
-            # Raises sv's ValueError when class/tracker ids are missing —
-            # deliberately outside the try: the sv fallback would fail the
-            # same way, only after a pointless mask materialisation.
-            ids = _resolve_color_ids(predictions, color_axis)
-            try:
-                palette = self.getPalette(color_palette, palette_size, custom_colors)
-                if not isinstance(palette, sv.ColorPalette):
-                    raise TypeError("expected sv.ColorPalette")
-                # Same colors sv's resolve_color_idx would pick:
-                # palette.by_idx(class_id | det index | tracker_id).
-                colors_rgb = np.asarray(
-                    [palette.by_idx(int(idx)).as_rgb() for idx in ids],
-                    dtype=np.uint8,
+        if image.is_tensor_materialised():
+            _validate_inputs(predictions, color_axis)
+            # Tensor pipeline contract: CHW RGB device tensor in, tensor out —
+            # zero device→host syncs on the dense path (downstream materialises
+            # numpy lazily only if something asks for it).
+            scene = image.tensor_image
+            if copy_image:
+                scene = scene.clone()
+            annotated = self._annotate_scene(
+                scene,
+                predictions,
+                color_palette,
+                palette_size,
+                custom_colors,
+                color_axis,
+                opacity,
+            )
+            if not copy_image:
+                # The compositor mutated `image.tensor_image` storage in
+                # place; invalidate the derived numpy/base64 caches.
+                image.declare_tensor_image_mutated()
+            return {
+                OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                    origin_image_data=image, tensor_image=annotated
                 )
-                # Tensor pipeline contract: the image is a CHW RGB device
-                # tensor — zero-copy in, tensor out (downstream materialises
-                # numpy lazily only if something asks for it).
-                scene_t = image.tensor_image
-                if int(scene_t.shape[0]) != 3:
-                    raise ValueError("GPU mask compositor requires a 3-channel image")
-                if copy_image:
-                    scene_t = scene_t.clone()
-                annotated_tensor = gpu_mask_composite(
-                    scene_t,
-                    predictions,
-                    colors_rgb,
-                    float(opacity),
-                )
-                if not copy_image:
-                    # The compositor mutated `image.tensor_image` storage
-                    # in place (the sv-path contract for copy_image=False);
-                    # invalidate the derived numpy/base64 caches.
-                    image.declare_tensor_image_mutated()
-                return {
-                    OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                        origin_image_data=image, tensor_image=annotated_tensor
-                    )
-                }
-            except Exception as gpu_error:
-                logger.debug(
-                    "GPU mask compositor failed (%s); falling back to "
-                    "sv.MaskAnnotator path.",
-                    gpu_error,
-                )
+            }
+        # Numpy-sourced image (flag-on cv2-fallback frames): behave EXACTLY as
+        # before — the battle-tested sv.MaskAnnotator path, byte-identical to
+        # the numpy v1 block. Forcing a CHW tensor out of such a frame would be
+        # pure host-side conversion overhead.
         predictions = to_supervision_for_annotation(predictions)
         annotator = self.getAnnotator(
             color_palette,
