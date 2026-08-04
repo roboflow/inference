@@ -692,8 +692,8 @@ def forward_image(
 ) -> Tuple[Union[bytes, np.ndarray], Tuple[int, int]]:
     """InferenceRequestImage -> (manager input, (width, height)).
 
-    Bundled/direct preserves a ``numpy_object`` as a contiguous BGR array.
-    Other paths keep the compressed-byte contract expected by SHM transport.
+    Bundled mode preserves a ``numpy_object`` as a contiguous BGR array.
+    External MMP receives the same array as ``.npy`` bytes over SHM.
     """
     started = performance_profiler.start()
     performance_profiler.increment("adapter.image_forward.calls")
@@ -731,25 +731,16 @@ def forward_image(
             performance_profiler.record(
                 "adapter.image.input_bytes", array.nbytes, "bytes"
             )
+            array = np.ascontiguousarray(convert_gray_image_to_bgr(array))
             dims = (int(array.shape[1]), int(array.shape[0]))
             if LEGACY_MMP_ADAPTER_MODE == "bundled":
-                array = np.ascontiguousarray(convert_gray_image_to_bgr(array))
                 performance_profiler.record(
                     "adapter.image.pixels", dims[0] * dims[1], "pixels"
                 )
                 return array, dims
-            png_started = performance_profiler.start()
-            performance_profiler.increment("adapter.png_encode.calls")
-            try:
-                success, encoded = cv2.imencode(".png", array)
-                if not success:
-                    raise InputImageLoadError(
-                        message="Could not encode numpy image as PNG.",
-                        public_message="Could not encode input image.",
-                    )
-                data = encoded.tobytes()
-            finally:
-                performance_profiler.stop("adapter.png_encode", png_started)
+            buffer = io.BytesIO()
+            np.save(buffer, array, allow_pickle=False)
+            data = buffer.getvalue()
             _record_forwarded_image(data, dims)
             return data, dims
         raise InvalidImageTypeDeclared(

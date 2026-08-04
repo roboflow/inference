@@ -508,7 +508,7 @@ class TestInfer:
         assert restored.shape == (48, 64, 3)
         assert response.image.width == 64 and response.image.height == 48
 
-    def test_mmp_numpy_object_image_forwarded_as_png(
+    def test_mmp_numpy_object_image_forwarded_as_npy(
         self, running_adapter, od_stat, monkeypatch
     ):
         monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "mmp")
@@ -517,10 +517,11 @@ class TestInfer:
         request = od_request(image=SimpleNamespace(type="numpy_object", value=array))
         response = running_adapter.infer_from_request_sync("ws/1", request)
         sent = running_adapter._client.infer_calls[0]["image"]
-        assert sent[:8] == b"\x89PNG\r\n\x1a\n"
+        assert sent.startswith(b"\x93NUMPY")
+        assert np.array_equal(np.load(io.BytesIO(sent)), array)
         assert response.image.width == 64 and response.image.height == 48
 
-    def test_mmp_numpy_object_round_trip_preserves_colors(self, monkeypatch):
+    def test_mmp_numpy_object_npy_round_trip_preserves_bgr(self, monkeypatch):
         monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "mmp")
         array = np.zeros((48, 64, 3), dtype=np.uint8)
         array[:24, :32] = (0, 0, 255)
@@ -528,19 +529,11 @@ class TestInfer:
             SimpleNamespace(type="numpy_object", value=array)
         )
         assert dims == (64, 48)
-        assert data[:8] == b"\x89PNG\r\n\x1a\n"
-        try:
-            import imagecodecs
-
-            decoded_rgb = imagecodecs.png_decode(data)
-        except ImportError:
-            decoded_bgr = cv2.imdecode(
-                np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR
-            )
-            decoded_rgb = cv2.cvtColor(decoded_bgr, cv2.COLOR_BGR2RGB)
-        assert decoded_rgb[0, 0].tolist() == [255, 0, 0]
-        assert decoded_rgb[47, 63].tolist() == [0, 0, 0]
-        assert np.array_equal(decoded_rgb, cv2.cvtColor(array, cv2.COLOR_BGR2RGB))
+        assert data.startswith(b"\x93NUMPY")
+        decoded_bgr = np.load(io.BytesIO(data))
+        assert decoded_bgr[0, 0].tolist() == [0, 0, 255]
+        assert decoded_bgr[47, 63].tolist() == [0, 0, 0]
+        assert np.array_equal(decoded_bgr, array)
 
     def test_bundled_numpy_object_bypasses_png(self, monkeypatch):
         monkeypatch.setattr(translation, "LEGACY_MMP_ADAPTER_MODE", "bundled")
