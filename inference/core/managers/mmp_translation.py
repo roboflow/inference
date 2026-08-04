@@ -62,11 +62,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import (
-    CLIP_MAX_BATCH_SIZE,
-    LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
-    LEGACY_MMP_ADAPTER_MODE,
-)
+from inference.core.env import CLIP_MAX_BATCH_SIZE, LEGACY_MMP_ADAPTER_MODE
 from inference.core.exceptions import (
     InferenceModelNotFound,
     InferencePayloadTooLargeError,
@@ -736,10 +732,7 @@ def forward_image(
                 "adapter.image.input_bytes", array.nbytes, "bytes"
             )
             dims = (int(array.shape[1]), int(array.shape[0]))
-            if (
-                LEGACY_MMP_ADAPTER_MODE == "bundled"
-                and LEGACY_MMP_ADAPTER_BUNDLED_BACKEND == "direct"
-            ):
+            if LEGACY_MMP_ADAPTER_MODE == "bundled":
                 array = np.ascontiguousarray(convert_gray_image_to_bgr(array))
                 performance_profiler.record(
                     "adapter.image.pixels", dims[0] * dims[1], "pixels"
