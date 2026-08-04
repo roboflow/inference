@@ -5,6 +5,14 @@ permissions:
 on:
   release:
     types: [created]
+  pull_request:
+    paths:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "requirements/requirements.docs.txt"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
     inputs:
       deploy:
@@ -91,7 +99,7 @@ jobs:
         working-directory: ./inference_repo
 
       - name: Upload site artifact
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: docs-site-preview
@@ -99,8 +107,9 @@ jobs:
           retention-days: 7
 
       - name: Deploy docs
-        # Only deploy if release event OR if deploy input was set to true
-        if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
+        # Only deploy on a release, or on a manual dispatch that asked for it.
+        # Pull request runs build and verify the site, but never publish it.
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true') }}
         run: |
           pip install ghp-import
           ghp-import -n -p -f site
