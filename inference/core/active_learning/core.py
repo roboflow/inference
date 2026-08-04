@@ -27,6 +27,7 @@ from inference.core.roboflow_api import (
     annotate_image_at_roboflow,
     register_image_at_roboflow,
 )
+from inference.core.utils.function import deprecated
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 
@@ -34,10 +35,10 @@ from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 class PreparedRegistrationImage(NamedTuple):
     """JPEG bytes plus the exact size transform applied before upload.
 
-    Index 0/1 stay `(encoded_image, scaling_factor)` for backward compatibility.
-    `scaling_factor` is the height ratio (historical Active Learning contract).
-    Prefer `scale_x` / `scale_y` / `final_size_wh` so annotations match the
-    uploaded JPEG at any aspect ratio (int truncation can make axes differ).
+    `scaling_factor` remains the height ratio used by the historical Active
+    Learning contract. Prefer `scale_x` / `scale_y` / `final_size_wh` so
+    annotations match the uploaded JPEG at any aspect ratio (int truncation can
+    make axes differ).
     """
 
     encoded_image: bytes
@@ -80,12 +81,11 @@ def execute_datapoint_registration(
     inference_id: Optional[str] = None,
 ) -> None:
     local_image_id = str(uuid4())
-    prepared_image = prepare_image_to_registration(
+    prepared_image = prepare_image_to_registration_with_metadata(
         image=image,
         desired_size=configuration.max_image_size,
         jpeg_compression_level=configuration.jpeg_compression_level,
     )
-    encoded_image = prepared_image.encoded_image
     prediction = adjust_prediction_to_client_scaling_factor(
         prediction=prediction,
         scaling_factor=prepared_image.scaling_factor,
@@ -107,7 +107,7 @@ def execute_datapoint_registration(
     register_datapoint_at_roboflow(
         cache=cache,
         strategy_with_spare_credit=strategy_with_spare_credit,
-        encoded_image=encoded_image,
+        encoded_image=prepared_image.encoded_image,
         local_image_id=local_image_id,
         prediction=prediction,
         prediction_type=prediction_type,
@@ -118,7 +118,31 @@ def execute_datapoint_registration(
     )
 
 
+@deprecated(
+    reason=(
+        "Use prepare_image_to_registration_with_metadata, which reports the exact "
+        "output dimensions and axis-specific scaling factors."
+    )
+)
 def prepare_image_to_registration(
+    image: np.ndarray,
+    desired_size: Optional[ImageDimensions],
+    jpeg_compression_level: int,
+) -> Tuple[bytes, float]:
+    """Prepare an image using the legacy two-tuple return contract.
+
+    Deprecated: use :func:`prepare_image_to_registration_with_metadata` so
+    annotations can be scaled to the exact encoded-image dimensions.
+    """
+    result = prepare_image_to_registration_with_metadata(
+        image=image,
+        desired_size=desired_size,
+        jpeg_compression_level=jpeg_compression_level,
+    )
+    return result.encoded_image, result.scaling_factor
+
+
+def prepare_image_to_registration_with_metadata(
     image: np.ndarray,
     desired_size: Optional[ImageDimensions],
     jpeg_compression_level: int,

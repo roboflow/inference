@@ -14,6 +14,7 @@ from inference.core.active_learning.core import (
     execute_sampling,
     is_prediction_registration_forbidden,
     prepare_image_to_registration,
+    prepare_image_to_registration_with_metadata,
     register_datapoint_at_roboflow,
     safe_register_image_at_roboflow,
 )
@@ -26,6 +27,7 @@ from inference.core.active_learning.entities import (
     StrategyLimitType,
 )
 from inference.core.exceptions import InvalidNumpyInput, RoboflowAPIConnectionError
+from inference.core.warnings import InferenceDeprecationWarning
 
 
 def test_execute_sampling() -> None:
@@ -62,16 +64,34 @@ def test_prepare_image_to_registration_when_desired_size_is_not_given(
     image_as_numpy: np.ndarray,
 ) -> None:
     # when
-    result = prepare_image_to_registration(
-        image=image_as_numpy, desired_size=None, jpeg_compression_level=95
-    )
-    bytes_array = np.frombuffer(result.encoded_image, dtype=np.uint8)
+    with pytest.warns(
+        InferenceDeprecationWarning,
+        match="Use prepare_image_to_registration_with_metadata",
+    ):
+        result = prepare_image_to_registration(
+            image=image_as_numpy, desired_size=None, jpeg_compression_level=95
+        )
+    encoded_image, scaling_factor = result
+    bytes_array = np.frombuffer(encoded_image, dtype=np.uint8)
     decoded_result = cv2.imdecode(bytes_array, flags=cv2.IMREAD_UNCHANGED)
 
     # then
+    assert type(result) is tuple
+    assert len(result) == 2
     assert decoded_result.shape == image_as_numpy.shape
     assert np.allclose(decoded_result, image_as_numpy)
-    assert abs(result.scaling_factor - 1.0) < 1e-5
+    assert abs(scaling_factor - 1.0) < 1e-5
+
+
+def test_prepare_image_to_registration_with_metadata_when_desired_size_is_not_given(
+    image_as_numpy: np.ndarray,
+) -> None:
+    result = prepare_image_to_registration_with_metadata(
+        image=image_as_numpy,
+        desired_size=None,
+        jpeg_compression_level=95,
+    )
+
     assert result.original_size_wh == (
         image_as_numpy.shape[1],
         image_as_numpy.shape[0],
@@ -85,7 +105,7 @@ def test_prepare_image_to_registration_when_desired_size_given(
     image_as_numpy: np.ndarray,
 ) -> None:
     # when
-    result = prepare_image_to_registration(
+    result = prepare_image_to_registration_with_metadata(
         image=image_as_numpy,
         desired_size=ImageDimensions(height=32, width=16),
         jpeg_compression_level=95,
@@ -103,7 +123,7 @@ def test_prepare_image_to_registration_when_desired_size_given(
 def test_prepare_image_to_registration_reports_anisotropic_scales() -> None:
     # Ultra-wide source: width-limited resize + int truncation ⇒ scale_x != scale_y
     image = np.zeros((1080, 4000, 3), dtype=np.uint8)
-    result = prepare_image_to_registration(
+    result = prepare_image_to_registration_with_metadata(
         image=image,
         desired_size=ImageDimensions(height=2080, width=2080),
         jpeg_compression_level=95,
@@ -128,7 +148,7 @@ def test_prepare_image_to_registration_rejects_empty_image_dimensions(
     image: np.ndarray,
 ) -> None:
     with pytest.raises(InvalidNumpyInput) as error:
-        prepare_image_to_registration(
+        prepare_image_to_registration_with_metadata(
             image=image,
             desired_size=None,
             jpeg_compression_level=95,
