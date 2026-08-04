@@ -14,7 +14,7 @@ import base64
 import binascii
 import io
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -410,6 +410,12 @@ def _numeric_confidence(value: Any) -> Optional[float]:
     return float(value)
 
 
+def _roboflow_confidence(value: Any) -> Optional[Union[float, str]]:
+    if isinstance(value, str) and value in ("best", "default"):
+        return value
+    return _numeric_confidence(value)
+
+
 def build_task_params(
     task_type: str, action: str, request: Any, route: Optional[dict] = None
 ) -> dict:
@@ -429,12 +435,16 @@ def build_task_params(
         return params
     if task_type == "open-vocabulary-object-detection":
         return _build_open_vocabulary_params(request)
-    if task_type in ("semantic-segmentation", "depth-estimation"):
+    if task_type == "depth-estimation":
         return params
-    confidence = _numeric_confidence(getattr(request, "confidence", None))
+    confidence = _roboflow_confidence(getattr(request, "confidence", None))
     if confidence is not None:
         params["confidence"] = confidence
-    if task_type in ("classification", "multi-label-classification"):
+    if task_type in (
+        "classification",
+        "multi-label-classification",
+        "semantic-segmentation",
+    ):
         return params
     iou_threshold = getattr(request, "iou_threshold", None)
     if iou_threshold is not None:

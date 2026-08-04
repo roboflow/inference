@@ -408,6 +408,48 @@ class TestStatErrorTranslation:
         assert result == ("object-detection", "infer")
 
 
+@pytest.mark.parametrize(
+    ("task_type", "confidence", "expected"),
+    [
+        ("classification", None, None),
+        ("object-detection", 0.4, 0.4),
+        ("object-detection", 1, 1.0),
+        ("object-detection", "best", "best"),
+        ("keypoint-detection", "default", "default"),
+    ],
+)
+def test_build_task_params_forwards_roboflow_confidence_modes(
+    task_type, confidence, expected
+):
+    params = translation.build_task_params(
+        task_type, "infer", SimpleNamespace(confidence=confidence)
+    )
+
+    if expected is None:
+        assert "confidence" not in params
+        return
+    assert params["confidence"] == expected
+    if isinstance(confidence, int):
+        assert type(params["confidence"]) is float
+
+
+@pytest.mark.parametrize("confidence", [True, "unsupported"])
+def test_build_task_params_rejects_invalid_roboflow_confidence(confidence):
+    with pytest.raises(ModelDeploymentNotSupportedError):
+        translation.build_task_params(
+            "object-detection", "infer", SimpleNamespace(confidence=confidence)
+        )
+
+
+def test_open_vocabulary_confidence_modes_remain_numeric_only():
+    with pytest.raises(ModelDeploymentNotSupportedError):
+        translation.build_task_params(
+            "open-vocabulary-object-detection",
+            "infer",
+            SimpleNamespace(text=["cat"], confidence="best"),
+        )
+
+
 class TestInfer:
     def test_sync_infer_happy_path(self, running_adapter, od_stat, png_image):
         image, payload = png_image
@@ -438,6 +480,15 @@ class TestInfer:
             running_adapter._loop,
         ).result(timeout=5)
         assert isinstance(response, ObjectDetectionInferenceResponse)
+
+    def test_sync_infer_forwards_best_confidence(
+        self, running_adapter, od_stat, png_image
+    ):
+        image, _ = png_image
+        running_adapter.infer_from_request_sync(
+            "ws/1", od_request(image=image, confidence="best")
+        )
+        assert running_adapter._client.infer_calls[0]["params"]["confidence"] == "best"
 
     def test_class_filter_applied_post_repack(
         self, running_adapter, od_stat, png_image
@@ -951,10 +1002,15 @@ class TestPerTypeRepack:
                 segmentation_map=seg_map, confidence=np.ones((48, 64)) * 0.5
             )
         ]
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, confidence="best")
         response = self._run(
-            running_adapter, monkeypatch, "semantic-segmentation", result
+            running_adapter, monkeypatch, "semantic-segmentation", result, request
         )
         assert response.predictions.class_map == {"0": "cat", "1": "dog"}
+        assert running_adapter._client.infer_calls[0]["params"] == {
+            "confidence": "best"
+        }
         from PIL import Image as PILImage
 
         decoded = np.asarray(
