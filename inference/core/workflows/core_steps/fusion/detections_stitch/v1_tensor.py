@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import copy
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
@@ -217,8 +217,11 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         resolution_wh = (reference_width, reference_height)
 
         re_aligned_predictions = []
+        # (dx, dy, row_count) per NON-EMPTY crop, in the order merge_detections
+        # concatenates them - see apply_deferred_box_shifts.
+        deferred_shifts: List[Tuple[float, float, int]] = []
         for detections in predictions:
-            detections_copy = deepcopy(detections)
+            detections_copy = shallow_copy_detections(detections)
             offset = retrieve_crop_offset(detections=detections_copy)
             detections_copy = manage_crops_metadata(
                 detections=detections_copy, image=reference_image
@@ -227,17 +230,94 @@ class DetectionsStitchBlockV1(WorkflowBlock):
                 detections=detections_copy,
                 offset=offset,
                 resolution_wh=resolution_wh,
+                defer_box_shift=True,
             )
             re_aligned_predictions.append(re_aligned_detections)
+            row_count = len(re_aligned_detections)
+            if row_count > 0:
+                # move_detections has already rejected a missing offset for a
+                # non-empty prediction, so offset is guaranteed here.
+                deferred_shifts.append(
+                    (float(offset[0]), float(offset[1]), row_count)
+                )
         overlap_filter = choose_overlap_filter_strategy(
             overlap_filtering_strategy=overlap_filtering_strategy,
         )
         merged = merge_detections(detections_list=re_aligned_predictions)
+        # Boxes reach reference coordinates HERE, in one op. Masks were already
+        # embedded onto the reference canvas per crop (they need the offset to
+        # place RLE runs), so between the loop and this line the two geometries
+        # are transiently in different spaces - nothing reads them in between.
+        merged = apply_deferred_box_shifts(detections=merged, shifts=deferred_shifts)
         if overlap_filter is OverlapFilter.NONE:
             return {"predictions": merged}
         if overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
             return {"predictions": with_nms(detections=merged, threshold=iou_threshold)}
         return {"predictions": with_nmm(detections=merged, threshold=iou_threshold)}
+
+
+def shallow_copy_detections(
+    detections: TensorNativeDetections,
+) -> TensorNativeDetections:
+    """Per-crop working copy that SHARES the caller's tensors and metadata.
+
+    This used to be ``deepcopy``, which cloned every device tensor (an
+    allocation plus a device copy each) and every per-box dict in
+    ``bboxes_metadata`` - O(rows) python object work on the hot path. None of
+    it was needed: the block never writes THROUGH a shared object, it rebinds
+    fields with freshly built ones (``xyxy`` via an add,
+    ``image_metadata`` via ``dict(...)`` in manage_crops_metadata,
+    ``bboxes_metadata`` via strip_host_mirror_metadata / the OBB rebuild,
+    ``mask`` via _move_native_masks). A shallow copy gives the same isolation
+    from the upstream step output - which other steps may still be reading -
+    at a fraction of the cost.
+
+    The invariant this relies on: NOTHING below may mutate a shared field in
+    place. The OBB branch of move_detections is written as a rebuild for
+    exactly that reason.
+    """
+    return copy(detections)
+
+
+def apply_deferred_box_shifts(
+    detections: TensorNativeDetections,
+    shifts: List[Tuple[float, float, int]],
+) -> TensorNativeDetections:
+    """Move every crop's boxes into reference coordinates in a single op.
+
+    Shifting per crop cost one pageable host->device transfer (a 4-element
+    offset tensor) plus one add kernel PER CROP. On Jetson that launch and
+    transfer overhead dwarfs the arithmetic itself - a few hundred boxes moved
+    by two floats - and it scales with the slice count, which is exactly what
+    SAHI maximises. Expanding the offsets on host with ``np.repeat`` collapses
+    the whole thing to one (N, 4) transfer and one add regardless of how many
+    crops were stitched.
+
+    ``shifts`` must list ``(dx, dy, row_count)`` for the non-empty predictions
+    in the same order ``merge_detections`` concatenated them.
+    """
+    if not shifts or len(detections) == 0:
+        return detections
+    per_crop = np.asarray(
+        [[dx, dy, dx, dy] for dx, dy, _ in shifts], dtype=np.float64
+    )
+    row_counts = [row_count for _, _, row_count in shifts]
+    expanded = np.repeat(per_crop, row_counts, axis=0)
+    total_rows = int(detections.xyxy.shape[0])
+    if expanded.shape[0] != total_rows:
+        # A silent mismatch would shift boxes by the WRONG crop's offset and
+        # emit plausible-looking garbage, so fail loudly instead.
+        raise RuntimeError(
+            f"Deferred crop offsets cover {expanded.shape[0]} boxes but the merged "
+            f"prediction has {total_rows}. The offsets collected while re-aligning "
+            f"crops must stay in lockstep with the rows merge_detections "
+            f"concatenates."
+        )
+    shift = torch.as_tensor(
+        expanded, dtype=detections.xyxy.dtype, device=detections.xyxy.device
+    )
+    detections.xyxy = detections.xyxy + shift
+    return detections
 
 
 def read_image_shape(image: WorkflowImageData) -> Tuple[int, int]:
@@ -336,6 +416,7 @@ def move_detections(
     detections: TensorNativeDetections,
     offset: Optional[np.ndarray],
     resolution_wh: Optional[Tuple[int, int]],
+    defer_box_shift: bool = False,
 ) -> TensorNativeDetections:
     """
     Shift detections by ``offset``, keeping every geometry field consistent:
@@ -343,23 +424,31 @@ def move_detections(
 
     Mirrors ``supervision.detection.tools.inference_slicer.move_detections``;
     kept local since that helper is not part of supervision's public API.
+
+    With ``defer_box_shift=True`` the ``xyxy`` translation is SKIPPED and left
+    to ``apply_deferred_box_shifts``, which does it for every crop at once
+    after the merge - one transfer and one kernel instead of two per crop.
+    Masks and OBB corners are still moved here: both need this crop's offset
+    at this point (masks are embedded onto the reference canvas, OBB corners
+    live in host metadata), and neither is worth batching.
     """
     if len(detections) == 0:
         return detections
     if offset is None:
         raise ValueError("To move non-empty detections offset is needed, but not given")
-    # Translate xyxy on-device: add [dx, dy, dx, dy] broadcast over the box rows,
-    # staying on detections.xyxy.device/dtype (no D2H->H2D round-trip per slice).
-    dx, dy = float(offset[0]), float(offset[1])
-    xyxy_shift = torch.as_tensor(
-        [dx, dy, dx, dy],
-        dtype=detections.xyxy.dtype,
-        device=detections.xyxy.device,
-    )
-    detections.xyxy = detections.xyxy + xyxy_shift
-    # Drop the per-box host mirror: xyxy just moved from slice-local to image
-    # coordinates, so a carried mirror would be stale — consumers fall back to
-    # tensor reads.
+    if not defer_box_shift:
+        # Translate xyxy on-device: add [dx, dy, dx, dy] broadcast over the box
+        # rows, staying on detections.xyxy.device/dtype (no D2H->H2D round-trip).
+        dx, dy = float(offset[0]), float(offset[1])
+        xyxy_shift = torch.as_tensor(
+            [dx, dy, dx, dy],
+            dtype=detections.xyxy.dtype,
+            device=detections.xyxy.device,
+        )
+        detections.xyxy = detections.xyxy + xyxy_shift
+    # Drop the per-box host mirror: xyxy moves from slice-local to image
+    # coordinates (here or in apply_deferred_box_shifts), so a carried mirror
+    # would be stale — consumers fall back to tensor reads.
     detections.bboxes_metadata = strip_host_mirror_metadata(detections.bboxes_metadata)
     bboxes_metadata = detections.bboxes_metadata
     if bboxes_metadata is not None and any(
@@ -370,11 +459,24 @@ def move_detections(
         # shape (4, 2); broadcast `offset` (shape (2,)) over the trailing axis to
         # translate each (x, y). Without this, downstream OBB-aware NMS/NMM compares
         # corners in tile-local coords against `xyxy` already moved to image coords.
-        for box_metadata in bboxes_metadata:
-            if box_metadata is not None and ORIENTED_BOX_COORDINATES in box_metadata:
-                box_metadata[ORIENTED_BOX_COORDINATES] = (
-                    np.asarray(box_metadata[ORIENTED_BOX_COORDINATES]) + offset
-                )
+        # Rebuilt rather than mutated in place: the caller's copy is shallow
+        # (shallow_copy_detections), and strip_host_mirror_metadata passes
+        # mirror-free entries through by reference, so writing into one of these
+        # dicts would corrupt the upstream step's prediction.
+        detections.bboxes_metadata = [
+            (
+                {
+                    **box_metadata,
+                    ORIENTED_BOX_COORDINATES: np.asarray(
+                        box_metadata[ORIENTED_BOX_COORDINATES]
+                    )
+                    + offset,
+                }
+                if box_metadata and ORIENTED_BOX_COORDINATES in box_metadata
+                else box_metadata
+            )
+            for box_metadata in bboxes_metadata
+        ]
     if isinstance(detections, InstanceDetections) and detections.mask is not None:
         if resolution_wh is None:
             raise ValueError(
@@ -471,8 +573,12 @@ def merge_detections(
     for detections in non_empty:
         per_detection = detections.bboxes_metadata
         if per_detection is None:
-            per_detection = [{} for _ in range(len(detections))]
-        bboxes_metadata.extend(per_detection)
+            bboxes_metadata.extend({} for _ in range(len(detections)))
+            continue
+        bboxes_metadata.extend(
+            dict(entry) if isinstance(entry, dict) else entry
+            for entry in per_detection
+        )
     if is_instance_segmentation:
         mask = _merge_masks(non_empty)
         return InstanceDetections(

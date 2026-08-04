@@ -233,14 +233,12 @@ class ImageSlicerBlockV2(WorkflowBlock):
         slices = []
         for offset in offsets:
             x_min, y_min, x_max, y_max = (int(v) for v in offset)
-            # tensor[..., y0:y1, x0:x1] is a zero-copy view on-device; make it
-            # contiguous so the crop WorkflowImageData carries a dense device buffer.
             crop_tensor = tensor[:, y_min:y_max, x_min:x_max]
             if crop_tensor.numel():
                 cropped_image = WorkflowImageData.create_crop_from_tensor(
                     origin_image_data=image,
                     crop_identifier=f"image_slicer.{uuid4()}",
-                    cropped_tensor_image=crop_tensor.contiguous(),
+                    cropped_tensor_image=crop_tensor,
                     offset_x=x_min,
                     offset_y=y_min,
                 )
