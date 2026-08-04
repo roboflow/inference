@@ -59,7 +59,7 @@ RUN uv pip install --system \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     jupyterlab \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 
 # Install setup.py requirements for flash_attn
@@ -106,13 +106,15 @@ WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools~=83.0.0"
 
 WORKDIR /notebooks
 COPY examples/notebooks .
 
 WORKDIR /app/
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

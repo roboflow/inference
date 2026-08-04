@@ -41,8 +41,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -87,6 +89,9 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
         return ["semantic-segmentation"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_id)]
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:

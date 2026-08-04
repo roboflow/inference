@@ -75,13 +75,16 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
@@ -241,6 +244,15 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return ["sam3/sam3_final"]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if SAM3_EXEC_MODE == "remote":
+            # Proxy execution ignores the configured model id — the proxy runs
+            # its own fixed SAM3 server-side; nothing to declare.
+            return []
+        if self.model_id is None:
+            return []
+        return [roboflow_platform_model(model_id=self.model_id)]
+
 
 class SegmentAnything3BlockV2(WorkflowBlock):
 
@@ -386,6 +398,7 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: str,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -426,6 +439,7 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: str,
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
         http_prompts = _build_http_prompts(class_names, per_class_confidence)
 

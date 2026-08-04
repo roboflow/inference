@@ -57,13 +57,16 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -249,6 +252,15 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return ["sam3/sam3_final"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if SAM3_EXEC_MODE == "remote":
+            # Proxy execution ignores the configured model id — the proxy runs
+            # its own fixed SAM3 server-side; nothing to declare.
+            return []
+        if self.model_id is None:
+            return []
+        return [roboflow_platform_model(model_id=self.model_id)]
 
 
 class SegmentAnything3BlockV3(WorkflowBlock):
@@ -437,6 +449,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         if class_names is None:
             class_names = []
         if len(class_names) == 0:
@@ -522,6 +535,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         if class_names is None:
             class_names = []
         if len(class_names) == 0:

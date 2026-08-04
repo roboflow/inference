@@ -32,11 +32,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -131,6 +133,9 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return ["moondream2/moondream2_2b_jul24"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
 
 
 class Moondream2BlockV1(WorkflowBlock):

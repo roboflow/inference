@@ -4,6 +4,7 @@ from collections import deque
 from concurrent.futures import Future
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import torch
 
@@ -13,7 +14,10 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.inference_models_adapters import (
+    InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
+    InferenceModelsObjectDetectionAdapter,
+    _supports_independent_stage_execution,
     prepare_classification_response,
     prepare_multi_label_classification_response,
 )
@@ -22,6 +26,7 @@ from inference_models import (
     InstanceDetections,
     MultiLabelClassificationPrediction,
 )
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.async_handoff import attach_adapter_mapped_kwargs
 
 
@@ -78,6 +83,26 @@ class _FakePipelineModel:
         return ["sync-detections"]
 
 
+class _FakeObjectDetectionModel:
+    def __init__(self) -> None:
+        self.pre_process_calls = []
+
+    def pre_process(self, images, **kwargs):
+        self.pre_process_calls.append((images, kwargs))
+        return "preprocessed", "metadata"
+
+
+class _FakeIndependentStageObjectDetectionModel(_FakeObjectDetectionModel):
+    def pre_process(
+        self,
+        images,
+        independent_stage_execution: bool = True,
+        **kwargs,
+    ):
+        kwargs["independent_stage_execution"] = independent_stage_execution
+        return super().pre_process(images, **kwargs)
+
+
 def _make_meta(tag: str):
     return [
         SimpleNamespace(
@@ -85,6 +110,33 @@ def _make_meta(tag: str):
             original_size=SimpleNamespace(width=10, height=20),
         )
     ]
+
+
+@pytest.mark.parametrize(
+    ("model", "expected_flag"),
+    [
+        (_FakeObjectDetectionModel(), None),
+        (_FakeIndependentStageObjectDetectionModel(), False),
+    ],
+)
+def test_object_detection_preprocess_only_disables_independent_execution_for_models_that_support_it(
+    model,
+    expected_flag,
+) -> None:
+    adapter = object.__new__(InferenceModelsObjectDetectionAdapter)
+    adapter._model = model
+    adapter._preprocess_supports_independent_stage_execution = (
+        _supports_independent_stage_execution(model.pre_process)
+    )
+
+    result = adapter.preprocess(torch.zeros((8, 9, 3), dtype=torch.uint8).numpy())
+
+    assert result == ("preprocessed", "metadata")
+    _, call_kwargs = model.pre_process_calls[0]
+    if expected_flag is None:
+        assert "independent_stage_execution" not in call_kwargs
+    else:
+        assert call_kwargs["independent_stage_execution"] is expected_flag
 
 
 def _make_pipeline_adapter(
@@ -482,3 +534,91 @@ def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="Timed out while waiting for"):
         adapter.flush()
+
+
+def test_depth_estimation_adapter_normalization_matches_depth_anything_convention() -> (
+    None
+):
+    """The endpoint's ordinal proximity convention uses larger values for nearer
+    predictions (see the "Flip to be consistent with V2" step in
+    DepthAnythingV3Torch.forward). The metric-depth adapter must reverse depth
+    while normalizing: nearest pixel -> 1.0, farthest -> 0.0."""
+    import numpy as np
+
+    adapter = InferenceModelsDepthEstimationAdapter.__new__(
+        InferenceModelsDepthEstimationAdapter
+    )
+    adapter._model = lambda inputs: [torch.tensor([[1.0, 2.0], [3.0, 4.0]])]
+
+    (result,) = adapter.predict(np.zeros((2, 2, 3), dtype=np.uint8))
+
+    expected = np.array([[1.0, 2 / 3], [1 / 3, 0.0]], dtype=np.float32)
+    assert np.allclose(result["normalized_depth"], expected, atol=1e-6)
+
+
+def _make_depth_estimation_adapter(model) -> InferenceModelsDepthEstimationAdapter:
+    adapter = object.__new__(InferenceModelsDepthEstimationAdapter)
+    adapter._model = model
+    return adapter
+
+
+def test_depth_estimation_adapter_tensor_native_negates_metric_depth() -> None:
+    """The tensor-native depth contract mirrors the DepthAnything adapters:
+    raw per-image maps in which larger means closer, normalized by the caller.
+    YOLO26-depth emits metric depth (larger == farther), so the adapter must
+    negate it while keeping kwargs mapping consistent with the other five
+    tensor-native adapter overrides."""
+    captured = {}
+
+    def fake_model(images, **kwargs):
+        captured["images"] = images
+        captured["kwargs"] = kwargs
+        return [torch.tensor([[1.0, 2.0], [3.0, 4.0]])]
+
+    adapter = _make_depth_estimation_adapter(fake_model)
+    images = [torch.zeros((3, 2, 2), dtype=torch.uint8)]
+
+    result = adapter.run_tensor_native_inference(images, input_color_format="rgb")
+
+    assert captured["images"] is images
+    assert captured["kwargs"]["input_color_format"] == "rgb"
+    assert isinstance(
+        captured["kwargs"]["pre_processing_overrides"], PreProcessingOverrides
+    )
+    assert len(result) == 1
+    assert torch.equal(result[0], torch.tensor([[-1.0, -2.0], [-3.0, -4.0]]))
+
+
+def test_depth_estimation_adapter_tensor_native_passes_missing_color_format_as_none() -> (
+    None
+):
+    captured = {}
+
+    def fake_model(images, **kwargs):
+        captured["kwargs"] = kwargs
+        return [torch.tensor([[0.0, 1.0]])]
+
+    adapter = _make_depth_estimation_adapter(fake_model)
+
+    adapter.run_tensor_native_inference([torch.zeros((3, 1, 2), dtype=torch.uint8)])
+
+    assert captured["kwargs"]["input_color_format"] is None
+
+
+def test_depth_estimation_adapter_tensor_native_composes_to_numpy_normalization() -> (
+    None
+):
+    """min-max normalization of the tensor-native output (what the flag-on
+    depth-estimation block computes) must reproduce the numpy path's
+    `(max - map) / (max - min)` proximity map exactly."""
+    adapter = _make_depth_estimation_adapter(
+        lambda images, **kwargs: [torch.tensor([[1.0, 2.0], [3.0, 4.0]])]
+    )
+
+    (depth_map,) = adapter.run_tensor_native_inference(
+        [torch.zeros((3, 2, 2), dtype=torch.uint8)], input_color_format="bgr"
+    )
+    normalized = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min())
+
+    expected = np.array([[1.0, 2 / 3], [1 / 3, 0.0]], dtype=np.float32)
+    assert np.allclose(normalized.numpy(), expected, atol=1e-6)

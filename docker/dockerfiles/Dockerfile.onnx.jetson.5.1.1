@@ -1,7 +1,37 @@
 # syntax=docker/dockerfile:1.7
+FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.4-experimental AS jetson-tensor-bridge-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# JP5 (r35 / CUDA 11.8) build of the native tensor bridge - same source and
+# scripts as the JP6 image. JetPack 5 runs on Xavier (sm_72) and Orin (sm_87),
+# so fatbin both. The base ships nvcc, the jetson_multimedia_api headers and
+# the GStreamer dev stack; nvv4l2decoder and libnvbufsurface come from the
+# host L4T mount at runtime (--runtime nvidia), and the bridge's dlopen
+# candidates already include the r35 /tegra/ library path.
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        libglib2.0-dev \
+        pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY docker/native/jetson_tensor_bridge /src/jetson_tensor_bridge
+COPY docker/scripts/build_jetson_tensor_bridge.sh /usr/local/bin/build_jetson_tensor_bridge
+COPY docker/scripts/verify_jetson_tensor_bridge.sh /usr/local/bin/verify_jetson_tensor_bridge
+
+RUN chmod +x \
+        /usr/local/bin/build_jetson_tensor_bridge \
+        /usr/local/bin/verify_jetson_tensor_bridge && \
+    JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES="72;87" build_jetson_tensor_bridge && \
+    verify_jetson_tensor_bridge && \
+    du -sh /opt/roboflow/lib
+
 FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.4-experimental
 
 ARG TRITON_VERSION=3.0.0
+
+COPY --from=jetson-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
 
 RUN apt-get update -y && apt-get install -y ffmpeg
 
@@ -57,7 +87,7 @@ RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src
     git -C /tmp/triton-build/src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
     python -m pip install --no-cache-dir \
-        "setuptools>=40.8.0" \
+        "setuptools~=83.0.0" \
         wheel \
         "cmake>=3.18,<4.0" \
         "ninja>=1.11.1"; \
@@ -77,6 +107,9 @@ RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src
 
 WORKDIR /app/
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
@@ -99,7 +132,10 @@ ENV VERSION_CHECK_MODE=continuous \
     HOST=0.0.0.0 \
     PORT=9001 \
     OPENBLAS_CORETYPE=ARMV8 \
-    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    # libGLdispatch must claim its static TLS at process start: loaded late
+    # (torch/ort/cv2 exhaust the r35 glibc surplus first) the tensor bridge's
+    # deferred EGL load dies with 'cannot allocate memory in static TLS block'.
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/lib/aarch64-linux-gnu/libGLdispatch.so.0 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
     API_LOGGING_ENABLED=True \
@@ -109,10 +145,14 @@ ENV VERSION_CHECK_MODE=continuous \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
+# Triton imports in this deprecated JP 5.1.1 image, but cannot JIT-compile the
+# RF-DETR kernels. Keep those stages on their non-Triton implementations.
 ENV CORE_MODEL_SAM3_ENABLED=False \
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True \
     USE_INFERENCE_MODELS=True \
     RUNNING_ON_JETSON=True \
+    INFERENCE_MODELS_RFDETR_PREPROCESSOR=base \
+    INFERENCE_MODELS_RFDETR_POSTPROCESSOR=base \
     L4T_VERSION=35.2.1
 
 ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

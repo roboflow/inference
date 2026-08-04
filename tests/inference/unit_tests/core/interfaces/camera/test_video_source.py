@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.interfaces.camera import video_source
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
@@ -20,6 +21,7 @@ from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -34,6 +36,13 @@ from inference.core.interfaces.camera.video_source import (
     drop_single_frame_from_buffer,
     get_fps_if_tick_happens_now,
     get_from_queue,
+)
+
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="Exercises legacy (flag-off) producer selection; under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION sources route through the hardware "
+    "decoder discovery covered by test_discoverability.py",
 )
 
 
@@ -259,6 +268,24 @@ def test_video_source_throwing_error_when_invalid_video_reference_given() -> Non
         source.start()
 
 
+def test_video_source_connection_error_uses_underlying_producer_message() -> None:
+    source = VideoSource.init(video_reference="rtsp://camera.example/stream")
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = (
+            "401 Unauthorized"
+        )
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    assert exc_info.value.code == StreamErrorCode.STREAM_AUTH_FAILED
+    assert "401 Unauthorized" in str(exc_info.value)
+    assert exc_info.value.source_reference == "rtsp://camera.example/stream"
+
+
 def test_video_source_describe_source_when_stream_consumption_not_yet_started() -> None:
     # given
     source = VideoSource.init(video_reference="invalid", source_id=2)
@@ -270,12 +297,59 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
     assert result == SourceMetadata(
         source_properties=None,
         source_reference="invalid",
-        buffer_size=64,
+        buffer_size=DEFAULT_BUFFER_SIZE,
         state=StreamState.NOT_STARTED,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
         source_id=2,
     ), "Source description must denote NOT_STARTED state and invalid source reference"
+
+
+@_NUMPY_ONLY
+def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
+    credentialed_url = "rtsps://user:secret@192.168.1.1:554/stream"
+    with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
+        with patch(
+            "inference.core.interfaces.camera.gstreamer_rtsp_producer.gstreamer_rtsp_capture_available",
+            return_value=True,
+        ):
+            with patch(
+                "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
+            ) as mock_producer_cls:
+                mock_producer_cls.return_value.isOpened.return_value = True
+                mock_producer_cls.return_value.discover_source_properties.return_value = SourceProperties(
+                    width=640,
+                    height=480,
+                    fps=30.0,
+                    total_frames=0,
+                    is_file=False,
+                )
+                source = VideoSource.init(video_reference=credentialed_url)
+                source.start()
+
+    mock_producer_cls.assert_called_once_with(credentialed_url)
+
+
+def test_video_source_keeps_cv2_producer_for_plain_rtsp_on_jetson() -> None:
+    url = "rtsp://user:secret@192.168.1.1:554/stream"
+    with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
+        with patch(
+            "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+        ) as mock_producer_cls:
+            mock_producer_cls.return_value.isOpened.return_value = True
+            mock_producer_cls.return_value.discover_source_properties.return_value = (
+                SourceProperties(
+                    width=640,
+                    height=480,
+                    fps=30.0,
+                    total_frames=0,
+                    is_file=False,
+                )
+            )
+            source = VideoSource.init(video_reference=url)
+            source.start()
+
+    mock_producer_cls.assert_called_once_with(url)
 
 
 def test_video_source_describe_source_when_invalid_video_reference_consumption_started() -> (
@@ -293,7 +367,7 @@ def test_video_source_describe_source_when_invalid_video_reference_consumption_s
     assert result == SourceMetadata(
         source_properties=None,
         source_reference="invalid",
-        buffer_size=64,
+        buffer_size=DEFAULT_BUFFER_SIZE,
         state=StreamState.ERROR,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,

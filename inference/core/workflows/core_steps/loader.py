@@ -85,6 +85,9 @@ else:
 
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1 import (
+    AutoRotateOnEdgesBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
     BackgroundSubtractionBlockV1,
 )
@@ -122,7 +125,14 @@ else:
     from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
         ConvertGrayscaleBlockV1,
     )
-
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+        DetectionsNearestNeighborBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1_tensor import (
+        DetectionsNearestNeighborBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
         DistanceMeasurementBlockV1,
@@ -198,6 +208,7 @@ else:
     from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1_tensor import (
         PixelationCountBlockV1,
     )
+
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
@@ -229,6 +240,7 @@ else:
     from inference.core.workflows.core_steps.classical_cv.threshold.v1_tensor import (
         ImageThresholdBlockV1,
     )
+
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,
@@ -284,6 +296,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
         serialise_native_keypoint_detection,
         serialise_native_rle_detections,
         serialise_native_tensor,
+        serialise_numpy_array_kind,
         serialise_rle_sv_detections,
         serialise_sv_detections,
         serialize_wildcard_kind,
@@ -403,6 +416,16 @@ else:
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.frame_delay.v1 import (
+        FrameDelayBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.frame_delay.v1_tensor import (
+        FrameDelayBlockV1,
+    )
+
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -472,6 +495,9 @@ else:
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
@@ -518,6 +544,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
+    GoogleGeminiBlockV4,
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
@@ -604,6 +633,7 @@ else:
     from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1_tensor import (
         PPOCRBlockV1,
     )
+
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
@@ -1342,6 +1372,14 @@ else:
     from inference.core.workflows.core_steps.visualizations.label.v1_tensor import (
         LabelVisualizationBlockV1,
     )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.label.v2 import (
+        LabelVisualizationBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.label.v2_tensor import (
+        LabelVisualizationBlockV2,
+    )
 
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
@@ -1394,6 +1432,16 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.rich_label.v1 import (
+        RichLabelVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.rich_label.v1_tensor import (
+        RichLabelVisualizationBlockV1,
+    )
+
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
@@ -1469,6 +1517,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "disable_sinks": False,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
@@ -1487,6 +1536,7 @@ KINDS_SERIALIZERS = {
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
+    DETECTIONS_OVERLAPS_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
 }
 if ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -1512,6 +1562,12 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     # Tensor-native embedding/tensor kinds serialise to plain Python lists.
     KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
     KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
+    # `numpy_array` has NO numpy-side serialiser (ndarrays pass through raw to
+    # the HTTP layer). Flag-on, the depth-estimation block carries a
+    # `torch.Tensor` under the same kind name, which the HTTP layer cannot
+    # serialise - materialise it to the flag-off-identical ndarray. Numpy
+    # producers of this kind (SIFT, contours) keep the raw pass-through.
+    KINDS_SERIALIZERS[NUMPY_ARRAY_KIND.name] = serialise_numpy_array_kind
     # The wildcard (`*`) serialiser needs no override here: the same-name symbol
     # swap above already selects serializers_tensor.serialize_wildcard_kind, whose
     # native arms serialise native values routed to `*` outputs to the standard dicts.
@@ -1532,6 +1588,7 @@ KINDS_DESERIALIZERS = {
     ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
     LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    DETECTIONS_OVERLAPS_KIND.name: deserialize_list_of_values_kind,
     BOOLEAN_KIND.name: deserialize_boolean_kind,
     INTEGER_KIND.name: deserialize_integer_kind,
     STRING_KIND.name: deserialize_string_kind,
@@ -1635,6 +1692,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
+        FrameDelayBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
@@ -1673,6 +1731,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
+        DetectionsNearestNeighborBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
@@ -1681,6 +1740,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV1,
         GoogleGeminiBlockV2,
         GoogleGeminiBlockV3,
+        GoogleGeminiBlockV4,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
@@ -1688,6 +1748,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
+        AutoRotateOnEdgesBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         HeatmapVisualizationBlockV1,
@@ -1698,6 +1759,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMBlockV1,
         LMMForClassificationBlockV1,
         LabelVisualizationBlockV1,
+        LabelVisualizationBlockV2,
+        RichLabelVisualizationBlockV1,
         ClassificationLabelVisualizationBlockV1,
         LineCounterBlockV1,
         LineCounterBlockV2,
@@ -1799,6 +1862,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
+        Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,

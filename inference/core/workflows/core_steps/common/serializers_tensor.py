@@ -5,6 +5,7 @@ import numpy as np
 import supervision as sv
 import torch
 
+from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.core_steps.common.serializers import (
     _attach_parent_metadata_to_detection_dict,
     mask_to_polygon,
@@ -44,6 +45,7 @@ from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    NEAREST_TARGET_DISTANCE_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -280,13 +282,21 @@ def _serialise_sv_detections(
             kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS]
             kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
             kp_xy = data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+            # Drop the trailing padding slots so we never emit fabricated
+            # keypoints for detections that carry fewer than the batch maximum.
+            kp_count = real_keypoints_count(kp_class_name, total=len(kp_xy))
             detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = []
             for (
                 keypoint_class_id,
                 keypoint_class_name,
                 keypoint_confidence,
                 (x, y),
-            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
+            ) in zip(
+                kp_class_id[:kp_count],
+                kp_class_name[:kp_count],
+                kp_confidence[:kp_count],
+                kp_xy[:kp_count],
+            ):
                 detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE].append(
                     {
                         "class_id": int(keypoint_class_id),
@@ -321,6 +331,13 @@ def _serialise_sv_detections(
         if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in data:
             detection_dict[AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE] = float(
                 data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
+            )
+        if NEAREST_TARGET_DISTANCE_KEY in data:
+            nearest_target_distance = data[NEAREST_TARGET_DISTANCE_KEY]
+            detection_dict[NEAREST_TARGET_DISTANCE_KEY] = (
+                float(nearest_target_distance)
+                if nearest_target_distance is not None
+                else None
             )
         serialized_detections.append(detection_dict)
         kept_indices.append(index)
@@ -718,10 +735,23 @@ def serialise_native_embedding(value: torch.Tensor) -> list:
 
 
 def serialise_native_tensor(value: torch.Tensor) -> list:
-    """C4 serialiser for the tensor kind (e.g. depth-estimation normalized depth,
-    raw model tensors). The native value is a (possibly CUDA/MPS) ``torch.Tensor``;
-    emit a JSON-serialisable nested list."""
+    """C4 serialiser for the tensor kind (e.g. raw model tensors). The native
+    value is a (possibly CUDA/MPS) ``torch.Tensor``; emit a JSON-serialisable
+    nested list."""
     return value.detach().cpu().tolist()
+
+
+def serialise_numpy_array_kind(value: Any) -> Any:
+    """Flag-on serialiser for the ``numpy_array`` kind (e.g. depth-estimation
+    ``normalized_depth``). Flag-off the kind has NO serialiser at all -
+    ``np.ndarray`` payloads pass through raw and the HTTP layer serialises
+    them - so non-tensor values are returned untouched here. Tensor-native
+    producers carry a ``torch.Tensor`` under the same kind name; materialise it
+    to the flag-off-identical ``np.ndarray`` so the wire format matches in both
+    flag directions."""
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy()
+    return value
 
 
 def serialize_wildcard_kind(value: Any) -> Any:

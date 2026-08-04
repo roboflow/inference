@@ -28,8 +28,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    third_party_model,
 )
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
@@ -198,6 +200,20 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # The serving provider IS the user-defined endpoint — carrying it in
+        # `provider` keeps the same model name on different servers distinct.
+        # A selector-fed url is reported verbatim, so
+        # `requires_runtime_resolution()` correctly flags the reference as
+        # unresolved. Trailing slash stripped — the client treats both forms
+        # identically.
+        return [
+            third_party_model(
+                provider=self.base_url.rstrip("/"),
+                model_id=self.model_name,
+            )
+        ]
 
 
 class OpenAICompatibleBlockV1(WorkflowBlock):

@@ -129,6 +129,53 @@ def test_deserialize_detections_kind_when_serialized_non_empty_object_detections
     assert np.allclose(result.data["image_dimensions"], np.array([[192, 168]]))
 
 
+def test_deserialize_detections_kind_when_serialized_detections_with_nearest_target_distance_given() -> (
+    None
+):
+    # given: one detection with a real match distance, one unmatched (None)
+    detections = {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "nearest_target_distance": 12.5,
+            },
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 3.5,
+                "y": 3.5,
+                "confidence": 0.9,
+                "class_id": 2,
+                "class": "dog",
+                "detection_id": "second",
+                "nearest_target_distance": None,
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 2
+    assert list(result.data["nearest_target_distance"]) == [12.5, None]
+
+
 def test_deserialize_detections_kind_when_serialized_non_empty_instance_segmentations_given() -> (
     None
 ):
@@ -1371,3 +1418,62 @@ def test_deserialize_labeled_points_kind_when_coordinates_are_not_numbers() -> N
         _ = deserialize_labeled_points_kind(
             parameter="some", value=[{"x": "a", "y": 100}]
         )
+
+
+def test_tensor_deserialize_detections_kind_round_trips_nearest_target_distance() -> (
+    None
+):
+    # given: one detection with a real match distance, one unmatched (None)
+    pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import (
+        deserializers_tensor,
+        serializers_tensor,
+    )
+
+    detections = {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.25,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "nearest_target_distance": 12.5,
+            },
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 3.5,
+                "y": 3.5,
+                "confidence": 0.5,
+                "class_id": 2,
+                "class": "dog",
+                "detection_id": "second",
+                "nearest_target_distance": None,
+            },
+        ],
+    }
+
+    # when
+    result = deserializers_tensor.deserialize_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert [
+        entry["nearest_target_distance"] for entry in result.bboxes_metadata
+    ] == [12.5, None]
+    serialized = serializers_tensor.serialise_sv_detections(result)
+    assert [
+        prediction["nearest_target_distance"]
+        for prediction in serialized["predictions"]
+    ] == [12.5, None]

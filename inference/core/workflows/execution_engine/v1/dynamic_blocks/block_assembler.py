@@ -513,6 +513,16 @@ def assembly_manifest_class_methods(
         "get_execution_engine_compatibility",
         classmethod(get_execution_engine_compatibility),
     )
+    # Dynamic manifests do not subclass WorkflowBlockManifest, so the
+    # dependent-resources contract must be patched on explicitly. The python
+    # body is opaque to static analysis — `None` (unknown), not `[]` (declares
+    # no resources), is the only honest answer.
+    discover_dependent_resources = lambda self: None
+    setattr(
+        manifest_class,
+        "discover_dependent_resources",
+        discover_dependent_resources,
+    )
     return manifest_class
 
 

@@ -452,7 +452,7 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     git -C src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
-        "setuptools>=40.8.0" \
+        "setuptools~=83.0.0" \
         wheel \
         "cmake>=3.18,<4.0" \
         "ninja>=1.11.1" \
@@ -504,7 +504,7 @@ RUN echo "opencv-python==4.12.0.88" > /tmp/jetson-opencv-overrides.txt && \
     -r requirements.easyocr.txt \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/jetson-opencv-overrides.txt
@@ -537,7 +537,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools<=75.5.0"
+        "setuptools~=83.0.0"
 
 # Pin boto3/botocore last so the final versions win regardless of what the
 # requirement sets resolved to (previously done as an extra layer in the
@@ -797,6 +797,9 @@ ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages
 
 # Copy application code
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py

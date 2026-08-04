@@ -423,6 +423,27 @@ class TestKeypointsToV2:
         result = _keypoints_to_v2(detections)
         assert result == []
 
+    def test_padding_slots_excluded(self):
+        """Trailing padding slots (empty class name) must not become phantom
+        keypoints at (0, 0)."""
+        detections = sv.Detections(
+            xyxy=np.array([[10.0, 20.0, 110.0, 120.0]]),
+            confidence=np.array([0.9]),
+            data={
+                "class_name": np.array(["person"]),
+                "keypoints_xy": np.array(
+                    [[[30.0, 40.0], [50.0, 60.0], [0.0, 0.0]]], dtype=np.float32
+                ),
+                "keypoints_class_name": np.array([["nose", "eye", ""]], dtype=object),
+            },
+        )
+        result = _keypoints_to_v2(detections)
+        assert len(result) == 1
+        kps = result[0]["keypoints"]
+        assert len(kps) == 2
+        assert kps[0] == {"id": 0, "x": pytest.approx(30.0), "y": pytest.approx(40.0)}
+        assert kps[1] == {"id": 1, "x": pytest.approx(50.0), "y": pytest.approx(60.0)}
+
 
 # ---------------------------------------------------------------------------
 # _build_image_entry

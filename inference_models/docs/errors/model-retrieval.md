@@ -42,7 +42,8 @@ This error is raised when the system cannot retrieve model metadata from the wei
 
 **Scenario 4: HTTP error from provider**
 
-- API returns 4xx or 5xx error (except 401/403 which raise `UnauthorizedModelAccessError`)
+- API returns an unclassified 4xx or 5xx error. Authentication, payment,
+  authorization, missing-model, and usage-paused responses raise dedicated subclasses.
 
 - Network issues or timeouts
 
@@ -252,6 +253,35 @@ model = AutoModel.from_pretrained(
 - Check that you have access to the project
 
 - Verify the model version exists
+
+---
+
+## PaymentRequiredModelAccessError
+
+**Model access requires additional workspace credits.**
+
+This error occurs when the Roboflow API returns HTTP 402 while retrieving model
+metadata or weights. Check the workspace billing page and add credits before retrying.
+
+---
+
+## ForbiddenModelAccessError
+
+**The API key is authenticated but cannot access the requested model.**
+
+This error occurs when the Roboflow API returns HTTP 403. Verify that the API key has
+the required scopes, belongs to the appropriate workspace, and that the workspace is
+active.
+
+---
+
+## UsagePausedModelAccessError
+
+**Roboflow API usage is paused for the workspace.**
+
+This error occurs when the Roboflow API returns HTTP 423 while retrieving model
+metadata or weights. Contact a workspace administrator to re-enable API keys before
+retrying.
 
 ---
 

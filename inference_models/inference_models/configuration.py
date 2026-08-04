@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 
+from inference_models._offline import OFFLINE_MODE, OFFLINE_MODE_CONTRACT_VERSION
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -38,13 +39,29 @@ IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
     )
 )
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", "prod")
+# Region / environment matrix mirroring inference_sdk.regions - inference-models
+# is a standalone distribution and cannot depend on inference_sdk.
+_ROBOFLOW_API_HOSTS = {
+    ("us", "prod"): "https://api.roboflow.com",
+    ("us", "staging"): "https://api.roboflow.one",
+    ("eu", "prod"): "https://api.roboflow.eu",
+    ("eu", "staging"): "https://api.roboflow-eu.one",
+}
+ROBOFLOW_REGION = os.getenv("ROBOFLOW_REGION", "us").strip().lower()
+if ROBOFLOW_REGION not in {region for region, _ in _ROBOFLOW_API_HOSTS}:
+    warnings.warn(
+        f"Unknown ROBOFLOW_REGION {ROBOFLOW_REGION!r} - falling back to 'us'. "
+        "Supported regions: eu, us.",
+    )
+    ROBOFLOW_REGION = "us"
 ROBOFLOW_API_HOST = os.getenv(
     "ROBOFLOW_API_HOST",
-    (
-        "https://api.roboflow.com"
-        if ROBOFLOW_ENVIRONMENT.lower() == "prod"
-        else "https://api.roboflow.one"
-    ),
+    _ROBOFLOW_API_HOSTS[
+        (
+            ROBOFLOW_REGION,
+            "prod" if ROBOFLOW_ENVIRONMENT.lower() == "prod" else "staging",
+        )
+    ],
 )
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
@@ -57,7 +74,30 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
-INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Fall back to the inference server's MODEL_CACHE_DIR so that both cache
+# layouts live on the same (typically mounted) volume without relying on
+# import order between `inference` and `inference_models`.
+INFERENCE_HOME = (
+    os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
+)
+HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
+# The package initializer establishes the dependency-light process-wide latch
+# before importing this configuration module. Reloads only compare the public
+# environment request with that immutable state.
+try:
+    _requested_offline_mode = get_boolean_from_env(
+        variable_name="OFFLINE_MODE", default=False
+    )
+except InvalidEnvVariable:
+    # Ignore malformed runtime mutations once the process-wide state exists.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,
@@ -71,6 +111,17 @@ AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
 SAM3_IMAGE_SIZE = get_integer_from_env(variable_name="SAM3_IMAGE_SIZE", default=1008)
+INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE", default=8
+)
+if INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
     variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
     default=30.0,
@@ -127,6 +178,18 @@ INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS",
     default=300,
 )
+INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE",
+    default=16,
+)
+if INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS",
     default=False,
@@ -226,6 +289,14 @@ INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
+INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
 INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS",
     default=8192,
@@ -290,6 +361,10 @@ INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE = get_float_from_env(
 INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
 )
 DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = False
 INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = get_boolean_from_env(

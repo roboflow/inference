@@ -13,6 +13,7 @@ from inference_models import (
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
 )
 from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
@@ -235,6 +236,7 @@ class RFDetrForInstanceSegmentationOnnx(
         pre_processing_meta: List[PreProcessingMetadata],
         confidence: Confidence = "default",
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        max_detections: Optional[int] = INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -267,6 +269,7 @@ class RFDetrForInstanceSegmentationOnnx(
                     threshold=confidence_filter.get_threshold(self.class_names),
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
+                    max_detections=max_detections,
                 )
             else:
                 results = post_process_instance_segmentation_results_to_rle_masks(
@@ -277,6 +280,7 @@ class RFDetrForInstanceSegmentationOnnx(
                     threshold=confidence_filter.get_threshold(self.class_names),
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
+                    max_detections=max_detections,
                 )
         if post_process_stream is not None:
             post_process_stream.synchronize()

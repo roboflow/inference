@@ -26,8 +26,10 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import (
     DEVICE,
+    HF_HUB_CACHE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
+    OFFLINE_MODE,
     OWLV2_COMPILE_MODEL,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
@@ -56,6 +58,18 @@ from inference.core.utils.image_utils import (
 from inference_models.models.owlv2.owlv2_hf import (
     monkey_patch_vision_encoder_before_compilation,
 )
+
+try:
+    from inference_models.models.owlv2.reference_dataset import (
+        canonicalize_url_for_hashing,
+    )
+except ImportError:
+    # Released `inference-models` wheels lag this repo: until a release
+    # carrying the helper is pinned, keep the legacy behavior of hashing the
+    # raw URL. The canonicalization then activates with the pin bump.
+    def canonicalize_url_for_hashing(reference: str) -> str:
+        return reference
+
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 PRELOADED_HF_MODELS = {}
@@ -115,7 +129,9 @@ class Owlv2Singleton:
             model = (
                 Owlv2ForObjectDetection.from_pretrained(
                     huggingface_id,
+                    cache_dir=HF_HUB_CACHE,
                     device_map=DEVICE if str(DEVICE).startswith("cuda") else None,
+                    local_files_only=OFFLINE_MODE,
                 )
                 .eval()
                 .to(DEVICE)
@@ -180,7 +196,11 @@ def dummy_infer(hf_id: str):
     # Below code is copied from Owlv2.__init__
     singleton = Owlv2Singleton(hf_id)
     model = singleton.model
-    processor = Owlv2Processor.from_pretrained(hf_id)
+    processor = Owlv2Processor.from_pretrained(
+        hf_id,
+        cache_dir=HF_HUB_CACHE,
+        local_files_only=OFFLINE_MODE,
+    )
     image_size = (
         processor.image_processor.size.height,
         processor.image_processor.size.width,
@@ -358,7 +378,9 @@ class LazyImageRetrievalWrapper:
     def image_hash(self) -> Hash:
         if self._image_hash is None:
             image_payload, image_type = extract_image_payload_and_type(self.image)
-            if image_type in (ImageType.URL, ImageType.FILE):
+            if image_type is ImageType.URL:
+                self._image_hash = canonicalize_url_for_hashing(reference=image_payload)
+            elif image_type is ImageType.FILE:
                 self._image_hash = image_payload
             elif image_type is ImageType.BASE64:
                 if isinstance(image_payload, str):
@@ -398,7 +420,11 @@ class OwlV2(RoboflowInferenceModel):
             self.dataset_id = owlv2_model_id_chunks[0]
             self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
-        processor = Owlv2Processor.from_pretrained(hf_id)
+        processor = Owlv2Processor.from_pretrained(
+            hf_id,
+            cache_dir=HF_HUB_CACHE,
+            local_files_only=OFFLINE_MODE,
+        )
         self.image_size = (
             processor.image_processor.size.height,
             processor.image_processor.size.width,

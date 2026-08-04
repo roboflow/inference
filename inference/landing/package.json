@@ -10,11 +10,14 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.0",
-    "next": "latest",
+    "immutable": ">=5.1.8",
+    "js-yaml": "^4.3.0",
+    "next": "16.2.12",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.6",
     "@headlessui/react": "^1.7.17",
     "@headlessui/tailwindcss": "^0.2.0",
     "@types/node": "latest",
@@ -23,19 +26,22 @@
     "@types/react-syntax-highlighter": "^15.5.8",
     "autoprefixer": "latest",
     "classnames": "^2.3.2",
-    "eslint": "latest",
-    "eslint-config-next": "latest",
-    "postcss": "latest",
+    "eslint": "^10.8.0",
+    "eslint-config-next": "^16.2.12",
+    "immutable": ">=5.1.8",
+    "js-yaml": "^4.3.0",
+    "postcss": "^8.5.18",
     "react-syntax-highlighter": "^16.1.1",
     "sass": "^1.68.0",
+    "sharp": "0.35.0",
     "tailwindcss": "latest",
-    "typescript": "latest",
-    "js-yaml": "^4.2.0",
-    "@babel/core": "^7.29.6"
+    "typescript": "latest"
   },
   "overrides": {
     "next": {
-      "postcss": "^8.5.10"
-    }
+      "postcss": "^8.5.18",
+      "sharp": "^0.35.0"
+    },
+    "brace-expansion": "^5.0.8"
   }
 }

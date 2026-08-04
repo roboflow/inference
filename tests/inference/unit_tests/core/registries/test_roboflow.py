@@ -1,6 +1,7 @@
 import json
 import os.path
-from typing import Tuple
+from pathlib import Path
+from typing import Optional, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -11,8 +12,10 @@ from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
 from inference.core.exceptions import (
     MissingApiKeyError,
+    ModelArtefactError,
     ModelDeploymentNotSupportedError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
@@ -147,6 +150,66 @@ def test_get_model_metadata_from_cache_when_metadata_is_valid(
     assert result == ("object-detection", "yolov8n")
 
 
+def test_in_process_model_metadata_cache_is_scoped_by_api_key() -> None:
+    with mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow,
+        "_get_model_metadata_from_cache",
+        side_effect=[
+            ("object-detection", "model-a"),
+            ("classification", "model-b"),
+        ],
+    ) as load_metadata:
+        first = get_model_metadata_from_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            api_key="credential-a",
+        )
+        second = get_model_metadata_from_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            api_key="credential-b",
+        )
+
+    assert first == ("object-detection", "model-a")
+    assert second == ("classification", "model-b")
+    assert load_metadata.call_count == 2
+
+
+def test_save_model_metadata_populates_credential_scoped_in_process_cache() -> None:
+    with mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "_save_model_metadata_in_cache"
+    ), mock.patch.object(
+        roboflow,
+        "_get_model_metadata_from_cache",
+        return_value=("classification", "model-b"),
+    ) as load_metadata:
+        save_model_metadata_in_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            project_task_type="object-detection",
+            model_type="model-a",
+            api_key="credential-a",
+        )
+        same_credential = get_model_metadata_from_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            api_key="credential-a",
+        )
+        different_credential = get_model_metadata_from_cache(
+            dataset_id="workspace/model",
+            version_id="1",
+            api_key="credential-b",
+        )
+
+    assert same_credential == ("object-detection", "model-a")
+    assert different_credential == ("classification", "model-b")
+    load_metadata.assert_called_once_with(
+        dataset_id="workspace/model",
+        version_id="1",
+        api_key="credential-b",
+    )
+
+
 def test_model_metadata_content_is_invalid_when_content_is_empty() -> None:
     # when
     result = model_metadata_content_is_invalid(content=None)
@@ -212,6 +275,7 @@ def test_save_model_metadata_in_cache(
     # then
     assert result["model_type"] == "yolov8l"
     assert result["project_task_type"] == "instance-segmentation"
+    assert result["model_id"] == "some/1"
     construct_model_type_cache_path_mock.assert_called_once_with(
         dataset_id="some", version_id="1"
     )
@@ -239,15 +303,646 @@ def test_save_and_load_model_metadata_in_cache_when_instant_model_slug_is_long(
         cache_path = roboflow.construct_model_type_cache_path(
             dataset_id=dataset_id, version_id=None
         )
+        with open(cache_path) as metadata_file:
+            persisted_metadata = json.load(metadata_file)
 
     # then
     assert result == ("object-detection", "yolov8n")
+    assert persisted_metadata["model_id"] == dataset_id
     assert os.path.isfile(cache_path)
     assert all(
         len(os.fsencode(path_segment)) <= 255
         for path_segment in cache_path.split(os.sep)
         if path_segment
     )
+
+
+@pytest.mark.parametrize("existing_owner", [None, "", "workspace/different"])
+def test_save_model_metadata_refuses_to_claim_unowned_generated_v2_path(
+    empty_local_dir: str,
+    existing_owner: Optional[str],
+) -> None:
+    model_id = f"workspace/{'x' * 300}"
+    current_cache_key = model_artifacts.get_model_id_cache_path(
+        model_id=model_id,
+        cache_dir_root=empty_local_dir,
+    )
+    metadata = {
+        "project_task_type": "classification",
+        "model_type": "old-raw-model",
+    }
+    if existing_owner is not None:
+        metadata["model_id"] = existing_owner
+    metadata_path = Path(empty_local_dir) / current_cache_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(json.dumps(metadata))
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True):
+        with pytest.raises(ModelArtefactError, match="Refusing to claim"):
+            save_model_metadata_in_cache(
+                dataset_id=model_id,
+                version_id=None,
+                project_task_type="object-detection",
+                model_type="yolov8n",
+            )
+
+    assert json.loads(metadata_path.read_text()) == metadata
+
+
+def test_save_model_metadata_refuses_nonempty_generated_v2_path_without_owner(
+    empty_local_dir: str,
+) -> None:
+    model_id = f"workspace/{'x' * 300}"
+    current_cache_key = model_artifacts.get_model_id_cache_path(
+        model_id=model_id,
+        cache_dir_root=empty_local_dir,
+    )
+    model_cache_dir = Path(empty_local_dir) / current_cache_key
+    model_cache_dir.mkdir(parents=True)
+    (model_cache_dir / "weights.bin").write_bytes(b"old raw model")
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True):
+        with pytest.raises(ModelArtefactError, match="non-empty generated"):
+            save_model_metadata_in_cache(
+                dataset_id=model_id,
+                version_id=None,
+                project_task_type="object-detection",
+                model_type="yolov8n",
+            )
+
+    assert not (model_cache_dir / "model_type.json").exists()
+    assert (model_cache_dir / "weights.bin").read_bytes() == b"old raw model"
+
+
+def test_save_model_metadata_updates_exactly_owned_generated_v2_path(
+    empty_local_dir: str,
+) -> None:
+    model_id = f"workspace/{'x' * 300}"
+    current_cache_key = model_artifacts.get_model_id_cache_path(
+        model_id=model_id,
+        cache_dir_root=empty_local_dir,
+    )
+    metadata_path = Path(empty_local_dir) / current_cache_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "model_id": model_id,
+                "project_task_type": "classification",
+                "model_type": "vit",
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True):
+        save_model_metadata_in_cache(
+            dataset_id=model_id,
+            version_id=None,
+            project_task_type="object-detection",
+            model_type="yolov8n",
+        )
+
+    assert json.loads(metadata_path.read_text()) == {
+        "model_id": model_id,
+        "project_task_type": "object-detection",
+        "model_type": "yolov8n",
+    }
+
+
+def test_model_metadata_cache_reads_owned_legacy_slug(
+    empty_local_dir: str,
+) -> None:
+    model_id = f"workspace/{'x' * 300}"
+    legacy_cache_key = model_artifacts.get_legacy_model_id_cache_path(
+        model_id=model_id, cache_dir_root=empty_local_dir
+    )
+    assert legacy_cache_key is not None
+    metadata_path = Path(empty_local_dir) / legacy_cache_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+                "model_id": model_id,
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
+
+    assert result == ("object-detection", "yolov8n")
+
+
+def test_model_metadata_cache_reads_owned_legacy_raw_path(
+    empty_local_dir: str,
+) -> None:
+    model_id = "Workspace/Model/1"
+    current_cache_key = model_artifacts.get_model_id_cache_path(
+        model_id=model_id, cache_dir_root=empty_local_dir
+    )
+    legacy_cache_key = model_artifacts.get_legacy_model_id_cache_path(
+        model_id=model_id, cache_dir_root=empty_local_dir
+    )
+    assert current_cache_key != model_id
+    assert legacy_cache_key == model_id
+    metadata_path = Path(empty_local_dir) / legacy_cache_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+                "model_id": model_id,
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
+
+    assert result == ("object-detection", "yolov8n")
+
+
+def test_model_metadata_cache_rejects_unowned_legacy_raw_path(
+    empty_local_dir: str,
+) -> None:
+    model_id = "Workspace/Model/1"
+    metadata_path = Path(empty_local_dir) / model_id / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "attacker-controlled",
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
+
+    assert result is None
+
+
+@pytest.mark.parametrize("cached_model_id", [None, "", "workspace/different"])
+def test_model_metadata_cache_rejects_unowned_current_v2_slug(
+    empty_local_dir: str, cached_model_id: Optional[str]
+) -> None:
+    model_id = f"workspace/{'x' * 300}"
+    current_cache_key = model_artifacts.get_model_id_cache_path(
+        model_id=model_id,
+        cache_dir_root=empty_local_dir,
+    )
+    assert current_cache_key.startswith(
+        model_artifacts.MODEL_ID_CACHE_SLUG_NAMESPACE_PREFIX
+    )
+    metadata = {
+        "project_task_type": "object-detection",
+        "model_type": "attacker-controlled",
+    }
+    if cached_model_id is not None:
+        metadata["model_id"] = cached_model_id
+    metadata_path = Path(empty_local_dir) / current_cache_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(json.dumps(metadata))
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(
+            dataset_id=model_id,
+            version_id=None,
+        )
+
+    assert result is None
+
+
+def test_model_metadata_cache_does_not_confuse_old_raw_id_with_v2_slug(
+    empty_local_dir: str,
+) -> None:
+    victim_model_id = f"workspace/{'x' * 300}"
+    generated_v2_key = model_artifacts.get_model_id_cache_path(
+        model_id=victim_model_id,
+        cache_dir_root=empty_local_dir,
+    )
+    metadata_path = Path(empty_local_dir) / generated_v2_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "old-raw-model",
+                # This is the exact identity an old writer could have stored
+                # ownerlessly at the path now reserved for the victim's V2 key.
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        assert (
+            get_model_metadata_from_cache(
+                dataset_id=victim_model_id,
+                version_id=None,
+            )
+            is None
+        )
+
+
+@pytest.mark.parametrize("cached_model_id", [None, "", "workspace/different"])
+def test_model_metadata_cache_rejects_unowned_legacy_slug(
+    empty_local_dir: str, cached_model_id: Optional[str]
+) -> None:
+    model_id = f"workspace/{'x' * 300}"
+    legacy_cache_key = model_artifacts.get_legacy_model_id_cache_path(
+        model_id=model_id, cache_dir_root=empty_local_dir
+    )
+    assert legacy_cache_key is not None
+    metadata = {
+        "project_task_type": "object-detection",
+        "model_type": "attacker-controlled",
+    }
+    if cached_model_id is not None:
+        metadata["model_id"] = cached_model_id
+    metadata_path = Path(empty_local_dir) / legacy_cache_key / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(json.dumps(metadata))
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
+
+    assert result is None
+
+
+def test_model_metadata_cache_keeps_ownerless_safe_raw_path_compatible(
+    empty_local_dir: str,
+) -> None:
+    metadata_path = Path(empty_local_dir) / "some" / "1" / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+        constructed_path = roboflow.construct_model_type_cache_path(
+            dataset_id="some", version_id="1"
+        )
+
+    assert result == ("object-detection", "yolov8n")
+    assert constructed_path == str(metadata_path)
+
+
+@pytest.mark.parametrize("cached_model_id", [None, "", "other/1"])
+def test_model_metadata_cache_rejects_invalid_owner_on_safe_raw_path(
+    empty_local_dir: str,
+    cached_model_id: Optional[str],
+) -> None:
+    metadata_path = Path(empty_local_dir) / "some" / "1" / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "classification",
+                "model_type": "wrong-owner-type",
+                "model_id": cached_model_id,
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+
+    assert result is None
+
+
+@pytest.mark.parametrize("cached_model_id", [None, "", "other/1"])
+def test_save_model_metadata_refuses_invalid_owner_on_safe_raw_path(
+    empty_local_dir: str,
+    cached_model_id: Optional[str],
+) -> None:
+    existing_metadata = {
+        "project_task_type": "classification",
+        "model_type": "wrong-owner-type",
+        "model_id": cached_model_id,
+    }
+    metadata_path = Path(empty_local_dir) / "some" / "1" / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(json.dumps(existing_metadata))
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True):
+        with pytest.raises(ModelArtefactError, match="Refusing to claim raw"):
+            save_model_metadata_in_cache(
+                dataset_id="some",
+                version_id="1",
+                project_task_type="object-detection",
+                model_type="yolov8n",
+            )
+
+    assert json.loads(metadata_path.read_text()) == existing_metadata
+
+
+def test_save_model_metadata_upgrades_ownerless_safe_raw_path(
+    empty_local_dir: str,
+) -> None:
+    metadata_path = Path(empty_local_dir) / "some" / "1" / "model_type.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "project_task_type": "classification",
+                "model_type": "vit",
+            }
+        )
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True):
+        save_model_metadata_in_cache(
+            dataset_id="some",
+            version_id="1",
+            project_task_type="object-detection",
+            model_type="yolov8n",
+        )
+
+    assert json.loads(metadata_path.read_text()) == {
+        "project_task_type": "object-detection",
+        "model_type": "yolov8n",
+        "model_id": "some/1",
+    }
+
+
+def test_model_metadata_cache_rejects_ambiguous_id_before_memory_lookup() -> None:
+    with mock.patch.object(_in_process_metadata_cache, "get") as memory_get_mock:
+        with pytest.raises(ValueError, match="unsafe or ambiguous path segment"):
+            get_model_metadata_from_cache(dataset_id="victim", version_id=".")
+
+    memory_get_mock.assert_not_called()
+
+
+def test_model_metadata_cache_rejects_ambiguous_id_before_write_lock() -> None:
+    with mock.patch.object(roboflow, "LAMBDA", False), mock.patch.object(
+        roboflow.cache, "lock"
+    ) as lock_mock:
+        with pytest.raises(ValueError, match="unsafe or ambiguous path segment"):
+            save_model_metadata_in_cache(
+                dataset_id="victim",
+                version_id=".",
+                project_task_type="object-detection",
+                model_type="yolov8n",
+            )
+
+    lock_mock.assert_not_called()
+
+
+def test_model_metadata_cache_allows_mounted_symlink_cache_root(
+    tmp_path: Path,
+) -> None:
+    real_cache_root = tmp_path / "real-cache"
+    real_cache_root.mkdir()
+    mounted_cache_root = tmp_path / "mounted-cache"
+    mounted_cache_root.symlink_to(real_cache_root, target_is_directory=True)
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", str(mounted_cache_root)
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        save_model_metadata_in_cache(
+            dataset_id="some",
+            version_id="1",
+            project_task_type="object-detection",
+            model_type="yolov8n",
+        )
+        _in_process_metadata_cache.cache.clear()
+        result = get_model_metadata_from_cache(
+            dataset_id="some",
+            version_id="1",
+        )
+        cache_path = roboflow.construct_model_type_cache_path(
+            dataset_id="some",
+            version_id="1",
+        )
+
+    assert result == ("object-detection", "yolov8n")
+    assert cache_path == str(mounted_cache_root / "some" / "1" / "model_type.json")
+
+
+def test_model_metadata_cache_returns_absolute_lexical_path_for_relative_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", "relative-cache"):
+        cache_path = roboflow.construct_model_type_cache_path(
+            dataset_id="some",
+            version_id="1",
+        )
+
+    assert cache_path == str(
+        tmp_path / "relative-cache" / "some" / "1" / "model_type.json"
+    )
+
+
+def test_model_metadata_cache_rejects_cross_model_directory_symlink(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    owner_metadata_path = cache_root / "owner" / "1" / "model_type.json"
+    owner_metadata_path.parent.mkdir(parents=True)
+    owner_metadata = {
+        "project_task_type": "classification",
+        "model_type": "owner-model",
+    }
+    owner_metadata_path.write_text(json.dumps(owner_metadata))
+    (cache_root / "requested").symlink_to(
+        cache_root / "owner",
+        target_is_directory=True,
+    )
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", str(cache_root)
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(
+            dataset_id="requested",
+            version_id="1",
+        )
+        with pytest.raises(ValueError, match="symbolic link"):
+            save_model_metadata_in_cache(
+                dataset_id="requested",
+                version_id="1",
+                project_task_type="object-detection",
+                model_type="replacement-model",
+            )
+
+    assert result is None
+    assert json.loads(owner_metadata_path.read_text()) == owner_metadata
+
+
+def test_model_metadata_cache_rejects_final_symlink_and_preserves_outside_target(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    requested_model_dir = cache_root / "requested" / "1"
+    requested_model_dir.mkdir(parents=True)
+    outside_metadata_path = tmp_path / "outside-model-type.json"
+    outside_metadata = {
+        "project_task_type": "classification",
+        "model_type": "outside-model",
+    }
+    outside_metadata_path.write_text(json.dumps(outside_metadata))
+    (requested_model_dir / "model_type.json").symlink_to(outside_metadata_path)
+
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", str(cache_root)
+    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+        roboflow, "USE_INFERENCE_MODELS", False
+    ):
+        result = get_model_metadata_from_cache(
+            dataset_id="requested",
+            version_id="1",
+        )
+        with pytest.raises(ValueError, match="symbolic link"):
+            save_model_metadata_in_cache(
+                dataset_id="requested",
+                version_id="1",
+                project_task_type="object-detection",
+                model_type="replacement-model",
+            )
+
+    assert result is None
+    assert json.loads(outside_metadata_path.read_text()) == outside_metadata
+
+
+def test_model_metadata_reader_closes_descriptor_when_fdopen_fails(
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "model_type.json"
+    metadata_path.write_text("{}")
+    opened_descriptors = []
+    real_open = os.open
+
+    def record_open(*args, **kwargs) -> int:
+        descriptor = real_open(*args, **kwargs)
+        opened_descriptors.append(descriptor)
+        return descriptor
+
+    with (
+        mock.patch.object(roboflow.os, "open", side_effect=record_open),
+        mock.patch.object(
+            roboflow.os,
+            "fdopen",
+            side_effect=OSError("fdopen failed"),
+        ),
+    ):
+        with pytest.raises(OSError, match="fdopen failed"):
+            roboflow._read_model_metadata_json(str(metadata_path))
+
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO support is POSIX-only")
+def test_model_metadata_reader_rejects_fifo_without_blocking(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "model_type.json"
+    os.mkfifo(metadata_path)
+
+    with pytest.raises(OSError, match="non-regular metadata"):
+        roboflow._read_model_metadata_json(str(metadata_path))
+
+    assert metadata_path.exists()
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="Symlink-race simulation requires POSIX symlinks",
+)
+def test_model_metadata_reader_rejects_symlink_swap_without_no_follow(
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "model_type.json"
+    outside_metadata_path = tmp_path / "outside.json"
+    metadata_path.write_text(json.dumps({"model_type": "inside"}))
+    outside_metadata_path.write_text(json.dumps({"model_type": "outside"}))
+    real_lstat = os.lstat
+    path_swapped = False
+
+    def lstat_then_swap(path: str) -> os.stat_result:
+        nonlocal path_swapped
+        file_status = real_lstat(path)
+        if not path_swapped:
+            Path(path).unlink()
+            Path(path).symlink_to(outside_metadata_path)
+            path_swapped = True
+        return file_status
+
+    with (
+        mock.patch.object(
+            roboflow.os,
+            "lstat",
+            side_effect=lstat_then_swap,
+        ),
+        mock.patch.object(
+            roboflow.os,
+            "O_NOFOLLOW",
+            0,
+            create=True,
+        ),
+    ):
+        with pytest.raises(OSError, match="changed while it was being opened"):
+            roboflow._read_model_metadata_json(str(metadata_path))
+
+    assert metadata_path.is_symlink()
+    assert json.loads(outside_metadata_path.read_text()) == {"model_type": "outside"}
 
 
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
@@ -276,6 +971,45 @@ def test_get_model_type_when_cache_is_utilised(
         dataset_id="some", version_id="1"
     )
     assert result == ("object-detection", "yolov8n")
+
+
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_offline_cache_auth_is_enabled_does_not_call_api(
+    construct_model_type_cache_path_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    with open(metadata_path, "w") as f:
+        json.dump(
+            {
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            },
+            f,
+        )
+
+    # when
+    with mock.patch.object(roboflow, "OFFLINE_MODE", True), mock.patch.object(
+        roboflow, "MODELS_CACHE_AUTH_ENABLED", True
+    ), mock.patch.object(
+        roboflow, "_check_if_api_key_has_access_to_model"
+    ) as auth_check_mock, mock.patch.object(
+        roboflow, "get_model_metadata_from_inference_models_registry"
+    ) as registry_api_mock, mock.patch.object(
+        roboflow, "get_roboflow_model_data"
+    ) as model_api_mock, mock.patch.object(
+        roboflow, "get_roboflow_instant_model_data"
+    ) as instant_model_api_mock:
+        result = get_model_type(model_id="some/1", api_key="my_api_key")
+
+    # then
+    assert result == ("object-detection", "yolov8n")
+    auth_check_mock.assert_not_called()
+    registry_api_mock.assert_not_called()
+    model_api_mock.assert_not_called()
+    instant_model_api_mock.assert_not_called()
 
 
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
@@ -346,6 +1080,227 @@ def test_get_model_type_when_generic_model_is_utilised(
 
     # then
     assert result == expected_result
+
+
+def test_model_pipelines_enumerate_all_coded_pp_ocr_ids() -> None:
+    # given
+    stage_variants = ("none", "tiny", "small", "medium")
+    expected_combo_ids = {
+        f"pp_ocr/{text_detection}-{text_recognition}"
+        for text_detection in stage_variants
+        for text_recognition in stage_variants
+        if (text_detection, text_recognition) != ("none", "none")
+    }
+    expected_single_token_ids = {"pp_ocr/tiny", "pp_ocr/small", "pp_ocr/medium"}
+
+    # then
+    assert set(roboflow.MODEL_PIPELINES) == (
+        expected_combo_ids | expected_single_token_ids | {"pp_ocr"}
+    )
+    for definition in roboflow.MODEL_PIPELINES.values():
+        assert (definition.task_type, definition.model_type) == ("ocr", "pp_ocr")
+        assert len(definition.downstream_model_ids) > 0
+    assert "pp_ocr/none-none" not in roboflow.MODEL_PIPELINES
+    assert "pp_ocr/none" not in roboflow.MODEL_PIPELINES
+    # pipeline IDs must not leak into GENERIC_MODELS - auth treats them differently
+    assert all(
+        model_id not in roboflow.GENERIC_MODELS for model_id in roboflow.MODEL_PIPELINES
+    )
+
+
+@pytest.mark.parametrize(
+    "model_id, expected_downstream",
+    [
+        ("pp_ocr/small-small", ("pp-ocrv6-det/small", "pp-ocrv6-rec/small")),
+        ("pp_ocr/tiny-medium", ("pp-ocrv6-det/tiny", "pp-ocrv6-rec/medium")),
+        ("pp_ocr/none-small", ("pp-ocrv6-rec/small",)),
+        ("pp_ocr/medium-none", ("pp-ocrv6-det/medium",)),
+        ("pp_ocr/tiny", ("pp-ocrv6-det/tiny", "pp-ocrv6-rec/tiny")),
+        ("pp_ocr", ("pp-ocrv6-det/small", "pp-ocrv6-rec/small")),
+    ],
+)
+def test_model_pipelines_map_to_expected_downstream_models(
+    model_id: str, expected_downstream: Tuple[str, ...]
+) -> None:
+    assert (
+        roboflow.MODEL_PIPELINES[model_id].downstream_model_ids == expected_downstream
+    )
+
+
+@pytest.mark.parametrize(
+    "model_id, expected_downstream",
+    [
+        ("pp_ocr/tiny-medium", ("pp-ocrv6-det/tiny", "pp-ocrv6-rec/medium")),
+        ("pp_ocr/none-small", ("pp-ocrv6-rec/small",)),
+        ("pp_ocr/medium-none", ("pp-ocrv6-det/medium",)),
+    ],
+)
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_check_api_key_for_pp_ocr_pipeline_authorizes_downstream_models(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    model_id: str,
+    expected_downstream: Tuple[str, ...],
+) -> None:
+    # when
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key=f"my_api_key-{model_id}",
+        model_id=model_id,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then - the synthetic pipeline ID itself must never reach the remote registry,
+    # but every downstream stage model must be authorized against it
+    assert result is True
+    checked_model_ids = [
+        call.kwargs["model_id"]
+        for call in get_model_metadata_from_inference_models_registry_mock.call_args_list
+    ]
+    assert checked_model_ids == list(expected_downstream)
+
+
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_check_api_key_for_pp_ocr_pipeline_fails_when_downstream_model_not_authorized(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+) -> None:
+    # given - detection stage authorized, recognition stage not
+    def _registry_response(api_key: str, model_id: str, **kwargs):
+        if model_id == "pp-ocrv6-rec/medium":
+            raise RoboflowAPINotAuthorizedError()
+        return {"taskType": "ocr"}
+
+    get_model_metadata_from_inference_models_registry_mock.side_effect = (
+        _registry_response
+    )
+
+    # when
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="pp_ocr/tiny-medium",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
+
+
+@pytest.mark.parametrize("model_id", ["pp_ocr/small-small", "pp_ocr"])
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
+@mock.patch.object(
+    roboflow,
+    "get_roboflow_instant_model_data",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+@mock.patch.object(
+    roboflow,
+    "get_roboflow_model_data",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+def test_check_api_key_for_pp_ocr_pipeline_not_recognized_without_inference_models(
+    get_roboflow_model_data_mock: MagicMock,
+    get_roboflow_instant_model_data_mock: MagicMock,
+    model_id: str,
+) -> None:
+    # when - with USE_INFERENCE_MODELS disabled, pipeline IDs fall through to the
+    # regular resolution and fail closed there
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id=model_id,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
+
+
+@pytest.mark.parametrize("model_id", ["pp_ocr/none-none", "pp_ocr/huge-small"])
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(
+    roboflow,
+    "get_model_metadata_from_inference_models_registry",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+def test_check_api_key_for_invalid_pp_ocr_pipeline_fails_closed(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    model_id: str,
+) -> None:
+    # when - IDs outside the coded pipeline set are not treated as pipelines
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key=f"my_api_key-{model_id}",
+        model_id=model_id,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
+    get_model_metadata_from_inference_models_registry_mock.assert_called_once_with(
+        api_key=f"my_api_key-{model_id}",
+        model_id=model_id,
+        countinference=None,
+        service_secret=None,
+    )
+
+
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(
+    roboflow,
+    "get_model_metadata_from_inference_models_registry",
+    side_effect=RoboflowAPINotAuthorizedError,
+)
+def test_check_api_key_does_not_blanket_trust_generic_models(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+) -> None:
+    # when - full-ID GENERIC_MODELS entries (e.g. sam3/sam3_interactive) must still
+    # be authorized remotely; regression guard against trusting GENERIC_MODELS as such
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="sam3/sam3_interactive",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is False
+    get_model_metadata_from_inference_models_registry_mock.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ["pp_ocr", "pp_ocr/small", "pp_ocr/tiny-medium", "pp_ocr/none-small"],
+)
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_roboflow_instant_model_data")
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+def test_get_model_type_for_pipeline_when_inference_models_enabled(
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    get_roboflow_instant_model_data_mock: MagicMock,
+    model_id: str,
+) -> None:
+    # when
+    result = get_model_type(model_id=model_id, api_key="my_api_key")
+
+    # then - pipeline recognition is static and must not call any remote API
+    assert result == ("ocr", "pp_ocr")
+    get_model_metadata_from_inference_models_registry_mock.assert_not_called()
+    get_roboflow_model_data_mock.assert_not_called()
+    get_roboflow_instant_model_data_mock.assert_not_called()
+
+
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_get_model_type_for_pipeline_when_inference_models_disabled(
+    get_roboflow_model_data_mock: MagicMock,
+) -> None:
+    # given - with the flag off, pipeline IDs are not recognized and resolution
+    # falls through to the regular Roboflow API pathway
+    get_roboflow_model_data_mock.side_effect = RoboflowAPINotAuthorizedError()
+
+    # when / then
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        get_model_type(model_id="pp_ocr/small-small", api_key="my_api_key")
+    get_roboflow_model_data_mock.assert_called_once()
 
 
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
@@ -838,3 +1793,141 @@ def test_roboflow_model_registry_get_model_on_cache_ht(
 
     # then
     assert result == "some"
+
+
+# ---------------------------------------------------------------------------
+# _get_model_metadata_from_inference_models_cache
+# ---------------------------------------------------------------------------
+
+
+def test_compat_cache_finder_supports_released_inference_models(
+    tmp_path: Path,
+) -> None:
+    """The server can scan cache packages before the new helper is released."""
+    from inference_models.models.auto_loaders import model_cache_paths
+
+    model_id = "workspace/project/3"
+    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", str(tmp_path)):
+        package_dir = Path(
+            model_cache_paths.generate_model_package_cache_path(
+                model_id=model_id, package_id="package1"
+            )
+        )
+        package_dir.mkdir(parents=True)
+        (package_dir / "model_config.json").write_text(
+            json.dumps(
+                {
+                    "model_id": model_id,
+                    "task_type": "object-detection",
+                    "model_architecture": "yolov8n",
+                    "backend_type": "onnx",
+                }
+            )
+        )
+
+        result = roboflow._find_cached_model_package_dir_compat(model_id=model_id)
+
+    assert result == str(package_dir.resolve())
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {},
+        {
+            "model_id": "other/model/1",
+            "task_type": "object-detection",
+            "model_architecture": "yolov8n",
+            "backend_type": "onnx",
+        },
+        {
+            "model_id": "workspace/project/3",
+            "task_type": ["object-detection"],
+            "model_architecture": "yolov8n",
+            "backend_type": "onnx",
+        },
+        {
+            "model_id": "workspace/project/3",
+            "task_type": "object-detection",
+            "model_architecture": {"name": "yolov8n"},
+            "backend_type": "onnx",
+        },
+    ],
+)
+def test_compat_cache_finder_rejects_malformed_metadata(
+    tmp_path: Path,
+    config: dict,
+) -> None:
+    from inference_models.models.auto_loaders import model_cache_paths
+
+    model_id = "workspace/project/3"
+    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", str(tmp_path)):
+        package_dir = Path(
+            model_cache_paths.generate_model_package_cache_path(
+                model_id=model_id,
+                package_id="package1",
+            )
+        )
+        package_dir.mkdir(parents=True)
+        (package_dir / "model_config.json").write_text(json.dumps(config))
+
+        result = roboflow._find_cached_model_package_dir_compat(model_id=model_id)
+
+    assert result is None
+
+
+def test_get_model_metadata_from_inference_models_cache_when_config_found(
+    empty_local_dir: str,
+) -> None:
+    # given
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": "coco/22",
+                "task_type": "object-detection",
+                "model_architecture": "yolov8",
+                "backend_type": "onnx",
+            },
+            f,
+        )
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=package_dir
+    ) as find_cached_package:
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/22",
+            api_key="credential-a",
+        )
+
+    # then
+    assert result == ("object-detection", "yolov8")
+    find_cached_package.assert_called_once_with(
+        model_id="coco/22",
+        api_key="credential-a",
+    )
+
+
+def test_get_model_metadata_from_inference_models_cache_when_no_package_found() -> None:
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=None
+    ):
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/22"
+        )
+
+    # then
+    assert result is None
+
+
+def test_get_model_metadata_from_inference_models_cache_when_backend_disabled() -> None:
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/22"
+        )
+
+    # then
+    assert result is None

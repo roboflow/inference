@@ -34,8 +34,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    third_party_model,
 )
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
@@ -50,8 +52,20 @@ MODEL_ALIASES = {
 
 GEMINI_MODELS = [
     {
+        "id": "gemini-3.6-flash",
+        "name": "Gemini 3.6 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
         "id": "gemini-3.5-flash",
         "name": "Gemini 3.5 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
+        "id": "gemini-3.5-flash-lite",
+        "name": "Gemini 3.5 Flash-Lite",
         "supports_thinking_level": True,
         "supports_native_code_execution": True,
     },
@@ -374,6 +388,9 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [third_party_model(provider="google", model_id=self.model_version)]
+
 
 class GoogleGeminiBlockV3(WorkflowBlock):
 
@@ -572,9 +589,7 @@ def _execute_direct_gemini_request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
         headers={
             "Content-Type": "application/json",
-        },
-        params={
-            "key": google_api_key,
+            "x-goog-api-key": google_api_key,
         },
         json=prompt,
     )

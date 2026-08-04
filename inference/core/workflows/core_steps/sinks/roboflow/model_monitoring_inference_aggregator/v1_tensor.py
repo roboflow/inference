@@ -22,6 +22,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     KeyPointPrediction,
     split_key_point_prediction,
 )
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     INFERENCE_ID_KEY,
@@ -44,12 +45,15 @@ from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
+    ModelRequiredAction,
     Runtime,
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_models.models.base.classification import (
     ClassificationPrediction,
@@ -251,6 +255,15 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # References the platform model entity for monitoring; no weights are pulled.
+        return [
+            roboflow_platform_model(
+                model_id=self.model_id,
+                required_action=ModelRequiredAction.ACCESS,
+            )
+        ]
+
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         restriction = RuntimeRestriction(
@@ -328,8 +341,9 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
-        if api_key is None:
+        if api_key is None and not disable_sinks:
             raise ValueError(
                 "ModelMonitoringInferenceAggregator block cannot run without Roboflow API key. "
                 "If you do not know how to get API key - visit "
@@ -340,11 +354,18 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         self._cache = cache
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
         self._predictions_aggregator = PredictionsAggregator()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "background_tasks", "thread_pool_executor"]
+        return [
+            "api_key",
+            "cache",
+            "background_tasks",
+            "thread_pool_executor",
+            "disable_sinks",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -358,6 +379,8 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         unique_aggregator_key: str,
         model_id: str,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return disabled_sink_response()
         self._last_report_time_cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
         if predictions:
             self._predictions_aggregator.collect(predictions, model_id)
