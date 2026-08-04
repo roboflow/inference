@@ -19,6 +19,7 @@ from fastapi import Request
 
 from inference_model_manager.backends.utils.shm_pool import INPUT_ERROR_PREFIX
 from inference_model_manager.model_manager import ModelManager
+from inference_models.utils.performance import performance_profiler
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 
@@ -84,6 +85,11 @@ class MMWrapper:
         # so a timed-out load() keeps loading and later calls await the same
         # future instead of double-loading.
         self._pending_loads: dict[str, asyncio.Future] = {}
+        performance_profiler.set_metadata("wrapper.backend", backend)
+        performance_profiler.set_metadata(
+            "wrapper.decoder", configuration.SERVER_DECODER
+        )
+        performance_profiler.set_metadata("wrapper.n_slots", self.n_slots)
 
     # ------------------------------------------------------------------
     # Lifecycle (lifespan)
@@ -128,36 +134,50 @@ class MMWrapper:
         replacement.
         """
         lock = self._load_locks.setdefault(model_id, asyncio.Lock())
-        async with lock:
-            future = self._pending_loads.get(model_id)
-            if future is not None:
-                return future
-            drop_dead = False
-            if model_id in self.manager:
-                is_healthy = getattr(self.manager, "is_healthy", None)
-                if is_healthy is None or is_healthy(model_id):
-                    return None
-                logger.warning(
-                    "MMWrapper: backend for '%s' is dead — reloading", model_id
-                )
-                drop_dead = True
+        if not performance_profiler.enabled:
+            async with lock:
+                return self._acquire_load_future_locked(model_id, api_key, device)
 
-            def _reload() -> None:
-                if drop_dead:
-                    try:
-                        self.manager.unload(model_id)
-                    except Exception:
-                        logger.warning(
-                            "MMWrapper: dead-backend unload failed", exc_info=True
-                        )
-                self._load_sync(model_id, api_key, device)
+        lock_started = performance_profiler.start()
+        await lock.acquire()
+        performance_profiler.stop("wrapper.ensure.lock", lock_started)
+        check_started = performance_profiler.start()
+        try:
+            return self._acquire_load_future_locked(model_id, api_key, device)
+        finally:
+            lock.release()
+            performance_profiler.stop("wrapper.ensure.check", check_started)
 
-            # Unload+load run as ONE executor job registered before the lock
-            # releases: no await window a cancelled caller could exploit, and
-            # followers join the same future covering the whole replacement.
-            future = asyncio.get_running_loop().run_in_executor(None, _reload)
-            self._pending_loads[model_id] = future
-            future.add_done_callback(lambda _f: self._pending_loads.pop(model_id, None))
+    def _acquire_load_future_locked(
+        self, model_id: str, api_key: str, device: Optional[str]
+    ) -> Optional[asyncio.Future]:
+        future = self._pending_loads.get(model_id)
+        if future is not None:
+            return future
+        drop_dead = False
+        if model_id in self.manager:
+            is_healthy = getattr(self.manager, "is_healthy", None)
+            if is_healthy is None or is_healthy(model_id):
+                return None
+            logger.warning("MMWrapper: backend for '%s' is dead — reloading", model_id)
+            drop_dead = True
+
+        def _reload() -> None:
+            if drop_dead:
+                try:
+                    self.manager.unload(model_id)
+                except Exception:
+                    logger.warning(
+                        "MMWrapper: dead-backend unload failed", exc_info=True
+                    )
+            self._load_sync(model_id, api_key, device)
+
+        # Unload+load run as ONE executor job registered before the lock
+        # releases: no await window a cancelled caller could exploit, and
+        # followers join the same future covering the whole replacement.
+        future = asyncio.get_running_loop().run_in_executor(None, _reload)
+        self._pending_loads[model_id] = future
+        future.add_done_callback(lambda _f: self._pending_loads.pop(model_id, None))
         return future
 
     async def _await_load(
@@ -206,17 +226,21 @@ class MMWrapper:
         api_key: str = "",
         device: str = "",
     ) -> tuple:
-        future = await self._acquire_load_future(model_id, api_key, device or None)
-        if future is None:
+        started = performance_profiler.start()
+        try:
+            future = await self._acquire_load_future(model_id, api_key, device or None)
+            if future is None:
+                return ("model_ready",)
+            failure = await self._await_load(
+                future,
+                self.load_wait_s,
+                deadline_result=("load_timeout", int(self.load_wait_s)),
+            )
+            if failure is not None:
+                return failure
             return ("model_ready",)
-        failure = await self._await_load(
-            future,
-            self.load_wait_s,
-            deadline_result=("load_timeout", int(self.load_wait_s)),
-        )
-        if failure is not None:
-            return failure
-        return ("model_ready",)
+        finally:
+            performance_profiler.stop("wrapper.ensure.total", started)
 
     async def load(
         self, model_id: str, api_key: str = "", timeout_s: Optional[float] = None
@@ -247,6 +271,31 @@ class MMWrapper:
         return ("ok",)
 
     async def infer(
+        self,
+        *,
+        model_id: str,
+        image: Optional[bytes] = None,
+        task: Optional[str] = None,
+        instance: str = "",
+        params: Optional[dict] = None,
+        request: Optional[Request] = None,
+        raw_pickle: bool = False,
+    ) -> Any:
+        started = performance_profiler.start()
+        try:
+            return await self._infer(
+                model_id=model_id,
+                image=image,
+                task=task,
+                instance=instance,
+                params=params,
+                request=request,
+                raw_pickle=raw_pickle,
+            )
+        finally:
+            performance_profiler.stop("wrapper.infer.total", started)
+
+    async def _infer(
         self,
         *,
         model_id: str,

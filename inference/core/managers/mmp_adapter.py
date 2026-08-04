@@ -21,6 +21,7 @@ from inference.core.logger import logger
 from inference.core.managers import mmp_translation as translation
 from inference.core.managers.entities import ModelDescription
 from inference.core.registries.roboflow import ModelEndpointType
+from inference_models.utils.performance import performance_profiler
 
 _SYNC_BRIDGE_EXTRA_TIMEOUT_S = 30.0
 
@@ -102,13 +103,20 @@ class ModelManagerAdapter:
         self._client = mmp_client
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._routes: Dict[str, dict] = {}
+        performance_profiler.set_metadata("adapter.mode", LEGACY_MMP_ADAPTER_MODE)
+        performance_profiler.set_metadata(
+            "adapter.bundled_backend", LEGACY_MMP_ADAPTER_BUNDLED_BACKEND
+        )
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
         await self._client.start()
 
     async def shutdown(self) -> None:
-        await self._client.shutdown()
+        try:
+            await self._client.shutdown()
+        finally:
+            performance_profiler.flush(force=True)
 
     def mmp_ready(self) -> bool:
         """Readiness probe: the MMP must answer stats over ZMQ."""
@@ -136,19 +144,54 @@ class ModelManagerAdapter:
                 "ModelManagerAdapter sync bridge called on its own event loop; "
                 "this would deadlock"
             )
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         timeout = (
             self._client.load_wait_s
             + self._client.infer_timeout_s
             + _SYNC_BRIDGE_EXTRA_TIMEOUT_S
         )
-        return future.result(timeout=timeout)
+        if not performance_profiler.enabled:
+            future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+            return future.result(timeout=timeout)
+
+        queue_started = performance_profiler.start()
+        return_started = [None]
+
+        async def _profiled_coro():
+            performance_profiler.stop("adapter.bridge.queue", queue_started)
+            try:
+                return await coro
+            finally:
+                return_started[0] = performance_profiler.start()
+
+        profiled_coro = _profiled_coro()
+        try:
+            future = asyncio.run_coroutine_threadsafe(profiled_coro, self._loop)
+        except BaseException:
+            profiled_coro.close()
+            coro.close()
+            raise
+        try:
+            return future.result(timeout=timeout)
+        finally:
+            performance_profiler.stop("adapter.bridge.return", return_started[0])
 
     # ------------------------------------------------------------------
     # routing
     # ------------------------------------------------------------------
 
     async def _resolve_route_async(self, model_id: str, api_key: Optional[str]) -> dict:
+        started = performance_profiler.start()
+        performance_profiler.increment(
+            "adapter.route.hit" if model_id in self._routes else "adapter.route.miss"
+        )
+        try:
+            return await self._resolve_route_async_impl(model_id, api_key)
+        finally:
+            performance_profiler.stop("adapter.route", started)
+
+    async def _resolve_route_async_impl(
+        self, model_id: str, api_key: Optional[str]
+    ) -> dict:
         route = self._routes.get(model_id)
         if route is not None:
             if not route["supported"]:
@@ -221,6 +264,14 @@ class ModelManagerAdapter:
                 "model_mro_names": model_entry.get("model_mro_names"),
             }
             self._routes[model_id] = route
+            performance_profiler.set_metadata("adapter.model_id", mmp_model_id)
+            performance_profiler.set_metadata("adapter.task_type", task_type)
+            performance_profiler.set_metadata(
+                "adapter.model_class", model_entry.get("model_class_name")
+            )
+            performance_profiler.set_metadata(
+                "adapter.backend_type", model_entry.get("backend_type")
+            )
             return route
         except Exception as error:
             _relabel_model_id(error, mmp_model_id, model_id)
@@ -230,16 +281,25 @@ class ModelManagerAdapter:
         route = await self._resolve_route_async(
             model_id, getattr(request, "api_key", None)
         )
-        action = translation.resolve_request_action(route, request)
+        validate_started = performance_profiler.start()
+        try:
+            action = translation.resolve_request_action(route, request)
+            is_embedding = route["task_type"] == "embedding"
+            if not is_embedding and (
+                (route["task_type"], action) not in translation.IMPLEMENTED_ROUTES
+                or action not in route["tasks"]
+            ):
+                raise _unsupported(model_id)
+            if not is_embedding:
+                translation.ensure_request_supported(model_id, request, route)
+        finally:
+            performance_profiler.stop("adapter.validate", validate_started)
+
         if route["task_type"] == "embedding":
             return await self._infer_embedding(model_id, route, action, request)
-        if (route["task_type"], action) not in translation.IMPLEMENTED_ROUTES or (
-            action not in route["tasks"]
-        ):
-            raise _unsupported(model_id)
-        translation.ensure_request_supported(model_id, request, route)
         is_batch = isinstance(request.image, list)
         images = request.image if is_batch else [request.image]
+        performance_profiler.record("adapter.batch_size", len(images), "count")
         imageless_allowed = (
             route["task_type"] == "interactive-instance-segmentation"
             and action == "segment"
@@ -252,31 +312,48 @@ class ModelManagerAdapter:
             )
             for image in images
         ]
-        params = translation.build_task_params(
-            route["task_type"], action, request, route
-        )
+        params_started = performance_profiler.start()
+        try:
+            params = translation.build_task_params(
+                route["task_type"], action, request, route
+            )
+        finally:
+            performance_profiler.stop("adapter.params", params_started)
         t_start = time.perf_counter()
-        ensure = await self._client.ensure_loaded(
-            route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
-        )
+        ensure_started = performance_profiler.start()
+        try:
+            ensure = await self._client.ensure_loaded(
+                route["mmp_model_id"],
+                api_key=getattr(request, "api_key", None) or "",
+            )
+        finally:
+            performance_profiler.stop("adapter.ensure_loaded", ensure_started)
         translation.raise_for_lifecycle_result(ensure, model_id)
         predictions = await self._fan_out_infer(
             model_id, route, action, forwarded, params
         )
         elapsed = time.perf_counter() - t_start
-        responses = []
-        for prediction, (_, dims) in zip(predictions, forwarded):
-            response = translation.repack_prediction(
-                route["task_type"], action, prediction, dims, route, request
-            )
-            _set_if_field(response, "time", elapsed)
-            _set_if_field(response, "inference_id", request.id)
-            responses.append(response)
-        if getattr(request, "visualize_predictions", False):
-            for response in responses:
-                response.visualization = translation.render_visualization(
-                    route["task_type"], request, response, route
+        repack_started = performance_profiler.start()
+        try:
+            responses = []
+            for prediction, (_, dims) in zip(predictions, forwarded):
+                response = translation.repack_prediction(
+                    route["task_type"], action, prediction, dims, route, request
                 )
+                _set_if_field(response, "time", elapsed)
+                _set_if_field(response, "inference_id", request.id)
+                responses.append(response)
+        finally:
+            performance_profiler.stop("adapter.repack", repack_started)
+        if getattr(request, "visualize_predictions", False):
+            visualize_started = performance_profiler.start()
+            try:
+                for response in responses:
+                    response.visualization = translation.render_visualization(
+                        route["task_type"], request, response, route
+                    )
+            finally:
+                performance_profiler.stop("adapter.visualize", visualize_started)
         return responses if is_batch else responses[0]
 
     async def _infer_embedding(self, model_id: str, route: dict, action: str, request):
@@ -284,12 +361,19 @@ class ModelManagerAdapter:
         calls, prompt_keys = translation.build_embedding_calls(action, request)
         if not {call["task"] for call in calls}.issubset(route["tasks"]):
             raise _unsupported(model_id)
-        ensure = await self._client.ensure_loaded(
-            route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
-        )
+        ensure_started = performance_profiler.start()
+        try:
+            ensure = await self._client.ensure_loaded(
+                route["mmp_model_id"],
+                api_key=getattr(request, "api_key", None) or "",
+            )
+        finally:
+            performance_profiler.stop("adapter.ensure_loaded", ensure_started)
         translation.raise_for_lifecycle_result(ensure, model_id)
         concurrency = min(len(calls), max(1, getattr(self._client, "n_slots", 1) or 1))
         semaphore = asyncio.Semaphore(concurrency)
+        performance_profiler.record("adapter.batch_size", len(calls), "count")
+        performance_profiler.increment("adapter.client_infer.calls", len(calls))
 
         async def run_call(call: dict):
             async with semaphore:
@@ -300,18 +384,26 @@ class ModelManagerAdapter:
                     params=call["params"],
                 )
 
-        results = await asyncio.gather(
-            *(run_call(call) for call in calls), return_exceptions=True
-        )
+        client_started = performance_profiler.start()
+        try:
+            results = await asyncio.gather(
+                *(run_call(call) for call in calls), return_exceptions=True
+            )
+        finally:
+            performance_profiler.stop("adapter.client_infer", client_started)
         for result in results:
             if isinstance(result, BaseException):
                 translated = translation.translate_infer_error(result, model_id)
                 if translated is result:
                     raise result
                 raise translated from result
-        response = translation.repack_embedding_response(
-            action, request, list(results), prompt_keys
-        )
+        repack_started = performance_profiler.start()
+        try:
+            response = translation.repack_embedding_response(
+                action, request, list(results), prompt_keys
+            )
+        finally:
+            performance_profiler.stop("adapter.repack", repack_started)
         _set_if_field(response, "time", time.perf_counter() - t_start)
         return response
 
@@ -322,6 +414,7 @@ class ModelManagerAdapter:
             len(forwarded), max(1, getattr(self._client, "n_slots", 1) or 1)
         )
         semaphore = asyncio.Semaphore(concurrency)
+        performance_profiler.increment("adapter.client_infer.calls", len(forwarded))
 
         async def infer_one(image_bytes: bytes):
             async with semaphore:
@@ -332,10 +425,14 @@ class ModelManagerAdapter:
                     params=params,
                 )
 
-        results = await asyncio.gather(
-            *(infer_one(image_bytes) for image_bytes, _ in forwarded),
-            return_exceptions=True,
-        )
+        started = performance_profiler.start()
+        try:
+            results = await asyncio.gather(
+                *(infer_one(image_bytes) for image_bytes, _ in forwarded),
+                return_exceptions=True,
+            )
+        finally:
+            performance_profiler.stop("adapter.client_infer", started)
         for result in results:
             if isinstance(result, BaseException):
                 translated = translation.translate_infer_error(result, model_id)
@@ -357,15 +454,23 @@ class ModelManagerAdapter:
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
     ) -> None:
-        route = self._run_sync(self._resolve_route_async(model_id, api_key))
-        if model_id_alias is not None:
-            self._routes[model_id_alias] = route
+        started = performance_profiler.start()
+        try:
+            route = self._run_sync(self._resolve_route_async(model_id, api_key))
+            if model_id_alias is not None:
+                self._routes[model_id_alias] = route
+        finally:
+            performance_profiler.stop("adapter.add_model.total", started)
 
     async def infer_from_request(self, model_id: str, request, **kwargs):
         return await self._infer_new_path(model_id, request, **kwargs)
 
     def infer_from_request_sync(self, model_id: str, request, **kwargs):
-        return self._run_sync(self._infer_new_path(model_id, request, **kwargs))
+        started = performance_profiler.start()
+        try:
+            return self._run_sync(self._infer_new_path(model_id, request, **kwargs))
+        finally:
+            performance_profiler.stop("adapter.infer.sync_total", started)
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         route = self._routes.get(model_id)

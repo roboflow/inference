@@ -17,6 +17,11 @@ from inference.core.env import (
     LEGACY_MMP_ADAPTER_MODE,
     LOG_LEVEL,
     MAX_ACTIVE_MODELS,
+    MMP_PERFORMANCE_PROFILING_ENABLED,
+    MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S,
+    MMP_PERFORMANCE_PROFILING_MAX_SAMPLES,
+    MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N,
+    MMP_PERFORMANCE_PROFILING_WARMUP_CALLS,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WEB_ENDPOINT_URL,
@@ -313,6 +318,19 @@ if modal is not None:
             "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
             "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
             "LOG_LEVEL": LOG_LEVEL,
+            "MMP_PERFORMANCE_PROFILING_ENABLED": str(MMP_PERFORMANCE_PROFILING_ENABLED),
+            "MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S": str(
+                MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S
+            ),
+            "MMP_PERFORMANCE_PROFILING_MAX_SAMPLES": str(
+                MMP_PERFORMANCE_PROFILING_MAX_SAMPLES
+            ),
+            "MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N": str(
+                MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N
+            ),
+            "MMP_PERFORMANCE_PROFILING_WARMUP_CALLS": str(
+                MMP_PERFORMANCE_PROFILING_WARMUP_CALLS
+            ),
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
             "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
@@ -561,6 +579,26 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN set: %s", bool(MODAL_IDENTITY_TOKEN))
 
+            performance_profiler = None
+            if MMP_PERFORMANCE_PROFILING_ENABLED:
+                from inference_models.utils.performance import performance_profiler
+
+                performance_profiler.set_metadata("modal.image_tag", docker_tag)
+                performance_profiler.set_metadata("modal.gpu", self._gpu)
+                performance_profiler.set_metadata("modal.workflow_id", workflow_id)
+                performance_profiler.set_metadata("modal.cold_start", self._cold_start)
+                performance_profiler.set_metadata(
+                    "modal.function_call_number",
+                    self._function_call_number_on_container,
+                )
+                performance_profiler.set_metadata(
+                    "modal.memory_snapshot_enabled",
+                    WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+                )
+                performance_profiler.set_metadata(
+                    "modal.preload_models", self.preload_models
+                )
+
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 if obj.error_message:
@@ -619,6 +657,14 @@ if modal is not None:
                 logger.warning("Unhandled exception: %s", exc)
             finally:
                 watchdog.stop()
+                if performance_profiler is not None:
+                    try:
+                        performance_profiler.flush(force=True)
+                    except Exception:
+                        logger.warning(
+                            "Could not flush Modal performance profile",
+                            exc_info=True,
+                        )
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(

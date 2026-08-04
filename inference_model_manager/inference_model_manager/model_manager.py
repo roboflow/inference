@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.dispatch import _get_registry, invoke_task, resolve_task
+from inference_models.utils.performance import performance_profiler
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,10 @@ class ModelManager:
             max_workers=cfg.INFERENCE_DIRECT_MAX_WORKERS,
             thread_name_prefix="mm-worker",
         )
+        performance_profiler.set_metadata(
+            "manager.direct_max_workers", cfg.INFERENCE_DIRECT_MAX_WORKERS
+        )
+        performance_profiler.set_metadata("manager.n_slots", n_slots)
 
         # Pinned memory tracking: model_id → bytes used
         self._pinned_bytes: Dict[str, int] = {}
@@ -204,6 +209,14 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
+            performance_profiler.set_metadata("manager.model_id", model_id)
+            performance_profiler.set_metadata("manager.backend", backend)
+            performance_profiler.set_metadata("manager.device", b.device)
+            model = getattr(b, "model", None)
+            if model is not None:
+                performance_profiler.set_metadata(
+                    "manager.model_class", type(model).__name__
+                )
         finally:
             self._loading_ids.discard(model_id)
 
@@ -657,38 +670,92 @@ class ModelManager:
                     return entry.serializer(result, backend)
             return result
 
-        # Resolve task (validates it exists, raises ValueError if not)
-        task_name, _entry = resolve_task(backend.model, task)
+        task_setup_ns = 0
+        task_setup_started = performance_profiler.start()
+        try:
+            # Resolve task (validates it exists, raises ValueError if not)
+            task_name, _entry = resolve_task(backend.model, task)
+        finally:
+            if task_setup_started is not None:
+                task_setup_ns += time.perf_counter_ns() - task_setup_started
 
         n_images = 1
         if wire_marshalling:
-            kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
+            decode_started = performance_profiler.start()
+            performance_profiler.increment("manager.input_decode.calls")
+            try:
+                kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
+            finally:
+                performance_profiler.stop("manager.input_decode", decode_started)
 
-        # Validate kwargs through registry (if entry exists)
-        kwargs = _get_registry().validate(backend.model, task_name, kwargs)
+        task_setup_started = performance_profiler.start()
+        try:
+            # Validate kwargs through registry (if entry exists)
+            kwargs = _get_registry().validate(backend.model, task_name, kwargs)
+        finally:
+            if task_setup_started is not None:
+                task_setup_ns += time.perf_counter_ns() - task_setup_started
+                performance_profiler.record(
+                    "manager.task_setup", task_setup_ns / 1_000_000, "ms"
+                )
 
         t0 = time.monotonic()
         _begin = getattr(backend, "inflight_begin", None)
         if _begin is not None:
-            _begin()
+            inflight_started = performance_profiler.start()
+            try:
+                _begin()
+            finally:
+                performance_profiler.stop("manager.inflight_wait", inflight_started)
         try:
-            result = invoke_task(backend.model, task=task, **kwargs)
+            invoke_started = performance_profiler.start()
+            performance_profiler.increment("manager.model_invoke.calls")
+            try:
+                result = invoke_task(backend.model, task=task, **kwargs)
+            finally:
+                performance_profiler.stop("manager.model_invoke", invoke_started)
             if wire_marshalling:
                 # Inside the inflight/accounting window: per-image retries are
                 # inference too — unload drains must wait for them and their
                 # failures must count as errors.
                 images = kwargs.get("images")
+                retry_invoke_ns = 0
 
                 def _retry_single(index: int) -> Any:
+                    nonlocal retry_invoke_ns
                     single_kwargs = dict(kwargs)
                     single_kwargs["images"] = images[index]
-                    return invoke_task(backend.model, task=task, **single_kwargs)
+                    retry_started = performance_profiler.start()
+                    performance_profiler.increment("manager.model_invoke.calls")
+                    try:
+                        return invoke_task(backend.model, task=task, **single_kwargs)
+                    finally:
+                        if retry_started is not None:
+                            retry_ended = time.perf_counter_ns()
+                            retry_invoke_ns += retry_ended - retry_started
+                            performance_profiler.stop(
+                                "manager.model_invoke", retry_started, retry_ended
+                            )
 
-                result = self._wire_marshal_result(
-                    result,
-                    n_images,
-                    retry_single=_retry_single if isinstance(images, list) else None,
-                )
+                marshal_started = performance_profiler.start()
+                performance_profiler.increment("manager.result_marshal.calls")
+                try:
+                    result = self._wire_marshal_result(
+                        result,
+                        n_images,
+                        retry_single=(
+                            _retry_single if isinstance(images, list) else None
+                        ),
+                    )
+                finally:
+                    if marshal_started is not None:
+                        marshal_ended = time.perf_counter_ns()
+                        performance_profiler.record(
+                            "manager.result_marshal",
+                            max(0, marshal_ended - marshal_started - retry_invoke_ns)
+                            / 1_000_000,
+                            "ms",
+                        )
         except Exception:
             backend.record_inference(t0, error=True)
             raise
@@ -722,16 +789,64 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If task is not supported by the model.
         """
-        return await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: self.process(
-                model_id,
-                task=task,
-                serialize=serialize,
-                wire_marshalling=wire_marshalling,
-                **kwargs,
-            ),
-        )
+        loop = asyncio.get_running_loop()
+        if not performance_profiler.enabled:
+            return await loop.run_in_executor(
+                None,
+                lambda: self.process(
+                    model_id,
+                    task=task,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    **kwargs,
+                ),
+            )
+
+        queue_started = performance_profiler.start()
+        return_started = [None]
+
+        def _run() -> Any:
+            performance_profiler.stop("manager.executor.queue", queue_started)
+            process_started = performance_profiler.start()
+            try:
+                return self.process(
+                    model_id,
+                    task=task,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    **kwargs,
+                )
+            finally:
+                process_ended = time.perf_counter_ns()
+                performance_profiler.stop(
+                    "manager.process.total", process_started, process_ended
+                )
+                return_started[0] = process_ended
+
+        try:
+            result = await loop.run_in_executor(None, _run)
+        except asyncio.CancelledError:
+            performance_profiler.increment("manager.executor.cancelled")
+            raise
+        except Exception:
+            executor_ended = time.perf_counter_ns()
+            performance_profiler.stop(
+                "manager.return", return_started[0], executor_ended
+            )
+            performance_profiler.stop(
+                "manager.executor.total", queue_started, executor_ended
+            )
+            performance_profiler.increment("manager.executor.errors")
+            raise
+        else:
+            executor_ended = time.perf_counter_ns()
+            performance_profiler.stop(
+                "manager.return", return_started[0], executor_ended
+            )
+            performance_profiler.stop(
+                "manager.executor.total", queue_started, executor_ended
+            )
+            return result
 
     def submit(
         self,

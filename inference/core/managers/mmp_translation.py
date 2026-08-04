@@ -96,6 +96,7 @@ from inference.core.utils.postprocess import (
 )
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference_models.utils.performance import performance_profiler
 
 # Static mirror of the (model_type, action) pairs registered by
 # inference_server/handlers/*/description.py. Kept as literals so the legacy
@@ -691,39 +692,68 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
     Never decodes pixels adapter-side: dims come from the ndarray shape or a
     header-only read; the MMP worker does the real decode.
     """
-    if isinstance(image, dict):
-        image_type = image.get("type")
-        value = image.get("value")
-    else:
-        image_type = getattr(image, "type", None)
-        value = getattr(image, "value", None)
-    if image_type == "base64":
-        data = _decode_base64_payload(value)
-        return data, _dims_from_header(data)
-    if image_type == "url":
-        data = fetch_image_bytes_from_url(value=value)
-        return data, _dims_from_header(data)
-    if image_type == "numpy":
-        if isinstance(value, np.ndarray):
-            array = load_image_from_numpy_object(value)
+    started = performance_profiler.start()
+    performance_profiler.increment("adapter.image_forward.calls")
+    try:
+        if isinstance(image, dict):
+            image_type = image.get("type")
+            value = image.get("value")
         else:
-            array = load_image_from_numpy_str(value)
-        buffer = io.BytesIO()
-        np.save(buffer, array, allow_pickle=False)
-        return buffer.getvalue(), (int(array.shape[1]), int(array.shape[0]))
-    if image_type == "numpy_object":
-        array = load_image_from_numpy_object(value)
-        success, encoded = cv2.imencode(".png", array)
-        if not success:
-            raise InputImageLoadError(
-                message="Could not encode numpy image as PNG.",
-                public_message="Could not encode input image.",
+            image_type = getattr(image, "type", None)
+            value = getattr(image, "value", None)
+        performance_profiler.set_metadata("adapter.image_type", image_type)
+        if image_type == "base64":
+            data = _decode_base64_payload(value)
+            dims = _dims_from_header(data)
+            _record_forwarded_image(data, dims)
+            return data, dims
+        if image_type == "url":
+            data = fetch_image_bytes_from_url(value=value)
+            dims = _dims_from_header(data)
+            _record_forwarded_image(data, dims)
+            return data, dims
+        if image_type == "numpy":
+            if isinstance(value, np.ndarray):
+                array = load_image_from_numpy_object(value)
+            else:
+                array = load_image_from_numpy_str(value)
+            buffer = io.BytesIO()
+            np.save(buffer, array, allow_pickle=False)
+            data = buffer.getvalue()
+            dims = (int(array.shape[1]), int(array.shape[0]))
+            _record_forwarded_image(data, dims)
+            return data, dims
+        if image_type == "numpy_object":
+            array = load_image_from_numpy_object(value)
+            performance_profiler.record(
+                "adapter.image.input_bytes", array.nbytes, "bytes"
             )
-        return encoded.tobytes(), (int(array.shape[1]), int(array.shape[0]))
-    raise InvalidImageTypeDeclared(
-        message=f"Image type '{image_type}' is not supported on the MMP path.",
-        public_message=f"Image type '{image_type}' is not supported on the MMP path.",
-    )
+            png_started = performance_profiler.start()
+            performance_profiler.increment("adapter.png_encode.calls")
+            try:
+                success, encoded = cv2.imencode(".png", array)
+                if not success:
+                    raise InputImageLoadError(
+                        message="Could not encode numpy image as PNG.",
+                        public_message="Could not encode input image.",
+                    )
+                data = encoded.tobytes()
+            finally:
+                performance_profiler.stop("adapter.png_encode", png_started)
+            dims = (int(array.shape[1]), int(array.shape[0]))
+            _record_forwarded_image(data, dims)
+            return data, dims
+        raise InvalidImageTypeDeclared(
+            message=f"Image type '{image_type}' is not supported on the MMP path.",
+            public_message=f"Image type '{image_type}' is not supported on the MMP path.",
+        )
+    finally:
+        performance_profiler.stop("adapter.image_forward", started)
+
+
+def _record_forwarded_image(data: bytes, dims: Tuple[int, int]) -> None:
+    performance_profiler.record("adapter.image.encoded_bytes", len(data), "bytes")
+    performance_profiler.record("adapter.image.pixels", dims[0] * dims[1], "pixels")
 
 
 _EMBEDDING_RESPONSE_CLASSES = {
