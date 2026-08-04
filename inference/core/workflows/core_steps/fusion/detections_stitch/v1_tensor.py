@@ -212,7 +212,7 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         iou_threshold: Optional[float],
     ) -> BlockResult:
         # Use reference image to ensure all masks have the same dimensions
-        reference_height, reference_width = reference_image.numpy_image.shape[:2]
+        reference_height, reference_width = read_image_shape(reference_image)
         resolution_wh = (reference_width, reference_height)
 
         re_aligned_predictions = []
@@ -237,6 +237,25 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         if overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
             return {"predictions": with_nms(detections=merged, threshold=iou_threshold)}
         return {"predictions": with_nmm(detections=merged, threshold=iou_threshold)}
+
+
+def read_image_shape(image: WorkflowImageData) -> Tuple[int, int]:
+    """(height, width) of the reference image without forcing a representation
+    conversion.
+
+    Reading ``.numpy_image`` here would materialise the ENTIRE frame - a
+    device->host transfer plus the host-side RGB->BGR pass - to obtain two
+    integers. In a tensor-mode SAHI workflow the slicer and the model both stay
+    on device, so this block is the first consumer to touch numpy and pays that
+    full cost once per reference image, on every frame. Mirrors the guard used
+    by ``transformations/dynamic_crop/v1_tensor``.
+    """
+    if image.is_tensor_materialised():
+        # tensor_image is CHW -> H=shape[1], W=shape[2]
+        tensor_image = image.tensor_image
+        return int(tensor_image.shape[1]), int(tensor_image.shape[2])
+    numpy_image = image.numpy_image
+    return int(numpy_image.shape[0]), int(numpy_image.shape[1])
 
 
 def retrieve_crop_offset(detections: TensorNativeDetections) -> Optional[np.ndarray]:
@@ -271,7 +290,7 @@ def manage_crops_metadata(
                 f"wrong step output plugged as input of this step."
             )
 
-    height, width = image.numpy_image.shape[:2]
+    height, width = read_image_shape(image)
     image_metadata = dict(image_metadata)
     image_metadata[IMAGE_DIMENSIONS_KEY] = [height, width]
     image_metadata = attach_parents_coordinates_to_image_metadata(
