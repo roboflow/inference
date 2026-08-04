@@ -22,6 +22,7 @@ from inference.core.active_learning.post_processing import (
 )
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_TAGS
+from inference.core.exceptions import InvalidNumpyInput
 from inference.core.roboflow_api import (
     annotate_image_at_roboflow,
     register_image_at_roboflow,
@@ -46,17 +47,11 @@ class PreparedRegistrationImage(NamedTuple):
 
     @property
     def scale_x(self) -> float:
-        original_width = self.original_size_wh[0]
-        if original_width <= 0:
-            return 1.0
-        return self.final_size_wh[0] / original_width
+        return self.final_size_wh[0] / self.original_size_wh[0]
 
     @property
     def scale_y(self) -> float:
-        original_height = self.original_size_wh[1]
-        if original_height <= 0:
-            return 1.0
-        return self.final_size_wh[1] / original_height
+        return self.final_size_wh[1] / self.original_size_wh[1]
 
 
 def execute_sampling(
@@ -129,6 +124,15 @@ def prepare_image_to_registration(
     jpeg_compression_level: int,
 ) -> PreparedRegistrationImage:
     original_size_wh = (int(image.shape[1]), int(image.shape[0]))
+    if original_size_wh[0] <= 0 or original_size_wh[1] <= 0:
+        width, height = original_size_wh
+        raise InvalidNumpyInput(
+            message=(
+                "Could not prepare image for registration because its dimensions "
+                f"are invalid: width={width}, height={height}."
+            ),
+            public_message="Image width and height must both be greater than zero.",
+        )
     if desired_size is not None:
         image = downscale_image_keeping_aspect_ratio(
             image=image,
@@ -136,9 +140,7 @@ def prepare_image_to_registration(
         )
     final_size_wh = (int(image.shape[1]), int(image.shape[0]))
     # Height ratio kept for Active Learning callers that still expect a single factor.
-    scaling_factor = (
-        1.0 if original_size_wh[1] <= 0 else final_size_wh[1] / original_size_wh[1]
-    )
+    scaling_factor = final_size_wh[1] / original_size_wh[1]
     return PreparedRegistrationImage(
         encoded_image=encode_image_to_jpeg_bytes(
             image=image, jpeg_quality=jpeg_compression_level

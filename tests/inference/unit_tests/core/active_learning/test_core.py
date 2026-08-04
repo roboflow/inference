@@ -25,7 +25,7 @@ from inference.core.active_learning.entities import (
     StrategyLimit,
     StrategyLimitType,
 )
-from inference.core.exceptions import RoboflowAPIConnectionError
+from inference.core.exceptions import InvalidNumpyInput, RoboflowAPIConnectionError
 
 
 def test_execute_sampling() -> None:
@@ -115,6 +115,29 @@ def test_prepare_image_to_registration_reports_anisotropic_scales() -> None:
     assert abs(result.scale_x - result.scale_y) > 1e-4
     # Historical single factor remains the height ratio for Active Learning BC
     assert abs(result.scaling_factor - result.scale_y) < 1e-9
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        np.zeros((0, 10, 3), dtype=np.uint8),
+        np.zeros((10, 0, 3), dtype=np.uint8),
+    ],
+)
+def test_prepare_image_to_registration_rejects_empty_image_dimensions(
+    image: np.ndarray,
+) -> None:
+    with pytest.raises(InvalidNumpyInput) as error:
+        prepare_image_to_registration(
+            image=image,
+            desired_size=None,
+            jpeg_compression_level=95,
+        )
+
+    assert (
+        error.value.get_public_error_details()
+        == "Image width and height must both be greater than zero."
+    )
 
 
 @mock.patch.object(core, "ACTIVE_LEARNING_TAGS", None)
