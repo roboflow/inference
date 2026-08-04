@@ -8,6 +8,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      mmp-configuration:
+        description: "Legacy MMP adapter configuration"
+        type: choice
+        default: mmp
+        options:
+          - mmp
+          - bundled-subprocess
+          - bundled-direct
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -55,6 +64,9 @@ jobs:
         run: python -m pytest tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Unit Tests of Inference Managers (LEGACY_MMP_ADAPTER_ENABLED=true)
         timeout-minutes: 10
+        env:
+          LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
+          LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
         run: LEGACY_MMP_ADAPTER_ENABLED=true python -m pytest tests/inference/unit_tests/core/managers
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5

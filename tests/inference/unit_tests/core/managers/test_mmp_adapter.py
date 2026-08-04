@@ -1872,6 +1872,9 @@ def test_default_client_is_built_with_adapter_budgets(monkeypatch):
     import sys
     import types
 
+    from inference.core.managers import mmp_adapter as adapter_module
+
+    monkeypatch.setattr(adapter_module, "LEGACY_MMP_ADAPTER_MODE", "mmp")
     captured = {}
 
     class RecordingClient:

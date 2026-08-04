@@ -14,11 +14,22 @@ on:
           - all
           - "true"
           - "false"
+      mmp-configuration:
+        description: "Legacy MMP adapter configuration"
+        type: choice
+        default: mmp
+        options:
+          - mmp
+          - bundled-subprocess
+          - bundled-direct
 jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on:
       group: group8core
+    env:
+      LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
+      LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
     strategy:
       matrix:
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
