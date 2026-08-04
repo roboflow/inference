@@ -123,7 +123,11 @@ class DirectBackend(Backend):
 
     def _decode_input(self, raw_input: Any) -> Any:
         if isinstance(raw_input, (bytes, bytearray)):
-            return self._decode(raw_input)
+            decoded = self._decode(raw_input)
+            if self._decoder_name == "imagecodecs":
+                # inference_models defaults numpy inputs to BGR.
+                return decoded[..., ::-1].copy()
+            return decoded
         return raw_input
 
     def record_inference(self, t0: float, error: bool = False) -> None:
