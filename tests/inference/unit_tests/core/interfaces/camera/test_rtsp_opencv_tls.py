@@ -127,7 +127,6 @@ def test_opencv_rtsps_tls_env_restores_previous(
 
 
 def test_opencv_rtsps_tls_env_serializes_concurrent_opens() -> None:
-<<<<<<< HEAD
     """Concurrent opens must not overlap inside the env context.
 
     The previous Barrier-based version deadlocked: both workers waited on the
@@ -173,33 +172,3 @@ def test_opencv_rtsps_tls_env_serializes_concurrent_opens() -> None:
             os.environ.pop(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, None)
         else:
             os.environ[RTSP_TLS_VALIDATION_FLAGS_ENV_VAR] = previous_flags
-=======
-    # The context manager holds its lock across the yield (set -> open ->
-    # restore), so no cross-thread rendezvous may happen INSIDE the `with`
-    # block - a barrier there deadlocks. Serialization is asserted instead by
-    # checking the two workers were never inside the context simultaneously.
-    os.environ.pop(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, None)
-    observed: list[str] = []
-    inside: list[str] = []
-    overlaps: list[int] = []
-
-    def worker(video: str) -> None:
-        with opencv_rtsps_tls_env(video):
-            inside.append(video)
-            overlaps.append(len(inside))
-            observed.append(os.environ[OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR])
-            time.sleep(0.05)
-            inside.remove(video)
-
-    first = threading.Thread(target=worker, args=("rtsps://first/stream",))
-    second = threading.Thread(target=worker, args=("rtsps://second/stream",))
-    first.start()
-    second.start()
-    first.join()
-    second.join()
-
-    assert max(overlaps) == 1, "opens must be serialized, never concurrent"
-    assert len(observed) == 2
-    assert all("rtsp_transport;tcp" in value for value in observed)
-    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
->>>>>>> main
