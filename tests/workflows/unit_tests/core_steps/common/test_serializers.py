@@ -549,6 +549,23 @@ def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
     assert (ys.max() - ys.min()) >= 30
 
 
+def test_mask_to_polygon_when_mask_contains_hole() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[10:110, 20:100] = 255
+    mask[20:100, 30:90] = 0
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then — RETR_TREE returns both contours; the exterior must be selected
+    xs, ys = result[:, 0], result[:, 1]
+    assert xs.min() == 20
+    assert xs.max() == 99
+    assert ys.min() == 10
+    assert ys.max() == 109
+
+
 def test_serialise_image_with_parent_origin_when_crop() -> None:
     # given
     np_image = np.zeros((100, 100, 3), dtype=np.uint8)
