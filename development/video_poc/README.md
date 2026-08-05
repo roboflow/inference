@@ -23,7 +23,10 @@ Components in this folder (branch `hansent/video-poc`):
   (`batch` = every frame as fast as possible; `stream` = real-time with drops, files
   replayed via `ffmpeg -re` through mediamtx), splits outputs into an SSE events stream
   (images redacted to refs) and per-output MJPEG previews (`/preview.mjpeg?output=`,
-  available outputs advertised in `/status`).
+  available outputs advertised in `/status`). Managed-pool claims carry a
+  platform-minted `processorAccessToken`; job endpoints require it as a Bearer
+  token (or `access_token` query parameter for native browser media elements).
+  Bare `/status` and `/metrics` expose only aggregate health/metrics without auth.
 - `mediamtx.yml`, `fetch-deps.sh`, `bin/` — local media plane (RTSP ingest :8554, WHEP :8889).
 
 The platform half lives in the `roboflow` repo (branch `hansent/video-sources-poc`):

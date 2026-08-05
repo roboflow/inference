@@ -175,7 +175,7 @@ Security deltas (staging-appropriate, do not skip #9):
 | # | Item | Plan |
 |---|---|---|
 | 9 | relay publish auth | mediamtx `authInternalUsers`: require user/pass to **publish**; platform embeds creds in ingest URLs (`rtsp://user:pass@video-ingest...`) — connector and processor sim-replay pass them through ffmpeg unchanged. Read (WHEP) stays open for the demo. This kills "anyone can push video into our cluster" |
-| 10 | processor endpoints | open for the demo (CORS `*` already), gateway host is obscure. Day-2: shared bearer token checked by the processor, injected by the platform into `processorUrl` responses |
+| 10 | processor endpoints | per-job token enforcement is implemented in the processor. Platform must mint `processorAccessToken`, include it in claim + authorized watch/access responses, and exclude it from job lists before the managed image rolls out. Bearer auth is preferred; `access_token` query is supported for native media elements. |
 | 11 | mediamtx API :9997 | keep `127.0.0.1` bind — never exposed |
 
 ## 5. Platform side (roboflow repo)

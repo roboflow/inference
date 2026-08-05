@@ -284,7 +284,9 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   ack-by-id) — same contract shape as device-manager healthchecks.
 - **`video_jobs`**: `{workspace, sourceId, sourceName, workflowUrl|workflowSpecification,
   imageOutput?, mode: batch|stream, streamKey (relay credential for sim-<jobId>,
-  never sent to browsers), state: queued|claimed|running|completed|error|cancelled,
+  never sent to browsers), processorAccessToken (processor HTTP credential,
+  returned only by an authorized job-access route),
+  state: queued|claimed|running|completed|error|cancelled,
   attempts (requeue counter, capped at 3), cancelRequested, processorId?,
   processorUrl?, heartbeatAt?, stats?, resultsFiles?/resultsUploadedAt? (GCS),
   error?, created_at, updated_at}`. The claim payload derives from this doc plus
@@ -329,13 +331,22 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   workspace-key auth and its workspace scoping — per-job scoped tokens remain
   the eventual hardening there. The fleet secret is the crown jewel: never
   user-facing.
-- **Processor HTTP has no auth** and CORS `*` — the gateway hostname is the only
-  barrier in staging. This is the top prod-readiness item. Planned shape: the
-  platform mints a per-job access token (same pattern as stream keys), returns it
-  with the job doc to authorized UI/API callers, and the processor (or the gateway)
-  checks it on `/events`, `/status`, `/preview.mjpeg`, `/results`. The job-addressed
-  events endpoint (§6) subsumes most of this for programmatic consumers, since the
-  platform authenticates at its own front door.
+- **Processor HTTP auth: processor side CLOSED; platform wiring required before
+  rollout.** The worker accepts `processorAccessToken` in each claim, removes it
+  from the retained workflow payload, and checks it per job on `/events`,
+  `/events/poll`, `/status`, `/preview.mjpeg`, and `/results`. Fetch clients should
+  send `Authorization: Bearer <token>`; native `<img>`/`<video>` consumers may use
+  `?access_token=<token>` (responses set `Referrer-Policy: no-referrer`). `/metrics`
+  and bare `/status` remain unauthenticated for scraping/readiness, but bare
+  `/status` returns only aggregate counts in managed mode. Managed workers default
+  token enforcement on when `VIDEO_PROC_SERVICE_SECRET` is present; explicit
+  `REQUIRE_JOB_ACCESS_TOKEN=true|false` overrides this for rollout/local testing.
+  The app must mint a high-entropy token at job creation, include it only in the
+  authorized job-access/watch response and claim payload, and strip it from all
+  list/general job serializers (alongside `streamKey`). Deploy that app contract
+  before deploying this processor image, or managed claims will fail closed.
+  The job-addressed platform events endpoint (§6) remains the preferred long-term
+  programmatic surface because the platform authenticates at its own front door.
 - **Nothing behind platform Traefik can stream** (staging deploy finding,
   2026-07-08): `crusoe/addons/traefik.tf` attaches the `buffering` middleware
   (`body-size-limit`, a 100MB request cap) to the whole websecure entrypoint,

@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir google-cloud-pubsub requests aiortc
 
 WORKDIR /app
 COPY processor.py /app/processor.py
+COPY security.py /app/security.py
 # low-latency RTSP ingest (PyAV, codec-level low_delay); without it the
 # processor silently falls back to cv2 ingest and its ~550ms decoder buffer
 COPY low_latency_producer.py /app/low_latency_producer.py

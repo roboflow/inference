@@ -5,12 +5,14 @@ Modes:
   --api-url ... --api-key ...  poll the platform for job assignments (videoJobs/claim contract)
 
 While a job runs, the processor exposes:
-  GET /status                worker + job state, timing/fps stats, and the image outputs
+  GET /status?job=           worker + job state, timing/fps stats, and the image outputs
                              it is redacting from events (imageOutputs) so clients can
                              attach to any of them after the job has started
-  GET /events                SSE stream of per-frame workflow outputs (images redacted to refs)
-  GET /preview.mjpeg?output= MJPEG stream of one image output (defaults to the job's
-                             designated output, switchable per-request)
+  GET /events?job=           SSE stream of per-frame workflow outputs
+                             (images redacted to refs)
+  GET /preview.mjpeg?job=&output=
+                             MJPEG stream of one image output (defaults to the
+                             job's designated output, switchable per-request)
   GET /results/<jobId>/...   persisted batch-job results: video.mp4 (annotated, Range
                              support for scrubbing), frames.jsonl (one line per frame,
                              aligned with the mp4 by index), meta.json (fps, frames);
@@ -22,14 +24,16 @@ Design notes (mirrors the video strategy deck):
   - events and pixels are split at the source; base64 image blobs never ride the events channel
   - the pipeline uses InferencePipeline's live-stream defaults (ADAPTIVE_DROP_OLDEST) so
     latency stays bounded at ~one inference time regardless of ingest rate
+  - managed-pool job endpoints require a platform-minted per-job token (Bearer header,
+    or access_token query parameter for native browser media elements); /metrics and the
+    aggregate /status readiness response contain no tenant data and remain
+    unauthenticated
 """
 
 import argparse
 import base64
-import collections
 import copy
 import json
-import logging
 import os
 import re
 import signal
@@ -45,9 +49,8 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-import requests
-
 import cv2
+import requests
 
 # ONNX Runtime sizes its intra-op thread pool to the NODE's cores (it can't
 # see cgroup limits) and busy-spins them: one CPU session then burns the whole
@@ -89,6 +92,16 @@ try:
     from low_latency_producer import LowLatencyRtspProducer
 except Exception:  # PyAV missing: fall back to cv2 URL ingest
     LowLatencyRtspProducer = None
+
+from security import (
+    DiagnosticRing,
+    JobSecurityRegistry,
+    MissingJobAccessToken,
+    env_flag,
+    extract_access_token,
+    sanitize_diagnostic,
+    validate_job_id,
+)
 
 
 def _parse_capture_options(options):
@@ -137,7 +150,6 @@ RESULT_FILES = {
     "frames.jsonl": "application/x-ndjson",
     "meta.json": "application/json",
 }
-JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def utcnow_iso() -> str:
@@ -197,31 +209,6 @@ class Stats:
             if self.job_received_at and self.first_result_at:
                 out["timeToFirstResultS"] = round(self.first_result_at - self.job_received_at, 2)
             return out
-
-
-class LogRing(logging.Handler):
-    """Last-N log lines (root logger: libav, inference, our own notes) so a
-    failure report can carry the context that actually explains it — the log
-    dies with the pod otherwise."""
-
-    def __init__(self, capacity=150):
-        super().__init__()
-        self.buf = collections.deque(maxlen=capacity)
-        self.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-
-    def emit(self, record):
-        try:
-            self.buf.append(self.format(record))
-        except Exception:
-            pass
-
-    def note(self, line):
-        for part in str(line).splitlines():
-            if part.strip():
-                self.buf.append(part)
-
-    def tail(self, n=40):
-        return list(self.buf)[-n:]
 
 
 class EventBus:
@@ -338,11 +325,15 @@ class JobRecorder:
     the JSON with the video while scrubbing.
     """
 
-    def __init__(self, job_id: str):
-        self.job_id = job_id
-        self.dir = os.path.join(RESULTS_ROOT, job_id)
-        os.makedirs(self.dir, exist_ok=True)
-        self.events_file = open(os.path.join(self.dir, "frames.jsonl"), "w")
+    def __init__(self, job_id: str, security: JobSecurityRegistry):
+        self.job_id = validate_job_id(job_id)
+        os.makedirs(RESULTS_ROOT, exist_ok=True)
+        # The claimed job ID never participates in a filesystem path. HTTP
+        # result lookup uses the registry below, keyed separately by job ID.
+        self.dir = tempfile.mkdtemp(prefix="job-", dir=RESULTS_ROOT)
+        self.paths = {name: os.path.join(self.dir, name) for name in RESULT_FILES}
+        security.register_result_paths(self.job_id, self.paths)
+        self.events_file = open(self.paths["frames.jsonl"], "w")
         self.ffmpeg = None
         self.fps = None
         self.frames = 0
@@ -373,14 +364,18 @@ class JobRecorder:
                             "-framerate", str(self.fps), "-i", "-",
                             "-c:v", "libx264", "-preset", "veryfast",
                             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                            os.path.join(self.dir, "video.mp4"),
+                            self.paths["video.mp4"],
                         ],
                         stdin=subprocess.PIPE,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
                 except OSError as exc:
-                    print(f"[processor] result recording disabled: {exc}", file=sys.stderr)
+                    print(
+                        f"[processor] result recording disabled: "
+                        f"{sanitize_diagnostic(exc)}",
+                        file=sys.stderr,
+                    )
                     self.video_failed = True
                     return
             try:
@@ -414,7 +409,7 @@ class JobRecorder:
                 "videoFrames": self.video_frames,
                 "hasVideo": self.ffmpeg is not None and not self.video_failed,
             }
-            with open(os.path.join(self.dir, "meta.json"), "w") as f:
+            with open(self.paths["meta.json"], "w") as f:
                 json.dump(meta, f)
 
 
@@ -489,7 +484,11 @@ class OutputPublisher:
                 stderr=subprocess.DEVNULL,
             )
         except OSError as exc:
-            print(f"[processor] output publisher failed to start: {exc}", file=sys.stderr)
+            print(
+                f"[processor] output publisher failed to start: "
+                f"{sanitize_diagnostic(exc)}",
+                file=sys.stderr,
+            )
             return
         self._proc = proc
         if not self._consuming:
@@ -595,7 +594,10 @@ class AiortcWhipPublisher:
         try:
             loop.run_until_complete(self._publish(loop))
         except Exception as exc:
-            print(f"[processor] whip publisher error: {exc}", file=sys.stderr)
+            print(
+                f"[processor] whip publisher error: {sanitize_diagnostic(exc)}",
+                file=sys.stderr,
+            )
             self._failed = True
         finally:
             try:
@@ -757,7 +759,11 @@ class PodSelf:
             resp.raise_for_status()
             print(f"[processor] detached from ready pool (job {job_id}); pool will refill")
         except Exception as exc:
-            print(f"[processor] pool detach failed (continuing): {exc}", file=sys.stderr)
+            print(
+                f"[processor] pool detach failed (continuing): "
+                f"{sanitize_diagnostic(exc)}",
+                file=sys.stderr,
+            )
 
     def is_detached(self):
         """True when this pod is already labeled pool=working — meaning this
@@ -787,7 +793,11 @@ class PodSelf:
             print("[processor] job over — retiring this pod")
             return True
         except Exception as exc:
-            print(f"[processor] self-delete failed; staying alive: {exc}", file=sys.stderr)
+            print(
+                f"[processor] self-delete failed; staying alive: "
+                f"{sanitize_diagnostic(exc)}",
+                file=sys.stderr,
+            )
             return False
 
 
@@ -800,7 +810,10 @@ class JobRun:
     def __init__(self, worker, job):
         self.worker = worker
         self.job = job
-        self.job_id = str(job.get("id", "local"))
+        self.job_id = validate_job_id(job.get("id", "local"))
+        # Never attach a process-wide logging handler here: this process can run
+        # several tenants concurrently and root-log records carry no job ID.
+        self.log_ring = DiagnosticRing()
         self.state = "starting"
         self.image_output = job.get("imageOutput")
         # set while stop() tears the job down, so the pipeline-end watcher knows
@@ -900,7 +913,10 @@ class JobRun:
 
         source_url = job["sourceUrl"]
         mode = job.get("mode") or ("batch" if source_url.startswith("http") else "stream")
-        print(f"[processor] starting job {self.job_id} ({mode}) on {source_url}")
+        print(
+            f"[processor] starting job {self.job_id} ({mode}) on "
+            f"{sanitize_diagnostic(source_url)}"
+        )
 
         video_reference = source_url
         pipeline_kwargs = {}
@@ -913,7 +929,7 @@ class JobRun:
             pipeline_kwargs["video_source_properties"] = {"buffersize": float(buffersize)}
         if mode == "batch":
             # Record results so the UI can scrub them after the job completes.
-            self.recorder = JobRecorder(self.job_id)
+            self.recorder = JobRecorder(self.job_id, self.worker.security)
             # Batch means the WHOLE file, once: download it to a local path first.
             # A URL fails VideoSource's is_file check (os.path.exists), which has
             # two effects — stream buffer strategies (frames silently dropped) and,
@@ -924,13 +940,14 @@ class JobRun:
                 try:
                     video_reference = self._download_source(source_url)
                 except Exception as exc:
-                    print(f"[processor] source download failed: {exc}", file=sys.stderr)
-                    self.worker.report_job_failure(job, f"source download failed: {exc}")
+                    error = f"source download failed: {sanitize_diagnostic(exc)}"
+                    print(f"[processor] {error}", file=sys.stderr)
+                    self.report_failure(error)
                     self._finalize_recorder()
                     self._cleanup_download()
                     with self.lock:
                         self.state = "error"
-                        self.job = {**job, "error": f"source download failed: {exc}"}
+                        self.job = {**job, "error": error}
                     # transient or not, same recovery as the sibling failure
                     # paths: free the slot, let the reaper requeue (attempts-
                     # capped); other runs on this worker keep going
@@ -962,11 +979,12 @@ class JobRun:
                 )
                 time.sleep(2.0)  # let the publisher register with the relay
             except OSError as exc:
-                print(f"[processor] could not start ffmpeg replay: {exc}", file=sys.stderr)
-                self.worker.report_job_failure(job, f"ffmpeg replay failed: {exc}")
+                error = f"ffmpeg replay failed: {sanitize_diagnostic(exc)}"
+                print(f"[processor] {error}", file=sys.stderr)
+                self.report_failure(error)
                 with self.lock:
                     self.state = "error"
-                    self.job = {**job, "error": f"ffmpeg replay failed: {exc}"}
+                    self.job = {**job, "error": error}
                 # deliberately NOT reported as terminal: failures here are often
                 # transient (relay stream not up yet) — freeing the slot lets
                 # the reaper requeue the job, and the attempts cap handles
@@ -988,7 +1006,7 @@ class JobRun:
             rtsp_url = video_reference
             av_options = _parse_capture_options(capture_options)
             video_reference = lambda: LowLatencyRtspProducer(rtsp_url, av_options)
-            print(f"[processor] low-latency ingest for {rtsp_url}")
+            print(f"[processor] low-latency ingest for {sanitize_diagnostic(rtsp_url)}")
 
         # cv2 reads capture options from process-global env at capture-open time
         # (inside init_with_workflow) — a shared resource now that jobs run
@@ -1032,9 +1050,11 @@ class JobRun:
                 daemon=True,
             ).start()
         except Exception as exc:
-            print(f"[processor] job failed to start: {exc}", file=sys.stderr)
-            self.worker.log_ring.note(traceback.format_exc())
-            self.worker.report_job_failure(job, f"workflow failed to start: {exc}")
+            safe_error = sanitize_diagnostic(exc)
+            print(f"[processor] job failed to start: {safe_error}", file=sys.stderr)
+            self.report_failure(
+                f"workflow failed to start: {safe_error}", traceback.format_exc()
+            )
             pipeline, self.pipeline = self.pipeline, None
             if pipeline is not None:
                 try:
@@ -1047,7 +1067,7 @@ class JobRun:
             self._cleanup_download()
             with self.lock:
                 self.state = "error"
-                self.job = {**job, "error": str(exc)}
+                self.job = {**job, "error": safe_error}
             # see the replay-failure comment above: free the slot → reaper
             # requeues; a bad workflow must not kill its neighbor runs
             self.worker.maybe_retire()
@@ -1084,12 +1104,18 @@ class JobRun:
                 f"[processor] stream pipeline for job {self.job_id} ended unexpectedly; releasing job",
                 file=sys.stderr,
             )
-            self.worker.report_job_failure(
-                self.job,
+            self.report_failure(
                 "stream pipeline ended unexpectedly (source stream lost or workflow crashed"
                 " — see logTail)",
             )
             self.worker.finish_run(self)
+
+    def report_failure(self, message, traceback_text=None):
+        """Report only diagnostics explicitly produced by this job."""
+        if traceback_text:
+            self.log_ring.note(traceback_text)
+        self.log_ring.note(f"[processor] {message}")
+        self.worker.report_job_failure(self.job, message, self.log_ring.tail())
 
     def _upload_results(self):
         """Move finished batch results to durable storage via platform-signed URLs.
@@ -1100,11 +1126,14 @@ class JobRun:
         """
         if not self.worker.args.api_url:
             return
-        rdir = os.path.join(RESULTS_ROOT, self.job_id)
-        files = [f for f in RESULT_FILES if os.path.isfile(os.path.join(rdir, f))]
+        paths = {
+            name: self.worker.security.result_path(self.job_id, name)
+            for name in RESULT_FILES
+        }
+        files = [name for name, path in paths.items() if path and os.path.isfile(path)]
         # a failed encode leaves an unplayable mp4 (no moov atom) — don't ship it
-        meta_path = os.path.join(rdir, "meta.json")
-        if "video.mp4" in files and os.path.isfile(meta_path):
+        meta_path = paths["meta.json"]
+        if "video.mp4" in files and meta_path and os.path.isfile(meta_path):
             try:
                 with open(meta_path) as f:
                     if not json.load(f).get("hasVideo"):
@@ -1125,7 +1154,7 @@ class JobRun:
                 url = uploads.get(name)
                 if not url:
                     continue
-                with open(os.path.join(rdir, name), "rb") as fh:
+                with open(paths[name], "rb") as fh:
                     # v4 signed PUT with no bound content type: send no
                     # Content-Type header (requests omits it for file bodies)
                     r = requests.put(url, data=fh, timeout=300)
@@ -1139,7 +1168,11 @@ class JobRun:
                 )
                 print(f"[processor] uploaded results for {self.job_id}: {', '.join(uploaded)}")
         except Exception as exc:
-            print(f"[processor] results upload failed (kept locally): {exc}", file=sys.stderr)
+            print(
+                f"[processor] results upload failed (kept locally): "
+                f"{sanitize_diagnostic(exc)}",
+                file=sys.stderr,
+            )
 
     def _finalize_recorder(self):
         recorder, self.recorder = self.recorder, None
@@ -1200,7 +1233,11 @@ class JobRun:
                     pipeline.terminate()
                     pipeline.join()
                 except Exception as exc:
-                    print(f"[processor] error during terminate: {exc}", file=sys.stderr)
+                    print(
+                        f"[processor] error during terminate: "
+                        f"{sanitize_diagnostic(exc)}",
+                        file=sys.stderr,
+                    )
             self._stop_sim_process()
             self._finalize_recorder()
             self._cleanup_download()
@@ -1351,8 +1388,13 @@ class Worker:
         self.capture_env_lock = threading.Lock()
         self._pubsub_client = None
         self._stop_requested = False
-        self.log_ring = LogRing()
-        logging.getLogger().addHandler(self.log_ring)
+        # Managed fleet jobs must be inaccessible without their platform-minted
+        # token. Local/self-hosted mode remains compatible unless explicitly
+        # opted in with REQUIRE_JOB_ACCESS_TOKEN=true.
+        managed_pool = bool(os.getenv("VIDEO_PROC_SERVICE_SECRET"))
+        self.security = JobSecurityRegistry(
+            require_tokens=env_flag("REQUIRE_JOB_ACCESS_TOKEN", managed_pool)
+        )
 
     # ---------- run bookkeeping ----------
 
@@ -1405,27 +1447,35 @@ class Worker:
 
     # ---------- job failure reporting ----------
 
-    def report_job_failure(self, job, message):
+    def report_job_failure(self, job, message, log_tail=None):
         """Best-effort: persist why this attempt died (message + recent log
         tail) on the job doc BEFORE the run is torn down. state="failing"
         records the error without terminally failing the job — the platform's
         attempts cap decides when to stop requeueing."""
-        self.log_ring.note(f"[processor] {message}")
         if not self.args.api_url or not job or not job.get("id"):
             return
+        diagnostics = DiagnosticRing()
+        if log_tail:
+            for line in log_tail:
+                diagnostics.note(line)
+        else:
+            diagnostics.note(f"[processor] {message}")
         try:
             self.api(
                 "POST",
                 f"/video-jobs/{job['id']}/status",
                 json={
                     "state": "failing",
-                    "error": str(message)[:2000],
-                    "logTail": self.log_ring.tail(),
+                    "error": sanitize_diagnostic(message)[:2000],
+                    "logTail": diagnostics.tail(),
                     "processorId": self.processor_id,
                 },
             )
         except Exception as exc:
-            print(f"[processor] failure report failed: {exc}", file=sys.stderr)
+            print(
+                f"[processor] failure report failed: {sanitize_diagnostic(exc)}",
+                file=sys.stderr,
+            )
 
     def status(self, job_id=None) -> dict:
         """Without ?job=: aggregate doc plus the default run's fields inline
@@ -1448,6 +1498,16 @@ class Worker:
         else:
             doc.update({"state": "idle", "job": None})
         return doc
+
+    def health_status(self) -> dict:
+        """Non-sensitive readiness response for unauthenticated pool probes."""
+        return {
+            "state": "ready",
+            "tier": self.tier,
+            "capacity": self.capacity,
+            "activeJobs": self.active_count(),
+            "retiring": self.retiring,
+        }
 
     # ---------- platform polling ----------
 
@@ -1494,6 +1554,15 @@ class Worker:
             job = resp.get("job")
             if not job:
                 return None
+            # The access token is transport authorization, not workflow input.
+            # Remove it before the job dict is retained or surfaced by status.
+            job = dict(job)
+            access_token = job.pop("processorAccessToken", None)
+            try:
+                self.security.register_job(job.get("id"), access_token)
+            except (MissingJobAccessToken, ValueError) as exc:
+                self.report_job_failure(job, str(exc))
+                return job
             if not self.had_job:
                 self.had_job = True
                 # leave the ready pool BEFORE the (slow) pipeline start so the
@@ -1579,7 +1648,11 @@ class Worker:
                             },
                         )
                     except requests.RequestException as exc:
-                        print(f"[processor] poll error for job {run.job_id}: {exc}", file=sys.stderr)
+                        print(
+                            f"[processor] poll error for job {run.job_id}: "
+                            f"{sanitize_diagnostic(exc)}",
+                            file=sys.stderr,
+                        )
                         continue
                     if run.state == "completed":
                         print(f"[processor] completed job {run.job_id} reported")
@@ -1592,11 +1665,17 @@ class Worker:
                 self._fresh_claim_holdoff()
                 self.try_claim()
             except requests.RequestException as exc:
-                print(f"[processor] poll error: {exc}", file=sys.stderr)
+                print(
+                    f"[processor] poll error: {sanitize_diagnostic(exc)}",
+                    file=sys.stderr,
+                )
             except Exception as exc:
                 # the poll loop is the worker's heartbeat and cancel channel —
                 # it must survive anything
-                print(f"[processor] poll loop error: {exc}", file=sys.stderr)
+                print(
+                    f"[processor] poll loop error: {sanitize_diagnostic(exc)}",
+                    file=sys.stderr,
+                )
             time.sleep(POLL_INTERVAL_S)
 
     def stop_all(self):
@@ -1608,6 +1687,9 @@ class Worker:
             with open(self.args.job_file) as f:
                 job = json.load(f)
             job.setdefault("id", "local-job")
+            job = dict(job)
+            access_token = job.pop("processorAccessToken", None)
+            self.security.register_job(job["id"], access_token)
             run = JobRun(self, job)
             with self.runs_lock:
                 self.runs[run.job_id] = run
@@ -1639,19 +1721,59 @@ def make_handler(worker: Worker):
         def _cors(self):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("Referrer-Policy", "no-referrer")
 
         def _job_param(self):
             query = parse_qs(urlparse(self.path).query)
             return (query.get("job") or [None])[0]
 
+        def _authorize(self, job_id):
+            token = extract_access_token(
+                self.headers.get("Authorization", ""), self.path
+            )
+            if worker.security.authorize(job_id, token):
+                return True
+            self.send_response(401)
+            self._cors()
+            self.send_header("WWW-Authenticate", "Bearer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+
+        def _authorized_run(self):
+            job_id = self._job_param()
+            if worker.security.require_tokens and not job_id:
+                self._authorize("")
+                return None
+            if job_id and not self._authorize(job_id):
+                return None
+            run = worker.resolve_run(job_id)
+            if run is None:
+                self._not_found()
+                return None
+            if not job_id and not self._authorize(run.job_id):
+                return None
+            return run
+
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/status":
                 job_id = self._job_param()
-                if job_id and worker.resolve_run(job_id) is None:
-                    self._not_found()
-                    return
-                body = json.dumps(worker.status(job_id), default=str).encode()
+                if job_id:
+                    if not self._authorize(job_id):
+                        return
+                    run = worker.resolve_run(job_id)
+                    if run is None:
+                        self._not_found()
+                        return
+                    status = worker.status(job_id)
+                elif worker.security.require_tokens:
+                    # Kubernetes readiness needs an unauthenticated endpoint,
+                    # but must not receive tenant/job identifiers.
+                    status = worker.health_status()
+                else:
+                    status = worker.status()
+                body = json.dumps(status, default=str).encode()
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "application/json")
@@ -1667,14 +1789,13 @@ def make_handler(worker: Worker):
                     cursor = int((query.get("cursor") or [None])[0])
                 except (TypeError, ValueError):
                     cursor = None
-                run = worker.resolve_run(self._job_param())
+                run = self._authorized_run()
                 if run is None:
-                    body = ('{"cursor": %d, "events": []}' % (cursor or 0)).encode()
-                else:
-                    events, new_cursor = run.events.since(cursor)
-                    body = (
-                        '{"cursor": %d, "events": [%s]}' % (new_cursor, ",".join(events))
-                    ).encode()
+                    return
+                events, new_cursor = run.events.since(cursor)
+                body = (
+                    '{"cursor": %d, "events": [%s]}' % (new_cursor, ",".join(events))
+                ).encode()
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "application/json")
@@ -1683,9 +1804,8 @@ def make_handler(worker: Worker):
                 self.end_headers()
                 self.wfile.write(body)
             elif path == "/events":
-                run = worker.resolve_run(self._job_param())
+                run = self._authorized_run()
                 if run is None:
-                    self._not_found()
                     return
                 self.send_response(200)
                 self._cors()
@@ -1712,7 +1832,9 @@ def make_handler(worker: Worker):
             elif path == "/preview.mjpeg":
                 query = parse_qs(urlparse(self.path).query)
                 requested_output = (query.get("output") or [None])[0]
-                job_id = self._job_param()
+                run = self._authorized_run()
+                if run is None:
+                    return
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
@@ -1722,14 +1844,7 @@ def make_handler(worker: Worker):
                 seq = -1
                 min_interval = 1.0 / MJPEG_MAX_FPS
                 last_sent = 0.0
-                run = None
                 try:
-                    # a stream can open before its job is claimed (or before
-                    # the first result exists): wait for both to appear
-                    while run is None:
-                        run = worker.resolve_run(job_id)
-                        if run is None:
-                            time.sleep(0.2)
                     run.frames.add_consumer()
                     try:
                         while True:
@@ -1780,14 +1895,15 @@ def make_handler(worker: Worker):
                 # batch-job results. Range support is what makes <video> scrubbing
                 # work: the browser seeks by requesting byte ranges of the mp4.
                 parts = path.split("/")
-                if (
-                    len(parts) == 4
-                    and JOB_ID_RE.match(parts[2])
-                    and parts[3] in RESULT_FILES
-                ):
-                    fpath = os.path.join(RESULTS_ROOT, parts[2], parts[3])
-                    if os.path.isfile(fpath):
-                        self._serve_file(fpath, RESULT_FILES[parts[3]])
+                if len(parts) == 4 and parts[3] in RESULT_FILES:
+                    job_id, filename = parts[2], parts[3]
+                    if not self._authorize(job_id):
+                        return
+                    # Resolve through the recorder-populated registry. Request
+                    # path segments never participate in a filesystem path.
+                    fpath = worker.security.result_path(job_id, filename)
+                    if fpath is not None and os.path.isfile(fpath):
+                        self._serve_file(fpath, RESULT_FILES[filename])
                         return
                 self._not_found()
             else:
@@ -1845,6 +1961,7 @@ def make_handler(worker: Worker):
             self.send_response(204)
             self._cors()
             self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Range")
             self.send_header("Content-Length", "0")
             self.end_headers()
 
