@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from inspect import signature
 from queue import Queue
 from threading import Event, Thread
 from unittest import mock
@@ -198,6 +199,29 @@ def test_video_source_forwards_options_to_default_producer() -> None:
         "rtsps://camera.example.test/live",
         output_tensor=True,
         producer_options={"rtsp_tls_validation_flags": 0},
+    )
+
+
+def test_video_source_init_preserves_legacy_positional_parameter_order() -> None:
+    legacy_parameters = (
+        "video_reference",
+        "buffer_size",
+        "status_update_handlers",
+        "buffer_filling_strategy",
+        "buffer_consumption_strategy",
+        "adaptive_mode_stream_pace_tolerance",
+        "adaptive_mode_reader_pace_tolerance",
+        "minimum_adaptive_mode_samples",
+        "maximum_adaptive_frames_dropped_in_row",
+        "video_source_properties",
+        "source_id",
+        "desired_fps",
+        "allow_tensor_frames",
+    )
+
+    assert tuple(signature(VideoSource.init).parameters) == (
+        *legacy_parameters,
+        "video_source_options",
     )
 
 

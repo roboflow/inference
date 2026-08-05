@@ -36,10 +36,10 @@ def prepare_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
-    video_source_options: Optional[VideoSourceOptions] = None,
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
+    video_source_options: Optional[VideoSourceOptions] = None,
 ) -> List[VideoSource]:
     video_reference = wrap_in_list(element=video_reference)
     if len(video_reference) < 1:
@@ -94,13 +94,13 @@ def broadcast_elements(
 def initialise_video_sources(
     video_reference: List[VideoSourceIdentifier],
     video_source_properties: List[Optional[Dict[str, float]]],
-    video_source_options: List[Optional[Dict[str, object]]],
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
+    video_source_options: Optional[List[Optional[Dict[str, object]]]] = None,
 ) -> List[VideoSource]:
     if isinstance(source_buffer_filling_strategy, str):
         source_buffer_filling_strategy = BufferFillingStrategy(
@@ -110,6 +110,8 @@ def initialise_video_sources(
         source_buffer_consumption_strategy = BufferConsumptionStrategy(
             source_buffer_consumption_strategy
         )
+    if video_source_options is None:
+        video_source_options = [None] * len(video_reference)
     return [
         VideoSource.init(
             video_reference=reference,

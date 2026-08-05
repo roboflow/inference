@@ -124,7 +124,6 @@ class InferencePipeline:
         video_source_properties: Optional[
             Union[Dict[str, float], List[Optional[Dict[str, float]]]]
         ] = None,
-        video_source_options: Optional[VideoSourceOptions] = None,
         active_learning_target_dataset: Optional[str] = None,
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
@@ -133,6 +132,7 @@ class InferencePipeline:
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         exec_session_id: Optional[str] = None,
+        video_source_options: Optional[VideoSourceOptions] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -370,7 +370,6 @@ class InferencePipeline:
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
-        video_source_options: Optional[VideoSourceOptions] = None,
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
         max_staleness: Optional[float] = None,
@@ -378,6 +377,7 @@ class InferencePipeline:
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         exec_session_id: Optional[str] = None,
+        video_source_options: Optional[VideoSourceOptions] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -546,7 +546,6 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
-        video_source_options: Optional[VideoSourceOptions] = None,
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
         disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
@@ -565,6 +564,7 @@ class InferencePipeline:
         workflow_version_id: Optional[str] = None,
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
+        video_source_options: Optional[VideoSourceOptions] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -818,7 +818,6 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
-        video_source_options: Optional[VideoSourceOptions] = None,
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
         max_staleness: Optional[float] = None,
@@ -827,6 +826,7 @@ class InferencePipeline:
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         exec_session_id: Optional[str] = None,
         allow_tensor_frames: bool = False,
+        video_source_options: Optional[VideoSourceOptions] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
