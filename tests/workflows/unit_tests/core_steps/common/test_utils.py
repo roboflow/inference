@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import pytest
 import supervision as sv
+from pycocotools import mask as mask_utils
 
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
@@ -1380,7 +1381,7 @@ def test_scale_sv_detections_rejects_anisotropic_scalar_metadata() -> None:
         )
 
 
-def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
+def test_scale_sv_detections_regenerates_rle_when_scale_changes_mask() -> None:
     # given
     mask = np.zeros((100, 100), dtype=bool)
     mask[20:40, 20:40] = True
@@ -1401,8 +1402,18 @@ def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
     result = scale_sv_detections(detections=detections, scale=0.5)
 
     # then
-    assert "rle_mask" not in result.data
     assert result.mask.shape == (1, 50, 50)
+    assert "rle_mask" in result.data
+    resized_rle = result.data["rle_mask"][0]
+    assert resized_rle["size"] == [50, 50]
+    assert isinstance(resized_rle["counts"], str)
+    decoded_mask = mask_utils.decode(
+        {
+            "size": resized_rle["size"],
+            "counts": resized_rle["counts"].encode("utf-8"),
+        }
+    ).astype(bool)
+    assert np.array_equal(decoded_mask, result.mask[0])
 
 
 def test_scale_sv_detections_keeps_rle_when_scale_is_noop() -> None:

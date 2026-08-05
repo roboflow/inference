@@ -492,11 +492,20 @@ def scale_sv_detections(
                     for detection_mask in detections_copy.mask
                 ]
             )
-            # RLE from the source frame no longer matches the resized masks.
-            # Only drop it when a resize actually happened - no-op scales must
-            # keep it, because the RLE-kind serializer requires `rle_mask`.
             if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
-                del detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
+                from pycocotools import mask as mask_utils
+
+                resized_rle_masks = []
+                for detection_mask in detections_copy.mask:
+                    rle_mask = mask_utils.encode(
+                        np.asfortranarray(detection_mask.astype(np.uint8))
+                    )
+                    if isinstance(rle_mask["counts"], bytes):
+                        rle_mask["counts"] = rle_mask["counts"].decode("utf-8")
+                    resized_rle_masks.append(rle_mask)
+                detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                    resized_rle_masks, dtype=object
+                )
 
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
         polygons = detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS]
