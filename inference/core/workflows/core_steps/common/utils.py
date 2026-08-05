@@ -465,15 +465,26 @@ def scale_sv_detections(
         image_dimensions[:, 1] *= scale_x
         detections_copy[IMAGE_DIMENSIONS_KEY] = image_dimensions.round()
 
-    if detections_copy.mask is not None:
+    rle_masks = detections_copy.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+    masks_to_resize = detections_copy.mask
+    preserve_dense_masks = masks_to_resize is not None
+    original_mask_size_wh = None
+    if masks_to_resize is not None:
+        original_mask_size_wh = (
+            masks_to_resize.shape[2],
+            masks_to_resize.shape[1],
+        )
+    elif rle_masks is not None and len(rle_masks) > 0:
+        original_mask_size_wh = (
+            int(rle_masks[0]["size"][1]),
+            int(rle_masks[0]["size"][0]),
+        )
+
+    if original_mask_size_wh is not None:
         # Resize dense masks directly onto the destination canvas. Polygon →
         # scale → raster round-trips fragment edge-touching masks; combined with
         # mask_to_polygon that used to take contours[0], Dataset Upload persisted
         # speckles instead of the real instance.
-        original_mask_size_wh = (
-            detections_copy.mask.shape[2],
-            detections_copy.mask.shape[1],
-        )
         if target_size_wh is not None:
             scaled_w, scaled_h = int(target_size_wh[0]), int(target_size_wh[1])
         else:
@@ -482,21 +493,42 @@ def scale_sv_detections(
         scaled_w = max(1, scaled_w)
         scaled_h = max(1, scaled_h)
         if (scaled_w, scaled_h) != original_mask_size_wh:
-            detections_copy.mask = np.array(
+            if masks_to_resize is None:
+                from pycocotools import mask as mask_utils
+
+                masks_to_resize = np.array(
+                    [
+                        mask_utils.decode(
+                            {
+                                "size": rle_mask["size"],
+                                "counts": (
+                                    rle_mask["counts"].encode("utf-8")
+                                    if isinstance(rle_mask["counts"], str)
+                                    else rle_mask["counts"]
+                                ),
+                            }
+                        ).astype(bool)
+                        for rle_mask in rle_masks
+                    ]
+                )
+
+            resized_masks = np.array(
                 [
                     cv2.resize(
                         detection_mask.astype(np.uint8),
                         (scaled_w, scaled_h),
                         interpolation=cv2.INTER_NEAREST,
                     ).astype(bool)
-                    for detection_mask in detections_copy.mask
+                    for detection_mask in masks_to_resize
                 ]
             )
+            if preserve_dense_masks:
+                detections_copy.mask = resized_masks
             if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
                 from pycocotools import mask as mask_utils
 
                 resized_rle_masks = []
-                for detection_mask in detections_copy.mask:
+                for detection_mask in resized_masks:
                     rle_mask = mask_utils.encode(
                         np.asfortranarray(detection_mask.astype(np.uint8))
                     )
@@ -506,6 +538,11 @@ def scale_sv_detections(
                 detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
                     resized_rle_masks, dtype=object
                 )
+                non_empty_masks = resized_masks.reshape(len(resized_masks), -1).any(
+                    axis=1
+                )
+                if not np.all(non_empty_masks):
+                    detections_copy = detections_copy[non_empty_masks]
 
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
         polygons = detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS]

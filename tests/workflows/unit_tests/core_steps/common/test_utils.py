@@ -6,6 +6,9 @@ import pytest
 import supervision as sv
 from pycocotools import mask as mask_utils
 
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_rle_sv_detections,
+)
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_sv_detections,
@@ -1305,9 +1308,7 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
     # Full-height strip flush to the right edge
     mask[:, orig_w - 200 : orig_w] = True
     detections = sv.Detections(
-        xyxy=np.array(
-            [[orig_w - 200, 0, orig_w - 1, orig_h - 1]], dtype=np.float64
-        ),
+        xyxy=np.array([[orig_w - 200, 0, orig_w - 1, orig_h - 1]], dtype=np.float64),
         mask=np.array([mask]),
         confidence=np.array([0.9]),
         class_id=np.array([0]),
@@ -1339,9 +1340,7 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
     )
 
     assert result.mask.shape == (1, target_h, target_w)
-    assert np.allclose(
-        result["image_dimensions"], np.array([[target_h, target_w]])
-    )
+    assert np.allclose(result["image_dimensions"], np.array([[target_h, target_w]]))
     x1, y1, x2, y2 = result.xyxy[0]
     assert x2 <= target_w
     assert y2 <= target_h
@@ -1354,9 +1353,7 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
     polygon = result.data[POLYGON_KEY_IN_SV_DETECTIONS][0]
     assert polygon[:, 0].max() >= target_w - 2
     assert np.array_equal(result[SCALING_RELATIVE_TO_PARENT_KEY], np.array([0.5]))
-    assert np.array_equal(
-        result[SCALING_RELATIVE_TO_ROOT_PARENT_KEY], np.array([0.25])
-    )
+    assert np.array_equal(result[SCALING_RELATIVE_TO_ROOT_PARENT_KEY], np.array([0.25]))
 
 
 def test_scale_sv_detections_rejects_anisotropic_scalar_metadata() -> None:
@@ -1414,6 +1411,85 @@ def test_scale_sv_detections_regenerates_rle_when_scale_changes_mask() -> None:
         }
     ).astype(bool)
     assert np.array_equal(decoded_mask, result.mask[0])
+
+
+def test_scale_sv_detections_resizes_rle_only_masks() -> None:
+    # given
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:40, 20:40] = 1
+    rle_mask = mask_utils.encode(np.asfortranarray(mask))
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40]], dtype=np.float64),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+            "rle_mask": np.array([rle_mask], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+
+    # then
+    assert result.mask is None
+    resized_rle = result.data["rle_mask"][0]
+    assert resized_rle["size"] == [50, 50]
+    decoded_mask = mask_utils.decode(
+        {
+            "size": resized_rle["size"],
+            "counts": resized_rle["counts"].encode("utf-8"),
+        }
+    ).astype(bool)
+    expected_mask = cv2.resize(
+        mask,
+        (50, 50),
+        interpolation=cv2.INTER_NEAREST,
+    ).astype(bool)
+    assert np.array_equal(decoded_mask, expected_mask)
+
+
+def test_scale_sv_detections_filters_empty_masks_and_matching_rles() -> None:
+    # given
+    masks = np.zeros((2, 4, 4), dtype=np.uint8)
+    masks[0, 3, 3] = 1
+    masks[1, 0:3, 0:3] = 1
+    rle_masks = np.array(
+        [mask_utils.encode(np.asfortranarray(mask)) for mask in masks],
+        dtype=object,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[3, 3, 4, 4], [0, 0, 3, 3]], dtype=np.float64),
+        mask=masks.astype(bool),
+        confidence=np.array([0.5, 0.9]),
+        class_id=np.array([0, 1]),
+        data={
+            "class_name": np.array(["thin", "body"]),
+            "detection_id": np.array(["thin-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": rle_masks,
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+    serialized_result = serialise_rle_sv_detections(detections=result)
+
+    # then
+    assert len(result) == 1
+    assert result.data["detection_id"].tolist() == ["body-id"]
+    assert len(result.data["rle_mask"]) == 1
+    serialized_prediction = serialized_result["predictions"][0]
+    assert serialized_prediction["detection_id"] == "body-id"
+    serialized_mask = mask_utils.decode(
+        {
+            "size": serialized_prediction["rle_mask"]["size"],
+            "counts": serialized_prediction["rle_mask"]["counts"].encode("utf-8"),
+        }
+    )
+    assert serialized_mask.sum() == 4
 
 
 def test_scale_sv_detections_keeps_rle_when_scale_is_noop() -> None:
