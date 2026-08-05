@@ -37,24 +37,25 @@ Whether you call the hosted Serverless API or a local inference server, the only
 pip install inference-sdk
 ```
 
-To serve Cosmos 3 Edge locally, run the GPU inference server Docker image — it ships with the Cosmos-specific dependencies pre-installed. The easiest way to start it is with the CLI:
+To serve Cosmos 3 Edge locally, run the dedicated Cosmos build of the GPU inference server Docker image — it ships with the Cosmos-specific dependencies pre-installed. The easiest way to start it is with the CLI:
 
 ```
 pip install inference-cli
-inference server start
+inference server start --image roboflow/roboflow-inference-server-gpu:1.3.8-cosmos3
 ```
 
-This starts the `roboflow/roboflow-inference-server-gpu` container on port 9001 (an NVIDIA CUDA GPU is required — there is no CPU support for this model).
+This starts the server on port 9001 (an NVIDIA CUDA GPU is required — there is no CPU support for this model).
 
-!!! warning "Local execution requires the GPU Docker image"
+!!! warning "Local execution requires the `-cosmos3` GPU Docker image"
 
     Cosmos 3 Edge support is newer than any released `transformers` version — the
     `cosmos3_edge` model type requires a pre-release `transformers` build that
-    cannot be shipped through the `inference-gpu` pip extras. The GPU Docker
-    image bundles the required git-pinned dependencies
-    (`requirements/requirements.cosmos.txt`), so running the containerized
-    server is the supported way to execute the model locally. If you cannot run
-    the Docker image, use the hosted Serverless API instead.
+    cannot be shipped through the `inference-gpu` pip extras or the standard
+    release images. The standard `roboflow/roboflow-inference-server-gpu:latest`
+    image does NOT include these dependencies; only the `-cosmos3` suffixed tags
+    (e.g. `1.3.8-cosmos3`) bundle the required git-pinned builds
+    (`requirements/requirements.cosmos.txt`). If you cannot run the Docker
+    image, use the hosted Serverless API instead.
 
 ### How to Use Cosmos 3 Edge (Hosted API)
 
@@ -94,7 +95,7 @@ The model's text answer will be printed to the console.
 
 ### How to Use Cosmos 3 Edge (Local Inference Server)
 
-If you are running the GPU inference server Docker image (see the Installation section above), point the same SDK code at it — for example a server running locally on port 9001:
+If you are running the `-cosmos3` GPU inference server Docker image (see the Installation section above), point the same SDK code at it — for example a server running locally on port 9001:
 
 ```python
 from inference_sdk import InferenceHTTPClient
