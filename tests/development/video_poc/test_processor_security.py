@@ -58,6 +58,12 @@ def test_access_token_prefers_bearer_header_and_supports_media_query():
     )
 
 
+def test_access_token_parsing_handles_untrusted_header_whitespace_linearly():
+    header = "Bearer " + (" " * 10_000) + "header-token"
+
+    assert extract_access_token(header, "/events?job=job-a") == "header-token"
+
+
 @pytest.mark.parametrize(
     "job_id",
     ["../other-job", "job/child", "job%2Fchild", "", ".", "job id"],

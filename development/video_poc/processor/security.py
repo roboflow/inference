@@ -13,7 +13,6 @@ import threading
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_BEARER_RE = re.compile(r"^Bearer\s+(.+)$", re.IGNORECASE)
 _BEARER_VALUE_RE = re.compile(r"(?i)\bBearer\s+[^\s,;]+")
 _SECRET_PARAM_RE = re.compile(
     r"(?i)(\b(?:api[_-]?key|token|access_token|signature|sig)=)[^\s&#]+"
@@ -41,9 +40,10 @@ def validate_job_id(job_id) -> str:
 
 def extract_access_token(authorization: str, request_path: str) -> str:
     """Read a job token from Bearer auth or the media-element query fallback."""
-    match = _BEARER_RE.match((authorization or "").strip())
-    if match:
-        return match.group(1).strip()
+    header = (authorization or "").strip()
+    scheme, separator, value = header.partition(" ")
+    if separator and scheme.lower() == "bearer":
+        return value.strip()
     query = parse_qs(urlsplit(request_path).query, keep_blank_values=True)
     return (query.get("access_token") or [""])[0]
 
