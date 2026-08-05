@@ -76,6 +76,7 @@ jobs:
       - name: Build and Push
         uses: depot/build-push-action@v1
         with:
+          context: .
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: 2rp7mfjw7q
           tags: ${{ steps.tags.outputs.image_tags }}
