@@ -11,6 +11,7 @@ from inference.core.interfaces.stream import utils
 from inference.core.interfaces.stream.utils import (
     broadcast_elements,
     on_pipeline_end,
+    prepare_video_sources,
     save_workflows_profiler_trace,
     wrap_in_list,
 )
@@ -88,6 +89,26 @@ def test_broadcast_elements_when_input_is_empty() -> None:
         _ = broadcast_elements(
             elements=element, desired_length=3, error_description="some"
         )
+
+
+@mock.patch.object(utils.VideoSource, "init")
+def test_prepare_video_sources_broadcasts_per_source_options(
+    video_source_init: MagicMock,
+) -> None:
+    prepare_video_sources(
+        video_reference=["a", "b"],
+        video_source_properties=None,
+        video_source_options={"rtsp_tls_validation_flags": 0},
+        status_update_handlers=None,
+        source_buffer_filling_strategy=None,
+        source_buffer_consumption_strategy=None,
+    )
+
+    assert video_source_init.call_count == 2
+    for call in video_source_init.call_args_list:
+        assert call.kwargs["video_source_options"] == {
+            "rtsp_tls_validation_flags": 0
+        }
 
 
 def test_save_workflows_profiler_trace(empty_directory: str) -> None:

@@ -32,6 +32,9 @@ def prepare_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
+    video_source_options: Optional[
+        Union[Dict[str, object], List[Optional[Dict[str, object]]]]
+    ] = None,
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
@@ -48,9 +51,17 @@ def prepare_video_sources(
         error_description="Cannot apply `video_source_properties` to video sources due to missmatch in "
         "number of entries in properties configuration.",
     )
+    video_source_options = wrap_in_list(element=video_source_options)
+    video_source_options = broadcast_elements(
+        elements=video_source_options,
+        desired_length=len(video_reference),
+        error_description="Cannot apply `video_source_options` to video sources due to mismatch in "
+        "number of entries in options configuration.",
+    )
     return initialise_video_sources(
         video_reference=video_reference,
         video_source_properties=video_source_properties,
+        video_source_options=video_source_options,
         status_update_handlers=status_update_handlers,
         source_buffer_filling_strategy=source_buffer_filling_strategy,
         source_buffer_consumption_strategy=source_buffer_consumption_strategy,
@@ -81,6 +92,7 @@ def broadcast_elements(
 def initialise_video_sources(
     video_reference: List[VideoSourceIdentifier],
     video_source_properties: List[Optional[Dict[str, float]]],
+    video_source_options: List[Optional[Dict[str, object]]],
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
@@ -103,13 +115,14 @@ def initialise_video_sources(
             buffer_filling_strategy=source_buffer_filling_strategy,
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=source_properties,
+            video_source_options=source_options,
             source_id=i,
             desired_fps=desired_source_fps,
             buffer_size=decoding_buffer_size,
             allow_tensor_frames=allow_tensor_frames,
         )
-        for i, (reference, source_properties) in enumerate(
-            zip(video_reference, video_source_properties)
+        for i, (reference, source_properties, source_options) in enumerate(
+            zip(video_reference, video_source_properties, video_source_options)
         )
     ]
 
