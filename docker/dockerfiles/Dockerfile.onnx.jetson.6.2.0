@@ -373,16 +373,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
     apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*'
 WORKDIR /build/tensorrt-10.x
+COPY docker/vendor/tensorrt/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb ./_dl/
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
-    --mount=type=cache,target=/build/tensorrt-10.x/_dl,sharing=locked,id=trt-deb-10.7.0-${TARGETARCH} \
     deb="_dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb" && \
-    url="https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb" && \
-    if ! dpkg-deb --info "${deb}" >/dev/null 2>&1; then \
-        mkdir -p _dl && \
-        (cd _dl && timeout 600s wget --continue --timeout=30 --tries=10 "${url}"); \
-    fi && \
-    dpkg-deb --info "${deb}" >/dev/null && \
     dpkg -i "${deb}" && \
     cp /var/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6/nv-tensorrt-local-tegra-C50F04B9-keyring.gpg /usr/share/keyrings/ && \
     apt-get update && \
