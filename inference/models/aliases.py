@@ -143,8 +143,6 @@ RFDETR_ALIASES = {
     "rfdetr-seg-large": "coco-dataset-vdnr1/38",
     "rfdetr-seg-xlarge": "coco-dataset-vdnr1/39",
     "rfdetr-seg-2xlarge": "coco-dataset-vdnr1/40",
-    # Registry model id, not {project}/{version}: alias resolution is single-hop,
-    # and this is what the models service resolves the alias to.
     "rfdetr-keypoint-preview": "microsoft/coco-pose-detection-17-rfdetr-keypoint-preview-t1",
 }
 
