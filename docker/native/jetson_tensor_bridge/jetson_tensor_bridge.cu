@@ -95,13 +95,13 @@ struct RfBridgeStats {
     uint64_t array_flatten_copies;
     uint64_t conversion_kernels;
     uint64_t nvmm_frames;
-    // Frames decoded+converted on the streaming thread but replaced by a newer
-    // frame before the consumer collected them (latest-wins handoff slot).
+    // Pending live samples replaced before consumer-side conversion
+    // (latest-wins handoff slot).
     uint64_t frames_dropped_by_consumer;
     int32_t last_nvbuf_memory_type;
     int32_t last_egl_frame_type;
     int32_t last_egl_color_format;
-    // --- ABI v5: per-phase timing of the streaming-thread conversion (ns). ---
+    // --- ABI v5: per-phase timing of CUDA conversion (ns). ---
     // Under concurrent TRT/torch GPU load individual native calls in
     // convert_sample_to_tensor() intermittently stall for hundreds of ms;
     // these accumulators (total + observed max per phase) name the stalling
@@ -249,23 +249,22 @@ struct RfJetsonPipeline {
     std::shared_ptr<RfBufferPool> tensor_pool;
     RfBridgeStats stats{};
     std::atomic<bool> interrupted{false};
+    // Serializes consumer-side EGL/CUDA conversion with interrupt()/release()
+    // transitioning the decoder pipeline to NULL.
+    std::mutex conversion_mutex;
     std::mutex mutex;
-    // Streaming-thread handoff (the jetson-utils consume model): the appsink
-    // new-sample callback converts each frame on the GStreamer streaming
-    // thread and publishes the finished CUDA tensor here. grab() waits on
-    // `frame_ready`; retrieve() pops the oldest tensor. Two modes:
-    //  * live (lossless_handoff=false, capacity 1): a newer frame replaces an
-    //    uncollected one (latest-wins, like appsink drop=true, but the drop
-    //    happens AFTER decode so nothing stalls) - correct for live streams
-    //    where a source cannot be paused;
+    // The appsink callback only removes samples from GStreamer's streaming
+    // thread and publishes them here. grab() performs the EGL/CUDA conversion
+    // on the consumer thread; doing that work inside nvv4l2decoder's callback
+    // can deadlock before the first frame on JetPack 6.2. Two modes:
+    //  * live (lossless_handoff=false, capacity 1): a newer pending sample
+    //    replaces an uncollected pending sample (latest-wins);
     //  * lossless (lossless_handoff=true, capacity kLosslessHandoffCapacity):
-    //    the callback BLOCKS on `handoff_space` while the queue is full,
-    //    holding the appsink sample - appsink (drop=false) queues up, the
-    //    non-leaky queue fills, the decoder and demuxer stall and filesrc
-    //    pauses. Decode is demand-paced and no frame is ever dropped -
-    //    required for every-frame video-file processing.
+    //    the callback blocks while pending samples plus converted tensors fill
+    //    the queue, backpressuring file decode without dropping frames.
     std::condition_variable frame_ready;
     std::condition_variable handoff_space;
+    std::deque<GstSample*> ready_samples;
     std::deque<RfTensorContext*> ready_tensors;
     bool lossless_handoff = false;
     size_t handoff_capacity = 1;
@@ -282,8 +281,8 @@ struct RfJetsonPipeline {
     // pattern): decoder pools recycle a small stable set of surfaces, so
     // the EGL image mapping, CUDA graphics registration and texture objects
     // survive across frames instead of paying the process-global-lock
-    // sequence per frame. Touched only on the streaming thread inside
-    // convert_sample_to_tensor(); release() tears it down after the
+    // sequence per frame. Touched only by the consumer thread inside
+    // rf_jetson_pipeline_grab(); release() tears it down after the GStreamer
     // streaming thread is joined (GST_STATE_NULL).
     std::vector<RfEglCacheEntry> egl_cache;
     GstPad* srtp_probe_pad = nullptr;
@@ -869,9 +868,8 @@ struct RfEglDiagnostics {
     int32_t color_format = -1;
 };
 
-// Per-attempt phase durations measured inside convert_sample_to_tensor(),
-// accumulated into RfBridgeStats under the handle mutex by the caller (the
-// conversion itself runs lock-free on the streaming thread).
+// Per-attempt phase durations measured inside convert_sample_to_tensor() and
+// accumulated into RfBridgeStats under the handle mutex by the caller.
 struct RfPhaseTimings {
     uint64_t egl_map_ns = 0;
     uint64_t cuda_register_ns = 0;
@@ -892,14 +890,11 @@ uint64_t monotonic_ns() {
             .count());
 }
 
-// Convert one appsink sample into a pooled CHW RGB CUDA tensor. Runs on the
-// GStreamer STREAMING thread (the jetson-utils consume model): the sample is
-// fully consumed here and the caller unrefs it immediately afterwards, so the
-// decoder's capture pool is never held across consumer latency. Takes no lock
-// — it only touches handle fields that are immutable after create()
-// (device_id, stream, tensor_pool). Supports both the direct decoder output
-// (NV12 semi-planar, the RTSP path) and nvvidconv output (RGBA, the
-// CSI/v4l2/file paths).
+// Convert one appsink sample into a pooled CHW RGB CUDA tensor on the consumer
+// thread. The appsink callback has already removed the sample from GStreamer's
+// streaming thread, avoiding the JP6.2 deadlock caused by performing EGL/CUDA
+// work synchronously inside nvv4l2decoder's callback. Supports both direct
+// decoder output (NV12 semi-planar) and nvvidconv output (RGBA).
 RfTensorContext* convert_sample_to_tensor(
     RfJetsonPipeline* handle,
     GstSample* sample,
@@ -920,8 +915,8 @@ RfTensorContext* convert_sample_to_tensor(
     bool egl_resources_cached = false;
     RfEglCacheEntry* egl_cache_entry = nullptr;
 
-    // Bind the device on this streaming thread (it has made no prior CUDA
-    // runtime call); the driver-API EGL registration below needs a context.
+    // Bind the device on this consumer thread; the driver-API EGL registration
+    // below needs a current CUDA context.
     cudaError_t bind_status = cudaSetDevice(handle->device_id);
     if (bind_status == cudaSuccess) {
         bind_status = cudaFree(nullptr);
@@ -1162,8 +1157,8 @@ RfTensorContext* convert_sample_to_tensor(
             write_error(error, error_capacity, "CUDA EGL frame storage is unsupported");
             goto cleanup;
         }
-        // Timed as one phase: the sync is where the streaming thread parks on
-        // the GPU behind whatever else (TRT/torch) currently occupies it.
+        // Timed as one phase: the sync is where the consumer thread parks
+        // behind any concurrent TRT/torch work.
         phase_start = monotonic_ns();
         cuda_status = cudaGetLastError();
         if (cuda_status == cudaSuccess) {
@@ -1258,13 +1253,15 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
         gst_sample_unref(sample);
         return GST_FLOW_OK;
     }
-    if (handle->lossless_handoff) {
-        // Lossless (file) mode: park BEFORE converting, holding the appsink
-        // sample - that is what backs the queue up and stalls the decoder,
-        // so decode is demand-paced instead of frames being overwritten.
+    {
         std::unique_lock<std::mutex> lock(handle->mutex);
+        // Lossless file mode backpressures decode at the bounded sample/tensor
+        // queue. Live mode keeps only the newest pending sample.
         handle->handoff_space.wait(lock, [handle]() {
-            return handle->ready_tensors.size() < handle->handoff_capacity ||
+            return !handle->lossless_handoff ||
+                   handle->ready_samples.size() +
+                           handle->ready_tensors.size() <
+                       handle->handoff_capacity ||
                    handle->interrupted.load(std::memory_order_acquire);
         });
         if (handle->interrupted.load(std::memory_order_acquire)) {
@@ -1272,82 +1269,14 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
             gst_sample_unref(sample);
             return GST_FLOW_OK;
         }
-    }
-    char error[1024] = {0};
-    RfFrameInfo frame_info{};
-    RfEglDiagnostics diagnostics{};
-    RfPhaseTimings timings{};
-    RfTensorContext* tensor = convert_sample_to_tensor(
-        handle, sample, &frame_info, &diagnostics, &timings, error, sizeof(error));
-    gst_sample_unref(sample);
-    {
-        std::lock_guard<std::mutex> lock(handle->mutex);
-        handle->stats.descriptor_maps += 1;
-        handle->stats.last_nvbuf_memory_type = diagnostics.memory_type;
-        handle->stats.last_egl_frame_type = diagnostics.frame_type;
-        handle->stats.last_egl_color_format = diagnostics.color_format;
-        const auto accumulate_phase =
-            [](uint64_t* total, uint64_t* max_value, uint64_t sample_ns) {
-                *total += sample_ns;
-                if (sample_ns > *max_value) {
-                    *max_value = sample_ns;
-                }
-            };
-        accumulate_phase(
-            &handle->stats.egl_map_ns,
-            &handle->stats.egl_map_max_ns,
-            timings.egl_map_ns);
-        accumulate_phase(
-            &handle->stats.cuda_register_ns,
-            &handle->stats.cuda_register_max_ns,
-            timings.cuda_register_ns);
-        accumulate_phase(
-            &handle->stats.texture_create_ns,
-            &handle->stats.texture_create_max_ns,
-            timings.texture_create_ns);
-        accumulate_phase(
-            &handle->stats.kernel_launch_ns,
-            &handle->stats.kernel_launch_max_ns,
-            timings.kernel_launch_ns);
-        accumulate_phase(
-            &handle->stats.sync_ns,
-            &handle->stats.sync_max_ns,
-            timings.sync_ns);
-        accumulate_phase(
-            &handle->stats.cleanup_ns,
-            &handle->stats.cleanup_max_ns,
-            timings.cleanup_ns);
-        if (timings.buffer_fd_valid &&
-            handle->seen_buffer_fds.insert(timings.buffer_fd).second) {
-            handle->stats.unique_buffer_fds =
-                static_cast<uint64_t>(handle->seen_buffer_fds.size());
-        }
-        handle->stats.egl_cache_hits += timings.egl_cache_hit;
-        handle->stats.egl_cache_misses += timings.egl_cache_miss;
-        if (tensor == nullptr) {
-            handle->conversion_failed = true;
-            std::snprintf(
-                handle->conversion_error,
-                sizeof(handle->conversion_error),
-                "%s",
-                error);
-        } else {
-            if (!handle->lossless_handoff && !handle->ready_tensors.empty()) {
-                // Latest-wins (live mode): the consumer never collected the
-                // previous frame. Its buffer goes straight back to the pool.
-                // Never taken in lossless mode: only this streaming thread
-                // pushes, so the space awaited above cannot vanish.
-                delete_managed_tensor(&handle->ready_tensors.front()->managed);
-                handle->ready_tensors.pop_front();
+        if (!handle->lossless_handoff) {
+            while (!handle->ready_samples.empty()) {
+                gst_sample_unref(handle->ready_samples.front());
+                handle->ready_samples.pop_front();
                 handle->stats.frames_dropped_by_consumer += 1;
             }
-            handle->ready_tensors.push_back(tensor);
-            handle->last_frame_info = frame_info;
-            handle->frame_info_valid = true;
-            handle->stats.frames += 1;
-            handle->stats.conversion_kernels += 1;
-            handle->stats.nvmm_frames += 1;
         }
+        handle->ready_samples.push_back(sample);
     }
     handle->frame_ready.notify_all();
     return GST_FLOW_OK;
@@ -1377,6 +1306,9 @@ extern "C" {
 
 __attribute__((visibility("default")))
 const char* rf_jetson_tensor_bridge_version() {
+    // v8: appsink callbacks hand off NVMM samples without doing EGL/CUDA work;
+    // grab() converts on the consumer thread, avoiding a JP6.2 first-frame
+    // deadlock inside nvv4l2decoder's streaming callback.
     // v7: per-fd EGL/CUDA registration cache (map/register/texture objects
     // survive across frames; the per-frame global-lock sequence is paid only
     // on pool warmup) + egl_cache_hits/egl_cache_misses appended to
@@ -1391,7 +1323,7 @@ const char* rf_jetson_tensor_bridge_version() {
     // v4: streaming-thread conversion + tensor handoff (jetson-utils consume
     // model), direct NV12 path, frames_dropped_by_consumer added to
     // RfBridgeStats.
-    return "7";
+    return "8";
 }
 
 __attribute__((visibility("default")))
@@ -1538,10 +1470,10 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
         handle->srtp_probe_pad = source_pad;
         handle->srtp_probe_id = probe_id;
     }
-    // Consume frames via appsink callbacks on the GStreamer streaming thread.
-    // Each sample is converted and released before the tensor handoff; live
-    // sources stay latest-wins, while files backpressure at the bounded FIFO.
-    // Must be installed before the PLAYING transition.
+    // Remove samples from appsink on GStreamer's streaming thread and hand
+    // them to grab() for consumer-thread conversion. Live sources stay
+    // latest-wins, while files backpressure at the bounded FIFO. Must be
+    // installed before the PLAYING transition.
     GstAppSinkCallbacks sink_callbacks{};
     sink_callbacks.eos = handle_appsink_eos;
     sink_callbacks.new_preroll = handle_new_preroll;
@@ -1581,10 +1513,12 @@ int rf_jetson_pipeline_grab(
     if (handle->interrupted.load(std::memory_order_acquire)) {
         return 0;
     }
+    GstSample* sample = nullptr;
     {
         std::unique_lock<std::mutex> lock(handle->mutex);
         const auto frame_or_terminal = [handle]() {
-            return !handle->ready_tensors.empty() || handle->conversion_failed ||
+            return !handle->ready_samples.empty() ||
+                   !handle->ready_tensors.empty() || handle->conversion_failed ||
                    handle->interrupted.load(std::memory_order_acquire) ||
                    handle->eos.load(std::memory_order_acquire);
         };
@@ -1605,6 +1539,90 @@ int rf_jetson_pipeline_grab(
             // reported, so the tail of a video file is never lost.
             return 1;
         }
+        if (!handle->ready_samples.empty()) {
+            sample = handle->ready_samples.front();
+            handle->ready_samples.pop_front();
+        }
+    }
+    if (sample != nullptr) {
+        std::lock_guard<std::mutex> conversion_lock(handle->conversion_mutex);
+        if (handle->interrupted.load(std::memory_order_acquire)) {
+            gst_sample_unref(sample);
+            handle->handoff_space.notify_all();
+            return 0;
+        }
+        char conversion_error[1024] = {0};
+        RfFrameInfo frame_info{};
+        RfEglDiagnostics diagnostics{};
+        RfPhaseTimings timings{};
+        RfTensorContext* tensor = convert_sample_to_tensor(
+            handle,
+            sample,
+            &frame_info,
+            &diagnostics,
+            &timings,
+            conversion_error,
+            sizeof(conversion_error));
+        gst_sample_unref(sample);
+        {
+            std::lock_guard<std::mutex> lock(handle->mutex);
+            handle->stats.descriptor_maps += 1;
+            handle->stats.last_nvbuf_memory_type = diagnostics.memory_type;
+            handle->stats.last_egl_frame_type = diagnostics.frame_type;
+            handle->stats.last_egl_color_format = diagnostics.color_format;
+            const auto accumulate_phase =
+                [](uint64_t* total, uint64_t* max_value, uint64_t sample_ns) {
+                    *total += sample_ns;
+                    if (sample_ns > *max_value) {
+                        *max_value = sample_ns;
+                    }
+                };
+            accumulate_phase(
+                &handle->stats.egl_map_ns,
+                &handle->stats.egl_map_max_ns,
+                timings.egl_map_ns);
+            accumulate_phase(
+                &handle->stats.cuda_register_ns,
+                &handle->stats.cuda_register_max_ns,
+                timings.cuda_register_ns);
+            accumulate_phase(
+                &handle->stats.texture_create_ns,
+                &handle->stats.texture_create_max_ns,
+                timings.texture_create_ns);
+            accumulate_phase(
+                &handle->stats.kernel_launch_ns,
+                &handle->stats.kernel_launch_max_ns,
+                timings.kernel_launch_ns);
+            accumulate_phase(
+                &handle->stats.sync_ns,
+                &handle->stats.sync_max_ns,
+                timings.sync_ns);
+            accumulate_phase(
+                &handle->stats.cleanup_ns,
+                &handle->stats.cleanup_max_ns,
+                timings.cleanup_ns);
+            if (timings.buffer_fd_valid &&
+                handle->seen_buffer_fds.insert(timings.buffer_fd).second) {
+                handle->stats.unique_buffer_fds =
+                    static_cast<uint64_t>(handle->seen_buffer_fds.size());
+            }
+            handle->stats.egl_cache_hits += timings.egl_cache_hit;
+            handle->stats.egl_cache_misses += timings.egl_cache_miss;
+            if (tensor != nullptr) {
+                handle->ready_tensors.push_back(tensor);
+                handle->last_frame_info = frame_info;
+                handle->frame_info_valid = true;
+                handle->stats.frames += 1;
+                handle->stats.conversion_kernels += 1;
+                handle->stats.nvmm_frames += 1;
+            }
+        }
+        if (tensor == nullptr) {
+            write_error(error, error_capacity, "%s", conversion_error);
+            handle->handoff_space.notify_all();
+            return -1;
+        }
+        return 1;
     }
     // Nothing ready. Check the bus BEFORE the EOS flag: a pipeline that died
     // during startup (RTSP connect/auth failure, autoplug failure) never
@@ -1675,14 +1693,13 @@ DLManagedTensor* rf_jetson_pipeline_retrieve(
             write_error(error, error_capacity, "No grabbed frame is available");
             return nullptr;
         }
-        // The tensor was fully converted on the streaming thread; hand it
-        // over. No CUDA call happens on the consumer thread (the DLPack
-        // deleter binds the device itself when the consumer eventually drops
-        // the tensor).
+        // grab() already converted this sample on the consumer thread; hand
+        // the finished tensor to Python. The DLPack deleter binds the device
+        // when the consumer eventually drops the tensor.
         tensor = handle->ready_tensors.front();
         handle->ready_tensors.pop_front();
     }
-    // Wake a lossless-mode streaming thread parked on a full handoff queue.
+    // Wake a lossless-mode callback parked on a full handoff queue.
     handle->handoff_space.notify_all();
     return &tensor->managed;
 }
@@ -1712,8 +1729,8 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
         return -1;
     }
     handle->interrupted.store(true, std::memory_order_release);
-    // Wake a grab() parked on the handoff queue - and a lossless-mode
-    // streaming thread parked on a full queue - so interrupt is prompt.
+    // Wake a grab() parked on the handoff queue and a lossless-mode callback
+    // parked on a full queue so interrupt is prompt.
     handle->frame_ready.notify_all();
     handle->handoff_space.notify_all();
     if (handle->sink != nullptr) {
@@ -1725,6 +1742,7 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
         }
     }
     if (handle->pipeline != nullptr) {
+        std::lock_guard<std::mutex> conversion_lock(handle->conversion_mutex);
         gst_element_set_state(handle->pipeline, GST_STATE_NULL);
     }
     return 1;
@@ -1744,6 +1762,10 @@ void rf_jetson_pipeline_release(RfJetsonPipeline* handle) {
     }
     {
         std::lock_guard<std::mutex> lock(handle->mutex);
+        while (!handle->ready_samples.empty()) {
+            gst_sample_unref(handle->ready_samples.front());
+            handle->ready_samples.pop_front();
+        }
         while (!handle->ready_tensors.empty()) {
             // interrupt() already reached GST_STATE_NULL, so the streaming
             // thread is joined and no further callback can repopulate the
