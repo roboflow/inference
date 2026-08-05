@@ -1451,7 +1451,7 @@ def test_scale_sv_detections_resizes_rle_only_masks() -> None:
     assert np.array_equal(decoded_mask, expected_mask)
 
 
-def test_scale_sv_detections_filters_empty_masks_and_matching_rles() -> None:
+def test_scale_sv_detections_preserves_empty_masks_and_matching_rles() -> None:
     # given
     masks = np.zeros((2, 4, 4), dtype=np.uint8)
     masks[0, 3, 3] = 1
@@ -1478,18 +1478,22 @@ def test_scale_sv_detections_filters_empty_masks_and_matching_rles() -> None:
     serialized_result = serialise_rle_sv_detections(detections=result)
 
     # then
-    assert len(result) == 1
-    assert result.data["detection_id"].tolist() == ["body-id"]
-    assert len(result.data["rle_mask"]) == 1
-    serialized_prediction = serialized_result["predictions"][0]
-    assert serialized_prediction["detection_id"] == "body-id"
-    serialized_mask = mask_utils.decode(
-        {
-            "size": serialized_prediction["rle_mask"]["size"],
-            "counts": serialized_prediction["rle_mask"]["counts"].encode("utf-8"),
-        }
-    )
-    assert serialized_mask.sum() == 4
+    assert len(result) == 2
+    assert result.data["detection_id"].tolist() == ["thin-id", "body-id"]
+    assert len(result.data["rle_mask"]) == 2
+    assert [
+        prediction["detection_id"] for prediction in serialized_result["predictions"]
+    ] == ["thin-id", "body-id"]
+    serialized_mask_areas = []
+    for prediction in serialized_result["predictions"]:
+        serialized_mask = mask_utils.decode(
+            {
+                "size": prediction["rle_mask"]["size"],
+                "counts": prediction["rle_mask"]["counts"].encode("utf-8"),
+            }
+        )
+        serialized_mask_areas.append(int(serialized_mask.sum()))
+    assert serialized_mask_areas == [0, 4]
 
 
 def test_scale_sv_detections_keeps_rle_when_scale_is_noop() -> None:

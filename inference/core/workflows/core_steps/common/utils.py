@@ -538,11 +538,6 @@ def scale_sv_detections(
                 detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
                     resized_rle_masks, dtype=object
                 )
-                non_empty_masks = resized_masks.reshape(len(resized_masks), -1).any(
-                    axis=1
-                )
-                if not np.all(non_empty_masks):
-                    detections_copy = detections_copy[non_empty_masks]
 
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
         polygons = detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS]

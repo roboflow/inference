@@ -1172,6 +1172,48 @@ def test_serialise_rle_sv_detections() -> None:
     }
 
 
+def test_serialise_rle_sv_detections_preserves_detection_with_empty_dense_mask() -> (
+    None
+):
+    # given
+    masks = np.zeros((2, 4, 4), dtype=bool)
+    masks[1, 0:2, 0:2] = True
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [0, 0, 2, 2]], dtype=np.float64),
+        mask=masks,
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["empty", "body"]),
+            "detection_id": np.array(["empty-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": np.array(
+                [
+                    {"size": [4, 4], "counts": "a"},
+                    {"size": [4, 4], "counts": "b"},
+                ],
+                dtype=object,
+            ),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert [prediction["detection_id"] for prediction in result["predictions"]] == [
+        "empty-id",
+        "body-id",
+    ]
+    assert [
+        prediction["rle_mask"]["counts"] for prediction in result["predictions"]
+    ] == [
+        "a",
+        "b",
+    ]
+    assert np.array_equal(detections.mask, masks)
+
+
 def test_serialise_rle_sv_detections_with_bytes_counts() -> None:
     # given - RLE mask with bytes counts (as returned by pycocotools)
     rle_mask = {"size": [192, 168], "counts": b"abc123"}
