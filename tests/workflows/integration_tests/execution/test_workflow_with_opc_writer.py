@@ -13,6 +13,7 @@ try:
 except ImportError:
     from asyncua.crypto.permission_rules import User, UserRole
 
+from asyncua.server.internal_session import InternalSession
 from asyncua.sync import Client, sync_async_client_method
 from asyncua.ua import NodeId
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
@@ -20,6 +21,7 @@ from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import (
+    SESSION_TIMEOUT_SECONDS,
     OPCUAConnectionManager,
     get_connection_manager,
     opc_connect_and_write_value,
@@ -526,12 +528,14 @@ def reset_connection_manager():
     """Reset the connection manager singleton before and after each test."""
     # Get the manager and close all connections before test
     manager = get_connection_manager()
+    manager._shutting_down = False
     manager.close_all()
 
     yield manager
 
     # Clean up after test
     manager.close_all()
+    manager._shutting_down = False
 
 
 @pytest.mark.timeout(10)
@@ -753,3 +757,98 @@ def test_close_all_connections(test_opc_server, reset_connection_manager) -> Non
 
     assert error_status2 == False
     assert manager.get_pool_stats()["total_connections"] == 1
+
+
+@pytest.mark.timeout(20)
+def test_pooled_session_asks_for_short_timeout_and_stays_alive_while_idle(
+    test_opc_server, reset_connection_manager
+) -> None:
+    """A short session timeout must not cost us the pooled connection while it sits idle."""
+    manager = reset_connection_manager
+
+    error_status, _ = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=900,
+        timeout=2,
+        value_type="Int32",
+    )
+    assert error_status == False
+
+    client = manager._connections[
+        manager._get_connection_key(
+            test_opc_server["url"], test_opc_server["user_name"]
+        )
+    ]
+
+    # The server echoes the requested timeout, so this is what it will hold the session for
+    assert client.aio_obj.session_timeout == int(SESSION_TIMEOUT_SECONDS * 1000)
+
+    # asyncua keeps the session alive on its own - its watchdog reads `server_state` about
+    # once a second regardless of how long the block's cooldown is
+    time.sleep(3)
+    assert client.aio_obj._monitor_server_task is not None
+    assert not client.aio_obj._monitor_server_task.done()
+
+    error_status_after_idle, message_after_idle = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=901,
+        timeout=2,
+        value_type="Int32",
+    )
+    assert error_status_after_idle == False
+    assert message_after_idle == "Value set successfully"
+    assert manager.get_pool_stats()["total_connections"] == 1
+
+
+@pytest.mark.timeout(20)
+def test_shutdown_hands_the_session_back_to_the_server(
+    test_opc_server, reset_connection_manager
+) -> None:
+    """Shutdown must release the server-side session instead of leaving it to time out."""
+    manager = reset_connection_manager
+    sessions_before = InternalSession._current_connections
+
+    error_status, _ = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=1000,
+        timeout=2,
+        value_type="Int32",
+    )
+    assert error_status == False
+    assert InternalSession._current_connections == sessions_before + 1
+
+    manager.shutdown()
+
+    assert manager.get_pool_stats()["total_connections"] == 0
+    assert InternalSession._current_connections == sessions_before
+
+    # No further sessions are opened once the process is on its way out
+    error_status_after_shutdown, message_after_shutdown = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=1001,
+        timeout=2,
+        value_type="Int32",
+    )
+    assert error_status_after_shutdown == True
+    assert "SHUTTING DOWN" in message_after_shutdown
+    assert InternalSession._current_connections == sessions_before
