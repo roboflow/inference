@@ -369,6 +369,8 @@ ENV CUDA_HOME=/usr/local/cuda \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Install Tensorrt
+# For clean-checkout builds, use docker/scripts/build_jetson_6_2_image.sh;
+# it fetches and verifies this package before invoking BuildKit.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
     apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*'

@@ -53,24 +53,7 @@ jobs:
           force_push: ${{ github.event.inputs.force_push }}
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch TensorRT local repository
-        env:
-          TENSORRT_DEB_SHA256: cf8bd26b3b9c0f65ee8f3358bbc7abfcd4bbed4940b2220140fb108f0852e5c0
-          TENSORRT_DEB_URL: https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb
-        run: |
-          set -euo pipefail
-          mkdir -p docker/vendor/tensorrt
-          destination="docker/vendor/tensorrt/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb"
-          curl \
-            --fail \
-            --location \
-            --retry 10 \
-            --retry-all-errors \
-            --connect-timeout 30 \
-            --max-time 600 \
-            --output "${destination}.part" \
-            "${TENSORRT_DEB_URL}"
-          echo "${TENSORRT_DEB_SHA256}  ${destination}.part" | sha256sum --check -
-          mv "${destination}.part" "${destination}"
+        run: docker/scripts/fetch_jetson_6_2_tensorrt.sh
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build and Push

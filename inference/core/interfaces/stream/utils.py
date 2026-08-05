@@ -22,6 +22,10 @@ from inference.core.interfaces.camera.video_source import (
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 
 T = TypeVar("T")
+VideoSourceOptions = Union[
+    Dict[str, object],
+    List[Optional[Dict[str, object]]],
+]
 
 
 def prepare_video_sources(
@@ -32,9 +36,7 @@ def prepare_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
-    video_source_options: Optional[
-        Union[Dict[str, object], List[Optional[Dict[str, object]]]]
-    ] = None,
+    video_source_options: Optional[VideoSourceOptions] = None,
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,

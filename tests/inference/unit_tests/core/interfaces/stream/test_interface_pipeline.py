@@ -42,6 +42,7 @@ from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
+from inference.core.interfaces.stream.utils import VideoSourceOptions
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 
@@ -810,6 +811,52 @@ def test_inference_pipeline_factories_expose_optional_exec_session_id(
     ]
 
     assert parameter.default is None
+
+
+@pytest.mark.parametrize(
+    "factory_name",
+    ["init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic"],
+)
+def test_inference_pipeline_factories_expose_per_source_options(
+    factory_name: str,
+) -> None:
+    parameter = signature(getattr(InferencePipeline, factory_name)).parameters[
+        "video_source_options"
+    ]
+
+    assert parameter.annotation == Optional[VideoSourceOptions]
+    assert parameter.default is None
+
+
+def test_inference_pipeline_init_propagates_per_source_options(monkeypatch) -> None:
+    pipeline = MagicMock()
+    init_with_custom_logic = MagicMock(return_value=pipeline)
+    monkeypatch.setattr(
+        "inference.core.interfaces.stream.inference_pipeline.get_model",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        InferencePipeline,
+        "init_with_custom_logic",
+        init_with_custom_logic,
+    )
+    video_source_options = [
+        {"rtsp_tls_validation_flags": 0},
+        None,
+    ]
+
+    result = InferencePipeline.init(
+        video_reference=["rtsps://camera-1", "rtsp://camera-2"],
+        model_id="example/1",
+        active_learning_enabled=False,
+        video_source_options=video_source_options,
+    )
+
+    assert result is pipeline
+    assert (
+        init_with_custom_logic.call_args.kwargs["video_source_options"]
+        is video_source_options
+    )
 
 
 @pytest.mark.parametrize("disable_sinks", [False, True])
