@@ -380,7 +380,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     url="https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb" && \
     if ! dpkg-deb --info "${deb}" >/dev/null 2>&1; then \
         mkdir -p _dl && \
-        (cd _dl && wget --continue --timeout=30 --tries=10 "${url}"); \
+        (cd _dl && timeout 600s wget --continue --timeout=30 --tries=10 "${url}"); \
     fi && \
     dpkg-deb --info "${deb}" >/dev/null && \
     dpkg -i "${deb}" && \
