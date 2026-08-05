@@ -106,9 +106,30 @@ def test_prepare_video_sources_broadcasts_per_source_options(
 
     assert video_source_init.call_count == 2
     for call in video_source_init.call_args_list:
-        assert call.kwargs["video_source_options"] == {
-            "rtsp_tls_validation_flags": 0
-        }
+        assert call.kwargs["video_source_options"] == {"rtsp_tls_validation_flags": 0}
+
+
+@mock.patch.object(utils.VideoSource, "init")
+def test_prepare_video_sources_applies_aligned_per_source_options(
+    video_source_init: MagicMock,
+) -> None:
+    prepare_video_sources(
+        video_reference=["a", "b"],
+        video_source_properties=None,
+        video_source_options=[
+            {"rtsp_tls_validation_flags": 0},
+            None,
+        ],
+        status_update_handlers=None,
+        source_buffer_filling_strategy=None,
+        source_buffer_consumption_strategy=None,
+    )
+
+    assert video_source_init.call_count == 2
+    assert video_source_init.call_args_list[0].kwargs["video_source_options"] == {
+        "rtsp_tls_validation_flags": 0
+    }
+    assert video_source_init.call_args_list[1].kwargs["video_source_options"] is None
 
 
 def test_save_workflows_profiler_trace(empty_directory: str) -> None:
@@ -203,5 +224,6 @@ def test_on_pipeline_end_when_profiling_directory_readonly(
     assert thread_pool_executor._shutdown is True, "Expected pool executor to be closed"
     # No profiling files should have been created
     json_files_in_directory = glob(os.path.join(read_only_dir, "*.json"))
-    assert len(json_files_in_directory) == 0, "Expected no profiler trace saved on read-only FS"
-
+    assert (
+        len(json_files_in_directory) == 0
+    ), "Expected no profiler trace saved on read-only FS"
