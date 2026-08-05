@@ -465,6 +465,9 @@ def scale_sv_detections(
         image_dimensions[:, 1] *= scale_x
         detections_copy[IMAGE_DIMENSIONS_KEY] = image_dimensions.round()
 
+    # RLE predictions may keep masks compressed and leave `mask=None`. Prefer an
+    # existing dense representation, but derive the source canvas from RLE
+    # metadata so those lazy predictions can follow the same resize path.
     rle_masks = detections_copy.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
     masks_to_resize = detections_copy.mask
     preserve_dense_masks = masks_to_resize is not None
@@ -496,6 +499,8 @@ def scale_sv_detections(
             if masks_to_resize is None:
                 from pycocotools import mask as mask_utils
 
+                # Decode only when a resize is actually required. The result is
+                # kept temporary so RLE-only predictions remain RLE-only.
                 masks_to_resize = np.array(
                     [
                         mask_utils.decode(
@@ -527,6 +532,9 @@ def scale_sv_detections(
             if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
                 from pycocotools import mask as mask_utils
 
+                # Source RLE counts encode the old canvas and cannot be scaled
+                # arithmetically. Re-encode every resized mask, including valid
+                # all-zero masks, to preserve detection-to-RLE alignment.
                 resized_rle_masks = []
                 for detection_mask in resized_masks:
                     rle_mask = mask_utils.encode(
