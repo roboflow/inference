@@ -364,12 +364,31 @@ ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
+# GStreamer's CUDA converters (cudaconvert / cudascale / cudaconvertscale) build
+# their kernels at runtime with NVRTC, and gst-plugins-bad's gstcudanvrtc.cpp
+# dlopen()s the UNVERSIONED soname "libnvrtc.so". CUDA *runtime* base images ship
+# only libnvrtc.so.MAJOR and libnvrtc.so.MAJOR.MINOR.PATCH - the unversioned link
+# lives in the cuda-nvrtc-dev package, which is (correctly) absent here. Without
+# it the nvcodec plugin still registers nvh264dec / cudaupload / cudadownload
+# (they compile nothing) but silently skips the three converter elements, so
+# `required_gstreamer_cuda_elements()` fails its `cudaconvertscale` probe and
+# EVERY stream falls back to the cv2 CPU decoder with only a debug-level
+# "Could not open nvrtc library libnvrtc.so" from GStreamer. Recreate the link
+# the loader is looking for, then prove it actually resolves.
+RUN set -eu && \
+    nvrtc_library="$(ls -1 /usr/local/cuda/lib64/libnvrtc.so.* | sort -V | tail -n 1)" && \
+    ln -sf "${nvrtc_library}" /usr/local/cuda/lib64/libnvrtc.so && \
+    ldconfig && \
+    python3 -c "import ctypes; ctypes.CDLL('libnvrtc.so')"
+
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
     --mount=type=bind,source=docker/scripts/verify_media_runtime.sh,target=/tmp/verify_media_runtime,ro \
     sh /tmp/verify_ffmpeg && \
-    GSTREAMER_REQUIRE_NVCODEC=true sh /tmp/verify_gstreamer && \
+    GSTREAMER_REQUIRE_NVCODEC=true \
+    GSTREAMER_REQUIRE_NVCODEC_NVRTC=true \
+    sh /tmp/verify_gstreamer && \
     sh /tmp/verify_media_runtime && \
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
     rm -rf /root/.cache/gstreamer-1.0

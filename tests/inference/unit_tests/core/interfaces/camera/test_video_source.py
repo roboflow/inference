@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Event, Thread
+from typing import List, Tuple
 from unittest import mock
 from unittest.mock import MagicMock, call, patch
 
@@ -1494,6 +1495,101 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
         len(buffer_content) < 103
     ), "With delay in stream consumption, not all frames can be processed as adaptive strategy taking into account reader pace should trigger decoding prevention"
     assert buffer.empty() is True, "Everything should be consumed from buffer"
+
+
+def _run_adaptive_stream_pace_scenario(
+    respect_consumer_capacity: bool,
+) -> Tuple[List[int], List[StatusUpdate]]:
+    """Drive a consumer whose grabbing pace can never reach the DECLARED fps.
+
+    The source announces 200 fps while frames are emitted at ~100 fps, so the
+    stream-pace rule of ADAPTIVE mode is permanently satisfied - exactly the
+    shape of a real RTSP camera that advertises a round 30 fps and delivers a
+    hair less. The reader takes every frame the moment it appears and spends
+    nearly all of its time blocked on an empty buffer, i.e. it has plenty of
+    spare capacity.
+    """
+    status_updates: List[StatusUpdate] = []
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=200.0,
+        minimum_adaptive_mode_samples=2,
+        maximum_adaptive_frames_dropped_in_row=1,
+        status_update_handlers=[status_updates.append],
+        respect_consumer_capacity=respect_consumer_capacity,
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=False, fps=200)
+    video.discover_source_properties.return_value = source_properties
+    buffer = Queue()
+
+    consumed_frame_ids: List[int] = []
+    consumer.reset(source_properties=source_properties)
+    for _ in range(20):
+        consumer.consume_frame(
+            video=video,
+            declared_source_fps=source_properties.fps,
+            is_source_video_file=source_properties.is_file,
+            buffer=buffer,
+            frames_buffering_allowed=True,
+        )
+        time.sleep(0.01)
+        delivered = False
+        while not buffer.empty():
+            consumed_frame_ids.append(buffer.get_nowait().frame_id)
+            consumer.notify_frame_consumed()
+            delivered = True
+        # The reader was ready the whole 10ms - it only got a frame if one was
+        # decoded, so nearly all of that time was spent blocked.
+        consumer.notify_frame_read(blocked_seconds=0.0095, frame_delivered=delivered)
+    return consumed_frame_ids, status_updates
+
+
+@pytest.mark.slow
+def test_adaptive_strategy_stops_dropping_once_consumer_shows_spare_capacity() -> None:
+    # when
+    consumed_frame_ids, status_updates = _run_adaptive_stream_pace_scenario(
+        respect_consumer_capacity=True,
+    )
+
+    # then
+    adaptive_drops = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "ADAPTIVE strategy"
+    ]
+    assert (
+        len(adaptive_drops) <= 2
+    ), "Adaptive mode may drop while it has no capacity evidence yet, but must stop afterwards"
+    assert (
+        len(consumed_frame_ids) >= 18
+    ), "A consumer with spare capacity must receive virtually every grabbed frame"
+    assert consumed_frame_ids[-1] == 20, "Last grabbed frame must reach the consumer"
+
+
+@pytest.mark.slow
+def test_adaptive_strategy_capacity_guard_can_be_disabled() -> None:
+    # when
+    consumed_frame_ids, status_updates = _run_adaptive_stream_pace_scenario(
+        respect_consumer_capacity=False,
+    )
+
+    # then
+    adaptive_drops = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "ADAPTIVE strategy"
+    ]
+    assert (
+        len(adaptive_drops) >= 5
+    ), "With the guard disabled, the unreachable declared fps must keep the drop ratchet engaged"
+    assert (
+        len(consumed_frame_ids) < 18
+    ), "Legacy open-loop behaviour starves the consumer"
 
 
 def test_get_fps_if_tick_happens_now_when_monitor_has_no_ticks_registered() -> None:

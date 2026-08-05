@@ -843,7 +843,6 @@ DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES = int(
 DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
     os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
 )
-
 ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = str2bool(
     os.getenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "False")
 )
@@ -1430,6 +1429,31 @@ else:
 ENABLE_TENSOR_DATA_REPRESENTATION = (
     str2bool(os.getenv("ENABLE_TENSOR_DATA_REPRESENTATION", "False"))
     and USE_INFERENCE_MODELS
+)
+
+# Adaptive buffer filling only ever pays off while the pipeline decodes frames
+# FASTER than the consumer can take them. Both adaptive rules are open loop
+# (nothing checks that dropping actually improved anything), so a source whose
+# grabbing pace simply cannot reach the DECLARED fps - e.g. any RTSP camera that
+# announces 30 fps and delivers a hair less - pins the drop ratchet at its floor
+# of one accepted frame per (VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW
+# + 1) grabs, no matter how fast the consumer is. With the guard on, adaptive
+# drops are suppressed whenever the measured consumer CAPACITY (frames read per
+# second of NON-blocked reader time) is at least the current decoding pace, which
+# leaves genuinely saturated deployments untouched and stops the collapse.
+#
+# The default is GATED ON ENABLE_TENSOR_DATA_REPRESENTATION deliberately. The bug
+# is representation-independent - it lives in VideoSource, below that boundary -
+# but defaulting the guard on only for the tensor pipeline leaves the established
+# numpy path bit-for-bit unchanged while the fix proves itself in the field. Set
+# VIDEO_SOURCE_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY explicitly to override in
+# either direction; a numpy deployment hitting the collapse can opt in without
+# turning on tensors.
+DEFAULT_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY = str2bool(
+    os.getenv(
+        "VIDEO_SOURCE_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY",
+        str(ENABLE_TENSOR_DATA_REPRESENTATION),
+    )
 )
 
 

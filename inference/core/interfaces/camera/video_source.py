@@ -1,6 +1,7 @@
 import os
 import random
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
@@ -15,6 +16,7 @@ from numpy import ndarray
 from inference.core import logger
 from inference.core.env import (
     DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
+    DEFAULT_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY,
     DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
     DEFAULT_BUFFER_SIZE,
     DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
@@ -371,6 +373,19 @@ class VideoSource:
         reader pace and maximum number of consecutive frames dropped in ADAPTIVE mode are configurable by clients,
         with reasonable defaults being set.
 
+        Both adaptive conditions above are open loop - nothing verifies that the drops they cause actually
+        improve anything. In particular, the first one compares the ANNOUNCED source fps against the measured
+        grabbing pace, and an announced fps that the pipeline can never reach (any RTSP camera advertising a
+        round 30 fps while delivering a hair less, any source where `grab()` already carries the decode cost)
+        makes it true forever - which pins throughput at one accepted frame per
+        (`maximum_adaptive_frames_dropped_in_row` + 1) grabs regardless of how fast the consumer is, and the
+        faster the consumer, the bigger the loss. ADAPTIVE mode therefore has one closed-loop guard: it does
+        not drop while the consumer's measured CAPACITY (frames read per second of reader time NOT spent
+        blocked on an empty buffer - see `VideoConsumer.notify_frame_read`) is at least the current decoding
+        pace. Deployments where the consumer really is the bottleneck never hit the guard and behave exactly
+        as before; set VIDEO_SOURCE_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY=False to restore the old
+        open-loop behaviour.
+
         `VideoSource` emits events regarding its activity - which can be intercepted by custom handlers. Take
         into account that they are always executed in context of thread invoking them (and should be fast to complete,
         otherwise may block the flow of stream consumption). All errors raised will be emitted as logger warnings only.
@@ -385,6 +400,7 @@ class VideoSource:
         * VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE - default: 5.0
         * VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES - default: 10
         * VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW - default: 16
+        * VIDEO_SOURCE_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY - default: True
 
         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
 
@@ -649,11 +665,20 @@ class VideoSource:
             self._fps = source_metadata.source_properties.fps
             if not self._fps or self._fps <= 0 or self._fps > 1000:
                 self._fps = 30  # sane default
+        # Time spent inside `get_from_queue(...)` is - to within the cost of
+        # draining an already-filled buffer - time the consumer spent BLOCKED on
+        # an empty buffer. Reporting it lets `VideoConsumer` tell a slow consumer
+        # apart from a starved one; see `VideoConsumer.notify_frame_read`.
+        read_started_at = time.monotonic()
         video_frame: Optional[Union[VideoFrame, str]] = get_from_queue(
             queue=self._frames_buffer,
             on_successful_read=self._video_consumer.notify_frame_consumed,
             timeout=timeout,
             purge=self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER,
+        )
+        self._video_consumer.notify_frame_read(
+            blocked_seconds=time.monotonic() - read_started_at,
+            frame_delivered=isinstance(video_frame, VideoFrame),
         )
         if video_frame == POISON_PILL:
             raise EndOfStreamError(
@@ -942,6 +967,7 @@ class VideoConsumer:
         maximum_adaptive_frames_dropped_in_row: int,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         desired_fps: Optional[Union[float, int]] = None,
+        respect_consumer_capacity: bool = DEFAULT_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY,
     ) -> "VideoConsumer":
         minimum_adaptive_mode_samples = max(minimum_adaptive_mode_samples, 2)
         reader_pace_monitor = sv.FPSMonitor(
@@ -964,6 +990,7 @@ class VideoConsumer:
             stream_consumption_pace_monitor=stream_consumption_pace_monitor,
             decoding_pace_monitor=decoding_pace_monitor,
             desired_fps=desired_fps,
+            respect_consumer_capacity=respect_consumer_capacity,
         )
 
     def __init__(
@@ -978,6 +1005,7 @@ class VideoConsumer:
         stream_consumption_pace_monitor: sv.FPSMonitor,
         decoding_pace_monitor: sv.FPSMonitor,
         desired_fps: Optional[Union[float, int]],
+        respect_consumer_capacity: bool = DEFAULT_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY,
     ):
         self._buffer_filling_strategy = buffer_filling_strategy
         self._frame_counter = 0
@@ -997,6 +1025,15 @@ class VideoConsumer:
         self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
+        self._respect_consumer_capacity = respect_consumer_capacity
+        # Sliding window of completed reader round-trips, used to estimate the
+        # consumer CAPACITY (as opposed to the rate at which frames happen to be
+        # handed to it). Written by the reader thread, read by the stream
+        # consumption thread - hence the lock.
+        self._reader_reads_lock = Lock()
+        self._reader_reads: deque = deque(
+            maxlen=max(10 * self._minimum_adaptive_mode_samples, 10)
+        )
 
     @property
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
@@ -1012,12 +1049,29 @@ class VideoConsumer:
         self._decoding_pace_monitor.reset()
         self._adaptive_frames_dropped_in_row = 0
         self._next_frame_from_video_to_accept = self._frame_counter + 1
+        with self._reader_reads_lock:
+            self._reader_reads.clear()
 
     def reset_stream_consumption_pace(self) -> None:
         self._stream_consumption_pace_monitor.reset()
 
     def notify_frame_consumed(self) -> None:
         self._reader_pace_monitor.tick()
+
+    def notify_frame_read(self, blocked_seconds: float, frame_delivered: bool) -> None:
+        """Register one completed `VideoSource.read_frame(...)` round-trip.
+
+        `blocked_seconds` is the time that read spent waiting on an EMPTY buffer.
+        Subtracting it from wall time is what separates "the consumer is slow"
+        from "the consumer is starved": the reader pace monitors only see the
+        frames that were actually handed over, so a consumer that is being
+        starved by adaptive dropping looks exactly like a slow one, and the
+        adaptive rules then keep dropping - the feedback loop this fixes.
+        """
+        with self._reader_reads_lock:
+            self._reader_reads.append(
+                (time.monotonic(), max(blocked_seconds, 0.0), bool(frame_delivered))
+            )
 
     def consume_frame(
         self,
@@ -1195,6 +1249,15 @@ class VideoConsumer:
         ):
             # not enough observations
             return False
+        if self._consumer_can_absorb_current_decoding_pace():
+            # Neither adaptive rule has an actuator that can help here: we are
+            # already handing the consumer fewer frames per second than it has
+            # demonstrated it can process, so dropping one more can only lower
+            # throughput. Both rules below are open loop - nothing re-checks
+            # that dropping improved anything - so without this guard a source
+            # that simply cannot reach its DECLARED fps keeps the drop ratchet
+            # pinned at its floor forever.
+            return False
         if hasattr(self._stream_consumption_pace_monitor, "fps"):
             stream_consumption_pace = self._stream_consumption_pace_monitor.fps
         else:
@@ -1231,6 +1294,61 @@ class VideoConsumer:
             # we are too fast for the reader - time to save compute on decoding
             return True
         return False
+
+    def _consumer_can_absorb_current_decoding_pace(self) -> bool:
+        """Is the consumer demonstrably able to take everything we decode?
+
+        Returns False whenever there is not enough evidence, so the guard is
+        inert for anything that does not report reader round-trips through
+        `notify_frame_read(...)` (i.e. every direct user of `VideoConsumer`).
+        """
+        if not self._respect_consumer_capacity:
+            return False
+        if (
+            len(self._decoding_pace_monitor.all_timestamps)
+            <= self._minimum_adaptive_mode_samples
+        ):
+            # not enough observations
+            return False
+        consumer_capacity = self._consumer_capacity()
+        if consumer_capacity is None:
+            return False
+        if hasattr(self._decoding_pace_monitor, "fps"):
+            decoding_pace = self._decoding_pace_monitor.fps
+        else:
+            decoding_pace = self._decoding_pace_monitor()
+        return decoding_pace <= consumer_capacity
+
+    def _consumer_capacity(self) -> Optional[float]:
+        """Frames the consumer can process per second of time it is NOT starved.
+
+        `reader_pace_monitor` measures the rate at which frames were HANDED to
+        the consumer, which is capped by whatever the decoder chose to emit - it
+        can never reveal spare capacity. Excluding the time the reader spent
+        blocked on an empty buffer turns the same observations into a capacity
+        estimate: `frames delivered / time the reader was actually working`.
+        """
+        with self._reader_reads_lock:
+            reads = list(self._reader_reads)
+        if len(reads) <= self._minimum_adaptive_mode_samples:
+            return None
+        # The first entry only anchors the window - its blocked time was spent
+        # before the window opened.
+        window_seconds = reads[-1][0] - reads[0][0]
+        if window_seconds <= 0:
+            return None
+        blocked_seconds = sum(read[1] for read in reads[1:])
+        frames_delivered = sum(1 for read in reads[1:] if read[2])
+        if frames_delivered == 0:
+            # Starved to the point of receiving nothing - no capacity evidence,
+            # but also nothing that dropping more frames could possibly fix.
+            return None
+        working_seconds = window_seconds - blocked_seconds
+        if working_seconds <= 0:
+            # Reader did nothing but wait - capacity is unbounded as far as we
+            # can tell.
+            return float("inf")
+        return frames_delivered / working_seconds
 
     def _process_stream_frame_dropping_oldest(
         self,
