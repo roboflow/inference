@@ -114,6 +114,48 @@ result = client.infer_lmm(
 print(result["response"])
 ```
 
+### How to Use Cosmos 3 Edge (Local Python)
+
+You can also run the model in-process with the `inference` Python package, without going through the HTTP API. Because the Cosmos dependencies ship only in the `-cosmos3` Docker image, the easiest way is to run your script inside that image. Create `app.py`:
+
+```python
+from inference import get_model
+
+model = get_model("nvidia/cosmos-3-edge", api_key="YOUR_ROBOFLOW_API_KEY")
+
+result = model.infer(
+    "https://media.roboflow.com/dog.jpeg",
+    prompt="What is likely going to happen next in this scene?",
+)
+
+print(result[0].response)
+```
+
+Then run it inside the Cosmos image:
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd):/workspace -w /workspace \
+  -v /tmp/model-cache:/tmp/model-cache -e MODEL_CACHE_DIR=/tmp/model-cache \
+  --entrypoint python3 \
+  roboflow/roboflow-inference-server-gpu:1.3.8-cosmos3 app.py
+```
+
+The `-v /tmp/model-cache` mount persists the downloaded weights across runs (and is the same cache directory `inference server start` uses).
+
+Under the hood the model is loaded through the `inference_models` package — you can equivalently load it directly with `AutoModel`:
+
+```python
+import cv2
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained("nvidia/cosmos-3-edge", api_key="YOUR_ROBOFLOW_API_KEY")
+
+image = cv2.imread("my-image.jpg")
+answers = model.prompt(images=image, prompt="What is likely going to happen next in this scene?")
+print(answers[0])
+```
+
 ### System Prompts
 
 Cosmos 3 Edge accepts an optional system prompt that lets you steer the model's behavior — for example, asking it to answer as a safety inspector. When calling the model directly, the system prompt is appended to the user prompt with the `<system_prompt>` delimiter:
