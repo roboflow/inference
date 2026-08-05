@@ -1,5 +1,7 @@
 import copy
+import os
 import shutil
+import tempfile
 import uuid
 from time import perf_counter
 from typing import Any, List, Tuple, Union
@@ -10,7 +12,6 @@ import numpy as np
 import torch
 from PIL import Image
 
-from inference.core.cache.model_artifacts import get_cache_file_path
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponse,
@@ -18,7 +19,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image, load_image_with_inferred_type
@@ -53,28 +54,39 @@ class EasyOCR(RoboflowCoreModel):
         self.task_type = "ocr"
         self.recognizer = model_id.split("/")[1]
 
-        shutil.copyfile(
-            get_cache_file_path(file="weights.pt", model_id=model_id),
-            get_cache_file_path(file=f"{self.recognizer}.pth", model_id=model_id),
-        )
-
     def predict(self, image_in: np.ndarray, prompt="", history=None, **kwargs):
         language_codes = kwargs.get("language_codes", ["en"])
         quantize = kwargs.get("quantize", False)
-        reader = easyocr.Reader(
-            language_codes,
-            download_enabled=False,
-            user_network_directory=f"{MODEL_CACHE_DIR}/easy_ocr/{self.recognizer}/",
-            model_storage_directory=f"{MODEL_CACHE_DIR}/easy_ocr/{self.recognizer}/",
-            detect_network="craft",
-            recog_network=self.recognizer,
-            detector=True,
-            recognizer=True,
-            gpu=True,
-            quantize=quantize,
-        )
-
-        results = reader.readtext(image_in)
+        recognition_weights_path = self.cache_file("weights.pt")
+        detector_weights_path = self.cache_file("craft_mlt_25k.pth")
+        with tempfile.TemporaryDirectory(prefix="inference-easyocr-") as runtime_dir:
+            _stage_runtime_weight(
+                source_path=recognition_weights_path,
+                destination_path=os.path.join(
+                    runtime_dir,
+                    f"{self.recognizer}.pth",
+                ),
+            )
+            _stage_runtime_weight(
+                source_path=detector_weights_path,
+                destination_path=os.path.join(
+                    runtime_dir,
+                    "craft_mlt_25k.pth",
+                ),
+            )
+            reader = easyocr.Reader(
+                language_codes,
+                download_enabled=False,
+                user_network_directory=runtime_dir,
+                model_storage_directory=runtime_dir,
+                detect_network="craft",
+                recog_network=self.recognizer,
+                detector=True,
+                recognizer=True,
+                gpu=True,
+                quantize=quantize,
+            )
+            results = reader.readtext(image_in)
         # convert native EasyOCR results from numpy to standard python types
         results = [
             (
@@ -145,3 +157,21 @@ class EasyOCR(RoboflowCoreModel):
 
     def get_infer_bucket_file_list(self) -> List[str]:
         return ["weights.pt", "craft_mlt_25k.pth"]
+
+
+def _stage_runtime_weight(source_path: str, destination_path: str) -> None:
+    """Expose a cached weight under the filename expected by EasyOCR.
+
+    The cache itself may be mounted read-only. Prefer a temporary symlink so
+    large recognition weights are not duplicated; copy only on platforms that
+    cannot create the link.
+    """
+
+    if os.path.islink(source_path) or not os.path.isfile(source_path):
+        raise FileNotFoundError(
+            f"EasyOCR cached weight is missing or not a regular file: {source_path}"
+        )
+    try:
+        os.symlink(os.path.abspath(source_path), destination_path)
+    except (NotImplementedError, OSError):
+        shutil.copyfile(source_path, destination_path)

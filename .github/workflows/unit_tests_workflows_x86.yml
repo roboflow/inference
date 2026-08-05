@@ -48,6 +48,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.easyocr.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt
+      - name: 🔤 Cache Workflows font assets
+        uses: actions/cache@v5
+        with:
+          path: inference/core/workflows/core_steps/visualizations/common/fonts/assets
+          key: workflows-fonts-${{ hashFiles('inference/core/workflows/core_steps/visualizations/common/fonts/registry.py') }}
+      - name: 🔤 Download Workflows font assets
+        run: python build_scripts/download_fonts.py
       - name: 🧪 Unit Tests of Workflows
         timeout-minutes: 30
         run: python -m pytest tests/workflows/unit_tests

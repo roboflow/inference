@@ -13,9 +13,14 @@ from transformers import (
 from transformers.utils import is_flash_attn_2_available
 
 from inference.core.cache.model_artifacts import get_cache_dir, get_cache_file_path
-from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.roboflow_api import get_roboflow_base_lora, stream_url_to_cache
-from inference.models.transformers import LoRATransformerModel, TransformerModel
+from inference.models.transformers import (
+    LoRATransformerModel,
+    TransformerModel,
+    load_compatible_adapter_config,
+    remove_extracted_archive_if_online,
+)
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -48,19 +53,19 @@ class Qwen3VL(TransformerModel):
         self.use_quantization = use_quantization
         super().__init__(model_id, *args, **kwargs)
 
+    def get_infer_bucket_file_list(self) -> list:
+        return [
+            *super().get_infer_bucket_file_list(),
+            "adapter_config.json",
+        ]
+
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=["eva_config", "lora_bias", "exclude_modules"],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -96,6 +101,7 @@ class Qwen3VL(TransformerModel):
                 token=token,
                 quantization_config=bnb_config,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -105,6 +111,7 @@ class Qwen3VL(TransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
         self.model = self.base_model.eval().to(self.dtype)
 
@@ -115,6 +122,7 @@ class Qwen3VL(TransformerModel):
             token=token,
             min_pixels=256 * 28 * 28,
             max_pixels=1280 * 28 * 28,
+            local_files_only=OFFLINE_MODE,
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
@@ -230,16 +238,10 @@ class LoRAQwen3VL(LoRATransformerModel):
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=["eva_config", "lora_bias", "exclude_modules"],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -263,8 +265,7 @@ class LoRAQwen3VL(LoRATransformerModel):
         rm_weights = os.path.join(
             MODEL_CACHE_DIR, "lora-bases/qwen/qwen3vl-2b-instruct/main/weights.tar.gz"
         )
-        if os.path.exists(rm_weights):
-            os.remove(rm_weights)
+        remove_extracted_archive_if_online(rm_weights)
 
         attn_implementation = (
             "flash_attention_2"
@@ -281,6 +282,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 token=token,
                 quantization_config=bnb_config,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -290,11 +292,16 @@ class LoRAQwen3VL(LoRATransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 attn_implementation=attn_implementation,
+                local_files_only=OFFLINE_MODE,
             )
 
         if model_load_id != "qwen-pretrains/2":
             self.model = (
-                PeftModel.from_pretrained(self.base_model, self.cache_dir)
+                PeftModel.from_pretrained(
+                    self.base_model,
+                    self.cache_dir,
+                    config=lora_config,
+                )
                 .eval()
                 .to(self.dtype)
             )
@@ -315,6 +322,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 chat_template=chat_template,
                 min_pixels=256 * 28 * 28,
                 max_pixels=1280 * 28 * 28,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.processor = self.processor_class.from_pretrained(
@@ -324,6 +332,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 token=token,
                 min_pixels=256 * 28 * 28,
                 max_pixels=1280 * 28 * 28,
+                local_files_only=OFFLINE_MODE,
             )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):

@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src
     git -C /tmp/triton-build/src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
     python -m pip install --no-cache-dir \
-        "setuptools>=40.8.0" \
+        "setuptools~=83.0.0" \
         wheel \
         "cmake>=3.18,<4.0" \
         "ninja>=1.11.1"; \
@@ -77,6 +77,9 @@ RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src
 
 WORKDIR /app/
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py

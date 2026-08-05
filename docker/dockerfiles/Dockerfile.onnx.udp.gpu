@@ -29,7 +29,7 @@ RUN pip3 install \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.easyocr.txt \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
@@ -54,6 +54,9 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     && rm -rf /var/lib/apt/lists/*
 
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/udp_stream_config.py udp_stream_config.py
 
 ENTRYPOINT python3 udp_stream_config.py

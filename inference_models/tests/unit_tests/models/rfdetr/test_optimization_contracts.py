@@ -20,13 +20,17 @@ from inference_models.models.optimization.contracts import (
     InputCompatibility,
     OptimizationMetadata,
     OptimizationStage,
-    ValidationEnvironment,
     immutable_mapping,
 )
+from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
+    RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
+    RFDETR_ENGINE_PLUGIN_IMPLEMENTATIONS,
     RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+    RFDETR_SCHEDULER_IMPLEMENTATIONS,
+    build_rfdetr_implementation_registry,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
@@ -39,6 +43,7 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.optimization.readiness import (
@@ -57,28 +62,10 @@ class _Stage:
         implementation_id: str,
         *,
         compatible: bool = True,
-        validated: bool = False,
         model_supported: bool = True,
         request_supported: bool = True,
         stage: OptimizationStage = OptimizationStage.PREPROCESS,
     ) -> None:
-        validation_environments = (
-            (
-                ValidationEnvironment(
-                    machine_type="test",
-                    device_kind="gpu",
-                    device_name="test-gpu",
-                    scenario="runtime",
-                    resolved_axes={},
-                    runtime_versions={},
-                    source_commit="test",
-                    profiling_bundle="test-bundle",
-                    status="validated",
-                ),
-            )
-            if validated
-            else ()
-        )
         self.metadata = OptimizationMetadata(
             implementation_id=implementation_id,
             stage=stage,
@@ -90,7 +77,6 @@ class _Stage:
             changes_numerics=False,
             supports_concurrency=True,
             supports_cuda_graphs=False,
-            validated_environments=validation_environments,
         )
         self._compatible = compatible
         self._model_supported = model_supported
@@ -128,9 +114,6 @@ def _context() -> ExecutionContext:
     return ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        device_name="test-gpu",
-        machine_type="test",
-        scenario="runtime",
     )
 
 
@@ -147,7 +130,7 @@ def _network_input() -> NetworkInputDefinition:
     )
 
 
-def test_execution_plan_defaults_to_optimized_implementations(monkeypatch) -> None:
+def test_execution_plan_defaults_to_auto_selection(monkeypatch) -> None:
     monkeypatch.delenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR", raising=False)
     monkeypatch.delenv("INFERENCE_MODELS_RFDETR_POSTPROCESSOR", raising=False)
 
@@ -155,8 +138,8 @@ def test_execution_plan_defaults_to_optimized_implementations(monkeypatch) -> No
     resolved_plan = RFDetrExecutionPlan.resolve()
 
     for plan in (default_plan, resolved_plan):
-        assert plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
-        assert plan.postprocessor_id == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+        assert plan.preprocessor_id == AUTO_IMPLEMENTATION_ID
+        assert plan.postprocessor_id == AUTO_IMPLEMENTATION_ID
 
 
 def test_execution_plan_reads_environment_overrides(monkeypatch) -> None:
@@ -190,11 +173,19 @@ def test_explicit_plan_ignores_environment(monkeypatch) -> None:
     assert resolved is plan
 
 
-def test_execution_plan_rejects_unimplemented_stage_category() -> None:
-    with pytest.raises(ModelRuntimeError, match="does not yet provide"):
-        RFDetrExecutionPlan.resolve(
-            execution_plan=RFDetrExecutionPlan(scheduler_id="future-scheduler")
-        )
+def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
+    plan = RFDetrExecutionPlan(
+        buffer_strategy_id="future-buffer",
+        scheduler_id="future-scheduler",
+        engine_plugin_id="future-plugin",
+    )
+
+    resolved = RFDetrExecutionPlan.resolve(execution_plan=plan)
+
+    assert resolved is plan
+    assert resolved.buffer_strategy_id == "future-buffer"
+    assert resolved.scheduler_id == "future-scheduler"
+    assert resolved.engine_plugin_id == "future-plugin"
 
 
 def test_registry_resolves_explicit_and_auto_base() -> None:
@@ -222,12 +213,16 @@ def test_registry_resolves_explicit_and_auto_base() -> None:
     )
 
 
-def test_registry_auto_selects_a_validated_compatible_candidate() -> None:
+def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
     registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")
-    candidate = _Stage("candidate", validated=True)
+    candidate = _Stage("candidate")
     registry.register(base)
     registry.register(candidate)
+    registry.set_auto_preferences(
+        stage=OptimizationStage.PREPROCESS,
+        implementation_ids=("candidate",),
+    )
 
     assert (
         registry.resolve(
@@ -237,6 +232,34 @@ def test_registry_auto_selects_a_validated_compatible_candidate() -> None:
         )
         is candidate
     )
+
+
+def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cuda:0"),
+        preprocessor_max_workers=2,
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda:0",
+        runtime_components={"triton": False},
+    )
+
+    preprocessor = registry.resolve(
+        stage=OptimizationStage.PREPROCESS,
+        requested_id="auto",
+        context=context,
+    )
+    postprocessor = registry.resolve(
+        stage=OptimizationStage.POSTPROCESS,
+        requested_id="auto",
+        context=context,
+    )
+
+    assert (
+        preprocessor.metadata.implementation_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
+    )
+    assert postprocessor.metadata.implementation_id == RFDETR_POSTPROCESSOR_BASE
 
 
 def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
@@ -250,7 +273,7 @@ def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
             requested_id="unknown",
             context=_context(),
         )
-    with pytest.raises(ModelRuntimeError, match="not compatible"):
+    with pytest.raises(ModelRuntimeError, match="is incompatible"):
         registry.resolve(
             stage=OptimizationStage.PREPROCESS,
             requested_id="incompatible",
@@ -284,8 +307,12 @@ def test_auto_selection_is_not_reported_as_fallback_when_candidate_is_supported(
 ):
     registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register(_Stage("base"))
-    candidate = _Stage("candidate", validated=True)
+    candidate = _Stage("candidate")
     registry.register(candidate)
+    registry.set_auto_preferences(
+        stage=OptimizationStage.PREPROCESS,
+        implementation_ids=("candidate",),
+    )
 
     selection = resolve_preprocessor_for_model(
         registry=registry,
@@ -419,6 +446,21 @@ def test_implementation_metadata_is_typed_and_immutable() -> None:
     assert json.loads(json.dumps(preprocessor.to_dict()))["stage"] == "preprocess"
 
 
+def test_all_execution_plan_stages_publish_base_metadata() -> None:
+    stage_catalogs = {
+        OptimizationStage.PREPROCESS: RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+        OptimizationStage.BUFFER_STRATEGY: RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
+        OptimizationStage.SCHEDULER: RFDETR_SCHEDULER_IMPLEMENTATIONS,
+        OptimizationStage.POSTPROCESS: RFDETR_POSTPROCESSOR_IMPLEMENTATIONS,
+        OptimizationStage.ENGINE_PLUGIN: RFDETR_ENGINE_PLUGIN_IMPLEMENTATIONS,
+    }
+
+    for stage, catalog in stage_catalogs.items():
+        assert "base" in catalog
+        assert catalog["base"].stage is stage
+        assert json.loads(json.dumps(catalog["base"].to_dict()))["stage"] == stage.value
+
+
 def test_readiness_tracker_consumes_only_the_exact_tensor() -> None:
     tracker = PreprocessReadinessTracker()
     tensor = torch.zeros(1)
@@ -433,6 +475,7 @@ def test_readiness_tracker_consumes_only_the_exact_tensor() -> None:
     assert tracker.consume(other) is None
     readiness = tracker.consume(tensor)
     assert readiness is not None
+    assert readiness.ready_event is None
     assert readiness.input_kind == "test"
     assert readiness.implementation_id == "candidate"
     assert tracker.consume(tensor) is None

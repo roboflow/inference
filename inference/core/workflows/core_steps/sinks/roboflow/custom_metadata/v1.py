@@ -11,6 +11,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
@@ -185,15 +186,23 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._api_key = api_key
         self._cache = cache
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "background_tasks", "thread_pool_executor"]
+        return [
+            "api_key",
+            "cache",
+            "background_tasks",
+            "thread_pool_executor",
+            "disable_sinks",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -206,6 +215,8 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         field_value: str,
         predictions: Union[sv.Detections, dict],
     ) -> BlockResult:
+        if self._disable_sinks:
+            return disabled_sink_response()
         if self._api_key is None:
             raise ValueError(
                 "RoboflowCustomMetadata block cannot run without Roboflow API key. "

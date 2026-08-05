@@ -221,6 +221,10 @@ class BlockManifest(WorkflowBlockManifest):
             "sam3trackervideo",
         ]
 
+    # `discover_dependent_resources()` deliberately not implemented: this
+    # block loads its weights via AutoModel.from_pretrained, not the model
+    # manager — dependencies stay undeclared (None) for now.
+
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):
     """Stateful SAM2 streaming video tracking block."""

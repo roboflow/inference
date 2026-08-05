@@ -110,7 +110,8 @@ def test_build_effective_updates_skips_rows_when_metadata_and_tags_are_empty() -
     ]
 
 
-def test_run_when_api_key_is_not_specified() -> None:
+@pytest.mark.parametrize("disable_sink", [False, True])
+def test_run_when_api_key_is_not_specified(disable_sink: bool) -> None:
     block_no_key = RoboflowAssetLibraryAttributesBlockV1(
         cache=MemoryCache(),
         api_key=None,
@@ -121,7 +122,29 @@ def test_run_when_api_key_is_not_specified() -> None:
         block_no_key.run(
             source_id=make_batch(["img-1"]),
             metadata={"color": "red"},
+            disable_sink=disable_sink,
         )
+
+
+def test_execution_policy_noops_without_api_key() -> None:
+    block_no_key = RoboflowAssetLibraryAttributesBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        update_attributes_offloader=None,
+        disable_sinks=True,
+    )
+
+    result = block_no_key.run(
+        source_id=make_batch(["img-1"]),
+        metadata={"color": "red"},
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
 
 
 def test_run_when_disabled(block: RoboflowAssetLibraryAttributesBlockV1) -> None:

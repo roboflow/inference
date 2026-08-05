@@ -250,7 +250,7 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     -r requirements.easyocr.txt \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/overrides.txt
@@ -270,7 +270,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools<=75.5.0"
+        "setuptools~=83.0.0"
 
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned
@@ -382,6 +382,9 @@ COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
 # Copy application code
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py

@@ -108,9 +108,9 @@ class _FakeSam3TrackerVideoModel:
         )
 
 
-def _build_model() -> Tuple[
-    SAM3TrackerVideo, _FakeSam3TrackerVideoProcessor, _FakeSam3TrackerVideoModel
-]:
+def _build_model() -> (
+    Tuple[SAM3TrackerVideo, _FakeSam3TrackerVideoProcessor, _FakeSam3TrackerVideoModel]
+):
     processor = _FakeSam3TrackerVideoProcessor()
     model = _FakeSam3TrackerVideoModel()
     tracker = SAM3TrackerVideo(

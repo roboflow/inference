@@ -37,8 +37,8 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 
 ## Supported Backends
 
-For the selectable TensorRT preprocessing and postprocessing architecture, see
-[Inference-Path Optimization Architecture](../contributors/inference-path-optimization-architecture.md#current-rf-detr-integration).
+For the composable five-stage TensorRT execution-plan architecture, see
+[Current RF-DETR Inference-Path Optimization Integration](../contributors/inference-path-optimization-architectures/rfdetr.md).
 
 | Backend | Extras Required |
 |---------|----------------|

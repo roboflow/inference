@@ -96,6 +96,7 @@ nav:
           - Grounding DINO: models/grounding-dino.md
           - OWLv2: models/owlv2.md
       - Depth Estimation:
+          - YOLO26: models/yolo26-depth-estimation.md
           - Depth Anything V2: models/depth-anything-v2.md
           - Depth Anything V3: models/depth-anything-v3.md
       - Gaze Detection:
@@ -114,7 +115,9 @@ nav:
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
-      - Inference-Path Optimization Architecture: contributors/inference-path-optimization-architecture.md
+      - Inference-Path Optimization Architecture:
+          - Component Overview: contributors/inference-path-optimization-architecture.md
+          - RF-DETR Integration: contributors/inference-path-optimization-architectures/rfdetr.md
       - Dependencies and Backends: contributors/dependencies-and-backends.md
       - Adding a Model: contributors/adding-model.md
       - Writing Tests: contributors/writing-tests.md

@@ -11,6 +11,8 @@ import requests
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -314,13 +316,15 @@ class EventWriterSinkBlockV1(WorkflowBlock):
         self,
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        disable_sinks: bool = False,
     ):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor"]
+        return ["background_tasks", "thread_pool_executor", "disable_sinks"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -364,11 +368,13 @@ class EventWriterSinkBlockV1(WorkflowBlock):
         Returns:
             dict: A dictionary with ``error_status`` (bool), ``event_id`` (str), and ``message`` (str).
         """
-        if disable_sink:
+        if self._disable_sinks or disable_sink:
             return {
                 "error_status": False,
                 "event_id": "",
-                "message": "Sink was disabled by parameter `disable_sink`",
+                "message": disabled_sink_message(
+                    disabled_by_execution_policy=self._disable_sinks
+                ),
             }
 
         url = event_ingestion_url.rstrip("/")
@@ -595,6 +601,7 @@ def _keypoints_to_v2(detections: Any) -> List[Dict[str, Any]]:
         confidence = detections.confidence
         class_names = detections.data.get("class_name", [])
         keypoints_xy = detections.data.get("keypoints_xy")
+        keypoints_class_name = detections.data.get("keypoints_class_name")
         for i in range(len(xyxy)):
             x1, y1, x2, y2 = xyxy[i]
             w = float(x2 - x1)
@@ -610,7 +617,15 @@ def _keypoints_to_v2(detections: Any) -> List[Dict[str, Any]]:
             }
             if keypoints_xy is not None and i < len(keypoints_xy):
                 kps = keypoints_xy[i]
-                for j, kp in enumerate(kps):
+                # Skip trailing padding slots (see common/keypoints.py).
+                kp_class_name = (
+                    keypoints_class_name[i]
+                    if keypoints_class_name is not None
+                    and i < len(keypoints_class_name)
+                    else None
+                )
+                kp_count = real_keypoints_count(kp_class_name, total=len(kps))
+                for j, kp in enumerate(kps[:kp_count]):
                     entry["keypoints"].append(
                         {
                             "id": j,

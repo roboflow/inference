@@ -44,8 +44,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
+    roboflow_platform_project,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -149,6 +152,20 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
         return ["keypoint-detection"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        resources = [roboflow_platform_model(model_id=self.model_id)]
+        if self.disable_active_learning is True:
+            # Active learning literally disabled (the default) — the target
+            # project is dead configuration, not a dependency.
+            return resources
+        if self.active_learning_target_dataset is not None:
+            resources.append(
+                roboflow_platform_project(
+                    project_url=self.active_learning_target_dataset
+                )
+            )
+        return resources
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:

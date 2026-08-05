@@ -27,7 +27,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 
 MODEL_VERSION_MAPPING = {
@@ -193,6 +196,25 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector returned verbatim; the attached resolver
+            # performs the MODEL_VERSION_MAPPING lookup once the input value
+            # is substituted.
+            return [
+                third_party_model(
+                    provider="openrouter",
+                    model_id=self.model_version,
+                    model_id_resolver=lambda label: MODEL_VERSION_MAPPING[label],
+                )
+            ]
+        return [
+            third_party_model(
+                provider="openrouter",
+                model_id=MODEL_VERSION_MAPPING[self.model_version],
+            )
+        ]
 
 
 class GoogleGemmaBlockV2(OpenRouterWorkflowBlockBase):

@@ -8,6 +8,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -215,16 +216,24 @@ class BlockManifest(WorkflowBlockManifest):
 class LocalFileSinkBlockV1(WorkflowBlock):
 
     def __init__(
-        self, allow_access_to_file_system: bool, allowed_write_directory: Optional[str]
+        self,
+        allow_access_to_file_system: bool,
+        allowed_write_directory: Optional[str],
+        disable_sinks: bool = False,
     ):
         self._active_file_descriptor: Optional[TextIOWrapper] = None
         self._entries_in_file = 0
         self._allow_access_to_file_system = allow_access_to_file_system
         self._allowed_write_directory = allowed_write_directory
+        self._disable_sinks = disable_sinks
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["allow_access_to_file_system", "allowed_write_directory"]
+        return [
+            "allow_access_to_file_system",
+            "allowed_write_directory",
+            "disable_sinks",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -239,6 +248,8 @@ class LocalFileSinkBlockV1(WorkflowBlock):
         file_name_prefix: str,
         max_entries_per_file: int,
     ) -> BlockResult:
+        if self._disable_sinks:
+            return disabled_sink_response()
         if not self._allow_access_to_file_system:
             raise RuntimeError(
                 "`roboflow_core/local_file_sink@v1` block cannot run in this environment - "

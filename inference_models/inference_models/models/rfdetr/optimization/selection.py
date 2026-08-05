@@ -1,7 +1,6 @@
 """RF-DETR stage selection with declared compatibility fallback."""
 
-from dataclasses import dataclass
-from typing import Callable, Dict, Generic, Optional, TypeVar, cast
+from typing import Callable, Optional, TypeVar, cast
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -14,7 +13,10 @@ from inference_models.models.optimization.contracts import (
     InferenceStage,
     OptimizationStage,
 )
-from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.optimization.registry import (
+    ImplementationRegistry,
+    ImplementationSelection,
+)
 from inference_models.models.rfdetr.optimization.contracts import (
     Postprocessor,
     PostprocessRequest,
@@ -23,47 +25,6 @@ from inference_models.models.rfdetr.optimization.contracts import (
 )
 
 StageT = TypeVar("StageT", bound=InferenceStage)
-
-
-@dataclass(frozen=True)
-class ImplementationSelection(Generic[StageT]):
-    """Requested and effective RF-DETR stage selection."""
-
-    implementation: StageT
-    requested_id: str
-    fallback_reason: Optional[str] = None
-
-    @property
-    def effective_id(self) -> str:
-        """Return the implementation ID that will execute.
-
-        Returns:
-            Effective stage implementation ID.
-        """
-        return self.implementation.metadata.implementation_id
-
-    @property
-    def used_fallback(self) -> bool:
-        """Return whether selection followed the declared fallback.
-
-        Returns:
-            Whether compatibility resolution followed a declared fallback.
-        """
-        return self.fallback_reason is not None
-
-    def to_dict(self) -> Dict[str, Optional[str]]:
-        """Serialize requested and effective selection metadata.
-
-        Returns:
-            JSON-compatible selection metadata.
-        """
-        serialized = {
-            "requested_id": self.requested_id,
-            "effective_id": self.effective_id,
-            "fallback_reason": self.fallback_reason,
-        }
-
-        return serialized
 
 
 def resolve_preprocessor_for_model(
@@ -92,13 +53,15 @@ def resolve_preprocessor_for_model(
         ModelRuntimeError: If the requested implementation is incompatible and no
             permitted compatible fallback exists.
     """
+    static_selection = registry.resolve_selection(
+        stage=OptimizationStage.PREPROCESS,
+        requested_id=requested_id,
+        context=context,
+        allow_fallback=allow_fallback,
+    )
     implementation = cast(
         Preprocessor,
-        registry.resolve(
-            stage=OptimizationStage.PREPROCESS,
-            requested_id=requested_id,
-            context=context,
-        ),
+        static_selection.implementation,
     )
 
     def check(candidate: Preprocessor) -> CompatibilityResult:
@@ -109,11 +72,20 @@ def resolve_preprocessor_for_model(
 
         return result
 
+    compatibility = check(implementation)
+    if compatibility.supported:
+        selection = cast(
+            ImplementationSelection[Preprocessor],
+            static_selection,
+        )
+
+        return selection
+
     selection = _apply_declared_fallback(
         registry=registry,
         stage=OptimizationStage.PREPROCESS,
         implementation=implementation,
-        requested_id=requested_id,
+        requested_id=static_selection.requested_id,
         context=context,
         check_compatibility=check,
         allow_fallback=allow_fallback,

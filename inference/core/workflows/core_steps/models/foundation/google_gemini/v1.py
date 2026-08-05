@@ -31,8 +31,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    third_party_model,
 )
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
@@ -256,6 +258,9 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [third_party_model(provider="google", model_id=self.model_version)]
+
 
 class GoogleGeminiBlockV1(WorkflowBlock):
 
@@ -381,9 +386,7 @@ def execute_gemini_request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
         headers={
             "Content-Type": "application/json",
-        },
-        params={
-            "key": google_api_key,
+            "x-goog-api-key": google_api_key,
         },
         json=prompt,
     )
