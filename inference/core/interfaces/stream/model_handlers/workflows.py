@@ -1,10 +1,16 @@
+import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
+    WorkflowBatchInput,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,6 +34,13 @@ class WorkflowRunner:
         self._video_metadata_input_name = video_metadata_input_name
         self._serialize_results = serialize_results
         self._is_preview = _is_preview
+        self._clamp_warned_keys: Set[str] = set()
+        self._batch_input_names: Set[str] = (
+            _declared_batch_input_names(execution_engine=execution_engine)
+            - {image_input_name, video_metadata_input_name}
+            if _is_preview
+            else set()
+        )
 
     def __call__(self, video_frames: List[VideoFrame]) -> List[dict]:
         return self._run_workflow(video_frames=video_frames)
@@ -73,6 +86,20 @@ class WorkflowRunner:
         if fps is None:
             # for FPS reporting we expect 0 when FPS cannot be determined
             fps = 0
+        if self._is_preview and self._batch_input_names:
+            # Preview block-cache may pass full per-video lists via
+            # workflows_parameters while the stream runs one frame / small
+            # batch at a time. Index those lists by frame_id so
+            # WorkflowBatchInput length matches the current image batch.
+            # Restricted to inputs the workflow declares as WorkflowBatchInput -
+            # WorkflowParameter values (zones, class lists, ...) are ordinary
+            # parameters of arbitrary length and must pass through untouched.
+            workflows_parameters = _index_list_parameters_by_frame_id(
+                workflows_parameters,
+                video_frames,
+                batch_input_names=self._batch_input_names,
+                warned_keys=self._clamp_warned_keys,
+            )
         video_metadata_for_images = [
             VideoMetadata(
                 video_identifier=(
@@ -102,6 +129,88 @@ class WorkflowRunner:
             video_metadata_for_images
         )
         return workflows_parameters, fps
+
+
+def _declared_batch_input_names(execution_engine: ExecutionEngine) -> Set[str]:
+    # Only inputs declared as WorkflowBatchInput may hold per-frame caches.
+    # The Workflow Builder preview injects each cached block output by adding
+    # `{"type": "WorkflowBatchInput", "name": <cached input>, ...}` to the
+    # definition it sends and rewriting `$steps.<step>.<prop>` selectors to
+    # `$inputs.<cached input>` (roboflow app: cachedBlocks.ts,
+    # buildBatchInputsForHits / rewriteStepRefsToInputs), so the declaration is
+    # what marks a runtime value as a cache. Ordinary WorkflowParameters
+    # (polygon zones, class filters, ...) are never declared this way.
+    # Reached defensively - the engine internals are not part of a public
+    # contract and an engine version may not expose a compiled workflow.
+    engine = getattr(execution_engine, "_engine", None)
+    compiled_workflow = getattr(engine, "_compiled_workflow", None)
+    workflow_definition = getattr(compiled_workflow, "workflow_definition", None)
+    declared_inputs = getattr(workflow_definition, "inputs", None) or []
+    return {
+        declared_input.name
+        for declared_input in declared_inputs
+        if isinstance(declared_input, WorkflowBatchInput)
+    }
+
+
+def _index_list_parameters_by_frame_id(
+    workflows_parameters: Dict[str, Any],
+    video_frames: List[VideoFrame],
+    batch_input_names: Set[str],
+    warned_keys: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
+    # Cached lists are keyed by raw frame_id. The producer (Workflow Builder
+    # preview, roboflow app: cachedBlocks.ts) records outputs into a map keyed
+    # by the streamed frame_id and materialises a dense array of length
+    # max(frame_id) + 1 (populateCachedBlocksFromVideoFrames), so index 0 is
+    # unused for the 1-based ids both VideoSource and the webrtc worker emit,
+    # and gaps from dropped frames are backfilled with the nearest earlier
+    # recorded value. It only serves a cached run when the recorded frame
+    # count covers the expected one and ids stay within its replay bound, so
+    # alignment is enforced there - it cannot be re-checked here, where the
+    # previewed video's total frame count is unknown.
+    # A misaligned cache would clamp to the nearest cached element and log a
+    # warning once per key - the workflow keeps running, on a neighbouring
+    # cached value, rather than having the engine treat the cache length as
+    # the batch size.
+    # Only finite video files qualify: on a live stream frame ids grow
+    # unbounded and indexing would pin every frame to the last cached element.
+    if not video_frames:
+        return workflows_parameters
+    if any(not frame.comes_from_video_file for frame in video_frames):
+        return workflows_parameters
+    frame_ids = [frame.frame_id for frame in video_frames]
+    if any(not isinstance(frame_id, int) for frame_id in frame_ids):
+        return workflows_parameters
+    batch_size = len(video_frames)
+    if warned_keys is None:
+        warned_keys = set()
+    indexed: Dict[str, Any] = {}
+    for key, value in workflows_parameters.items():
+        if key not in batch_input_names:
+            indexed[key] = value
+            continue
+        if not isinstance(value, list) or len(value) in (0, 1, batch_size):
+            indexed[key] = value
+            continue
+        # Out-of-range frame ids clamp to the nearest cached element. Passing
+        # the full list through would make the execution engine treat its
+        # length as the batch size and broadcast the single image across it.
+        if key not in warned_keys and any(
+            frame_id < 0 or frame_id >= len(value) for frame_id in frame_ids
+        ):
+            warned_keys.add(key)
+            logger.warning(
+                "Parameter '%s' holds %d cached elements but frame ids reach %d - "
+                "clamping to the nearest cached value.",
+                key,
+                len(value),
+                max(frame_ids),
+            )
+        indexed[key] = [
+            value[min(max(frame_id, 0), len(value) - 1)] for frame_id in frame_ids
+        ]
+    return indexed
 
 
 class PipelinedWorkflowRunner:

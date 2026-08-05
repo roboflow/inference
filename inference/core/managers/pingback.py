@@ -10,6 +10,7 @@ from inference.core.env import (
     METRICS_ENABLED,
     METRICS_INTERVAL,
     METRICS_URL,
+    OFFLINE_MODE,
     ROBOFLOW_API_VERIFY_SSL,
     TAGS,
 )
@@ -108,6 +109,8 @@ class PingbackInfo:
 
         The data is collected and reset for the next window, and a POST request is made to the pingback URL.
         """
+        if OFFLINE_MODE:
+            return
         all_data = self.environment_info.copy()
         all_data["inference_results"] = []
 

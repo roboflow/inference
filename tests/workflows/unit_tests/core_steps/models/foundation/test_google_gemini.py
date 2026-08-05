@@ -16,6 +16,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     BlockManifest as V3BlockManifest,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
+    MODEL_VERSION_IDS as V4_MODEL_VERSION_IDS,
+)
 
 STALE_MODEL_IDS = {
     "gemini-3-pro-preview",
@@ -67,7 +70,7 @@ def test_gemini_v3_step_validation_when_input_is_valid() -> None:
 
 @pytest.mark.parametrize(
     "model_ids",
-    [MODEL_VERSION_IDS, V3_MODEL_VERSION_IDS],
+    [MODEL_VERSION_IDS, V3_MODEL_VERSION_IDS, V4_MODEL_VERSION_IDS],
 )
 def test_gemini_model_catalog_uses_available_google_models(
     model_ids: list[str],

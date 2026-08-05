@@ -29,9 +29,7 @@ CUDA_AVAILABLE = torch.cuda.is_available()
     reason="COSMOS3_REASONER_PACKAGE_DIR not set or CUDA unavailable",
 )
 def test_cosmos3_reasoner_answers_scene_question() -> None:
-    from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
-        Cosmos3EdgeReasoner,
-    )
+    from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
     model = Cosmos3EdgeReasoner.from_pretrained(
         REASONER_PACKAGE_DIR, device=torch.device("cuda")

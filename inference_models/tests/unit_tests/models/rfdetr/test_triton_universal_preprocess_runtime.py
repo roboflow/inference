@@ -134,7 +134,7 @@ def test_universal_candidate_is_explicitly_selectable() -> None:
     metadata = RFDETR_PREPROCESSOR_IMPLEMENTATIONS[
         RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
     ]
-    assert metadata.validated_environments == ()
+    assert metadata.validation_records == ()
     assert metadata.fallback_id == "base"
 
 
@@ -280,10 +280,10 @@ def test_uint8_request_reports_missing_triton(monkeypatch) -> None:
     )
 
     assert not compatibility.supported
-    assert "Triton is not installed for uint8 preprocessing" in compatibility.reasons
+    assert "Triton is not installed" in compatibility.reasons
 
 
-def test_float_request_remains_compatible_without_triton(monkeypatch) -> None:
+def test_float_request_reports_missing_triton(monkeypatch) -> None:
     monkeypatch.setattr(
         "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
         "TRITON_AVAILABLE",
@@ -295,7 +295,8 @@ def test_float_request_remains_compatible_without_triton(monkeypatch) -> None:
         pre_processing_overrides=None,
     )
 
-    assert compatibility.supported
+    assert not compatibility.supported
+    assert "Triton is not installed" in compatibility.reasons
 
 
 def test_preprocessor_worker_limit_can_be_selected_from_environment(

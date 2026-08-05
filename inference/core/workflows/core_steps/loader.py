@@ -269,6 +269,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
+    GoogleGeminiBlockV4,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
 )
@@ -632,6 +635,9 @@ from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.label.v2 import (
+    LabelVisualizationBlockV2,
+)
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
@@ -655,6 +661,9 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.rich_label.v1 import (
+    RichLabelVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
@@ -900,6 +909,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV1,
         GoogleGeminiBlockV2,
         GoogleGeminiBlockV3,
+        GoogleGeminiBlockV4,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
@@ -918,6 +928,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMBlockV1,
         LMMForClassificationBlockV1,
         LabelVisualizationBlockV1,
+        LabelVisualizationBlockV2,
+        RichLabelVisualizationBlockV1,
         ClassificationLabelVisualizationBlockV1,
         LineCounterBlockV1,
         LineCounterBlockV2,

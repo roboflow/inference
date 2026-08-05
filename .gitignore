@@ -188,6 +188,8 @@ docs/inference_helpers/cli_commands/reference.md
 docs/openapi.json
 !tests/workflows/integration_tests/execution/assets/*.jpg
 !tests/workflows/integration_tests/execution/assets/rock_paper_scissors/*.jpg
+# Workflows font assets are provisioned by build_scripts/download_fonts.py
+inference/core/workflows/core_steps/visualizations/common/fonts/assets/
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png
 !tests/workflows/integration_tests/execution/assets/*.png
 tests/inference_cli/integration_tests/assets/test_images/

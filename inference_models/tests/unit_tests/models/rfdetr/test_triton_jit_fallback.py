@@ -262,7 +262,9 @@ def test_try_preprocess_falls_back_on_triton_jit_failure(
     assert calls["count"] == 1
 
 
-def test_postproc_falls_back_on_triton_jit_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_postproc_falls_back_on_triton_jit_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", True)
     monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_JIT_DISABLED", False)
     rfdetr_common._TRITON_POSTPROC_JIT_WARNED_REASONS.clear()
@@ -298,14 +300,16 @@ def test_postproc_falls_back_on_triton_jit_failure(monkeypatch: pytest.MonkeyPat
     assert calls["count"] == 1
     assert rfdetr_common._TRITON_POSTPROC_JIT_DISABLED is True
 
-    second_results = rfdetr_common.post_process_instance_segmentation_results_to_rle_masks(
-        bboxes=bboxes.unsqueeze(0),
-        logits=logits.unsqueeze(0),
-        masks=masks.unsqueeze(0),
-        pre_processing_meta=[_metadata()],
-        threshold=0.4,
-        num_classes=2,
-        classes_re_mapping=_class_mapping(device),
+    second_results = (
+        rfdetr_common.post_process_instance_segmentation_results_to_rle_masks(
+            bboxes=bboxes.unsqueeze(0),
+            logits=logits.unsqueeze(0),
+            masks=masks.unsqueeze(0),
+            pre_processing_meta=[_metadata()],
+            threshold=0.4,
+            num_classes=2,
+            classes_re_mapping=_class_mapping(device),
+        )
     )
 
     assert len(second_results) == 1

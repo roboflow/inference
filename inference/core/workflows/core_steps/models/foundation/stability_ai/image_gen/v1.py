@@ -22,8 +22,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 
 LONG_DESCRIPTION = """
@@ -126,6 +129,27 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model):
+            # Selector returned verbatim; the attached resolver mirrors run()'s
+            # coercion of unknown values to the "core" endpoint.
+            return [
+                third_party_model(
+                    provider="stability_ai",
+                    model_id=self.model,
+                    model_id_resolver=lambda value: (
+                        value if value in ENDPOINT else "core"
+                    ),
+                )
+            ]
+        # run() coerces unset/unknown values to the "core" endpoint.
+        return [
+            third_party_model(
+                provider="stability_ai",
+                model_id=self.model if self.model in ENDPOINT else "core",
+            )
+        ]
 
 
 class StabilityAIImageGenBlockV1(WorkflowBlock):

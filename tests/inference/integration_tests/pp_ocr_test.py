@@ -64,7 +64,9 @@ def bool_env(val):
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_PP_OCR_TEST", False)), reason="Skipping PP-OCR test"
+    bool_env(os.getenv("SKIP_PP_OCR_TEST", False))
+    or os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
+    reason="Skipping PP-OCR test (requires USE_INFERENCE_MODELS=true)",
 )
 @pytest.mark.parametrize("test", TESTS, ids=lambda t: t["description"])
 def test_pp_ocr(test, clean_loaded_models_fixture):

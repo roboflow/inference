@@ -1,5 +1,6 @@
 from typing import Callable, Dict, Optional
 
+from inference_models.configuration import OFFLINE_MODE
 from inference_models.errors import ModelRetrievalError
 from inference_models.weights_providers.entities import ModelMetadata
 from inference_models.weights_providers.roboflow import get_roboflow_model
@@ -8,9 +9,17 @@ ModelId = str
 ApiKey = Optional[str]
 WeightsProvider = Callable[[ModelId, ApiKey, ...], ModelMetadata]
 
-WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
+_BUILT_IN_NETWORK_WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
     "roboflow": get_roboflow_model,
 }
+WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = (
+    _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS.copy()
+)
+
+
+def model_provider_requires_network(provider: str) -> bool:
+    """Return whether a registered provider is a built-in network handler."""
+    return provider in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
 
 
 def get_model_from_provider(
@@ -86,7 +95,14 @@ def get_model_from_provider(
             message=f"Requested model to be retrieved using '{provider}' provider which is not implemented.",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
-    return WEIGHTS_PROVIDERS[provider](model_id, api_key, **kwargs)
+    provider_handler = WEIGHTS_PROVIDERS[provider]
+    if OFFLINE_MODE and model_provider_requires_network(provider=provider):
+        raise ModelRetrievalError(
+            message=f"Cannot fetch model metadata from provider '{provider}' - "
+            f"OFFLINE_MODE is enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
+    return provider_handler(model_id, api_key, **kwargs)
 
 
 def register_model_provider(
@@ -169,7 +185,7 @@ def register_model_provider(
 
     Note:
         - Provider handlers must return a `ModelMetadata` object
-        - The provider name must be unique (will override existing providers)
+        - Built-in provider names are reserved and cannot be overridden
         - Provider handlers should handle authentication and error cases
 
     See Also:
@@ -177,4 +193,18 @@ def register_model_provider(
         - `ModelMetadata`: Structure for model metadata
         - `ModelPackageMetadata`: Structure for package metadata
     """
+    if (
+        not isinstance(provider_name, str)
+        or not provider_name.strip()
+        or provider_name.casefold()
+        in {
+            built_in_name.casefold()
+            for built_in_name in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
+        }
+    ):
+        raise ValueError(
+            f"Weights provider name {provider_name!r} is empty or reserved."
+        )
+    if not callable(provider_handler):
+        raise TypeError("Weights provider handler must be callable.")
     WEIGHTS_PROVIDERS[provider_name] = provider_handler

@@ -17,7 +17,10 @@ def test_post_process_semantic_segmentation_logits_argmax_collapses_to_winning_c
     meta = [
         MagicMock(
             inference_size=MagicMock(height=h, width=w),
-            pad_top=0, pad_bottom=0, pad_left=0, pad_right=0,
+            pad_top=0,
+            pad_bottom=0,
+            pad_left=0,
+            pad_right=0,
             size_after_pre_processing=MagicMock(height=h, width=w),
             original_size=MagicMock(height=h, width=w),
             static_crop_offset=MagicMock(offset_x=0, offset_y=0),
@@ -56,7 +59,10 @@ def test_post_process_semantic_segmentation_logits_sub_threshold_collapses_to_ba
     meta = [
         MagicMock(
             inference_size=MagicMock(height=h, width=w),
-            pad_top=0, pad_bottom=0, pad_left=0, pad_right=0,
+            pad_top=0,
+            pad_bottom=0,
+            pad_left=0,
+            pad_right=0,
             size_after_pre_processing=MagicMock(height=h, width=w),
             original_size=MagicMock(height=h, width=w),
             static_crop_offset=MagicMock(offset_x=0, offset_y=0),
@@ -93,7 +99,10 @@ def test_post_process_semantic_segmentation_logits_shifts_when_class_names_prepe
     meta = [
         MagicMock(
             inference_size=MagicMock(height=h, width=w),
-            pad_top=0, pad_bottom=0, pad_left=0, pad_right=0,
+            pad_top=0,
+            pad_bottom=0,
+            pad_left=0,
+            pad_right=0,
             size_after_pre_processing=MagicMock(height=h, width=w),
             original_size=MagicMock(height=h, width=w),
             static_crop_offset=MagicMock(offset_x=0, offset_y=0),
@@ -213,6 +222,10 @@ def test_yolo26_semantic_segmentation_registered():
     )
 
     for backend in (BackendType.ONNX, BackendType.TORCH_SCRIPT, BackendType.TRT):
-        assert ("yolo26", SEMANTIC_SEGMENTATION_TASK, backend) in REGISTERED_MODELS, (
+        assert (
+            "yolo26",
+            SEMANTIC_SEGMENTATION_TASK,
+            backend,
+        ) in REGISTERED_MODELS, (
             f"Missing yolo26 semantic seg entry for backend {backend}"
         )

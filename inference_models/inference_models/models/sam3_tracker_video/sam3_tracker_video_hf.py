@@ -44,10 +44,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
     @classmethod
     def _resolve_transformers_classes(cls) -> Tuple[Any, Any]:
         try:
-            from transformers import (
-                Sam3TrackerVideoModel,
-                Sam3TrackerVideoProcessor,
-            )
+            from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor
         except ImportError as import_error:
             raise MissingDependencyError(
                 message=(

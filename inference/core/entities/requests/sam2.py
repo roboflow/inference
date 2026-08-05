@@ -31,9 +31,9 @@ class Sam2InferenceRequest(BaseRequest):
     def validate_model_id(cls, value, values):
         if value is not None:
             return value
-        if values.get("sam_version_id") is None:
+        if values.get("sam2_version_id") is None:
             return None
-        return f"sam2/{values['sam_version_id']}"
+        return f"sam2/{values['sam2_version_id']}"
 
 
 class Sam2EmbeddingRequest(Sam2InferenceRequest):
