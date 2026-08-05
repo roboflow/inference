@@ -22,7 +22,9 @@ for element in \
     fakesink \
     filesrc \
     h264parse \
+    h264timestamper \
     h265parse \
+    h265timestamper \
     jpegdec \
     jpegenc \
     jpegparse \

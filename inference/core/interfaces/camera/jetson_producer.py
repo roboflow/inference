@@ -176,7 +176,12 @@ def required_gstreamer_elements(
         return tuple(
             elements
             + srtp_elements
-            + [f"rtp{codec}depay", f"{codec}parse", "nvv4l2decoder"]
+            + [
+                f"rtp{codec}depay",
+                f"{codec}parse",
+                f"{codec}timestamper",
+                "nvv4l2decoder",
+            ]
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_URI_DECODE_ELEMENTS)
@@ -255,9 +260,18 @@ def build_gstreamer_pipeline(
                 "capssetter name=rf_srtp_caps caps=application/x-srtp "
                 "join=false replace=false ! srtpdec ! "
             )
+        depayloader = f"rtp{codec}depay"
+        if codec == "h264":
+            # rtph264depay can request a fresh keyframe over RTCP when startup
+            # begins mid-GOP. GStreamer 1.24's rtph265depay does not expose
+            # these properties, so keep its launch string portable.
+            depayloader += " request-keyframe=true wait-for-keyframe=true"
         return (
             source
-            + f"rtp{codec}depay ! {codec}parse ! "
+            # RTSP commonly supplies PTS without DTS. Reconstruct DTS from the
+            # codec's SPS reordering metadata before NVDEC.
+            + f"{depayloader} ! "
+            f"{codec}parse ! {codec}timestamper ! "
             "nvv4l2decoder enable-max-performance=1 ! "
             "video/x-raw(memory:NVMM),format=NV12 ! "
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "

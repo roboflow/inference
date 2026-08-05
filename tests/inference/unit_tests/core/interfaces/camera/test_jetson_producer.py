@@ -180,8 +180,10 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "application/x-rtp,media=video ! queue ! "
     )
     assert (
-        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
-    )
+        "rtph264depay request-keyframe=true wait-for-keyframe=true ! "
+        "h264parse ! h264timestamper ! "
+        "nvv4l2decoder enable-max-performance=1"
+    ) in pipeline
     assert "uridecodebin" not in pipeline
     assert "nvvidconv" not in pipeline
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
@@ -201,7 +203,8 @@ def test_rtsps_sdes_source_decrypts_before_codec_autoplugging() -> None:
     assert (
         "capssetter name=rf_srtp_caps caps=application/x-srtp "
         "join=false replace=false ! srtpdec ! "
-        "rtph264depay ! h264parse ! "
+        "rtph264depay request-keyframe=true wait-for-keyframe=true ! "
+        "h264parse ! h264timestamper ! "
         "nvv4l2decoder enable-max-performance=1 !"
     ) in pipeline
     assert {"capssetter", "srtpdec"} <= elements
@@ -231,7 +234,9 @@ def test_rtsp_codec_env_selects_h265_chain(monkeypatch) -> None:
 
     pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
 
-    assert "rtph265depay ! h265parse ! nvv4l2decoder" in pipeline
+    assert ("rtph265depay ! h265parse ! h265timestamper ! nvv4l2decoder") in pipeline
+    assert "request-keyframe" not in pipeline
+    assert "wait-for-keyframe" not in pipeline
 
 
 def test_rtsp_codec_override_requires_only_selected_parser(monkeypatch) -> None:
@@ -241,7 +246,13 @@ def test_rtsp_codec_override_requires_only_selected_parser(monkeypatch) -> None:
 
     elements = set(required_gstreamer_elements("rtsp://camera.example.test/live"))
 
-    assert {"rtspsrc", "rtph265depay", "h265parse", "nvv4l2decoder"} <= elements
+    assert {
+        "rtspsrc",
+        "rtph265depay",
+        "h265parse",
+        "h265timestamper",
+        "nvv4l2decoder",
+    } <= elements
     assert "parsebin" not in elements
     assert "rtph264depay" not in elements
 
@@ -317,6 +328,7 @@ def test_rtsps_source_requires_rtsp_and_nvidia_decode_elements() -> None:
     assert {
         "appsink",
         "h264parse",
+        "h264timestamper",
         "nvvidconv",
         "nvv4l2decoder",
         "rtph264depay",

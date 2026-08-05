@@ -108,6 +108,7 @@ meson setup "${GSTREAMER_BUILD_DIR}" "${GSTREAMER_SOURCE_DIR}" \
     -Dgst-plugins-good:wavparse=enabled \
     -Dgst-plugins-bad:curl=enabled \
     -Dgst-plugins-bad:bayer=enabled \
+    -Dgst-plugins-bad:codectimestamper=enabled \
     -Dgst-plugins-bad:dtls=enabled \
     -Dgst-plugins-bad:jpegformat=enabled \
     -Dgst-plugins-bad:mpegtsdemux=enabled \
