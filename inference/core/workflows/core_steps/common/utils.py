@@ -465,41 +465,25 @@ def scale_sv_detections(
         image_dimensions[:, 1] *= scale_x
         detections_copy[IMAGE_DIMENSIONS_KEY] = image_dimensions.round()
 
-    # RLE predictions may keep masks compressed and leave `mask=None`. Prefer an
-    # existing dense representation, but derive the source canvas from RLE
-    # metadata so those lazy predictions can follow the same resize path.
-    rle_masks = detections_copy.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
-    masks_to_resize = detections_copy.mask
-    preserve_dense_masks = masks_to_resize is not None
-    original_mask_size_wh = None
-    if masks_to_resize is not None:
-        original_mask_size_wh = (
-            masks_to_resize.shape[2],
-            masks_to_resize.shape[1],
-        )
-    elif rle_masks is not None:
-        # `rle_mask` entries may be None when only some predictions carried RLE
-        # (see convert_inference_detections_batch_to_sv_detections) - derive the
-        # source canvas from the first detection that actually has one.
-        first_rle_mask = next(
-            (rle_mask for rle_mask in rle_masks if rle_mask is not None), None
-        )
-        if first_rle_mask is not None:
-            original_mask_size_wh = (
-                int(first_rle_mask["size"][1]),
-                int(first_rle_mask["size"][0]),
-            )
-
-    if original_mask_size_wh is not None:
+    # RLE-only predictions (`mask=None` with the `rle_mask` data key) are
+    # intentionally passed through untouched, matching historical behaviour: no
+    # stock workflow routes them through a resize, and decoding full-resolution
+    # RLE just to resize it is expensive. Their RLE stays sized to the source
+    # canvas after scaling - callers needing scaled RLE must densify first.
+    if detections_copy.mask is not None:
         # Resize dense masks directly onto the destination canvas. Polygon →
         # scale → raster round-trips fragment edge-touching masks; combined with
         # mask_to_polygon that used to take contours[0], Dataset Upload persisted
         # speckles instead of the real instance.
+        original_mask_size_wh = (
+            detections_copy.mask.shape[2],
+            detections_copy.mask.shape[1],
+        )
         if target_size_wh is not None:
             scaled_w, scaled_h = int(target_size_wh[0]), int(target_size_wh[1])
         else:
-            scaled_w = max(1, int(round(original_mask_size_wh[0] * scale_x)))
-            scaled_h = max(1, int(round(original_mask_size_wh[1] * scale_y)))
+            scaled_w = int(round(original_mask_size_wh[0] * scale_x))
+            scaled_h = int(round(original_mask_size_wh[1] * scale_y))
         scaled_w = max(1, scaled_w)
         scaled_h = max(1, scaled_h)
         if (scaled_w, scaled_h) != original_mask_size_wh:
@@ -510,53 +494,23 @@ def scale_sv_detections(
                 # only reach it when RLE masks are actually involved.
                 from pycocotools import mask as mask_utils
 
-            if masks_to_resize is None:
-                # Decode only when a resize is actually required. The result is
-                # kept temporary so RLE-only predictions remain RLE-only. None
-                # entries carry no mask, so there is nothing to decode for them.
-                masks_to_resize = [
-                    (
-                        mask_utils.decode(
-                            {
-                                "size": rle_mask["size"],
-                                "counts": (
-                                    rle_mask["counts"].encode("utf-8")
-                                    if isinstance(rle_mask["counts"], str)
-                                    else rle_mask["counts"]
-                                ),
-                            }
-                        ).astype(bool)
-                        if rle_mask is not None
-                        else None
-                    )
-                    for rle_mask in rle_masks
-                ]
-
-            resized_masks = [
-                (
+            resized_masks = np.array(
+                [
                     cv2.resize(
                         detection_mask.astype(np.uint8),
                         (scaled_w, scaled_h),
                         interpolation=cv2.INTER_NEAREST,
                     ).astype(bool)
-                    if detection_mask is not None
-                    else None
-                )
-                for detection_mask in masks_to_resize
-            ]
-            if preserve_dense_masks:
-                # Dense input masks are never None, so the stack is rectangular.
-                detections_copy.mask = np.array(resized_masks)
+                    for detection_mask in detections_copy.mask
+                ]
+            )
+            detections_copy.mask = resized_masks
             if rle_masks_present:
                 # Source RLE counts encode the old canvas and cannot be scaled
                 # arithmetically. Re-encode every resized mask, including valid
-                # all-zero masks, to preserve detection-to-RLE alignment. None
-                # masks (detections that never had one) stay None.
+                # all-zero masks, to preserve detection-to-RLE alignment.
                 resized_rle_masks = []
                 for detection_mask in resized_masks:
-                    if detection_mask is None:
-                        resized_rle_masks.append(None)
-                        continue
                     rle_mask = mask_utils.encode(
                         np.asfortranarray(detection_mask.astype(np.uint8))
                     )
