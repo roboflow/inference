@@ -20,6 +20,9 @@ from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer import (
+    v1 as opc_writer_v1,
+)
 from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import (
     SESSION_TIMEOUT_SECONDS,
     OPCUAConnectionManager,
@@ -759,11 +762,72 @@ def test_close_all_connections(test_opc_server, reset_connection_manager) -> Non
     assert manager.get_pool_stats()["total_connections"] == 1
 
 
-@pytest.mark.timeout(20)
-def test_pooled_session_asks_for_short_timeout_and_stays_alive_while_idle(
+@pytest.mark.timeout(40)
+def test_pooled_session_survives_idling_past_its_own_session_timeout(
     test_opc_server, reset_connection_manager
 ) -> None:
-    """A short session timeout must not cost us the pooled connection while it sits idle."""
+    """
+    The premise of shortening the requested session timeout is that an idle pooled session
+    still survives it, because asyncua keeps the session warm on its own. That only means
+    anything if the idle window is longer than the timeout, so shorten the timeout to a few
+    seconds and idle well past it. asyncua's own server enforces this: its
+    `_session_watchdog_loop` closes any session whose last activity is older than the
+    timeout, so a broken keepalive fails the write below rather than passing silently.
+    """
+    manager = reset_connection_manager
+    short_timeout_seconds = 3.0
+    idle_seconds = short_timeout_seconds * 2
+
+    with patch.object(opc_writer_v1, "SESSION_TIMEOUT_SECONDS", short_timeout_seconds):
+        error_status, _ = opc_connect_and_write_value(
+            url=test_opc_server["url"],
+            namespace=test_opc_server["namespace"],
+            user_name=test_opc_server["user_name"],
+            password=test_opc_server["password"],
+            object_name=test_opc_server["object_name"],
+            variable_name="Int32Var",
+            value=900,
+            timeout=2,
+            value_type="Int32",
+        )
+        assert error_status == False
+
+        key = manager._get_connection_key(
+            test_opc_server["url"], test_opc_server["user_name"]
+        )
+        client = manager._connections[key]
+        # The server echoes the request back, so this is what it will actually hold
+        assert client.aio_obj.session_timeout == int(short_timeout_seconds * 1000)
+
+        # No block-level traffic at all for twice the session timeout
+        time.sleep(idle_seconds)
+
+        error_status_after_idle, message_after_idle = opc_connect_and_write_value(
+            url=test_opc_server["url"],
+            namespace=test_opc_server["namespace"],
+            user_name=test_opc_server["user_name"],
+            password=test_opc_server["password"],
+            object_name=test_opc_server["object_name"],
+            variable_name="Int32Var",
+            value=901,
+            timeout=2,
+            value_type="Int32",
+        )
+
+    # then - the same pooled session is still usable, never having been reconnected
+    assert error_status_after_idle == False
+    assert message_after_idle == "Value set successfully"
+    assert manager.get_pool_stats()["total_connections"] == 1
+    assert manager._connections[key] is client
+    assert client.aio_obj._monitor_server_task is not None
+    assert not client.aio_obj._monitor_server_task.done()
+
+
+@pytest.mark.timeout(20)
+def test_pooled_session_asks_the_server_for_the_configured_timeout(
+    test_opc_server, reset_connection_manager
+) -> None:
+    """The default path asks for SESSION_TIMEOUT_SECONDS rather than asyncua's 1 hour."""
     manager = reset_connection_manager
 
     error_status, _ = opc_connect_and_write_value(
@@ -773,7 +837,7 @@ def test_pooled_session_asks_for_short_timeout_and_stays_alive_while_idle(
         password=test_opc_server["password"],
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
-        value=900,
+        value=902,
         timeout=2,
         value_type="Int32",
     )
@@ -784,30 +848,7 @@ def test_pooled_session_asks_for_short_timeout_and_stays_alive_while_idle(
             test_opc_server["url"], test_opc_server["user_name"]
         )
     ]
-
-    # The server echoes the requested timeout, so this is what it will hold the session for
     assert client.aio_obj.session_timeout == int(SESSION_TIMEOUT_SECONDS * 1000)
-
-    # asyncua keeps the session alive on its own - its watchdog reads `server_state` about
-    # once a second regardless of how long the block's cooldown is
-    time.sleep(3)
-    assert client.aio_obj._monitor_server_task is not None
-    assert not client.aio_obj._monitor_server_task.done()
-
-    error_status_after_idle, message_after_idle = opc_connect_and_write_value(
-        url=test_opc_server["url"],
-        namespace=test_opc_server["namespace"],
-        user_name=test_opc_server["user_name"],
-        password=test_opc_server["password"],
-        object_name=test_opc_server["object_name"],
-        variable_name="Int32Var",
-        value=901,
-        timeout=2,
-        value_type="Int32",
-    )
-    assert error_status_after_idle == False
-    assert message_after_idle == "Value set successfully"
-    assert manager.get_pool_stats()["total_connections"] == 1
 
 
 @pytest.mark.timeout(20)
