@@ -26,6 +26,7 @@ from inference.core.models.roboflow import (
     RoboflowInferenceModel,
     acquire_model_download_lock,
     get_model_download_lock_path,
+    invalidate_model_download_marker,
     is_model_download_marked_complete,
     mark_model_download_complete,
 )
@@ -259,6 +260,7 @@ class TransformerModel(RoboflowInferenceModel):
                     "lock; skipping download."
                 )
                 return
+            invalidate_model_download_marker(model_id=self.endpoint)
             if self.load_weights_as_transformers:
                 api_data = get_roboflow_model_data(
                     api_key=self.api_key,

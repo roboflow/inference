@@ -641,6 +641,50 @@ def test_real_download_method_redownloads_when_files_exist_without_marker(
     api_mock.assert_called_once()
 
 
+def test_stale_marker_is_invalidated_when_repair_download_fails(
+    isolated_model_cache,
+) -> None:
+    """A marker must never outlive the artifacts it vouched for.
+
+    Scenario: a previously complete cache (marker present) lost an artifact.
+    The repair download starts and dies partway. If the old marker survived,
+    the next waiter would see marker + all filenames and trust a mix of old and
+    half-written artifacts - so the downloader must drop the marker the moment
+    it decides the cache is incomplete, and only rewrite it on success.
+    """
+    # given - marker present but an artifact file missing
+    endpoint = "dataset/1"
+    model_cache_dir = os.path.join(isolated_model_cache, endpoint)
+    os.makedirs(model_cache_dir, exist_ok=True)
+    with open(os.path.join(model_cache_dir, "weights.onnx"), "wb") as f:
+        f.write(b"payload")
+    roboflow.mark_model_download_complete(model_id=endpoint)
+
+    model = mock.Mock()
+    model.endpoint = endpoint
+    model.cache_dir = model_cache_dir
+    model.version_id = "1"
+    model.api_key = "key"
+    model.device_id = "device"
+    model.weights_file = "weights.onnx"
+    model.get_all_required_infer_bucket_file.return_value = [
+        "weights.onnx",
+        "environment.json",
+    ]
+
+    # when - the repair download fails partway
+    with mock.patch.object(
+        roboflow, "get_roboflow_model_data", side_effect=ModelArtefactError("boom")
+    ):
+        with pytest.raises(ModelArtefactError):
+            roboflow.RoboflowInferenceModel.download_model_artifacts_from_roboflow_api(
+                model
+            )
+
+    # then - the stale marker is gone, so no later waiter trusts the partial cache
+    assert not roboflow.is_model_download_marked_complete(model_id=endpoint)
+
+
 def test_core_model_download_method_skips_network_when_cache_warmed_while_waiting(
     isolated_model_cache,
 ) -> None:

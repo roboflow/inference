@@ -29,6 +29,7 @@ from inference.core.models.roboflow import (
     RoboflowCoreModel,
     acquire_model_download_lock,
     get_model_download_lock_path,
+    invalidate_model_download_marker,
     is_model_download_marked_complete,
     mark_model_download_complete,
 )
@@ -364,6 +365,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     "lock; skipping download."
                 )
                 return
+            invalidate_model_download_marker(model_id=self.endpoint)
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id="sam3-3d-weights-vc6vz/1",

@@ -47,6 +47,7 @@ from inference.core.models.roboflow import (
     acquire_model_download_lock,
     draw_detection_predictions,
     get_model_download_lock_path,
+    invalidate_model_download_marker,
     is_model_download_marked_complete,
     mark_model_download_complete,
 )
@@ -998,6 +999,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
                     "lock; skipping download."
                 )
                 return
+            invalidate_model_download_marker(model_id=self.endpoint)
             if self.version_id is not None:
                 api_data = get_roboflow_model_data(
                     api_key=self.api_key,

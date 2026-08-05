@@ -47,6 +47,7 @@ from inference.core.cache.model_artifacts import (
     clear_cache,
     get_cache_dir,
     get_cache_dir_for_read,
+    get_cache_file_path,
     initialise_cache,
     is_file_cached,
     load_json_from_cache,
@@ -236,6 +237,24 @@ def mark_model_download_complete(model_id: str) -> None:
 def is_model_download_marked_complete(model_id: str) -> bool:
     """Whether a marker-writing release completed this model's download."""
     return is_file_cached(file=MODEL_DOWNLOAD_COMPLETE_MARKER_FILE, model_id=model_id)
+
+
+def invalidate_model_download_marker(model_id: str) -> None:
+    """Remove a stale completion marker before (re)downloading artifacts.
+
+    Called under the download lock as soon as the post-wait recheck decides the
+    cache is incomplete. Without this, a previously complete cache that lost an
+    artifact would keep its old marker through a failed repair: the repair
+    recreates some files, dies, and the next waiter then sees marker plus all
+    filenames and trusts a mix of old and half-written artifacts. Removing the
+    marker first keeps the invariant that a present marker always describes the
+    most recent fully-completed download transaction.
+    """
+    marker_path = get_cache_file_path(
+        file=MODEL_DOWNLOAD_COMPLETE_MARKER_FILE, model_id=model_id
+    )
+    if os.path.isfile(marker_path):
+        os.remove(marker_path)
 
 
 class RoboflowInferenceModel(Model):
@@ -482,6 +501,7 @@ class RoboflowInferenceModel(Model):
                         "lock; skipping download."
                     )
                     return
+                invalidate_model_download_marker(model_id=self.endpoint)
                 if self.version_id is not None:
                     api_data = get_roboflow_model_data(
                         api_key=self.api_key,
@@ -875,6 +895,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     "lock; skipping download."
                 )
                 return
+            invalidate_model_download_marker(model_id=self.endpoint)
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
