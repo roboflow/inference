@@ -477,11 +477,18 @@ def scale_sv_detections(
             masks_to_resize.shape[2],
             masks_to_resize.shape[1],
         )
-    elif rle_masks is not None and len(rle_masks) > 0:
-        original_mask_size_wh = (
-            int(rle_masks[0]["size"][1]),
-            int(rle_masks[0]["size"][0]),
+    elif rle_masks is not None:
+        # `rle_mask` entries may be None when only some predictions carried RLE
+        # (see convert_inference_detections_batch_to_sv_detections) - derive the
+        # source canvas from the first detection that actually has one.
+        first_rle_mask = next(
+            (rle_mask for rle_mask in rle_masks if rle_mask is not None), None
         )
+        if first_rle_mask is not None:
+            original_mask_size_wh = (
+                int(first_rle_mask["size"][1]),
+                int(first_rle_mask["size"][0]),
+            )
 
     if original_mask_size_wh is not None:
         # Resize dense masks directly onto the destination canvas. Polygon →
@@ -496,13 +503,19 @@ def scale_sv_detections(
         scaled_w = max(1, scaled_w)
         scaled_h = max(1, scaled_h)
         if (scaled_w, scaled_h) != original_mask_size_wh:
-            if masks_to_resize is None:
+            rle_masks_present = RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data
+            if rle_masks_present:
+                # pycocotools is not a base dependency - it ships with the extras
+                # that produce RLE predictions - so keep the import deferred and
+                # only reach it when RLE masks are actually involved.
                 from pycocotools import mask as mask_utils
 
+            if masks_to_resize is None:
                 # Decode only when a resize is actually required. The result is
-                # kept temporary so RLE-only predictions remain RLE-only.
-                masks_to_resize = np.array(
-                    [
+                # kept temporary so RLE-only predictions remain RLE-only. None
+                # entries carry no mask, so there is nothing to decode for them.
+                masks_to_resize = [
+                    (
                         mask_utils.decode(
                             {
                                 "size": rle_mask["size"],
@@ -513,30 +526,37 @@ def scale_sv_detections(
                                 ),
                             }
                         ).astype(bool)
-                        for rle_mask in rle_masks
-                    ]
-                )
+                        if rle_mask is not None
+                        else None
+                    )
+                    for rle_mask in rle_masks
+                ]
 
-            resized_masks = np.array(
-                [
+            resized_masks = [
+                (
                     cv2.resize(
                         detection_mask.astype(np.uint8),
                         (scaled_w, scaled_h),
                         interpolation=cv2.INTER_NEAREST,
                     ).astype(bool)
-                    for detection_mask in masks_to_resize
-                ]
-            )
+                    if detection_mask is not None
+                    else None
+                )
+                for detection_mask in masks_to_resize
+            ]
             if preserve_dense_masks:
-                detections_copy.mask = resized_masks
-            if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
-                from pycocotools import mask as mask_utils
-
+                # Dense input masks are never None, so the stack is rectangular.
+                detections_copy.mask = np.array(resized_masks)
+            if rle_masks_present:
                 # Source RLE counts encode the old canvas and cannot be scaled
                 # arithmetically. Re-encode every resized mask, including valid
-                # all-zero masks, to preserve detection-to-RLE alignment.
+                # all-zero masks, to preserve detection-to-RLE alignment. None
+                # masks (detections that never had one) stay None.
                 resized_rle_masks = []
                 for detection_mask in resized_masks:
+                    if detection_mask is None:
+                        resized_rle_masks.append(None)
+                        continue
                     rle_mask = mask_utils.encode(
                         np.asfortranarray(detection_mask.astype(np.uint8))
                     )

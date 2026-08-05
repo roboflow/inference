@@ -1451,6 +1451,48 @@ def test_scale_sv_detections_resizes_rle_only_masks() -> None:
     assert np.array_equal(decoded_mask, expected_mask)
 
 
+def test_scale_sv_detections_tolerates_none_entries_in_rle_only_masks() -> None:
+    # convert_inference_detections_batch_to_sv_detections stores the `rle_mask`
+    # key when ANY prediction carries RLE, leaving None for those that do not -
+    # scaling must not crash on, nor fabricate masks for, the None entries
+    # given
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:40, 20:40] = 1
+    rle_mask = mask_utils.encode(np.asfortranarray(mask))
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40], [50, 50, 70, 70]], dtype=np.float64),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 1]),
+        data={
+            "class_name": np.array(["obj", "other"]),
+            "detection_id": np.array(["d1", "d2"]),
+            "image_dimensions": np.array([[100, 100], [100, 100]]),
+            "rle_mask": np.array([None, rle_mask], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+
+    # then
+    assert result.mask is None
+    assert result.data["rle_mask"][0] is None, "None RLE entry must stay None"
+    resized_rle = result.data["rle_mask"][1]
+    assert resized_rle["size"] == [50, 50]
+    decoded_mask = mask_utils.decode(
+        {
+            "size": resized_rle["size"],
+            "counts": resized_rle["counts"].encode("utf-8"),
+        }
+    ).astype(bool)
+    expected_mask = cv2.resize(
+        mask,
+        (50, 50),
+        interpolation=cv2.INTER_NEAREST,
+    ).astype(bool)
+    assert np.array_equal(decoded_mask, expected_mask)
+
+
 def test_scale_sv_detections_preserves_empty_masks_and_matching_rles() -> None:
     # given
     masks = np.zeros((2, 4, 4), dtype=np.uint8)
