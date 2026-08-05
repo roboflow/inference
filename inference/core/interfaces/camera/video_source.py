@@ -199,6 +199,7 @@ def _build_default_producer(
     stream_reference: Union[str, int],
     *,
     output_tensor: bool = False,
+    producer_options: Optional[Dict[str, object]] = None,
 ) -> VideoFrameProducer:
     """Pick the decoder for a plain (non-callable, non-test-pattern) source reference.
 
@@ -220,6 +221,7 @@ def _build_default_producer(
         producer = build_hw_producer(
             stream_reference,
             output_tensor=output_tensor,
+            **(producer_options or {}),
         )
     except (
         Exception
@@ -264,6 +266,7 @@ class VideoSource:
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
         video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_options: Optional[Dict[str, object]] = None,
         source_id: Optional[int] = None,
         desired_fps: Optional[Union[float, int]] = None,
         allow_tensor_frames: bool = False,
@@ -398,6 +401,7 @@ class VideoSource:
             buffer_consumption_strategy=buffer_consumption_strategy,
             video_consumer=video_consumer,
             video_source_properties=video_source_properties,
+            video_source_options=video_source_options,
             source_id=source_id,
             allow_tensor_frames=allow_tensor_frames,
         )
@@ -411,6 +415,7 @@ class VideoSource:
         video_consumer: "VideoConsumer",
         video_source_properties: Optional[Dict[str, float]],
         source_id: Optional[int],
+        video_source_options: Optional[Dict[str, object]] = None,
         allow_tensor_frames: bool = False,
     ):
         self._stream_reference = stream_reference
@@ -427,6 +432,7 @@ class VideoSource:
         self._stream_consumption_thread: Optional[Thread] = None
         self._state_change_lock = Lock()
         self._video_source_properties = video_source_properties or {}
+        self._video_source_options = video_source_options or {}
         self._source_id = source_id
         self._allow_tensor_frames = allow_tensor_frames
         self._last_frame_timestamp: int = time.time_ns()
@@ -690,9 +696,14 @@ class VideoSource:
                 self._video = TestPatternStreamProducer()
             else:
                 uses_default_producer = True
+                producer_kwargs = {
+                    "output_tensor": self._allow_tensor_frames,
+                }
+                if self._video_source_options:
+                    producer_kwargs["producer_options"] = self._video_source_options
                 self._video = _build_default_producer(
                     self._stream_reference,
-                    output_tensor=self._allow_tensor_frames,
+                    **producer_kwargs,
                 )
             try:
                 self._initialise_selected_video()

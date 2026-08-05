@@ -243,6 +243,7 @@ def build_gstreamer_pipeline(
     video: Union[str, int],
     *,
     output_tensor: bool = False,
+    rtsp_tls_validation_flags: Optional[int] = None,
 ) -> str:
     """Build a Jetson GStreamer pipeline ending in an NVMM appsink."""
 
@@ -292,7 +293,9 @@ def build_gstreamer_pipeline(
         #   drains it on the queue's streaming thread); drop=true explicitly
         #   selects the bridge's latest-frame handoff for this live source.
         codec = _rtsp_video_codec_override()
-        tls_validation_flags = _rtsp_tls_validation_flags()
+        tls_validation_flags = _rtsp_tls_validation_flags(
+            explicit_flags=rtsp_tls_validation_flags
+        )
         source = (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
@@ -374,7 +377,9 @@ def _rtsp_latency_ms() -> int:
     return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
 
 
-def _rtsp_tls_validation_flags() -> str:
+def _rtsp_tls_validation_flags(
+    explicit_flags: Optional[int] = None,
+) -> str:
     """Return an explicit rtspsrc TLS-validation setting when requested.
 
     ``0`` disables certificate validation for cameras with private/self-signed
@@ -382,12 +387,16 @@ def _rtsp_tls_validation_flags() -> str:
     validation for normal deployments.
     """
 
-    raw = os.getenv(_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
-    if raw is None or not raw.strip():
+    raw = (
+        explicit_flags
+        if explicit_flags is not None
+        else os.getenv(_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
+    )
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
         return ""
     try:
         flags = int(raw)
-    except ValueError as error:
+    except (TypeError, ValueError) as error:
         raise ValueError(
             f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
         ) from error
@@ -426,6 +435,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         output_tensor: bool = True,
         tensor_device: str = "cuda",
         pin_host_memory: bool = True,
+        rtsp_tls_validation_flags: Optional[int] = None,
     ):
         gst_ok, gst_reason = probe_gstreamer_elements(
             required_gstreamer_elements(video, output_tensor=True),
@@ -436,7 +446,11 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
 
         self._source_ref = video
         self._output_tensor = output_tensor
-        self._pipeline = build_gstreamer_pipeline(video, output_tensor=True)
+        self._pipeline = build_gstreamer_pipeline(
+            video,
+            output_tensor=True,
+            rtsp_tls_validation_flags=rtsp_tls_validation_flags,
+        )
         self._decoder_validated = not _source_requires_decoder(video)
         self._prerolled_frame_pending = False
         self._cached_source_properties: Optional[SourceProperties] = None

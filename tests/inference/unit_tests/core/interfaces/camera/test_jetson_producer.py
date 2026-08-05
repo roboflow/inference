@@ -312,6 +312,23 @@ def test_rtsp_tls_validation_flags_are_opt_in(monkeypatch) -> None:
     assert "tls-validation-flags=0 ! " in self_signed_pipeline
 
 
+def test_rtsp_tls_validation_flags_can_be_scoped_to_one_source(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", "7")
+
+    self_signed_pipeline = build_gstreamer_pipeline(
+        "rtsps://camera.example.test/self-signed",
+        rtsp_tls_validation_flags=0,
+    )
+    default_pipeline = build_gstreamer_pipeline(
+        "rtsps://camera.example.test/default"
+    )
+
+    assert "tls-validation-flags=0 ! " in self_signed_pipeline
+    assert "tls-validation-flags=7 ! " in default_pipeline
+
+
 @pytest.mark.parametrize("value", ("nope", "-1"))
 def test_rtsp_tls_validation_flags_reject_invalid_values(monkeypatch, value) -> None:
     monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", value)

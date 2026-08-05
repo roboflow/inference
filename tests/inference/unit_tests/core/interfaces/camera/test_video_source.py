@@ -74,6 +74,28 @@ def test_default_producer_requests_tensor_frames_for_tensor_consumers(
     )
 
 
+@patch("inference.core.interfaces.camera.discoverability.build_hw_producer")
+@patch.object(video_source, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+def test_default_producer_forwards_per_source_options(
+    build_hw_producer: MagicMock,
+) -> None:
+    producer = MagicMock()
+    build_hw_producer.return_value = producer
+
+    result = _build_default_producer(
+        "rtsps://camera.example.test/live",
+        output_tensor=True,
+        producer_options={"rtsp_tls_validation_flags": 0},
+    )
+
+    assert result is producer
+    build_hw_producer.assert_called_once_with(
+        "rtsps://camera.example.test/live",
+        output_tensor=True,
+        rtsp_tls_validation_flags=0,
+    )
+
+
 @pytest.mark.timeout(90)
 def test_tensor_enabled_source_requests_tensor_producer() -> None:
     # Covers the allow_tensor_frames kwarg hop from VideoSource.init through
@@ -123,6 +145,52 @@ def test_tensor_enabled_source_requests_tensor_producer() -> None:
         output_tensor=True,
     )
     assert not source._stream_consumption_thread.is_alive()
+
+
+@pytest.mark.timeout(90)
+def test_video_source_forwards_options_to_default_producer() -> None:
+    properties = SourceProperties(
+        width=320,
+        height=180,
+        total_frames=0,
+        is_file=False,
+        fps=30.0,
+    )
+
+    class ImmediateEosProducer:
+        def isOpened(self) -> bool:
+            return True
+
+        def initialize_source_properties(self, properties) -> None:
+            return None
+
+        def discover_source_properties(self) -> SourceProperties:
+            return properties
+
+        def grab(self) -> bool:
+            return False
+
+        def release(self) -> None:
+            return None
+
+    with patch.object(
+        video_source,
+        "_build_default_producer",
+        return_value=ImmediateEosProducer(),
+    ) as build_mock:
+        source = VideoSource.init(
+            video_reference="rtsps://camera.example.test/live",
+            allow_tensor_frames=True,
+            video_source_options={"rtsp_tls_validation_flags": 0},
+        )
+        source.start()
+        source._stream_consumption_thread.join(timeout=5.0)
+
+    build_mock.assert_called_once_with(
+        "rtsps://camera.example.test/live",
+        output_tensor=True,
+        producer_options={"rtsp_tls_validation_flags": 0},
+    )
 
 
 @pytest.mark.timeout(90)
