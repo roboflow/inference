@@ -74,7 +74,9 @@ class FakeSamClient:
         }
         return {"mmp_models": {m: dict(entry) for m in self.loaded}}
 
-    async def infer(self, *, model_id, image, task=None, instance="", params=None, **kw):
+    async def infer(
+        self, *, model_id, image, task=None, instance="", params=None, **kw
+    ):
         self.infer_calls.append(
             {"model_id": model_id, "image": image, "task": task, "params": params}
         )
@@ -176,14 +178,10 @@ class TestSamSegmentParams:
         assert call["params"]["image_hashes"] == [
             namespace_client_hash_id("test", "key")
         ]
-        assert call["params"]["point_coordinates"] == [
-            [[10.0, 20.0], [30.0, 40.0]]
-        ]
+        assert call["params"]["point_coordinates"] == [[[10.0, 20.0], [30.0, 40.0]]]
         assert call["params"]["point_labels"] == [[1.0, 0.0]]
 
-    def test_default_sentinel_points_forwarded(
-        self, running_adapter, interactive_stat
-    ):
+    def test_default_sentinel_points_forwarded(self, running_adapter, interactive_stat):
         running_adapter._client.infer_result = sam_segmentation_result()
         image, _ = make_image()
         request = SamSegmentationRequest(api_key="key", image=image)
@@ -296,9 +294,7 @@ class TestSamSegmentRepack:
         request = SamSegmentationRequest(api_key="key", image_id="test")
         response = running_adapter.infer_from_request_sync("sam/vit_h", request)
         assert isinstance(response, SamSegmentationResponse)
-        expected_masks = [
-            polygon.tolist() for polygon in masks2poly(result[0].masks)
-        ]
+        expected_masks = [polygon.tolist() for polygon in masks2poly(result[0].masks)]
         expected_low_res = [
             polygon.tolist() for polygon in masks2poly(result[0].logits > 0.0)
         ]
@@ -339,9 +335,7 @@ class TestSam2Segment:
                 ]
             ),
         )
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         call = running_adapter._client.infer_calls[0]
         assert call["task"] == "segment"
         assert call["image"] == payload
@@ -364,9 +358,7 @@ class TestSam2Segment:
         running_adapter._client.infer_result = sam2_segmentation_result()
         image, _ = make_image()
         request = Sam2SegmentationRequest(api_key="key", image=image, format="json")
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         assert response.predictions[0].format == "polygon"
 
     def test_empty_prompts_inject_legacy_sentinel_point(
@@ -415,9 +407,7 @@ class TestSam2Segment:
         ]
         image, _ = make_image()
         request = Sam2SegmentationRequest(api_key="key", image=image)
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         expected = [
             polygon.tolist() for polygon in masks2multipoly(masks[0, 0:1] >= 0.0)[0]
         ]
@@ -429,9 +419,7 @@ class TestSam2Segment:
         self, running_adapter, interactive_stat, bad_format
     ):
         image, _ = make_image()
-        request = Sam2SegmentationRequest(
-            api_key="key", image=image, format=bad_format
-        )
+        request = Sam2SegmentationRequest(api_key="key", image=image, format=bad_format)
         with pytest.raises(ValueError) as error:
             running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         assert str(error.value) == f"Invalid format {bad_format}"
@@ -441,9 +429,7 @@ class TestSam2Segment:
         running_adapter._client.infer_result = sam2_segmentation_result()
         image, _ = make_image()
         request = Sam2SegmentationRequest(api_key="key", image=image, format="rle")
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         prediction = response.predictions[0]
         assert prediction.format == "rle"
         assert isinstance(prediction.masks, dict)
@@ -457,9 +443,7 @@ class TestSam2Segment:
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.infer_from_request_sync("sam2/hiera_large", request)
 
-    def test_multimask_output_false_forwarded(
-        self, running_adapter, interactive_stat
-    ):
+    def test_multimask_output_false_forwarded(self, running_adapter, interactive_stat):
         running_adapter._client.infer_result = sam2_segmentation_result()
         image, _ = make_image()
         request = Sam2SegmentationRequest(
@@ -469,13 +453,44 @@ class TestSam2Segment:
         params = running_adapter._client.infer_calls[0]["params"]
         assert params["multi_mask_output"] is False
 
-    def test_logits_cache_flags_refused(self, running_adapter, interactive_stat):
+    def test_logits_cache_flags_forwarded_to_mask_input_cache(
+        self, running_adapter, interactive_stat
+    ):
+        running_adapter._client.infer_result = SimpleNamespace(
+            masks=np.zeros((1, 3, 8, 8), dtype=np.float32),
+            scores=np.asarray([[0.3, 0.2, 0.1]]),
+        )
         image, _ = make_image()
         request = Sam2SegmentationRequest(
-            api_key="key", image=image, save_logits_to_cache=True
+            api_key="key",
+            image=image,
+            save_logits_to_cache=True,
+            load_logits_from_cache=True,
         )
-        with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.infer_from_request_sync("sam2/hiera_large", request)
+        running_adapter.infer_from_request_sync("sam2/hiera_large", request)
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params["save_to_mask_input_cache"] is True
+        assert params["load_from_mask_input_cache"] is True
+
+    def test_logits_cache_flags_disabled_by_kill_switch(
+        self, running_adapter, interactive_stat, monkeypatch
+    ):
+        monkeypatch.setattr(translation, "DISABLE_SAM3_LOGITS_CACHE", True)
+        running_adapter._client.infer_result = SimpleNamespace(
+            masks=np.zeros((1, 3, 8, 8), dtype=np.float32),
+            scores=np.asarray([[0.3, 0.2, 0.1]]),
+        )
+        image, _ = make_image()
+        request = Sam2SegmentationRequest(
+            api_key="key",
+            image=image,
+            save_logits_to_cache=True,
+            load_logits_from_cache=True,
+        )
+        running_adapter.infer_from_request_sync("sam2/hiera_large", request)
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params["save_to_mask_input_cache"] is False
+        assert params["load_from_mask_input_cache"] is False
 
 
 class TestEmbedImageIdLifecycle:
@@ -498,14 +513,10 @@ class TestEmbedImageIdLifecycle:
     def test_sam2_embed_forwards_image_id_and_echoes_it(
         self, running_adapter, interactive_stat
     ):
-        running_adapter._client.infer_result = [
-            SimpleNamespace(image_hash="deadbeef")
-        ]
+        running_adapter._client.infer_result = [SimpleNamespace(image_hash="deadbeef")]
         image, _ = make_image()
         request = Sam2EmbeddingRequest(api_key="key", image=image, image_id="abc")
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         params = running_adapter._client.infer_calls[0]["params"]
         assert params == {"image_hashes": [namespace_client_hash_id("abc", "key")]}
         assert response.image_id == "abc"
@@ -513,34 +524,22 @@ class TestEmbedImageIdLifecycle:
     def test_sam2_embed_echoes_client_id_starting_with_own_namespace(
         self, running_adapter, interactive_stat
     ):
-        running_adapter._client.infer_result = [
-            SimpleNamespace(image_hash="deadbeef")
-        ]
+        running_adapter._client.infer_result = [SimpleNamespace(image_hash="deadbeef")]
         image, _ = make_image()
         client_id = f"{tenant_namespace('key')}:abc"
-        request = Sam2EmbeddingRequest(
-            api_key="key", image=image, image_id=client_id
-        )
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        request = Sam2EmbeddingRequest(api_key="key", image=image, image_id=client_id)
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         params = running_adapter._client.infer_calls[0]["params"]
-        assert params == {
-            "image_hashes": [namespace_client_hash_id(client_id, "key")]
-        }
+        assert params == {"image_hashes": [namespace_client_hash_id(client_id, "key")]}
         assert response.image_id == client_id
 
     def test_sam2_embed_without_id_returns_worker_hash(
         self, running_adapter, interactive_stat
     ):
-        running_adapter._client.infer_result = [
-            SimpleNamespace(image_hash="deadbeef")
-        ]
+        running_adapter._client.infer_result = [SimpleNamespace(image_hash="deadbeef")]
         image, _ = make_image()
         request = Sam2EmbeddingRequest(api_key="key", image=image)
-        response = running_adapter.infer_from_request_sync(
-            "sam2/hiera_large", request
-        )
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
         params = running_adapter._client.infer_calls[0]["params"]
         assert "image_hashes" not in params
         assert response.image_id == "deadbeef"

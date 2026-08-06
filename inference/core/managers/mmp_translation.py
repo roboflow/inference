@@ -62,7 +62,11 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import CLIP_MAX_BATCH_SIZE, LEGACY_MMP_ADAPTER_MODE
+from inference.core.env import (
+    CLIP_MAX_BATCH_SIZE,
+    DISABLE_SAM3_LOGITS_CACHE,
+    LEGACY_MMP_ADAPTER_MODE,
+)
 from inference.core.exceptions import (
     InferenceModelNotFound,
     InferencePayloadTooLargeError,
@@ -565,11 +569,6 @@ def _build_visual_prompt_params(request: Any) -> dict:
         raise ModelDeploymentNotSupportedError(
             "mask_input is not supported on the MMP path."
         )
-    for field in ("save_logits_to_cache", "load_logits_from_cache"):
-        if getattr(request, field, False):
-            raise ModelDeploymentNotSupportedError(
-                f"{field} is not supported on the MMP path."
-            )
     prompts = getattr(request, "prompts", None)
     if prompts is not None:
         args = prompts.to_sam2_inputs()
@@ -592,6 +591,12 @@ def _build_visual_prompt_params(request: Any) -> dict:
     image_id = getattr(request, "image_id", None)
     if image_id:
         params["image_hashes"] = [_namespaced_client_hash(image_id, request)]
+    # Same gating as the legacy wrapper: the worker owns the low-res mask
+    # cache; the env kill-switch silently disables both directions.
+    if getattr(request, "load_logits_from_cache", False):
+        params["load_from_mask_input_cache"] = not DISABLE_SAM3_LOGITS_CACHE
+    if getattr(request, "save_logits_to_cache", False):
+        params["save_to_mask_input_cache"] = not DISABLE_SAM3_LOGITS_CACHE
     return params
 
 
