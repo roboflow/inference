@@ -33,7 +33,9 @@ from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
     use_credit_of_matching_strategy,
 )
-from inference.core.active_learning.core import prepare_image_to_registration
+from inference.core.active_learning.core import (
+    prepare_image_to_registration_with_metadata,
+)
 from inference.core.active_learning.entities import (
     ImageDimensions,
     StrategyLimit,
@@ -478,7 +480,7 @@ def execute_registration(
         # Scale annotations to the exact JPEG canvas that will be stored. Aspect-
         # preserving resize can produce different X/Y factors after int truncation;
         # a single height scale leaves edge detections off-canvas and clipped.
-        prepared_image = prepare_image_to_registration(
+        prepared_image = prepare_image_to_registration_with_metadata(
             image=image.numpy_image,
             desired_size=ImageDimensions(
                 width=max_image_size[0], height=max_image_size[1]
@@ -495,6 +497,7 @@ def execute_registration(
                 detections=prediction,
                 scale=(prepared_image.scale_x, prepared_image.scale_y),
                 target_size_wh=prepared_image.final_size_wh,
+                update_scaling_metadata=False,
             )
         status = register_datapoint(
             target_project=target_project,

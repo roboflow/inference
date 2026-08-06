@@ -549,6 +549,23 @@ def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
     assert (ys.max() - ys.min()) >= 30
 
 
+def test_mask_to_polygon_when_mask_contains_hole() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[10:110, 20:100] = 255
+    mask[20:100, 30:90] = 0
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then — RETR_TREE returns both contours; the exterior must be selected
+    xs, ys = result[:, 0], result[:, 1]
+    assert xs.min() == 20
+    assert xs.max() == 99
+    assert ys.min() == 10
+    assert ys.max() == 109
+
+
 def test_serialise_image_with_parent_origin_when_crop() -> None:
     # given
     np_image = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -1153,6 +1170,48 @@ def test_serialise_rle_sv_detections() -> None:
             },
         ],
     }
+
+
+def test_serialise_rle_sv_detections_preserves_detection_with_empty_dense_mask() -> (
+    None
+):
+    # given
+    masks = np.zeros((2, 4, 4), dtype=bool)
+    masks[1, 0:2, 0:2] = True
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [0, 0, 2, 2]], dtype=np.float64),
+        mask=masks,
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["empty", "body"]),
+            "detection_id": np.array(["empty-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": np.array(
+                [
+                    {"size": [4, 4], "counts": "a"},
+                    {"size": [4, 4], "counts": "b"},
+                ],
+                dtype=object,
+            ),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert [prediction["detection_id"] for prediction in result["predictions"]] == [
+        "empty-id",
+        "body-id",
+    ]
+    assert [
+        prediction["rle_mask"]["counts"] for prediction in result["predictions"]
+    ] == [
+        "a",
+        "b",
+    ]
+    assert np.array_equal(detections.mask, masks)
 
 
 def test_serialise_rle_sv_detections_with_bytes_counts() -> None:

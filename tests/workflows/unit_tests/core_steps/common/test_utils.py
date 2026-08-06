@@ -4,7 +4,11 @@ import cv2
 import numpy as np
 import pytest
 import supervision as sv
+from pycocotools import mask as mask_utils
 
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_rle_sv_detections,
+)
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_sv_detections,
@@ -20,6 +24,8 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY_IN_SV_DETECTIONS,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -1302,9 +1308,7 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
     # Full-height strip flush to the right edge
     mask[:, orig_w - 200 : orig_w] = True
     detections = sv.Detections(
-        xyxy=np.array(
-            [[orig_w - 200, 0, orig_w - 1, orig_h - 1]], dtype=np.float64
-        ),
+        xyxy=np.array([[orig_w - 200, 0, orig_w - 1, orig_h - 1]], dtype=np.float64),
         mask=np.array([mask]),
         confidence=np.array([0.9]),
         class_id=np.array([0]),
@@ -1323,6 +1327,8 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
                 ],
                 dtype=np.int32,
             ),
+            SCALING_RELATIVE_TO_PARENT_KEY: np.array([0.5]),
+            SCALING_RELATIVE_TO_ROOT_PARENT_KEY: np.array([0.25]),
         },
     )
 
@@ -1330,12 +1336,11 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
         detections=detections,
         scale=(scale_x, scale_y),
         target_size_wh=(target_w, target_h),
+        update_scaling_metadata=False,
     )
 
     assert result.mask.shape == (1, target_h, target_w)
-    assert np.allclose(
-        result["image_dimensions"], np.array([[target_h, target_w]])
-    )
+    assert np.allclose(result["image_dimensions"], np.array([[target_h, target_w]]))
     x1, y1, x2, y2 = result.xyxy[0]
     assert x2 <= target_w
     assert y2 <= target_h
@@ -1347,9 +1352,33 @@ def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
     assert isotropic_w != target_w
     polygon = result.data[POLYGON_KEY_IN_SV_DETECTIONS][0]
     assert polygon[:, 0].max() >= target_w - 2
+    assert np.array_equal(result[SCALING_RELATIVE_TO_PARENT_KEY], np.array([0.5]))
+    assert np.array_equal(result[SCALING_RELATIVE_TO_ROOT_PARENT_KEY], np.array([0.25]))
 
 
-def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
+def test_scale_sv_detections_rejects_anisotropic_scalar_metadata() -> None:
+    detections = sv.Detections(
+        xyxy=np.array([[10, 10, 20, 20]], dtype=np.float64),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Anisotropic scaling cannot be represented",
+    ):
+        scale_sv_detections(
+            detections=detections,
+            scale=(0.5, 0.6),
+        )
+
+
+def test_scale_sv_detections_regenerates_rle_when_scale_changes_mask() -> None:
     # given
     mask = np.zeros((100, 100), dtype=bool)
     mask[20:40, 20:40] = True
@@ -1370,8 +1399,95 @@ def test_scale_sv_detections_drops_stale_rle_when_scale_changes_mask() -> None:
     result = scale_sv_detections(detections=detections, scale=0.5)
 
     # then
-    assert "rle_mask" not in result.data
     assert result.mask.shape == (1, 50, 50)
+    assert "rle_mask" in result.data
+    resized_rle = result.data["rle_mask"][0]
+    assert resized_rle["size"] == [50, 50]
+    assert isinstance(resized_rle["counts"], str)
+    decoded_mask = mask_utils.decode(
+        {
+            "size": resized_rle["size"],
+            "counts": resized_rle["counts"].encode("utf-8"),
+        }
+    ).astype(bool)
+    assert np.array_equal(decoded_mask, result.mask[0])
+
+
+def test_scale_sv_detections_passes_rle_only_masks_through_untouched() -> None:
+    # RLE-only predictions (mask=None) are intentionally not resized to avoid
+    # a decode/resize/re-encode cost on a path no stock workflow exercises -
+    # boxes scale, but the RLE stays sized to the source canvas. None entries
+    # (see convert_inference_detections_batch_to_sv_detections) must not crash.
+    # given
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:40, 20:40] = 1
+    rle_mask = mask_utils.encode(np.asfortranarray(mask))
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40], [50, 50, 70, 70]], dtype=np.float64),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 1]),
+        data={
+            "class_name": np.array(["obj", "other"]),
+            "detection_id": np.array(["d1", "d2"]),
+            "image_dimensions": np.array([[100, 100], [100, 100]]),
+            "rle_mask": np.array([None, rle_mask], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+
+    # then
+    assert result.mask is None
+    assert np.allclose(result.xyxy, np.array([[10, 10, 20, 20], [25, 25, 35, 35]]))
+    assert result.data["rle_mask"][0] is None, "None RLE entry must stay None"
+    # scale_sv_detections deep-copies its input, so compare by value
+    assert result.data["rle_mask"][1] == rle_mask, "RLE must be left untouched"
+
+
+def test_scale_sv_detections_preserves_empty_masks_and_matching_rles() -> None:
+    # given
+    masks = np.zeros((2, 4, 4), dtype=np.uint8)
+    masks[0, 3, 3] = 1
+    masks[1, 0:3, 0:3] = 1
+    rle_masks = np.array(
+        [mask_utils.encode(np.asfortranarray(mask)) for mask in masks],
+        dtype=object,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[3, 3, 4, 4], [0, 0, 3, 3]], dtype=np.float64),
+        mask=masks.astype(bool),
+        confidence=np.array([0.5, 0.9]),
+        class_id=np.array([0, 1]),
+        data={
+            "class_name": np.array(["thin", "body"]),
+            "detection_id": np.array(["thin-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": rle_masks,
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+    serialized_result = serialise_rle_sv_detections(detections=result)
+
+    # then
+    assert len(result) == 2
+    assert result.data["detection_id"].tolist() == ["thin-id", "body-id"]
+    assert len(result.data["rle_mask"]) == 2
+    assert [
+        prediction["detection_id"] for prediction in serialized_result["predictions"]
+    ] == ["thin-id", "body-id"]
+    serialized_mask_areas = []
+    for prediction in serialized_result["predictions"]:
+        serialized_mask = mask_utils.decode(
+            {
+                "size": prediction["rle_mask"]["size"],
+                "counts": prediction["rle_mask"]["counts"].encode("utf-8"),
+            }
+        )
+        serialized_mask_areas.append(int(serialized_mask.sum()))
+    assert serialized_mask_areas == [0, 4]
 
 
 def test_scale_sv_detections_keeps_rle_when_scale_is_noop() -> None:

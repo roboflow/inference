@@ -402,6 +402,7 @@ def scale_sv_detections(
     scale: Union[float, Tuple[float, float]],
     keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     target_size_wh: Optional[Tuple[int, int]] = None,
+    update_scaling_metadata: bool = True,
 ) -> sv.Detections:
     """Scale detection geometry into a new image coordinate frame.
 
@@ -414,6 +415,10 @@ def scale_sv_detections(
             image (e.g. the JPEG that will be uploaded). When set, dense masks
             and ``image_dimensions`` are forced to this canvas so annotations
             stay intact relative to the stored image.
+        update_scaling_metadata: Whether to update the scalar workflow coordinate
+            lineage metadata. Set to ``False`` for terminal consumers, such as
+            Dataset Upload, when using different X/Y scales. An anisotropic
+            transform cannot be represented by the existing scalar metadata.
     """
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
@@ -424,10 +429,13 @@ def scale_sv_detections(
     else:
         scale_x = scale_y = float(scale)
 
-    # Metadata fields historically store a single factor; use X when isotropic,
-    # otherwise the mean (dataset-upload consumers serialize immediately and do
-    # not rely on undoing this via root-coordinate recovery).
-    scale_meta = scale_x if abs(scale_x - scale_y) < 1e-9 else (scale_x + scale_y) / 2.0
+    scales_are_isotropic = abs(scale_x - scale_y) < 1e-9
+    if update_scaling_metadata and not scales_are_isotropic:
+        raise ValueError(
+            "Anisotropic scaling cannot be represented by scalar workflow "
+            "coordinate metadata. Set update_scaling_metadata=False for a "
+            "terminal result that will not undergo root-coordinate recovery."
+        )
 
     xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
     xyxy[:, [0, 2]] *= scale_x
@@ -457,6 +465,11 @@ def scale_sv_detections(
         image_dimensions[:, 1] *= scale_x
         detections_copy[IMAGE_DIMENSIONS_KEY] = image_dimensions.round()
 
+    # RLE-only predictions (`mask=None` with the `rle_mask` data key) are
+    # intentionally passed through untouched, matching historical behaviour: no
+    # stock workflow routes them through a resize, and decoding full-resolution
+    # RLE just to resize it is expensive. Their RLE stays sized to the source
+    # canvas after scaling - callers needing scaled RLE must densify first.
     if detections_copy.mask is not None:
         # Resize dense masks directly onto the destination canvas. Polygon →
         # scale → raster round-trips fragment edge-touching masks; combined with
@@ -469,12 +482,19 @@ def scale_sv_detections(
         if target_size_wh is not None:
             scaled_w, scaled_h = int(target_size_wh[0]), int(target_size_wh[1])
         else:
-            scaled_w = max(1, int(round(original_mask_size_wh[0] * scale_x)))
-            scaled_h = max(1, int(round(original_mask_size_wh[1] * scale_y)))
+            scaled_w = int(round(original_mask_size_wh[0] * scale_x))
+            scaled_h = int(round(original_mask_size_wh[1] * scale_y))
         scaled_w = max(1, scaled_w)
         scaled_h = max(1, scaled_h)
         if (scaled_w, scaled_h) != original_mask_size_wh:
-            detections_copy.mask = np.array(
+            rle_masks_present = RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data
+            if rle_masks_present:
+                # pycocotools is not a base dependency - it ships with the extras
+                # that produce RLE predictions - so keep the import deferred and
+                # only reach it when RLE masks are actually involved.
+                from pycocotools import mask as mask_utils
+
+            resized_masks = np.array(
                 [
                     cv2.resize(
                         detection_mask.astype(np.uint8),
@@ -484,11 +504,22 @@ def scale_sv_detections(
                     for detection_mask in detections_copy.mask
                 ]
             )
-            # RLE from the source frame no longer matches the resized masks.
-            # Only drop it when a resize actually happened - no-op scales must
-            # keep it, because the RLE-kind serializer requires `rle_mask`.
-            if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
-                del detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
+            detections_copy.mask = resized_masks
+            if rle_masks_present:
+                # Source RLE counts encode the old canvas and cannot be scaled
+                # arithmetically. Re-encode every resized mask, including valid
+                # all-zero masks, to preserve detection-to-RLE alignment.
+                resized_rle_masks = []
+                for detection_mask in resized_masks:
+                    rle_mask = mask_utils.encode(
+                        np.asfortranarray(detection_mask.astype(np.uint8))
+                    )
+                    if isinstance(rle_mask["counts"], bytes):
+                        rle_mask["counts"] = rle_mask["counts"].decode("utf-8")
+                    resized_rle_masks.append(rle_mask)
+                detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                    resized_rle_masks, dtype=object
+                )
 
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
         polygons = detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS]
@@ -513,22 +544,23 @@ def scale_sv_detections(
                 scaled_polygons, dtype=object
             )
 
-    if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale_meta
-        )
-    else:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
-            [scale_meta] * len(detections_copy)
-        )
-    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale_meta
-        )
-    else:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
-            [scale_meta] * len(detections_copy)
-        )
+    if update_scaling_metadata:
+        if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
+                detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale_x
+            )
+        else:
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+                [scale_x] * len(detections_copy)
+            )
+        if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+                detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale_x
+            )
+        else:
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+                [scale_x] * len(detections_copy)
+            )
     return detections_copy
 
 
