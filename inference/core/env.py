@@ -1431,27 +1431,24 @@ ENABLE_TENSOR_DATA_REPRESENTATION = (
     and USE_INFERENCE_MODELS
 )
 
-# Adaptive buffer filling only ever pays off while the pipeline decodes frames
-# FASTER than the consumer can take them. Both adaptive rules are open loop
-# (nothing checks that dropping actually improved anything), so a source whose
-# grabbing pace simply cannot reach the DECLARED fps - e.g. any RTSP camera that
-# announces 30 fps and delivers a hair less - pins the drop ratchet at its floor
-# of one accepted frame per (VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW
-# + 1) grabs, no matter how fast the consumer is. With the guard on, adaptive
-# drops are suppressed whenever the measured consumer CAPACITY (frames read per
-# second of NON-blocked reader time) is at least the current decoding pace, which
-# leaves genuinely saturated deployments untouched and stops the collapse.
-#
-# The default is GATED ON ENABLE_TENSOR_DATA_REPRESENTATION deliberately. The bug
-# is representation-independent - it lives in VideoSource, below that boundary -
-# but defaulting the guard on only for the tensor pipeline leaves the established
-# numpy path bit-for-bit unchanged while the fix proves itself in the field. Set
-# VIDEO_SOURCE_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY explicitly to override in
-# either direction; a numpy deployment hitting the collapse can opt in without
-# turning on tensors.
-DEFAULT_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY = str2bool(
+# ADAPTIVE buffer filling historically decided drops from rate estimates, and
+# every estimate available in VideoSource proved unreliable: the declared source
+# fps is nominal (a round 30.0 that a real stream never quite delivers), reader
+# pace is capped by whatever the decoder chose to emit, and per-source capacity
+# ledgers mis-attribute time under a shared multi-source reader. With this flag
+# on, the ADAPTIVE strategies switch to demand-driven backpressure instead: a
+# the buffer state becomes the only drop signal. Each ADAPTIVE strategy degrades
+# to its plain counterpart: ADAPTIVE_DROP_OLDEST evicts oldest at a full buffer
+# (content stays fresh, which staleness-budget consumers depend on) and
+# ADAPTIVE_DROP_LATEST skips the decode of frames a full buffer would discard
+# anyway. The buffer state is a fact, not an estimate, so there is nothing to
+# tune and none of the estimator failure modes can occur. Default mirrors
+# ENABLE_TENSOR_DATA_REPRESENTATION so the established numpy path stays
+# bit-for-bit unchanged; numpy deployments opt in by setting the variable
+# explicitly to True.
+DEFAULT_ADAPTIVE_MODE_BACKPRESSURE = str2bool(
     os.getenv(
-        "VIDEO_SOURCE_ADAPTIVE_MODE_RESPECT_CONSUMER_CAPACITY",
+        "VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE",
         str(ENABLE_TENSOR_DATA_REPRESENTATION),
     )
 )

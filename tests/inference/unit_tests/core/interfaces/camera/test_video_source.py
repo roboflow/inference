@@ -1008,6 +1008,7 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1041,6 +1042,7 @@ def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
 def test_stream_consumption_when_buffering_not_allowed() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1078,6 +1080,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_fa
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1116,6 +1119,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1159,6 +1163,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
 def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.DROP_LATEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1195,6 +1200,7 @@ def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -
 def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1244,6 +1250,7 @@ def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1294,6 +1301,7 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=200.0,
@@ -1368,6 +1376,7 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=5.0,
         adaptive_mode_reader_pace_tolerance=200.0,
@@ -1443,6 +1452,7 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=100.0,
         adaptive_mode_reader_pace_tolerance=0.1,
@@ -1498,16 +1508,18 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
 
 
 def _run_adaptive_stream_pace_scenario(
-    respect_consumer_capacity: bool,
-) -> Tuple[List[int], List[StatusUpdate]]:
+    adaptive_backpressure: bool,
+    drain: bool = True,
+    buffer_maxsize: int = 0,
+) -> Tuple[List[int], List[StatusUpdate], MagicMock, Queue]:
     """Drive a consumer whose grabbing pace can never reach the DECLARED fps.
 
     The source announces 200 fps while frames are emitted at ~100 fps, so the
-    stream-pace rule of ADAPTIVE mode is permanently satisfied - exactly the
-    shape of a real RTSP camera that advertises a round 30 fps and delivers a
-    hair less. The reader takes every frame the moment it appears and spends
-    nearly all of its time blocked on an empty buffer, i.e. it has plenty of
-    spare capacity.
+    legacy stream-pace rule of ADAPTIVE mode is permanently satisfied - exactly
+    the shape of a real RTSP camera that advertises a round 30 fps and delivers
+    a hair less. With `drain=True` the reader empties the buffer the moment a
+    frame appears (a consumer with abundant spare capacity); with `drain=False`
+    nobody reads at all (a consumer that is genuinely stuck).
     """
     status_updates: List[StatusUpdate] = []
     consumer = VideoConsumer.init(
@@ -1517,7 +1529,7 @@ def _run_adaptive_stream_pace_scenario(
         minimum_adaptive_mode_samples=2,
         maximum_adaptive_frames_dropped_in_row=1,
         status_update_handlers=[status_updates.append],
-        respect_consumer_capacity=respect_consumer_capacity,
+        adaptive_backpressure=adaptive_backpressure,
     )
     video = MagicMock()
     video.grab.return_value = True
@@ -1525,7 +1537,7 @@ def _run_adaptive_stream_pace_scenario(
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=False, fps=200)
     video.discover_source_properties.return_value = source_properties
-    buffer = Queue()
+    buffer = Queue(maxsize=buffer_maxsize)
 
     consumed_frame_ids: List[int] = []
     consumer.reset(source_properties=source_properties)
@@ -1538,22 +1550,18 @@ def _run_adaptive_stream_pace_scenario(
             frames_buffering_allowed=True,
         )
         time.sleep(0.01)
-        delivered = False
-        while not buffer.empty():
-            consumed_frame_ids.append(buffer.get_nowait().frame_id)
-            consumer.notify_frame_consumed()
-            delivered = True
-        # The reader was ready the whole 10ms - it only got a frame if one was
-        # decoded, so nearly all of that time was spent blocked.
-        consumer.notify_frame_read(blocked_seconds=0.0095, frame_delivered=delivered)
-    return consumed_frame_ids, status_updates
+        if drain:
+            while not buffer.empty():
+                consumed_frame_ids.append(buffer.get_nowait().frame_id)
+                consumer.notify_frame_consumed()
+    return consumed_frame_ids, status_updates, video, buffer
 
 
 @pytest.mark.slow
-def test_adaptive_strategy_stops_dropping_once_consumer_shows_spare_capacity() -> None:
+def test_adaptive_backpressure_never_starves_a_draining_consumer() -> None:
     # when
-    consumed_frame_ids, status_updates = _run_adaptive_stream_pace_scenario(
-        respect_consumer_capacity=True,
+    consumed_frame_ids, status_updates, _, _ = _run_adaptive_stream_pace_scenario(
+        adaptive_backpressure=True,
     )
 
     # then
@@ -1562,20 +1570,24 @@ def test_adaptive_strategy_stops_dropping_once_consumer_shows_spare_capacity() -
         for update in status_updates
         if update.payload.get("cause") == "ADAPTIVE strategy"
     ]
+    assert len(adaptive_drops) == 0, (
+        "The buffer is drained the moment a frame appears, so it never reaches"
+        " the watermark and demand-driven mode must not drop anything - the"
+        " unreachable DECLARED fps that fools the legacy rule is never consulted"
+    )
     assert (
-        len(adaptive_drops) <= 2
-    ), "Adaptive mode may drop while it has no capacity evidence yet, but must stop afterwards"
-    assert (
-        len(consumed_frame_ids) >= 18
-    ), "A consumer with spare capacity must receive virtually every grabbed frame"
+        len(consumed_frame_ids) == 20
+    ), "A consumer with spare capacity must receive every grabbed frame"
     assert consumed_frame_ids[-1] == 20, "Last grabbed frame must reach the consumer"
 
 
 @pytest.mark.slow
-def test_adaptive_strategy_capacity_guard_can_be_disabled() -> None:
-    # when
-    consumed_frame_ids, status_updates = _run_adaptive_stream_pace_scenario(
-        respect_consumer_capacity=False,
+def test_adaptive_backpressure_keeps_buffer_fresh_for_a_stuck_consumer() -> None:
+    # when - nobody drains a 4-slot buffer for 20 grabbed frames
+    _, status_updates, video, buffer = _run_adaptive_stream_pace_scenario(
+        adaptive_backpressure=True,
+        drain=False,
+        buffer_maxsize=4,
     )
 
     # then
@@ -1584,9 +1596,46 @@ def test_adaptive_strategy_capacity_guard_can_be_disabled() -> None:
         for update in status_updates
         if update.payload.get("cause") == "ADAPTIVE strategy"
     ]
+    evictions = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "DROP_OLDEST strategy"
+    ]
+    assert len(adaptive_drops) == 0, (
+        "Demand-driven ADAPTIVE_DROP_OLDEST must never invoke the estimator"
+        " drop path - the full-buffer eviction path handles overrun"
+    )
     assert (
-        len(adaptive_drops) >= 5
-    ), "With the guard disabled, the unreachable declared fps must keep the drop ratchet engaged"
+        len(evictions) == 16
+    ), "Every frame beyond the buffer capacity must evict the oldest one"
+    assert video.retrieve.call_count == 20, "Eviction happens post-decode here"
+    buffered_ids = []
+    while not buffer.empty():
+        buffered_ids.append(buffer.get_nowait().frame_id)
+    assert buffered_ids == [17, 18, 19, 20], (
+        "The buffer must hold the NEWEST frames - keep-oldest-when-full ages"
+        " the content past any staleness budget and starves TTL consumers,"
+        " which is exactly the failure measured on the L4 at 4 streams"
+    )
+
+
+@pytest.mark.slow
+def test_adaptive_backpressure_can_be_disabled_restoring_legacy_rules() -> None:
+    # when
+    consumed_frame_ids, status_updates, _, _ = _run_adaptive_stream_pace_scenario(
+        adaptive_backpressure=False,
+    )
+
+    # then
+    adaptive_drops = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "ADAPTIVE strategy"
+    ]
+    assert len(adaptive_drops) >= 5, (
+        "With backpressure disabled, the unreachable declared fps must keep the"
+        " legacy drop ratchet engaged"
+    )
     assert (
         len(consumed_frame_ids) < 18
     ), "Legacy open-loop behaviour starves the consumer"
