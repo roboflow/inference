@@ -51,6 +51,16 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
+# Collection-level key under which the dense per-pixel confidence map is carried.
+# The map is image-level `(H, W)`, NOT a per-detection column: every entry of
+# `sv.Detections.data` must have first dimension == `len(detections)` (supervision
+# enforces this via `_validate_data` in `__post_init__`/`merge`, and in
+# `__setitem__` from 0.30.0 on), so the map lives on the length-agnostic
+# `Detections.metadata` instead. This mirrors the tensor sibling, which carries the
+# same map on `InstanceDetections.image_metadata`. The serialiser never emits it
+# into `predictions`, but it survives for consumers reading the prediction metadata.
+CONFIDENCE_MASK_KEY = "confidence_mask"
+
 LONG_DESCRIPTION = """
 Run inference on a semantic segmentation model hosted on or uploaded to Roboflow.
 
@@ -284,7 +294,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
     @staticmethod
     def _convert_to_sv_detections(predictions_dict: Dict) -> sv.Detections:
         seg_mask_b64 = predictions_dict.get("segmentation_mask", "")
-        conf_mask_b64 = predictions_dict.get("confidence_mask", "")
+        conf_mask_b64 = predictions_dict.get(CONFIDENCE_MASK_KEY, "")
         class_map: Dict[str, str] = predictions_dict.get("class_map", {})
 
         mask_bytes = base64.b64decode(seg_mask_b64)
@@ -346,6 +356,6 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         )
 
         if conf_array is not None:
-            result["confidence_mask"] = conf_array
+            result.metadata[CONFIDENCE_MASK_KEY] = conf_array
 
         return result

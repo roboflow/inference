@@ -154,10 +154,16 @@ def test_convert_to_sv_detections_derives_confidence_from_mask() -> None:
         }
     )
 
-    assert "confidence_mask" in result.data
-    assert result.data["confidence_mask"].shape == (50, 50)
+    # the dense (H, W) map is image-level, so it is carried on the length-agnostic
+    # `metadata` — putting it in `data` violates supervision's per-detection
+    # first-dimension contract (`len(detections)`) and raises on assignment/merge.
+    assert "confidence_mask" not in result.data
+    assert "confidence_mask" in result.metadata
+    assert result.metadata["confidence_mask"].shape == (50, 50)
     assert result.confidence is not None
     assert abs(float(result.confidence[0]) - 200 / 255.0) < 0.01
+    # the collection must stay valid under supervision's own operations
+    assert len(sv.Detections.merge([result, result])) == 2 * len(result)
 
 
 def test_convert_to_sv_detections_empty_when_all_background() -> None:
