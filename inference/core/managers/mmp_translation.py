@@ -616,10 +616,6 @@ def _pad_points(
 
 
 def _build_text_prompt_params(request: Any) -> dict:
-    if getattr(request, "nms_iou_threshold", None) is not None:
-        raise ModelDeploymentNotSupportedError(
-            "nms_iou_threshold is not supported on the MMP path."
-        )
     prompts = getattr(request, "prompts", None)
     if not prompts:
         raise ModelDeploymentNotSupportedError(
@@ -1609,6 +1605,52 @@ def _repack_visual_segmentation(
     return Sam2SegmentationResponse(predictions=predictions, time=0.0)
 
 
+def _nms_greedy_pycocotools_rles(
+    rles: List[dict], confidences: np.ndarray, iou_threshold: float
+) -> np.ndarray:
+    """Verbatim port of the legacy wrapper's greedy mask NMS."""
+    from pycocotools import mask as mask_utils
+
+    num_detections = len(rles)
+    if num_detections == 0:
+        return np.array([], dtype=bool)
+    sort_index = np.argsort(confidences)[::-1]
+    sorted_rles = [rles[i] for i in sort_index]
+    ious = mask_utils.iou(sorted_rles, sorted_rles, [0] * num_detections)
+    keep = np.ones(num_detections, dtype=bool)
+    for i in range(num_detections):
+        if keep[i]:
+            condition = ious[i, :] > iou_threshold
+            keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
+    return keep[np.argsort(sort_index)]
+
+
+def _apply_cross_prompt_nms(
+    collected: List[Tuple[int, np.ndarray, float]], iou_threshold: float
+) -> List[Tuple[int, np.ndarray, float]]:
+    from pycocotools import mask as mask_utils
+
+    if not collected:
+        return collected
+    rles = [
+        mask_utils.encode(np.asfortranarray((mask > 0).astype(np.uint8)))
+        for _, mask, _ in collected
+    ]
+    confidences = np.array([score for _, _, score in collected])
+    keep = _nms_greedy_pycocotools_rles(rles, confidences, iou_threshold)
+    return [collected[i] for i in range(len(collected)) if keep[i]]
+
+
+def _sam3_prompt_echo(index: int, prompt: Any) -> Sam3PromptEcho:
+    has_visual = bool(getattr(prompt, "boxes", None))
+    return Sam3PromptEcho(
+        prompt_index=index,
+        type="visual" if has_visual else "text",
+        text=getattr(prompt, "text", None),
+        num_boxes=len(getattr(prompt, "boxes", None) or []) if has_visual else 0,
+    )
+
+
 def _repack_text_segmentation(
     prediction: Any, request: Any
 ) -> Sam3SegmentationResponse:
@@ -1625,10 +1667,9 @@ def _repack_text_segmentation(
         )
     prompts = list(getattr(request, "prompts", None) or [])
     response_format = getattr(request, "format", "polygon")
-    prompt_results = []
+    decoded: List[Tuple[int, np.ndarray, List[float]]] = []
     for output in prompt_outputs:
-        index = int(output.get("prompt_index", len(prompt_results)))
-        prompt = prompts[index] if index < len(prompts) else None
+        index = int(output.get("prompt_index", len(decoded)))
         raw_masks = output.get("masks")
         if raw_masks is None:
             raw_masks = []
@@ -1637,23 +1678,68 @@ def _repack_text_segmentation(
         else:
             masks = np.asarray(raw_masks)
         scores = [float(score) for score in output.get("scores", [])]
+        decoded.append((index, masks, scores))
+
+    nms_iou_threshold = getattr(request, "nms_iou_threshold", None)
+    if nms_iou_threshold is not None and prompts:
+        # Legacy wrapper semantics: collect with per-prompt thresholds
+        # (request threshold as the fallback), cross-prompt greedy mask NMS,
+        # regroup — every prompt gets a result row.
+        default_threshold = float(getattr(request, "output_prob_thresh", None) or 0.5)
+        collected: List[Tuple[int, np.ndarray, float]] = []
+        for index, masks, scores in decoded:
+            prompt = prompts[index] if index < len(prompts) else None
+            prompt_threshold = getattr(prompt, "output_prob_thresh", None)
+            if prompt_threshold is None:
+                prompt_threshold = default_threshold
+            if masks.ndim != 3 or 0 in masks.shape:
+                continue
+            for mask, score in zip(masks, scores):
+                if score >= prompt_threshold:
+                    collected.append((index, mask, float(score)))
+        collected = _apply_cross_prompt_nms(collected, float(nms_iou_threshold))
+        regrouped: Dict[int, List[Tuple[np.ndarray, float]]] = {
+            i: [] for i in range(len(prompts))
+        }
+        for index, mask, score in collected:
+            regrouped[index].append((mask, score))
+        prompt_results = []
+        for index, prompt in enumerate(prompts):
+            bucket = regrouped.get(index, [])
+            if bucket:
+                masks = np.stack([mask for mask, _ in bucket], axis=0)
+                scores = [score for _, score in bucket]
+            else:
+                masks = np.zeros((0, 0, 0), dtype=np.uint8)
+                scores = []
+            prompt_results.append(
+                Sam3PromptResult(
+                    prompt_index=index,
+                    echo=_sam3_prompt_echo(index, prompt),
+                    predictions=_sam_masks_to_predictions(
+                        masks, scores, response_format, Sam3SegmentationPrediction
+                    ),
+                )
+            )
+        return Sam3SegmentationResponse(prompt_results=prompt_results, time=0.0)
+
+    prompt_results = []
+    for index, masks, scores in decoded:
+        prompt = prompts[index] if index < len(prompts) else None
         prompt_threshold = getattr(prompt, "output_prob_thresh", None)
         if prompt_threshold is not None:
             kept = [i for i, score in enumerate(scores) if score >= prompt_threshold]
             masks = masks[kept] if len(kept) else masks[:0]
             scores = [scores[i] for i in kept]
-        has_visual = bool(getattr(prompt, "boxes", None))
-        echo = Sam3PromptEcho(
-            prompt_index=index,
-            type="visual" if has_visual else "text",
-            text=getattr(prompt, "text", None),
-            num_boxes=len(getattr(prompt, "boxes", None) or []) if has_visual else 0,
-        )
         predictions = _sam_masks_to_predictions(
             masks, scores, response_format, Sam3SegmentationPrediction
         )
         prompt_results.append(
-            Sam3PromptResult(prompt_index=index, echo=echo, predictions=predictions)
+            Sam3PromptResult(
+                prompt_index=index,
+                echo=_sam3_prompt_echo(index, prompt),
+                predictions=predictions,
+            )
         )
     return Sam3SegmentationResponse(prompt_results=prompt_results, time=0.0)
 

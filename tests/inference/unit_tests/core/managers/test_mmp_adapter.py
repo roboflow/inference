@@ -1716,7 +1716,9 @@ class TestSamRouting:
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.infer_from_request_sync("sam3/sam3_interactive", request)
 
-    def test_nms_iou_threshold_errors(self, running_adapter, monkeypatch):
+    def test_nms_iou_threshold_applies_cross_prompt_mask_nms(
+        self, running_adapter, monkeypatch
+    ):
         from inference.core.entities.requests.sam3 import Sam3Prompt
 
         self._setup(
@@ -1728,13 +1730,65 @@ class TestSamRouting:
                 "segment_with_text_prompts",
             ],
         )
+        overlapping = np.zeros((16, 16), dtype=np.uint8)
+        overlapping[2:10, 2:10] = 1
+        distinct = np.zeros((16, 16), dtype=np.uint8)
+        distinct[12:15, 12:15] = 1
+        running_adapter._client.infer_result = [
+            {"prompt_index": 0, "masks": [overlapping.copy()], "scores": [0.9]},
+            {
+                "prompt_index": 1,
+                "masks": [overlapping.copy(), distinct],
+                "scores": [0.8, 0.7],
+            },
+        ]
+        request = sam_request(
+            Sam3SegmentationRequest,
+            prompts=[
+                Sam3Prompt(type="text", text="cat"),
+                Sam3Prompt(type="text", text="dog"),
+            ],
+            output_prob_thresh=0.5,
+            nms_iou_threshold=0.5,
+        )
+        response = running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        # Prompt 0's overlapping mask (0.9) wins over prompt 1's copy (0.8);
+        # the distinct mask survives. Every prompt keeps a result row.
+        assert len(response.prompt_results) == 2
+        assert len(response.prompt_results[0].predictions) == 1
+        assert response.prompt_results[0].predictions[0].confidence == 0.9
+        assert len(response.prompt_results[1].predictions) == 1
+        assert response.prompt_results[1].predictions[0].confidence == 0.7
+
+    def test_nms_collect_uses_request_threshold_for_prompts_without_override(
+        self, running_adapter, monkeypatch
+    ):
+        from inference.core.entities.requests.sam3 import Sam3Prompt
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            [
+                "embed_images",
+                "segment_with_visual_prompts",
+                "segment_with_text_prompts",
+            ],
+        )
+        mask = np.zeros((16, 16), dtype=np.uint8)
+        mask[2:6, 2:6] = 1
+        running_adapter._client.infer_result = [
+            {"prompt_index": 0, "masks": [mask], "scores": [0.45]}
+        ]
         request = sam_request(
             Sam3SegmentationRequest,
             prompts=[Sam3Prompt(type="text", text="cat")],
-            nms_iou_threshold=0.5,
+            output_prob_thresh=0.5,
+            nms_iou_threshold=0.9,
         )
-        with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        response = running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        # 0.45 < request threshold 0.5 -> dropped at collect (wrapper parity),
+        # unlike the non-NMS path where inheritance-free prompts leak.
+        assert response.prompt_results[0].predictions == []
 
 
 class TestUnsupportedModelOps:
