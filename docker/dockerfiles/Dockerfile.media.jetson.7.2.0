@@ -13,6 +13,53 @@ ARG OPENCV_CUDA_ARCH_PTX=
 ARG JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES=87;110
 ARG L4T_REPOSITORY=r39.2
 
+FROM ubuntu:24.04 AS codec-fixture-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-codec-fixtures-jp72-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-codec-fixtures-jp72-${TARGETARCH} \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    mkdir -p /opt/roboflow/test-fixtures && \
+    ffmpeg -hide_banner -loglevel error \
+        -f lavfi -i color=c=red:size=320x180:rate=30 \
+        -frames:v 8 -an -pix_fmt yuv420p \
+        -c:v libx264 -preset ultrafast -tune zerolatency \
+        -x264-params repeat-headers=1 \
+        -f h264 -y /opt/roboflow/test-fixtures/test.h264 && \
+    ffmpeg -hide_banner -loglevel error \
+        -f lavfi -i color=c=red:size=320x180:rate=30 \
+        -frames:v 8 -an -pix_fmt yuv420p \
+        -c:v libx265 -preset ultrafast \
+        -x265-params pools=1:log-level=error \
+        -f hevc -y /opt/roboflow/test-fixtures/test.h265 && \
+    ffmpeg -hide_banner -loglevel error \
+        -f lavfi -i testsrc2=size=320x180:rate=30 \
+        -frames:v 8 -an -pix_fmt yuv420p \
+        -c:v libx264 -preset ultrafast -tune zerolatency \
+        -x264-params repeat-headers=1 \
+        -f h264 -y /opt/roboflow/test-fixtures/changing.h264 && \
+    ffmpeg -hide_banner -loglevel error \
+        -f lavfi -i color=c=red:size=320x180:rate=30 \
+        -frames:v 4 -an -pix_fmt yuv420p \
+        -c:v libx264 -preset ultrafast -tune zerolatency \
+        -x264-params repeat-headers=1 \
+        -f h264 -y /tmp/resolution-320.h264 && \
+    ffmpeg -hide_banner -loglevel error \
+        -f lavfi -i color=c=blue:size=640x360:rate=30 \
+        -frames:v 4 -an -pix_fmt yuv420p \
+        -c:v libx264 -preset ultrafast -tune zerolatency \
+        -x264-params repeat-headers=1 \
+        -f h264 -y /tmp/resolution-640.h264 && \
+    cat /tmp/resolution-320.h264 /tmp/resolution-640.h264 \
+        > /opt/roboflow/test-fixtures/resolution-change.h264 && \
+    test -s /opt/roboflow/test-fixtures/test.h264 && \
+    test -s /opt/roboflow/test-fixtures/test.h265 && \
+    test -s /opt/roboflow/test-fixtures/changing.h264 && \
+    test -s /opt/roboflow/test-fixtures/resolution-change.h264
+
 FROM ubuntu:24.04 AS ffmpeg-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -299,6 +346,7 @@ COPY --from=gstreamer-builder /opt/gstreamer-runtime /opt/gstreamer
 COPY --from=opencv-builder /opt/opencv-runtime /opt/opencv
 COPY --from=cuda-runtime-export /opt/cuda-runtime /opt/cuda-runtime
 COPY --from=jetson-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
+COPY --from=codec-fixture-builder /opt/roboflow/test-fixtures /opt/roboflow/test-fixtures
 COPY LICENSE LICENSE.core /opt/roboflow/share/licenses/roboflow-media-bridges/
 
 ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:$PATH \

@@ -271,6 +271,11 @@ struct RfJetsonPipeline {
     char conversion_error[1024] = {0};
     RfFrameInfo last_frame_info{};
     bool frame_info_valid = false;
+    // The advertised source properties are established from the first frame.
+    // If later caps disagree, fail recoverably instead of returning tensors
+    // whose dimensions no longer match cached workflow metadata.
+    bool caps_changed = false;
+    char caps_change_error[1024] = {0};
     // dmabuf fds observed on this pipeline (guarded by `mutex`); its size is
     // exported as stats.unique_buffer_fds. Decoder capture pools are small
     // (single digits), so an ordered set is fine.
@@ -627,6 +632,14 @@ bool read_sample_info(GstSample* sample, RfFrameInfo* info) {
     return true;
 }
 
+bool frame_caps_changed(const RfFrameInfo& previous, const RfFrameInfo& current) {
+    // Some sources first negotiate an unknown 0/1 framerate and later refine
+    // it without changing the actual image layout. Dimensions are the unsafe
+    // change because cached workflow metadata and tensor shape then disagree;
+    // frame-specific FPS remains available to callers without forcing a reset.
+    return previous.width != current.width || previous.height != current.height;
+}
+
 bool read_bus_error(
     RfJetsonPipeline* handle,
     char* error,
@@ -781,17 +794,37 @@ RfTensorContext* convert_sample_to_tensor(
     {
         auto* surface = reinterpret_cast<NvBufSurface*>(map.data);
         diagnostics->memory_type = static_cast<int32_t>(surface->memType);
-        if (surface->memType != NVBUF_MEM_SURFACE_ARRAY ||
-            surface->surfaceList == nullptr || surface->batchSize == 0 ||
-            surface->numFilled == 0) {
+        // A traditional Jetson decoder exports an NVRM surface array, which
+        // reaches CUDA through EGL. Thor's OpenRM decoder instead exports a
+        // CUDA-device surface: its dataPtr is already a CUDA-addressable,
+        // pitched image. Both are GPU-native and neither should fall back to
+        // a CPU frame path.
+        const bool direct_cuda_surface =
+            surface->memType == NVBUF_MEM_CUDA_DEVICE;
+        if ((surface->memType != NVBUF_MEM_SURFACE_ARRAY &&
+             !direct_cuda_surface) ||
+            surface->surfaceList == nullptr || surface->batchSize == 0) {
             write_error(
                 error,
                 error_capacity,
-                "Frame is not a populated NvBufSurface SURFACE_ARRAY");
+                "Frame is not a supported GPU NvBufSurface "
+                "(memType=%d surfaceArray=%d cudaDevice=%d surfaceList=%p "
+                "batchSize=%u numFilled=%u)",
+                static_cast<int>(surface->memType),
+                static_cast<int>(NVBUF_MEM_SURFACE_ARRAY),
+                static_cast<int>(NVBUF_MEM_CUDA_DEVICE),
+                static_cast<void*>(surface->surfaceList),
+                surface->batchSize,
+                surface->numFilled);
             goto cleanup;
         }
-        timings->buffer_fd = surface->surfaceList[0].bufferDesc;
-        timings->buffer_fd_valid = true;
+        // bufferDesc is the decoder dmabuf identity used by the EGL path.
+        // CUDA-device surfaces bypass EGL registration, so do not fold their
+        // backend-specific descriptor value into this diagnostic.
+        if (!direct_cuda_surface) {
+            timings->buffer_fd = surface->surfaceList[0].bufferDesc;
+            timings->buffer_fd_valid = true;
+        }
         const NvBufSurfaceColorFormat surface_format =
             surface->surfaceList[0].colorFormat;
         const bool is_rgba = surface_format == NVBUF_COLOR_FORMAT_RGBA;
@@ -803,6 +836,110 @@ RfTensorContext* convert_sample_to_tensor(
                 "NvBufSurface format is unsupported (format=%d, expected RGBA "
                 "or an NV12 variant)",
                 static_cast<int>(surface_format));
+            goto cleanup;
+        }
+        if (direct_cuda_surface) {
+            const NvBufSurfaceParams& params = surface->surfaceList[0];
+            const auto* source = static_cast<const uint8_t*>(params.dataPtr);
+            const size_t source_pitch = params.pitch;
+            if (source == nullptr || source_pitch == 0) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device surface has no pitched data pointer "
+                    "(data=%p pitch=%zu)",
+                    static_cast<const void*>(source),
+                    source_pitch);
+                goto cleanup;
+            }
+            if (!is_rgba &&
+                (params.planeParams.num_planes < 2 ||
+                 params.planeParams.offset[1] == 0)) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device NV12 surface has invalid plane metadata "
+                    "(planes=%u uvOffset=%u)",
+                    params.planeParams.num_planes,
+                    params.planeParams.offset[1]);
+                goto cleanup;
+            }
+
+            tensor = new (std::nothrow) RfTensorContext();
+            if (tensor == nullptr) {
+                write_error(error, error_capacity, "Could not allocate tensor state");
+                goto cleanup;
+            }
+            tensor->device_id = handle->device_id;
+            tensor->pool = handle->tensor_pool;
+            tensor->managed.manager_ctx = tensor;
+            tensor->managed.deleter = delete_managed_tensor;
+            const size_t output_size =
+                static_cast<size_t>(frame_info.width) * frame_info.height * 3;
+            tensor->allocation =
+                handle->tensor_pool->acquire(output_size, &tensor->pooled);
+            if (tensor->allocation == nullptr) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA tensor allocation failed for %zu bytes",
+                    output_size);
+                goto cleanup;
+            }
+
+            const dim3 threads(32, 8);
+            const dim3 blocks(
+                (frame_info.width + threads.x - 1) / threads.x,
+                (frame_info.height + threads.y - 1) / threads.y);
+            phase_start = monotonic_ns();
+            if (is_rgba) {
+                const ChannelMap rgba_channels{0, 1, 2};
+                rgba_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    source,
+                    source_pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    rgba_channels);
+            } else {
+                nv12_pitch_to_rgb_chw<<<blocks, threads, 0, handle->stream>>>(
+                    source,
+                    source + params.planeParams.offset[1],
+                    source_pitch,
+                    static_cast<uint8_t*>(tensor->allocation),
+                    frame_info.width,
+                    frame_info.height,
+                    yuv_coeffs);
+            }
+            timings->kernel_launch_ns = monotonic_ns() - phase_start;
+            phase_start = monotonic_ns();
+            cudaError_t cuda_status = cudaGetLastError();
+            if (cuda_status == cudaSuccess) {
+                cuda_status = cudaStreamSynchronize(handle->stream);
+            }
+            timings->sync_ns = monotonic_ns() - phase_start;
+            if (cuda_status != cudaSuccess) {
+                write_error(
+                    error,
+                    error_capacity,
+                    "CUDA-device frame conversion failed: %s",
+                    cudaGetErrorString(cuda_status));
+                goto cleanup;
+            }
+
+            tensor->shape[0] = 3;
+            tensor->shape[1] = frame_info.height;
+            tensor->shape[2] = frame_info.width;
+            tensor->managed.dl_tensor.data = tensor->allocation;
+            tensor->managed.dl_tensor.device = {kDLCUDA, handle->device_id};
+            tensor->managed.dl_tensor.ndim = 3;
+            tensor->managed.dl_tensor.dtype = {kDLUInt, 8, 1};
+            tensor->managed.dl_tensor.shape = tensor->shape;
+            tensor->managed.dl_tensor.strides = nullptr;
+            tensor->managed.dl_tensor.byte_offset = 0;
+            *frame_info_out = frame_info;
+            result = tensor;
+            tensor = nullptr;
             goto cleanup;
         }
         egl_cache_entry = find_egl_cache_entry(handle, timings->buffer_fd);
@@ -1162,21 +1299,39 @@ GstFlowReturn handle_new_sample(GstAppSink* sink, gpointer user_data) {
                 "%s",
                 error);
         } else {
-            if (!handle->lossless_handoff && !handle->ready_tensors.empty()) {
-                // Latest-wins (live mode): the consumer never collected the
-                // previous frame. Its buffer goes straight back to the pool.
-                // Never taken in lossless mode: only this streaming thread
-                // pushes, so the space awaited above cannot vanish.
-                delete_managed_tensor(&handle->ready_tensors.front()->managed);
-                handle->ready_tensors.pop_front();
-                handle->stats.frames_dropped_by_consumer += 1;
+            if (handle->frame_info_valid &&
+                frame_caps_changed(handle->last_frame_info, frame_info)) {
+                // The negotiated dimensions were established from the first
+                // frame; a mid-stream change would hand the consumer tensors
+                // whose shape no longer matches cached source metadata.
+                std::snprintf(
+                    handle->caps_change_error,
+                    sizeof(handle->caps_change_error),
+                    "Jetson source dimensions changed from %ux%u to %ux%u; "
+                    "restart the source to refresh workflow metadata",
+                    handle->last_frame_info.width,
+                    handle->last_frame_info.height,
+                    frame_info.width,
+                    frame_info.height);
+                handle->caps_changed = true;
+                delete_managed_tensor(&tensor->managed);
+            } else {
+                if (!handle->lossless_handoff && !handle->ready_tensors.empty()) {
+                    // Latest-wins (live mode): the consumer never collected the
+                    // previous frame. Its buffer goes straight back to the pool.
+                    // Never taken in lossless mode: only this streaming thread
+                    // pushes, so the space awaited above cannot vanish.
+                    delete_managed_tensor(&handle->ready_tensors.front()->managed);
+                    handle->ready_tensors.pop_front();
+                    handle->stats.frames_dropped_by_consumer += 1;
+                }
+                handle->ready_tensors.push_back(tensor);
+                handle->last_frame_info = frame_info;
+                handle->frame_info_valid = true;
+                handle->stats.frames += 1;
+                handle->stats.conversion_kernels += 1;
+                handle->stats.nvmm_frames += 1;
             }
-            handle->ready_tensors.push_back(tensor);
-            handle->last_frame_info = frame_info;
-            handle->frame_info_valid = true;
-            handle->stats.frames += 1;
-            handle->stats.conversion_kernels += 1;
-            handle->stats.nvmm_frames += 1;
         }
     }
     handle->frame_ready.notify_all();
@@ -1383,6 +1538,7 @@ int rf_jetson_pipeline_grab(
         std::unique_lock<std::mutex> lock(handle->mutex);
         const auto frame_or_terminal = [handle]() {
             return !handle->ready_tensors.empty() || handle->conversion_failed ||
+                   handle->caps_changed ||
                    handle->interrupted.load(std::memory_order_acquire) ||
                    handle->eos.load(std::memory_order_acquire);
         };
@@ -1396,6 +1552,11 @@ int rf_jetson_pipeline_grab(
         if (handle->conversion_failed) {
             write_error(error, error_capacity, "%s", handle->conversion_error);
             handle->conversion_failed = false;
+            return -1;
+        }
+        if (handle->caps_changed) {
+            write_error(error, error_capacity, "%s", handle->caps_change_error);
+            handle->caps_changed = false;
             return -1;
         }
         if (!handle->ready_tensors.empty()) {

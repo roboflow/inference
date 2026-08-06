@@ -180,7 +180,11 @@ class NativeJetsonTensorPipeline:
 
             tensor = torch.utils.dlpack.from_dlpack(capsule)
         except Exception:
-            self._library.rf_jetson_dlpack_delete(managed_tensor)
+            # torch renames a consumed capsule to "used_dltensor"; only free
+            # the tensor if the capsule still owns it, otherwise this would
+            # double-free.
+            if _capsule_owns_tensor(capsule):
+                self._library.rf_jetson_dlpack_delete(managed_tensor)
             raise
         if not tensor.is_cuda or tensor.dtype != torch.uint8 or tensor.ndim != 3:
             raise RuntimeError(
@@ -238,8 +242,8 @@ class NativeJetsonTensorPipeline:
         with self._lifecycle_lock:
             handle = getattr(self, "_handle", None)
             if handle:
-                self._library.rf_jetson_pipeline_release(handle)
                 self._handle = None
+                self._library.rf_jetson_pipeline_release(handle)
 
     def _ensure_open(self) -> None:
         if not getattr(self, "_handle", None):
@@ -330,6 +334,13 @@ def _create_dlpack_capsule(managed_tensor):
     py_capsule_new.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
     py_capsule_new.restype = ctypes.py_object
     return py_capsule_new(managed_tensor, b"dltensor", None)
+
+
+def _capsule_owns_tensor(capsule) -> bool:
+    py_capsule_is_valid = ctypes.pythonapi.PyCapsule_IsValid
+    py_capsule_is_valid.argtypes = [ctypes.py_object, ctypes.c_char_p]
+    py_capsule_is_valid.restype = ctypes.c_int
+    return bool(py_capsule_is_valid(capsule, b"dltensor"))
 
 
 def _decode_error(error_buffer) -> str:

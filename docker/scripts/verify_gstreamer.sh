@@ -13,6 +13,7 @@ for element in \
     avdec_h265 \
     avidemux \
     bayer2rgb \
+    capssetter \
     capsfilter \
     curlhttpsrc \
     decodebin \
@@ -31,6 +32,7 @@ for element in \
     nicesrc \
     opusdec \
     opusenc \
+    parsebin \
     qtdemux \
     queue \
     rtpbin \

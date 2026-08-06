@@ -738,6 +738,7 @@ class InferencePipeline:
                 init_parameters=workflow_init_parameters,
                 workflow_id=workflow_id,
                 profiler=profiler,
+                executor=thread_pool_executor,
                 dependencies_pre_init=workflows_dependencies_pre_init,
             )
             workflow_runner = WorkflowRunner(

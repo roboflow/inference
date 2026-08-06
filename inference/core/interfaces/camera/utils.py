@@ -182,15 +182,15 @@ class VideoSourcesManager:
         """Policy-driven sibling of `retrieve_frames_from_sources`.
 
         Mirrors the legacy loop (stop signal, inactive sources, EOS
-        registration, reconnection-thread joins, the
-        `_last_batch_yielded_time`-anchored budget) but the per-round budget
-        comes from the policy's self-tuning window and per-source reads go
-        through the policy (bounded-staleness FIFO for live sources, plain
-        reads for files).
+        registration, reconnection-thread joins), but the policy window is a
+        wait duration computed after the preceding execution gap. Its deadline
+        is therefore anchored at collection start rather than the previous
+        batch yield. Per-source reads go through the policy (bounded-staleness
+        FIFO for live sources, plain reads for files).
         """
         batch_frames = []
         window = collection_policy.collection_window()
-        batch_timeout_moment = self._last_batch_yielded_time + timedelta(seconds=window)
+        batch_timeout_moment = datetime.now() + timedelta(seconds=window)
         for source_ord, (source, source_should_reconnect) in enumerate(
             zip(self._video_sources.all_sources, self._video_sources.allow_reconnection)
         ):
