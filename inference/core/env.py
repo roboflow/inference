@@ -1199,7 +1199,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1440 -> ~5G
 # 1600 -> ~10G
 # 2048 -> ~22G
-RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+# 0 (or negative) disables the cap — mirrored by inference_models'
+# RFDETR_MAX_INPUT_RESOLUTION default so both load paths agree.
+_RFDETR_ONNX_MAX_RESOLUTION_RAW = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+RFDETR_ONNX_MAX_RESOLUTION = (
+    _RFDETR_ONNX_MAX_RESOLUTION_RAW if _RFDETR_ONNX_MAX_RESOLUTION_RAW > 0 else None
+)
 
 # Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
 # pipeline futures on the main execution path.

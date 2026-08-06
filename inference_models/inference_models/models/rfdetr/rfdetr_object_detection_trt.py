@@ -9,6 +9,7 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    RFDETR_MAX_INPUT_RESOLUTION,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -154,6 +155,8 @@ class RFDetrForObjectDetectionTRT(
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
+        if rf_detr_max_input_resolution is None:
+            rf_detr_max_input_resolution = RFDETR_MAX_INPUT_RESOLUTION
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",

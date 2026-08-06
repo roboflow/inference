@@ -20,6 +20,7 @@ from rich.text import Text
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     INFERENCE_HOME,
     OFFLINE_MODE,
@@ -1869,6 +1870,21 @@ class AutoModel:
         if not isinstance(model_id_or_path, str):
             _validate_remote_model_id(model_id=model_id_or_path)
         model_path_exists = os.path.exists(model_id_or_path)
+        if (
+            backend is None
+            and DISABLED_INFERENCE_MODELS_BACKENDS
+            and not model_path_exists
+        ):
+            # Env-driven default: negotiate over everything except the
+            # disabled backends, so bare calls (MMP workers, v2 server)
+            # converge with callers that pass the allowed set explicitly.
+            # Local checkpoint loads keep None — their resolution rejects
+            # backend lists.
+            backend = sorted(
+                backend_type.value
+                for backend_type in BackendType
+                if backend_type.value not in DISABLED_INFERENCE_MODELS_BACKENDS
+            )
         if not model_path_exists:
             _validate_remote_model_id(model_id=model_id_or_path)
         provider_requires_network = False
@@ -2691,9 +2707,7 @@ def attempt_loading_model_with_auto_load_cache(
                 model_name_or_path,
             )
         if (
-            _has_unsupplied_dependency(
-                model_dependencies, preloaded_model_dependencies
-            )
+            _has_unsupplied_dependency(model_dependencies, preloaded_model_dependencies)
             and not allow_loading_dependency_models
         ):
             return None
