@@ -176,17 +176,51 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
     # decoded frames.
     assert pipeline.startswith(
         'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
-        "protocols=tcp latency=200 ! queue ! "
+        "protocols=tcp latency=200 drop-on-latency=true teardown-timeout=0 ! "
+        "application/x-rtp,media=video ! queue ! "
     )
     assert (
-        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
-    )
+        "rtph264depay request-keyframe=true wait-for-keyframe=true ! "
+        "h264parse ! h264timestamper ! "
+        "nvv4l2decoder enable-max-performance=1"
+    ) in pipeline
     assert "uridecodebin" not in pipeline
     assert "nvvidconv" not in pipeline
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "max-buffers=4 drop=false sync=false" in pipeline
     assert "leaky" not in pipeline
+
+
+def test_rtsps_sdes_source_decrypts_before_codec_autoplugging() -> None:
+    """Route explicitly requested SRTP through native SDES key handling."""
+
+    video = "rtsps://camera.example.test/live?enableSrtp"
+
+    pipeline = build_gstreamer_pipeline(video)
+    elements = set(required_gstreamer_elements(video))
+
+    assert (
+        "capssetter name=rf_srtp_caps caps=application/x-srtp "
+        "join=false replace=false ! srtpdec ! "
+        "rtph264depay request-keyframe=true wait-for-keyframe=true ! "
+        "h264parse ! h264timestamper ! "
+        "nvv4l2decoder enable-max-performance=1 !"
+    ) in pipeline
+    assert {"capssetter", "srtpdec"} <= elements
+
+
+@pytest.mark.parametrize("value", ("0", "false", "no", "off"))
+def test_rtsps_sdes_source_can_explicitly_disable_srtp(value: str) -> None:
+    """Treat false-like enableSrtp query values as clear RTP media."""
+
+    video = f"rtsps://camera.example.test/live?enableSrtp={value}"
+
+    pipeline = build_gstreamer_pipeline(video)
+    elements = set(required_gstreamer_elements(video))
+
+    assert "rf_srtp_caps" not in pipeline
+    assert "srtpdec" not in elements
 
 
 def test_rtspt_source_is_recognised_as_rtsp() -> None:
@@ -200,7 +234,27 @@ def test_rtsp_codec_env_selects_h265_chain(monkeypatch) -> None:
 
     pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
 
-    assert "rtph265depay ! h265parse ! nvv4l2decoder" in pipeline
+    assert ("rtph265depay ! h265parse ! h265timestamper ! nvv4l2decoder") in pipeline
+    assert "request-keyframe" not in pipeline
+    assert "wait-for-keyframe" not in pipeline
+
+
+def test_rtsp_codec_override_requires_only_selected_parser(monkeypatch) -> None:
+    """Keep a forced codec usable in slim GStreamer images."""
+
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "h265")
+
+    elements = set(required_gstreamer_elements("rtsp://camera.example.test/live"))
+
+    assert {
+        "rtspsrc",
+        "rtph265depay",
+        "h265parse",
+        "h265timestamper",
+        "nvv4l2decoder",
+    } <= elements
+    assert "parsebin" not in elements
+    assert "rtph264depay" not in elements
 
 
 def test_rtsp_codec_env_rejects_unsupported_codec(monkeypatch) -> None:
@@ -216,7 +270,44 @@ def test_rtsp_transport_env_overrides_protocols_and_latency(monkeypatch) -> None
 
     pipeline = build_gstreamer_pipeline("rtsp://camera.example.test/live")
 
-    assert "protocols=tcp+udp latency=1000 ! " in pipeline
+    expected_transport = (
+        "protocols=tcp+udp latency=1000 drop-on-latency=true teardown-timeout=0 ! "
+    )
+    assert expected_transport in pipeline
+
+
+def test_rtsp_tls_validation_flags_are_opt_in(monkeypatch) -> None:
+    secure_pipeline = build_gstreamer_pipeline("rtsps://camera.example.test/live")
+    assert "tls-validation-flags" not in secure_pipeline
+
+    monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", "0")
+    self_signed_pipeline = build_gstreamer_pipeline("rtsps://camera.example.test/live")
+    assert "tls-validation-flags=0 ! " in self_signed_pipeline
+
+
+def test_rtsp_tls_validation_flags_can_be_scoped_to_one_source(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", "7")
+
+    self_signed_pipeline = build_gstreamer_pipeline(
+        "rtsps://camera.example.test/self-signed",
+        rtsp_tls_validation_flags=0,
+    )
+    default_pipeline = build_gstreamer_pipeline(
+        "rtsps://camera.example.test/default"
+    )
+
+    assert "tls-validation-flags=0 ! " in self_signed_pipeline
+    assert "tls-validation-flags=7 ! " in default_pipeline
+
+
+@pytest.mark.parametrize("value", ("nope", "-1"))
+def test_rtsp_tls_validation_flags_reject_invalid_values(monkeypatch, value) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS", value)
+
+    with pytest.raises(ValueError, match="TLS_VALIDATION_FLAGS"):
+        build_gstreamer_pipeline("rtsps://camera.example.test/live")
 
 
 def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
@@ -237,13 +328,13 @@ def test_rtsps_source_requires_rtsp_and_nvidia_decode_elements() -> None:
     assert {
         "appsink",
         "h264parse",
-        "h265parse",
+        "h264timestamper",
         "nvvidconv",
         "nvv4l2decoder",
         "rtph264depay",
-        "rtph265depay",
         "rtspsrc",
     } <= elements
+    assert {"h265parse", "parsebin", "rtph265depay"}.isdisjoint(elements)
     # The explicit rtspsrc chain does not autoplug, so the uridecodebin stack
     # is no longer part of the RTSP requirements.
     assert "uridecodebin" not in elements

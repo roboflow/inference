@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from inference.core.interfaces.camera.entities import (
     FrameImage,
@@ -42,6 +42,7 @@ def _resolve_grab_timeout_ns() -> int:
 _RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
 _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR = "ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
 _RTSP_VIDEO_CODECS = ("h264", "h265")
@@ -61,10 +62,9 @@ _URI_DECODE_ELEMENTS = (
     "uridecodebin",
 )
 _RTSP_ELEMENTS = (
-    "rtph264depay",
-    "rtph265depay",
     "rtspsrc",
 )
+_SRTP_ELEMENTS = ("capssetter", "srtpdec")
 _SOFTWARE_DECODER_ELEMENTS = (
     "avdec_h264",
     "avdec_h265",
@@ -171,9 +171,17 @@ def required_gstreamer_elements(
     if _is_rtsp_source(video):
         # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
         # (no uridecodebin autoplugging), so only those elements are required.
+        codec = _rtsp_video_codec()
+        srtp_elements = list(_SRTP_ELEMENTS) if _rtsp_uses_srtp(video) else []
         return tuple(
             elements
-            + ["h264parse", "h265parse", "nvv4l2decoder"]
+            + srtp_elements
+            + [
+                f"rtp{codec}depay",
+                f"{codec}parse",
+                f"{codec}timestamper",
+                "nvv4l2decoder",
+            ]
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_URI_DECODE_ELEMENTS)
@@ -189,6 +197,7 @@ def build_gstreamer_pipeline(
     video: Union[str, int],
     *,
     output_tensor: bool = False,
+    rtsp_tls_validation_flags: Optional[int] = None,
 ) -> str:
     """Build a Jetson GStreamer pipeline ending in an NVMM appsink."""
 
@@ -230,11 +239,39 @@ def build_gstreamer_pipeline(
         #   drains it on the streaming thread), so a small non-dropping queue
         #   is enough.
         codec = _rtsp_video_codec()
-        return (
+        tls_validation_flags = _rtsp_tls_validation_flags(
+            explicit_flags=rtsp_tls_validation_flags
+        )
+        source = (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
-            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
+            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()}"
+            " drop-on-latency=true teardown-timeout=0"
+            f"{tls_validation_flags} ! "
+            "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
+        )
+        if _rtsp_uses_srtp(video):
+            # UniFi and other SDES endpoints advertise the master key through
+            # the RTP caps' a-crypto field. The native bridge rewrites the
+            # named capssetter's CAPS event before srtpdec sees the first
+            # packet; key material never crosses Python or appears in the
+            # launch string.
+            source += (
+                "capssetter name=rf_srtp_caps caps=application/x-srtp "
+                "join=false replace=false ! srtpdec ! "
+            )
+        depayloader = f"rtp{codec}depay"
+        if codec == "h264":
+            # rtph264depay can request a fresh keyframe over RTCP when startup
+            # begins mid-GOP. GStreamer 1.24's rtph265depay does not expose
+            # these properties, so keep its launch string portable.
+            depayloader += " request-keyframe=true wait-for-keyframe=true"
+        return (
+            source
+            # RTSP commonly supplies PTS without DTS. Reconstruct DTS from the
+            # codec's SPS reordering metadata before NVDEC.
+            + f"{depayloader} ! "
+            f"{codec}parse ! {codec}timestamper ! "
             "nvv4l2decoder enable-max-performance=1 ! "
             "video/x-raw(memory:NVMM),format=NV12 ! "
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
@@ -259,6 +296,18 @@ def _rtsp_video_codec() -> str:
     return codec
 
 
+def _rtsp_uses_srtp(video: Union[str, int]) -> bool:
+    """Return whether an RTSP URL explicitly requests encrypted RTP media."""
+
+    if not isinstance(video, str):
+        return False
+    for key, value in parse_qsl(urlparse(video).query, keep_blank_values=True):
+        if key.lower() != "enablesrtp":
+            continue
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return False
+
+
 def _rtsp_protocols() -> str:
     return os.getenv(_RTSP_PROTOCOLS_ENV_VAR, _DEFAULT_RTSP_PROTOCOLS).strip() or (
         _DEFAULT_RTSP_PROTOCOLS
@@ -274,6 +323,36 @@ def _rtsp_latency_ms() -> int:
     except ValueError:
         return _DEFAULT_RTSP_LATENCY_MS
     return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
+def _rtsp_tls_validation_flags(
+    explicit_flags: Optional[int] = None,
+) -> str:
+    """Return an explicit rtspsrc TLS-validation setting when requested.
+
+    ``0`` disables certificate validation for cameras with private/self-signed
+    certificates. Keeping this unset by default avoids weakening RTSPS
+    validation for normal deployments.
+    """
+
+    raw = (
+        explicit_flags
+        if explicit_flags is not None
+        else os.getenv(_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
+    )
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return ""
+    try:
+        flags = int(raw)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
+        ) from error
+    if flags < 0:
+        raise ValueError(
+            f"{_RTSP_TLS_VALIDATION_FLAGS_ENV_VAR} must be a non-negative integer"
+        )
+    return f" tls-validation-flags={flags}"
 
 
 def _build_sink(is_live: bool) -> str:
@@ -304,6 +383,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         output_tensor: bool = True,
         tensor_device: str = "cuda",
         pin_host_memory: bool = True,
+        rtsp_tls_validation_flags: Optional[int] = None,
     ):
         gst_ok, gst_reason = probe_gstreamer_elements(
             required_gstreamer_elements(video, output_tensor=True),
@@ -314,7 +394,11 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
 
         self._source_ref = video
         self._output_tensor = output_tensor
-        self._pipeline = build_gstreamer_pipeline(video, output_tensor=True)
+        self._pipeline = build_gstreamer_pipeline(
+            video,
+            output_tensor=True,
+            rtsp_tls_validation_flags=rtsp_tls_validation_flags,
+        )
         self._decoder_validated = not _source_requires_decoder(video)
         self._prerolled_frame_pending = False
         self._cached_source_properties: Optional[SourceProperties] = None

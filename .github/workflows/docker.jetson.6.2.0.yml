@@ -52,11 +52,14 @@ jobs:
           base_image: ${{ env.BASE_IMAGE }}
           force_push: ${{ github.event.inputs.force_push }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fetch TensorRT local repository
+        run: docker/scripts/fetch_jetson_6_2_tensorrt.sh
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build and Push
         uses: depot/build-push-action@v1
         with:
+          context: .
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: 2rp7mfjw7q
           tags: ${{ steps.tags.outputs.image_tags }}

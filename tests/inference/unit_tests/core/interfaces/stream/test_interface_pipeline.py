@@ -42,6 +42,7 @@ from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
+from inference.core.interfaces.stream.utils import VideoSourceOptions
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 
@@ -810,6 +811,177 @@ def test_inference_pipeline_factories_expose_optional_exec_session_id(
     ]
 
     assert parameter.default is None
+
+
+@pytest.mark.parametrize(
+    "factory_name",
+    ["init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic"],
+)
+def test_inference_pipeline_factories_expose_per_source_options(
+    factory_name: str,
+) -> None:
+    parameter = signature(getattr(InferencePipeline, factory_name)).parameters[
+        "video_source_options"
+    ]
+
+    assert parameter.annotation == Optional[VideoSourceOptions]
+    assert parameter.default is None
+
+
+_LEGACY_FACTORY_PARAMETERS = {
+    "init": (
+        "video_reference",
+        "model_id",
+        "on_prediction",
+        "api_key",
+        "max_fps",
+        "watchdog",
+        "status_update_handlers",
+        "source_buffer_filling_strategy",
+        "source_buffer_consumption_strategy",
+        "class_agnostic_nms",
+        "confidence",
+        "iou_threshold",
+        "max_candidates",
+        "max_detections",
+        "mask_decode_mode",
+        "tradeoff_factor",
+        "active_learning_enabled",
+        "video_source_properties",
+        "active_learning_target_dataset",
+        "batch_collection_timeout",
+        "video_processing_mode",
+        "max_staleness",
+        "sink_mode",
+        "predictions_queue_size",
+        "decoding_buffer_size",
+        "exec_session_id",
+    ),
+    "init_with_yolo_world": (
+        "video_reference",
+        "classes",
+        "model_size",
+        "on_prediction",
+        "max_fps",
+        "watchdog",
+        "status_update_handlers",
+        "source_buffer_filling_strategy",
+        "source_buffer_consumption_strategy",
+        "class_agnostic_nms",
+        "confidence",
+        "iou_threshold",
+        "max_candidates",
+        "max_detections",
+        "video_source_properties",
+        "batch_collection_timeout",
+        "video_processing_mode",
+        "max_staleness",
+        "sink_mode",
+        "predictions_queue_size",
+        "decoding_buffer_size",
+        "exec_session_id",
+    ),
+    "init_with_workflow": (
+        "video_reference",
+        "workflow_specification",
+        "workspace_name",
+        "workflow_id",
+        "api_key",
+        "image_input_name",
+        "workflows_parameters",
+        "on_prediction",
+        "max_fps",
+        "watchdog",
+        "status_update_handlers",
+        "source_buffer_filling_strategy",
+        "source_buffer_consumption_strategy",
+        "video_source_properties",
+        "workflow_init_parameters",
+        "disable_sinks",
+        "workflows_thread_pool_workers",
+        "cancel_thread_pool_tasks_on_exit",
+        "video_metadata_input_name",
+        "batch_collection_timeout",
+        "video_processing_mode",
+        "max_staleness",
+        "profiling_directory",
+        "use_workflow_definition_cache",
+        "serialize_results",
+        "predictions_queue_size",
+        "decoding_buffer_size",
+        "model_manager",
+        "_is_preview",
+        "workflow_version_id",
+        "exec_session_id",
+        "workflows_dependencies_pre_init",
+    ),
+    "init_with_custom_logic": (
+        "video_reference",
+        "on_video_frame",
+        "on_prediction",
+        "on_pipeline_start",
+        "on_pipeline_end",
+        "max_fps",
+        "watchdog",
+        "status_update_handlers",
+        "source_buffer_filling_strategy",
+        "source_buffer_consumption_strategy",
+        "video_source_properties",
+        "batch_collection_timeout",
+        "video_processing_mode",
+        "max_staleness",
+        "sink_mode",
+        "predictions_queue_size",
+        "decoding_buffer_size",
+        "exec_session_id",
+        "allow_tensor_frames",
+    ),
+}
+
+
+@pytest.mark.parametrize("factory_name", _LEGACY_FACTORY_PARAMETERS)
+def test_inference_pipeline_factories_preserve_legacy_positional_parameter_order(
+    factory_name: str,
+) -> None:
+    parameter_names = tuple(
+        signature(getattr(InferencePipeline, factory_name)).parameters
+    )
+
+    assert parameter_names == (
+        *_LEGACY_FACTORY_PARAMETERS[factory_name],
+        "video_source_options",
+    )
+
+
+def test_inference_pipeline_init_propagates_per_source_options(monkeypatch) -> None:
+    pipeline = MagicMock()
+    init_with_custom_logic = MagicMock(return_value=pipeline)
+    monkeypatch.setattr(
+        "inference.core.interfaces.stream.inference_pipeline.get_model",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        InferencePipeline,
+        "init_with_custom_logic",
+        init_with_custom_logic,
+    )
+    video_source_options = [
+        {"rtsp_tls_validation_flags": 0},
+        None,
+    ]
+
+    result = InferencePipeline.init(
+        video_reference=["rtsps://camera-1", "rtsp://camera-2"],
+        model_id="example/1",
+        active_learning_enabled=False,
+        video_source_options=video_source_options,
+    )
+
+    assert result is pipeline
+    assert (
+        init_with_custom_logic.call_args.kwargs["video_source_options"]
+        is video_source_options
+    )
 
 
 @pytest.mark.parametrize("disable_sinks", [False, True])
