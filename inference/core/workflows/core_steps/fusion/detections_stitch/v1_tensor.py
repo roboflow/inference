@@ -237,9 +237,7 @@ class DetectionsStitchBlockV1(WorkflowBlock):
             if row_count > 0:
                 # move_detections has already rejected a missing offset for a
                 # non-empty prediction, so offset is guaranteed here.
-                deferred_shifts.append(
-                    (float(offset[0]), float(offset[1]), row_count)
-                )
+                deferred_shifts.append((float(offset[0]), float(offset[1]), row_count))
         overlap_filter = choose_overlap_filter_strategy(
             overlap_filtering_strategy=overlap_filtering_strategy,
         )
@@ -298,9 +296,7 @@ def apply_deferred_box_shifts(
     """
     if not shifts or len(detections) == 0:
         return detections
-    per_crop = np.asarray(
-        [[dx, dy, dx, dy] for dx, dy, _ in shifts], dtype=np.float64
-    )
+    per_crop = np.asarray([[dx, dy, dx, dy] for dx, dy, _ in shifts], dtype=np.float64)
     row_counts = [row_count for _, _, row_count in shifts]
     expanded = np.repeat(per_crop, row_counts, axis=0)
     total_rows = int(detections.xyxy.shape[0])
@@ -576,8 +572,7 @@ def merge_detections(
             bboxes_metadata.extend({} for _ in range(len(detections)))
             continue
         bboxes_metadata.extend(
-            dict(entry) if isinstance(entry, dict) else entry
-            for entry in per_detection
+            dict(entry) if isinstance(entry, dict) else entry for entry in per_detection
         )
     if is_instance_segmentation:
         mask = _merge_masks(non_empty)
