@@ -1105,6 +1105,7 @@ class TestPhase3aRouting:
         )
         assert response.result == "abc"
         assert response.predictions is None
+        assert response.image is None
 
     def test_easy_ocr_non_default_language_errors(self, running_adapter, monkeypatch):
         monkeypatch.setattr(translation, "stat_model", make_stat("structured-ocr"))
@@ -1123,6 +1124,7 @@ class TestPhase3aRouting:
             "trocr/trocr-base-printed", od_request(image=image)
         )
         assert response.result == "printed text"
+        assert response.image is None
 
     def test_open_vocabulary_uses_requested_classes(self, running_adapter, monkeypatch):
         monkeypatch.setattr(

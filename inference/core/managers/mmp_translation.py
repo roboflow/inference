@@ -1471,9 +1471,10 @@ def repack_structured_ocr_response(
     texts, detections = prediction
     text = _unwrap_single_prediction(texts)
     width, height = dims
+    # Legacy sets image metadata only alongside generated bounding boxes;
+    # a plain OCR response carries result/time only.
     response = OCRInferenceResponse(
         result=text if isinstance(text, str) else str(text),
-        image=InferenceResponseImage(width=width, height=height),
         time=0.0,
     )
     if getattr(request, "generate_bounding_boxes", False):
@@ -1481,6 +1482,7 @@ def repack_structured_ocr_response(
             _unwrap_single_prediction(detections), dims, class_names, request
         )
         response.predictions = boxes.predictions
+        response.image = InferenceResponseImage(width=width, height=height)
     return response
 
 
@@ -1488,10 +1490,8 @@ def repack_text_ocr_response(
     prediction: Any, dims: Tuple[int, int]
 ) -> OCRInferenceResponse:
     text = _unwrap_single_prediction(prediction)
-    width, height = dims
     return OCRInferenceResponse(
         result=text if isinstance(text, str) else str(text),
-        image=InferenceResponseImage(width=width, height=height),
         time=0.0,
     )
 
