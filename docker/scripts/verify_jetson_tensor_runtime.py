@@ -233,14 +233,21 @@ def _validate_source(path: Path, minimum_frames: int) -> None:
 
     assert len(tensors) >= minimum_frames
     stats = producer.tensor_bridge_stats
-    assert stats["frames"] == len(tensors)
-    assert stats["descriptor_maps"] == len(tensors)
+    # The streaming thread converts ahead of this consumer: on a fast decoder
+    # (Thor) the lossless FIFO legitimately holds frames this loop never asked
+    # for, so the counters may exceed len(tensors). What must hold is that the
+    # collected count is covered, every processed sample went down the
+    # GPU-native path, the per-sample counters agree with each other, and the
+    # lossless file handoff dropped nothing.
+    assert stats["frames"] >= len(tensors)
+    assert stats["descriptor_maps"] == stats["frames"]
     assert stats["host_pixel_maps"] == 0
     assert stats["host_to_device_copies"] == 0
     assert stats["device_to_host_copies"] == 0
     assert stats["array_flatten_copies"] == 0
-    assert stats["conversion_kernels"] == len(tensors)
-    assert stats["nvmm_frames"] == len(tensors)
+    assert stats["conversion_kernels"] == stats["frames"]
+    assert stats["nvmm_frames"] == stats["frames"]
+    assert stats["frames_dropped_by_consumer"] == 0
 
     producer.release()
     assert torch.equal(first, first_snapshot)

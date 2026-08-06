@@ -1575,6 +1575,16 @@ int rf_jetson_pipeline_grab(
     }
     if (handle->eos.load(std::memory_order_acquire) ||
         gst_app_sink_is_eos(handle->sink)) {
+        // The final frame and the EOS flag are published by the same
+        // streaming thread, but this thread released the mutex before the
+        // check above: a frame pushed in that window would be silently
+        // bypassed by the EOS report. Re-check the queue under the lock so
+        // end-of-stream is only reported once every converted frame has been
+        // served (a lossless file tail must never be lost).
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        if (!handle->ready_tensors.empty()) {
+            return 1;
+        }
         return 0;
     }
     // No frame, no error, no EOS: the finite timeout expired while the

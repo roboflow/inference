@@ -384,6 +384,10 @@ RUN set -eu && \
     ldconfig && \
     python3 -c "import ctypes; ctypes.CDLL('libnvrtc.so')"
 
+# VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false: this runtime intentionally
+# ships a C toolchain (gcc + libc6-dev + libpython3.10-dev) for RF-DETR's
+# Triton JIT preprocessing kernels; the hygiene scan would reject it. The
+# toolchain itself is validated by verify_triton_jit_toolchain below.
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \
     --mount=type=bind,source=docker/scripts/verify_gstreamer.sh,target=/tmp/verify_gstreamer,ro \
     --mount=type=bind,source=docker/scripts/verify_opencv.sh,target=/tmp/verify_opencv,ro \
@@ -392,6 +396,7 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     GSTREAMER_REQUIRE_NVCODEC=true \
     GSTREAMER_REQUIRE_NVCODEC_NVRTC=true \
     sh /tmp/verify_gstreamer && \
+    VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false \
     sh /tmp/verify_media_runtime && \
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
     rm -rf /root/.cache/gstreamer-1.0
