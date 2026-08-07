@@ -64,8 +64,6 @@ theme:
     - navigation.top
     - navigation.tracking
     - optimize
-    - search.share
-    - search.suggest
     - toc.follow
   icon:
     repo: fontawesome/brands/github
@@ -77,7 +75,8 @@ plugins:
   - git-revision-date-localized:
       enable_creation_date: true
       type: date
-  - search
+  - search:
+      enabled: false
   - mkdocs-jupyter
   - social:
       cards: true
@@ -87,7 +86,6 @@ plugins:
         font_family: Inter
   - ezlinks
   - macros:
-      include_dir: docs/include
       module_name: docs/scripts/macros
 
 
