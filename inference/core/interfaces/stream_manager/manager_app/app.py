@@ -1,3 +1,4 @@
+import errno
 import os
 import signal
 import socket
@@ -557,25 +558,40 @@ def start(expected_warmed_up_pipelines: int = 0) -> None:
         signal.SIGTERM, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
 
-    # check process health in daemon thread
-    Thread(target=check_process_health, daemon=True).start()
+    # The manager is a single instance per container, shared by every HTTP worker, but it is
+    # started once per worker (see docker/config/{cpu,gpu}_http.py). Bind before doing any other
+    # work so that the instances which lose the race exit without warming up pipelines.
+    try:
+        tcp_server = RoboflowTCPServer(
+            server_address=(HOST, PORT),
+            handler_class=partial(
+                InferencePipelinesManagerHandler, processes_table=PROCESSES_TABLE
+            ),
+            socket_operations_timeout=SOCKET_TIMEOUT,
+        )
+    except OSError as error:
+        if error.errno != errno.EADDRINUSE:
+            raise
+        logger.info(
+            f"Inference Pipeline Processes Manager is already serving this container at {(HOST, PORT)} - "
+            f"this instance is exiting. This is expected when NUM_WORKERS > 1: the running manager is "
+            f"shared by all workers."
+        )
+        return
 
-    # keep expected number of processes ready for processing
-    Thread(
-        target=partial(
-            ensure_idle_pipelines_warmed_up,
-            expected_warmed_up_pipelines=expected_warmed_up_pipelines,
-        ),
-        daemon=True,
-    ).start()
+    with tcp_server:
+        # check process health in daemon thread
+        Thread(target=check_process_health, daemon=True).start()
 
-    with RoboflowTCPServer(
-        server_address=(HOST, PORT),
-        handler_class=partial(
-            InferencePipelinesManagerHandler, processes_table=PROCESSES_TABLE
-        ),
-        socket_operations_timeout=SOCKET_TIMEOUT,
-    ) as tcp_server:
+        # keep expected number of processes ready for processing
+        Thread(
+            target=partial(
+                ensure_idle_pipelines_warmed_up,
+                expected_warmed_up_pipelines=expected_warmed_up_pipelines,
+            ),
+            daemon=True,
+        ).start()
+
         logger.info(
             f"Inference Pipeline Processes Manager is ready to accept connections at {(HOST, PORT)}"
         )

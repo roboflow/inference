@@ -4,6 +4,11 @@ from typing import Any, Optional, Tuple, Type
 
 
 class RoboflowTCPServer(TCPServer):
+    # Matches `http.server.HTTPServer`: lets the manager rebind while a socket from a
+    # previous instance lingers in TIME_WAIT. This does not permit two live listeners
+    # on the same address, so a second manager still fails to bind, as intended.
+    allow_reuse_address = True
+
     def __init__(
         self,
         server_address: Tuple[str, int],

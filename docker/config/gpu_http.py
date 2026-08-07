@@ -1,6 +1,8 @@
 import multiprocessing
+import os
 from functools import partial
 
+from inference.core import logger
 from inference.core.cache import cache
 from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
@@ -23,6 +25,11 @@ from inference.core.registries.roboflow import (
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 if ENABLE_STREAM_API:
+    if int(os.getenv("NUM_WORKERS", "1")) > 1:
+        logger.info(
+            "ENABLE_STREAM_API is set with NUM_WORKERS > 1. A single Stream Manager is shared by all "
+            "workers; it is started once per worker and only the first to bind the port survives."
+        )
     multiprocessing_context = multiprocessing.get_context(method="spawn")
     stream_manager_process = multiprocessing_context.Process(
         target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),

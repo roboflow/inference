@@ -5,6 +5,14 @@ from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
 )
 
 
+def test_roboflow_server_allows_address_reuse() -> None:
+    # then - the manager must be able to rebind while a socket from a previous
+    # instance lingers in TIME_WAIT
+    assert (
+        RoboflowTCPServer.allow_reuse_address is True
+    ), "Server must set SO_REUSEADDR, as per http.server.HTTPServer"
+
+
 def test_roboflow_server_applies_connection_timeout() -> None:
     # given
     server = RoboflowTCPServer(
