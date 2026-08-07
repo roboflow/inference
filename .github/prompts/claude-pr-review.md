@@ -306,7 +306,7 @@ top-level release-coordination comment (separate from the Pass Comment):
 
 - Tell the contributor to add the user-facing entry under `## Unreleased` in
   `inference_models/docs/changelog.md` and/or
-  `docs/workflows/execution_engine_changelog.md` when it is missing. Do not ask
+  the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`) when it is missing. Do not ask
   them to select or bump a version.
 - Tell maintainers exactly which system requires a release-time version change:
   **inference-models requires a version bump for release**, **Execution Engine

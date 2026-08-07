@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: https://docs.roboflow.com/deploy/batch-processing/cli-usage
+redirect_url: https://docs.roboflow.com/deployment/roboflow-cloud/batch-processing
 ---
