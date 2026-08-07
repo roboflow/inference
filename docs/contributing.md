@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md
+redirect_url: https://docs.roboflow.com/reference/inference/inference-python
 ---
