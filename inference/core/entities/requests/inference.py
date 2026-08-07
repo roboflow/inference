@@ -2,6 +2,7 @@ from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic.json_schema import SkipJsonSchema
 
 from inference.core import logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
@@ -296,11 +297,11 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
             '"default" uses the model built-in, or pass a float.'
         ),
     )
-    response_mask_format: Literal["base64_png", "numpy"] = Field(
+    response_mask_format: SkipJsonSchema[Literal["base64_png", "numpy"]] = Field(
         default="base64_png",
         examples=["base64_png"],
         description=(
-            "Format of segmentation_mask / confidence_mask in the response. "
+            "[INTERNAL USE ONLY] Format of segmentation_mask / confidence_mask in the response. "
             "'base64_png' (default) returns base64-encoded PNG strings. "
             "'numpy' returns raw uint8 numpy arrays and is an in-process "
             "contract for callers like the workflows semantic segmentation "
@@ -324,7 +325,10 @@ def ensure_wire_safe_mask_format(request: InferenceRequest) -> None:
     not fail. Call this at every boundary that ultimately serializes the
     response for the wire. Safe to call with any request type.
     """
-    if getattr(request, "response_mask_format", None) == "numpy":
+    if (
+        isinstance(request, SemanticSegmentationInferenceRequest)
+        and getattr(request, "response_mask_format", None) == "numpy"
+    ):
         logger.warning(
             "response_mask_format='numpy' is an in-process contract; "
             "coercing to 'base64_png' for wire serialization"
