@@ -216,6 +216,9 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             model_id=model_id,
             image=inference_images,
             confidence=confidence,
+            # In-process call: raw numpy masks skip a full-resolution PNG
+            # encode/decode round-trip between the model and this block.
+            response_mask_format="numpy",
             source="workflow-execution",
         )
         self._model_manager.add_model(
@@ -283,13 +286,18 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
 
     @staticmethod
     def _convert_to_sv_detections(predictions_dict: Dict) -> sv.Detections:
-        seg_mask_b64 = predictions_dict.get("segmentation_mask", "")
-        conf_mask_b64 = predictions_dict.get("confidence_mask", "")
+        seg_mask = predictions_dict.get("segmentation_mask", "")
+        conf_mask = predictions_dict.get("confidence_mask", "")
         class_map: Dict[str, str] = predictions_dict.get("class_map", {})
 
-        mask_bytes = base64.b64decode(seg_mask_b64)
-        nparr = np.frombuffer(mask_bytes, np.uint8)
-        mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        if isinstance(seg_mask, np.ndarray):
+            # response_mask_format="numpy" fast path - the model handed the
+            # label map over in-process, no PNG/base64 round-trip involved.
+            mask_array = seg_mask
+        else:
+            mask_bytes = base64.b64decode(seg_mask)
+            nparr = np.frombuffer(mask_bytes, np.uint8)
+            mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
         if mask_array is None:
             return sv.Detections.empty()
@@ -304,8 +312,10 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             return sv.Detections.empty()
 
         conf_array = None
-        if conf_mask_b64:
-            conf_bytes = base64.b64decode(conf_mask_b64)
+        if isinstance(conf_mask, np.ndarray):
+            conf_array = conf_mask
+        elif conf_mask:
+            conf_bytes = base64.b64decode(conf_mask)
             conf_nparr = np.frombuffer(conf_bytes, np.uint8)
             conf_array = cv2.imdecode(conf_nparr, cv2.IMREAD_GRAYSCALE)
 

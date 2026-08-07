@@ -591,3 +591,39 @@ def test_semantic_segmentation_adapter_postprocess_populates_present_class_ids()
         _Image.open(_io.BytesIO(_base64.b64decode(prediction.segmentation_mask)))
     )
     assert _np.array_equal(decoded, seg.numpy().astype(_np.uint8))
+
+
+def test_semantic_segmentation_adapter_postprocess_numpy_mask_format():
+    import numpy as _np
+
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsSemanticSegmentationAdapter,
+    )
+
+    # given: an adapter shell around a fake underlying model
+    adapter = InferenceModelsSemanticSegmentationAdapter.__new__(
+        InferenceModelsSemanticSegmentationAdapter
+    )
+    adapter.class_names = ["background", "cat"]
+    seg = torch.zeros((20, 30), dtype=torch.int64)
+    seg[4:9, 6:16] = 1
+    confidence = torch.full((20, 30), 0.5)
+    segmentation = SimpleNamespace(segmentation_map=seg, confidence=confidence)
+    adapter._model = SimpleNamespace(
+        post_process=lambda predictions, metadata, **kwargs: [segmentation]
+    )
+    metadata = SimpleNamespace(original_size=SimpleNamespace(height=20, width=30))
+
+    # when
+    responses = adapter.postprocess(None, [metadata], response_mask_format="numpy")
+
+    # then: raw arrays, no PNG/base64 encode happened
+    prediction = responses[0].predictions
+    assert isinstance(prediction.segmentation_mask, _np.ndarray)
+    assert isinstance(prediction.confidence_mask, _np.ndarray)
+    assert _np.array_equal(prediction.segmentation_mask, seg.numpy().astype(_np.uint8))
+    assert _np.array_equal(
+        prediction.confidence_mask,
+        (confidence * 255).to(torch.uint8).numpy(),
+    )
+    assert prediction.present_class_ids == [0, 1]

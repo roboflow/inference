@@ -120,17 +120,42 @@ class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
     )
 
 
+def _mask_to_base64_png(mask: Any) -> str:
+    """Encodes a uint8 numpy mask exactly like the model-side eager encoding."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    img = Image.fromarray(np.asarray(mask, dtype=np.uint8))
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode("ascii")
+
+
 class SemanticSegmentationPrediction(BaseModel):
     # match inference-internal/blob/main/deploy/helpers/helpers.py#L107-L128
-    segmentation_mask: str = Field(
-        description="base64-encoded PNG of predicted class label at each pixel"
+    segmentation_mask: Any = Field(
+        description=(
+            "base64-encoded PNG of predicted class label at each pixel. When "
+            "the request sets response_mask_format='numpy' (in-process fast "
+            "path), this carries the raw uint8 numpy label map instead; JSON "
+            "serialization always yields the base64 PNG string."
+        ),
+        json_schema_extra={"type": "string"},
     )
     class_map: Dict[str, str] = Field(
         description="Map of pixel intensity value to class label"
     )
     # added
-    confidence_mask: str = Field(
-        description="base64-encoded PNG of predicted class confidence at each pixel"
+    confidence_mask: Any = Field(
+        description=(
+            "base64-encoded PNG of predicted class confidence at each pixel. "
+            "When the request sets response_mask_format='numpy' (in-process "
+            "fast path), this carries the raw uint8 numpy confidence map "
+            "instead; JSON serialization always yields the base64 PNG string."
+        ),
+        json_schema_extra={"type": "string"},
     )
     present_class_ids: Optional[List[int]] = Field(
         default=None,
@@ -141,6 +166,12 @@ class SemanticSegmentationPrediction(BaseModel):
             "scanning when this field is absent."
         ),
     )
+
+    @field_serializer("segmentation_mask", "confidence_mask", when_used="json")
+    def _serialize_mask(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return _mask_to_base64_png(value)
 
 
 class ClassificationPrediction(BaseModel):

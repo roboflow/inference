@@ -302,3 +302,49 @@ def test_convert_to_sv_detections_ignores_empty_present_class_ids_hint() -> None
     )
 
     assert result.class_id.tolist() == [2]
+
+
+def test_convert_to_sv_detections_numpy_masks_match_base64_path() -> None:
+    # response_mask_format="numpy" must produce exactly what the PNG/base64
+    # round-trip produces: same RLE counts, xyxy, class ids, confidence
+    seg = _random_label_map(classes=(3, 7))
+    rng = np.random.default_rng(13)
+    conf = rng.integers(0, 256, size=seg.shape, dtype=np.uint8)
+    class_map = {"3": "a", "7": "b"}
+
+    via_b64 = BLOCK_CLS._convert_to_sv_detections(
+        {
+            "segmentation_mask": _encode_mask_as_base64_png(seg),
+            "confidence_mask": _encode_mask_as_base64_png(conf),
+            "class_map": class_map,
+        }
+    )
+    via_numpy = BLOCK_CLS._convert_to_sv_detections(
+        {
+            "segmentation_mask": seg,
+            "confidence_mask": conf,
+            "class_map": class_map,
+        }
+    )
+
+    assert via_numpy.class_id.tolist() == via_b64.class_id.tolist()
+    assert via_numpy.xyxy.tolist() == via_b64.xyxy.tolist()
+    assert via_numpy.confidence.tolist() == via_b64.confidence.tolist()
+    assert [r["counts"] for r in via_numpy.data["rle_mask"]] == [
+        r["counts"] for r in via_b64.data["rle_mask"]
+    ]
+    assert np.array_equal(
+        via_numpy.data["confidence_mask"], via_b64.data["confidence_mask"]
+    )
+
+
+def test_convert_to_sv_detections_numpy_empty_mask_yields_empty_detections() -> None:
+    result = BLOCK_CLS._convert_to_sv_detections(
+        {
+            "segmentation_mask": np.zeros((32, 32), dtype=np.uint8),
+            "confidence_mask": np.full((32, 32), 128, dtype=np.uint8),
+            "class_map": {},
+        }
+    )
+
+    assert len(result) == 0
