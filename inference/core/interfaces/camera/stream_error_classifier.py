@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Iterator, Optional
 
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.source_reference_sanitizer import (
@@ -101,9 +101,15 @@ def classify_stream_error_message(message: str) -> StreamErrorCode:
 
 
 def wrap_source_connection_error(
-    message: str, source_reference: str = ""
+    message: str,
+    source_reference: str = "",
+    classification_text: Optional[str] = None,
 ) -> SourceConnectionError:
-    code = classify_stream_error_message(message)
+    # classify from the raw text: redaction must not influence the error
+    # taxonomy (redacted messages e.g. lose ffmpeg's '?timeout=0' query)
+    code = classify_stream_error_message(
+        message if classification_text is None else classification_text
+    )
     error = SourceConnectionError(message)
     setattr(error, "code", code)
     setattr(error, "source_reference", source_reference)

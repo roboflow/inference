@@ -308,6 +308,23 @@ def test_video_source_connection_error_sanitizes_password_with_at_sign() -> None
     assert "rtsp://host:554/stream" in error_message
 
 
+def test_video_source_connection_error_classification_uses_raw_stderr() -> None:
+    source = VideoSource.init(video_reference="rtsp://192.168.1.64:554/stream")
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = (
+            "Connection to tcp://192.168.1.64:554?timeout=0 failed: Connection refused"
+        )
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    assert exc_info.value.code == StreamErrorCode.STREAM_TIMEOUT
+    assert "timeout=0" not in str(exc_info.value)
+
+
 def test_video_source_decode_path_uses_operational_reference() -> None:
     credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
     source = VideoSource.init(video_reference=credentialed_url)

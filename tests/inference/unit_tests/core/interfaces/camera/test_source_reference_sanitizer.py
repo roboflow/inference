@@ -111,10 +111,51 @@ class TestSanitizeSourceReference:
             == UNPARSEABLE_SOURCE
         )
 
-    def test_at_sign_in_path_without_netloc_credentials_returns_placeholder(self):
+    def test_preserves_at_sign_in_path_after_host_with_port(self):
         assert (
             sanitize_source_reference("rtsp://host:554/stream@2x")
+            == "rtsp://host:554/stream@2x"
+        )
+
+    def test_preserves_at_sign_in_path_segment_after_host_with_port(self):
+        assert (
+            sanitize_source_reference("rtsp://cam:554/onvif@media/live")
+            == "rtsp://cam:554/onvif@media/live"
+        )
+
+    def test_invalid_port_netloc_with_at_in_path_returns_placeholder(self):
+        assert (
+            sanitize_source_reference("rtsp://user:pa/ss@host/stream")
             == UNPARSEABLE_SOURCE
+        )
+
+    def test_preserves_at_sign_in_path_when_authority_has_no_colon(self):
+        assert (
+            sanitize_source_reference("https://cdn.example.com/videos/clip@2x.mp4")
+            == "https://cdn.example.com/videos/clip@2x.mp4"
+        )
+
+    def test_preserves_at_sign_in_path_for_s3_style_reference(self):
+        assert (
+            sanitize_source_reference("s3://bucket/clip@2x.mp4")
+            == "s3://bucket/clip@2x.mp4"
+        )
+
+    def test_preserves_file_uri_with_hash_in_name(self):
+        assert (
+            sanitize_source_reference("file:///data/clips/cam#1.mp4")
+            == "file:///data/clips/cam#1.mp4"
+        )
+
+    def test_preserves_portless_host_with_at_sign_in_path(self):
+        assert (
+            sanitize_source_reference("rtsp://host/stream@2x") == "rtsp://host/stream@2x"
+        )
+
+    def test_strips_query_with_at_sign_keeping_host_with_port(self):
+        assert (
+            sanitize_source_reference("rtsp://host:554/live?auth=tok@en")
+            == "rtsp://host:554/live"
         )
 
     def test_password_with_question_mark_recovers_host(self):

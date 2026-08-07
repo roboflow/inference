@@ -9,6 +9,9 @@ _URL_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S+")
 # ``user[:password]@`` right after ``://``; the password may contain unencoded
 # ``@`` (the last one wins) but not ``/``.
 _EMBEDDED_CREDENTIALS_RE = re.compile(r"(://)[^/@:\s]+(?::[^/\s]*)?@")
+# ``@host:port/`` inside a path: signature of credentials with an unencoded
+# '/' spilling past the netloc, where the real authority follows the last '@'.
+_PATH_HOSTPORT_AFTER_AT_RE = re.compile(r"@[^/@]*:\d+(?:/|$)")
 
 
 def redact_credentials_in_text(text: str) -> str:
@@ -18,18 +21,36 @@ def redact_credentials_in_text(text: str) -> str:
     return _URL_TOKEN_RE.sub(lambda match: _sanitize_schemed_url(match.group(0)), text)
 
 
+def _has_parseable_port(parts) -> bool:
+    try:
+        parts.port
+    except ValueError:
+        return False
+    return True
+
+
 def _sanitize_schemed_url(ref: str) -> str:
+    if ref[:7].lower() == "file://":
+        # local-file URI: '#' and '?' are file-name characters, credentials
+        # do not apply
+        return ref
     for candidate in (ref, _EMBEDDED_CREDENTIALS_RE.sub(r"\1", ref)):
         try:
             parts = urlsplit(candidate)
         except ValueError:
             continue
-        if "@" not in parts.netloc and "@" in candidate:
-            # '@' outside a credential-free netloc: either credentials with an
-            # unencoded delimiter spilled past the netloc (password containing
-            # '/', numeric prefix parsing as a port) or an ambiguous '@' in
-            # the path — the host cannot be separated from secrets either way.
-            continue
+        if "@" not in parts.netloc and ":" in parts.netloc:
+            # A colon-free netloc cannot be a credential fragment (usernames
+            # do not contain '/'), so these checks only apply with a colon.
+            if not _has_parseable_port(parts):
+                if "@" in candidate:
+                    # netloc like 'user:pa' left over from a password
+                    # containing '/', '?' or '#'
+                    continue
+            elif _PATH_HOSTPORT_AFTER_AT_RE.search(parts.path):
+                # valid-looking netloc ('user:12') but the path carries an
+                # '@host:port' spill — credentials with an unencoded '/'
+                continue
         credential_free_netloc = parts.netloc.rsplit("@", 1)[-1].lower()
         return f"{parts.scheme}://{credential_free_netloc}{parts.path}"
     return UNPARSEABLE_SOURCE

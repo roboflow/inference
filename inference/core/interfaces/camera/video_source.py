@@ -653,12 +653,14 @@ class VideoSource:
             else:
                 self._video = _create_video_frame_producer(self._stream_reference)
             if not self._video.isOpened():
+                underlying_error = self._video.connection_error_message()
                 raise wrap_source_connection_error(
                     build_source_connection_error_message(
                         source_reference=self._observability_reference,
-                        underlying_error=self._video.connection_error_message(),
+                        underlying_error=underlying_error,
                     ),
                     source_reference=self._observability_reference,
+                    classification_text=underlying_error,
                 )
             self._video.initialize_source_properties(self._video_source_properties)
             self._source_properties = self._video.discover_source_properties()
