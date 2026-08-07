@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Optional S3-compatible shared caching for content-hashed model files. Cache
+  misses, errors, corrupt objects, and timeouts fail open to the original model
+  source.
+
+---
+
 ## `0.34.5`
 
 ### Fixed

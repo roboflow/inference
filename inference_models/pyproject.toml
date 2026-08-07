@@ -52,6 +52,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+model-blob-cache = [
+  "boto3>=1.40.0,<=1.41.5",
+  "botocore>=1.40.0,<=1.41.5",
+]
 torch-cpu = [
   "torch>=2.0.0,<3.0.0",
   "torchvision"
