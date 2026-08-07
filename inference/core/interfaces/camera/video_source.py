@@ -36,6 +36,9 @@ from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    sanitize_source_reference,
+)
 from inference.core.interfaces.camera.stream_error_classifier import (
     build_source_connection_error_message,
     capture_process_stderr,
@@ -463,6 +466,7 @@ class VideoSource:
         allow_tensor_frames: bool = False,
     ):
         self._stream_reference = stream_reference
+        self._observability_reference = sanitize_source_reference(str(stream_reference))
         self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
@@ -689,12 +693,9 @@ class VideoSource:
         return video_frame
 
     def describe_source(self) -> SourceMetadata:
-        serialized_source_reference = self._stream_reference
-        if callable(serialized_source_reference):
-            serialized_source_reference = str(self._stream_reference)
         return SourceMetadata(
             source_properties=self._source_properties,
-            source_reference=serialized_source_reference,
+            source_reference=self._observability_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
             buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,
@@ -769,15 +770,14 @@ class VideoSource:
 
     def _initialise_selected_video(self) -> None:
         if not self._video.isOpened():
-            source_reference = self._stream_reference
-            if callable(source_reference):
-                source_reference = str(self._stream_reference)
+            underlying_error = self._video.connection_error_message()
             raise wrap_source_connection_error(
                 build_source_connection_error_message(
-                    source_reference=str(source_reference),
-                    underlying_error=self._video.connection_error_message(),
+                    source_reference=self._observability_reference,
+                    underlying_error=underlying_error,
                 ),
-                source_reference=str(source_reference),
+                source_reference=self._observability_reference,
+                classification_text=underlying_error,
             )
         self._video.initialize_source_properties(self._video_source_properties)
         self._source_properties = self._video.discover_source_properties()
