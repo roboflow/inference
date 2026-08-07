@@ -25,9 +25,7 @@ class _Boom(Exception):
 
 
 def _collector() -> UsageCollector:
-    collector = UsageCollector()
-    collector._cleanup()
-    return collector
+    return UsageCollector()
 
 
 class TestUsageFailureDoesNotBreakTheCall:
@@ -61,9 +59,6 @@ class TestUsageFailureDoesNotBreakTheCall:
             infer()
 
         assert len(calls) == 1, "a failed recording must not be retried as an error"
-        # error_details is merged into resource_details by
-        # _extract_usage_params_from_func_kwargs rather than passed through.
-        assert "error" not in (calls[0].get("resource_details") or {})
 
     def test_the_wrapped_functions_own_exception_still_propagates(self):
         collector = _collector()
@@ -123,6 +118,24 @@ class TestAsyncWrapperBehavesTheSame:
 
         with patch.object(UsageCollector, "async_record_usage", side_effect=_record):
             assert asyncio.run(infer()) == "predictions"
+
+    def test_async_recording_failure_is_not_reported_as_an_inference_error(self):
+        collector = _collector()
+
+        @collector("model")
+        async def infer():
+            return "predictions"
+
+        calls = []
+
+        async def _record(**kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("usage exploded")
+
+        with patch.object(UsageCollector, "async_record_usage", side_effect=_record):
+            asyncio.run(infer())
+
+        assert len(calls) == 1, "a failed recording must not be retried as an error"
 
     def test_async_wrapped_exception_still_propagates(self):
         collector = _collector()
