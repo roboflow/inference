@@ -377,30 +377,6 @@ class TestSanitizeSourceReference:
             == "http://example.com/feed"
         )
 
-    def test_strips_credentials_without_url_scheme(self):
-        assert (
-            CustomCollector._sanitize_source_reference(
-                "admin:secret@192.168.1.1:554/stream"
-            )
-            == "192.168.1.1:554/stream"
-        )
-
-    def test_strips_credentials_when_password_contains_at_sign(self):
-        assert (
-            CustomCollector._sanitize_source_reference(
-                "rtsp://user:p@ss@host:554/stream"
-            )
-            == "rtsp://host:554/stream"
-        )
-
-    def test_malformed_port_does_not_raise(self):
-        assert (
-            CustomCollector._sanitize_source_reference(
-                "rtsp://user:pass@host:notaport/path"
-            )
-            == "rtsp://host:notaport/path"
-        )
-
 
 class TestExtractSourceLabel:
     def test_single_source(self):

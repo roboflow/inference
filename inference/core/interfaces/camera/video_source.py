@@ -389,12 +389,9 @@ class VideoSource:
         source_id: Optional[int],
     ):
         self._stream_reference = stream_reference
-        if callable(stream_reference):
-            self._observability_reference = str(stream_reference)
-        else:
-            self._observability_reference = sanitize_source_reference(
-                str(stream_reference)
-            )
+        self._observability_reference = sanitize_source_reference(
+            str(stream_reference)
+        )
         self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer

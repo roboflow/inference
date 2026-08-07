@@ -398,7 +398,7 @@ if modal is not None:
             logger.info("MODAL_REGION: %s", MODAL_REGION)
             logger.info("MODAL_TASK_ID: %s", MODAL_TASK_ID)
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
-            logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
+            logger.info("MODAL_IDENTITY_TOKEN set: %s", bool(MODAL_IDENTITY_TOKEN))
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")

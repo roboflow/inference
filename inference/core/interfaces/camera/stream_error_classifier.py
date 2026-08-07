@@ -8,6 +8,9 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+)
 from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
 
 _AUTH_STATUS_PATTERN = re.compile(r"\b401\b|\b403\b")
@@ -62,7 +65,7 @@ def build_source_connection_error_message(
     source_reference: str, underlying_error: str = ""
 ) -> str:
     summary = f"Cannot connect to video source under reference: {source_reference}"
-    detail = (underlying_error or "").strip()
+    detail = redact_credentials_in_text((underlying_error or "").strip())
     if detail:
         return f"{detail}: {summary}"
     return summary

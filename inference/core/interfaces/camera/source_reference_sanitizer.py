@@ -1,75 +1,68 @@
 import re
 from typing import Optional
+from urllib.parse import urlsplit
 
-_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
+UNPARSEABLE_SOURCE = "<unparseable source>"
+
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+_URL_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S+")
+# ``user[:password]@`` right after ``://``; the password may contain unencoded
+# ``@`` (the last one wins) but not ``/``.
+_EMBEDDED_CREDENTIALS_RE = re.compile(r"(://)[^/@:\s]+(?::[^/\s]*)?@")
 
 
-def _cred_free_netloc(netloc: str) -> str:
-    """Drop userinfo from netloc.
+def redact_credentials_in_text(text: str) -> str:
+    """Sanitize every URL-shaped token embedded in free text (error messages,
+    reprs); tokens whose credentials cannot be separated safely are replaced
+    with ``UNPARSEABLE_SOURCE``."""
+    return _URL_TOKEN_RE.sub(lambda match: _sanitize_schemed_url(match.group(0)), text)
 
-    RTSP passwords may contain unencoded ``@`` (e.g. ``user:p@ss@host``), so split
-    from the right — the last ``@`` separates credentials from host:port.
-    """
-    if "@" not in netloc:
-        return netloc
-    return netloc.rsplit("@", 1)[-1]
+
+def _sanitize_schemed_url(ref: str) -> str:
+    for candidate in (ref, _EMBEDDED_CREDENTIALS_RE.sub(r"\1", ref)):
+        try:
+            parts = urlsplit(candidate)
+        except ValueError:
+            continue
+        if "@" not in parts.netloc and "@" in candidate:
+            # '@' outside a credential-free netloc: either credentials with an
+            # unencoded delimiter spilled past the netloc (password containing
+            # '/', numeric prefix parsing as a port) or an ambiguous '@' in
+            # the path — the host cannot be separated from secrets either way.
+            continue
+        credential_free_netloc = parts.netloc.rsplit("@", 1)[-1].lower()
+        return f"{parts.scheme}://{credential_free_netloc}{parts.path}"
+    return UNPARSEABLE_SOURCE
+
+
+def _looks_like_host_with_port(host_port: str) -> bool:
+    _, sep, port = host_port.rpartition(":")
+    return bool(sep) and port.isdigit()
 
 
 def _strip_schemeless_userinfo(ref: str) -> Optional[str]:
-    """Strip ``userinfo@host`` refs that omit a URL scheme."""
+    """Strip ``user[:password]@host`` from refs that omit a URL scheme."""
     path_start = ref.find("/")
     if path_start == -1:
-        authority = ref
-        path = ""
+        authority, path = ref, ""
     else:
-        authority = ref[:path_start]
-        path = ref[path_start:]
-
+        authority, path = ref[:path_start], ref[path_start:]
     if "@" not in authority:
         return None
-
-    host_port = authority.rsplit("@", 1)[-1]
-    rest = host_port + path
-    return rest.split("?", 1)[0].split("#", 1)[0]
-
-
-def _sanitize_schemed_url(ref: str) -> Optional[str]:
-    """Sanitize a URL with scheme using string ops.
-
-    Avoids ``urlparse`` so malformed bracket sequences in passwords cannot trigger
-    IPv6 validation errors.
-    """
-    match = _SCHEME_RE.match(ref)
-    if not match:
+    userinfo, _, host_port = authority.rpartition("@")
+    has_password = ":" in userinfo and "\\" not in userinfo
+    if not has_password and not _looks_like_host_with_port(host_port):
+        # '@' in a plain file name ('video@2x.mp4', 'C:\clips\cam@1.mp4'),
+        # not credentials.
         return None
-
-    scheme = match.group(1)
-    rest = ref[match.end() :]
-
-    path_start = len(rest)
-    for delim in ("/", "?", "#"):
-        idx = rest.find(delim)
-        if idx != -1:
-            path_start = min(path_start, idx)
-
-    authority = _cred_free_netloc(rest[:path_start])
-    remainder = rest[path_start:]
-    path = remainder.split("?", 1)[0].split("#", 1)[0]
-
-    return f"{scheme}://{authority}{path}"
+    return (host_port + path).split("?", 1)[0].split("#", 1)[0]
 
 
 def sanitize_source_reference(ref: str) -> str:
-    """Strip credentials and query parameters from URLs for observability surfaces."""
-    if not isinstance(ref, str) or not ref:
-        return ref
-
-    schemed = _sanitize_schemed_url(ref)
-    if schemed is not None:
-        return schemed
-
-    schemeless = _strip_schemeless_userinfo(ref)
-    if schemeless is not None:
-        return schemeless
-
-    return ref
+    """Strip credentials and query parameters from URLs for observability
+    surfaces; returns ``UNPARSEABLE_SOURCE`` when credentials cannot be
+    separated from the host safely."""
+    if _SCHEME_RE.match(ref):
+        return _sanitize_schemed_url(ref)
+    stripped = _strip_schemeless_userinfo(ref)
+    return redact_credentials_in_text(ref if stripped is None else stripped)

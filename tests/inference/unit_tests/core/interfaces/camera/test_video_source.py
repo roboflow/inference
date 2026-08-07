@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from functools import partial
 from queue import Queue
 from threading import Thread
 from unittest import mock
@@ -259,6 +260,19 @@ def test_video_source_describe_source_callable_reference_unchanged() -> None:
     assert result.source_reference == str(producer_factory)
 
 
+def test_video_source_describe_source_partial_reference_redacts_credentials() -> None:
+    def producer_factory(url):
+        return MagicMock()
+
+    factory = partial(producer_factory, "rtsp://user:secret@host:554/stream")
+    source = VideoSource.init(video_reference=factory)
+
+    result = source.describe_source()
+
+    assert "secret" not in result.source_reference
+    assert "rtsp://host:554/stream" in result.source_reference
+
+
 def test_video_source_connection_error_uses_sanitized_reference() -> None:
     credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
     source = VideoSource.init(video_reference=credentialed_url)
@@ -285,6 +299,7 @@ def test_video_source_connection_error_sanitizes_password_with_at_sign() -> None
         "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
     ) as mock_producer:
         mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = ""
         with pytest.raises(SourceConnectionError) as exc_info:
             source.start()
 
@@ -310,9 +325,11 @@ def test_video_source_decode_path_uses_operational_reference() -> None:
                 is_file=False,
             )
         )
-        source.start()
-
-    mock_producer.assert_called_once_with(credentialed_url)
+        try:
+            source.start()
+            mock_producer.assert_called_once_with(credentialed_url)
+        finally:
+            tear_down_source(source=source)
 
 
 def test_video_source_describe_source_when_invalid_video_reference_consumption_started() -> (
