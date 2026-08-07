@@ -94,6 +94,51 @@ only when the current metadata proves one unambiguous canonical model identity.
 A changed or rotated non-empty key requires an exact matching cache entry and
 otherwise fails closed.
 
+#### Shared S3-Compatible Blob Cache
+
+`inference-models` can use an S3-compatible service as an optional read-through
+cache for content-hashed model files. Cache reads and writes are best-effort. A
+miss, error, corrupt object, or timeout falls back to the original model source.
+
+Standalone library installations must include the cache-specific dependencies:
+
+```bash
+pip install 'inference-models[model-blob-cache]'
+```
+
+Roboflow Inference server installations already include the required S3 SDK.
+
+```bash
+export MODEL_BLOB_CACHE_ENABLED=true
+export MODEL_BLOB_CACHE_BUCKET="model-cache"
+export MODEL_BLOB_CACHE_PREFIX="model-blobs"             # default
+export MODEL_BLOB_CACHE_ENDPOINT_URL="https://objects.example.com"
+export MODEL_BLOB_CACHE_REGION="region-1"
+export MODEL_BLOB_CACHE_ADDRESSING_STYLE="path"           # auto|path|virtual
+```
+
+By default, the client uses the standard AWS credential chain. To provide
+cache-specific static credentials, set both
+`MODEL_BLOB_CACHE_ACCESS_KEY_ID` and `MODEL_BLOB_CACHE_SECRET_ACCESS_KEY`.
+
+Timeout and circuit-breaker settings have these defaults:
+
+```bash
+export MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=1
+export MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=2
+export MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS=30
+export MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
+export MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
+```
+
+The download timeout is a hard caller-side deadline. SDK connect and socket-read
+timeouts also apply, and SDK retries are disabled. After repeated cache failures,
+the process bypasses the cache for the cooldown period. Uploads use a small
+non-blocking background queue with daemon workers; a full queue drops the cache
+write. Multipart upload thresholds and chunk sizes use boto3 defaults, while
+transfer-manager worker threads are disabled so uploads cannot hold up process
+shutdown.
+
 ### Device Selection
 
 **`DEFAULT_DEVICE`**  

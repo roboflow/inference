@@ -47,6 +47,7 @@ from inference_models.utils.file_system import (
     remove_file_if_exists,
     stream_file_bytes,
 )
+from inference_models.utils.model_blob_cache import get_model_blob_cache
 
 FileHandle = str
 DownloadUrl = str
@@ -354,6 +355,26 @@ def safe_download_file(
                     f"skipping download."
                 )
                 return
+            model_blob_cache = get_model_blob_cache() if md5_hash else None
+            restored_from_blob_cache = False
+            if model_blob_cache:
+                try:
+                    restored_from_blob_cache = model_blob_cache.restore(
+                        content_hash=md5_hash,
+                        target_path=tmp_download_file,
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "Model blob cache lookup failed; using original model source: %s",
+                        error,
+                    )
+            if restored_from_blob_cache:
+                if on_file_created:
+                    on_file_created(tmp_download_file)
+                os.replace(tmp_download_file, target_file_path)
+                if on_file_renamed:
+                    on_file_renamed(tmp_download_file, target_file_path)
+                return
             safe_execute_download(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
@@ -368,6 +389,16 @@ def safe_download_file(
                 on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
+            if model_blob_cache and verify_hash_while_download:
+                try:
+                    model_blob_cache.schedule_store(
+                        content_hash=md5_hash,
+                        source_path=target_file_path,
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "Could not schedule model blob cache upload: %s", error
+                    )
     finally:
         remove_file_if_exists(path=tmp_download_file)
 
