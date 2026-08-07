@@ -33,7 +33,9 @@ def test_build_options_rtsps_default_strict_verify(
 
 
 def test_build_options_rtsps_with_ca(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(GST_SSL_CA_CERTIFICATE_ENV_VAR, "/etc/ssl/certs/ca-certificates.crt")
+    monkeypatch.setenv(
+        GST_SSL_CA_CERTIFICATE_ENV_VAR, "/etc/ssl/certs/ca-certificates.crt"
+    )
     got = build_opencv_ffmpeg_capture_options("rtsps://cam/stream")
     assert got is not None
     assert "cafile;/etc/ssl/certs/ca-certificates.crt" in got
