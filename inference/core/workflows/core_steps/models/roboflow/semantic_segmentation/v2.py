@@ -51,16 +51,6 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
-# Collection-level key under which the dense per-pixel confidence map is carried.
-# The map is image-level `(H, W)`, NOT a per-detection column: every entry of
-# `sv.Detections.data` must have first dimension == `len(detections)` (supervision
-# enforces this via `_validate_data` in `__post_init__`/`merge`, and in
-# `__setitem__` from 0.30.0 on), so the map lives on the length-agnostic
-# `Detections.metadata` instead. This mirrors the tensor sibling, which carries the
-# same map on `InstanceDetections.image_metadata`. The serialiser never emits it
-# into `predictions`, but it survives for consumers reading the prediction metadata.
-CONFIDENCE_MASK_KEY = "confidence_mask"
-
 LONG_DESCRIPTION = """
 Run inference on a semantic segmentation model hosted on or uploaded to Roboflow.
 
@@ -226,6 +216,9 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             model_id=model_id,
             image=inference_images,
             confidence=confidence,
+            # In-process call: raw numpy masks skip a full-resolution PNG
+            # encode/decode round-trip between the model and this block.
+            response_mask_format="numpy",
             source="workflow-execution",
         )
         self._model_manager.add_model(
@@ -293,26 +286,46 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
 
     @staticmethod
     def _convert_to_sv_detections(predictions_dict: Dict) -> sv.Detections:
-        seg_mask_b64 = predictions_dict.get("segmentation_mask", "")
-        conf_mask_b64 = predictions_dict.get(CONFIDENCE_MASK_KEY, "")
+        seg_mask = predictions_dict.get("segmentation_mask", "")
+        conf_mask = predictions_dict.get("confidence_mask", "")
         class_map: Dict[str, str] = predictions_dict.get("class_map", {})
 
-        mask_bytes = base64.b64decode(seg_mask_b64)
-        nparr = np.frombuffer(mask_bytes, np.uint8)
-        mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        if isinstance(seg_mask, np.ndarray):
+            # response_mask_format="numpy" fast path - the model handed the
+            # label map over in-process, no PNG/base64 round-trip involved.
+            mask_array = seg_mask
+        else:
+            mask_bytes = base64.b64decode(seg_mask)
+            nparr = np.frombuffer(mask_bytes, np.uint8)
+            mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
         if mask_array is None:
             return sv.Detections.empty()
 
-        unique_class_ids = [cid for cid in np.unique(mask_array).tolist() if cid != 0]
+        present_class_ids = predictions_dict.get("present_class_ids")
+        if not present_class_ids:
+            # Hint absent (or empty, which no producer emits for a real mask
+            # - do not trust it) - scan the full-resolution mask instead.
+            present_class_ids = np.unique(mask_array).tolist()
+        unique_class_ids = [cid for cid in present_class_ids if cid != 0]
         if not unique_class_ids:
             return sv.Detections.empty()
 
         conf_array = None
-        if conf_mask_b64:
-            conf_bytes = base64.b64decode(conf_mask_b64)
+        if isinstance(conf_mask, np.ndarray):
+            conf_array = conf_mask
+        elif conf_mask:
+            conf_bytes = base64.b64decode(conf_mask)
             conf_nparr = np.frombuffer(conf_bytes, np.uint8)
             conf_array = cv2.imdecode(conf_nparr, cv2.IMREAD_GRAYSCALE)
+
+        # pycocotools requires Fortran-ordered uint8 masks. Converting the label
+        # map to F-order once makes every `label_map_f == cid` result below
+        # F-contiguous already, so the per-class asfortranarray in the RLE loop
+        # is a no-op instead of a full-frame transposing copy. The C-order mask
+        # still feeds bbox/confidence: those reductions are layout-sensitive and
+        # run several times slower on F-order masks.
+        label_map_f = np.asfortranarray(mask_array)
 
         xyxy_list, masks_list, class_id_list, class_name_list, confidence_list = (
             [],
@@ -327,14 +340,20 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             # class mask even though this is not necessarily meaningful for non-contiguous masks.
             rows = np.where(np.any(binary_mask, axis=1))[0]
             cols = np.where(np.any(binary_mask, axis=0))[0]
+            if rows.size == 0:
+                # present_class_ids promised a class the mask does not contain.
+                continue
             xyxy_list.append([cols[0], rows[0], cols[-1], rows[-1]])
-            masks_list.append(binary_mask)
+            masks_list.append(label_map_f == class_id)
             class_id_list.append(class_id)
             class_name_list.append(class_map.get(str(class_id), str(class_id)))
             if conf_array is not None:
                 confidence_list.append(float(conf_array[binary_mask].mean()) / 255.0)
             else:
                 confidence_list.append(1.0)
+
+        if not class_id_list:
+            return sv.Detections.empty()
 
         rle_list = []
         for mask in masks_list:
@@ -356,6 +375,6 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         )
 
         if conf_array is not None:
-            result.metadata[CONFIDENCE_MASK_KEY] = conf_array
+            result["confidence_mask"] = conf_array
 
         return result

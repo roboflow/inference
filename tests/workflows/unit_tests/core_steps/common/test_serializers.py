@@ -534,26 +534,37 @@ def test_mask_to_polygon_when_mask_contains_standard_shape() -> None:
 
 
 def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
-    # given
+    # given — small speck first in image order, large instance second
     mask = np.zeros((128, 128), dtype=np.uint8)
-    mask[40:50, 50:60] = 255
-    mask[90:100, 100:110] = 255
+    mask[10:14, 10:14] = 255  # 4x4 speck
+    mask[40:80, 50:100] = 255  # large instance
 
     # when
     result = mask_to_polygon(mask=mask)
 
-    # then
-    assert np.allclose(
-        result,
-        np.array(
-            [
-                [100, 90],
-                [100, 99],
-                [109, 99],
-                [109, 90],
-            ]
-        ),
-    ) or np.allclose(result, np.array([[50, 40], [50, 49], [59, 49], [59, 40]]))
+    # then — must prefer largest contour, not findContours order (Dataset Upload bug)
+    xs, ys = result[:, 0], result[:, 1]
+    assert xs.min() >= 50 and xs.max() <= 99
+    assert ys.min() >= 40 and ys.max() <= 79
+    assert (xs.max() - xs.min()) >= 40
+    assert (ys.max() - ys.min()) >= 30
+
+
+def test_mask_to_polygon_when_mask_contains_hole() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[10:110, 20:100] = 255
+    mask[20:100, 30:90] = 0
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then — RETR_TREE returns both contours; the exterior must be selected
+    xs, ys = result[:, 0], result[:, 1]
+    assert xs.min() == 20
+    assert xs.max() == 99
+    assert ys.min() == 10
+    assert ys.max() == 109
 
 
 def test_serialise_image_with_parent_origin_when_crop() -> None:
@@ -623,6 +634,55 @@ def test_serialise_image_without_parent_origin_when_not_crop() -> None:
     assert "parent_origin" not in result
     assert "root_parent_id" not in result
     assert "root_parent_origin" not in result
+
+
+def test_serialise_sv_detections_prefers_largest_contour_after_downscale() -> None:
+    """Regression for Dataset Upload: after 4096→2080 scale, masks can contain a
+    tiny speck + the real instance. Serialising contours[0] produced annotations
+    that looked cut away at the edge (tiny polygon, full-size bbox)."""
+    from inference.core.workflows.core_steps.common.utils import scale_sv_detections
+
+    orig = 4096
+    target = 2080
+    scale = target / orig
+    mask = np.zeros((orig, orig), dtype=bool)
+    mask[400:1600, 3100:orig] = True
+    for y in range(400, 1600):
+        jag = int(80 * np.sin(y / 40.0) + 40)
+        mask[y, 3100 : 3100 + jag] = False
+    mask[820:828, 3088:3096] = True
+
+    detections = sv.Detections(
+        xyxy=np.array([[3088, 400, orig - 1, 1600]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["sill"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[orig, orig]]),
+        },
+    )
+    scaled = scale_sv_detections(
+        detections=detections,
+        scale=(scale, scale),
+        target_size_wh=(target, target),
+    )
+
+    result = serialise_sv_detections(detections=scaled)
+
+    assert len(result["predictions"]) == 1
+    pred = result["predictions"][0]
+    points = pred["points"]
+    xs = [p["x"] for p in points]
+    ys = [p["y"] for p in points]
+    poly_w = max(xs) - min(xs)
+    poly_h = max(ys) - min(ys)
+    # Must not collapse to a ~4x8 speck while bbox stays ~500x600
+    assert poly_w > pred["width"] * 0.5
+    assert poly_h > pred["height"] * 0.5
+    assert max(xs) >= 2070  # still reaches the right edge
+    assert result["image"] == {"width": target, "height": target}
 
 
 def test_mask_to_polygon_output_reconstruction_when_output_was_padded() -> None:
@@ -1111,6 +1171,48 @@ def test_serialise_rle_sv_detections() -> None:
             },
         ],
     }
+
+
+def test_serialise_rle_sv_detections_preserves_detection_with_empty_dense_mask() -> (
+    None
+):
+    # given
+    masks = np.zeros((2, 4, 4), dtype=bool)
+    masks[1, 0:2, 0:2] = True
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [0, 0, 2, 2]], dtype=np.float64),
+        mask=masks,
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["empty", "body"]),
+            "detection_id": np.array(["empty-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": np.array(
+                [
+                    {"size": [4, 4], "counts": "a"},
+                    {"size": [4, 4], "counts": "b"},
+                ],
+                dtype=object,
+            ),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert [prediction["detection_id"] for prediction in result["predictions"]] == [
+        "empty-id",
+        "body-id",
+    ]
+    assert [
+        prediction["rle_mask"]["counts"] for prediction in result["predictions"]
+    ] == [
+        "a",
+        "b",
+    ]
+    assert np.array_equal(detections.mask, masks)
 
 
 def test_serialise_rle_sv_detections_with_bytes_counts() -> None:
