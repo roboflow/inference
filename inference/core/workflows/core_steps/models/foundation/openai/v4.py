@@ -40,6 +40,21 @@ from inference.core.workflows.prototypes.block import (
 
 OPENAI_MODELS = [
     {
+        "id": "gpt-5.6-sol",
+        "name": "GPT-5.6 Sol",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
+        "id": "gpt-5.6-terra",
+        "name": "GPT-5.6 Terra",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
+        "id": "gpt-5.6-luna",
+        "name": "GPT-5.6 Luna",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
         "id": "gpt-5.5",
         "name": "GPT-5.5",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],

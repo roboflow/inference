@@ -1,10 +1,107 @@
-{% extends "main.html" %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redirecting to the Roboflow Docs</title>
+<meta name="robots" content="noindex,follow">
+<link rel="canonical" href="https://docs.roboflow.com">
+<noscript><meta http-equiv="refresh" content="0; url=https://docs.roboflow.com"></noscript>
+<style>
+  body{font-family:Inter,system-ui,-apple-system,sans-serif;margin:0;padding:4rem 1rem;text-align:center;color:#1f2937}
+  a{color:#8315f9}
+</style>
+</head>
+<body>
+<p>The Inference documentation now lives on <a id="target" href="https://docs.roboflow.com">docs.roboflow.com</a>. Redirecting...</p>
+<script>
+/*
+ * Router for pages that were generated at build time and no longer exist:
+ * the Workflows block gallery, the workflow examples gallery, the kinds
+ * reference, and the mkdocstrings API reference. Anything unrecognized goes
+ * to the documentation home page.
+ */
+(function () {
+  var DEFAULT = "https://docs.roboflow.com";
 
-{% block content %}
-<div style="text-align:center;padding:4rem 1rem;">
-    <img src="/images/404-img.svg" alt="" style="max-width:260px;margin:0 auto 2rem;" />
-    <h1>Page Not Found</h1>
-    <p>The page you have requested was not found.</p>
-    <p><a href="/">Go back to the documentation home</a>.</p>
-</div>
-{% endblock %}
+  // Exact matches for generated pages that have a specific new home.
+  var EXACT = {
+    "/reference/inference/": "https://docs.roboflow.com/reference/inference/inference-python",
+    "/reference/inference_cli/": "https://docs.roboflow.com/reference/inference/inference-cli",
+    "/reference/inference_sdk/": "https://docs.roboflow.com/reference/inference/inference-sdk",
+    "/workflows/kinds/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds",
+    "/workflows/kinds/bar_code_detection/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/bar-code-detection",
+    "/workflows/kinds/boolean/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/boolean",
+    "/workflows/kinds/bytes/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/bytes",
+    "/workflows/kinds/classification_prediction/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/classification-prediction",
+    "/workflows/kinds/contours/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/contours",
+    "/workflows/kinds/detection/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/detection",
+    "/workflows/kinds/detections_overlaps/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/detections-overlaps",
+    "/workflows/kinds/dictionary/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/dictionary",
+    "/workflows/kinds/embedding/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/embedding",
+    "/workflows/kinds/float/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/float",
+    "/workflows/kinds/float_zero_to_one/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/float-zero-to-one",
+    "/workflows/kinds/image/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/image",
+    "/workflows/kinds/image_keypoints/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/image-keypoints",
+    "/workflows/kinds/image_metadata/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/image-metadata",
+    "/workflows/kinds/inference_id/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/inference-id",
+    "/workflows/kinds/instance_segmentation_prediction/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/instance-segmentation-prediction",
+    "/workflows/kinds/integer/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/integer",
+    "/workflows/kinds/keypoint_detection_prediction/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/keypoint-detection-prediction",
+    "/workflows/kinds/labeled_points/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/labeled-points",
+    "/workflows/kinds/language_model_output/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/language-model-output",
+    "/workflows/kinds/list_of_values/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/list-of-values",
+    "/workflows/kinds/numpy_array/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/numpy-array",
+    "/workflows/kinds/object_detection_prediction/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/object-detection-prediction",
+    "/workflows/kinds/parent_id/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/parent-id",
+    "/workflows/kinds/point/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/point",
+    "/workflows/kinds/prediction_type/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/prediction-type",
+    "/workflows/kinds/qr_code_detection/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/qr-code-detection",
+    "/workflows/kinds/rgb_color/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/rgb-color",
+    "/workflows/kinds/roboflow_api_key/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/roboflow-api-key",
+    "/workflows/kinds/roboflow_managed_key/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/roboflow-managed-key",
+    "/workflows/kinds/roboflow_model_id/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/roboflow-model-id",
+    "/workflows/kinds/roboflow_project/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/roboflow-project",
+    "/workflows/kinds/roboflow_solution/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/roboflow-solution",
+    "/workflows/kinds/secret/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/secret",
+    "/workflows/kinds/semantic_segmentation_prediction/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/semantic-segmentation-prediction",
+    "/workflows/kinds/serialised_payloads/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/serialised-payloads",
+    "/workflows/kinds/string/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/string",
+    "/workflows/kinds/timestamp/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/timestamp",
+    "/workflows/kinds/top_class/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/top-class",
+    "/workflows/kinds/video_metadata/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/video-metadata",
+    "/workflows/kinds/wildcard/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/wildcard",
+    "/workflows/kinds/zone/": "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds/zone"
+  };
+
+  // Path prefixes for whole families of generated pages.
+  var PREFIXES = [
+    ["/workflows/blocks/", "https://docs.roboflow.com/workflows/blocks/blocks"],
+    ["/workflows/kinds/", "https://docs.roboflow.com/workflows/developer-guide/developer-guide/kinds"],
+    ["/workflows/gallery/", "https://docs.roboflow.com/workflows"],
+    ["/reference/inference_sdk/", "https://docs.roboflow.com/reference/inference/inference-sdk"],
+    ["/reference/inference_cli/", "https://docs.roboflow.com/reference/inference/inference-cli"],
+    ["/reference/inference/", "https://docs.roboflow.com/reference/inference/inference-python"],
+    ["/workflows/", "https://docs.roboflow.com/workflows"],
+    ["/reference/", "https://docs.roboflow.com/reference"]
+  ];
+
+  function resolve(path) {
+    path = path.toLowerCase();
+    if (path.charAt(path.length - 1) !== "/") path += "/";
+    if (EXACT[path]) return EXACT[path];
+    for (var i = 0; i < PREFIXES.length; i++) {
+      if (path.indexOf(PREFIXES[i][0]) === 0) return PREFIXES[i][1];
+    }
+    return DEFAULT;
+  }
+
+  var target = resolve(window.location.pathname);
+  var anchor = window.location.hash.substr(1);
+  if (anchor && target.indexOf("#") === -1) target += "#" + anchor;
+  document.getElementById("target").href = target;
+  window.location.replace(target);
+})();
+</script>
+</body>
+</html>

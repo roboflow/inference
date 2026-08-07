@@ -131,6 +131,13 @@ class ServiceConfigurationError(Exception):
     pass
 
 
+FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
+    "Fine-tuned SAM 3 models are not supported on Serverless. "
+    "Use the base SAM 3 model (sam3/sam3_final), a Dedicated Deployment, "
+    "or self-hosted Inference."
+)
+
+
 class ModelDeploymentNotSupportedError(ServiceConfigurationError):
     pass
 

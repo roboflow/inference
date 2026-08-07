@@ -26,8 +26,14 @@ do that when preparing a release.
 ## Required updates
 
 1. **Changelog** — add short **What changed** bullets (user-facing behavior, not
-   file lists) under `## Unreleased` in
-   `docs/workflows/execution_engine_changelog.md`.
+   file lists) under `## Unreleased` in the Execution Engine changelog. The
+   changelog now lives in the [roboflow/docs](https://github.com/roboflow/docs)
+   repository at `workflows/developer-guide/execution-engine-changelog.md`,
+   published at
+   <https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog>.
+   Open a PR against that repository in parallel with the code change.
+   `docs/workflows/execution_engine_changelog.md` in this repository is now only
+   a redirect stub: do not edit it.
 2. **Tests** — add or update behavior tests for the change. Do not update
    hardcoded version assertions in a contributor PR.
 
@@ -39,7 +45,9 @@ When preparing a release, maintainers:
    capability, major for a coordinated breaking change).
 2. Bump `EXECUTION_ENGINE_V1_VERSION` in
    `inference/core/workflows/execution_engine/v1/core.py`.
-3. Move the `## Unreleased` entries under
+3. In the [roboflow/docs](https://github.com/roboflow/docs) repository, move the
+   `## Unreleased` entries in
+   `workflows/developer-guide/execution-engine-changelog.md` under
    `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` using the release
    value from `inference/core/version.py`, then leave a fresh `## Unreleased`
    section at the top.
