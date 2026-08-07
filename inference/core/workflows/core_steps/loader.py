@@ -412,10 +412,10 @@ else:
     from inference.core.workflows.core_steps.fusion.detections_stitch.v1_tensor import (
         DetectionsStitchBlockV1,
     )
+
 from inference.core.workflows.core_steps.fusion.detections_difference.v1 import (
     DetectionsDifferenceBlockV1,
 )
-
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -1024,6 +1024,7 @@ else:
     from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
         RoboflowVisionEventsBlockV1,
     )
+
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
     VisionEventBundleSinkBlockV1,
 )
