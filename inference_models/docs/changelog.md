@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## `0.34.4`
+
+### Fixed
+
+- Enforced `GitPython>=3.1.57` and `pymdown-extensions>=11.0.0` to mitigate security issues
+
 ---
 
 ## `0.34.4`
