@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 
 import pytest
 
@@ -32,7 +33,9 @@ def test_build_options_rtsps_default_strict_verify(
 
 
 def test_build_options_rtsps_with_ca(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(GST_SSL_CA_CERTIFICATE_ENV_VAR, "/etc/ssl/certs/ca-certificates.crt")
+    monkeypatch.setenv(
+        GST_SSL_CA_CERTIFICATE_ENV_VAR, "/etc/ssl/certs/ca-certificates.crt"
+    )
     got = build_opencv_ffmpeg_capture_options("rtsps://cam/stream")
     assert got is not None
     assert "cafile;/etc/ssl/certs/ca-certificates.crt" in got
@@ -124,30 +127,31 @@ def test_opencv_rtsps_tls_env_restores_previous(
 
 
 def test_opencv_rtsps_tls_env_serializes_concurrent_opens() -> None:
+    # The context manager holds its lock across the yield (set -> open ->
+    # restore), so no cross-thread rendezvous may happen INSIDE the `with`
+    # block - a barrier there deadlocks. Serialization is asserted instead by
+    # checking the two workers were never inside the context simultaneously.
     os.environ.pop(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, None)
     observed: list[str] = []
-    barrier = threading.Barrier(2)
+    inside: list[str] = []
+    overlaps: list[int] = []
 
-    def worker(video: str, flag_value: str) -> None:
-        previous_flags = os.environ.get(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR)
-        os.environ[RTSP_TLS_VALIDATION_FLAGS_ENV_VAR] = flag_value
-        try:
-            with opencv_rtsps_tls_env(video):
-                barrier.wait()
-                observed.append(os.environ[OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR])
-        finally:
-            if previous_flags is None:
-                os.environ.pop(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, None)
-            else:
-                os.environ[RTSP_TLS_VALIDATION_FLAGS_ENV_VAR] = previous_flags
+    def worker(video: str) -> None:
+        with opencv_rtsps_tls_env(video):
+            inside.append(video)
+            overlaps.append(len(inside))
+            observed.append(os.environ[OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR])
+            time.sleep(0.05)
+            inside.remove(video)
 
-    strict = threading.Thread(target=worker, args=("rtsps://strict/stream", "1"))
-    relaxed = threading.Thread(target=worker, args=("rtsps://relaxed/stream", "0"))
-    strict.start()
-    relaxed.start()
-    strict.join()
-    relaxed.join()
+    first = threading.Thread(target=worker, args=("rtsps://first/stream",))
+    second = threading.Thread(target=worker, args=("rtsps://second/stream",))
+    first.start()
+    second.start()
+    first.join()
+    second.join()
 
-    assert any("tls_verify;1" in value for value in observed)
-    assert any("tls_verify;0" in value for value in observed)
+    assert max(overlaps) == 1, "opens must be serialized, never concurrent"
+    assert len(observed) == 2
+    assert all("rtsp_transport;tcp" in value for value in observed)
     assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
