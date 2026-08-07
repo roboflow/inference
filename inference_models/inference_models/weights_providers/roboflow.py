@@ -215,11 +215,22 @@ def roboflow_secure_gateway_proxy_url_builder(
         url = _add_query_params_to_url(url=url, query=query)
     if not SECURE_GATEWAY:
         return url
-    parts = urllib.parse.urlsplit(
-        SECURE_GATEWAY if "://" in SECURE_GATEWAY else f"http://{SECURE_GATEWAY}"
-    )
-    gateway_base = f"{parts.scheme}://{parts.netloc}"
-    return f"{gateway_base}/proxy?url=" + urllib.parse.quote(url, safe="~()*!'")
+    # Mirror `inference.core.utils.url_utils.wrap_url`: keep the full gateway
+    # base, including any path component, so a SECURE_GATEWAY of
+    # "https://gw.local/edge" proxies through "https://gw.local/edge/proxy"
+    # instead of silently dropping "/edge". Bare host[:port] values keep the
+    # historical http:// scheme for legacy license servers.
+    gateway = SECURE_GATEWAY.rstrip("/")
+    if "://" in gateway:
+        gateway_base = gateway
+    else:
+        gateway_base = f"http://{gateway}"
+    gateway_prefix = f"{gateway_base}/proxy?url="
+    # Idempotent: an already-wrapped URL (e.g. a download_url proxied upstream)
+    # must not be proxied twice.
+    if url.startswith(gateway_prefix):
+        return url
+    return gateway_prefix + urllib.parse.quote(url, safe="~()*!'")
 
 
 def get_model_metadata(

@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 from uuid import uuid4
 
 import numpy as np
@@ -22,12 +22,37 @@ from inference.core.active_learning.post_processing import (
 )
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_TAGS
+from inference.core.exceptions import InvalidNumpyInput
 from inference.core.roboflow_api import (
     annotate_image_at_roboflow,
     register_image_at_roboflow,
 )
+from inference.core.utils.function import deprecated
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
+
+
+class PreparedRegistrationImage(NamedTuple):
+    """JPEG bytes plus the exact size transform applied before upload.
+
+    `scaling_factor` remains the height ratio used by the historical Active
+    Learning contract. Prefer `scale_x` / `scale_y` / `final_size_wh` so
+    annotations match the uploaded JPEG at any aspect ratio (int truncation can
+    make axes differ).
+    """
+
+    encoded_image: bytes
+    scaling_factor: float
+    original_size_wh: Tuple[int, int]
+    final_size_wh: Tuple[int, int]
+
+    @property
+    def scale_x(self) -> float:
+        return self.final_size_wh[0] / self.original_size_wh[0]
+
+    @property
+    def scale_y(self) -> float:
+        return self.final_size_wh[1] / self.original_size_wh[1]
 
 
 def execute_sampling(
@@ -56,14 +81,14 @@ def execute_datapoint_registration(
     inference_id: Optional[str] = None,
 ) -> None:
     local_image_id = str(uuid4())
-    encoded_image, scaling_factor = prepare_image_to_registration(
+    prepared_image = prepare_image_to_registration_with_metadata(
         image=image,
         desired_size=configuration.max_image_size,
         jpeg_compression_level=configuration.jpeg_compression_level,
     )
     prediction = adjust_prediction_to_client_scaling_factor(
         prediction=prediction,
-        scaling_factor=scaling_factor,
+        scaling_factor=prepared_image.scaling_factor,
         prediction_type=prediction_type,
     )
     matching_strategies_limits = OrderedDict(
@@ -82,7 +107,7 @@ def execute_datapoint_registration(
     register_datapoint_at_roboflow(
         cache=cache,
         strategy_with_spare_credit=strategy_with_spare_credit,
-        encoded_image=encoded_image,
+        encoded_image=prepared_image.encoded_image,
         local_image_id=local_image_id,
         prediction=prediction,
         prediction_type=prediction_type,
@@ -93,22 +118,60 @@ def execute_datapoint_registration(
     )
 
 
+@deprecated(
+    reason=(
+        "Use prepare_image_to_registration_with_metadata, which reports the exact "
+        "output dimensions and axis-specific scaling factors."
+    )
+)
 def prepare_image_to_registration(
     image: np.ndarray,
     desired_size: Optional[ImageDimensions],
     jpeg_compression_level: int,
 ) -> Tuple[bytes, float]:
-    scaling_factor = 1.0
+    """Prepare an image using the legacy two-tuple return contract.
+
+    Deprecated: use :func:`prepare_image_to_registration_with_metadata` so
+    annotations can be scaled to the exact encoded-image dimensions.
+    """
+    result = prepare_image_to_registration_with_metadata(
+        image=image,
+        desired_size=desired_size,
+        jpeg_compression_level=jpeg_compression_level,
+    )
+    return result.encoded_image, result.scaling_factor
+
+
+def prepare_image_to_registration_with_metadata(
+    image: np.ndarray,
+    desired_size: Optional[ImageDimensions],
+    jpeg_compression_level: int,
+) -> PreparedRegistrationImage:
+    original_size_wh = (int(image.shape[1]), int(image.shape[0]))
+    if original_size_wh[0] <= 0 or original_size_wh[1] <= 0:
+        width, height = original_size_wh
+        raise InvalidNumpyInput(
+            message=(
+                "Could not prepare image for registration because its dimensions "
+                f"are invalid: width={width}, height={height}."
+            ),
+            public_message="Image width and height must both be greater than zero.",
+        )
     if desired_size is not None:
-        height_before_scale = image.shape[0]
         image = downscale_image_keeping_aspect_ratio(
             image=image,
             desired_size=desired_size.to_wh(),
         )
-        scaling_factor = image.shape[0] / height_before_scale
-    return (
-        encode_image_to_jpeg_bytes(image=image, jpeg_quality=jpeg_compression_level),
-        scaling_factor,
+    final_size_wh = (int(image.shape[1]), int(image.shape[0]))
+    # Height ratio kept for Active Learning callers that still expect a single factor.
+    scaling_factor = final_size_wh[1] / original_size_wh[1]
+    return PreparedRegistrationImage(
+        encoded_image=encode_image_to_jpeg_bytes(
+            image=image, jpeg_quality=jpeg_compression_level
+        ),
+        scaling_factor=scaling_factor,
+        original_size_wh=original_size_wh,
+        final_size_wh=final_size_wh,
     )
 
 
