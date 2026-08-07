@@ -49,6 +49,7 @@ except ImportError:
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
+    get_model_api_key_from_kwargs,
     get_model_id_from_kwargs,
     get_model_resource_details_from_kwargs,
     get_request_api_key_from_kwargs,
@@ -802,6 +803,8 @@ class UsageCollector:
             model_resource_details = get_model_resource_details_from_kwargs(func_kwargs)
             if model_resource_details:
                 resource_details = {**resource_details, **model_resource_details}
+            if not usage_api_key:
+                usage_api_key = get_model_api_key_from_kwargs(func_kwargs) or ""
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
@@ -942,32 +945,35 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
+                t1 = time.time()
                 try:
-                    t1 = time.time()
                     res = func(*args, **kwargs)
-                    t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    response_error_details = self._response_error(res)
-                    self.record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=execution_duration,
-                            func=func,
-                            category=category,
-                            error_details=response_error_details,
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                    )
                 except Exception as exc:
                     t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    error_details = self._exception_error_details(exc)
+                    try:
+                        self.record_usage(
+                            **self._extract_usage_params_from_func_kwargs(
+                                usage_fps=usage_fps,
+                                usage_api_key=usage_api_key,
+                                usage_workflow_id=usage_workflow_id,
+                                usage_workflow_preview=usage_workflow_preview,
+                                usage_inference_test_run=usage_inference_test_run,
+                                usage_billable=usage_billable,
+                                execution_duration=self._compute_execution_duration(
+                                    t1, t2
+                                ),
+                                func=func,
+                                category=category,
+                                error_details=self._exception_error_details(exc),
+                                args=args,
+                                kwargs=kwargs,
+                            )
+                        )
+                    except Exception as usage_exc:
+                        logger.debug("Failed to record usage - %s", usage_exc)
+                    raise
+                t2 = time.time()
+                try:
                     self.record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -976,15 +982,16 @@ class UsageCollector:
                             usage_workflow_preview=usage_workflow_preview,
                             usage_inference_test_run=usage_inference_test_run,
                             usage_billable=usage_billable,
-                            execution_duration=execution_duration,
+                            execution_duration=self._compute_execution_duration(t1, t2),
                             func=func,
                             category=category,
-                            error_details=error_details,
+                            error_details=self._response_error(res),
                             args=args,
                             kwargs=kwargs,
                         )
                     )
-                    raise
+                except Exception as usage_exc:
+                    logger.debug("Failed to record usage - %s", usage_exc)
                 return res
 
             @wraps(func)
@@ -998,32 +1005,35 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
+                t1 = time.time()
                 try:
-                    t1 = time.time()
                     res = await func(*args, **kwargs)
-                    t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    response_error_details = self._response_error(res)
-                    await self.async_record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=execution_duration,
-                            func=func,
-                            category=category,
-                            error_details=response_error_details,
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                    )
                 except Exception as exc:
                     t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    error_details = self._exception_error_details(exc)
+                    try:
+                        await self.async_record_usage(
+                            **self._extract_usage_params_from_func_kwargs(
+                                usage_fps=usage_fps,
+                                usage_api_key=usage_api_key,
+                                usage_workflow_id=usage_workflow_id,
+                                usage_workflow_preview=usage_workflow_preview,
+                                usage_inference_test_run=usage_inference_test_run,
+                                usage_billable=usage_billable,
+                                execution_duration=self._compute_execution_duration(
+                                    t1, t2
+                                ),
+                                func=func,
+                                category=category,
+                                error_details=self._exception_error_details(exc),
+                                args=args,
+                                kwargs=kwargs,
+                            )
+                        )
+                    except Exception as usage_exc:
+                        logger.debug("Failed to record usage - %s", usage_exc)
+                    raise
+                t2 = time.time()
+                try:
                     await self.async_record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -1032,15 +1042,16 @@ class UsageCollector:
                             usage_workflow_preview=usage_workflow_preview,
                             usage_inference_test_run=usage_inference_test_run,
                             usage_billable=usage_billable,
-                            execution_duration=execution_duration,
+                            execution_duration=self._compute_execution_duration(t1, t2),
                             func=func,
                             category=category,
-                            error_details=error_details,
+                            error_details=self._response_error(res),
                             args=args,
                             kwargs=kwargs,
                         )
                     )
-                    raise
+                except Exception as usage_exc:
+                    logger.debug("Failed to record usage - %s", usage_exc)
                 return res
 
             if asyncio.iscoroutinefunction(func):

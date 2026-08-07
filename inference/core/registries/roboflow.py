@@ -37,6 +37,7 @@ from inference.core.env import (
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
+    FINE_TUNED_SAM3_DEPLOYMENT_ERROR,
     MissingApiKeyError,
     ModelArtefactError,
     ModelDeploymentNotSupportedError,
@@ -175,11 +176,6 @@ MODEL_ID_METADATA_KEY = "model_id"
 
 # In-process cache for model metadata to avoid Redis lock contention on every request.
 _in_process_metadata_cache = LRUCache(capacity=1000)
-
-FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
-    "Fine-tuned SAM3 models are not supported on this deployment. "
-    "Please use a workflow or self-host the server."
-)
 
 
 def _get_in_process_metadata_cache_key(
