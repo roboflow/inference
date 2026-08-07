@@ -40,6 +40,9 @@ class BaseInference:
 
         return postprocessed
 
+    def run_tensor_native_inference(self, **kwargs) -> Any:
+        raise NotImplementedError
+
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:

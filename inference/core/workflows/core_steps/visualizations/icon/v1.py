@@ -254,7 +254,11 @@ class IconVisualizationBlockV1(VisualizationBlock):
         x_position: Optional[int],
         y_position: Optional[int],
     ) -> BlockResult:
-        annotated_image = image.numpy_image.copy() if copy_image else image.numpy_image
+        annotated_image = image.numpy_image
+        if copy_image:
+            annotated_image = annotated_image.copy()
+        else:
+            image.declare_numpy_image_mutated()
         icon_np = icon.numpy_image.copy()
 
         import os
