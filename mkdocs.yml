@@ -33,11 +33,11 @@ extra_css:
 
 nav:
   - Home: index.md
-  - "Get Started »": "https://docs.roboflow.com/deployment/self-hosted/self-hosted"
-  - "Models »": "https://docs.roboflow.com/models/supported-models"
-  - "Workflows »": "https://docs.roboflow.com/workflows"
-  - "Reference »": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
-  - "Changelog »": "https://github.com/roboflow/inference/releases"
+  - "Get Started": "https://docs.roboflow.com/deployment/self-hosted/self-hosted"
+  - "Models": "https://docs.roboflow.com/models/supported-models"
+  - "Workflows": "https://docs.roboflow.com/workflows"
+  - "Reference": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
+  - "Changelog": "https://github.com/roboflow/inference/releases"
 
 theme:
   name: 'material'
