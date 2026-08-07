@@ -1,0 +1,23 @@
+# Minimal MediaMTX config for the video POC.
+# RTSP ingest on :8554 (connector pushes here, processor reads here).
+# WebRTC/WHEP on :8889 (browser live preview reads here).
+logLevel: info
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcAdditionalHosts: [127.0.0.1, localhost]
+
+hls: no
+rtmp: no
+srt: no
+
+api: yes
+apiAddress: 127.0.0.1:9997
+
+paths:
+  all_others:
