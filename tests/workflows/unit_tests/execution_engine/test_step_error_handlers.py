@@ -5,6 +5,7 @@ from inference.core.exceptions import (
     FeatureDeprecatedError,
     InferenceModelNotFound,
     InvalidModelIDError,
+    ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     PaymentRequiredError,
     RoboflowAPIForbiddenError,
@@ -195,6 +196,26 @@ def test_extended_roboflow_errors_handler_when_not_found_error_occurs_while_remo
 
     # then
     assert error.value.status_code == 404
+
+
+def test_extended_roboflow_errors_handler_when_remote_deployment_is_not_supported() -> (
+    None
+):
+    api_message = "Fine-tuned SAM 3 models are not supported on Serverless."
+    upstream_error = HTTPCallErrorError(
+        "501 Server Error for url: http://producer:8080/sam3/concept_segment",
+        501,
+        api_message,
+    )
+
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("sam_3", upstream_error)
+
+    assert error.value.status_code == 501
+    assert error.value.public_message == api_message
+    assert error.value.context.endswith("deployment_not_supported")
+    assert isinstance(error.value.inner_error, ModelDeploymentNotSupportedError)
+    assert "producer" not in str(error.value.inner_error)
 
 
 def test_extended_roboflow_errors_handler_when_http_507_occurs() -> None:

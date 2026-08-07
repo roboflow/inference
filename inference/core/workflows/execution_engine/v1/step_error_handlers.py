@@ -3,6 +3,7 @@ from inference.core.exceptions import (
     FeatureDeprecatedError,
     InferenceModelNotFound,
     InvalidModelIDError,
+    ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     PaymentRequiredError,
     RoboflowAPIForbiddenError,
@@ -225,6 +226,17 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
                 f"Contact your workspace administrator to re-enable API keys. Details: {error}",
                 context="workflow_execution | step_execution",
                 inner_error=error,
+            ) from error
+        if error.status_code == 501:
+            public_message = error.api_message or (
+                f"Remote execution of step {step_name} is not supported on this deployment."
+            )
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=501,
+                public_message=public_message,
+                context="workflow_execution | step_execution | deployment_not_supported",
+                inner_error=ModelDeploymentNotSupportedError(public_message),
             ) from error
         if error.status_code == 507:
             raise RuntimeLimitsCausedStepExecutionError(

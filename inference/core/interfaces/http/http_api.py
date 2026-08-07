@@ -210,12 +210,14 @@ from inference.core.env import (
     WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
 from inference.core.exceptions import (
+    FINE_TUNED_SAM3_DEPLOYMENT_ERROR,
     ContentTypeInvalid,
     ContentTypeMissing,
     FeatureDeprecatedError,
     InputImageLoadError,
     MissingApiKeyError,
     MissingServiceSecretError,
+    ModelDeploymentNotSupportedError,
     RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
@@ -3528,6 +3530,8 @@ class HttpInterface(BaseInterface):
                     logger.debug(f"Reached /sam3/embed_image")
 
                     inference_request.model_id = "sam3/sam3_interactive"
+                    if api_key:
+                        inference_request.api_key = api_key
 
                     if SAM3_EXEC_MODE == "remote":
                         raise HTTPException(
@@ -3587,12 +3591,13 @@ class HttpInterface(BaseInterface):
                         inference_request.source = request_source
                     if request_source_info is not None:
                         inference_request.source_info = request_source_info
+                    if api_key:
+                        inference_request.api_key = api_key
 
                     if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
-                            raise HTTPException(
-                                status_code=501,
-                                detail="Fine-tuned SAM3 models are not supported on this deployment. Please use a workflow or self-host the server.",
+                            raise ModelDeploymentNotSupportedError(
+                                FINE_TUNED_SAM3_DEPLOYMENT_ERROR
                             )
 
                     if SAM3_EXEC_MODE == "remote":
@@ -3753,6 +3758,8 @@ class HttpInterface(BaseInterface):
                         inference_request.source_info = request_source_info
 
                     inference_request.model_id = "sam3/sam3_interactive"
+                    if api_key:
+                        inference_request.api_key = api_key
 
                     if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
