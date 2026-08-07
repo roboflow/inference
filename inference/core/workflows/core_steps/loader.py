@@ -487,6 +487,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inferen
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
     RoboflowVisionEventsBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
+    VisionEventBundleSinkBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1052,6 +1055,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OverlapBlockV1,
         ONVIFSinkBlockV1,
         RoboflowVisionEventsBlockV1,
+        VisionEventBundleSinkBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
         PPOCRBlockV1,
