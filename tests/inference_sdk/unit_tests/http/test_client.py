@@ -175,6 +175,30 @@ def test_wrap_errors_when_http_error_occurs() -> None:
     assert error.value.api_message == "Not Found"
 
 
+def test_wrap_errors_when_http_error_uses_fastapi_detail() -> None:
+    @wrap_errors
+    def example() -> None:
+        response = Response()
+        response.headers = {"Content-Type": "application/json"}
+        response.status_code = 501
+        response._content = json.dumps(
+            {"detail": "Fine-tuned SAM 3 models are not supported on Serverless."}
+        ).encode("utf-8")
+        raise HTTPError(
+            request=Request(),
+            response=response,
+        )
+
+    with pytest.raises(HTTPCallErrorError) as error:
+        example()
+
+    assert error.value.status_code == 501
+    assert (
+        error.value.api_message
+        == "Fine-tuned SAM 3 models are not supported on Serverless."
+    )
+
+
 @pytest.mark.asyncio
 async def test_wrap_errors_async_when_http_error_occurs() -> None:
     # given

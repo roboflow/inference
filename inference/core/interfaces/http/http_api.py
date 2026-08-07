@@ -210,12 +210,14 @@ from inference.core.env import (
     WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
 from inference.core.exceptions import (
+    FINE_TUNED_SAM3_DEPLOYMENT_ERROR,
     ContentTypeInvalid,
     ContentTypeMissing,
     FeatureDeprecatedError,
     InputImageLoadError,
     MissingApiKeyError,
     MissingServiceSecretError,
+    ModelDeploymentNotSupportedError,
     RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
@@ -3594,9 +3596,8 @@ class HttpInterface(BaseInterface):
 
                     if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
-                            raise HTTPException(
-                                status_code=501,
-                                detail="Fine-tuned SAM3 models are not supported on this deployment. Please use a workflow or self-host the server.",
+                            raise ModelDeploymentNotSupportedError(
+                                FINE_TUNED_SAM3_DEPLOYMENT_ERROR
                             )
 
                     if SAM3_EXEC_MODE == "remote":
