@@ -1,2 +1,0 @@
-!!! Note
-    The model id is composed of the string `<project_id>/<version_id>`. You can find these pieces of information by following the guide [here](https://docs.roboflow.com/api-reference/workspace-and-project-ids).

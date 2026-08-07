@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: /start/overview/
+redirect_url: https://docs.roboflow.com/deployment/self-hosted/self-hosted
 ---

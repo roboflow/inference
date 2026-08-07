@@ -197,6 +197,9 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     DetectionsConsensusBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.detections_difference.v1 import (
+    DetectionsDifferenceBlockV1,
+)
 from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
     DetectionsListRollUpBlockV1,
 )
@@ -312,6 +315,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
 )
 from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
     OpenAIBlockV4,
+)
+from inference.core.workflows.core_steps.models.foundation.openai.v5 import (
+    OpenAIBlockV5,
 )
 from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
@@ -483,6 +489,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inferen
 )
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
     RoboflowVisionEventsBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
+    VisionEventBundleSinkBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
@@ -897,6 +906,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
+        DetectionsDifferenceBlockV1,
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
@@ -942,6 +952,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV2,
         OpenAIBlockV3,
         OpenAIBlockV4,
+        OpenAIBlockV5,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -1048,6 +1059,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OverlapBlockV1,
         ONVIFSinkBlockV1,
         RoboflowVisionEventsBlockV1,
+        VisionEventBundleSinkBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
         PPOCRBlockV1,

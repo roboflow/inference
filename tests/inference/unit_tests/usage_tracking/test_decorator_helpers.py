@@ -91,3 +91,76 @@ def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threa
     assert usage_params["resource_details"]["billable"] is True
     assert usage_params["resource_details"]["source_info"] == "async-serverless-gpu"
     assert usage_params["resource_details"]["execution_mode"] == SAM3_EXEC_MODE
+
+
+def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
+    usage_collector_with_mocked_threads,
+):
+    class CachedModel:
+        api_key = "first-loader-api-key"
+        task_type = "unsupervised-segmentation"
+
+        def infer_from_request(self, request): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.1,
+            func=CachedModel.infer_from_request,
+            category="model",
+            error_details=None,
+            args=(
+                CachedModel(),
+                SimpleNamespace(
+                    api_key="current-caller-api-key",
+                    model_id="sam3/sam3_interactive",
+                ),
+            ),
+            kwargs={},
+        )
+    )
+
+    assert usage_params["api_key"] == "current-caller-api-key"
+    assert usage_params["resource_id"] == "sam3/sam3_interactive"
+    assert usage_params["resource_details"]["task_type"] == (
+        "unsupervised-segmentation"
+    )
+
+
+def test_explicit_model_usage_api_key_takes_precedence_over_request(
+    usage_collector_with_mocked_threads,
+):
+    class CachedModel:
+        api_key = "first-loader-api-key"
+
+        def infer_from_request(self, request): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="explicit-usage-api-key",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.1,
+            func=CachedModel.infer_from_request,
+            category="model",
+            error_details=None,
+            args=(
+                CachedModel(),
+                SimpleNamespace(
+                    api_key="current-caller-api-key",
+                    model_id="sam3/sam3_interactive",
+                ),
+            ),
+            kwargs={},
+        )
+    )
+
+    assert usage_params["api_key"] == "explicit-usage-api-key"
