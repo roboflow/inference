@@ -53,6 +53,9 @@ from inference.core.env import (
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
+from inference.core.models.semantic_segmentation_utils import (
+    present_class_ids_from_label_map,
+)
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
@@ -1657,14 +1660,14 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             # WARNING! This way of conversion is hazardous - first of all, if background class is not in class names,
             # for certain pre-processing, we end up with -1 values which will be wrapped to 255 - second of all,
             # we can support only 256 classes - those constraints should be fine until inference 2.0
+            segmentation_map_u8 = segmentation.segmentation_map.to(torch.uint8)
             response_predictions = SemanticSegmentationPrediction(
-                segmentation_mask=self.img_to_b64_str(
-                    segmentation.segmentation_map.to(torch.uint8)
-                ),
+                segmentation_mask=self.img_to_b64_str(segmentation_map_u8),
                 confidence_mask=self.img_to_b64_str(
                     (segmentation.confidence * 255).to(torch.uint8)
                 ),
                 class_map=self.class_map,
+                present_class_ids=present_class_ids_from_label_map(segmentation_map_u8),
                 image=dict(response_image),
             )
             response = SemanticSegmentationInferenceResponse(

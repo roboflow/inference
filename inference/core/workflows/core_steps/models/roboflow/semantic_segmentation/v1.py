@@ -233,7 +233,12 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
         if mask_array is None:
             return sv.Detections.empty()
 
-        unique_class_ids = [cid for cid in np.unique(mask_array).tolist() if cid != 0]
+        present_class_ids = predictions_dict.get("present_class_ids")
+        if not present_class_ids:
+            # Hint absent (or empty, which no producer emits for a real mask
+            # - do not trust it) - scan the full-resolution mask instead.
+            present_class_ids = np.unique(mask_array).tolist()
+        unique_class_ids = [cid for cid in present_class_ids if cid != 0]
         if not unique_class_ids:
             return sv.Detections.empty()
 
@@ -242,6 +247,14 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
             conf_bytes = base64.b64decode(conf_mask_b64)
             conf_nparr = np.frombuffer(conf_bytes, np.uint8)
             conf_array = cv2.imdecode(conf_nparr, cv2.IMREAD_GRAYSCALE)
+
+        # pycocotools requires Fortran-ordered uint8 masks. Converting the label
+        # map to F-order once makes every `label_map_f == cid` result below
+        # F-contiguous already, so the per-class asfortranarray in the RLE loop
+        # is a no-op instead of a full-frame transposing copy. The C-order mask
+        # still feeds bbox/confidence: those reductions are layout-sensitive and
+        # run several times slower on F-order masks.
+        label_map_f = np.asfortranarray(mask_array)
 
         xyxy_list, masks_list, class_id_list, class_name_list, confidence_list = (
             [],
@@ -256,14 +269,20 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
             # class mask even though this is not necessarily meaningful for non-contiguous masks.
             rows = np.where(np.any(binary_mask, axis=1))[0]
             cols = np.where(np.any(binary_mask, axis=0))[0]
+            if rows.size == 0:
+                # present_class_ids promised a class the mask does not contain.
+                continue
             xyxy_list.append([cols[0], rows[0], cols[-1], rows[-1]])
-            masks_list.append(binary_mask)
+            masks_list.append(label_map_f == class_id)
             class_id_list.append(class_id)
             class_name_list.append(class_map.get(str(class_id), str(class_id)))
             if conf_array is not None:
                 confidence_list.append(float(conf_array[binary_mask].mean()) / 255.0)
             else:
                 confidence_list.append(1.0)
+
+        if not class_id_list:
+            return sv.Detections.empty()
 
         rle_list = []
         for mask in masks_list:
