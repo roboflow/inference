@@ -99,6 +99,7 @@ from security import (
     MissingJobAccessToken,
     env_flag,
     extract_access_token,
+    format_inference_error,
     sanitize_diagnostic,
     validate_job_id,
 )
@@ -831,6 +832,7 @@ class JobRun:
         # in-process publisher without any JPEG round trip
         self.raw_frames = FrameStore()
         self.pipeline = None
+        self.pipeline_error = None
         self.sim_process = None
         self.recorder = None
         self.publisher = None
@@ -902,6 +904,16 @@ class JobRun:
         self.events.publish(event)
 
     # ---------- lifecycle ----------
+
+    def on_pipeline_status_update(self, update):
+        """Capture this pipeline's structured errors for durable UI diagnostics."""
+        if getattr(update, "event_type", None) != "INFERENCE_ERROR":
+            return
+        detail = format_inference_error(getattr(update, "payload", None))
+        message = f"workflow inference failed: {detail}"
+        self.log_ring.note(f"[inference_pipeline] {detail}")
+        with self.lock:
+            self.pipeline_error = message
 
     def start(self):
         with self.lifecycle_lock:
@@ -1030,6 +1042,7 @@ class JobRun:
                 # follow the job, not this worker's identity key
                 api_key=job.get("apiKey") or self.worker.args.api_key or os.getenv("ROBOFLOW_API_KEY"),
                 on_prediction=self.on_prediction,
+                status_update_handlers=[self.on_pipeline_status_update],
                 # we serialize ourselves in on_prediction (images stay raw for
                 # the publisher; the rest goes through inference's serializer)
                 serialize_results=False,
@@ -1088,6 +1101,12 @@ class JobRun:
         with self.lock:
             if self.state != "running":
                 return
+            pipeline_error = self.pipeline_error
+        if pipeline_error:
+            print(f"[processor] {pipeline_error}", file=sys.stderr)
+            self.report_failure(pipeline_error)
+            self.worker.finish_run(self)
+            return
         if mode == "batch":
             self._finalize_recorder()
             self._cleanup_download()

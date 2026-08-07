@@ -13,6 +13,7 @@ from security import (  # noqa: E402
     JobSecurityRegistry,
     MissingJobAccessToken,
     extract_access_token,
+    format_inference_error,
     sanitize_diagnostic,
     validate_job_id,
 )
@@ -121,3 +122,27 @@ def test_diagnostic_ring_is_bounded_and_sanitizes_each_job_independently():
 
     assert first.tail() == ["Bearer [redacted]", "last first line"]
     assert second.tail() == ["second job"]
+
+
+def test_format_inference_error_preserves_cause_and_redacts_credentials():
+    result = format_inference_error(
+        {
+            "error_type": "ClientCausedStepExecutionError",
+            "error_message": (
+                "model failed at https://user:pass@example.com/weights?api_key=secret "
+                "with Bearer another-secret"
+            ),
+        }
+    )
+
+    assert result.startswith("ClientCausedStepExecutionError: model failed")
+    assert "user:pass" not in result
+    assert "another-secret" not in result
+    assert "[credentials-redacted]@example.com" in result
+    assert "Bearer [redacted]" in result
+
+
+def test_format_inference_error_handles_missing_payload():
+    assert format_inference_error(None) == (
+        "InferenceError: the workflow inference thread stopped unexpectedly"
+    )

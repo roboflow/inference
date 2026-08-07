@@ -71,6 +71,17 @@ def sanitize_diagnostic(value) -> str:
     return _URL_RE.sub(_redact_url, text)
 
 
+def format_inference_error(payload) -> str:
+    """Turn an InferencePipeline error payload into a safe user-facing detail."""
+    payload = payload if isinstance(payload, dict) else {}
+    error_type = str(payload.get("error_type") or "InferenceError").strip()
+    error_message = str(
+        payload.get("error_message")
+        or "the workflow inference thread stopped unexpectedly"
+    ).strip()
+    return sanitize_diagnostic(f"{error_type}: {error_message}")
+
+
 class DiagnosticRing:
     """A small, explicitly job-scoped and credential-sanitized log tail."""
 
