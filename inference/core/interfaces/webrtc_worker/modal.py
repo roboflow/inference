@@ -2,16 +2,26 @@ import asyncio
 import datetime
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from queue import Empty
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
+    LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
+    LEGACY_MMP_ADAPTER_ENABLED,
+    LEGACY_MMP_ADAPTER_MODE,
     LOG_LEVEL,
+    MAX_ACTIVE_MODELS,
+    MMP_PERFORMANCE_PROFILING_ENABLED,
+    MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S,
+    MMP_PERFORMANCE_PROFILING_MAX_SAMPLES,
+    MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N,
+    MMP_PERFORMANCE_PROFILING_WARMUP_CALLS,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WEB_ENDPOINT_URL,
@@ -81,6 +91,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 )
 from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
+from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.version import __version__
@@ -116,6 +127,124 @@ def check_nvidia_smi_gpu() -> str:
         return gpu
     except subprocess.CalledProcessError:
         return ""
+
+
+_mmp_handle = None
+_mmp_started = False
+_mmp_lock = threading.Lock()
+
+
+def _ensure_mmp_started() -> None:
+    """Start the in-container ModelManagerProcess once per container.
+
+    Started lazily on the first call instead of @modal.enter so the live MMP
+    thread, its SHM pool and ZMQ socket never land in a memory snapshot.
+    """
+    global _mmp_handle, _mmp_started
+    with _mmp_lock:
+        if _mmp_started:
+            # A cancelled first attempt may have left the MMP thread alive with
+            # no handle recorded; relaunching would collide on the same address,
+            # so the one launch attempt per container stands either way.
+            return
+        _mmp_started = True
+        os.environ.setdefault("INFERENCE_MMP_ADDR", "ipc:///tmp/webrtc_mmp")
+        from inference_server.launcher import launch_orchestrated
+
+        _mmp_handle = launch_orchestrated(mmp_addr=os.environ["INFERENCE_MMP_ADDR"])
+        logger.info(
+            "MMP started for adapter: addr=%s shm=%s",
+            _mmp_handle.mmp_addr,
+            _mmp_handle.shm_name,
+        )
+
+
+_adapter = None
+_adapter_lock = threading.Lock()
+
+
+def _ensure_adapter_started():
+    """Container-singleton ModelManagerAdapter on a persistent background loop.
+
+    One adapter per container: per-call construction would rebuild the whole
+    in-process ModelManager in bundled mode, and asyncio locks/futures cannot
+    be shared across per-call asyncio.run loops. The adapter's sync bridge is
+    callable from any other thread. In bundled+direct mode the models loaded
+    through this adapter live in THIS process, so a snap=True preload lands
+    them inside the memory snapshot.
+    """
+    global _adapter
+    if LEGACY_MMP_ADAPTER_MODE != "bundled":
+        _ensure_mmp_started()
+    with _adapter_lock:
+        if _adapter is not None:
+            return _adapter
+        from inference.core.managers.mmp_adapter import ModelManagerAdapter
+
+        legacy_stack = WithFixedSizeCache(
+            ModelManager(model_registry=RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)),
+            max_size=MAX_ACTIVE_MODELS,
+        )
+        adapter = ModelManagerAdapter(legacy_stack=legacy_stack)
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(
+            target=loop.run_forever, name="mmp-adapter-loop", daemon=True
+        )
+        thread.start()
+        start_state: dict = {}
+
+        async def _start() -> None:
+            start_state["task"] = asyncio.current_task()
+            await adapter.start()
+
+        start_future = asyncio.run_coroutine_threadsafe(_start(), loop)
+        try:
+            start_future.result(timeout=30)
+        except BaseException:
+            # A failed start must not leak the loop thread or a half-started
+            # client — the next attempt builds fresh. One sequential cleanup
+            # coroutine cancels AND awaits the start task before shutting the
+            # adapter down, so nothing interleaves with start's own cleanup.
+            async def _cleanup() -> None:
+                task = start_state.get("task")
+                if task is not None and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except BaseException:
+                        pass
+                await adapter.shutdown()
+
+            try:
+                asyncio.run_coroutine_threadsafe(_cleanup(), loop).result(timeout=15)
+            except Exception:
+                logger.warning("Adapter cleanup after failed start", exc_info=True)
+            loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=5)
+            if thread.is_alive():
+                logger.warning(
+                    "Adapter loop thread did not stop; leaving daemon thread"
+                )
+            else:
+                loop.close()
+            raise
+        _adapter = adapter
+        return _adapter
+
+
+def _preload_models_over_adapter(adapter, model_ids: List[str]) -> None:
+    for model_id in model_ids:
+        try:
+            de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+            adapter.add_model(
+                de_aliased,
+                api_key=WEBRTC_MODAL_MODELS_PRELOAD_API_KEY or "",
+                countinference=False,
+                service_secret=ROBOFLOW_INTERNAL_SERVICE_SECRET,
+            )
+            logger.info("Preloaded %s over adapter", de_aliased)
+        except Exception as exc:
+            logger.error("Failed to preload %s over adapter: %s", model_id, exc)
 
 
 if modal is not None:
@@ -169,6 +298,15 @@ if modal is not None:
             "DISABLE_VERSION_CHECK": "True",
             "HF_HOME": Path(MODEL_CACHE_DIR).joinpath("hf_home").as_posix(),
             "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
+            "LEGACY_MMP_ADAPTER_ENABLED": str(LEGACY_MMP_ADAPTER_ENABLED),
+            "LEGACY_MMP_ADAPTER_MODE": LEGACY_MMP_ADAPTER_MODE,
+            "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND": LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
+            # The snap=True preload gate reads this in-container; without the
+            # forward it would default to enabled and skip preload on
+            # snapshots-disabled deployments.
+            "WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT": str(
+                WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
+            ),
             "METRICS_ENABLED": "False",
             "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
             "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
@@ -180,6 +318,19 @@ if modal is not None:
             "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
             "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
             "LOG_LEVEL": LOG_LEVEL,
+            "MMP_PERFORMANCE_PROFILING_ENABLED": str(MMP_PERFORMANCE_PROFILING_ENABLED),
+            "MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S": str(
+                MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S
+            ),
+            "MMP_PERFORMANCE_PROFILING_MAX_SAMPLES": str(
+                MMP_PERFORMANCE_PROFILING_MAX_SAMPLES
+            ),
+            "MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N": str(
+                MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N
+            ),
+            "MMP_PERFORMANCE_PROFILING_WARMUP_CALLS": str(
+                MMP_PERFORMANCE_PROFILING_WARMUP_CALLS
+            ),
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
             "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
@@ -257,29 +408,41 @@ if modal is not None:
             init_rtc_peer_connection_with_loop,
         )
 
-        rtc_peer_connection_task = asyncio.create_task(
-            init_rtc_peer_connection_with_loop(
-                webrtc_request=webrtc_request,
-                send_answer=send_answer,
-                model_manager=model_manager,
-                heartbeat_callback=watchdog.heartbeat,
-                connection_established_callback=watchdog.mark_connection_established,
-            )
-        )
+        if LEGACY_MMP_ADAPTER_ENABLED:
+            try:
+                # Container-singleton adapter on its own persistent loop —
+                # instant after the first call (or after snap=True preload).
+                model_manager = _ensure_adapter_started()
+            except Exception as exc:
+                error_msg = f"MMP adapter startup failed: {exc!r}"
+                logger.error(error_msg)
+                send_answer(WebRTCWorkerResult(error_message=error_msg))
+                return
 
-        loop = asyncio.get_running_loop()
-
-        def on_timeout(message: Optional[str] = ""):
-            msg = "Cancelled by watchdog"
-            if message:
-                msg += f": {message}"
-            # Use call_soon_threadsafe since this callback is invoked from the watchdog thread
-            loop.call_soon_threadsafe(rtc_peer_connection_task.cancel, msg)
-
-        watchdog.on_timeout = on_timeout
-        watchdog.start()
-
+        rtc_peer_connection_task = None
         try:
+            rtc_peer_connection_task = asyncio.create_task(
+                init_rtc_peer_connection_with_loop(
+                    webrtc_request=webrtc_request,
+                    send_answer=send_answer,
+                    model_manager=model_manager,
+                    heartbeat_callback=watchdog.heartbeat,
+                    connection_established_callback=watchdog.mark_connection_established,
+                )
+            )
+
+            loop = asyncio.get_running_loop()
+
+            def on_timeout(message: Optional[str] = ""):
+                msg = "Cancelled by watchdog"
+                if message:
+                    msg += f": {message}"
+                # Use call_soon_threadsafe since this callback is invoked from the watchdog thread
+                loop.call_soon_threadsafe(rtc_peer_connection_task.cancel, msg)
+
+            watchdog.on_timeout = on_timeout
+            watchdog.start()
+
             await rtc_peer_connection_task
             logger.info("Task completed uninterrupted")
         except modal.exception.InputCancellation:
@@ -288,8 +451,24 @@ if modal is not None:
             logger.warning("WebRTC connection task was cancelled (%s)", exc)
         except Exception as exc:
             logger.error(exc)
+            # Setup failures (e.g. watchdog.start) never reach the peer
+            # connection's own answer path; an extra queue item is harmless.
+            send_answer(
+                WebRTCWorkerResult(error_message=f"WebRTC worker failed: {exc}")
+            )
         finally:
             watchdog.stop()
+            if (
+                rtc_peer_connection_task is not None
+                and not rtc_peer_connection_task.done()
+            ):
+                # Setup failures after task creation land here with the task
+                # still running — drain it before the loop closes.
+                rtc_peer_connection_task.cancel()
+                try:
+                    await rtc_peer_connection_task
+                except BaseException:
+                    pass
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -400,6 +579,26 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN set: %s", bool(MODAL_IDENTITY_TOKEN))
 
+            performance_profiler = None
+            if MMP_PERFORMANCE_PROFILING_ENABLED:
+                from inference_models.utils.performance import performance_profiler
+
+                performance_profiler.set_metadata("modal.image_tag", docker_tag)
+                performance_profiler.set_metadata("modal.gpu", self._gpu)
+                performance_profiler.set_metadata("modal.workflow_id", workflow_id)
+                performance_profiler.set_metadata("modal.cold_start", self._cold_start)
+                performance_profiler.set_metadata(
+                    "modal.function_call_number",
+                    self._function_call_number_on_container,
+                )
+                performance_profiler.set_metadata(
+                    "modal.memory_snapshot_enabled",
+                    WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+                )
+                performance_profiler.set_metadata(
+                    "modal.preload_models", self.preload_models
+                )
+
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 if obj.error_message:
@@ -432,6 +631,15 @@ if modal is not None:
                 heartbeat_url=WEBRTC_SESSION_HEARTBEAT_URL,
             )
 
+            if LEGACY_MMP_ADAPTER_ENABLED:
+                try:
+                    _ensure_adapter_started()
+                except Exception as exc:
+                    error_msg = f"MMP adapter startup failed: {exc}"
+                    logger.error(error_msg)
+                    send_answer(WebRTCWorkerResult(error_message=error_msg))
+                    return
+
             try:
                 asyncio.run(
                     run_rtc_peer_connection_with_watchdog(
@@ -449,6 +657,14 @@ if modal is not None:
                 logger.warning("Unhandled exception: %s", exc)
             finally:
                 watchdog.stop()
+                if performance_profiler is not None:
+                    try:
+                        performance_profiler.flush(force=True)
+                    except Exception:
+                        logger.warning(
+                            "Could not flush Modal performance profile",
+                            exc_info=True,
+                        )
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
@@ -550,12 +766,39 @@ if modal is not None:
             logger.info("Starting GPU container on %s", self._gpu)
             logger.info("Preload hf ids: %s", self.preload_hf_ids)
             logger.info("Preload models: %s", self.preload_models)
-            if self.preload_hf_ids:
+            if LEGACY_MMP_ADAPTER_ENABLED:
+                # bundled+direct: models loaded here live in THIS process and
+                # are captured by the memory/GPU snapshot — warm restores.
+                # mmp / bundled+subprocess load into worker subprocesses a
+                # snapshot cannot capture, so with snapshots enabled those
+                # modes must start lazily on the first call instead.
+                snapshot_safe = (
+                    LEGACY_MMP_ADAPTER_MODE == "bundled"
+                    and LEGACY_MMP_ADAPTER_BUNDLED_BACKEND == "direct"
+                ) or not WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
+                if snapshot_safe:
+                    adapter = _ensure_adapter_started()
+                    if self.preload_models:
+                        preload_models = [
+                            m.strip() for m in self.preload_models.split(",")
+                        ]
+                        logger.info(
+                            "Preloading models over adapter: %s", preload_models
+                        )
+                        _preload_models_over_adapter(adapter, preload_models)
+                else:
+                    logger.info(
+                        "Adapter mode %s/%s is not snapshot-safe: adapter "
+                        "starts on first call, models load on first use",
+                        LEGACY_MMP_ADAPTER_MODE,
+                        LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
+                    )
+            if not LEGACY_MMP_ADAPTER_ENABLED and self.preload_hf_ids:
                 preload_hf_ids = [m.strip() for m in self.preload_hf_ids.split(",")]
                 for preload_hf_id in preload_hf_ids:
                     logger.info("Preloading owlv2 base model: %s", preload_hf_id)
                     preload_owlv2_model(preload_hf_id)
-            if self.preload_models:
+            if not LEGACY_MMP_ADAPTER_ENABLED and self.preload_models:
                 preload_models = []
                 if self.preload_models:
                     preload_models = [m.strip() for m in self.preload_models.split(",")]

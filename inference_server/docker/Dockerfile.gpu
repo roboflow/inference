@@ -1,0 +1,91 @@
+# syntax=docker/dockerfile:1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runtime base is swappable.
+#   Default  : ubuntu:22.04  (lean — CUDA/cuDNN/TensorRT come from pip wheels)
+#   Fallback : nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04  (system CUDA)
+# Flip with:  --build-arg RUNTIME_BASE=nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+# The ubuntu base relies on pip-bundled CUDA libs registered via ldconfig below
+# and on the host driver injected by the nvidia container runtime (`--gpus all`).
+# ─────────────────────────────────────────────────────────────────────────────
+ARG RUNTIME_BASE=ubuntu:22.04
+ARG PYTHON_VERSION=3.12
+
+# ───────────────────────────── builder ──────────────────────────────────────
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS builder
+ARG PYTHON_VERSION
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH \
+    UV_LINK_MODE=copy
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# ── deps layer: only pyproject + README + stub packages ──────────────────────
+# Busts only when a pyproject changes, NOT when source changes. The heavy
+# (~13GB) torch/onnx/tensorrt resolve lands here and stays cached across edits.
+WORKDIR /app
+COPY inference_models/pyproject.toml        inference_models/README.md        /app/inference_models/
+COPY inference_model_manager/pyproject.toml inference_model_manager/README.md /app/inference_model_manager/
+COPY inference_server/pyproject.toml        inference_server/README.md        /app/inference_server/
+RUN mkdir -p /app/inference_models/inference_models \
+             /app/inference_model_manager/inference_model_manager \
+             /app/inference_server/inference_server \
+    && touch /app/inference_models/inference_models/__init__.py \
+             /app/inference_model_manager/inference_model_manager/__init__.py \
+             /app/inference_server/inference_server/__init__.py
+
+# CWD = inference_models so its [tool.uv] index/sources/dependency-metadata apply.
+WORKDIR /app/inference_models
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv python install ${PYTHON_VERSION} \
+    && uv venv --python ${PYTHON_VERSION} /opt/venv \
+    && uv pip install \
+        -e ".[torch-cu124,onnx-cu12,trt10-runtime]" \
+        -e "../inference_model_manager[cuda]" \
+        -e "../inference_server"
+
+# ── source layer: real packages over the stubs (editable finders already point
+#    at these dirs, so no reinstall needed) ─────────────────────────────────
+COPY inference_models        /app/inference_models
+COPY inference_model_manager /app/inference_model_manager
+COPY inference_server        /app/inference_server
+
+# ───────────────────────────── runtime ──────────────────────────────────────
+FROM ${RUNTIME_BASE} AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates openssl \
+        libgl1 libglib2.0-0 libvips ffmpeg libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv-managed interpreter the venv symlinks to — venv is broken without it.
+COPY --from=builder /root/.local/share/uv/python /root/.local/share/uv/python
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+
+# Register pip-bundled CUDA/cuDNN/TensorRT libs on the dynamic loader path so
+# torch / onnxruntime-gpu / pycuda find them on the ubuntu base. No-op (but
+# harmless) when RUNTIME_BASE already ships system CUDA.
+RUN { ls -d /opt/venv/lib/python*/site-packages/nvidia/*/lib \
+            /opt/venv/lib/python*/site-packages/tensorrt_libs 2>/dev/null || true; } \
+      > /etc/ld.so.conf.d/nvidia-pip.conf \
+    && ldconfig
+
+WORKDIR /app/inference_server
+
+EXPOSE 8000
+
+CMD ["/bin/bash", "start_server.sh"]

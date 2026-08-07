@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+
+# ───────────────────────────── builder ──────────────────────────────────────
+FROM python:3.12-slim-bookworm AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH \
+    UV_LINK_MODE=copy
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# ── deps layer: only pyproject + README + stub packages ──────────────────────
+# Busts only when a pyproject changes, NOT when source changes — the heavy
+# torch/onnx resolve stays cached across source edits.
+WORKDIR /app
+COPY inference_models/pyproject.toml        inference_models/README.md        /app/inference_models/
+COPY inference_model_manager/pyproject.toml inference_model_manager/README.md /app/inference_model_manager/
+COPY inference_server/pyproject.toml        inference_server/README.md        /app/inference_server/
+RUN mkdir -p /app/inference_models/inference_models \
+             /app/inference_model_manager/inference_model_manager \
+             /app/inference_server/inference_server \
+    && touch /app/inference_models/inference_models/__init__.py \
+             /app/inference_model_manager/inference_model_manager/__init__.py \
+             /app/inference_server/inference_server/__init__.py
+
+# CWD = inference_models so its [tool.uv] index/sources apply (torch-cpu index).
+# only-system: use the slim image's python3.12 so the runtime stage (same base)
+# has the exact interpreter the venv symlinks to.
+WORKDIR /app/inference_models
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv venv --python 3.12 --python-preference only-system /opt/venv \
+    && uv pip install \
+        -e ".[torch-cpu,onnx-cpu]" \
+        -e "../inference_model_manager" \
+        -e "../inference_server"
+
+# ── source layer: real packages over the stubs (editable finders already point
+#    at these dirs, so no reinstall needed) ─────────────────────────────────
+COPY inference_models        /app/inference_models
+COPY inference_model_manager /app/inference_model_manager
+COPY inference_server        /app/inference_server
+
+# ───────────────────────────── runtime ──────────────────────────────────────
+FROM python:3.12-slim-bookworm AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates openssl \
+        libgl1 libglib2.0-0 libvips ffmpeg libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+
+WORKDIR /app/inference_server
+
+EXPOSE 8000
+
+CMD ["/bin/bash", "start_server.sh"]
