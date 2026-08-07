@@ -49,6 +49,7 @@ except ImportError:
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
+    get_model_api_key_from_kwargs,
     get_model_id_from_kwargs,
     get_model_resource_details_from_kwargs,
     get_request_api_key_from_kwargs,
@@ -802,6 +803,8 @@ class UsageCollector:
             model_resource_details = get_model_resource_details_from_kwargs(func_kwargs)
             if model_resource_details:
                 resource_details = {**resource_details, **model_resource_details}
+            if not usage_api_key:
+                usage_api_key = get_model_api_key_from_kwargs(func_kwargs) or ""
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
