@@ -12,6 +12,9 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationPrediction,
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.semantic_segmentation_utils import (
+    present_class_ids_from_label_map,
+)
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.onnx import run_session_via_iobinding
 
@@ -110,6 +113,7 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 segmentation_mask=self.img_to_b64_str(class_ids),
                 confidence_mask=self.img_to_b64_str(confidence),
                 class_map=self.class_map,
+                present_class_ids=present_class_ids_from_label_map(class_ids),
                 image=dict(response_image),
             )
 

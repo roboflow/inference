@@ -552,3 +552,42 @@ def test_depth_estimation_adapter_normalization_matches_depth_anything_conventio
 
     expected = np.array([[1.0, 2 / 3], [1 / 3, 0.0]], dtype=np.float32)
     assert np.allclose(result["normalized_depth"], expected, atol=1e-6)
+
+
+def test_semantic_segmentation_adapter_postprocess_populates_present_class_ids():
+    import base64 as _base64
+    import io as _io
+
+    import numpy as _np
+    from PIL import Image as _Image
+
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsSemanticSegmentationAdapter,
+    )
+
+    # given: an adapter shell around a fake underlying model
+    adapter = InferenceModelsSemanticSegmentationAdapter.__new__(
+        InferenceModelsSemanticSegmentationAdapter
+    )
+    adapter.class_names = ["background", "cat", "dog"]
+    seg = torch.zeros((30, 40), dtype=torch.int64)
+    seg[5:10, 5:15] = 1
+    seg[20:25, 20:30] = 2
+    segmentation = SimpleNamespace(
+        segmentation_map=seg, confidence=torch.full((30, 40), 0.5)
+    )
+    adapter._model = SimpleNamespace(
+        post_process=lambda predictions, metadata, **kwargs: [segmentation]
+    )
+    metadata = SimpleNamespace(original_size=SimpleNamespace(height=30, width=40))
+
+    # when
+    responses = adapter.postprocess(None, [metadata])
+
+    # then
+    prediction = responses[0].predictions
+    assert prediction.present_class_ids == [0, 1, 2]
+    decoded = _np.asarray(
+        _Image.open(_io.BytesIO(_base64.b64decode(prediction.segmentation_mask)))
+    )
+    assert _np.array_equal(decoded, seg.numpy().astype(_np.uint8))
