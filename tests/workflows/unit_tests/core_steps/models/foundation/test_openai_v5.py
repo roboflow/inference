@@ -29,6 +29,7 @@ from inference.core.workflows.core_steps.models.foundation.openai.v5 import (
     prepare_unconstrained_prompt,
     prepare_vqa_prompt,
 )
+from inference.core.workflows.prototypes.block import third_party_model
 
 PNG_MAGIC_BYTES = b"\x89PNG\r\n\x1a\n"
 JPEG_MAGIC_BYTES = b"\xff\xd8\xff"
@@ -71,6 +72,22 @@ def test_openai_step_validation_with_default_api_key() -> None:
 
     # then
     assert result.api_key == "rf_key:account"
+
+
+def test_openai_step_discovers_dependent_model() -> None:
+    specification = {
+        "type": "roboflow_core/open_ai@v5",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "caption",
+        "model_version": "gpt-5.6-sol",
+    }
+
+    manifest = BlockManifest.model_validate(specification)
+
+    result = manifest.discover_dependent_resources()
+
+    assert result == [third_party_model(provider="openai", model_id="gpt-5.6-sol")]
 
 
 @pytest.mark.parametrize("value", [None, 1, "a", True])
@@ -388,6 +405,25 @@ def test_execute_openai_request_routes_to_proxy_for_rf_key_account() -> None:
         # then
         assert result == "proxied response"
         mock_proxy.assert_called_once()
+
+
+def test_execute_openai_request_rejects_managed_key_without_roboflow_key() -> None:
+    with patch(
+        "inference.core.workflows.core_steps.models.foundation.openai.v5._execute_proxied_openai_request"
+    ) as mock_proxy:
+        with pytest.raises(ValueError, match="Roboflow API key is required"):
+            execute_openai_request(
+                roboflow_api_key=None,
+                openai_api_key="rf_key:account",
+                instructions="test",
+                input_content=[],
+                model_version="gpt-5.1",
+                reasoning_effort=None,
+                max_tokens=None,
+                temperature=None,
+            )
+
+        mock_proxy.assert_not_called()
 
 
 def test_execute_openai_request_routes_to_direct_for_regular_api_key() -> None:

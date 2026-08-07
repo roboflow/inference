@@ -38,8 +38,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    third_party_model,
 )
 
 # Detection prompt styles (selected per model based on a 17-model x 10-format
@@ -516,6 +518,9 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [third_party_model(provider="openai", model_id=self.model_version)]
+
 
 class OpenAIBlockV5(WorkflowBlock):
 
@@ -965,6 +970,11 @@ def execute_openai_request(
         Raw text output of the model.
     """
     if openai_api_key.startswith(("rf_key:account", "rf_key:user:")):
+        if not roboflow_api_key:
+            raise ValueError(
+                "Roboflow API key is required when using a Roboflow-managed OpenAI API key."
+            )
+
         return _execute_proxied_openai_request(
             roboflow_api_key=roboflow_api_key,
             openai_api_key=openai_api_key,
