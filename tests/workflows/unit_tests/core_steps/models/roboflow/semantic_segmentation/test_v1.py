@@ -339,8 +339,10 @@ def test_convert_to_sv_detections_numpy_masks_match_base64_path() -> None:
     assert [r["counts"] for r in via_numpy.data["rle_mask"]] == [
         r["counts"] for r in via_b64.data["rle_mask"]
     ]
+    # the dense map is image-level, carried on `metadata` (see the block's
+    # CONFIDENCE_MASK_KEY comment), so parity is asserted there
     assert np.array_equal(
-        via_numpy.data["confidence_mask"], via_b64.data["confidence_mask"]
+        via_numpy.metadata["confidence_mask"], via_b64.metadata["confidence_mask"]
     )
 
 

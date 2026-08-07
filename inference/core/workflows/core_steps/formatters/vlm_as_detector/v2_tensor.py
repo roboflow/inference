@@ -20,6 +20,9 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detec
     get_gemini_detection_class_name,
     scale_confidence,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.openai_detection_parsing import (
+    convert_openai_detection_to_pixel_xyxy,
+)
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -637,9 +640,112 @@ def get_4digit_from_md5(input_string):
     return integer_value % 10000
 
 
+def parse_openai_object_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> Detections:
+    """Parse OpenAI block (v5+) object-detection output into native detections.
+
+    The model returns ``box_2d`` entries as ``[x_min, y_min, x_max, y_max]``
+    in absolute pixel coordinates of the uploaded (possibly downscaled)
+    image; see ``convert_openai_detection_to_pixel_xyxy`` for the coordinate
+    contract. Tensor-native sibling of the numpy
+    ``openai_detection_parsing.parse_openai_object_detection_response``.
+
+    Raises:
+        ValueError: If the response is not a JSON list.
+    """
+    if not isinstance(parsed_data, list):
+        raise ValueError("Unexpected OpenAI object detection response format")
+    class_name2id = create_classes_index(classes=classes)
+    image_height, image_width = image._read_shape_without_materialization()
+    if len(parsed_data) == 0:
+        return empty_native_detections(
+            image=image,
+            image_height=image_height,
+            image_width=image_width,
+            inference_id=inference_id,
+            class_names={idx: class_name for class_name, idx in class_name2id.items()},
+        )
+
+    xyxy, class_id, class_name, confidence = [], [], [], []
+    for detection in parsed_data:
+        xyxy.append(
+            convert_openai_detection_to_pixel_xyxy(
+                detection=detection,
+                image_height=image_height,
+                image_width=image_width,
+            )
+        )
+        label = get_gemini_detection_class_name(detection=detection)
+        class_id.append(class_name2id.get(label, -1))
+        class_name.append(label)
+        confidence.append(scale_confidence(detection.get("confidence", 1.0)))
+
+    xyxy = np.array(xyxy).round(0) if len(xyxy) > 0 else np.empty((0, 4))
+    confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
+    class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
+    return native_detections_from_parsed(
+        image=image,
+        image_height=image_height,
+        image_width=image_width,
+        inference_id=inference_id,
+        xyxy=xyxy,
+        class_id=class_id,
+        class_name=class_name,
+        confidence=confidence,
+    )
+
+
+def parse_openai_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> Detections:
+    """Parse OpenAI object-detection output, dispatching on response format.
+
+    OpenAI blocks v1-v4 (and the v5 normalized-legacy style) produce
+    ``{"detections": [{"x_min": ...}]}`` with coordinates normalized to
+    0.0-1.0. The v5 plain-absolute style produces a JSON list of ``box_2d``
+    entries and the v5 structured-absolute style wraps the same entries in a
+    ``{"detections": [...]}`` object; both use absolute pixel coordinates of
+    the resized upload. Tensor-native sibling of the numpy ``v2.py``
+    ``parse_openai_detection_response``.
+    """
+    if isinstance(parsed_data, dict) and "detections" in parsed_data:
+        detections = parsed_data["detections"]
+        if (
+            isinstance(detections, list)
+            and len(detections) > 0
+            and isinstance(detections[0], dict)
+            and "box_2d" in detections[0]
+        ):
+            return parse_openai_object_detection_response(
+                image=image,
+                parsed_data=detections,
+                classes=classes,
+                inference_id=inference_id,
+            )
+        return parse_llm_object_detection_response(
+            image=image,
+            parsed_data=parsed_data,
+            classes=classes,
+            inference_id=inference_id,
+        )
+    return parse_openai_object_detection_response(
+        image=image,
+        parsed_data=parsed_data,
+        classes=classes,
+        inference_id=inference_id,
+    )
+
+
 REGISTERED_PARSERS = {
     # LLMs
-    ("openai", "object-detection"): parse_llm_object_detection_response,
+    ("openai", "object-detection"): parse_openai_detection_response,
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
     # Florence 2

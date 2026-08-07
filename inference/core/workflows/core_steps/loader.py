@@ -413,9 +413,14 @@ else:
         DetectionsStitchBlockV1,
     )
 
-from inference.core.workflows.core_steps.fusion.detections_difference.v1 import (
-    DetectionsDifferenceBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_difference.v1 import (
+        DetectionsDifferenceBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor import (
+        DetectionsDifferenceBlockV1,
+    )
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -1025,9 +1030,14 @@ else:
         RoboflowVisionEventsBlockV1,
     )
 
-from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
-    VisionEventBundleSinkBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
+        VisionEventBundleSinkBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
+        VisionEventBundleSinkBlockV1,
+    )
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,

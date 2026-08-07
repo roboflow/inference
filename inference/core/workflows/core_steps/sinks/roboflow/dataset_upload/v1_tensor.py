@@ -25,6 +25,7 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
+import cv2
 import numpy as np
 import supervision as sv
 import torch
@@ -35,7 +36,9 @@ from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
     use_credit_of_matching_strategy,
 )
-from inference.core.active_learning.core import prepare_image_to_registration
+from inference.core.active_learning.core import (
+    prepare_image_to_registration_with_metadata,
+)
 from inference.core.active_learning.entities import (
     ImageDimensions,
     StrategyLimit,
@@ -512,20 +515,27 @@ def execute_registration(
     credit_to_be_returned = False
     try:
         local_image_id = image_name if image_name else str(uuid4())
-        encoded_image, scaling_factor = prepare_image_to_registration(
+        # Scale annotations to the exact JPEG canvas that will be stored. Aspect-
+        # preserving resize can produce different X/Y factors after int truncation;
+        # a single height scale leaves edge detections off-canvas and clipped.
+        prepared_image = prepare_image_to_registration_with_metadata(
             image=image.numpy_image,
             desired_size=ImageDimensions(
                 width=max_image_size[0], height=max_image_size[1]
             ),
             jpeg_compression_level=compression_level,
         )
+        encoded_image = prepared_image.encoded_image
         batch_name = generate_batch_name(
             labeling_batch_prefix=labeling_batch_prefix,
             new_labeling_batch_frequency=new_labeling_batch_frequency,
         )
         if _is_tensor_native_detection_prediction(prediction):
             prediction = scale_tensor_native_prediction(
-                prediction=prediction, scale=scaling_factor
+                prediction=prediction,
+                scale=(prepared_image.scale_x, prepared_image.scale_y),
+                target_size_wh=prepared_image.final_size_wh,
+                update_scaling_metadata=False,
             )
         status = register_datapoint(
             target_project=target_project,
@@ -740,53 +750,121 @@ def _read_classification_inference_id(
 
 def scale_tensor_native_prediction(
     prediction: Union[TensorNativeDetections, KeyPointPrediction],
-    scale: float,
+    scale: Union[float, Tuple[float, float]],
+    target_size_wh: Optional[Tuple[int, int]] = None,
+    update_scaling_metadata: bool = True,
 ) -> Union[TensorNativeDetections, KeyPointPrediction]:
-    """Scale a tensor-native detection-shaped prediction by ``scale`` to match a
-    resized uploaded image, building a new native prediction (no sv round-trip).
+    """Scale a tensor-native detection-shaped prediction to match a resized
+    uploaded image, building a new native prediction (no sv round-trip).
 
     Mirrors ``scale_sv_detections``: scales ``xyxy``, per-image
     ``image_dimensions``, per-detection ``keypoints_xy`` / ``polygon`` /
-    ``scaling_relative_to_*`` metadata, and re-rasterises instance masks at the
-    scaled resolution (``sv.mask_to_polygons`` / ``sv.polygon_to_mask`` used as a
-    pure numpy algorithm). For the keypoint tuple, both the ``KeyPoints`` and the
-    bbox ``Detections`` components are scaled consistently.
+    ``scaling_relative_to_*`` metadata, and resizes dense instance masks onto
+    the destination canvas. For the keypoint tuple, both the ``KeyPoints`` and
+    the bbox ``Detections`` components are scaled consistently.
+
+    Args:
+        prediction: Tensor-native prediction in the source image frame.
+        scale: Isotropic factor, or ``(scale_x, scale_y)`` for aspect-preserving
+            resizes where integer truncation makes the axes differ.
+        target_size_wh: Optional exact ``(width, height)`` of the destination
+            image (e.g. the JPEG that will be uploaded). When set, dense masks
+            and ``image_dimensions`` are forced to this canvas so annotations
+            stay intact relative to the stored image.
+        update_scaling_metadata: Whether to update the scalar workflow coordinate
+            lineage metadata. Set to ``False`` for terminal consumers, such as
+            Dataset Upload, when using different X/Y scales. An anisotropic
+            transform cannot be represented by the existing scalar metadata.
     """
+    scale_x, scale_y = _resolve_scale_xy(scale)
+    _validate_scaling_metadata_request(
+        scale_x=scale_x,
+        scale_y=scale_y,
+        update_scaling_metadata=update_scaling_metadata,
+    )
     key_points, detections = split_key_point_prediction(prediction)
     scaled_detections = _scale_tensor_native_detections(
-        detections=detections, scale=scale
+        detections=detections,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        target_size_wh=target_size_wh,
+        update_scaling_metadata=update_scaling_metadata,
     )
     if key_points is None:
         return scaled_detections
+    scaled_xy = key_points.xy.to(torch.float32).clone()
+    scaled_xy[..., 0] *= scale_x
+    scaled_xy[..., 1] *= scale_y
     scaled_key_points = KeyPoints(
-        xy=(key_points.xy * scale).round(),
+        xy=scaled_xy.round(),
         class_id=key_points.class_id,
         confidence=key_points.confidence,
         image_metadata=_scale_image_metadata(
-            image_metadata=key_points.image_metadata, scale=scale
+            image_metadata=key_points.image_metadata,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            target_size_wh=target_size_wh,
         ),
         key_points_metadata=key_points.key_points_metadata,
     )
     return scaled_key_points, scaled_detections
 
 
+def _resolve_scale_xy(
+    scale: Union[float, Tuple[float, float]],
+) -> Tuple[float, float]:
+    if isinstance(scale, (tuple, list)):
+        return float(scale[0]), float(scale[1])
+    return float(scale), float(scale)
+
+
+def _validate_scaling_metadata_request(
+    scale_x: float,
+    scale_y: float,
+    update_scaling_metadata: bool,
+) -> None:
+    scales_are_isotropic = abs(scale_x - scale_y) < 1e-9
+    if update_scaling_metadata and not scales_are_isotropic:
+        raise ValueError(
+            "Anisotropic scaling cannot be represented by scalar workflow "
+            "coordinate metadata. Set update_scaling_metadata=False for a "
+            "terminal result that will not undergo root-coordinate recovery."
+        )
+
+
 def _scale_tensor_native_detections(
     detections: TensorNativeDetections,
-    scale: float,
+    scale_x: float,
+    scale_y: float,
+    target_size_wh: Optional[Tuple[int, int]],
+    update_scaling_metadata: bool,
 ) -> TensorNativeDetections:
     if len(detections) == 0:
         return detections
-    scaled_xyxy = (detections.xyxy * scale).round()
+    scaled_xyxy = detections.xyxy.to(torch.float64).clone()
+    scaled_xyxy[:, [0, 2]] *= scale_x
+    scaled_xyxy[:, [1, 3]] *= scale_y
+    scaled_xyxy = scaled_xyxy.round()
     scaled_image_metadata = _scale_image_metadata(
-        image_metadata=detections.image_metadata, scale=scale
+        image_metadata=detections.image_metadata,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        target_size_wh=target_size_wh,
     )
     scaled_bboxes_metadata = _scale_bboxes_metadata(
         bboxes_metadata=detections.bboxes_metadata,
         detections_number=len(detections),
-        scale=scale,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        update_scaling_metadata=update_scaling_metadata,
     )
     if isinstance(detections, InstanceDetections):
-        scaled_mask = _scale_instance_masks(detections=detections, scale=scale)
+        scaled_mask = _scale_instance_masks(
+            detections=detections,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            target_size_wh=target_size_wh,
+        )
         return InstanceDetections(
             xyxy=scaled_xyxy,
             class_id=detections.class_id,
@@ -806,23 +884,32 @@ def _scale_tensor_native_detections(
 
 def _scale_image_metadata(
     image_metadata: Optional[dict],
-    scale: float,
+    scale_x: float,
+    scale_y: float,
+    target_size_wh: Optional[Tuple[int, int]],
 ) -> Optional[dict]:
     if image_metadata is None:
         return None
     scaled = dict(image_metadata)
     image_dimensions = scaled.get(IMAGE_DIMENSIONS_KEY)
-    if image_dimensions is not None:
-        scaled[IMAGE_DIMENSIONS_KEY] = (
-            np.asarray(image_dimensions).astype(float) * scale
-        ).round()
+    if target_size_wh is not None:
+        target_w, target_h = int(target_size_wh[0]), int(target_size_wh[1])
+        scaled[IMAGE_DIMENSIONS_KEY] = np.array([float(target_h), float(target_w)])
+    elif image_dimensions is not None:
+        # native image_metadata carries `[height, width]`
+        scaled_dimensions = np.asarray(image_dimensions).astype(float).copy()
+        scaled_dimensions[0] *= scale_y
+        scaled_dimensions[1] *= scale_x
+        scaled[IMAGE_DIMENSIONS_KEY] = scaled_dimensions.round()
     return scaled
 
 
 def _scale_bboxes_metadata(
     bboxes_metadata: Optional[List[dict]],
     detections_number: int,
-    scale: float,
+    scale_x: float,
+    scale_y: float,
+    update_scaling_metadata: bool,
 ) -> List[dict]:
     if bboxes_metadata is None:
         bboxes_metadata = [{} for _ in range(detections_number)]
@@ -830,57 +917,80 @@ def _scale_bboxes_metadata(
     for data in bboxes_metadata:
         scaled_data = dict(data)
         if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in scaled_data:
-            scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = (
-                np.asarray(scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]).astype(
-                    np.float32
+            keypoints = np.asarray(
+                scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+            ).astype(np.float32)
+            if len(keypoints) > 0:
+                scaled_keypoints = keypoints.copy()
+                scaled_keypoints[..., 0] *= scale_x
+                scaled_keypoints[..., 1] *= scale_y
+                scaled_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = (
+                    scaled_keypoints.round()
                 )
-                * scale
-            ).round()
         if POLYGON_KEY_IN_SV_DETECTIONS in scaled_data:
-            scaled_data[POLYGON_KEY_IN_SV_DETECTIONS] = (
-                (np.asarray(scaled_data[POLYGON_KEY_IN_SV_DETECTIONS]) * scale)
-                .round()
-                .astype(np.int32)
+            scaled_polygon = np.asarray(
+                scaled_data[POLYGON_KEY_IN_SV_DETECTIONS], dtype=np.float64
+            ).copy()
+            scaled_polygon[..., 0] *= scale_x
+            scaled_polygon[..., 1] *= scale_y
+            scaled_data[POLYGON_KEY_IN_SV_DETECTIONS] = scaled_polygon.round().astype(
+                np.int32
             )
-        if SCALING_RELATIVE_TO_PARENT_KEY in scaled_data:
-            scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] = (
-                scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] * scale
-            )
-        else:
-            scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] = scale
-        if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in scaled_data:
-            scaled_data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
-                scaled_data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
-            )
-        else:
-            scaled_data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = scale
+        if update_scaling_metadata:
+            if SCALING_RELATIVE_TO_PARENT_KEY in scaled_data:
+                scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] = (
+                    scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] * scale_x
+                )
+            else:
+                scaled_data[SCALING_RELATIVE_TO_PARENT_KEY] = scale_x
+            if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in scaled_data:
+                scaled_data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+                    scaled_data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale_x
+                )
+            else:
+                scaled_data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = scale_x
         scaled_bboxes_metadata.append(scaled_data)
     return scaled_bboxes_metadata
 
 
 def _scale_instance_masks(
     detections: InstanceDetections,
-    scale: float,
+    scale_x: float,
+    scale_y: float,
+    target_size_wh: Optional[Tuple[int, int]],
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
+    # RLE-carried masks are intentionally passed through untouched, matching the
+    # numpy sibling's treatment of RLE-only predictions (`mask=None` with the
+    # `rle_mask` data key): no stock workflow routes them through a resize, and
+    # decoding full-resolution RLE just to resize it is expensive. Their RLE
+    # stays sized to the source canvas after scaling - callers needing scaled
+    # RLE must densify first.
+    if isinstance(detections.mask, InstancesRLEMasks):
+        return detections.mask
     detections_number = len(detections)
     sample_mask = instance_mask_to_numpy(detections, 0)
     original_h, original_w = sample_mask.shape[:2]
-    scaled_mask_size_wh = (
-        round(original_w * scale),
-        round(original_h * scale),
-    )
+    if target_size_wh is not None:
+        scaled_w, scaled_h = int(target_size_wh[0]), int(target_size_wh[1])
+    else:
+        scaled_w = int(round(original_w * scale_x))
+        scaled_h = int(round(original_h * scale_y))
+    scaled_w = max(1, scaled_w)
+    scaled_h = max(1, scaled_h)
+    if (scaled_w, scaled_h) == (original_w, original_h):
+        return detections.mask
+    # Resize dense masks directly onto the destination canvas. Polygon ->
+    # scale -> raster round-trips fragment edge-touching masks; combined with
+    # mask_to_polygon that used to take contours[0], Dataset Upload persisted
+    # speckles instead of the real instance.
     scaled_masks = []
     for index in range(detections_number):
         detection_mask = instance_mask_to_numpy(detections, index).astype(np.uint8)
-        polygons = sv.mask_to_polygons(mask=detection_mask)
-        polygon_masks = []
-        for polygon in polygons:
-            scaled_polygon = (polygon * scale).round().astype(np.int32)
-            polygon_masks.append(
-                sv.polygon_to_mask(
-                    polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
-                )
-            )
-        scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
-        scaled_masks.append(scaled_detection_mask)
+        scaled_masks.append(
+            cv2.resize(
+                detection_mask,
+                (scaled_w, scaled_h),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+        )
     return torch.from_numpy(np.array(scaled_masks)).to(torch.bool)
