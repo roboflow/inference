@@ -1,20 +1,79 @@
+import atexit
 import logging
+import math
+import multiprocessing.util
+import os
+import random
+import signal
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Callable, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from asyncua.client import Client as AsyncClient
 from asyncua.sync import Client, ThreadLoop, sync_async_client_method
 from asyncua.ua import VariantType
-from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
+from asyncua.ua.uaerrors import (
+    BadMaxConnectionsReached,
+    BadNoMatch,
+    BadTooManySessions,
+    BadTypeMismatch,
+    BadUserAccessDenied,
+)
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
+
+
+def _positive_float_from_env(variable_name: str, default: float) -> float:
+    """Read a positive float from the environment, falling back to `default` if unusable."""
+    raw_value = os.getenv(variable_name)
+    if raw_value is None:
+        return default
+    try:
+        parsed_value = float(raw_value)
+    except ValueError:
+        logger.warning(
+            f"OPC UA sink ignoring invalid {variable_name}='{raw_value}', using {default}"
+        )
+        return default
+    if not math.isfinite(parsed_value) or parsed_value <= 0:
+        # `float()` happily accepts "nan" and "inf": a non-finite timeout breaks every
+        # connection attempt, and a non-finite backoff never lets the circuit close.
+        logger.warning(
+            f"OPC UA sink ignoring non-positive {variable_name}='{raw_value}', using {default}"
+        )
+        return default
+    return parsed_value
+
+
+# How long the server is asked to keep a session alive without activity. asyncua defaults to
+# 1 hour, which servers typically clamp to 50 minutes - long enough for a session left behind
+# by a crashed process to squat a server slot for the better part of an hour. asyncua keeps
+# pooled idle sessions alive on its own (its watchdog reads `server_state` once a second,
+# independently of `cooldown_seconds`), so a short timeout does not cause surprise disconnects.
+SESSION_TIMEOUT_SECONDS = _positive_float_from_env("OPC_SESSION_TIMEOUT_SECONDS", 60.0)
+
+# Errors a server returns when it cannot accept another session/connection. Retrying these
+# milliseconds apart only hammers a server that is already full, so we fail fast and keep the
+# circuit open for tens of seconds instead. Jitter de-synchronises pods that all failed at once.
+SESSION_EXHAUSTION_ERRORS = (BadTooManySessions, BadMaxConnectionsReached)
+SESSION_EXHAUSTION_BACKOFF_SECONDS = _positive_float_from_env(
+    "OPC_SESSION_EXHAUSTION_BACKOFF_SECONDS", 30.0
+)
+SESSION_EXHAUSTION_BACKOFF_JITTER_SECONDS = 15.0
+
+# Upper bound on calls posted to the shared ThreadLoop while tearing the pool down, so a dead
+# server cannot stall process shutdown for the ThreadLoop's regular (much longer) timeout.
+SHUTDOWN_CALL_TIMEOUT_SECONDS = 5.0
+
+
+class SessionExhaustedError(Exception):
+    """Raised when the OPC UA server refuses CreateSession because it is at capacity."""
 
 
 class OPCUAConnectionManager:
@@ -45,32 +104,225 @@ class OPCUAConnectionManager:
     def __init__(self):
         if self._initialized:
             return
+        # `__new__` serialises allocation, but Python calls `__init__` on every construction
+        # of the singleton. Two first writes racing here would both see `_initialized` False
+        # and both reset: the loser's `_reset_process_local_state()` would swap out the pool
+        # and the global lock underneath a thread already connecting, dropping a live client
+        # without closing it - an orphaned session, which is the whole point of this change.
+        with self._lock:
+            if self._initialized:
+                return
+            self._reset_process_local_state()
+            self._register_shutdown_hooks()
+            # Last, so nobody can observe a manager whose hooks are not registered yet.
+            self._initialized = True
+        logger.debug("OPC UA Connection Manager initialized")
+
+    def _reset_process_local_state(self) -> None:
+        """Start from an empty pool owned by the current process."""
         self._connections: Dict[str, Client] = {}
         self._connection_locks: Dict[str, threading.Lock] = {}
         self._connection_metadata: Dict[str, dict] = {}
-        self._connection_failures: Dict[str, float] = (
+        self._connection_failures: Dict[str, Tuple[float, float]] = (
             {}
-        )  # key -> timestamp of last failure
-        self._global_lock = threading.Lock()
+        )  # key -> (timestamp of last failure, how long to stay away)
+        self._server_backoff: Dict[str, Tuple[float, float]] = (
+            {}
+        )  # url -> (timestamp, how long to stay away) when the server is out of sessions
+        # Reentrant: a SIGTERM handler runs on the main thread and may interrupt that
+        # thread while it already holds this lock, then close the pool underneath it.
+        self._global_lock = threading.RLock()
         self._tloop: Optional[ThreadLoop] = None
-        self._initialized = True
-        logger.debug("OPC UA Connection Manager initialized")
+        self._shutting_down = False
+        self._finalizer: Optional[multiprocessing.util.Finalize] = None
+        self._pid = os.getpid()
+
+    def _rearm_child_finalizer(self) -> None:
+        """
+        Give the child back the finalizer that its own bootstrap threw away.
+
+        `multiprocessing` clears the whole finalizer registry while bootstrapping a child -
+        after the `os.register_at_fork` hook above has already run - so the finalizer that
+        hook created is gone by the time the child executes anything. Callbacks registered
+        with `register_after_fork` run just *after* that clear, which is the only point
+        where a child-owned finalizer survives. Without it a worker that returns normally
+        leaves through `os._exit()` with its sessions still open.
+        """
+        self._finalizer = multiprocessing.util.Finalize(
+            None, self.shutdown, exitpriority=16
+        )
+
+    def _adopt_in_child(self) -> None:
+        """
+        Re-arm the manager in a process that inherited it through `fork()`.
+
+        A forked child inherits the singleton fully initialized, but none of it is usable:
+        the ThreadLoop thread does not survive `fork()`, so inherited clients cannot talk to
+        anything, their sockets belong to the parent, and `multiprocessing.util.Finalize`
+        deliberately skips callbacks registered in a different process - so the child would
+        run with no shutdown hook at all. Drop the inherited state (without touching the
+        parent's sessions) and register hooks owned by this process.
+
+        Deliberately takes no lock. Only the forking thread exists in the child, so there is
+        nothing to race with - and the inherited lock may well be held by a parent thread
+        that does not exist here, which would block us forever.
+        """
+        inherited = len(self._connections)
+        self._reset_process_local_state()
+        self._register_shutdown_hooks()
+        logger.debug(
+            f"OPC UA Connection Manager re-initialized after fork, dropped "
+            f"{inherited} connection(s) belonging to the parent process"
+        )
+
+    def _ensure_process_local_state(self) -> None:
+        """Re-arm after a fork that somehow bypassed the `os.register_at_fork` hook."""
+        if self._pid != os.getpid():
+            self._adopt_in_child()
+
+    def _register_shutdown_hooks(self) -> None:
+        """
+        Make sure pooled sessions are handed back when the process goes away.
+
+        Three hooks, because no single one covers every way this block is deployed:
+
+        * `atexit` - normal interpreter exit.
+        * `multiprocessing.util.Finalize` - a forked worker (the video pipeline runs inside
+          a `multiprocessing.Process`) leaves through `os._exit()`, which skips `atexit`
+          entirely but still runs multiprocessing's own finalizers.
+        * a chained `SIGTERM` handler - container restarts and redeploys, where the default
+          disposition kills the process before any exit hook runs. Only installable when the
+          manager is first used on the main thread; the other two hooks cover the rest.
+
+        Any handler that was already installed still runs, and it keeps ownership of the
+        shutdown: when one exists, `_handle_sigterm` chains to it and leaves the pool alone
+        so writes being drained during the grace period still succeed, and the exit hooks
+        above do the closing. The handler only closes the pool itself when nothing else was
+        handling SIGTERM, because then no exit hook will run at all.
+
+        Known gap, accepted deliberately: this manager is created lazily on first write, and
+        with the default `fire_and_forget=True` that write runs on a thread pool worker,
+        where `signal.signal` is not allowed. A process that both fails to install the
+        handler here *and* leaves SIGTERM on its default disposition runs no cleanup at all.
+
+        The two main deployments are covered - the video pipeline runs in a
+        `multiprocessing.Process` that installs its own SIGTERM handler and leaves through
+        the finalizer above, and the HTTP server lets uvicorn handle SIGTERM and then exits
+        through `atexit` - but `inference_cli`'s `process_video_with_workflow` is not: it
+        runs `InferencePipeline` directly and installs no SIGTERM handler, so a `docker stop`
+        or Ctrl-C-then-TERM there can still leave a session behind. What bounds that is the
+        session timeout requested at connect: the server reclaims the slot in ~60s instead of
+        the ~50min that caused the incident. Closing the gap outright means calling
+        `shutdown()` from explicit application lifecycle code on the main thread (a FastAPI
+        shutdown event, the CLI's pipeline teardown), which is outside this block; see
+        ENT-1626 for the follow-up.
+        """
+        atexit.register(self.shutdown)
+        # Runs in forked children, where `atexit` does not.
+        self._finalizer = multiprocessing.util.Finalize(
+            None, self.shutdown, exitpriority=16
+        )
+        multiprocessing.util.register_after_fork(
+            self, type(self)._rearm_child_finalizer
+        )
+        previous_handler = signal.getsignal(signal.SIGTERM)
+        if previous_handler == signal.SIG_IGN:
+            # The process deliberately ignores SIGTERM. Taking the slot would turn a signal
+            # it wants ignored into a teardown of a pool it is still writing to.
+            logger.debug(
+                "OPC UA Connection Manager leaving SIGTERM ignored as the process configured it"
+            )
+            return
+        try:
+            signal.signal(
+                signal.SIGTERM, partial(self._handle_sigterm, previous_handler)
+            )
+        except (ValueError, OSError) as exc:
+            # Signal handlers can only be installed from the main thread of the main
+            # interpreter - elsewhere the exit hooks above are what close the pool.
+            logger.debug(
+                f"OPC UA Connection Manager could not install SIGTERM handler ({exc}), "
+                f"relying on exit hooks to close pooled sessions"
+            )
+
+    def _handle_sigterm(
+        self, previous_handler: Union[Callable, int, None], signum: int, frame
+    ) -> None:
+        """
+        Release pooled sessions on SIGTERM without cutting a graceful shutdown short.
+
+        Whether we close the pool here depends entirely on what was handling SIGTERM before
+        us, because that determines whether any exit hook will get to run:
+
+        * A callable handler means the process has its own shutdown path, and it will leave
+          through an ordinary exit that runs `atexit` and the multiprocessing finalizer. We
+          must NOT tear the pool down here: such handlers commonly just flip a flag and
+          return (uvicorn's `handle_exit` does exactly that), so closing now would fail every
+          write still being drained during the grace period.
+        * `SIG_DFL` (or a handler installed outside Python, which we cannot call) means the
+          signal terminates the process outright and no exit hook ever runs, so this is the
+          only chance to hand the sessions back.
+        """
+        if callable(previous_handler):
+            logger.debug(
+                "OPC UA Connection Manager deferring pool shutdown to the process' own "
+                "SIGTERM handler; exit hooks will close pooled sessions"
+            )
+            previous_handler(signum, frame)
+            return
+        if previous_handler == signal.SIG_IGN:
+            # The process wants SIGTERM ignored and keeps running - closing its pool would
+            # be a surprise. We decline to install over SIG_IGN, so this is belt and braces.
+            return
+        logger.info("OPC UA Connection Manager closing pooled sessions on SIGTERM")
+        self.shutdown()
+        # Restore the default disposition and let the signal terminate the process the way
+        # it would have without our handler.
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    def shutdown(self) -> None:
+        """Close every pooled session and refuse to open new ones."""
+        self._shutting_down = True
+        self.close_all()
 
     def _get_tloop(self) -> ThreadLoop:
-        """Get or create the shared ThreadLoop for all clients."""
-        if self._tloop is None or not self._tloop.is_alive():
-            logger.debug("OPC UA Connection Manager creating shared ThreadLoop")
-            self._tloop = ThreadLoop(timeout=120)
-            self._tloop.start()
-        return self._tloop
+        """
+        Get or create the shared ThreadLoop for all clients.
+
+        Guarded by the global lock: per-server locks do not serialise this, so two first
+        connections to different servers could otherwise each start a loop and leave one
+        of them unreferenced - and therefore impossible to stop later.
+        """
+        with self._global_lock:
+            if self._shutting_down:
+                # Otherwise a connection attempt that started just before the sweep would
+                # leave a fresh loop running behind it.
+                raise Exception(
+                    "SHUTTING DOWN: Connection manager is closing, not starting a new event loop."
+                )
+            if self._tloop is None or not self._tloop.is_alive():
+                logger.debug("OPC UA Connection Manager creating shared ThreadLoop")
+                tloop = ThreadLoop(timeout=120)
+                # A ThreadLoop inherits its daemon flag from whichever thread created it,
+                # and it runs its event loop forever. Created from a non-daemon thread
+                # (a `ThreadPoolExecutor` worker, say) it would block interpreter exit -
+                # and non-daemon threads are joined *before* `atexit` runs, so the hook
+                # that stops it would never get to run. Daemonise it to break that cycle.
+                tloop.daemon = True
+                tloop.start()
+                self._tloop = tloop
+            return self._tloop
 
     def _stop_tloop(self) -> None:
-        """Stop the shared ThreadLoop if it exists."""
+        """Stop the shared ThreadLoop if it exists. Caller must hold the global lock."""
         if self._tloop is not None and self._tloop.is_alive():
             logger.debug("OPC UA Connection Manager stopping shared ThreadLoop")
             try:
                 self._tloop.loop.call_soon_threadsafe(self._tloop.loop.stop)
                 self._tloop.join(timeout=2.0)
+                if not self._tloop.is_alive():
+                    self._tloop.loop.close()
             except Exception as exc:
                 logger.debug(f"OPC UA Connection Manager ThreadLoop stop error: {exc}")
             self._tloop = None
@@ -97,6 +349,11 @@ class OPCUAConnectionManager:
         logger.debug(f"OPC UA Connection Manager creating client for {url}")
         tloop = self._get_tloop()
         client = Client(url=url, tloop=tloop, sync_wrapper_timeout=timeout)
+        # Ask for a short session timeout instead of the asyncua default of 1 hour, so a
+        # session orphaned by a crash stops holding a server slot for the better part of an
+        # hour. The server has the last word: it may revise the request upwards, and asyncua
+        # adopts whatever it returns.
+        client.aio_obj.session_timeout = int(SESSION_TIMEOUT_SECONDS * 1000)
         if user_name and password:
             client.set_user(user_name)
             client.set_password(password)
@@ -119,6 +376,7 @@ class OPCUAConnectionManager:
             base_backoff: Base delay between retries (seconds), doubles each retry
 
         Raises:
+            SessionExhaustedError: If the server refused to open another session
             Exception: If all connection attempts fail
         """
         last_exception = None
@@ -138,6 +396,25 @@ class OPCUAConnectionManager:
                 # Auth errors should not be retried - they will keep failing
                 logger.error(f"OPC UA Connection Manager authentication failed: {exc}")
                 raise Exception(f"AUTH ERROR: {exc}")
+            except SESSION_EXHAUSTION_ERRORS as exc:
+                # The server is out of session slots. Retrying immediately cannot help - a
+                # slot only frees up when another session times out - and every other pod is
+                # hitting the same wall, so fail fast and let the circuit breaker hold us off.
+                #
+                # ENT-1626 asked for a seconds-scale backoff here. We deliberately do not
+                # sleep: with `fire_and_forget=False` this runs on the pipeline thread, so a
+                # multi-second sleep would stall video processing. The jittered server-wide
+                # backoff recorded by the caller achieves the same thing for the server - one
+                # attempt per pod per ~30-45s, de-synchronised - at no cost to the pipeline.
+                logger.error(
+                    f"OPC UA Connection Manager server {url} refused a new session: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                raise SessionExhaustedError(
+                    f"SESSION LIMIT ERROR: server {url} refused a new session "
+                    f"({type(exc).__name__}: {exc}). The server is at its session/connection "
+                    f"limit - raise it, or reduce the number of clients."
+                ) from exc
             except OSError as exc:
                 last_exception = exc
                 logger.warning(
@@ -171,25 +448,56 @@ class OPCUAConnectionManager:
             f"CONNECTION ERROR: Failed to connect after {max_retries} attempts. Last error: {last_exception}"
         )
 
-    def _is_circuit_open(self, key: str) -> bool:
+    def _circuit_open_seconds_remaining(self, key: str) -> Optional[float]:
         """
         Check if circuit breaker is open (server recently failed).
-        Returns True if we should NOT attempt connection (fail fast).
+        Returns the number of seconds left before the next attempt, or None if we may connect.
         """
         if key not in self._connection_failures:
-            return False
+            return None
 
-        time_since_failure = time.time() - self._connection_failures[key]
-        if time_since_failure < self.CIRCUIT_BREAKER_TIMEOUT_SECONDS:
-            return True
+        failed_at, timeout_seconds = self._connection_failures[key]
+        time_since_failure = time.monotonic() - failed_at
+        if time_since_failure < timeout_seconds:
+            return timeout_seconds - time_since_failure
 
         # Timeout expired, clear the failure record
         del self._connection_failures[key]
-        return False
+        return None
 
-    def _record_failure(self, key: str) -> None:
+    def _record_failure(
+        self, key: str, timeout_seconds: Optional[float] = None
+    ) -> None:
         """Record a connection failure for circuit breaker."""
-        self._connection_failures[key] = time.time()
+        if timeout_seconds is None:
+            timeout_seconds = self.CIRCUIT_BREAKER_TIMEOUT_SECONDS
+        self._connection_failures[key] = (time.monotonic(), timeout_seconds)
+
+    @staticmethod
+    def _session_exhaustion_timeout() -> float:
+        """Seconds to stay away from a server that is out of session slots (jittered)."""
+        return SESSION_EXHAUSTION_BACKOFF_SECONDS + random.uniform(
+            0.0, SESSION_EXHAUSTION_BACKOFF_JITTER_SECONDS
+        )
+
+    def _record_server_backoff(self, url: str, timeout_seconds: float) -> None:
+        """Record that a server is out of session slots, for every credential alike."""
+        with self._global_lock:
+            self._server_backoff[url] = (time.monotonic(), timeout_seconds)
+
+    def _server_backoff_seconds_remaining(self, url: str) -> Optional[float]:
+        """Seconds left before this server should be approached again, or None if now."""
+        with self._global_lock:
+            if url not in self._server_backoff:
+                return None
+
+            failed_at, timeout_seconds = self._server_backoff[url]
+            time_since_failure = time.monotonic() - failed_at
+            if time_since_failure < timeout_seconds:
+                return timeout_seconds - time_since_failure
+
+            del self._server_backoff[url]
+            return None
 
     def _clear_failure(self, key: str) -> None:
         """Clear failure record after successful connection."""
@@ -225,43 +533,124 @@ class OPCUAConnectionManager:
         Raises:
             Exception: If connection fails or circuit breaker is open
         """
+        self._ensure_process_local_state()
+        if self._shutting_down:
+            raise Exception(
+                f"SHUTTING DOWN: Connection manager is closing, refusing new session to {url}."
+            )
+
         key = self._get_connection_key(url, user_name)
         lock = self._get_connection_lock(key)
 
         with lock:
-            # Circuit breaker: fail fast if server recently failed
-            if self._is_circuit_open(key):
-                logger.debug(
-                    f"OPC UA Connection Manager circuit breaker open for {url}, "
-                    f"failing fast (will retry in {self.CIRCUIT_BREAKER_TIMEOUT_SECONDS}s)"
-                )
-                raise Exception(
-                    f"CIRCUIT OPEN: Server {url} recently failed, skipping connection attempt. "
-                    f"Will retry after {self.CIRCUIT_BREAKER_TIMEOUT_SECONDS}s."
-                )
-
-            # Check if we have an existing connection
+            # Check if we have an existing connection. This comes first: both gates below
+            # exist to stop us *opening* a session, and a healthy pooled one costs the
+            # server nothing. Refusing it here would be worse than useless - the caller
+            # treats the refusal as a connection fault and invalidates the very session it
+            # was reusing, so a capacity incident on one credential would tear down
+            # working streams on another.
             if key in self._connections:
                 logger.debug(f"OPC UA Connection Manager reusing connection for {url}")
                 return self._connections[key]
 
+            # Server-wide backoff: a session/connection limit belongs to the server, not to
+            # one set of credentials, so every key for this URL waits it out.
+            server_seconds_remaining = self._server_backoff_seconds_remaining(url)
+            if server_seconds_remaining is not None:
+                logger.debug(
+                    f"OPC UA Connection Manager still backing off from {url}, "
+                    f"failing fast (will retry in {server_seconds_remaining:.1f}s)"
+                )
+                raise SessionExhaustedError(
+                    f"SESSION LIMIT ERROR: Server {url} recently refused a new session, "
+                    f"skipping connection attempt. Will retry after "
+                    f"{server_seconds_remaining:.1f}s."
+                )
+
+            # Circuit breaker: fail fast if server recently failed
+            seconds_remaining = self._circuit_open_seconds_remaining(key)
+            if seconds_remaining is not None:
+                logger.debug(
+                    f"OPC UA Connection Manager circuit breaker open for {url}, "
+                    f"failing fast (will retry in {seconds_remaining:.1f}s)"
+                )
+                raise Exception(
+                    f"CIRCUIT OPEN: Server {url} recently failed, skipping connection attempt. "
+                    f"Will retry after {seconds_remaining:.1f}s."
+                )
+
             # Create new connection
+            discarded = False
             try:
                 client = self._create_client(url, user_name, password, timeout)
                 self._connect_with_retry(client, url, max_retries, base_backoff)
 
-                # Success - clear any failure record and store in pool
-                self._clear_failure(key)
-                self._connections[key] = client
-                self._connection_metadata[key] = {
-                    "url": url,
-                    "user_name": user_name,
-                    "password": password,
-                    "timeout": timeout,
-                    "connected_at": datetime.now(),
-                }
+                # Success - clear any failure record and store in pool. Publishing under
+                # the global lock (the same one `close_all` sweeps under) closes the race
+                # where shutdown starts mid-connect: without it this session would land in
+                # the pool just after the sweep and never be closed.
+                #
+                # One narrower ordering is left open on purpose: shutdown can stop the
+                # ThreadLoop between `connect()` returning and this block running, and the
+                # undo below then cannot post a clean `disconnect()`. Making shutdown wait
+                # for in-flight connects would mean blocking a signal handler on an
+                # operation that retries with backoff - worse than the exposure, which the
+                # requested session timeout caps at ~60s rather than the ~50min this whole
+                # change exists to avoid.
+                with self._global_lock:
+                    self._clear_failure(key)
+                    self._connections[key] = client
+                    self._connection_metadata[key] = {
+                        "url": url,
+                        "user_name": user_name,
+                        "password": password,
+                        "timeout": timeout,
+                        "connected_at": datetime.now(),
+                        # Which process opened it - a forked child inherits the pool but
+                        # must not close sessions that belong to its parent.
+                        "pid": os.getpid(),
+                    }
+                    if self._shutting_down:
+                        # Shutdown started while this connection was being opened. Checking
+                        # *after* publishing covers both orderings, including a SIGTERM
+                        # handler that runs on this very thread and re-enters the lock to
+                        # sweep the pool. Undo, so the session is not left behind.
+                        self._connections.pop(key, None)
+                        self._connection_metadata.pop(key, None)
+                        discarded = True
+
+                if discarded:
+                    # Disconnect outside the lock. `close_all` needs that lock to apply its
+                    # own shutdown budget, so blocking OPC I/O while holding it would pin
+                    # the whole teardown to however long an unresponsive server takes to
+                    # answer - long enough to burn a container's grace period and get
+                    # SIGKILLed, which is the orphaned-session outcome this change exists
+                    # to prevent. Cap the wait the same way the sweep does.
+                    logger.debug(
+                        f"OPC UA Connection Manager discarding connection to {url} "
+                        f"opened while shutting down"
+                    )
+                    if self._tloop is not None:
+                        self._tloop.timeout = min(
+                            self._tloop.timeout, SHUTDOWN_CALL_TIMEOUT_SECONDS
+                        )
+                    self._safe_disconnect(client)
+                    raise Exception(
+                        f"SHUTTING DOWN: Connection manager is closing, "
+                        f"discarded new session to {url}."
+                    )
 
                 return client
+            except SessionExhaustedError:
+                # Server is out of session slots - stay away for tens of seconds so a hundred
+                # pods do not keep re-attempting against an already-full server.
+                timeout_seconds = self._session_exhaustion_timeout()
+                self._record_server_backoff(url, timeout_seconds)
+                logger.warning(
+                    f"OPC UA Connection Manager backing off from {url} for "
+                    f"{timeout_seconds:.1f}s after session limit refusal"
+                )
+                raise
             except Exception as exc:
                 # Record failure for circuit breaker
                 self._record_failure(key)
@@ -286,6 +675,9 @@ class OPCUAConnectionManager:
         By default, connections are kept alive for reuse. Set force_close=True
         to immediately close the connection.
 
+        Note that pooled connections are closed on process shutdown (see `shutdown`), so
+        keeping one for reuse does not leak a server session past the life of the process.
+
         Args:
             url: OPC UA server URL
             user_name: Optional username used for the connection
@@ -295,16 +687,7 @@ class OPCUAConnectionManager:
             # Connection stays in pool for reuse
             return
 
-        key = self._get_connection_key(url, user_name)
-        lock = self._get_connection_lock(key)
-
-        with lock:
-            if key in self._connections:
-                self._safe_disconnect(self._connections[key])
-                del self._connections[key]
-                if key in self._connection_metadata:
-                    del self._connection_metadata[key]
-                logger.debug(f"OPC UA Connection Manager closed connection for {url}")
+        self.invalidate_connection(url=url, user_name=user_name)
 
     def invalidate_connection(self, url: str, user_name: Optional[str]) -> None:
         """
@@ -321,19 +704,58 @@ class OPCUAConnectionManager:
         lock = self._get_connection_lock(key)
 
         with lock:
-            if key in self._connections:
-                self._safe_disconnect(self._connections[key])
-                del self._connections[key]
-                if key in self._connection_metadata:
-                    del self._connection_metadata[key]
-                logger.debug(
-                    f"OPC UA Connection Manager invalidated connection for {url}"
-                )
+            client = self._connections.get(key)
+            if client is None:
+                return
+            # Disconnect while still holding the key lock, and while the client is still
+            # listed in the pool. Both matter:
+            #
+            # * holding the key lock stops another writer opening a replacement session for
+            #   this key before the old one has released its slot - exactly the overlap that
+            #   pushes a full server into `BadTooManySessions`;
+            # * staying listed keeps the client visible to a concurrent `close_all` sweep, so
+            #   if shutdown wins the race it closes this session while the ThreadLoop is
+            #   still running, instead of stopping the loop and stranding the disconnect.
+            #
+            # A sweep landing mid-call may close the same client twice, which `_safe_disconnect`
+            # swallows, and may clear the pool underneath us - hence `pop`, not `del`, below.
+            # This blocks only writers to this one server; `close_all` takes the global lock
+            # alone, so shutdown is never queued behind this.
+            self._safe_disconnect(client)
+            self._connections.pop(key, None)
+            self._connection_metadata.pop(key, None)
+            logger.debug(f"OPC UA Connection Manager invalidated connection for {url}")
 
     def close_all(self) -> None:
         """Close all connections in the pool and stop the shared ThreadLoop."""
+        current_pid = os.getpid()
+        # One deadline for the whole sweep, not one per connection: this runs inside the
+        # SIGTERM handler, and a container's termination grace period does not grow with
+        # the number of unresponsive servers we happen to be pooling.
+        deadline = time.monotonic() + SHUTDOWN_CALL_TIMEOUT_SECONDS
         with self._global_lock:
             for key, client in list(self._connections.items()):
+                owner_pid = self._connection_metadata.get(key, {}).get("pid")
+                if owner_pid is not None and owner_pid != current_pid:
+                    # Inherited across a fork: the socket belongs to the parent, and
+                    # closing it here would end a session the parent is still using.
+                    logger.debug(
+                        f"OPC UA Connection Manager dropping connection inherited from "
+                        f"process {owner_pid} without closing it"
+                    )
+                    continue
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    # Out of time. Stop waiting on servers that are not answering: the
+                    # process is on its way out and the sockets go with it. Anything left
+                    # open is bounded by the session timeout we request at connect.
+                    logger.warning(
+                        f"OPC UA Connection Manager out of shutdown budget, dropping "
+                        f"remaining connection {key} without a clean close"
+                    )
+                    continue
+                if self._tloop is not None:
+                    self._tloop.timeout = budget
                 self._safe_disconnect(client)
             self._connections.clear()
             self._connection_metadata.clear()
@@ -358,6 +780,31 @@ class OPCUAConnectionManager:
 
 # Global connection manager instance
 _connection_manager: Optional[OPCUAConnectionManager] = None
+
+
+def _adopt_connection_manager_in_child() -> None:
+    """
+    Re-arm the pooled manager in a freshly forked child.
+
+    Runs in the child right after `fork()`, while it is still single-threaded, so it can
+    replace the inherited lock before anything tries to acquire it. Waiting until first
+    use would be too late: the parent may have been holding that lock at the moment of
+    the fork, and the thread that would release it does not exist here.
+    """
+    # First, unconditionally - and before touching `_instance`, which may not exist yet.
+    # `fork()` copies locks in whatever state they were in, and the thread that would have
+    # released this one does not exist here. A parent thread inside `__new__`/`__init__` at
+    # the moment of the fork would otherwise leave this child's first manager construction
+    # blocked forever on a lock nobody can release.
+    OPCUAConnectionManager._lock = threading.Lock()
+
+    manager = OPCUAConnectionManager._instance
+    if manager is not None and getattr(manager, "_initialized", False):
+        manager._adopt_in_child()
+
+
+if hasattr(os, "register_at_fork"):  # not available on Windows
+    os.register_at_fork(after_in_child=_adopt_connection_manager_in_child)
 
 
 def get_connection_manager() -> OPCUAConnectionManager:
@@ -459,6 +906,18 @@ This significantly reduces latency and resource usage for high-frequency write s
 - Connections are automatically pooled per server URL and username combination
 - If a connection fails during a write operation, it is automatically invalidated and a new connection
   is established on the next write attempt
+- Pooled connections are closed when the process shuts down, so a restart or redeploy usually hands
+  its sessions back to the server instead of leaving them to time out. This covers the Roboflow
+  Inference server and video pipelines, on normal exit and on `SIGTERM`. It does *not* cover every
+  host: a process that is killed outright (`SIGKILL`, power loss), or one that leaves `SIGTERM` on
+  its default disposition and first writes from a background thread (as `inference workflows
+  process-video` does), has no opportunity to close anything. The session timeout below is what
+  bounds those cases
+- Sessions are opened asking for a short server-side timeout (60 seconds by default, override with
+  the `OPC_SESSION_TIMEOUT_SECONDS` environment variable) so that a session orphaned by a crash is
+  reclaimed quickly rather than after the better part of an hour. This is a *request*: the server
+  returns the timeout it will actually honour, and may revise it upwards, so the effective value is
+  ultimately the server's to decide
 
 ### Retry Logic
 The block includes configurable retry logic with exponential backoff for handling transient connection failures:
@@ -468,6 +927,12 @@ The block includes configurable retry logic with exponential backoff for handlin
   after each failed attempt (exponential backoff).
 
 **Note:** Authentication errors (wrong username/password) are not retried as they will continue to fail.
+
+**Note:** If the server refuses a new session because it has reached its session or connection limit,
+the block does not retry - a slot only frees up when another session times out. It stops attempting to
+connect to that server for roughly 30 seconds (jittered, override with the
+`OPC_SESSION_EXHAUSTION_BACKOFF_SECONDS` environment variable) so that many clients failing at once do
+not keep hammering a server that is already full.
 
 ### Cooldown Limitations
 !!! warning "Cooldown Limitations"

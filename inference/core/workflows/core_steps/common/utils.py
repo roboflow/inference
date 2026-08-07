@@ -683,3 +683,39 @@ def _propagate_inference_context(
         return _with_context
 
     return [_wrap(t) for t in tasks]
+
+
+DETECTION_MAX_EDGE_PIXELS = 2048
+"""Maximum longest edge used when uploading images for VLM object detection."""
+
+
+def scale_dimensions_to_max_edge(
+    width: int,
+    height: int,
+    max_edge: int,
+) -> Tuple[int, int]:
+    """Scale dimensions down so the longest edge is at most ``max_edge``.
+
+    Never upscales and preserves the aspect ratio. Both the VLM blocks that
+    downscale images before upload and the parsers that map returned pixel
+    coordinates back onto the original image must use this exact arithmetic.
+
+    Args:
+        width: Original image width in pixels.
+        height: Original image height in pixels.
+        max_edge: Maximum allowed longest edge in pixels.
+
+    Returns:
+        Target ``(width, height)`` after scaling.
+    """
+    if max(width, height) <= max_edge:
+        return (width, height)
+
+    if width >= height:
+        scaled_width = max_edge
+        scaled_height = max(round(height * max_edge / width), 1)
+    else:
+        scaled_height = max_edge
+        scaled_width = max(round(width * max_edge / height), 1)
+
+    return (scaled_width, scaled_height)
