@@ -306,6 +306,10 @@ enforced via structured outputs.
 * GPT-4.x/GPT-4o and nano-tier models return a plain JSON list of `box_2d`
 entries in absolute pixel coordinates.
 
+The absolute-coordinate formats do not provide confidence scores.
+`roboflow_core/vlm_as_detector@v2` assigns these detections a confidence of
+`1.0`, so downstream confidence filtering is not meaningful for these formats.
+
 Images are downscaled so that their longest edge does not exceed
 {DETECTION_MAX_EDGE_PIXELS}px and are sent as lossless PNG for this task.
 

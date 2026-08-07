@@ -49,7 +49,7 @@ from inference.core.workflows.prototypes.block import (
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
-Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and confidences, converting normalized coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
+Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and available confidence scores, converting coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
 
 ## How This Block Works
 
@@ -75,8 +75,9 @@ This block converts VLM/LLM text outputs containing object detection predictions
 
    **For OpenAI/Gemini/Claude models:**
    - Extracts detections array from parsed JSON
-   - Converts normalized coordinates (0-1 range) to pixel coordinates using image dimensions
-   - Extracts class names, confidence scores, and bounding box coordinates
+   - Converts normalized or absolute coordinates to pixel coordinates using image dimensions
+   - Extracts class names, available confidence scores, and bounding box coordinates
+   - Assigns confidence 1.0 when a model format does not provide confidence; confidence filtering is not meaningful for those detections
    - Maps class names to class IDs using provided classes list
    - Creates detection objects with bounding boxes, classes, and confidences
 
@@ -88,10 +89,9 @@ This block converts VLM/LLM text outputs containing object detection predictions
    - For other tasks: uses MD5-based class ID generation or provided classes
    - Sets confidence to 1.0 for Florence-2 detections (model doesn't provide confidence)
 5. Converts coordinates and normalizes data:
-   - Converts normalized coordinates (0-1) to absolute pixel coordinates (x_min, y_min, x_max, y_max)
-   - Scales coordinates using image width and height
-   - Normalizes confidence scores to valid range [0.0, 1.0]
-   - Clamps confidence values outside the range
+   - Converts normalized coordinates (0-1) or uploaded-image pixel coordinates to original-image pixel coordinates (x_min, y_min, x_max, y_max)
+   - Normalizes provided confidence scores to valid range [0.0, 1.0]
+   - Assigns confidence 1.0 when the source format does not provide confidence
 6. Creates class name to class ID mapping:
    - For OpenAI/Gemini/Claude: uses provided classes list to create index mapping (class_name → class_id)
    - Classes are mapped in order (first class = ID 0, second = ID 1, etc.)
@@ -130,7 +130,7 @@ This block receives images and VLM outputs and produces object detection predict
 
 - **After VLM/LLM blocks** to parse detection outputs into standard format (e.g., VLM output to detections, LLM output to detections, parse model outputs), enabling VLM-to-detection workflows
 - **Before detection-based blocks** to use parsed detections (e.g., use parsed detections in workflows, provide detections to downstream blocks, use VLM detections with detection blocks), enabling detection-to-workflow workflows
-- **Before filtering blocks** to filter VLM detections (e.g., filter by class, filter by confidence, apply filters to VLM predictions), enabling detection-to-filter workflows
+- **Before filtering blocks** to filter VLM detections by class or by confidence when the source model provides confidence scores
 - **Before analytics blocks** to analyze VLM detection results (e.g., analyze VLM detections, perform analytics on parsed detections, track VLM detection metrics), enabling detection analytics workflows
 - **Before visualization blocks** to display VLM detection results (e.g., visualize VLM detections, display parsed detection predictions, show VLM detection outputs), enabling detection visualization workflows
 - **In workflow outputs** to provide VLM detections as final output (e.g., VLM detection outputs, parsed detection results, VLM-based detection outputs), enabling detection output workflows
