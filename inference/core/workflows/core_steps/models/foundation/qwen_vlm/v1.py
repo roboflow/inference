@@ -143,10 +143,14 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.6-plus",
     },
+    "Qwen 3.8 Max": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.8-max",
+    },
     # Note: Qwen 3.6 Max Preview is intentionally excluded — it's a text-only
     # model on OpenRouter (no image-input endpoints), so it can't satisfy a
-    # VLM block. If/when OpenRouter ships a vision-capable Max variant, add
-    # it back here.
+    # VLM block. The Qwen 3.8 Max entry above is the vision-capable Max
+    # variant OpenRouter now ships (text + image + video input).
 }
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
@@ -399,6 +403,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 "qwen-vl",
                 "qwen3.5",
                 "qwen3.6",
+                "qwen3.8",
                 "VLM",
                 "Alibaba",
                 "OpenRouter",
