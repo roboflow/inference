@@ -59,6 +59,16 @@ from inference.core.workflows.prototypes.block import (
 
 BUNDLE_FORMAT_VERSION = 1
 
+# Companion API enforces a 25 MiB raw bundle limit at ingest time.  Bundles
+# larger than this will always be rejected, so we catch the condition locally
+# and return an error instead of writing a bundle the consumer will reject.
+MAX_BUNDLE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MiB
+
+# Consumer schema caps each annotation list at 1 000 items.  Payloads with
+# more entries trigger a consumer-side fallback that silently drops *all*
+# images, so we enforce the cap before attaching annotations to the payload.
+MAX_ANNOTATIONS_PER_LIST = 1000
+
 SHORT_DESCRIPTION = (
     "Write vision events as self-contained tarball bundles to a local directory."
 )
@@ -659,7 +669,9 @@ def _write_event_bundle(
     custom_metadata: Dict[str, Any],
 ) -> Tuple[bool, str, str, str]:
     try:
-        annotations = _convert_predictions_to_annotations(prediction)
+        annotations = _cap_annotation_lists(
+            _convert_predictions_to_annotations(prediction)
+        )
 
         image_members: Dict[str, bytes] = {}
         image_entry: Dict[str, Any] = {}
@@ -694,6 +706,12 @@ def _write_event_bundle(
             image_members=image_members,
             mtime=int(timestamp.timestamp()),
         )
+        if len(tar_bytes) > MAX_BUNDLE_SIZE_BYTES:
+            raise ValueError(
+                f"Bundle size {len(tar_bytes):,} bytes exceeds the companion API "
+                f"limit of {MAX_BUNDLE_SIZE_BYTES:,} bytes (25 MiB). Reduce the "
+                "number or size of images in this event."
+            )
         dump_bytes_atomic(target_path, tar_bytes)
         _fsync_directory(target_directory)
         return False, "Vision event bundle written successfully", event_id, target_path
@@ -735,6 +753,30 @@ def _build_bundle_payload(
     return payload
 
 
+def _cap_annotation_lists(annotations: Dict[str, Any]) -> Dict[str, Any]:
+    annotation_keys = (
+        "objectDetections",
+        "classifications",
+        "instanceSegmentations",
+        "keypoints",
+    )
+    capped = {}
+    for key, value in annotations.items():
+        if key in annotation_keys and isinstance(value, list):
+            if len(value) > MAX_ANNOTATIONS_PER_LIST:
+                logger.warning(
+                    "vision_event_bundle: annotation list '%s' has %d items; "
+                    "truncating to %d to match consumer schema limit.",
+                    key,
+                    len(value),
+                    MAX_ANNOTATIONS_PER_LIST,
+                )
+            capped[key] = value[:MAX_ANNOTATIONS_PER_LIST]
+        else:
+            capped[key] = value
+    return capped
+
+
 def _build_tar_bytes(
     payload: dict,
     image_members: Dict[str, bytes],
@@ -742,7 +784,7 @@ def _build_tar_bytes(
 ) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
-        payload_bytes = json.dumps(payload, indent=2).encode("utf-8")
+        payload_bytes = json.dumps(payload, indent=2, allow_nan=False).encode("utf-8")
         payload_info = tarfile.TarInfo(name="payload.json")
         payload_info.size = len(payload_bytes)
         payload_info.mtime = mtime
