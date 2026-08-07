@@ -3,11 +3,12 @@
 Below you can find the changelog for Execution Engine.
 
 ## Unreleased
-
 **What changed**
 
 Add user-facing compile or execution behavior changes here. Maintainers replace
 this heading with the Execution Engine and inference versions when releasing.
+
+## Execution Engine `v1.15.0` | inference `1.3.9`
 
 * **Remote HTTP 501 errors preserve their status without exposing internal URLs** —
   When a remotely executed Workflow step returns HTTP 501, the Execution Engine now
