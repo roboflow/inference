@@ -16,8 +16,11 @@ from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import 
 )
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
     BUNDLE_FORMAT_VERSION,
+    MAX_ANNOTATIONS_PER_LIST,
+    MAX_BUNDLE_SIZE_BYTES,
     BlockManifest,
     VisionEventBundleSinkBlockV1,
+    _cap_annotation_lists,
 )
 from inference.core.workflows.execution_engine.constants import PREDICTION_TYPE_KEY
 from inference.core.workflows.execution_engine.entities.base import (
@@ -465,3 +468,171 @@ def test_temp_files_are_dot_prefixed(tmp_path, monkeypatch) -> None:
     assert len(observed_temp_names) == 1
     assert observed_temp_names[0].startswith(".")
     assert original_dump is not None
+
+
+# === P1 regression: 25 MiB bundle size limit ===
+
+
+def test_oversized_bundle_returns_error_not_writes(tmp_path, monkeypatch) -> None:
+    block = _make_block(tmp_path)
+    oversized = b"x" * (MAX_BUNDLE_SIZE_BYTES + 1)
+    monkeypatch.setattr(
+        vision_events_bundle.v1, "_build_tar_bytes", lambda **_: oversized
+    )
+
+    result = _run_block(block, str(tmp_path), output_image=_make_workflow_image())
+
+    assert result["error_status"] is True
+    assert "25 MiB" in result["message"] or "limit" in result["message"].lower()
+    assert result["event_id"] == ""
+    assert result["bundle_path"] == ""
+    non_dotfiles = [p for p in tmp_path.iterdir() if not p.name.startswith(".")]
+    assert non_dotfiles == []
+
+
+def test_bundle_at_exact_size_limit_succeeds(tmp_path, monkeypatch) -> None:
+    block = _make_block(tmp_path)
+    at_limit = b"x" * MAX_BUNDLE_SIZE_BYTES
+    monkeypatch.setattr(
+        vision_events_bundle.v1, "_build_tar_bytes", lambda **_: at_limit
+    )
+
+    result = _run_block(block, str(tmp_path))
+
+    assert result["error_status"] is False
+
+
+def test_bundle_one_byte_over_limit_returns_error(tmp_path, monkeypatch) -> None:
+    block = _make_block(tmp_path)
+    over_limit = b"x" * (MAX_BUNDLE_SIZE_BYTES + 1)
+    monkeypatch.setattr(
+        vision_events_bundle.v1, "_build_tar_bytes", lambda **_: over_limit
+    )
+
+    result = _run_block(block, str(tmp_path))
+
+    assert result["error_status"] is True
+    non_dotfiles = [p for p in tmp_path.iterdir() if not p.name.startswith(".")]
+    assert non_dotfiles == []
+
+
+# === P1 regression: annotation list capping at 1000 ===
+
+
+def test_cap_annotation_lists_truncates_over_limit() -> None:
+    annotations = {
+        "objectDetections": [{"class": "cat"}] * (MAX_ANNOTATIONS_PER_LIST + 50),
+        "classifications": [{"class": "dog"}] * (MAX_ANNOTATIONS_PER_LIST + 1),
+        "instanceSegmentations": [{"class": "bird"}] * MAX_ANNOTATIONS_PER_LIST,
+        "keypoints": [{"class": "person"}] * 5,
+    }
+
+    result = _cap_annotation_lists(annotations)
+
+    assert len(result["objectDetections"]) == MAX_ANNOTATIONS_PER_LIST
+    assert len(result["classifications"]) == MAX_ANNOTATIONS_PER_LIST
+    assert len(result["instanceSegmentations"]) == MAX_ANNOTATIONS_PER_LIST
+    assert len(result["keypoints"]) == 5
+
+
+def test_cap_annotation_lists_preserves_under_limit() -> None:
+    annotations = {
+        "objectDetections": [{"class": "cat"}] * 10,
+    }
+
+    result = _cap_annotation_lists(annotations)
+
+    assert result["objectDetections"] == annotations["objectDetections"]
+
+
+def test_cap_annotation_lists_passthrough_unknown_keys() -> None:
+    annotations = {"someOtherKey": "value", "objectDetections": [{"class": "x"}] * 3}
+
+    result = _cap_annotation_lists(annotations)
+
+    assert result["someOtherKey"] == "value"
+    assert len(result["objectDetections"]) == 3
+
+
+def test_annotations_capped_in_written_bundle(tmp_path) -> None:
+    block = _make_block(tmp_path)
+    n = MAX_ANNOTATIONS_PER_LIST + 5
+    detections = sv.Detections(
+        xyxy=np.tile(np.array([[10, 20, 50, 60]], dtype=float), (n, 1)),
+        confidence=np.ones(n) * 0.9,
+        class_id=np.zeros(n, dtype=int),
+        data={
+            "class_name": np.array(["cat"] * n),
+            PREDICTION_TYPE_KEY: np.array(["object-detection"] * n),
+        },
+    )
+
+    result = _run_block(
+        block,
+        str(tmp_path),
+        input_image=_make_workflow_image(),
+        predictions=detections,
+    )
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    image_entry = payload["images"][0]
+    assert len(image_entry["objectDetections"]) == MAX_ANNOTATIONS_PER_LIST
+
+
+# === P1 regression: strict JSON serialization (allow_nan=False) ===
+
+
+def test_nan_in_payload_returns_error_not_writes(tmp_path, monkeypatch) -> None:
+    block = _make_block(tmp_path)
+
+    original_build_payload = vision_events_bundle.v1._build_bundle_payload
+
+    def _inject_nan(**kwargs):
+        payload = original_build_payload(**kwargs)
+        payload["_nan_field"] = float("nan")
+        return payload
+
+    monkeypatch.setattr(vision_events_bundle.v1, "_build_bundle_payload", _inject_nan)
+
+    result = _run_block(block, str(tmp_path))
+
+    assert result["error_status"] is True
+    assert result["event_id"] == ""
+    assert result["bundle_path"] == ""
+    non_dotfiles = [p for p in tmp_path.iterdir() if not p.name.startswith(".")]
+    assert non_dotfiles == []
+
+
+def test_infinity_in_payload_returns_error_not_writes(tmp_path, monkeypatch) -> None:
+    block = _make_block(tmp_path)
+
+    original_build_payload = vision_events_bundle.v1._build_bundle_payload
+
+    def _inject_inf(**kwargs):
+        payload = original_build_payload(**kwargs)
+        payload["_inf_field"] = float("inf")
+        return payload
+
+    monkeypatch.setattr(vision_events_bundle.v1, "_build_bundle_payload", _inject_inf)
+
+    result = _run_block(block, str(tmp_path))
+
+    assert result["error_status"] is True
+    non_dotfiles = [p for p in tmp_path.iterdir() if not p.name.startswith(".")]
+    assert non_dotfiles == []
+
+
+def test_valid_float_in_payload_is_serialized_correctly(tmp_path) -> None:
+    block = _make_block(tmp_path)
+    detections = _make_detections()
+
+    result = _run_block(
+        block, str(tmp_path), input_image=_make_workflow_image(), predictions=detections
+    )
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    assert payload["images"][0]["objectDetections"][0]["confidence"] == pytest.approx(
+        0.9
+    )
