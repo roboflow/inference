@@ -54,7 +54,7 @@ BLOCK_DOCUMENTATION_FILE = os.path.join(
 
 KINDS_DIR = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds")
 KINDS_DOCUMENTATION_TEMPLATE = os.path.join(
-    DOCS_ROOT_DIR, "workflows", "kinds_template.md"
+    os.path.dirname(__file__), "templates", "kinds_template.md"
 )
 KINDS_DOCUMENTATION_FILE = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds", "index.md")
 
