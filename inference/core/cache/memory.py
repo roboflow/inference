@@ -15,6 +15,7 @@ class MemoryCache(BaseCache):
         cache (dict): A dictionary to store the cache values.
         expires (dict): A dictionary to store the expiration times of the cache values.
         zexpires (dict): A dictionary to store the expiration times of the sorted set values.
+        _lock_creation_lock (threading.Lock): A lock serializing cache lock creation.
         _expire_thread (threading.Thread): A thread that runs the _expire method.
     """
 
@@ -25,6 +26,7 @@ class MemoryCache(BaseCache):
         self.cache = dict()
         self.expires = dict()
         self.zexpires = dict()
+        self._lock_creation_lock = Lock()
 
         self._expire_thread = threading.Thread(target=self._expire)
         self._expire_thread.daemon = True
@@ -154,8 +156,11 @@ class MemoryCache(BaseCache):
     def acquire_lock(self, key: str, expire=None) -> Any:
         lock: Optional[Lock] = self.get(key)
         if lock is None:
-            lock = Lock()
-            self.set(key, lock, expire=expire)
+            with self._lock_creation_lock:
+                lock = self.get(key)
+                if lock is None:
+                    lock = Lock()
+                    self.set(key, lock, expire=expire)
         if expire is None:
             expire = -1
         acquired = lock.acquire(timeout=expire)
