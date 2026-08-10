@@ -1,7 +1,7 @@
 """Video POC processor: a warm worker that runs Roboflow Workflows on video sources.
 
 Modes:
-  --job-file job.json          run a single job from disk (standalone testing, no platform)
+  --job-file job.json          run jobs from disk (repeat for concurrent standalone jobs)
   --api-url ... --api-key ...  poll the platform for job assignments (videoJobs/claim contract)
 
 While a job runs, the processor exposes:
@@ -17,8 +17,8 @@ While a job runs, the processor exposes:
                              support for scrubbing), frames.jsonl (one line per frame,
                              aligned with the mp4 by index), meta.json (fps, frames);
                              local fallback — results also upload to GCS on completion
-  GET /metrics               Prometheus text: video_processor_busy gauge (warm-pool
-                             autoscaling signal: replicas = sum(busy) + MIN_IDLE)
+  GET /metrics               aggregate Prometheus worker/job/frame/latency metrics;
+                             no tenant, source, job, workflow, or model labels
 
 Design notes (mirrors the video strategy deck):
   - events and pixels are split at the source; base64 image blobs never ride the events channel
@@ -93,6 +93,7 @@ try:
 except Exception:  # PyAV missing: fall back to cv2 URL ingest
     LowLatencyRtspProducer = None
 
+from processor_metrics import ProcessorMetrics
 from security import (
     DiagnosticRing,
     JobSecurityRegistry,
@@ -178,12 +179,16 @@ class Stats:
         self.job_received_at = time.time()
 
     def on_pipeline_start(self):
-        self.pipeline_started_at = time.time()
+        now = time.time()
+        with self.lock:
+            self.pipeline_started_at = now
+            return max(0.0, now - self.job_received_at) if self.job_received_at else 0.0
 
     def on_result(self, video_frame: VideoFrame):
         now = time.time()
         with self.lock:
-            if self.first_result_at is None:
+            first_result = self.first_result_at is None
+            if first_result:
                 self.first_result_at = now
             self.frames += 1
             if self._last_frame_time is not None:
@@ -197,6 +202,12 @@ class Stats:
             self.ema_latency_ms = (
                 latency_ms if self.ema_latency_ms is None else 0.9 * self.ema_latency_ms + 0.1 * latency_ms
             )
+            first_result_seconds = (
+                max(0.0, now - self.job_received_at)
+                if first_result and self.job_received_at
+                else None
+            )
+            return max(0.0, latency_ms / 1000.0), first_result_seconds
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -812,6 +823,10 @@ class JobRun:
         self.worker = worker
         self.job = job
         self.job_id = validate_job_id(job.get("id", "local"))
+        source_url = str(job.get("sourceUrl") or "")
+        self.mode = job.get("mode") or (
+            "batch" if source_url.startswith("http") else "stream"
+        )
         # Never attach a process-wide logging handler here: this process can run
         # several tenants concurrently and root-log records carry no job ID.
         self.log_ring = DiagnosticRing()
@@ -841,6 +856,9 @@ class JobRun:
         self._publish_baseline_ms = None
         self._latency_strikes = 0
         self._downloaded_path = None
+        self._outcome_lock = threading.Lock()
+        self._outcome_recorded = False
+        self.worker.metrics.job_started(self.mode)
 
     @property
     def active(self):
@@ -853,7 +871,12 @@ class JobRun:
             predictions, video_frame = predictions[0], video_frame[0]
         if predictions is None or video_frame is None:
             return
-        self.stats.on_result(video_frame)
+        latency_seconds, first_result_seconds = self.stats.on_result(video_frame)
+        self.worker.metrics.frame_processed(
+            self.mode,
+            latency_seconds,
+            first_result_seconds=first_result_seconds,
+        )
 
         # We own serialization (serialize_results=False): image outputs stay raw
         # ndarrays (straight into the publisher's raw store — no JPEG round
@@ -924,7 +947,7 @@ class JobRun:
         self.stats.on_job()
 
         source_url = job["sourceUrl"]
-        mode = job.get("mode") or ("batch" if source_url.startswith("http") else "stream")
+        mode = self.mode
         print(
             f"[processor] starting job {self.job_id} ({mode}) on "
             f"{sanitize_diagnostic(source_url)}"
@@ -1050,7 +1073,8 @@ class JobRun:
                 **pipeline_kwargs,
             )
             self.pipeline = pipeline
-            self.stats.on_pipeline_start()
+            start_duration = self.stats.on_pipeline_start()
+            self.worker.metrics.pipeline_started(mode, start_duration)
             pipeline.start(use_main_thread=False)
             with self.lock:
                 self.state = "running"
@@ -1114,6 +1138,7 @@ class JobRun:
             with self.lock:
                 if self.state == "running":
                     self.state = "completed"
+                    self._record_outcome("completed")
                     print(f"[processor] job {self.job_id} completed; results are scrubbable")
         else:
             # a live pipeline ending on its own means the stream died (camera
@@ -1131,10 +1156,19 @@ class JobRun:
 
     def report_failure(self, message, traceback_text=None):
         """Report only diagnostics explicitly produced by this job."""
+        self._record_outcome("error")
         if traceback_text:
             self.log_ring.note(traceback_text)
         self.log_ring.note(f"[processor] {message}")
         self.worker.report_job_failure(self.job, message, self.log_ring.tail())
+
+    def _record_outcome(self, outcome):
+        """Record exactly one terminal aggregate outcome for this run."""
+        with self._outcome_lock:
+            if self._outcome_recorded:
+                return
+            self._outcome_recorded = True
+        self.worker.metrics.job_finished(self.mode, outcome)
 
     def _upload_results(self):
         """Move finished batch results to durable storage via platform-signed URLs.
@@ -1239,6 +1273,7 @@ class JobRun:
         # cancelling BEFORE taking the lifecycle lock: the pipeline-end watcher
         # must see it the instant our terminate() unblocks its join()
         self.cancelling = True
+        self._record_outcome("stopped")
         # taken AFTER any in-flight start finishes — cancelling mid-start would
         # leak a running pipeline with no run attached
         with self.lifecycle_lock:
@@ -1414,6 +1449,7 @@ class Worker:
         self.security = JobSecurityRegistry(
             require_tokens=env_flag("REQUIRE_JOB_ACCESS_TOKEN", managed_pool)
         )
+        self.metrics = ProcessorMetrics()
 
     # ---------- run bookkeeping ----------
 
@@ -1436,10 +1472,12 @@ class Worker:
         pick = active or runs
         return pick[-1] if pick else None
 
-    def finish_run(self, run):
+    def finish_run(self, run, outcome=None):
         """A run is over (completed and reported, cancelled, or its stream
         died): tear it down, free the slot, and retire the pod if this was the
         last one."""
+        if outcome is not None:
+            run._record_outcome(outcome)
         run.stop()
         with self.runs_lock:
             if self.runs.get(run.job_id) is run:
@@ -1678,7 +1716,7 @@ class Worker:
                         self.finish_run(run)
                     elif resp.get("cancel"):
                         print(f"[processor] job {run.job_id} cancelled by platform")
-                        self.finish_run(run)
+                        self.finish_run(run, outcome="cancelled")
                     else:
                         run.handle_watch(resp.get("watch") or {})
                 self._fresh_claim_holdoff()
@@ -1703,16 +1741,24 @@ class Worker:
 
     def run(self):
         if self.args.job_file:
-            with open(self.args.job_file) as f:
-                job = json.load(f)
-            job.setdefault("id", "local-job")
-            job = dict(job)
-            access_token = job.pop("processorAccessToken", None)
-            self.security.register_job(job["id"], access_token)
-            run = JobRun(self, job)
-            with self.runs_lock:
-                self.runs[run.job_id] = run
-            run.start()
+            if len(self.args.job_file) > self.capacity:
+                raise ValueError(
+                    f"{len(self.args.job_file)} job files exceed worker capacity "
+                    f"{self.capacity}"
+                )
+            for index, job_file in enumerate(self.args.job_file):
+                with open(job_file) as f:
+                    job = json.load(f)
+                job.setdefault("id", f"local-job-{index + 1}")
+                job = dict(job)
+                access_token = job.pop("processorAccessToken", None)
+                self.security.register_job(job["id"], access_token)
+                run = JobRun(self, job)
+                with self.runs_lock:
+                    if run.job_id in self.runs:
+                        raise ValueError(f"duplicate local job id: {run.job_id}")
+                    self.runs[run.job_id] = run
+                threading.Thread(target=run.start, daemon=True).start()
         else:
             if self.pod.is_detached():
                 # crash-restarted container inside a spent (detached) pod: it
@@ -1891,17 +1937,19 @@ def make_handler(worker: Worker):
                 except (BrokenPipeError, ConnectionResetError):
                     pass
             elif path == "/metrics":
-                # busy gauge drives the warm-pool autoscaler; with capacity > 1
-                # it counts JOBS, and the capacity gauge lets the autoscaler
-                # turn that into pods (ceil(busy/capacity) + MIN_IDLE)
-                busy = worker.active_count()
-                body = (
-                    "# HELP video_processor_busy number of jobs assigned to this worker\n"
-                    "# TYPE video_processor_busy gauge\n"
-                    f"video_processor_busy {busy}\n"
-                    "# HELP video_processor_capacity max concurrent jobs this worker accepts\n"
-                    "# TYPE video_processor_capacity gauge\n"
-                    f"video_processor_capacity {worker.capacity}\n"
+                # Process-level aggregates only: this worker may concurrently
+                # serve several tenants, so identifiers never become labels.
+                publishers = {"whip": 0, "rtsp": 0}
+                for run in worker.snapshot_runs():
+                    publisher = run.publisher
+                    if publisher is not None and publisher.transport in publishers:
+                        publishers[publisher.transport] += 1
+                body = worker.metrics.render(
+                    active_jobs=worker.active_count(),
+                    capacity=worker.capacity,
+                    tier=worker.tier,
+                    retiring=worker.retiring,
+                    active_publishers=publishers,
                 ).encode()
                 self.send_response(200)
                 self._cors()
@@ -1991,7 +2039,14 @@ def main():
     parser = argparse.ArgumentParser(description="Roboflow video POC processor")
     parser.add_argument("--api-url", default=os.getenv("RF_API_URL"))
     parser.add_argument("--api-key", default=os.getenv("ROBOFLOW_API_KEY"))
-    parser.add_argument("--job-file", help="run a single local job definition (skips platform polling)")
+    parser.add_argument(
+        "--job-file",
+        action="append",
+        help=(
+            "run a local job definition (repeat for concurrent jobs; skips "
+            "platform polling)"
+        ),
+    )
     parser.add_argument("--port", type=int, default=8890)
     parser.add_argument("--processor-id", default=None)
     parser.add_argument(

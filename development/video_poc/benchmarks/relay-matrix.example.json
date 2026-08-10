@@ -1,0 +1,35 @@
+{
+  "fixture": "fixtures/1080p-h264.mp4",
+  "publishUrlTemplate": "${BENCH_PUBLISH_URL_TEMPLATE}",
+  "readUrlTemplate": "${BENCH_READ_URL_TEMPLATE}",
+  "metrics": {
+    "mediamtx": {
+      "url": "${BENCH_MEDIAMTX_METRICS_URL}",
+      "prefixes": [
+        "paths",
+        "rtsp_sessions",
+        "webrtc_sessions"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "name": "smoke-1x1",
+      "sources": 1,
+      "readersPerSource": 1,
+      "publisherWarmupSeconds": 3,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "sampleIntervalSeconds": 5
+    },
+    {
+      "name": "fanout-10x4",
+      "sources": 10,
+      "readersPerSource": 4,
+      "publisherWarmupSeconds": 5,
+      "warmupSeconds": 30,
+      "durationSeconds": 600,
+      "sampleIntervalSeconds": 5
+    }
+  ]
+}

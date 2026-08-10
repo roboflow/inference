@@ -56,7 +56,16 @@ As of 2026-08-10, production is intentionally a single cell:
 - Production workers accept up to four jobs. Admission is job-count based;
   workflow cost and workspace fairness are not considered.
 - Processor Prometheus metrics expose active-job count and configured capacity.
-  MediaMTX metrics and pprof are not enabled by the current chart.
+  Draft infra [#2443](https://github.com/roboflow/roboflow-infra/pull/2443)
+  adds internal-only MediaMTX scraping and a first relay dashboard; it is not
+  active until the chart is merged and applied. pprof remains disabled.
+
+Phase 0 implementation has also started in draft inference
+[#2616](https://github.com/roboflow/inference/pull/2616): the processor exports
+bounded aggregate capacity, lifecycle, frame, publisher, and latency metrics;
+`benchmarks/` contains a reproducible relay harness and a provisional workflow
+corpus. These are measurement tools, not certified capacity settings. No relay or
+processor limit should change until baseline curves and SLOs exist.
 
 These are safe assumptions for one cell. They are unsafe for two: a processor in
 cell B could claim a job whose source only exists on the relay in cell A, then
@@ -414,8 +423,10 @@ profile predicted:
   east-west bandwidth;
 - external versus internal versus inter-cell bandwidth and estimated egress cost.
 
-MediaMTX metrics should be exposed only inside the cluster and scraped by a
-PodMonitor/ServiceMonitor. pprof should be internal and enabled only for controlled
+Draft infra [#2443](https://github.com/roboflow/roboflow-infra/pull/2443)
+implements the first part: metrics are exposed only on the internal Service,
+scraped by a PodMonitor with a bounded allowlist, and visualized in a Grafana
+dashboard. pprof should remain internal and be enabled only for controlled
 performance work.
 
 ### Processor and job
@@ -529,9 +540,12 @@ not yet an approved target.
 ### Phase 0: RFC, instrumentation, and baseline
 
 - agree on terminology, invariants, and SLOs;
-- expose MediaMTX and network metrics safely;
-- extend processor/job metrics;
-- build the synthetic benchmark harness and workflow corpus;
+- merge and apply the internal MediaMTX metrics/dashboard from infra
+  [#2443](https://github.com/roboflow/roboflow-infra/pull/2443), staging first;
+- validate the aggregate processor metrics in inference
+  [#2616](https://github.com/roboflow/inference/pull/2616);
+- run the synthetic relay harness and provisional workflow corpus in
+  [`benchmarks/`](benchmarks/), then version the resulting environment manifests;
 - measure the current East topology.
 
 **Gate:** relay and processor capacity curves exist and identify the first
@@ -629,7 +643,9 @@ security, and cost envelope.
 - [DEPLOY_PLAN_STAGING.md](DEPLOY_PLAN_STAGING.md) is retained as the historical
   first-cell deployment rationale; the roboflow-infra chart README is authoritative
   for current deployment mechanics.
-- Benchmark commands, fixtures, results, and environment manifests should live in
-  a dedicated `development/video_poc/benchmarks/` area once implementation begins.
+- Benchmark commands, fixtures, corpus definitions, results, and environment
+  manifests live in [`benchmarks/`](benchmarks/). Results and fixtures remain
+  untracked; representative reports should be published with their exact commit,
+  environment, and fixture hashes.
 - Material architecture decisions and completed milestones must update both this
   RFC and the handoff in the same change.

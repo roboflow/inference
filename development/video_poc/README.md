@@ -30,6 +30,9 @@ Components in this folder (branch `hansent/video-poc`):
   token (or `access_token` query parameter for native browser media elements).
   Bare `/status` and `/metrics` expose only aggregate health/metrics without auth.
 - `mediamtx.yml`, `fetch-deps.sh`, `bin/` — local media plane (RTSP ingest :8554, WHEP :8889).
+- [`benchmarks/`](benchmarks/) — relay fan-out load harness, provisional workflow
+  corpus, standalone processor job generator, and aggregate-metric runbook. Active
+  load is for local, staging, or a dedicated performance cell—not production.
 
 The platform half lives in the `roboflow` repo (branch `hansent/video-sources-poc`):
 Video Sources page + `/query/video-sources*` routes (token.js) + connector/processor

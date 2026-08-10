@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "cpu-blur",
+      "provisionalClass": "light",
+      "tier": "cpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "cpu-blur.json",
+      "models": [],
+      "purpose": "Establish decode, workflow-engine, and visualization overhead without model inference."
+    },
+    {
+      "id": "single-detection",
+      "provisionalClass": "light",
+      "tier": "gpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "single-detection.json",
+      "models": [
+        "yolov8n-640"
+      ],
+      "purpose": "Baseline one small detector plus bounding-box visualization; repeat it to test shared-model packing."
+    },
+    {
+      "id": "detection-tracking",
+      "provisionalClass": "medium",
+      "tier": "gpu",
+      "stateful": true,
+      "imageOutput": "visualization",
+      "spec": "detection-tracking.json",
+      "models": [
+        "yolov8n-640"
+      ],
+      "purpose": "Measure a stateful detector, ByteTrack, and trace-visualization pipeline with additional CPU work."
+    },
+    {
+      "id": "dual-detection",
+      "provisionalClass": "heavy",
+      "tier": "gpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "dual-detection.json",
+      "models": [
+        "yolov8n-640",
+        "yolov8n-1280"
+      ],
+      "purpose": "Exercise two different detector sessions, model memory pressure, and comparison visualization."
+    },
+    {
+      "id": "semantic-segmentation",
+      "provisionalClass": "exclusive",
+      "tier": "gpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "semantic-segmentation.json",
+      "models": [
+        "deep-lab-v3-plus/2"
+      ],
+      "purpose": "Initial high-cost segmentation and mask-visualization case; exclusive is a conservative hypothesis until measured."
+    }
+  ]
+}

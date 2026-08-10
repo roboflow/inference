@@ -22,7 +22,9 @@ cell (`crusoe-use1` on Crusoe US East) are live. The production cell runs one
 MediaMTX relay and ready GPU/CPU pools configured for up to four concurrent jobs per
 worker. Production deployment mechanics now live in the roboflow-infra chart/stack;
 [DEPLOY_PLAN_STAGING.md](DEPLOY_PLAN_STAGING.md) is retained for the rationale and
-history of the first deployment.
+history of the first deployment. Draft infra
+[#2443](https://github.com/roboflow/roboflow-infra/pull/2443) adds internal
+MediaMTX metrics scraping and the first relay dashboard; it has not been applied.
 
 There is also an internal video strategy deck that motivates all of this — the POC
 deliberately implements the shapes recommended there:
@@ -414,10 +416,14 @@ not implemented yet.
   estimate, multidimensional resource budget, model-affinity scheduler, or workspace
   fairness. Relay and workflow capacity benchmarks must establish safe workload
   classes before raising concurrency or admitting heavy mixes.
-- **Relay and cell capacity are not characterized.** The chart does not yet scrape
-  MediaMTX path/session/byte metrics or expose controlled pprof data. Public LB,
-  relay-node, CNI/east-west, WHEP, and processor bandwidth need independent capacity
-  curves before choosing a relay shard size.
+- **Relay and cell capacity are not characterized.** Draft infra
+  [#2443](https://github.com/roboflow/roboflow-infra/pull/2443) adds an
+  internal-only MediaMTX scrape and first relay dashboard, but it is not active
+  until merged and applied. The draft inference PR adds a reproducible relay
+  harness, provisional workflow corpus, and bounded aggregate processor metrics.
+  These are measurement tools, not certified limits. Public LB, relay-node,
+  CNI/east-west, WHEP, and processor bandwidth still need independent capacity
+  curves before choosing a relay shard size. Controlled pprof remains disabled.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
@@ -518,9 +524,12 @@ questions live in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
    per source, up to four jobs per worker, GCS batch results, and relay-published
    watched outputs.
 3. Next: complete Phase 0 of
-   [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md): agree on SLOs, expose
-   MediaMTX/cell network metrics, build the relay and workflow benchmark corpus, and
-   measure the current East cell.
+   [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md): agree on SLOs; review,
+   merge, and apply the MediaMTX observability chart from infra
+   [#2443](https://github.com/roboflow/roboflow-infra/pull/2443) to staging;
+   validate the aggregate processor metrics and benchmark tools in inference
+   [#2616](https://github.com/roboflow/inference/pull/2616); then measure the
+   current topology. A production apply remains a separate approval step.
 4. Then introduce cell-aware source/job contracts while only East is registered;
    prove claim isolation before deploying a second non-production cell.
 5. Remaining adjacent hardening: job-addressed live events, connector-source polish,
