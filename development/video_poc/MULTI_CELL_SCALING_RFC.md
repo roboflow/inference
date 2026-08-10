@@ -7,9 +7,10 @@
 **Scope:** Live connector sources, MediaMTX relay capacity, processor placement,
 multi-stream GPU allocation, dedicated cells, and remote execution experiments
 
-**Related:** [HANDOFF.md](HANDOFF.md),
-[DEPLOY_PLAN_STAGING.md](DEPLOY_PLAN_STAGING.md), and
-[README.md](README.md)
+**Related:**
+[HANDOFF.md](https://github.com/roboflow/inference/blob/hansent/video-poc/development/video_poc/HANDOFF.md),
+[DEPLOY_PLAN_STAGING.md](https://github.com/roboflow/inference/blob/hansent/video-poc/development/video_poc/DEPLOY_PLAN_STAGING.md), and
+[README.md](https://github.com/roboflow/inference/blob/hansent/video-poc/development/video_poc/README.md)
 
 ## Summary
 
