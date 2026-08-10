@@ -32,6 +32,16 @@
   inputs to channels-last (`HWC`) before the host transfer, so the HuggingFace processor receives
   a correctly-shaped image instead of silently mis-interpreting the channel axis.
 
+
+---
+
+## `0.34.6`
+
+### Fixed
+
+- ONNX models no longer invoke CUDA stream context management on non-CUDA devices,
+  preventing native inference failures on Apple Silicon.
+
 ---
 
 ## `0.34.5`
