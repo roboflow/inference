@@ -2,7 +2,9 @@
 
 End-to-end proof of concept for video sources as a platform primitive. This file is the
 **runbook**; for the full context — what we're proving, architecture, flows, data model,
-known gaps — read [HANDOFF.md](HANDOFF.md) first.
+known gaps — read [HANDOFF.md](HANDOFF.md) first. For the next phase — relay capacity,
+multi-cell placement, dedicated cells, remote execution, and workload-aware GPU
+admission — read [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
 
 ```
 connector (Go, laptop/LAN)  --RTSP push-->  mediamtx  --RTSP-->  processor (Python, warm worker)
@@ -32,6 +34,11 @@ Components in this folder (branch `hansent/video-poc`):
 The platform half lives in the `roboflow` repo (branch `hansent/video-sources-poc`):
 Video Sources page + `/query/video-sources*` routes (token.js) + connector/processor
 endpoints (deviceApi.js) + Firestore collections `video_sources`, `video_connectors`, `video_jobs`.
+
+Staging and the first feature-flagged production cell (`crusoe-use1`) are live as of
+2026-08-10. This runbook remains intentionally local; current cluster deployment
+mechanics live in the roboflow-infra `helm/roboflow-video-proc/` chart and
+`crusoe/video-proc` Terraform stack.
 
 ## Running the demo (everything local)
 
@@ -124,7 +131,8 @@ warm processor amortizes imports; model load is the remaining per-job cost).
   standing in for cameras). Details and the `is_file` gotcha that motivated it: HANDOFF.md §5.
 - **Media plane**: mediamtx is one static binary doing RTSP ingest + WHEP browser preview;
   the processor consumes plain RTSP from it. This is the seam where the real relay/cell
-  architecture (see the video strategy deck) slots in.
+  architecture slots in. The first production cell implements that seam; the next
+  scaling contract is [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
 
 An interactive architecture diagram with scenario walkthroughs (for demos) lives at
 [architecture.html](architecture.html) — open it directly in a browser.

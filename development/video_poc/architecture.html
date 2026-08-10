@@ -94,7 +94,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="eyebrow">Roboflow · Video Sources POC · July 2026</div>
+    <div class="eyebrow">Roboflow · Video Sources POC · Updated August 2026</div>
     <h1>How the video POC works</h1>
     <p>Four processes, four kinds of traffic. Everything customer-side dials <em>out</em>;
        nothing opens an inbound port. Click a scenario to trace its path through the system.</p>
@@ -160,25 +160,25 @@
 
   <div id="steps"></div>
 
-  <h2 class="section">What changes at production scale (deliberately not built yet)</h2>
+  <h2 class="section">Production evolution and the next scale boundary</h2>
   <div class="notes">
     <div class="note">
-      <h4>Results stop coming from the processor <span class="tag">routing</span></h4>
-      <p>Completed batch artifacts upload to object storage (job doc carries URLs).
-         Live events publish to the platform (vision-events ingest exists today).
-         Nobody ever connects <em>to</em> a worker — same outbound-only rule as the connector.</p>
+      <h4>Durable results moved to object storage <span class="tag">implemented</span></h4>
+      <p>Completed batch artifacts upload to GCS and the job carries signed retrieval URLs.
+         Live JSON still uses authenticated cursor polling through the worker gateway;
+         a durable job-addressed event stream remains future work.</p>
     </div>
     <div class="note">
-      <h4>Live annotated preview moves onto the relay <span class="tag">pixels</span></h4>
+      <h4>Live annotated preview uses the relay <span class="tag">implemented</span></h4>
       <p>The processor publishes its annotated output into MediaMTX as just another stream;
          browsers watch it over WHEP like any source. Encoded only while someone is watching
-         — MJPEG retires.</p>
+         — MJPEG remains a local/debug fallback.</p>
     </div>
     <div class="note">
-      <h4>One warm worker becomes a pool in a cell <span class="tag">scale</span></h4>
-      <p>Relay + worker pool deploy together as a cell (Crusoe/L40S); a job's results stream
-         and WHEP URL point at its cell. Raw video never crosses a cloud boundary.
-         See the video strategy deck for the full argument.</p>
+      <h4>One cell becomes a placement system <span class="tag">next</span></h4>
+      <p>US East now runs a MediaMTX relay plus ready CPU/GPU pools. Next: benchmark relay
+         and workflow capacity, persist a source home cell, enforce cell-scoped claims, and
+         then add shared, dedicated, and remote-execution cells.</p>
     </div>
   </div>
 </div>

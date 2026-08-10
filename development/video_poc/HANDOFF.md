@@ -4,14 +4,25 @@ This is the full context document for the video-sources proof of concept. It exi
 that anyone (human or agent) can pick up the work without access to prior conversations.
 The [README](README.md) is the runbook (how to build and run everything locally); this
 document is the *why and how*: what we're doing, what we're trying to prove, how it's
-implemented, and how the pieces fit together.
+implemented, and how the pieces fit together. The next scaling phase is specified in
+[MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md); material decisions made there
+must also be reflected here.
 
-The POC spans two repos:
+The system now spans four components:
 
-| Repo | Branch | Draft PR | What lives there |
-|---|---|---|---|
-| `roboflow/inference` | `hansent/video-poc` | [#2616](https://github.com/roboflow/inference/pull/2616) | `development/video_poc/` — Python processor (warm worker), local media plane (mediamtx), this doc. The Go connector agent moved to its own repo: [roboflow/rf-video-connector](https://github.com/roboflow/rf-video-connector) (releases bundle a static ffmpeg) |
-| `roboflow/roboflow` | `hansent/video-sources-poc` | [#13264](https://github.com/roboflow/roboflow/pull/13264) | Video Sources page (React), `/query/video-sources*` routes, connector/processor API endpoints, Firestore DAOs |
+| Component | Original work | What lives there |
+|---|---|---|
+| `roboflow/inference` | Draft [#2616](https://github.com/roboflow/inference/pull/2616) | `development/video_poc/` — Python processor, local MediaMTX config, harnesses, and architecture docs |
+| `roboflow/roboflow` | [#13264](https://github.com/roboflow/roboflow/pull/13264) plus production hardening follow-ups | Video Sources UI, `/query/video-sources*` routes, connector/processor APIs, Firestore control plane, relay auth, and result URLs |
+| `roboflow/roboflow-infra` | [#2290](https://github.com/roboflow/roboflow-infra/pull/2290) plus environment follow-ups | Terraform and `helm/roboflow-video-proc/`: MediaMTX, ready GPU/CPU pools, gateway, Pub/Sub subscriptions, secrets, and monitoring |
+| `roboflow/rf-video-connector` | Extracted from the original POC | Released Go connector binary with bundled ffmpeg, discovery, local UI, and the outbound command/media clients |
+
+**Deployment status (2026-08-10):** staging and the first feature-flagged production
+cell (`crusoe-use1` on Crusoe US East) are live. The production cell runs one
+MediaMTX relay and ready GPU/CPU pools configured for up to four concurrent jobs per
+worker. Production deployment mechanics now live in the roboflow-infra chart/stack;
+[DEPLOY_PLAN_STAGING.md](DEPLOY_PLAN_STAGING.md) is retained for the rationale and
+history of the first deployment.
 
 There is also an internal video strategy deck that motivates all of this — the POC
 deliberately implements the shapes recommended there:
@@ -70,7 +81,8 @@ The strategy is phased:
 - **Phase 2 — connector agent + live monitoring GA.** Agent discovery/push, relay
   (ingest fan-out), continuous workflows on live streams.
 - **Phase 3 — recording + scale.** Record-then-process, storage lifecycle, multi-cell
-  scale-out.
+  scale-out, and workload-aware processor allocation. The multi-cell/capacity work is
+  now tracked in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
 
 The POC cuts across phases 1 and 2 to de-risk the end-to-end shape before any piece is
 productionized.
@@ -126,9 +138,10 @@ Stream naming conventions (both sides must agree; defined in
   the full ingest URL in the `start_stream` command)
 - `sim-<jobId>` — the processor's own file replay for simulate-a-camera jobs
 
-Production deltas beyond auth: pin the version, TLS on ingest, colocation with the
-warm pool as a "cell", and capacity metrics (aggregate ingress/egress is the cell
-sizing input).
+The deployed chart pins MediaMTX, validates per-stream credentials through the
+platform auth hook, and colocates the relay with the warm pools as a cell. Remaining
+production-scale work includes secure WAN ingest/consume options and MediaMTX/cell
+capacity metrics; aggregate ingress/egress and reader fan-out are cell sizing inputs.
 
 ## 5. The two processing modes (important)
 
@@ -293,12 +306,18 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   `sourceUrl` (signed GCS URL or credentialed RTSP consume URL), `apiKey` (the
   job workspace's inference key), and `simPublishUrl`.
 
+The current schema does not persist a source or job cell. Proposed `homeCell`,
+`relayShard`, `executionCell`, placement-generation, and workload-profile fields
+are specified in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md); they are
+not implemented yet.
+
 ## 8. Known gaps and how they're meant to close
 
 - **Browser→processor addressing is solved (gateway), but coupled to workers.**
   Locally `job.processorUrl` is localhost; in the cluster it's the processor-gateway
-  path to a specific worker. The remaining production work is *job-addressing*
-  (`/video-jobs/{id}/events` — see §6 "Consuming results") and **auth** (below).
+  path to a specific worker. The remaining production work on the JSON/event side is
+  *job-addressing* (`/video-jobs/{id}/events` — see §6 "Consuming results"); processor
+  HTTP auth is closed below.
   For the video half this is **CLOSED**: the processor **publishes the annotated
   stream to the relay** (`out-<jobId>`, credentialed with the job's stream key,
   watched over WHEP like any source preview), and *wanting to watch* is signaled
@@ -331,9 +350,10 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   workspace-key auth and its workspace scoping — per-job scoped tokens remain
   the eventual hardening there. The fleet secret is the crown jewel: never
   user-facing.
-- **Processor HTTP auth: processor side CLOSED; platform wiring required before
-  rollout.** The worker accepts `processorAccessToken` in each claim, removes it
-  from the retained workflow payload, and checks it per job on `/events`,
+- ~~Processor HTTP endpoints are unauthenticated~~ **CLOSED**: the platform mints a
+  high-entropy `processorAccessToken`, returns it only through authorized job-access
+  routes and claim payloads, and redacts it from general job serializers. The worker
+  removes it from the retained workflow payload and checks it per job on `/events`,
   `/events/poll`, `/status`, `/preview.mjpeg`, and `/results`. Fetch clients should
   send `Authorization: Bearer <token>`; native `<img>`/`<video>` consumers may use
   `?access_token=<token>` (responses set `Referrer-Policy: no-referrer`). `/metrics`
@@ -341,10 +361,6 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   `/status` returns only aggregate counts in managed mode. Managed workers default
   token enforcement on when `VIDEO_PROC_SERVICE_SECRET` is present; explicit
   `REQUIRE_JOB_ACCESS_TOKEN=true|false` overrides this for rollout/local testing.
-  The app must mint a high-entropy token at job creation, include it only in the
-  authorized job-access/watch response and claim payload, and strip it from all
-  list/general job serializers (alongside `streamKey`). Deploy that app contract
-  before deploying this processor image, or managed claims will fail closed.
   The job-addressed platform events endpoint (§6) remains the preferred long-term
   programmatic surface because the platform authenticates at its own front door.
 - **Nothing behind platform Traefik can stream** (staging deploy finding,
@@ -386,13 +402,22 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   glass-to-glass source→annotated-output: **~20-50ms** (was ~600). Job-level
   `captureOptions` become libavformat open options for stream mode; batch keeps
   the cv2 path (throughput over latency).
-- **Single-workspace claim**: processors claim jobs only for the workspace of their API
-  key. Real warm pools need cross-tenant scheduling, leases/heartbeats on claims, and
-  model-affinity placement.
-- **One stream per GPU**: multi-stream-per-GPU is required for monitoring economics.
-  Prerequisite: measuring workflow "bulkiness" (per-stream cost of a graph at a
-  target fps) so a scheduler can pack N streams per node with stability guarantees —
-  see §9.
+- **Claims and media URLs are cell-unaware.** Fleet processors now claim across
+  workspaces, but the Firestore claim query filters by state and CPU/GPU tier, not
+  cell. Functions also construct ingest/consume/WHEP URLs from one global
+  `VIDEO_PROC_*` configuration. A second cell is unsafe until source placement,
+  job placement, URL resolution, and transactional claim filtering all agree on a
+  persisted cell. See [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
+- **Multi-stream admission is count-only.** Production allows up to four jobs in one
+  worker and biases claims toward partially filled workers so model loads can be
+  shared. This works for the tested simple workflows, but there is no workflow-cost
+  estimate, multidimensional resource budget, model-affinity scheduler, or workspace
+  fairness. Relay and workflow capacity benchmarks must establish safe workload
+  classes before raising concurrency or admitting heavy mixes.
+- **Relay and cell capacity are not characterized.** The chart does not yet scrape
+  MediaMTX path/session/byte metrics or expose controlled pprof data. Public LB,
+  relay-node, CNI/east-west, WHEP, and processor bandwidth need independent capacity
+  curves before choosing a relay shard size.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
@@ -407,10 +432,19 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
 - **`imageOutput` list outputs** (arrays of images) are redacted from events but not
   stored/previewable.
 
-## 9. Where the design is heading (team alignment, 2026-07-07)
+## 9. Where the design is heading (updated 2026-08-10)
 
 Decisions and direction that came out of team review — this is current intent, not
-yet all in the PRs:
+yet all implemented. The detailed scaling plan, benchmarks, rollout gates, and open
+questions live in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
+
+- **A live source gets a sticky home cell on first activation.** Registration remains
+  metadata-only. The first preview or live job transactionally selects and persists a
+  cell/relay shard; ordinary jobs inherit it so connector ingest, relay fan-out, and
+  processing stay colocated. Workspace/connector policy biases or constrains the
+  choice, enabling regional and dedicated cells. Idle sources may be reassigned;
+  active migration waits for a generation-aware connector handshake and acceptable
+  stateful-workflow recovery.
 
 - **Scaling model: ready pool, not replica scaling.** "There are always N workers
   ready to accept jobs." A Deployment manages only *ready* workers; claiming a job
@@ -478,11 +512,16 @@ yet all in the PRs:
 
 1. Read the README for the local runbook (node 24 / redis / staging env quirks are
    documented there — they are real and will bite you).
-2. The task list that produced this: dev tooling ✅, backend API ✅, connector ✅,
-   processor ✅, frontend ✅, e2e demo verified through "workflow on uploaded file with
-   live annotated preview" ✅.
-3. Prod-readiness order (per §8/§9, post-review): ~~reap-to-requeue~~ ✅;
-   ~~ready-pool scaling swap in the chart~~ ✅; processor endpoint auth (per-job
-   tokens); the job-addressed events endpoint; ~~relay-published results stream +
-   `watchRequestedUntil`~~ ✅; multi-stream-per-GPU (needs bulkiness measurement);
-   connector-source e2e polish (USB/RTSP got less testing than files).
+2. Staging and the first feature-flagged production cell are live. The implemented
+   base includes outbound connector ingest, relay auth, fleet auth, transactional
+   claim, ready pools, orphan requeue, per-job processor tokens, multiple workflows
+   per source, up to four jobs per worker, GCS batch results, and relay-published
+   watched outputs.
+3. Next: complete Phase 0 of
+   [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md): agree on SLOs, expose
+   MediaMTX/cell network metrics, build the relay and workflow benchmark corpus, and
+   measure the current East cell.
+4. Then introduce cell-aware source/job contracts while only East is registered;
+   prove claim isolation before deploying a second non-production cell.
+5. Remaining adjacent hardening: job-addressed live events, connector-source polish,
+   recording/metering, and externalizable state for seamless stateful recovery.

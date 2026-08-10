@@ -1,11 +1,19 @@
 # Staging deployment plan — video POC on Crusoe
 
+> **Current status 2026-08-10:** staging and the first feature-flagged production
+> cell (`crusoe-use1`) are live. This document is retained as the rationale and
+> historical runbook for the first cell; the roboflow-infra
+> `helm/roboflow-video-proc/README.md` and `crusoe/video-proc` stack are
+> authoritative for current deployment mechanics. Multi-cell placement, relay
+> capacity, workload-aware GPU admission, dedicated cells, and remote execution are
+> now designed in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
+
 > **Status 2026-07-07**: the "day-2" items below are now IMPLEMENTED, not
 > planned — per-stream keys + relay external auth, per-job API key in the claim
 > payload, batch results to GCS (with processor-local fallback), Pub/Sub
 > dispatch wake-ups (claim stays the transactional source of truth; claim is
 > now an actual Firestore transaction), the `video_processor_busy` metric, and
-> the KEDA warm-floor autoscaling. The Helm chart exists:
+> the ready-pool refill lifecycle. The Helm chart exists:
 > `helm/roboflow-video-proc/` in roboflow-infra
 > ([PR #2290](https://github.com/roboflow/roboflow-infra/pull/2290)) — its
 > README lists the remaining MANUAL steps (image push, Pub/Sub topic/sub,
@@ -20,9 +28,10 @@
 > gone: merge to master + confirm the Spacelift run IS the deploy. Env vars
 > renamed VIDEO_POC_* → VIDEO_PROC_*; functions env ships in the roboflow
 > repo's .env.roboflow-staging (.env.local overrides for laptop dev). The only
-> out-of-band steps left: seed VIDEO_PROC_WORKSPACE_API_KEY in Secret Manager
-> once, build/push + pin the processor image, and DNS records after the first
-> LB IP. Manual kubectl/gcloud sections below are superseded by the chart
+> out-of-band steps left at that point: seed VIDEO_PROC_WORKSPACE_API_KEY in
+> Secret Manager once, build/push + pin the processor image, and DNS records after
+> the first LB IP. The workspace-key seed was subsequently removed by fleet
+> authentication. Manual kubectl/gcloud sections below are superseded by the chart
 > README + the stack.
 
 Goal: mediamtx (relay) + video processors running on the Crusoe staging cluster
@@ -227,22 +236,29 @@ Afternoon (wiring):
       (WHEP through Crusoe!) → stream-mode job → annotated output.
 8. Demo checklist = 7c + 7d working from a clean browser session.
 
-## 7. Known gaps this deployment adds (track, don't fix tomorrow)
+## 7. Current gaps after the first production cell
 
-- ~~Batch results live on processor-local disk~~ done: uploaded to GCS on
-  completion via platform-signed URLs; local files are only the fallback.
-  Next step: recorder uploads mp4+jsonl to GCS on finalize, platform stores
-  the URLs on the job doc, review UI stops touching the processor entirely
-  (also removes the biggest reason browsers talk to processors at all).
-- Processor endpoint auth (#10) and per-stream relay credentials (real stream
-  keys per source, not one shared publish user).
-- GPU-per-processor is wasteful for a demo (idle GPU while no job); fine for
-  staging, revisit worker/GPU packing later.
-- KEDA/scale: replicas are static; queue-depth-based scaling is exactly where
-  the async-serverless machinery becomes relevant.
-- mediamtx version pinning + `fetch-deps.sh` alignment.
-- GCS→Crusoe egress for batch downloads (revisit when Crusoe object storage
-  is adopted; explicitly deferred).
+The original first-cell blockers are closed: batch artifacts upload to GCS,
+MediaMTX validates per-stream keys, fleet workers authenticate without tenant keys,
+processor endpoints require per-job tokens, MediaMTX is pinned, and ready workers can
+run several jobs concurrently.
+
+The remaining scaling and operations gaps are:
+
+- source/job placement and claim filtering are not cell-aware;
+- MediaMTX, LoadBalancer, node, CNI, and per-workflow capacity are not yet
+  characterized;
+- worker admission uses a fixed job count rather than measured workflow cost and
+  workspace fairness;
+- live JSON events remain worker-addressed through the gateway rather than a durable
+  job-addressed stream;
+- the external RTSP/TCP path is a baseline, not the final secure WAN contract for
+  cross-cloud or on-prem processing;
+- GCS→Crusoe egress for batch downloads, continuous recording/storage lifecycle, and
+  metering remain deferred.
+
+See [HANDOFF.md](HANDOFF.md) for current component behavior and
+[MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md) for the execution plan.
 
 ## 8. Poll → queue migration path (design, not tomorrow)
 
@@ -252,10 +268,9 @@ replaces dispatch; the heartbeat/lease/reaping system built in the POC stays
 as the ownership mechanism, and the status poll stays as the control channel
 (cancel, watch signaling).
 
-- **Phase A (now)**: polling claim. Prerequisite fix regardless of queues:
-  make claim a transactional compare-and-set — today two processors can race
-  on the same queued job.
-- **Phase B**: **GCP Pub/Sub** for dispatch — NOT RabbitMQ. Rationale: the
+- **Phase A — IMPLEMENTED**: polling claim plus a transactional compare-and-set,
+  so two processors cannot win the same queued job.
+- **Phase B — IMPLEMENTED**: **GCP Pub/Sub** for dispatch — NOT RabbitMQ. Rationale: the
   functions already live in GCP and publish natively (no Firestore→queue
   dispatcher bridge needed at all), and — decisively — cells must not depend
   on infrastructure that only exists because async-serverless happens to be
@@ -271,10 +286,9 @@ as the ownership mechanism, and the status poll stays as the control channel
     additionally re-publishes. Poll mode remains for local dev.
   - Processors on Crusoe authenticate to Pub/Sub with a GCP service-account
     key from Secret Manager — same pattern the cluster already uses.
-- **Phase C**: split classes. Batch = true backlog; monitoring = placement
-  problem (scale on assigned-streams-per-worker; rebalancing = drain →
-  re-publish → re-place, cheap because workers re-attach to relay streams
-  locally, not across the customer's NAT).
+- **Phase C — NEXT**: split classes. Batch = true backlog; monitoring = placement
+  and workload-admission problem. The cell-aware and resource-aware version of this
+  phase is specified in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
 
 **Scaling model — REVISED (2026-07-07): ready pool, not replica scaling.**
 The first design here was a KEDA warm-floor query (`replicas = sum(busy) +
