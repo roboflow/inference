@@ -536,6 +536,7 @@ class InferencePipeline:
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
         disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
+        execution_engine_thread_pool_workers: int = 4,
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
         batch_collection_timeout: Optional[float] = None,
@@ -608,7 +609,12 @@ class InferencePipeline:
                 with custom plugins.
             disable_sinks (bool): Whether to disable sink writes and outbound notifications/uploads.
             workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
-                by workflows blocks to run background tasks.
+                by workflows blocks and sinks to run background tasks (fire-and-forget dispatch of
+                notifications, uploads and other side effects).
+            execution_engine_thread_pool_workers (int): Number of workers for the thread pool used
+                exclusively by the workflows Execution Engine to run workflow steps. Kept separate
+                from `workflows_thread_pool_workers` so that slow background sink tasks cannot
+                starve step execution.
             cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
                 canceled at the end of InferencePipeline processing. By default, when video file ends or
                 pipeline is stopped, tasks that has not started will be cancelled.
@@ -727,6 +733,12 @@ class InferencePipeline:
             thread_pool_executor = ThreadPoolExecutor(
                 max_workers=workflows_thread_pool_workers
             )
+            # Deliberately a separate pool: sharing one executor between
+            # fire-and-forget sink tasks and step execution lets slow sinks
+            # block the whole pipeline.
+            execution_engine_thread_pool_executor = ThreadPoolExecutor(
+                max_workers=execution_engine_thread_pool_workers
+            )
             workflow_init_parameters["workflows_core.model_manager"] = model_manager
             workflow_init_parameters["workflows_core.api_key"] = api_key
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
@@ -738,7 +750,7 @@ class InferencePipeline:
                 init_parameters=workflow_init_parameters,
                 workflow_id=workflow_id,
                 profiler=profiler,
-                executor=thread_pool_executor,
+                executor=execution_engine_thread_pool_executor,
                 dependencies_pre_init=workflows_dependencies_pre_init,
             )
             workflow_runner = WorkflowRunner(
@@ -764,6 +776,7 @@ class InferencePipeline:
             cancel_thread_pool_tasks_on_exit=cancel_thread_pool_tasks_on_exit,
             profiler=profiler,
             profiling_directory=profiling_directory,
+            execution_engine_thread_pool_executor=execution_engine_thread_pool_executor,
         )
         return cls.init_with_custom_logic(
             video_reference=video_reference,

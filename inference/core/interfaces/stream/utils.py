@@ -160,6 +160,7 @@ def on_pipeline_end(
     cancel_thread_pool_tasks_on_exit: bool,
     profiler: WorkflowsProfiler,
     profiling_directory: str,
+    execution_engine_thread_pool_executor: Optional[ThreadPoolExecutor] = None,
 ) -> None:
     if ENABLE_WORKFLOWS_PROFILING:
         try:
@@ -173,11 +174,15 @@ def on_pipeline_end(
                 f"'{profiling_directory}' - profiling data will be lost. "
                 f"This may happen when the filesystem is read-only."
             )
-    try:
-        thread_pool_executor.shutdown(cancel_futures=cancel_thread_pool_tasks_on_exit)
-    except TypeError:
-        # we must support Python 3.8 which do not support `cancel_futures`
-        thread_pool_executor.shutdown()
+    executors = [thread_pool_executor]
+    if execution_engine_thread_pool_executor is not None:
+        executors.append(execution_engine_thread_pool_executor)
+    for executor in executors:
+        try:
+            executor.shutdown(cancel_futures=cancel_thread_pool_tasks_on_exit)
+        except TypeError:
+            # we must support Python 3.8 which do not support `cancel_futures`
+            executor.shutdown()
 
 
 def save_workflows_profiler_trace(

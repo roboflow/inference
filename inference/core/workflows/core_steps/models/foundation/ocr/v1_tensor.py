@@ -35,8 +35,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -107,6 +109,19 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return ["doctr/default"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # No version field on this manifest — run() relies on the request-model
+        # default DocTR variant ("default", an inline literal on
+        # DoctrOCRInferenceRequest), so the loaded id is fixed.
+        return [
+            roboflow_platform_model(
+                model_id="doctr/default",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class OCRModelBlockV1(WorkflowBlock):

@@ -323,6 +323,11 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
+        # One-shot latch so a permanently broken GPU fast path is visible in
+        # production logs (WARNING) without emitting one record per frame.
+        # Deliberately unsynchronised: a benign race can only cost a duplicate
+        # warning, which is cheaper than a lock on the annotate path.
+        self._gpu_fallback_warned = False
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -456,11 +461,23 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                     )
                 }
             except Exception as gpu_error:
-                logger.debug(
-                    "GPU box painter failed (%s); falling back to "
-                    "sv.BoxAnnotator path.",
-                    gpu_error,
-                )
+                if not self._gpu_fallback_warned:
+                    self._gpu_fallback_warned = True
+                    logger.warning(
+                        "Bounding Box Visualization: GPU box painter failed "
+                        "(%s); falling back to the slower sv.BoxAnnotator path "
+                        "(this materialises the frame on the host, paying a "
+                        "device-to-host transfer per frame). Only the first "
+                        "occurrence is logged at warning level; subsequent "
+                        "fallbacks are logged at debug level.",
+                        gpu_error,
+                    )
+                else:
+                    logger.debug(
+                        "GPU box painter failed (%s); falling back to "
+                        "sv.BoxAnnotator path.",
+                        gpu_error,
+                    )
         # sv.BoxAnnotator / sv.RoundBoxAnnotator draw from `xyxy` only and never
         # read `.mask`; skip the device->host dense-mask materialisation.
         predictions = to_supervision_for_annotation(

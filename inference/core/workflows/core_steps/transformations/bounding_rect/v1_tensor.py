@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
+    strip_host_mirror_metadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
@@ -193,7 +194,12 @@ class BoundingRectBlockV1(WorkflowBlock):
         new_dense_masks: List[np.ndarray] = []
         new_xyxy_rows: List[np.ndarray] = []
         new_bboxes_metadata: List[dict] = []
-        existing_meta = predictions.bboxes_metadata or [{} for _ in range(n)]
+        # Drop the per-box host mirror: xyxy is recomputed from the rotated
+        # rectangles below, so a carried mirror would be stale — consumers fall
+        # back to tensor reads.
+        existing_meta = strip_host_mirror_metadata(predictions.bboxes_metadata) or [
+            {} for _ in range(n)
+        ]
 
         for i in range(n):
             # Decode one instance at a time (RLE row decoded on demand, dense

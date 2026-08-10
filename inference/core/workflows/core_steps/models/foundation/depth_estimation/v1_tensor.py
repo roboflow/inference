@@ -28,11 +28,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -168,6 +170,9 @@ class BlockManifest(WorkflowBlockManifest):
             "yolo26l-depth-768",
             "yolo26x-depth-768",
         ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
 
 
 def _depth_to_visualization(

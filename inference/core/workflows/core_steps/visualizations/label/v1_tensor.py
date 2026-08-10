@@ -812,6 +812,11 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         # steady-state path allocates/pins nothing per frame and its single
         # upload never blocks the stream (see _PinnedSlabRing).
         self._table_ring = _PinnedSlabRing()
+        # One-shot latch so a permanently broken GPU fast path is visible in
+        # production logs (WARNING) without emitting one record per frame.
+        # Deliberately unsynchronised: a benign race can only cost a duplicate
+        # warning, which is cheaper than a lock on the annotate path.
+        self._gpu_fallback_warned = False
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -1128,11 +1133,23 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                     )
                 }
             except Exception as gpu_error:
-                logger.debug(
-                    "GPU label compositor failed (%s); falling back to "
-                    "sv.LabelAnnotator path.",
-                    gpu_error,
-                )
+                if not self._gpu_fallback_warned:
+                    self._gpu_fallback_warned = True
+                    logger.warning(
+                        "Label Visualization: GPU label compositor failed "
+                        "(%s); falling back to the slower sv.LabelAnnotator "
+                        "path (this materialises the frame on the host, paying "
+                        "a device-to-host transfer per frame). Only the first "
+                        "occurrence is logged at warning level; subsequent "
+                        "fallbacks are logged at debug level.",
+                        gpu_error,
+                    )
+                else:
+                    logger.debug(
+                        "GPU label compositor failed (%s); falling back to "
+                        "sv.LabelAnnotator path.",
+                        gpu_error,
+                    )
         predictions = to_supervision_for_annotation(
             predictions, materialise_masks=needs_masks
         )

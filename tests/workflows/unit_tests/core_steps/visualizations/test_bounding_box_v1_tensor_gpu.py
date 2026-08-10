@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 import supervision as sv
@@ -359,3 +361,61 @@ def test_empty_passthrough_helper_declines_non_empty_predictions() -> None:
     )
 
     assert result is None
+
+
+def test_gpu_fallback_warns_once_then_stays_quiet(monkeypatch, caplog) -> None:
+    # given: a permanently broken GPU fast path. It must be visible in
+    # production logs (WARNING) on the first fallback, but must not emit one
+    # warning per frame afterwards.
+    from inference.core.workflows.core_steps.visualizations.bounding_box import (
+        v1_tensor as bounding_box_v1_tensor,
+    )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated GPU painter failure")
+
+    monkeypatch.setattr(bounding_box_v1_tensor, "gpu_draw_boxes", _boom)
+    block = bounding_box_v1_tensor.BoundingBoxVisualizationBlockV1()
+
+    def _annotate():
+        return block.run(
+            image=_tensor_backed_image(),
+            predictions=_eligible_detections(),
+            copy_image=True,
+            color_palette="DEFAULT",
+            palette_size=10,
+            custom_colors=None,
+            color_axis="CLASS",
+            thickness=2,
+            roundness=0.0,
+        )["image"]
+
+    def _warnings():
+        return [r for r in caplog.records if r.levelno == logging.WARNING]
+
+    # The top-level `inference` logger is configured with propagate=False
+    # (see inference/core/logger.py), so its records never reach the root
+    # logger pytest's caplog handler is attached to. Attach the caplog
+    # handler directly to the module logger.
+    bounding_box_v1_tensor.logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(
+            logging.WARNING, logger=bounding_box_v1_tensor.logger.name
+        ):
+            # when: two frames both hit the broken fast path
+            first_out = _annotate()
+            after_first = _warnings()
+            second_out = _annotate()
+            after_second = _warnings()
+    finally:
+        bounding_box_v1_tensor.logger.removeHandler(caplog.handler)
+
+    # then: both frames still rendered through the sv fallback
+    assert first_out._numpy_image is not None
+    assert second_out._numpy_image is not None
+    # ...and exactly one warning was emitted, naming the block and the error
+    assert len(after_first) == 1
+    message = after_first[0].getMessage()
+    assert "Bounding Box Visualization" in message
+    assert "simulated GPU painter failure" in message
+    assert len(after_second) == 1, "the second fallback must not warn again"

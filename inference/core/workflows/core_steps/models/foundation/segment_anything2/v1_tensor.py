@@ -44,11 +44,14 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
@@ -183,6 +186,28 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2/hiera_small",
             "sam2/hiera_tiny",
             "sam2/hiera_b_plus",
+        ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"sam2/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"sam2/{self.version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
         ]
 
 

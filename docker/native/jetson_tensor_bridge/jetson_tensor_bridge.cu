@@ -1680,7 +1680,15 @@ int rf_jetson_pipeline_interrupt(RfJetsonPipeline* handle) {
     if (handle == nullptr) {
         return -1;
     }
-    handle->interrupted.store(true, std::memory_order_release);
+    {
+        // The store must be serialized with the handoff_space predicate
+        // check: an unguarded store can land between a lossless-mode waiter's
+        // predicate evaluation and its park, the notify below then wakes
+        // nobody, and that wait has no timeout — the streaming thread sleeps
+        // forever and the GST_STATE_NULL transition below never completes.
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        handle->interrupted.store(true, std::memory_order_release);
+    }
     // Wake a grab() parked on the handoff queue - and a lossless-mode
     // streaming thread parked on a full queue - so interrupt is prompt.
     handle->frame_ready.notify_all();

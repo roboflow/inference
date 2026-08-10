@@ -342,6 +342,7 @@ class VideoFrameProcessor:
             workflows_parameters=workflow_configuration.workflows_parameters,
             disable_sinks=workflow_configuration.disable_sinks,
             workflows_thread_pool_workers=workflow_configuration.workflows_thread_pool_workers,
+            execution_engine_thread_pool_workers=workflow_configuration.execution_engine_thread_pool_workers,
             cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
             video_metadata_input_name=workflow_configuration.video_metadata_input_name,
             model_manager=model_manager,

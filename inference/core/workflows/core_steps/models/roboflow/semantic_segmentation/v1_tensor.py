@@ -145,6 +145,12 @@ PREDICTION_TYPE = "semantic-segmentation"
 # data-driven background-by-name / 255 exclusion; see the module docstring.)
 BACKGROUND_CLASS_ID = 0
 
+# `image_metadata` key under which the dense per-pixel confidence map is carried
+# for numpy parity (numpy `v1.py` stores `conf_array` on the sv.Detections under
+# `result["confidence_mask"]`). The serialiser never emits it into `predictions`,
+# but it survives for consumers reading the prediction's `image_metadata`.
+CONFIDENCE_MASK_KEY = "confidence_mask"
+
 
 LONG_DESCRIPTION = """
 Run inference on a semantic segmentation model hosted on or uploaded to Roboflow.
@@ -399,6 +405,7 @@ def _assemble_instance_detections(
     height: int,
     width: int,
     inference_id: str,
+    confidence_mask: Optional[torch.Tensor] = None,
 ) -> InstanceDetections:
     if len(rle_dicts) == 0:
         return _empty_instance_detections(
@@ -428,6 +435,12 @@ def _assemble_instance_detections(
         prediction_type=PREDICTION_TYPE,
         inference_id=inference_id,
     )
+    # Carry the dense per-pixel confidence map for numpy parity (numpy `v1.py`
+    # attaches `conf_array` to the sv.Detections under `confidence_mask`). The
+    # serialiser drops it from `predictions`, but consumers can still read it off
+    # the prediction's `image_metadata`.
+    if confidence_mask is not None:
+        detections.image_metadata[CONFIDENCE_MASK_KEY] = confidence_mask
     detections.bboxes_metadata = bboxes_metadata
     return detections
 
@@ -502,6 +515,8 @@ def _build_instance_detections_from_segmentation(
         height=height,
         width=width,
         inference_id=inference_id,
+        # Dense per-pixel confidence grid (kept on device) for numpy parity.
+        confidence_mask=confidence,
     )
 
 
@@ -572,6 +587,14 @@ def _build_instance_detections_from_inference_response(
             {DETECTION_ID_KEY: str(uuid.uuid4()), CLASS_NAME_KEY: class_name}
         )
 
+    # Carry the dense per-pixel confidence map for numpy parity (numpy `v1.py`
+    # attaches the decoded `conf_array`). Mirror the native carrier convention by
+    # moving it to the workflow tensor device when present.
+    confidence_mask = (
+        torch.from_numpy(conf_array).to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        if conf_array is not None
+        else None
+    )
     return _assemble_instance_detections(
         xyxy=xyxy,
         class_ids=class_ids,
@@ -583,6 +606,7 @@ def _build_instance_detections_from_inference_response(
         height=height,
         width=width,
         inference_id=inference_id,
+        confidence_mask=confidence_mask,
     )
 
 

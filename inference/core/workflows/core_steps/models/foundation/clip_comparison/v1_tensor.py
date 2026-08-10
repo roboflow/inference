@@ -39,8 +39,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 from inference_sdk import InferenceHTTPClient
 
@@ -109,6 +111,19 @@ class BlockManifest(WorkflowBlockManifest):
         )
 
         return list(CLIP_CACHE_MODEL_IDS)
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # No version field on this manifest — run() uses the server-level
+        # default CLIP variant, so the dependency is server-configuration
+        # relative.
+        return [
+            roboflow_platform_model(
+                model_id=f"clip/{CLIP_VERSION_ID}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class ClipComparisonBlockV1(WorkflowBlock):

@@ -248,8 +248,11 @@ def build_gstreamer_pipeline(
         # uridecodebin: autoplugging an RTSP source decodes EVERY track, and a
         # camera that muxes audio (e.g. A-Law) poisons the bus with a
         # missing-decoder error — fatal at startup when it races preroll, and a
-        # mid-run grab() failure otherwise. A codec-specific depayloader only
-        # ever links the video stream, so the audio track is never plugged.
+        # mid-run grab() failure otherwise. The application/x-rtp,media=video
+        # caps filter pins rtspsrc's delayed link to the video stream: without
+        # it the parser links whichever pad rtspsrc creates FIRST (a bare queue
+        # accepts any caps), so a camera that lists audio before video would
+        # wire the audio track into the video chain and never deliver a frame.
         # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
         # and a NAT-free path that containers typically lack, and a failed UDP
         # SETUP can make cameras drop the whole control connection.
@@ -270,6 +273,7 @@ def build_gstreamer_pipeline(
         return (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
+            "application/x-rtp,media=video ! "
             "queue ! "
             f"rtp{codec}depay ! {codec}parse ! "
             f"nvv4l2decoder {_nvv4l2decoder_max_performance_fragment()}! "

@@ -14,6 +14,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.exceptions import FeatureDeprecatedError
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -32,8 +33,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
 
 LONG_DESCRIPTION = """
@@ -111,6 +115,28 @@ class BlockManifest(WorkflowBlockManifest):
             "yolo_world/m",
             "yolo_world/l",
             "yolo_world/x",
+        ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"yolo_world/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"yolo_world/{self.version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
         ]
 
 

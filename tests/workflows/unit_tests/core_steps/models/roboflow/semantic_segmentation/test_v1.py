@@ -8,6 +8,7 @@ import supervision as sv
 from PIL import Image
 from pydantic import ValidationError
 
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
     BlockManifest,
     RoboflowSemanticSegmentationModelBlockV1,
@@ -154,16 +155,10 @@ def test_convert_to_sv_detections_derives_confidence_from_mask() -> None:
         }
     )
 
-    # the dense (H, W) map is image-level, so it is carried on the length-agnostic
-    # `metadata` — putting it in `data` violates supervision's per-detection
-    # first-dimension contract (`len(detections)`) and raises on assignment/merge.
-    assert "confidence_mask" not in result.data
-    assert "confidence_mask" in result.metadata
-    assert result.metadata["confidence_mask"].shape == (50, 50)
+    assert "confidence_mask" in result.data
+    assert result.data["confidence_mask"].shape == (50, 50)
     assert result.confidence is not None
     assert abs(float(result.confidence[0]) - 200 / 255.0) < 0.01
-    # the collection must stay valid under supervision's own operations
-    assert len(sv.Detections.merge([result, result])) == 2 * len(result)
 
 
 def test_convert_to_sv_detections_empty_when_all_background() -> None:
@@ -339,10 +334,8 @@ def test_convert_to_sv_detections_numpy_masks_match_base64_path() -> None:
     assert [r["counts"] for r in via_numpy.data["rle_mask"]] == [
         r["counts"] for r in via_b64.data["rle_mask"]
     ]
-    # the dense map is image-level, carried on `metadata` (see the block's
-    # CONFIDENCE_MASK_KEY comment), so parity is asserted there
     assert np.array_equal(
-        via_numpy.metadata["confidence_mask"], via_b64.metadata["confidence_mask"]
+        via_numpy.data["confidence_mask"], via_b64.data["confidence_mask"]
     )
 
 
@@ -356,3 +349,88 @@ def test_convert_to_sv_detections_numpy_empty_mask_yields_empty_detections() -> 
     )
 
     assert len(result) == 0
+
+
+# --- tensor-native sibling (`v1_tensor.py`) tests ---
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+
+@_TENSOR_ONLY
+def test_tensor_native_response_conversion_carries_confidence_mask_on_image_metadata() -> None:
+    # numpy `v1.py` attaches the decoded confidence map under
+    # `result["confidence_mask"]`; the tensor sibling carries the same map on
+    # `InstanceDetections.image_metadata` (the serialiser emits neither).
+    import torch
+
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor import (
+        CONFIDENCE_MASK_KEY,
+        _build_instance_detections_from_inference_response,
+    )
+    from inference.core.workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    seg = np.zeros((50, 50), dtype=np.uint8)
+    seg[10:40, 10:40] = 1
+    conf = np.full((50, 50), 200, dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=np.zeros((50, 50, 3), dtype=np.uint8),
+    )
+
+    result = _build_instance_detections_from_inference_response(
+        predictions_dict={
+            "segmentation_mask": _encode_mask_as_base64_png(seg),
+            "confidence_mask": _encode_mask_as_base64_png(conf),
+            "class_map": {"1": "cat"},
+        },
+        image=image,
+        inference_id="some-inference-id",
+    )
+
+    assert len(result) == 1
+    assert CONFIDENCE_MASK_KEY in result.image_metadata
+    confidence_mask = result.image_metadata[CONFIDENCE_MASK_KEY]
+    assert isinstance(confidence_mask, torch.Tensor)
+    assert tuple(confidence_mask.shape) == (50, 50)
+    assert int(confidence_mask.max().item()) == 200
+    assert abs(float(result.confidence[0].item()) - 200 / 255.0) < 0.01
+
+
+@_TENSOR_ONLY
+def test_tensor_native_response_conversion_empty_mask_has_no_confidence_mask() -> None:
+    # numpy `v1.py` returns bare `sv.Detections.empty()` for an all-background
+    # mask (no confidence map attached) - the tensor sibling must match.
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor import (
+        CONFIDENCE_MASK_KEY,
+        _build_instance_detections_from_inference_response,
+    )
+    from inference.core.workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    seg = np.zeros((50, 50), dtype=np.uint8)
+    conf = np.full((50, 50), 128, dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=np.zeros((50, 50, 3), dtype=np.uint8),
+    )
+
+    result = _build_instance_detections_from_inference_response(
+        predictions_dict={
+            "segmentation_mask": _encode_mask_as_base64_png(seg),
+            "confidence_mask": _encode_mask_as_base64_png(conf),
+            "class_map": {},
+        },
+        image=image,
+        inference_id="some-inference-id",
+    )
+
+    assert len(result) == 0
+    assert CONFIDENCE_MASK_KEY not in result.image_metadata

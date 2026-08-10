@@ -42,8 +42,11 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
 from inference_models import ClassificationPrediction
 from inference_sdk import InferenceHTTPClient
@@ -136,6 +139,28 @@ class BlockManifest(WorkflowBlockManifest):
         )
 
         return list(CLIP_CACHE_MODEL_IDS)
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"clip/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"clip/{self.version}",
+                model_registration_kwargs={
+                    "endpoint_type": ModelEndpointType.CORE_MODEL
+                },
+            )
+        ]
 
 
 class ClipComparisonBlockV2(WorkflowBlock):

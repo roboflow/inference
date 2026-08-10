@@ -22,6 +22,14 @@ _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
 # be validated on-device against real RTSP connect + keyframe latency.
 _DEFAULT_GRAB_TIMEOUT_NS = 15_000_000_000
 _GRAB_TIMEOUT_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_GRAB_TIMEOUT_SECONDS"
+# Shared with the Jetson producer so RTSP transport tuning is uniform across
+# platforms.
+_RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
+_RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
+_RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+_DEFAULT_RTSP_PROTOCOLS = "tcp"
+_DEFAULT_RTSP_LATENCY_MS = 200
+_RTSP_VIDEO_CODECS = ("h264", "h265")
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
 _RTSP_ELEMENTS = (
     "h264parse",
@@ -162,7 +170,12 @@ def required_gstreamer_cuda_elements(
     if not isinstance(video, str):
         return tuple(elements)
     if _is_rtsp_source(video):
-        elements.extend(_RTSP_ELEMENTS)
+        # RTSP uses an explicit rtspsrc ! depay ! parse ! decodebin chain
+        # (no uridecodebin autoplugging), so uridecodebin is not required.
+        return tuple(
+            ["appsink", "cudaconvertscale", "queue", "decodebin"]
+            + list(_RTSP_ELEMENTS)
+        )
     local_file_path = _local_file_path(video)
     if local_file_path is not None:
         demuxer = _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
@@ -183,14 +196,46 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
         if is_live
         else "max-buffers=4 drop=false sync=false"
     )
-    uri = _source_uri(video)
-    return (
-        f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
-        'caps="video/x-raw(memory:CUDAMemory)" ! '
+    tail = (
         f"queue {queue_options} ! "
         f"cudaconvertscale cuda-device-id={device_id} ! "
         "video/x-raw(memory:CUDAMemory),format=RGBP ! "
         f"appsink name=rf_tensor_sink {appsink_options} wait-on-eos=false"
+    )
+    if _is_rtsp_source(video):
+        # Explicit video-only chain instead of uridecodebin (mirrors the Jetson
+        # producer): autoplugging an RTSP source decodes EVERY track, and a
+        # camera that muxes audio (e.g. A-Law) poisons the bus with a
+        # missing-decoder error — fatal at startup when it races preroll, and a
+        # mid-run grab() failure otherwise; over UDP the dead audio udpsrc
+        # separately kills the pipeline with not-linked stream errors. The
+        # application/x-rtp,media=video caps filter pins rtspsrc's delayed link
+        # to the video stream (first-pad-wins would otherwise let an
+        # audio-first camera wire audio into the chain). protocols defaults to
+        # tcp: RTP-over-UDP needs raised kernel buffers and a NAT-free path
+        # that containers typically lack, and a failed UDP SETUP can make
+        # cameras drop the whole control connection. decodebin is caps-pinned
+        # to CUDAMemory so only an NVIDIA decoder can terminate autoplugging
+        # (x86 decoder factory names vary per codec/device, so the fixed
+        # nvv4l2decoder of the Jetson chain has no single-name equivalent);
+        # a software decoder cannot satisfy the caps, so selection fails loudly
+        # instead of silently falling back — and _validate_pipeline re-checks
+        # the instantiated factories after the first frame either way.
+        codec = _rtsp_video_codec()
+        return (
+            f'rtspsrc location="{_quote_gstreamer_value(video)}" '
+            f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
+            "application/x-rtp,media=video ! "
+            "queue ! "
+            f"rtp{codec}depay ! {codec}parse ! "
+            'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
+            f"{tail}"
+        )
+    uri = _source_uri(video)
+    return (
+        f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
+        'caps="video/x-raw(memory:CUDAMemory)" ! '
+        f"{tail}"
     )
 
 
@@ -357,6 +402,33 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
         self._decoder_validated = True
 
 
+def _rtsp_video_codec() -> str:
+    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
+    if codec not in _RTSP_VIDEO_CODECS:
+        raise ValueError(
+            f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
+            f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
+        )
+    return codec
+
+
+def _rtsp_protocols() -> str:
+    return os.getenv(_RTSP_PROTOCOLS_ENV_VAR, _DEFAULT_RTSP_PROTOCOLS).strip() or (
+        _DEFAULT_RTSP_PROTOCOLS
+    )
+
+
+def _rtsp_latency_ms() -> int:
+    raw = os.getenv(_RTSP_LATENCY_ENV_VAR)
+    if raw is None:
+        return _DEFAULT_RTSP_LATENCY_MS
+    try:
+        latency = int(raw)
+    except ValueError:
+        return _DEFAULT_RTSP_LATENCY_MS
+    return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
 def _source_uri(video: str) -> str:
     local_path = _local_file_path(video)
     if local_path is not None:
@@ -374,7 +446,10 @@ def _local_file_path(video: str) -> Optional[str]:
 
 
 def _is_rtsp_source(video: str) -> bool:
-    return video.lower().startswith(("rtsp://", "rtsps://"))
+    # rtspt:// / rtspst:// are rtspsrc's force-TCP variants of rtsp:// / rtsps://.
+    return video.lower().startswith(
+        ("rtsp://", "rtsps://", "rtspt://", "rtspst://")
+    )
 
 
 def _supports_uri_source(video: object) -> bool:
