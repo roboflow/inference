@@ -2,10 +2,16 @@
 
 ## Unreleased
 
+---
+
+### `0.34.6`
+
 ### Fixed
 
 - ONNX models no longer invoke CUDA stream context management on non-CUDA devices,
   preventing native inference failures on Apple Silicon.
+
+---
 
 ## `0.34.5`
 
