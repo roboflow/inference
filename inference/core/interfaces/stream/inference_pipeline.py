@@ -266,7 +266,7 @@ class InferencePipeline:
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
         * ACTIVE_LEARNING_ENABLED - controls Active Learning middleware if explicit parameter not given
 
-        Returns: Instance of InferencePipeline
+        Returns: Instance of InferencePipeline.
 
         Throws:
             * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
