@@ -4742,8 +4742,15 @@ def test_get_workflow_specification_when_config_not_provided_and_ephemeral_cache
         )
 
     # then
+    workflow_requests = [
+        request
+        for request in requests_mock.request_history
+        if request.method == "GET"
+        and "/my_workspace/workflows/some_workflow" in request.url
+    ]
+    assert len(workflow_requests) == 1, "Expected single workflow specification request"
     assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
+        workflow_requests[0].query == "api_key=my_api_key"
     ), "API key must be given in query"
     assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
 
