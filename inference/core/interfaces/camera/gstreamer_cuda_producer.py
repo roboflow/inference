@@ -173,8 +173,7 @@ def required_gstreamer_cuda_elements(
         # RTSP uses an explicit rtspsrc ! depay ! parse ! decodebin chain
         # (no uridecodebin autoplugging), so uridecodebin is not required.
         return tuple(
-            ["appsink", "cudaconvertscale", "queue", "decodebin"]
-            + list(_RTSP_ELEMENTS)
+            ["appsink", "cudaconvertscale", "queue", "decodebin"] + list(_RTSP_ELEMENTS)
         )
     local_file_path = _local_file_path(video)
     if local_file_path is not None:
@@ -447,9 +446,7 @@ def _local_file_path(video: str) -> Optional[str]:
 
 def _is_rtsp_source(video: str) -> bool:
     # rtspt:// / rtspst:// are rtspsrc's force-TCP variants of rtsp:// / rtsps://.
-    return video.lower().startswith(
-        ("rtsp://", "rtsps://", "rtspt://", "rtspst://")
-    )
+    return video.lower().startswith(("rtsp://", "rtsps://", "rtspt://", "rtspst://"))
 
 
 def _supports_uri_source(video: object) -> bool:
