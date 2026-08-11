@@ -768,8 +768,12 @@ def serialize_wildcard_kind(value: Any) -> Any:
     including the ``sv.Detections`` arm (defensive: non-swapped paths can still
     route sv under the flag) — routed to the NUMPY detections serialiser, since
     this module's same-name ``serialise_sv_detections`` consumes native objects.
-    Tuples other than the keypoint prediction pass through untouched, mirroring
-    the numpy contract.
+    Tuples other than the keypoint prediction convert ELEMENT-WISE (namedtuples
+    rebuilt field-wise) — a DIVERGENCE from the numpy sibling's pass-through,
+    which is process-safe for numpy values but would smuggle a live CUDA tensor
+    across the stream-manager process boundary here (CUDA IPC is unsupported on
+    Jetson/Tegra — "CUDA error: invalid argument"). The numpy sibling stays
+    untouched for flag-off parity.
     """
     if isinstance(value, WorkflowImageData):
         return serialise_image(image=value)
@@ -789,6 +793,16 @@ def serialize_wildcard_kind(value: Any) -> Any:
         return {key: serialize_wildcard_kind(value=item) for key, item in value.items()}
     if isinstance(value, list):
         return [serialize_wildcard_kind(value=element) for element in value]
+    if isinstance(value, tuple):
+        # The keypoint pair was consumed above, so any tuple here is a plain
+        # container — convert element-wise so a nested tensor cannot cross the
+        # stream-manager process boundary alive. Namedtuples take one
+        # positional argument PER FIELD — splat; a plain tuple takes the
+        # iterable whole (same reconstruction as the representation boundary).
+        converted = [serialize_wildcard_kind(value=element) for element in value]
+        if hasattr(value, "_fields"):
+            return type(value)(*converted)
+        return type(value)(converted)
     if isinstance(value, sv.Detections):
         return _serialise_legacy_sv_detections(detections=value)
     if isinstance(value, datetime):

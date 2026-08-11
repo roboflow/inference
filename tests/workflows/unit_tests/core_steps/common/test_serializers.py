@@ -1523,7 +1523,77 @@ def test_tensor_wildcard_serializer_dispatches_native_values_like_kind_serialize
     assert result["untouched"] == "text"
     assert result["number"] == 42
     assert result["none"] is None
-    assert result["plain_tuple"] == (1, 2), "non-KP tuples pass through like numpy"
+    assert result["plain_tuple"] == (
+        1,
+        2,
+    ), "non-KP tuples are rebuilt element-wise with values intact"
+
+
+def test_tensor_wildcard_serializer_converts_tuples_element_wise() -> None:
+    # given - tuples must not smuggle a live tensor across the stream-manager
+    # process boundary (CUDA IPC is unsupported on Jetson/Tegra), so the
+    # wildcard serialiser converts tuple elements like list elements while
+    # preserving the container type (namedtuples rebuilt field-wise).
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from collections import namedtuple
+
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.keypoints_detection import KeyPoints
+    from inference_models.models.base.object_detection import Detections
+
+    def assert_no_torch_tensor(value) -> None:
+        assert not isinstance(value, torch.Tensor), f"live tensor survived: {value!r}"
+        if isinstance(value, dict):
+            for item in value.values():
+                assert_no_torch_tensor(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                assert_no_torch_tensor(item)
+
+    TensorRecord = namedtuple("TensorRecord", ["label", "payload"])
+    plain_tuple = (torch.tensor([1.0, 2.0]), torch.tensor([[3.0]]))
+    named = TensorRecord(label="foo", payload=torch.tensor([4.0, 5.0]))
+    nested = [{"inner": (torch.tensor([6.0]), "text", 7)}]
+    scalars = ("a", 1, 2.5, None)
+    key_points = KeyPoints(
+        xy=torch.tensor([[[11.0, 11.0], [12.0, 13.0]]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([[0.9, 0.8]]),
+    )
+    kp_tuple = (
+        key_points,
+        Detections(
+            xyxy=torch.tensor([[10.0, 20.0, 30.0, 40.0]]),
+            class_id=torch.tensor([1]),
+            confidence=torch.tensor([0.5]),
+            image_metadata={"class_names": {1: "dog"}, "image_dimensions": [100, 200]},
+            bboxes_metadata=[{"detection_id": "det-1"}],
+        ),
+    )
+
+    # when
+    plain_result = serializers_tensor.serialize_wildcard_kind(value=plain_tuple)
+    named_result = serializers_tensor.serialize_wildcard_kind(value=named)
+    nested_result = serializers_tensor.serialize_wildcard_kind(value=nested)
+    scalars_result = serializers_tensor.serialize_wildcard_kind(value=scalars)
+    kp_result = serializers_tensor.serialize_wildcard_kind(value=kp_tuple)
+
+    # then
+    assert type(plain_result) is tuple
+    assert plain_result == ([1.0, 2.0], [[3.0]])
+    assert_no_torch_tensor(plain_result)
+    assert type(named_result) is TensorRecord, "namedtuple type is preserved"
+    assert named_result.label == "foo"
+    assert named_result.payload == [4.0, 5.0]
+    assert_no_torch_tensor(named_result)
+    assert nested_result == [{"inner": ([6.0], "text", 7)}]
+    assert type(nested_result[0]["inner"]) is tuple
+    assert_no_torch_tensor(nested_result)
+    assert scalars_result == ("a", 1, 2.5, None), "scalar tuples keep their values"
+    assert kp_result == serializers_tensor.serialise_native_keypoint_detection(
+        prediction=kp_tuple
+    ), "the keypoint pair still routes to the kind serialiser, not element-wise"
 
 
 def test_tensor_wildcard_serializer_matches_numpy_wildcard_for_equivalent_prediction() -> (
