@@ -7,12 +7,54 @@ PROCESSOR_DIR = (
 sys.path.insert(0, str(PROCESSOR_DIR))
 
 from processor_metrics import ProcessorMetrics  # noqa: E402
+from worker_lifecycle import schedule_retirement  # noqa: E402
 
 
 def test_processor_image_includes_metrics_module():
     dockerfile = (PROCESSOR_DIR / "Dockerfile").read_text()
 
     assert "COPY processor_metrics.py /app/processor_metrics.py" in dockerfile
+    assert "COPY worker_lifecycle.py /app/worker_lifecycle.py" in dockerfile
+
+
+def test_processor_retires_after_metrics_grace_period():
+    processor = (PROCESSOR_DIR / "processor.py").read_text()
+
+    assert 'os.getenv("PROCESSOR_FINAL_METRICS_GRACE_S", "35")' in processor
+    assert "schedule_retirement(" in processor
+    assert "self._delete_retiring_pod" in processor
+
+
+def test_retirement_waits_for_final_metrics_scrape_window():
+    events = []
+
+    class FakeTimer:
+        def __init__(self, delay, callback):
+            events.append(("created", delay))
+            self.callback = callback
+            self.daemon = False
+
+        def start(self):
+            events.append(("started", self.daemon))
+
+    timer = schedule_retirement(
+        35,
+        lambda: events.append(("retired", None)),
+        timer_factory=FakeTimer,
+    )
+
+    assert events == [("created", 35.0), ("started", True)]
+    timer.callback()
+    assert events[-1] == ("retired", None)
+
+
+def test_zero_retirement_grace_is_immediate():
+    events = []
+
+    timer = schedule_retirement(0, lambda: events.append("retired"))
+
+    assert timer is None
+    assert events == ["retired"]
 
 
 def test_metrics_render_aggregate_worker_state_and_bounded_labels():

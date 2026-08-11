@@ -104,6 +104,7 @@ from security import (
     sanitize_diagnostic,
     validate_job_id,
 )
+from worker_lifecycle import schedule_retirement
 
 
 def _parse_capture_options(options):
@@ -130,6 +131,14 @@ MJPEG_MAX_FPS = 12
 # scattering across the pool. Costs at most a few seconds of start latency
 # when the whole pool is cold. 0 disables.
 POOL_FRESH_CLAIM_HOLDOFF_S = float(os.getenv("POOL_FRESH_CLAIM_HOLDOFF_S", "3"))
+
+# A detached pool pod used to delete itself immediately after its last job,
+# which removed its process-local terminal counters before Prometheus's next
+# scrape. Keep the retiring, non-claiming worker alive for two default 15s
+# scrape opportunities. 0 restores immediate retirement.
+FINAL_METRICS_SCRAPE_GRACE_S = max(
+    0.0, float(os.getenv("PROCESSOR_FINAL_METRICS_GRACE_S", "35"))
+)
 
 # Used by stream-mode jobs on file sources: the file is replayed at native speed
 # into the local relay and consumed as RTSP, so the pipeline sees a real stream.
@@ -1488,17 +1497,29 @@ class Worker:
         """Pool pods are single-GENERATION: they detach from the ready pool on
         their first claim (a fresh replacement warms immediately), keep
         claiming into free slots while anything is still running, and
-        self-delete once their last job ends — bounding how long leaks can
-        accumulate while still packing several streams onto one pod. If the
-        delete fails (local dev, degraded RBAC) we fall back to long-lived
-        behavior. Abrupt deaths are safe either way: the platform requeues
-        held jobs via the heartbeat reaper."""
+        self-delete after a short final-metrics scrape window once their last
+        job ends — bounding how long leaks can accumulate while still packing
+        several streams onto one pod. If the delete fails (local dev, degraded
+        RBAC) we fall back to long-lived behavior. Abrupt deaths are safe either
+        way: the platform requeues held jobs via the heartbeat reaper."""
         if not self.pod.enabled or not self.had_job:
             return
         with self.claim_lock:  # a concurrent claim can't interleave the check
             if self.retiring or any(r.active for r in self.snapshot_runs()):
                 return
             self.retiring = True
+
+        if FINAL_METRICS_SCRAPE_GRACE_S > 0:
+            print(
+                "[processor] job over — exposing final metrics for "
+                f"{FINAL_METRICS_SCRAPE_GRACE_S:g}s before retiring"
+            )
+        schedule_retirement(
+            FINAL_METRICS_SCRAPE_GRACE_S,
+            self._delete_retiring_pod,
+        )
+
+    def _delete_retiring_pod(self):
         if not self.pod.self_delete():
             self.retiring = False
 

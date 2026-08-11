@@ -424,6 +424,13 @@ not implemented yet.
   These are measurement tools, not certified limits. Public LB, relay-node,
   CNI/east-west, WHEP, and processor bandwidth still need independent capacity
   curves before choosing a relay shard size. Controlled pprof remains disabled.
+- **Processor terminal metrics need a retirement scrape window.** Detached pool
+  workers expose `video_processor_retiring=1` and remain alive for 35 seconds
+  after their final job outcome so the default 15-second Prometheus interval can
+  capture process-local `video_processor_jobs_finished_total` counters before
+  pod self-deletion. `PROCESSOR_FINAL_METRICS_GRACE_S=0` restores immediate
+  retirement; changing the scrape interval should preserve at least two scrape
+  opportunities.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
