@@ -59,6 +59,42 @@ SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
 
 
+def merge_megapixel_buckets(
+    left: Optional[Dict[str, Any]],
+    right: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Sum per-bucket frame and duration counters.
+
+    Kept local to this module so the redis usage offloader can mirror it without
+    importing the rest of inference.
+    """
+    if not left:
+        return {key: dict(value) for key, value in (right or {}).items()}
+    if not right:
+        return {key: dict(value) for key, value in left.items()}
+
+    merged: Dict[str, Dict[str, Any]] = {
+        key: {
+            "processed_frames": int(value.get("processed_frames", 0) or 0),
+            "execution_duration": float(value.get("execution_duration", 0) or 0),
+        }
+        for key, value in left.items()
+    }
+    for key, value in right.items():
+        frames = int(value.get("processed_frames", 0) or 0)
+        duration = float(value.get("execution_duration", 0) or 0)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = {
+                "processed_frames": frames,
+                "execution_duration": duration,
+            }
+            continue
+        existing["processed_frames"] = int(existing["processed_frames"]) + frames
+        existing["execution_duration"] = float(existing["execution_duration"]) + duration
+    return merged
+
+
 def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
     merged = {}
     if d1 and d2 and d1.get("resource_id") != d2.get("resource_id"):
@@ -74,6 +110,11 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
     merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get(
         "execution_duration", 0
     )
+    if "megapixel_buckets" in d1 or "megapixel_buckets" in d2:
+        merged["megapixel_buckets"] = merge_megapixel_buckets(
+            d1.get("megapixel_buckets"),
+            d2.get("megapixel_buckets"),
+        )
     return {**d1, **d2, **merged}
 
 

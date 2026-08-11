@@ -53,6 +53,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.megapixel_buckets import prepare_sam_usage_billing
 from inference_models.errors import ModelInputError
 
 if DEVICE is None:
@@ -124,6 +125,12 @@ class InferenceModelsSAM2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+        nested_model = getattr(self._model, "_model", None)
+        self.image_size = int(
+            getattr(self._model, "image_size", None)
+            or getattr(nested_model, "image_size", None)
+            or 1024
+        )
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
@@ -135,6 +142,7 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        prepare_sam_usage_billing(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())

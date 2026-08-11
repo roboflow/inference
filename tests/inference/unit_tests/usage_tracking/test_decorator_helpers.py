@@ -99,6 +99,7 @@ def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
     class CachedModel:
         api_key = "first-loader-api-key"
         task_type = "unsupervised-segmentation"
+        model_type = "sam3"
 
         def infer_from_request(self, request): ...
 
@@ -130,6 +131,94 @@ def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
     assert usage_params["resource_details"]["task_type"] == (
         "unsupervised-segmentation"
     )
+    assert usage_params["resource_details"]["model_type"] == "sam3"
+
+
+def test_extract_usage_params_for_model_includes_megapixel_buckets(
+    usage_collector_with_mocked_threads,
+):
+    class FixedInputModel:
+        api_key = "test_key"
+        dataset_id = "st-inst-seg"
+        version_id = "9"
+        task_type = "instance-segmentation"
+        model_type = "rfdetr-seg-nano"
+        img_size_h = 640
+        img_size_w = 640
+
+        def infer(self, image, **kwargs): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.25,
+            func=FixedInputModel.infer,
+            category="model",
+            error_details=None,
+            args=(FixedInputModel(), [object(), object(), object()]),
+            kwargs={},
+        )
+    )
+
+    assert usage_params["resource_id"] == "st-inst-seg/9"
+    assert usage_params["frames"] == 3
+    assert usage_params["resource_details"]["model_type"] == "rfdetr-seg-nano"
+    assert usage_params["megapixel_buckets"] == {
+        "0.25-0.5": {
+            "processed_frames": 3,
+            "execution_duration": 0.25,
+        }
+    }
+
+
+def test_extract_usage_params_for_sam_uses_encoder_image_size(
+    usage_collector_with_mocked_threads,
+):
+    class SamLikeModel:
+        api_key = "test_key"
+        dataset_id = "sam2"
+        version_id = "hiera_tiny"
+        task_type = "unsupervised-segmentation"
+        model_type = "sam2"
+        image_size = 1024
+
+        def infer_from_request(self, request): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.5,
+            func=SamLikeModel.infer_from_request,
+            category="model",
+            error_details=None,
+            args=(
+                SamLikeModel(),
+                SimpleNamespace(image=object(), api_key="test_key"),
+            ),
+            kwargs={},
+        )
+    )
+
+    assert usage_params["resource_id"] == "sam2/hiera_tiny"
+    assert usage_params["frames"] == 1
+    assert usage_params["resource_details"]["model_type"] == "sam2"
+    # 1024x1024 = ~1.05 MP -> 1-2 bucket
+    assert usage_params["megapixel_buckets"] == {
+        "1-2": {
+            "processed_frames": 1,
+            "execution_duration": 0.5,
+        }
+    }
 
 
 def test_explicit_model_usage_api_key_takes_precedence_over_request(

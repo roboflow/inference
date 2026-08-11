@@ -76,6 +76,7 @@ def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
                     "inference_version": inference_version,
                     "enterprise": False,
                     "execution_duration": 0,
+                    "megapixel_buckets": {},
                 }
             }
         }
@@ -2056,3 +2057,82 @@ def test_send_usage_payload_retry_sends_identical_rows(post_mock):
         post_mock.call_args_list[0].kwargs["json"]
         == post_mock.call_args_list[1].kwargs["json"]
     )
+
+
+def test_record_usage_accumulates_megapixel_buckets(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+
+    collector.record_usage(
+        source="img",
+        category="model",
+        frames=2,
+        api_key="test_key",
+        resource_id="st-inst-seg/9",
+        resource_details={
+            "billable": True,
+            "task_type": "instance-segmentation",
+            "model_type": "rfdetr-seg-nano",
+        },
+        execution_duration=0.4,
+        megapixel_buckets={
+            "0.25-0.5": {"processed_frames": 2, "execution_duration": 0.4},
+        },
+    )
+    collector.record_usage(
+        source="img",
+        category="model",
+        frames=1,
+        api_key="test_key",
+        resource_id="st-inst-seg/9",
+        resource_details={
+            "billable": True,
+            "task_type": "instance-segmentation",
+            "model_type": "rfdetr-seg-nano",
+        },
+        execution_duration=0.2,
+        megapixel_buckets={
+            "0.25-0.5": {"processed_frames": 1, "execution_duration": 0.2},
+        },
+    )
+
+    key = usage_key("model", "st-inst-seg/9")
+    row = collector._usage["test_key"][key]
+    assert row["processed_frames"] == 3
+    assert row["execution_duration"] == pytest.approx(0.6)
+    assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 3
+    assert row["megapixel_buckets"]["0.25-0.5"][
+        "execution_duration"
+    ] == pytest.approx(0.6)
+    details = json.loads(row["resource_details"])
+    assert details["model_type"] == "rfdetr-seg-nano"
+
+
+def test_model_decorator_records_fixed_input_megapixel_buckets(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FixedInputModel:
+        api_key = "test_key"
+        dataset_id = "st-inst-seg"
+        version_id = "9"
+        task_type = "instance-segmentation"
+        model_type = "rfdetr-seg-nano"
+        img_size_h = 640
+        img_size_w = 640
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return {"ok": True}
+
+    FixedInputModel().infer([object(), object()])
+
+    key = usage_key("model", "st-inst-seg/9")
+    row = usage_collector._usage["test_key"][key]
+    assert row["processed_frames"] == 2
+    assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 2
+    details = json.loads(row["resource_details"])
+    assert details["model_type"] == "rfdetr-seg-nano"
+    assert details["task_type"] == "instance-segmentation"

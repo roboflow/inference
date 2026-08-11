@@ -1,9 +1,14 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
+)
+from inference.usage_tracking.megapixel_buckets import (
+    billable_hw_from_model,
+    build_megapixel_buckets,
+    count_inference_images,
 )
 
 
@@ -46,6 +51,37 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
+    """Resolve Roboflow ``modelType`` (architecture / size), not the resource id."""
+    model = func_kwargs.get("self")
+    if model is not None:
+        model_type = getattr(model, "model_type", None)
+        if model_type:
+            return str(model_type)
+
+    model_id = get_model_id_from_kwargs(func_kwargs)
+    if not model_id:
+        return None
+
+    api_key = get_model_api_key_from_kwargs(func_kwargs)
+    try:
+        # Lazy import: registries pull in model stacks that import usage tracking.
+        from inference.core.registries.roboflow import get_model_type
+
+        _, model_type = get_model_type(model_id=model_id, api_key=api_key)
+        if model_type:
+            model_type = str(model_type)
+            if model is not None and not getattr(model, "model_type", None):
+                try:
+                    model.model_type = model_type
+                except Exception:
+                    pass
+            return model_type
+    except Exception as exc:
+        logger.debug("Unable to resolve model_type for '%s': %s", model_id, exc)
+    return None
+
+
 def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -58,7 +94,62 @@ def get_model_resource_details_from_kwargs(
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
             resource_details["task_type"] = _self.task_type
+    model_type = get_model_type_from_kwargs(func_kwargs)
+    if model_type:
+        resource_details["model_type"] = model_type
     return resource_details
+
+
+def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
+    if "image" in func_kwargs:
+        return func_kwargs["image"]
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict) and "image" in nested_kwargs:
+        return nested_kwargs["image"]
+    for request_key in ("inference_request", "request"):
+        request = func_kwargs.get(request_key)
+        image = getattr(request, "image", None)
+        if image is not None:
+            return image
+    return None
+
+
+def get_model_frames_and_billable_hw(
+    func_kwargs: Dict[str, Any],
+) -> Tuple[int, Optional[Tuple[int, int]]]:
+    model = func_kwargs.get("self")
+    frames = 0
+    if model is not None:
+        stamped_frames = getattr(model, "_usage_billable_frames", None)
+        if isinstance(stamped_frames, int) and stamped_frames > 0:
+            frames = stamped_frames
+    if not frames:
+        frames = count_inference_images(get_model_image_from_kwargs(func_kwargs))
+    if frames <= 0:
+        frames = 1
+
+    billable_hw = billable_hw_from_model(model) if model is not None else None
+    return frames, billable_hw
+
+
+def get_model_megapixel_buckets_from_kwargs(
+    func_kwargs: Dict[str, Any],
+    *,
+    execution_duration: float,
+    inference_test_run: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    if inference_test_run:
+        return {}
+    frames, billable_hw = get_model_frames_and_billable_hw(func_kwargs)
+    if not billable_hw:
+        return {}
+    height, width = billable_hw
+    return build_megapixel_buckets(
+        height=height,
+        width=width,
+        frames=frames,
+        execution_duration=execution_duration,
+    )
 
 
 def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
