@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.35.0`
+
 ### Added
 
 - Adjustment to `KeyPoints` interface to expose `__len__(...)` method.
@@ -20,7 +24,7 @@
   `KeyPoints` - not keypoints per instance. `KeyPoints` deliberately remains **non-iterable**, so
   that adding a positional iteration order for it later is an explicit, tested decision rather than
   a silent contract downstream code could come to depend on.
-- 
+
 ### Fixed
 
 - `EasyOCRTorch` no longer emits a malformed `Detections.xyxy` when no text region passes the
