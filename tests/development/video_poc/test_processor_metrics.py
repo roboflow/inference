@@ -9,6 +9,12 @@ sys.path.insert(0, str(PROCESSOR_DIR))
 from processor_metrics import ProcessorMetrics  # noqa: E402
 
 
+def test_processor_image_includes_metrics_module():
+    dockerfile = (PROCESSOR_DIR / "Dockerfile").read_text()
+
+    assert "COPY processor_metrics.py /app/processor_metrics.py" in dockerfile
+
+
 def test_metrics_render_aggregate_worker_state_and_bounded_labels():
     metrics = ProcessorMetrics()
     metrics.job_started("stream")
