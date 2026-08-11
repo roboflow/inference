@@ -20,6 +20,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.doctr.doctr_torch import DocTR
 
@@ -98,6 +99,7 @@ class InferenceModelsDocTRAdapter(Model):
                 time=perf_counter() - t1,
             )
 
+    @usage_collector("model")
     def infer(
         self, image: Any, **kwargs
     ) -> Union[

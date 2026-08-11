@@ -85,7 +85,20 @@ def _as_positive_int(value: Any) -> Optional[int]:
     return parsed
 
 
-def _square_image_size(value: Any) -> Optional[Tuple[int, int]]:
+def _image_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
+    """Normalize an ``image_size``-style attribute to (height, width).
+
+    Backends express it either as a single edge length for square inputs or as
+    an explicit (height, width) pair.
+    """
+    if isinstance(value, (tuple, list)):
+        if len(value) != 2:
+            return None
+        height = _as_positive_int(value[0])
+        width = _as_positive_int(value[1])
+        if height is None or width is None:
+            return None
+        return height, width
     size = _as_positive_int(value)
     if size is None:
         return None
@@ -100,25 +113,25 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
         return height, width
 
     for attr in ("image_size", "img_size"):
-        square = _square_image_size(getattr(model, attr, None))
-        if square is not None:
-            return square
+        size = _image_size_to_hw(getattr(model, attr, None))
+        if size is not None:
+            return size
 
-    # SAM adapters wrap torch backends that expose image_size / _image_size.
-    for attr in ("_model", "sam", "sam_model"):
+    # Adapters wrap backends that expose image_size / _image_size.
+    for attr in ("_model", "sam", "sam_model", "owlv2"):
         inner = getattr(model, attr, None)
         if inner is None:
             continue
         for size_attr in ("image_size", "_image_size", "img_size"):
-            square = _square_image_size(getattr(inner, size_attr, None))
-            if square is not None:
-                return square
+            size = _image_size_to_hw(getattr(inner, size_attr, None))
+            if size is not None:
+                return size
         nested = getattr(inner, "_model", None)
         if nested is not None:
             for size_attr in ("image_size", "_image_size", "img_size"):
-                square = _square_image_size(getattr(nested, size_attr, None))
-                if square is not None:
-                    return square
+                size = _image_size_to_hw(getattr(nested, size_attr, None))
+                if size is not None:
+                    return size
 
     environment = getattr(model, "environment", None)
     if isinstance(environment, dict):

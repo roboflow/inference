@@ -19,6 +19,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.grounding_dino.grounding_dino_torch import (
     GroundingDinoForObjectDetectionTorch,
@@ -86,6 +87,7 @@ class InferenceModelsGroundingDINOAdapter(Model):
         result = self.infer(**request.dict())
         return result
 
+    @usage_collector("model")
     def infer(
         self,
         image: InferenceRequestImage,

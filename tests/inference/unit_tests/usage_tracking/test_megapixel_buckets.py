@@ -158,6 +158,30 @@ def test_input_hw_uses_measured_size_when_dynamic():
     )
 
 
+def test_fixed_input_hw_reads_non_square_image_size_pair():
+    # OwlV2 exposes image_size as a (height, width) pair rather than an edge length.
+    model = SimpleNamespace(image_size=(960, 1024))
+
+    assert get_fixed_model_input_hw(model) == (960, 1024)
+
+
+def test_fixed_input_hw_reads_square_image_size_scalar():
+    assert get_fixed_model_input_hw(SimpleNamespace(image_size=768)) == (768, 768)
+
+
+def test_fixed_input_hw_ignores_malformed_image_size():
+    assert get_fixed_model_input_hw(SimpleNamespace(image_size=(960,))) is None
+    assert get_fixed_model_input_hw(SimpleNamespace(image_size=(0, 640))) is None
+    assert get_fixed_model_input_hw(SimpleNamespace(image_size=(None, None))) is None
+
+
+def test_fixed_input_hw_reads_wrapped_owlv2_backend():
+    # SerializedOwlV2 delegates inference to a wrapped OwlV2 instance.
+    model = SimpleNamespace(owlv2=SimpleNamespace(image_size=(960, 960)))
+
+    assert get_fixed_model_input_hw(model) == (960, 960)
+
+
 def test_consume_measured_model_input_clears_value():
     record_measured_model_input(np.zeros((1, 3, 512, 512)))
 
