@@ -13,6 +13,7 @@ from run_relay_benchmark import (  # noqa: E402
     publisher_command,
     reader_command,
     redacted_command,
+    resolve_run_id,
 )
 
 
@@ -51,6 +52,10 @@ def test_commands_replay_without_encoding_and_redact_all_urls():
     assert "secret" not in rendered
     assert "[credentials-redacted]" in rendered
     assert "[query-redacted]" in rendered
+
+
+def test_run_id_can_be_pinned_for_preauthorized_stream_paths():
+    assert resolve_run_id("staging-smoke-001") == "staging-smoke-001"
 
 
 def test_load_config_resolves_fixture_and_normalizes_scenarios(tmp_path):

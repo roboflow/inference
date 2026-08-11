@@ -126,6 +126,17 @@ def _expand(value):
     return os.path.expandvars(str(value))
 
 
+def resolve_run_id(value=None):
+    run_id = value or (
+        time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        + "-"
+        + uuid.uuid4().hex[:8]
+    )
+    if not SAFE_NAME.fullmatch(run_id):
+        raise ValueError("run id must be filesystem-safe")
+    return run_id
+
+
 def load_config(path):
     config_path = Path(path).resolve()
     with config_path.open() as source:
@@ -386,6 +397,10 @@ def main():
     parser.add_argument("--config", required=True, help="benchmark matrix JSON")
     parser.add_argument("--scenario", action="append", help="run only this scenario")
     parser.add_argument("--output-dir", default="benchmark-results")
+    parser.add_argument(
+        "--run-id",
+        help="filesystem-safe run id; generated automatically when omitted",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -404,7 +419,10 @@ def main():
     if ffmpeg is None:
         parser.error(f"ffmpeg not found: {config['ffmpeg']}")
 
-    run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex[:8]
+    try:
+        run_id = resolve_run_id(args.run_id)
+    except ValueError as error:
+        parser.error(str(error))
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     report = {
