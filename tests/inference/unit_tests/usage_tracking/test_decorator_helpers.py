@@ -1,10 +1,17 @@
 from types import SimpleNamespace
+from unittest import mock
 
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
+)
+from inference.usage_tracking.model_types import (
+    clear_recorded_model_types,
+    get_recorded_model_type,
+    record_model_type,
 )
 
 
@@ -219,6 +226,43 @@ def test_extract_usage_params_for_sam_uses_encoder_image_size(
             "execution_duration": 0.5,
         }
     }
+
+
+def test_get_model_type_reads_recorded_map_without_calling_registry():
+    class UnlabelledModel:
+        dataset_id = "st-inst-seg"
+        version_id = "9"
+
+        def infer(self, image, **kwargs): ...
+
+    func_kwargs = {"self": UnlabelledModel()}
+
+    with mock.patch(
+        "inference.core.registries.roboflow.get_model_type"
+    ) as registry_get_model_type:
+        assert get_model_type_from_kwargs(func_kwargs) is None
+
+        record_model_type(model_id="st-inst-seg/9", model_type="rfdetr-seg-nano")
+        try:
+            assert get_model_type_from_kwargs(func_kwargs) == "rfdetr-seg-nano"
+        finally:
+            clear_recorded_model_types()
+
+    # Resolving a model type must never reach the registry: that call can issue
+    # an authenticated HTTP request from the inference hot path.
+    assert not registry_get_model_type.called
+
+
+def test_registry_records_model_type_for_usage_tracking():
+    from inference.core.registries.roboflow import get_model_type
+
+    try:
+        _, model_type = get_model_type(model_id="sam2/hiera_tiny")
+
+        assert model_type == "sam2"
+        assert get_recorded_model_type("sam2/hiera_tiny") == "sam2"
+    finally:
+        clear_recorded_model_types()
 
 
 def test_explicit_model_usage_api_key_takes_precedence_over_request(

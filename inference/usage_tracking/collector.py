@@ -50,9 +50,9 @@ except ImportError:
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
     get_model_api_key_from_kwargs,
-    get_model_frames_and_billable_hw,
+    get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
-    get_model_megapixel_buckets_from_kwargs,
+    get_model_megapixel_buckets,
     get_model_resource_details_from_kwargs,
     get_request_api_key_from_kwargs,
     get_request_resource_details_from_kwargs,
@@ -822,9 +822,10 @@ class UsageCollector:
                 resource_details = {**resource_details, **model_resource_details}
             if not usage_api_key:
                 usage_api_key = get_model_api_key_from_kwargs(func_kwargs) or ""
-            frames, _billable_hw = get_model_frames_and_billable_hw(func_kwargs)
-            megapixel_buckets = get_model_megapixel_buckets_from_kwargs(
-                func_kwargs,
+            frames, input_hw = get_model_frames_and_input_hw(func_kwargs)
+            megapixel_buckets = get_model_megapixel_buckets(
+                frames=frames,
+                input_hw=input_hw,
                 execution_duration=execution_duration,
                 inference_test_run=usage_inference_test_run,
             )

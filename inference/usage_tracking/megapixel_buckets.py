@@ -1,12 +1,20 @@
-"""Billable megapixel bucketing for model usage telemetry.
+"""Megapixel bucketing for model usage telemetry.
 
-Billing uses post-preprocess / fixed model input size (not native upload size).
-Bucket maps are merge-friendly sums; averages are derived downstream.
+Buckets record the post-preprocess / fixed model input size, which is the
+resolution the model actually ran at, rather than the native upload size. Bucket
+maps are merge-friendly sums; averages are derived downstream.
+
+The measured input size is published through a :class:`~contextvars.ContextVar`
+rather than an attribute on the model. Model instances are shared across the
+server's worker threads, so an attribute would let one request overwrite the
+size and frame count of another request that is still running.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+import json
+from contextvars import ContextVar
+from typing import Any, Dict, Optional, Tuple, Union
 
 # Inclusive upper bounds in megapixels. Final bucket catches everything above.
 _MEGAPIXEL_BUCKET_UPPER_BOUNDS: Tuple[Tuple[str, float], ...] = (
@@ -17,6 +25,18 @@ _MEGAPIXEL_BUCKET_UPPER_BOUNDS: Tuple[Tuple[str, float], ...] = (
     ("2-4", 4.0),
 )
 _MEGAPIXEL_BUCKET_OVERFLOW = "4+"
+
+# Frames whose input size could not be determined. Recording them keeps the sum
+# of bucket frames equal to the row's processed_frames, so downstream consumers
+# can always reconcile the two.
+MEGAPIXEL_BUCKET_UNKNOWN = "unknown"
+
+MeasuredModelInput = Tuple[Optional[Tuple[int, int]], Optional[int]]
+
+_measured_model_input: ContextVar[Optional[MeasuredModelInput]] = ContextVar(
+    "usage_measured_model_input",
+    default=None,
+)
 
 
 def megapixels_from_hw(height: int, width: int) -> float:
@@ -33,15 +53,18 @@ def megapixel_bucket_for_hw(height: int, width: int) -> str:
 
 def build_megapixel_buckets(
     *,
-    height: int,
-    width: int,
+    height: Optional[int],
+    width: Optional[int],
     frames: int,
     execution_duration: float,
 ) -> Dict[str, Dict[str, Union[int, float]]]:
-    if frames <= 0 or height <= 0 or width <= 0:
+    if frames <= 0:
         return {}
 
-    bucket = megapixel_bucket_for_hw(height=height, width=width)
+    if height and width and height > 0 and width > 0:
+        bucket = megapixel_bucket_for_hw(height=height, width=width)
+    else:
+        bucket = MEGAPIXEL_BUCKET_UNKNOWN
     return {
         bucket: {
             "processed_frames": int(frames),
@@ -109,10 +132,8 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
         preproc = environment.get("PREPROCESSING")
         if isinstance(preproc, str):
             try:
-                import json
-
                 preproc = json.loads(preproc)
-            except Exception:
+            except ValueError:
                 preproc = None
         if isinstance(preproc, dict):
             resize = preproc.get("resize") or {}
@@ -141,7 +162,7 @@ def get_tensor_spatial_hw(tensor: Any) -> Optional[Tuple[int, int]]:
         return None
     try:
         dims = tuple(int(dim) for dim in shape)
-    except Exception:
+    except (TypeError, ValueError):
         return None
     if len(dims) < 2:
         return None
@@ -169,12 +190,20 @@ def get_tensor_spatial_hw(tensor: Any) -> Optional[Tuple[int, int]]:
 
 def get_tensor_batch_size(tensor: Any) -> Optional[int]:
     shape = getattr(tensor, "shape", None)
-    if shape is None or len(shape) < 4:
+    try:
+        if shape is None or len(shape) < 4:
+            return None
+        return _as_positive_int(shape[0])
+    except TypeError:
         return None
-    return _as_positive_int(shape[0])
 
 
 def count_inference_images(image: Any) -> int:
+    """Number of images the caller asked the model to process.
+
+    A single array counts as one image even when it carries a batch dimension;
+    the request is the authority on how many frames were asked for.
+    """
     if image is None:
         return 0
     if isinstance(image, (list, tuple)):
@@ -182,76 +211,86 @@ def count_inference_images(image: Any) -> int:
     return 1
 
 
-def stamp_billable_model_input(model: Any, preprocessed_tensor: Any) -> None:
-    """Store post-preprocess spatial metadata for the usage decorator to read."""
+def clear_measured_model_input() -> None:
+    _measured_model_input.set(None)
+
+
+def record_measured_model_input(preprocessed_tensor: Any) -> None:
+    """Publish post-preprocess spatial metadata for the usage decorator to read."""
     try:
-        model._usage_billable_input_hw = get_tensor_spatial_hw(preprocessed_tensor)
-        model._usage_billable_frames = get_tensor_batch_size(preprocessed_tensor)
+        _measured_model_input.set(
+            (
+                get_tensor_spatial_hw(preprocessed_tensor),
+                get_tensor_batch_size(preprocessed_tensor),
+            )
+        )
     except Exception:
         pass
 
 
-def stamp_billable_model_hw(
-    model: Any,
+def record_measured_model_hw(
     *,
     height: int,
     width: int,
-    frames: int = 1,
+    frames: Optional[int] = None,
 ) -> None:
-    """Stamp explicit billable spatial size (used by SAM request entrypoints)."""
+    """Publish an explicit input size (used by SAM request entrypoints)."""
     try:
-        model._usage_billable_input_hw = (int(height), int(width))
-        model._usage_billable_frames = max(int(frames), 1)
+        _measured_model_input.set(
+            (
+                (int(height), int(width)),
+                max(int(frames), 1) if frames else None,
+            )
+        )
     except Exception:
         pass
 
 
-def clear_billable_model_input(model: Any) -> None:
-    for attr in (
-        "_usage_billable_input_hw",
-        "_usage_billable_frames",
-    ):
-        try:
-            setattr(model, attr, None)
-        except Exception:
-            pass
+def consume_measured_model_input() -> MeasuredModelInput:
+    """Read and clear the input size published by the current call.
+
+    Clearing on read keeps a stale value from leaking into a later call that did
+    not publish one, which would otherwise attribute it to the wrong resolution.
+    """
+    measured = _measured_model_input.get()
+    if measured is None:
+        return None, None
+    _measured_model_input.set(None)
+    return measured
 
 
-def billable_hw_from_model(model: Any) -> Optional[Tuple[int, int]]:
-    fixed_hw = get_fixed_model_input_hw(model)
-    if fixed_hw is not None:
-        return fixed_hw
-    stamped = getattr(model, "_usage_billable_input_hw", None)
+def resolve_model_input_hw(
+    model: Any,
+    measured_hw: Optional[Tuple[int, int]] = None,
+) -> Optional[Tuple[int, int]]:
+    """Fixed model input size when there is one, otherwise the observed size."""
+    if model is not None:
+        fixed_hw = get_fixed_model_input_hw(model)
+        if fixed_hw is not None:
+            return fixed_hw
     if (
-        isinstance(stamped, Sequence)
-        and len(stamped) == 2
-        and _as_positive_int(stamped[0]) is not None
-        and _as_positive_int(stamped[1]) is not None
+        isinstance(measured_hw, tuple)
+        and len(measured_hw) == 2
+        and _as_positive_int(measured_hw[0]) is not None
+        and _as_positive_int(measured_hw[1]) is not None
     ):
-        return int(stamped[0]), int(stamped[1])
+        return int(measured_hw[0]), int(measured_hw[1])
     return None
 
 
-def prepare_sam_usage_billing(model: Any, request: Any = None) -> None:
-    """Clear prior stamps and record SAM encoder input size for usage billing.
+def record_sam_model_input(model: Any, request: Any = None) -> None:
+    """Publish the SAM encoder input size for usage telemetry.
 
-    SAM entrypoints decorate ``infer_from_request`` rather than ``BaseInference.infer``,
-    so they must stamp billable HW explicitly. Prefer the model's fixed encoder size
-    (``image_size`` / nested backend) over native upload resolution.
+    SAM entrypoints decorate ``infer_from_request`` rather than
+    ``BaseInference.infer``, so they publish their input size explicitly. The
+    model's fixed encoder size is preferred over native upload resolution.
     """
-    clear_billable_model_input(model)
-    frames = count_inference_images(
-        getattr(request, "image", None) if request else None
-    )
-    if frames <= 0:
-        frames = 1
-    billable_hw = billable_hw_from_model(model)
-    if billable_hw is None:
-        model._usage_billable_frames = frames
+    clear_measured_model_input()
+    input_hw = resolve_model_input_hw(model)
+    if input_hw is None:
         return
-    stamp_billable_model_hw(
-        model,
-        height=billable_hw[0],
-        width=billable_hw[1],
-        frames=frames,
+    record_measured_model_hw(
+        height=input_hw[0],
+        width=input_hw[1],
+        frames=count_inference_images(getattr(request, "image", None)),
     )

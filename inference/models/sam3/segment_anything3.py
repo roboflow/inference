@@ -67,7 +67,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.megapixel_buckets import prepare_sam_usage_billing
+from inference.usage_tracking.megapixel_buckets import record_sam_model_input
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
@@ -511,7 +511,7 @@ class SegmentAnything3(RoboflowCoreModel):
     @usage_collector("model")
     def infer_from_request(self, request: Sam3InferenceRequest):
         # with self.sam3_lock:
-        prepare_sam_usage_billing(self, request)
+        record_sam_model_input(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam3SegmentationRequest):
             # Pass strongly-typed fields to preserve Sam3Prompt objects

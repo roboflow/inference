@@ -6,10 +6,12 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
 from inference.usage_tracking.megapixel_buckets import (
-    billable_hw_from_model,
     build_megapixel_buckets,
+    consume_measured_model_input,
     count_inference_images,
+    resolve_model_input_hw,
 )
+from inference.usage_tracking.model_types import get_recorded_model_type
 
 
 def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
@@ -52,34 +54,19 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
 
 
 def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow ``modelType`` (architecture / size), not the resource id."""
+    """Resolve Roboflow ``modelType`` (architecture / size), not the resource id.
+
+    Only values already known in-process are consulted. Asking the model registry
+    would be a network call on the inference hot path, so model types are instead
+    recorded when the registry resolves them during model loading. A model whose
+    type was never recorded is reported without one.
+    """
     model = func_kwargs.get("self")
     if model is not None:
         model_type = getattr(model, "model_type", None)
         if model_type:
             return str(model_type)
-
-    model_id = get_model_id_from_kwargs(func_kwargs)
-    if not model_id:
-        return None
-
-    api_key = get_model_api_key_from_kwargs(func_kwargs)
-    try:
-        # Lazy import: registries pull in model stacks that import usage tracking.
-        from inference.core.registries.roboflow import get_model_type
-
-        _, model_type = get_model_type(model_id=model_id, api_key=api_key)
-        if model_type:
-            model_type = str(model_type)
-            if model is not None and not getattr(model, "model_type", None):
-                try:
-                    model.model_type = model_type
-                except Exception:
-                    pass
-            return model_type
-    except Exception as exc:
-        logger.debug("Unable to resolve model_type for '%s': %s", model_id, exc)
-    return None
+    return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
 
 
 def get_model_resource_details_from_kwargs(
@@ -114,36 +101,40 @@ def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
     return None
 
 
-def get_model_frames_and_billable_hw(
+def get_model_frames_and_input_hw(
     func_kwargs: Dict[str, Any],
 ) -> Tuple[int, Optional[Tuple[int, int]]]:
+    """Frames recorded for one model call, and the input resolution to attribute
+    them to.
+
+    The frame count comes from the request rather than from the preprocessed
+    tensor: preprocessing pads the batch dimension up to a fixed model batch size
+    when ``FIX_BATCH_SIZE`` is set, and that padding is not part of what the
+    caller asked for. The tensor batch size is only a fallback for calls whose
+    images are not introspectable.
+    """
     model = func_kwargs.get("self")
-    frames = 0
-    if model is not None:
-        stamped_frames = getattr(model, "_usage_billable_frames", None)
-        if isinstance(stamped_frames, int) and stamped_frames > 0:
-            frames = stamped_frames
-    if not frames:
-        frames = count_inference_images(get_model_image_from_kwargs(func_kwargs))
+    measured_hw, measured_frames = consume_measured_model_input()
+
+    frames = count_inference_images(get_model_image_from_kwargs(func_kwargs))
+    if frames <= 0 and measured_frames:
+        frames = measured_frames
     if frames <= 0:
         frames = 1
 
-    billable_hw = billable_hw_from_model(model) if model is not None else None
-    return frames, billable_hw
+    return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
 
 
-def get_model_megapixel_buckets_from_kwargs(
-    func_kwargs: Dict[str, Any],
+def get_model_megapixel_buckets(
     *,
+    frames: int,
+    input_hw: Optional[Tuple[int, int]],
     execution_duration: float,
     inference_test_run: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     if inference_test_run:
         return {}
-    frames, billable_hw = get_model_frames_and_billable_hw(func_kwargs)
-    if not billable_hw:
-        return {}
-    height, width = billable_hw
+    height, width = input_hw if input_hw else (None, None)
     return build_megapixel_buckets(
         height=height,
         width=width,

@@ -54,7 +54,7 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.megapixel_buckets import prepare_sam_usage_billing
+from inference.usage_tracking.megapixel_buckets import record_sam_model_input
 
 # from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 # from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
@@ -204,7 +204,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        prepare_sam_usage_billing(self, request)
+        record_sam_model_input(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())

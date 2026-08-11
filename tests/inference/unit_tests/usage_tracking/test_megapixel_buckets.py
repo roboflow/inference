@@ -4,19 +4,29 @@ import numpy as np
 import pytest
 
 from inference.usage_tracking.megapixel_buckets import (
-    billable_hw_from_model,
+    MEGAPIXEL_BUCKET_UNKNOWN,
     build_megapixel_buckets,
+    clear_measured_model_input,
+    consume_measured_model_input,
     count_inference_images,
     get_fixed_model_input_hw,
     get_tensor_spatial_hw,
     megapixel_bucket_for_hw,
-    prepare_sam_usage_billing,
-    stamp_billable_model_input,
+    record_measured_model_input,
+    record_sam_model_input,
+    resolve_model_input_hw,
 )
 from inference.usage_tracking.payload_helpers import (
     merge_megapixel_buckets,
     merge_usage_dicts,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_measured_input():
+    clear_measured_model_input()
+    yield
+    clear_measured_model_input()
 
 
 def test_megapixel_bucket_boundaries():
@@ -55,6 +65,31 @@ def test_build_and_merge_megapixel_buckets():
     assert merged["0.25-0.5"]["execution_duration"] == 1.0
     assert merged["1-2"]["processed_frames"] == 1
     assert merged["1-2"]["execution_duration"] == 0.3
+
+
+def test_build_megapixel_buckets_falls_back_to_unknown_bucket():
+    # Frames whose size cannot be resolved still have to be accounted for, so
+    # that bucket frames always sum to the row's processed_frames.
+    buckets = build_megapixel_buckets(
+        height=None,
+        width=None,
+        frames=4,
+        execution_duration=0.8,
+    )
+
+    assert buckets == {
+        MEGAPIXEL_BUCKET_UNKNOWN: {
+            "processed_frames": 4,
+            "execution_duration": 0.8,
+        }
+    }
+
+
+def test_build_megapixel_buckets_is_empty_without_frames():
+    assert (
+        build_megapixel_buckets(height=640, width=640, frames=0, execution_duration=0.1)
+        == {}
+    )
 
 
 def test_merge_usage_dicts_sums_megapixel_buckets():
@@ -104,19 +139,31 @@ def test_get_tensor_spatial_hw_nchw_and_nhwc():
     assert get_tensor_spatial_hw(np.zeros((2, 640, 480, 3))) == (640, 480)
 
 
-def test_billable_hw_prefers_fixed_over_stamped():
+def test_input_hw_prefers_fixed_size_over_measured():
     model = SimpleNamespace(img_size_h=420, img_size_w=420)
-    stamp_billable_model_input(model, np.zeros((1, 3, 800, 800)))
+    record_measured_model_input(np.zeros((1, 3, 800, 800)))
+    measured_hw, _ = consume_measured_model_input()
 
-    assert billable_hw_from_model(model) == (420, 420)
+    assert resolve_model_input_hw(model, measured_hw=measured_hw) == (420, 420)
 
 
-def test_billable_hw_uses_stamped_when_dynamic():
-    model = SimpleNamespace()
-    stamp_billable_model_input(model, np.zeros((4, 3, 512, 768)))
+def test_input_hw_uses_measured_size_when_dynamic():
+    record_measured_model_input(np.zeros((4, 3, 512, 768)))
+    measured_hw, measured_frames = consume_measured_model_input()
 
-    assert billable_hw_from_model(model) == (512, 768)
-    assert model._usage_billable_frames == 4
+    assert measured_frames == 4
+    assert resolve_model_input_hw(SimpleNamespace(), measured_hw=measured_hw) == (
+        512,
+        768,
+    )
+
+
+def test_consume_measured_model_input_clears_value():
+    record_measured_model_input(np.zeros((1, 3, 512, 512)))
+
+    assert consume_measured_model_input() == ((512, 512), 1)
+    # A later call that publishes nothing must not inherit the previous size.
+    assert consume_measured_model_input() == (None, None)
 
 
 def test_count_inference_images():
@@ -135,43 +182,38 @@ def test_get_fixed_model_input_hw_from_image_size_and_nested_backend():
     ) == (1024, 1024)
 
 
-def test_prepare_sam_usage_billing_stamps_encoder_size():
-    model = SimpleNamespace(image_size=1024)
-    request = SimpleNamespace(image=object())
-
-    prepare_sam_usage_billing(model, request)
-
-    assert model._usage_billable_input_hw == (1024, 1024)
-    assert model._usage_billable_frames == 1
-    assert billable_hw_from_model(model) == (1024, 1024)
-
-
-def test_sam_model_decorator_records_megapixel_buckets(
-    usage_collector_with_mocked_threads,
-):
-    from inference.usage_tracking.collector import usage_collector
-
-    collector = usage_collector_with_mocked_threads
-
-    class SamLikeModel:
-        api_key = "test_key"
-        dataset_id = "sam2"
-        version_id = "hiera_tiny"
-        task_type = "unsupervised-segmentation"
-        model_type = "sam2"
-        image_size = 1024
-
-        @usage_collector(category="model")
-        def infer_from_request(self, request):
-            prepare_sam_usage_billing(self, request)
-            return {"ok": True}
-
-    SamLikeModel().infer_from_request(
-        SimpleNamespace(image=object(), api_key="test_key")
+def test_record_sam_model_input_publishes_encoder_size():
+    record_sam_model_input(
+        SimpleNamespace(image_size=1024),
+        SimpleNamespace(image=object()),
     )
 
-    key = f"model:sam2/hiera_tiny:billable=true:outcome=success"
-    row = collector._usage["test_key"][key]
-    # 1024x1024 = 1.048576 MP -> 1-2 bucket
-    assert row["megapixel_buckets"]["1-2"]["processed_frames"] == 1
-    assert row["processed_frames"] == 1
+    assert consume_measured_model_input() == ((1024, 1024), 1)
+
+
+def test_record_sam_model_input_clears_stale_value_for_unknown_encoder():
+    record_measured_model_input(np.zeros((1, 3, 4000, 4000)))
+
+    record_sam_model_input(SimpleNamespace(), SimpleNamespace(image=object()))
+
+    assert consume_measured_model_input() == (None, None)
+
+
+def test_base_inference_publishes_preprocessed_input_size():
+    from inference.core.models.base import BaseInference
+
+    class DynamicInputModel(BaseInference):
+        def preprocess(self, image, **kwargs):
+            return np.zeros((2, 3, 512, 768), dtype=np.float32), None
+
+        def predict(self, img_in, **kwargs):
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    # Call the undecorated function so the published value survives for assertion;
+    # the usage decorator consumes it.
+    BaseInference.infer.__wrapped__(DynamicInputModel(), [object(), object()])
+
+    assert consume_measured_model_input() == ((512, 768), 2)

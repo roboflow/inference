@@ -91,7 +91,9 @@ def merge_megapixel_buckets(
             }
             continue
         existing["processed_frames"] = int(existing["processed_frames"]) + frames
-        existing["execution_duration"] = float(existing["execution_duration"]) + duration
+        existing["execution_duration"] = (
+            float(existing["execution_duration"]) + duration
+        )
     return merged
 
 

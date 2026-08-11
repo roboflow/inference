@@ -2,16 +2,22 @@ import asyncio
 import hashlib
 import json
 import sys
+import threading
 from queue import Queue
 from typing import Optional
 from unittest import mock
 
+import numpy as np
 import pytest
 
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
+from inference.usage_tracking.megapixel_buckets import (
+    clear_measured_model_input,
+    record_measured_model_input,
+)
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
@@ -2102,9 +2108,9 @@ def test_record_usage_accumulates_megapixel_buckets(
     assert row["processed_frames"] == 3
     assert row["execution_duration"] == pytest.approx(0.6)
     assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 3
-    assert row["megapixel_buckets"]["0.25-0.5"][
-        "execution_duration"
-    ] == pytest.approx(0.6)
+    assert row["megapixel_buckets"]["0.25-0.5"]["execution_duration"] == pytest.approx(
+        0.6
+    )
     details = json.loads(row["resource_details"])
     assert details["model_type"] == "rfdetr-seg-nano"
 
@@ -2136,3 +2142,106 @@ def test_model_decorator_records_fixed_input_megapixel_buckets(
     details = json.loads(row["resource_details"])
     assert details["model_type"] == "rfdetr-seg-nano"
     assert details["task_type"] == "instance-segmentation"
+
+
+def test_model_decorator_does_not_count_batch_padding(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class PaddedBatchModel:
+        api_key = "test_key"
+        dataset_id = "padded"
+        version_id = "1"
+        task_type = "object-detection"
+        model_type = "yolov8n"
+        img_size_h = 640
+        img_size_w = 640
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            # Preprocessing pads the batch up to MAX_BATCH_SIZE when
+            # FIX_BATCH_SIZE is set; the padding is not part of the request.
+            clear_measured_model_input()
+            record_measured_model_input(np.zeros((8, 3, 640, 640), dtype=np.uint8))
+            return {"ok": True}
+
+    PaddedBatchModel().infer([object()])
+
+    row = usage_collector._usage["test_key"][usage_key("model", "padded/1")]
+    assert row["processed_frames"] == 1
+    assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 1
+
+
+def test_model_decorator_records_unknown_bucket_when_size_unresolved(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class UnresolvedSizeModel:
+        api_key = "test_key"
+        dataset_id = "unresolved"
+        version_id = "1"
+        task_type = "object-detection"
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return {"ok": True}
+
+    UnresolvedSizeModel().infer([object(), object()])
+
+    row = usage_collector._usage["test_key"][usage_key("model", "unresolved/1")]
+    assert row["processed_frames"] == 2
+    assert row["megapixel_buckets"]["unknown"]["processed_frames"] == 2
+    # Bucket frames must always reconcile with the row total so that every frame
+    # is accounted for, including ones of unknown resolution.
+    assert (
+        sum(bucket["processed_frames"] for bucket in row["megapixel_buckets"].values())
+        == row["processed_frames"]
+    )
+
+
+def test_model_decorator_isolates_measured_input_across_threads(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    first_published = threading.Event()
+    second_finished = threading.Event()
+
+    class DynamicInputModel:
+        api_key = "test_key"
+        dataset_id = "dynamic"
+        version_id = "1"
+        task_type = "object-detection"
+        model_type = "yolov8n"
+
+        @usage_collector(category="model")
+        def infer(self, image, tag=None, **kwargs):
+            clear_measured_model_input()
+            size = 640 if tag == "first" else 1600
+            record_measured_model_input(
+                np.zeros((len(image), 3, size, size), dtype=np.uint8)
+            )
+            if tag == "first":
+                # Hand over to the concurrent call, which shares this instance.
+                first_published.set()
+                second_finished.wait(5)
+            return {"ok": True}
+
+    model = DynamicInputModel()
+
+    def run_second_call():
+        first_published.wait(5)
+        model.infer([object()] * 4, tag="second")
+        second_finished.set()
+
+    thread = threading.Thread(target=run_second_call)
+    thread.start()
+    model.infer([object()], tag="first")
+    thread.join()
+
+    row = usage_collector._usage["test_key"][usage_key("model", "dynamic/1")]
+    assert row["processed_frames"] == 5
+    assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 1
+    assert row["megapixel_buckets"]["2-4"]["processed_frames"] == 4
