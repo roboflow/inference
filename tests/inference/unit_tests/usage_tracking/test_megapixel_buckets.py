@@ -35,7 +35,8 @@ def test_megapixel_bucket_boundaries():
     assert megapixel_bucket_for_hw(1000, 1000) == "0.5-1"
     assert megapixel_bucket_for_hw(1280, 1280) == "1-2"
     assert megapixel_bucket_for_hw(2000, 2000) == "2-4"
-    assert megapixel_bucket_for_hw(3000, 3000) == "4+"
+    assert megapixel_bucket_for_hw(2500, 2500) == "4-8"
+    assert megapixel_bucket_for_hw(3000, 3000) == "8+"
 
 
 def test_build_and_merge_megapixel_buckets():

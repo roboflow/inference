@@ -23,8 +23,9 @@ _MEGAPIXEL_BUCKET_UPPER_BOUNDS: Tuple[Tuple[str, float], ...] = (
     ("0.5-1", 1.0),
     ("1-2", 2.0),
     ("2-4", 4.0),
+    ("4-8", 8.0),
 )
-_MEGAPIXEL_BUCKET_OVERFLOW = "4+"
+_MEGAPIXEL_BUCKET_OVERFLOW = "8+"
 
 # Frames whose input size could not be determined. Recording them keeps the sum
 # of bucket frames equal to the row's processed_frames, so downstream consumers
