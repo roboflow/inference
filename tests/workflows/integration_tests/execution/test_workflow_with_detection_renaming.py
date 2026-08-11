@@ -475,6 +475,7 @@ def _native_class_names(detections: NativeDetections) -> Counter:
 def test_class_rename_workflow_with_non_strict_mapping_tensor_native(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     workflow_definition = build_class_remapping_workflow_definition(
         class_map={"apple": "fruit", "banana": "fruit"},
@@ -495,7 +496,7 @@ def test_class_rename_workflow_with_non_strict_mapping_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": fruit_image,
+            "image": image_as_workflow_input(fruit_image),
             "model_id": "yolov8n-640",
         },
     )
@@ -524,6 +525,7 @@ def test_class_rename_workflow_with_non_strict_mapping_tensor_native(
 def test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped_tensor_native(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     workflow_definition = build_class_remapping_workflow_definition(
         class_map={"apple": "fruit", "banana": "fruit", "orange": "my-orange"},
@@ -544,7 +546,7 @@ def test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": fruit_image,
+            "image": image_as_workflow_input(fruit_image),
             "model_id": "yolov8n-640",
         },
     )
@@ -573,6 +575,7 @@ def test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped
 def test_class_rename_workflow_when_mapping_is_parametrised_tensor_native(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -588,7 +591,7 @@ def test_class_rename_workflow_when_mapping_is_parametrised_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": fruit_image,
+            "image": image_as_workflow_input(fruit_image),
             "model_id": "yolov8n-640",
             "class_map": {"apple": "fruit", "banana": "fruit"},
             "strict": False,

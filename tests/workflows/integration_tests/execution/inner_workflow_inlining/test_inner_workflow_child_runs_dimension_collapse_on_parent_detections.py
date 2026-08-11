@@ -310,6 +310,7 @@ def _assert_collapsed_native(collapsed: list, expected_images: int) -> None:
 def test_inlined_child_dimension_collapse_matches_flat_workflow_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     run_mock = mock.MagicMock(side_effect=_run_tensor_native_inference)
     inner = child_dimension_collapse_from_parent_detections()
@@ -323,8 +324,12 @@ def test_inlined_child_dimension_collapse_matches_flat_workflow_tensor_native(
     ):
         nested_engine = execution_engine(model_manager, _nested_workflow(inner))
         flat_engine = execution_engine(model_manager, _flat_workflow())
-        nested_result = nested_engine.run(runtime_parameters={"image": dogs_image})
-        flat_result = flat_engine.run(runtime_parameters={"image": dogs_image})
+        nested_result = nested_engine.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
+        flat_result = flat_engine.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
 
     assert run_mock.call_count == 2
     for call in run_mock.call_args_list:
@@ -345,10 +350,14 @@ def test_inlined_child_dimension_collapse_matches_flat_workflow_tensor_native(
 def test_inlined_child_dimension_collapse_matches_flat_workflow_runtime_image_list_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     run_mock = mock.MagicMock(side_effect=_run_tensor_native_inference)
     inner = child_dimension_collapse_from_parent_detections()
-    images = [dogs_image, dogs_image.copy()]
+    images = [
+        image_as_workflow_input(dogs_image),
+        image_as_workflow_input(dogs_image.copy()),
+    ]
 
     with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
         ModelManager, "get_class_names", return_value=["x", "y", "z"]

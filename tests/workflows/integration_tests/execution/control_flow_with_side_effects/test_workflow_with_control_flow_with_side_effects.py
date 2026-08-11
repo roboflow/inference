@@ -907,11 +907,14 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
     expected_message_parameters: tuple,
     expected_result: tuple,
     model_manager,
+    image_as_workflow_input,
 ) -> None:
     send_email_mock.return_value = (False, "Notification sent successfully")
     workflow_definition = _load_workflow_definition(workflow_name)
 
-    runtime_parameters = {"image": image_gen_fn()}
+    runtime_parameters = {
+        "image": [image_as_workflow_input(image) for image in image_gen_fn()]
+    }
     inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
     if "names" in inputs:
         runtime_parameters["names"] = names
@@ -1305,11 +1308,12 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input_t
     expected_num_detections: List[int],
     model_manager,
     empty_directory,
+    image_as_workflow_input,
 ) -> None:
     workflow_definition = _load_workflow_definition(workflow_name)
 
     runtime_parameters = {
-        "image": image_gen_fn(),
+        "image": [image_as_workflow_input(image) for image in image_gen_fn()],
         "output_directory": empty_directory,
     }
 
@@ -1445,9 +1449,12 @@ def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls_tensor_na
     expected_call_count: int,
     expected_results: List[dict],
     model_manager,
+    image_as_workflow_input,
 ) -> None:
     workflow_definition = _load_workflow_definition(workflow_name)
-    runtime_parameters = {"image": image_gen_fn()}
+    runtime_parameters = {
+        "image": [image_as_workflow_input(image) for image in image_gen_fn()]
+    }
 
     stitch_run_call_count = []
     # Under the flag the workflow loads the tensor-native stitch block, so the

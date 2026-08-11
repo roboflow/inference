@@ -644,6 +644,7 @@ def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_inp
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -660,7 +661,10 @@ def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_inp
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": [license_plate_image, crowd_image],
+            "image": [
+                image_as_workflow_input(license_plate_image),
+                image_as_workflow_input(crowd_image),
+            ],
             "reference": ["car", "crowd"],
         }
     )

@@ -171,6 +171,7 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -186,7 +187,7 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "data_percentage": 0.0,
         }
     )

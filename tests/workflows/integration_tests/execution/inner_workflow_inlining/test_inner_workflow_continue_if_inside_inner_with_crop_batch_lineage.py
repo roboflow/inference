@@ -560,6 +560,7 @@ def _assert_native_call_order(run_mock: mock.MagicMock) -> None:
 def test_inlined_continue_if_inside_inner_matches_flat_workflow_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     h, w = dogs_image.shape[:2]
     run_mock = mock.MagicMock(
@@ -578,13 +579,13 @@ def test_inlined_continue_if_inside_inner_matches_flat_workflow_tensor_native(
         flat_engine = execution_engine(model_manager, _flat_workflow())
         nested_result = nested_engine.run(
             runtime_parameters={
-                "image": dogs_image,
+                "image": image_as_workflow_input(dogs_image),
                 "crop_label": "passed",
             },
         )
         flat_result = flat_engine.run(
             runtime_parameters={
-                "image": dogs_image,
+                "image": image_as_workflow_input(dogs_image),
                 "crop_label": "passed",
             },
         )
@@ -657,6 +658,7 @@ def test_inlined_continue_if_last_in_inner_echo_on_outer_matches_flat_workflow(
 def test_inlined_continue_if_last_in_inner_echo_on_outer_matches_flat_workflow_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     h, w = dogs_image.shape[:2]
     run_mock = mock.MagicMock(
@@ -678,13 +680,13 @@ def test_inlined_continue_if_last_in_inner_echo_on_outer_matches_flat_workflow_t
         flat_engine = execution_engine(model_manager, _flat_workflow())
         nested_result = nested_engine.run(
             runtime_parameters={
-                "image": dogs_image,
+                "image": image_as_workflow_input(dogs_image),
                 "crop_label": "passed",
             },
         )
         flat_result = flat_engine.run(
             runtime_parameters={
-                "image": dogs_image,
+                "image": image_as_workflow_input(dogs_image),
                 "crop_label": "passed",
             },
         )

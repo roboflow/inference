@@ -548,6 +548,7 @@ def test_mask_edge_snap_workflow_with_morphological_preprocessing(
 def test_mask_edge_snap_workflow_with_empty_segmentation_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with empty native segmentation."""
     # given
@@ -574,7 +575,7 @@ def test_mask_edge_snap_workflow_with_empty_segmentation_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": empty_segmentation,
             "pixel_tolerance": 15,
             "sigma": 1.0,
@@ -653,6 +654,7 @@ def test_mask_edge_snap_workflow_with_empty_segmentation_with_tensor_input(
 def test_mask_edge_snap_workflow_with_single_mask_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with a single native mask."""
     # given
@@ -681,7 +683,7 @@ def test_mask_edge_snap_workflow_with_single_mask_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 15,
             "sigma": 1.0,
@@ -768,6 +770,7 @@ def test_mask_edge_snap_workflow_with_single_mask_with_tensor_input(
 def test_mask_edge_snap_workflow_with_multiple_masks_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with multiple native masks."""
     # given
@@ -799,7 +802,7 @@ def test_mask_edge_snap_workflow_with_multiple_masks_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 15,
             "sigma": 1.0,
@@ -887,6 +890,7 @@ def test_mask_edge_snap_workflow_with_multiple_masks_with_tensor_input(
 def test_mask_edge_snap_workflow_with_permissive_parameters_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with permissive parameters (native input)."""
     # given
@@ -915,7 +919,7 @@ def test_mask_edge_snap_workflow_with_permissive_parameters_tensor_native(
     # when - using permissive parameters
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 5,
             "sigma": 0.3,
@@ -994,6 +998,7 @@ def test_mask_edge_snap_workflow_with_permissive_parameters_with_tensor_input(
 def test_mask_edge_snap_workflow_with_strict_parameters_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with strict parameters (native input)."""
     # given
@@ -1022,7 +1027,7 @@ def test_mask_edge_snap_workflow_with_strict_parameters_tensor_native(
     # when - using strict parameters
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 50,
             "sigma": 2.0,
@@ -1101,6 +1106,7 @@ def test_mask_edge_snap_workflow_with_strict_parameters_with_tensor_input(
 def test_mask_edge_snap_workflow_with_different_mask_sizes_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with native masks of different sizes."""
     # given
@@ -1133,7 +1139,7 @@ def test_mask_edge_snap_workflow_with_different_mask_sizes_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 15,
             "sigma": 1.0,
@@ -1222,6 +1228,7 @@ def test_mask_edge_snap_workflow_with_different_mask_sizes_with_tensor_input(
 def test_mask_edge_snap_workflow_with_morphological_preprocessing_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Test Mask Edge Snap workflow with morphological preprocessing (native input)."""
     # given
@@ -1250,7 +1257,7 @@ def test_mask_edge_snap_workflow_with_morphological_preprocessing_tensor_native(
     # when - run workflow with morphological preprocessing
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "segmentation": segmentation,
         }
     )

@@ -740,6 +740,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_native(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Tensor-native parity: detections_stitch emits a native inference_models.Detections
     (torch fields). The direct-SAHI reference side stays numpy; the workflow side is bridged
@@ -793,7 +794,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
     detections_obtained_directly = slicer(crowd_image)
     workflow_result = execution_engine.run(
         runtime_parameters={
-            "image": [crowd_image],
+            "image": [image_as_workflow_input(crowd_image)],
             "overlap_filtering_strategy": "nms",
         }
     )

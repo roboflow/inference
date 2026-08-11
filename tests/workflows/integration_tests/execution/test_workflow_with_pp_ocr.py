@@ -105,6 +105,7 @@ def test_pp_ocr_workflow_extracts_text(
 def test_pp_ocr_workflow_extracts_text_tensor_native(
     model_manager: ModelManager,
     multi_line_text_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     # Parity sibling of test_pp_ocr_workflow_extracts_text: under
     # ENABLE_TENSOR_DATA_REPRESENTATION the pp_ocr `predictions` output is a native
@@ -123,7 +124,7 @@ def test_pp_ocr_workflow_extracts_text_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": multi_line_text_image,
+            "image": image_as_workflow_input(multi_line_text_image),
         }
     )
 

@@ -242,6 +242,7 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -273,17 +274,17 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     # when
     e2e_results = end_to_end_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         }
     )
     detection_results = first_step_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         }
     )
     cropping_results = second_step_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "predictions": detection_results[0]["result"]["predictions"],
         }
     )
@@ -521,6 +522,7 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -552,31 +554,31 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     # when
     e2e_results = end_to_end_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         },
         serialize_results=True,
     )
     detection_results = first_step_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         },
         serialize_results=True,
     )
     detection_results_not_serialized = first_step_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         },
     )
     cropping_results = second_step_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "predictions": detection_results[0]["result"]["predictions"],
         },
         serialize_results=True,
     )
     cropping_results_not_serialized = second_step_execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "predictions": detection_results_not_serialized[0]["result"]["predictions"],
         },
         serialize_results=False,
@@ -866,6 +868,7 @@ def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_eva
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -897,17 +900,26 @@ def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_eva
     # when
     e2e_results = end_to_end_execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ],
         }
     )
     detection_results = first_step_execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ],
         }
     )
     cropping_results = second_step_execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ],
             "predictions": [
                 detection_results[0]["result"]["predictions"],
                 detection_results[1]["result"]["predictions"],
@@ -1217,6 +1229,7 @@ def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evalua
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -1248,17 +1261,26 @@ def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evalua
     # when
     e2e_results = end_to_end_execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ],
         }
     )
     detection_results = first_step_execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ],
         }
     )
     cropping_results = second_step_execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ],
             "predictions": [
                 detection_results[0]["result"]["predictions"],
                 detection_results[1]["result"]["predictions"],

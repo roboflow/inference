@@ -162,6 +162,7 @@ def test_workflow_with_overlap_all(
 def test_workflow_with_overlap_all_tensor_native(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -178,7 +179,7 @@ def test_workflow_with_overlap_all_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": fruit_image,
+            "image": image_as_workflow_input(fruit_image),
         }
     )
 

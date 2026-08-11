@@ -143,6 +143,7 @@ def test_workflow_with_classical_pattern_matching_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """
     In this test set we check how classical pattern matching block integrates with
@@ -167,8 +168,11 @@ def test_workflow_with_classical_pattern_matching_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": [crowd_image, dogs_image],
-            "template": template,
+            "image": [
+                image_as_workflow_input(crowd_image),
+                image_as_workflow_input(dogs_image),
+            ],
+            "template": image_as_workflow_input(template),
         }
     )
 

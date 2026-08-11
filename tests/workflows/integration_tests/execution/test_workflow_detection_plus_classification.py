@@ -110,6 +110,7 @@ def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -126,7 +127,7 @@ def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         }
     )
 
@@ -354,6 +355,7 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     roboflow_api_key: str,
     od_block_type: str,
     cls_block_type: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -372,7 +374,7 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
         }
     )
 

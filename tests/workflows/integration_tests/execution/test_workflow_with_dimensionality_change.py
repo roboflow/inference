@@ -202,6 +202,7 @@ def test_workflow_with_detections_coordinates_transformation_in_batch_variant_te
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Tensor-native parity of
     `test_workflow_with_detections_coordinates_transformation_in_batch_variant`.
@@ -228,7 +229,12 @@ def test_workflow_with_detections_coordinates_transformation_in_batch_variant_te
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": [crowd_image, crowd_image]}
+        runtime_parameters={
+            "image": [
+                image_as_workflow_input(crowd_image),
+                image_as_workflow_input(crowd_image),
+            ]
+        }
     )
 
     # then
@@ -524,6 +530,7 @@ def test_workflow_with_detections_coordinates_transformation_in_non_batch_varian
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Tensor-native parity of
     `test_workflow_with_detections_coordinates_transformation_in_non_batch_variant`.
@@ -548,7 +555,12 @@ def test_workflow_with_detections_coordinates_transformation_in_non_batch_varian
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": [crowd_image, crowd_image]}
+        runtime_parameters={
+            "image": [
+                image_as_workflow_input(crowd_image),
+                image_as_workflow_input(crowd_image),
+            ]
+        }
     )
 
     # then

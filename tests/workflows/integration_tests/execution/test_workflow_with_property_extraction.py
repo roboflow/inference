@@ -777,6 +777,7 @@ def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -794,8 +795,8 @@ def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_
     result = execution_engine.run(
         runtime_parameters={
             "image": [
-                np.zeros((192, 168, 3), dtype=np.uint8),
-                np.zeros((200, 168, 3), dtype=np.uint8),
+                image_as_workflow_input(np.zeros((192, 168, 3), dtype=np.uint8)),
+                image_as_workflow_input(np.zeros((200, 168, 3), dtype=np.uint8)),
             ]
         }
     )
