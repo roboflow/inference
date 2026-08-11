@@ -25,6 +25,9 @@ from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     SourceConnectionError,
 )
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+)
 from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
 
 MINIMAL_FPS = 0.01
@@ -496,7 +499,8 @@ def _attempt_reconnect(
             time.sleep(RESTART_ATTEMPT_DELAY)
         except Exception as error:
             logger.warning(
-                f"Fatal error in re-connection to source: {video_source.source_id}. Details: {error}"
+                f"Fatal error in re-connection to source: {video_source.source_id}. "
+                f"Details: {redact_credentials_in_text(str(error))}"
             )
             on_fatal_error()
             break

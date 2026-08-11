@@ -37,6 +37,7 @@ from inference.core.interfaces.camera.exceptions import (
     StreamOperationNotAllowedError,
 )
 from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
     sanitize_source_reference,
 )
 from inference.core.interfaces.camera.stream_error_classifier import (
@@ -224,9 +225,13 @@ def _build_default_producer(
     and verified at runtime. ``output_tensor`` selects the representation requested by
     the consumer. Construction failures fall back to the general cv2 decoder.
     """
+    # Log surfaces only ever see the sanitized reference / redacted error text:
+    # camera references embed `user:password@` credentials, and GStreamer error
+    # reprs embed the full launch string carrying the same URL.
+    display_reference = sanitize_source_reference(str(stream_reference))
     if not ENABLE_TENSOR_DATA_REPRESENTATION:
         logger.debug(
-            "Using legacy decoder for source " f"reference: {stream_reference}"
+            "Using legacy decoder for source " f"reference: {display_reference}"
         )
         return _create_video_frame_producer(stream_reference)
     # Local import: the discoverability layer pulls optional GPU-decode deps lazily.
@@ -246,13 +251,14 @@ def _build_default_producer(
     ) as error:  # noqa: BLE001 - decoder selection must never break startup
         logger.warning(
             "Initialising a hardware decoder for source reference "
-            f"{stream_reference} raised: "
-            f"{error!r}. Falling back to the cv2 CPU decoder."
+            f"{display_reference} raised: "
+            f"{redact_credentials_in_text(repr(error))}. "
+            "Falling back to the cv2 CPU decoder."
         )
     if producer is not None:
         logger.info(
             "Selected hardware decoder "
-            f"'{type(producer).__name__}' for source reference: {stream_reference}"
+            f"'{type(producer).__name__}' for source reference: {display_reference}"
         )
         return producer
     probe_reasons = {
@@ -264,7 +270,8 @@ def _build_default_producer(
     }
     logger.warning(
         "No hardware decoder is "
-        f"usable for source reference {stream_reference} (probes: {probe_reasons}). "
+        f"usable for source reference {display_reference} "
+        f"(probes: {redact_credentials_in_text(str(probe_reasons))}). "
         "Falling back to the cv2 CPU decoder."
     )
     return CV2VideoFrameProducer(stream_reference)
@@ -747,7 +754,8 @@ class VideoSource:
                 self._release_video()
                 logger.warning(
                     "Hardware video source initialisation failed for "
-                    f"{self._stream_reference}: {hardware_error!r}. "
+                    f"{self._observability_reference}: "
+                    f"{redact_credentials_in_text(repr(hardware_error))}. "
                     "Falling back to the cv2 decoder."
                 )
                 self._video = CV2VideoFrameProducer(self._stream_reference)
@@ -789,7 +797,10 @@ class VideoSource:
         try:
             interrupt()
         except Exception as error:  # noqa: BLE001
-            logger.warning(f"Could not interrupt video source: {error}")
+            logger.warning(
+                "Could not interrupt video source: "
+                f"{redact_credentials_in_text(str(error))}"
+            )
 
     def _release_video(self) -> None:
         if self._video is None:
@@ -797,7 +808,10 @@ class VideoSource:
         try:
             self._video.release()
         except Exception as error:  # noqa: BLE001
-            logger.warning(f"Could not release video source: {error}")
+            logger.warning(
+                "Could not release video source: "
+                f"{redact_credentials_in_text(str(error))}"
+            )
 
     def _terminate(
         self, wait_on_frames_consumption: bool, purge_frames_buffer: bool
@@ -1388,7 +1402,10 @@ def send_video_source_status_update(
         try:
             handler(status_update)
         except Exception as error:
-            logger.warning(f"Could not execute handler update. Cause: {error}")
+            logger.warning(
+                "Could not execute handler update. Cause: "
+                f"{redact_credentials_in_text(str(error))}"
+            )
 
 
 def decode_video_frame_to_buffer(
