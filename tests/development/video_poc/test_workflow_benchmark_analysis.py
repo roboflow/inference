@@ -111,6 +111,14 @@ def test_analyze_report_derives_frame_counter_fps_startup_and_fairness():
         "sampledEmaLatencyP95Ms": 10.0,
         "sampledEmaLatencyMaxMs": 10,
         "latencySamples": 3,
+        "frameLatencyHistogramCount": 0,
+        "frameLatencyMeanMs": None,
+        "frameLatencyP50ApproxMs": None,
+        "frameLatencyP95ApproxMs": None,
+        "frameLatencyP99ApproxMs": None,
+        "latencyP95ForSloMs": 10.0,
+        "latencySource": "sampled_ema",
+        "counterDeltas": {},
     }
     assert analysis["streams"][1]["steadyState"]["deliveredFps"] == 9.0
     assert analysis["streams"][1]["startup"]["timeToFirstResultS"] == 4
@@ -167,3 +175,47 @@ def test_markdown_warns_that_latency_is_sampled_ema():
 
     assert "sampled rolling EMAs, not per-frame percentiles" in rendered
     assert "| c1 | 1 | 10.0" in rendered
+
+
+def test_schema_v2_uses_frame_histogram_and_counter_deltas_for_slo():
+    report = make_report("schema-v2", 1)
+    report["schemaVersion"] = 2
+    for sample in report["samples"]:
+        stats = sample["jobs"][0]["stats"]
+        frames = stats["frames"]
+        stats["schemaVersion"] = 2
+        stats["counters"] = {
+            "captured": frames + 2,
+            "decoded": frames + 1,
+            "dropped": 1,
+            "inferred": frames,
+            "rendered": frames,
+            "published": 0,
+        }
+        stats["decodeToResultLatency"] = {
+            "count": frames,
+            "sum": frames * 15,
+            "max": 15,
+            "histogram": {
+                "bounds": [10, 20, None],
+                "cumulativeCounts": [0, frames, frames],
+            },
+        }
+
+    analysis = analyze_reports([report], AnalysisConfig(warmup_seconds=2))
+    steady = analysis["runs"][0]["streams"][0]["steadyState"]
+
+    assert steady["frameLatencyHistogramCount"] == 40
+    assert steady["frameLatencyMeanMs"] == 15
+    assert steady["frameLatencyP95ApproxMs"] == 20
+    assert steady["latencyP95ForSloMs"] == 20
+    assert steady["latencySource"] == "frame_histogram"
+    assert steady["counterDeltas"] == {
+        "captured": 40,
+        "decoded": 40,
+        "dropped": 0,
+        "inferred": 40,
+        "published": 0,
+        "rendered": 40,
+    }
+    assert analysis["runs"][0]["capacitySlo"]["maxLatencyP95Ms"] == 20

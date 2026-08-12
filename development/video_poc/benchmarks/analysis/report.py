@@ -163,7 +163,7 @@ def _latency_summary(records):
         for record in records
     ]
     values = [value for value in values if value is not None]
-    return {
+    summary = {
         "sampledEmaLatencyMeanMs": _rounded(
             statistics.mean(values) if values else None
         ),
@@ -172,6 +172,94 @@ def _latency_summary(records):
         "sampledEmaLatencyMaxMs": _rounded(max(values) if values else None),
         "latencySamples": len(values),
     }
+    summary.update(_histogram_latency_delta(records))
+    histogram_p95 = summary["frameLatencyP95ApproxMs"]
+    summary["latencyP95ForSloMs"] = (
+        histogram_p95
+        if histogram_p95 is not None
+        else summary["sampledEmaLatencyP95Ms"]
+    )
+    summary["latencySource"] = (
+        "frame_histogram" if histogram_p95 is not None else "sampled_ema"
+    )
+    return summary
+
+
+def _histogram_latency_delta(records):
+    snapshots = []
+    for record in records:
+        latency = (record["job"].get("stats") or {}).get(
+            "decodeToResultLatency"
+        )
+        histogram = (latency or {}).get("histogram") or {}
+        bounds = histogram.get("bounds")
+        counts = histogram.get("cumulativeCounts")
+        if (
+            isinstance(bounds, list)
+            and isinstance(counts, list)
+            and len(bounds) == len(counts)
+            and latency.get("count") is not None
+        ):
+            snapshots.append((latency, bounds, counts))
+    empty = {
+        "frameLatencyHistogramCount": 0,
+        "frameLatencyMeanMs": None,
+        "frameLatencyP50ApproxMs": None,
+        "frameLatencyP95ApproxMs": None,
+        "frameLatencyP99ApproxMs": None,
+    }
+    if len(snapshots) < 2:
+        return empty
+    first, first_bounds, first_counts = snapshots[0]
+    last, last_bounds, last_counts = snapshots[-1]
+    if first_bounds != last_bounds:
+        return empty
+    count = int(last["count"]) - int(first["count"])
+    delta_counts = [
+        int(current) - int(previous)
+        for previous, current in zip(first_counts, last_counts)
+    ]
+    if count <= 0 or any(value < 0 for value in delta_counts):
+        return empty
+
+    def quantile(value):
+        target = max(1, math.ceil(count * value))
+        for bound, cumulative in zip(last_bounds, delta_counts):
+            if cumulative >= target:
+                # The overflow bucket is represented by null. The cumulative
+                # snapshot's max may predate the steady window, so label this
+                # as an approximation rather than pretending it is exact.
+                return bound if bound is not None else last.get("max")
+        return None
+
+    delta_sum = float(last.get("sum") or 0) - float(first.get("sum") or 0)
+    return {
+        "frameLatencyHistogramCount": count,
+        "frameLatencyMeanMs": _rounded(delta_sum / count),
+        "frameLatencyP50ApproxMs": _rounded(quantile(0.50)),
+        "frameLatencyP95ApproxMs": _rounded(quantile(0.95)),
+        "frameLatencyP99ApproxMs": _rounded(quantile(0.99)),
+    }
+
+
+def _counter_deltas(records):
+    snapshots = [
+        (record["job"].get("stats") or {}).get("counters")
+        for record in records
+    ]
+    snapshots = [item for item in snapshots if isinstance(item, dict)]
+    if len(snapshots) < 2:
+        return {}
+    first, last = snapshots[0], snapshots[-1]
+    counters = {}
+    for name in sorted(set(first) & set(last)):
+        try:
+            delta = int(last[name]) - int(first[name])
+        except (TypeError, ValueError):
+            continue
+        if delta >= 0:
+            counters[name] = delta
+    return counters
 
 
 def _placement_summary(report, job_ids):
@@ -209,14 +297,14 @@ def _fairness(streams):
     fps_values = [stream["steadyState"]["deliveredFps"] for stream in streams]
     fps_values = [value for value in fps_values if value is not None]
     latency_values = [
-        stream["steadyState"]["sampledEmaLatencyP95Ms"] for stream in streams
+        stream["steadyState"]["latencyP95ForSloMs"] for stream in streams
     ]
     latency_values = [value for value in latency_values if value is not None]
     fps_median = statistics.median(fps_values) if fps_values else None
     latency_median = statistics.median(latency_values) if latency_values else None
     for stream in streams:
         fps = stream["steadyState"]["deliveredFps"]
-        latency = stream["steadyState"]["sampledEmaLatencyP95Ms"]
+        latency = stream["steadyState"]["latencyP95ForSloMs"]
         stream["fairness"] = {
             "fpsVsCohortMedianPct": _rounded(
                 100 * (fps / fps_median - 1) if fps is not None and fps_median else None
@@ -241,6 +329,7 @@ def _fairness(streams):
         "deliveredFpsSpreadRatio": _rounded(spread),
         "deliveredFpsJainIndex": _rounded(jain, 6),
         "sampledEmaLatencyP95MedianMs": _rounded(latency_median),
+        "latencyP95MedianMs": _rounded(latency_median),
     }
 
 
@@ -290,6 +379,7 @@ def analyze_report(report, config=None):
         }
         steady_summary = _frame_rate(steady)
         steady_summary.update(_latency_summary(steady))
+        steady_summary["counterDeltas"] = _counter_deltas(steady)
         streams.append(
             {
                 **item,
@@ -361,10 +451,10 @@ def _capacity_summary(signature, runs, config):
         if stream["steadyState"]["deliveredFps"] is not None
     ]
     baseline_latency_values = [
-        stream["steadyState"]["sampledEmaLatencyP95Ms"]
+        stream["steadyState"]["latencyP95ForSloMs"]
         for run in baseline_runs
         for stream in run["streams"]
-        if stream["steadyState"]["sampledEmaLatencyP95Ms"] is not None
+        if stream["steadyState"]["latencyP95ForSloMs"] is not None
     ]
     baseline_fps = (
         statistics.median(baseline_fps_values) if baseline_fps_values else None
@@ -385,7 +475,7 @@ def _capacity_summary(signature, runs, config):
         intervals = []
         for stream in run["streams"]:
             fps = stream["steadyState"]["deliveredFps"]
-            latency = stream["steadyState"]["sampledEmaLatencyP95Ms"]
+            latency = stream["steadyState"]["latencyP95ForSloMs"]
             startup = stream["startup"]["timeToFirstResultS"]
             intervals.append(stream["steadyState"]["steadyIntervals"])
             if fps is not None:
@@ -398,7 +488,7 @@ def _capacity_summary(signature, runs, config):
                 "fpsRetentionRatio": _rounded(
                     fps / baseline_fps if fps is not None and baseline_fps else None
                 ),
-                "sampledEmaLatencyP95VsBaselinePct": _rounded(
+                "latencyP95VsBaselinePct": _rounded(
                     100 * (latency / baseline_latency - 1)
                     if latency is not None and baseline_latency
                     else None
@@ -418,7 +508,7 @@ def _capacity_summary(signature, runs, config):
             "baselineAvailable": baseline_fps is not None,
             "fpsRetention": min_retention is not None
             and min_retention >= config.min_fps_retention_ratio,
-            "sampledEmaLatency": max_latency is not None
+            "latencyP95": max_latency is not None
             and max_latency <= config.max_sampled_ema_latency_p95_ms,
             "fpsFairness": run["fairness"]["deliveredFpsSpreadRatio"] is not None
             and run["fairness"]["deliveredFpsSpreadRatio"]
@@ -437,6 +527,7 @@ def _capacity_summary(signature, runs, config):
             "checks": checks,
             "minFpsRetentionRatio": _rounded(min_retention),
             "maxSampledEmaLatencyP95Ms": _rounded(max_latency),
+            "maxLatencyP95Ms": _rounded(max_latency),
             "maxTimeToFirstResultS": _rounded(max_startup),
         }
         results.append(
@@ -455,6 +546,7 @@ def _capacity_summary(signature, runs, config):
         "baselineConcurrency": baseline_concurrency,
         "baselineDeliveredFps": _rounded(baseline_fps),
         "baselineSampledEmaLatencyP95Ms": _rounded(baseline_latency),
+        "baselineLatencyP95Ms": _rounded(baseline_latency),
         "maxTestedConcurrency": max(
             (run["plannedConcurrency"] for run in runs), default=None
         ),
@@ -493,8 +585,9 @@ def render_markdown(analysis):
     lines = [
         "# Video workflow benchmark analysis",
         "",
-        "Latency values are percentiles of sampled rolling EMAs, not per-frame "
-        "percentiles.",
+        "Schema-v2 reports use approximate percentiles from fixed per-frame "
+        "histograms. Legacy reports use percentiles of sampled rolling EMAs, "
+        "not per-frame percentiles.",
         "",
     ]
     for capacity in analysis["capacitySummaries"]:
@@ -503,7 +596,7 @@ def render_markdown(analysis):
             [
                 f"## {capacity['profile']} ({capacity['tier']}, output {output})",
                 "",
-                "| Run | Streams | Total FPS | FPS spread | Max sampled latency p95 | "
+                "| Run | Streams | Total FPS | FPS spread | Max latency p95 | "
                 "Processors | SLO |",
                 "| --- | ---: | ---: | ---: | ---: | ---: | :---: |",
             ]
@@ -518,7 +611,7 @@ def render_markdown(analysis):
                     concurrency=result["concurrency"],
                     fps=run["aggregate"]["totalDeliveredFps"],
                     spread=run["fairness"]["deliveredFpsSpreadRatio"],
-                    latency=result["maxSampledEmaLatencyP95Ms"],
+                    latency=result["maxLatencyP95Ms"],
                     processors=run["placement"]["distinctProcessorCount"],
                     slo="pass" if result["passed"] else "fail",
                 )
