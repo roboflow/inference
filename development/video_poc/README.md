@@ -129,6 +129,15 @@ warm processor amortizes imports; model load is the remaining per-job cost).
 - **Events vs pixels**: the processor redacts image outputs from the JSON events (SSE) and
   serves any image output as MJPEG on demand (`?output=`); `/status` advertises what exists
   so viewers can attach to a job after it started.
+- **Benchmark telemetry**: an authorized job `/status` response and the platform heartbeat
+  retain the original `stats.frames`, `stats.fps`, and startup fields, and add a versioned,
+  fixed-size `stats.counters`/`stats.decodeToResultLatency` report. It distinguishes source
+  frames captured, decoded/selected, and dropped from inferred, rendered, and actually
+  published output frames. The latency histogram has fixed bounds so runs can be merged
+  without retaining per-frame samples. `stats.runtime` reports only an explicit non-secret
+  allowlist (process/host/GPU visibility plus `VIDEO_PROC_IMAGE` and
+  `VIDEO_PROC_GIT_SHA` when deployment injects them). Job identity remains out of
+  Prometheus labels.
 - **Two processing modes**: `batch` (files as they are: every frame, in order, faster than
   real time is the goal) vs `stream` (real-time pacing, drops under load — cameras, or files
   standing in for cameras). Details and the `is_file` gotcha that motivated it: HANDOFF.md §5.

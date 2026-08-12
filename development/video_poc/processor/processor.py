@@ -77,7 +77,6 @@ if ONNX_INTRA_OP_THREADS > 0:
 
     _ort.InferenceSession = _capped_inference_session
 
-from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -93,6 +92,7 @@ try:
 except Exception:  # PyAV missing: fall back to cv2 URL ingest
     LowLatencyRtspProducer = None
 
+from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
 from security import (
     DiagnosticRing,
@@ -165,71 +165,6 @@ RESULT_FILES = {
 
 def utcnow_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
-
-
-class Stats:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.reset()
-
-    def reset(self):
-        with getattr(self, "lock", threading.Lock()):
-            self.job_received_at = None
-            self.pipeline_started_at = None
-            self.first_result_at = None
-            self.frames = 0
-            self.ema_fps = None
-            self.last_latency_ms = None
-            self.ema_latency_ms = None
-            self._last_frame_time = None
-
-    def on_job(self):
-        self.reset()
-        self.job_received_at = time.time()
-
-    def on_pipeline_start(self):
-        now = time.time()
-        with self.lock:
-            self.pipeline_started_at = now
-            return max(0.0, now - self.job_received_at) if self.job_received_at else 0.0
-
-    def on_result(self, video_frame: VideoFrame):
-        now = time.time()
-        with self.lock:
-            first_result = self.first_result_at is None
-            if first_result:
-                self.first_result_at = now
-            self.frames += 1
-            if self._last_frame_time is not None:
-                dt = now - self._last_frame_time
-                if dt > 0:
-                    inst = 1.0 / dt
-                    self.ema_fps = inst if self.ema_fps is None else 0.9 * self.ema_fps + 0.1 * inst
-            self._last_frame_time = now
-            latency_ms = (datetime.now() - video_frame.frame_timestamp).total_seconds() * 1000.0
-            self.last_latency_ms = latency_ms
-            self.ema_latency_ms = (
-                latency_ms if self.ema_latency_ms is None else 0.9 * self.ema_latency_ms + 0.1 * latency_ms
-            )
-            first_result_seconds = (
-                max(0.0, now - self.job_received_at)
-                if first_result and self.job_received_at
-                else None
-            )
-            return max(0.0, latency_ms / 1000.0), first_result_seconds
-
-    def snapshot(self) -> dict:
-        with self.lock:
-            out = {
-                "frames": self.frames,
-                "fps": round(self.ema_fps, 2) if self.ema_fps else None,
-                "decodeToResultLatencyMs": round(self.ema_latency_ms, 1) if self.ema_latency_ms else None,
-            }
-            if self.job_received_at and self.pipeline_started_at:
-                out["pipelineStartS"] = round(self.pipeline_started_at - self.job_received_at, 2)
-            if self.job_received_at and self.first_result_at:
-                out["timeToFirstResultS"] = round(self.first_result_at - self.job_received_at, 2)
-            return out
 
 
 class EventBus:
@@ -459,9 +394,10 @@ class OutputPublisher:
 
     transport = "rtsp"
 
-    def __init__(self, frames: FrameStore, publish_url: str):
+    def __init__(self, frames: FrameStore, publish_url: str, on_published=None):
         self.frames = frames
         self.publish_url = publish_url
+        self.on_published = on_published or (lambda: None)
         self.output = None
         self._proc = None
         self._thread = None
@@ -530,6 +466,7 @@ class OutputPublisher:
             try:
                 proc.stdin.write(jpeg)
                 proc.stdin.flush()
+                self.on_published()
             except Exception:
                 break
 
@@ -579,9 +516,10 @@ class AiortcWhipPublisher:
 
     transport = "whip"
 
-    def __init__(self, frames: FrameStore, whip_url: str):
+    def __init__(self, frames: FrameStore, whip_url: str, on_published=None):
         self.frames = frames
         self.whip_url = whip_url
+        self.on_published = on_published or (lambda: None)
         self.output = None
         self._thread = None
         self._stopped = threading.Event()
@@ -676,6 +614,7 @@ class AiortcWhipPublisher:
                     self._t0 = now
                 frame.pts = int((now - self._t0) * 90000)
                 frame.time_base = fractions.Fraction(1, 90000)
+                publisher.on_published()
                 return frame
 
         pc = RTCPeerConnection()
@@ -849,7 +788,7 @@ class JobRun:
         # pipeline with no run attached)
         self.lifecycle_lock = threading.Lock()
         self.lock = threading.Lock()
-        self.stats = Stats()
+        self.stats = JobTelemetry()
         self.events = EventBus()
         self.frames = FrameStore()
         # raw ndarrays per image output (same store semantics): feeds the
@@ -900,8 +839,10 @@ class JobRun:
         # exists; a newly attached MJPEG client gets its first frame on the
         # next prediction
         want_jpeg = recorder is not None or self.frames.consumers > 0
+        rendered = False
         for key, value in predictions.items():
             if isinstance(value, WorkflowImageData):
+                rendered = True
                 if self.image_output is None:
                     self.image_output = key
                 try:
@@ -918,12 +859,16 @@ class JobRun:
                     pass
                 outputs[key] = {"type": "image_ref", "output": key}
             elif isinstance(value, list) and value and all(isinstance(v, WorkflowImageData) for v in value):
+                rendered = True
                 outputs[key] = [{"type": "image_ref", "output": key, "index": i} for i in range(len(value))]
             else:
                 try:
                     outputs[key] = serialize_wildcard_kind(value=value)
                 except Exception:
                     outputs[key] = str(value)
+
+        if rendered:
+            self.stats.on_rendered()
 
         event = {
             "frameId": video_frame.frame_id,
@@ -939,7 +884,9 @@ class JobRun:
 
     def on_pipeline_status_update(self, update):
         """Capture this pipeline's structured errors for durable UI diagnostics."""
-        if getattr(update, "event_type", None) != "INFERENCE_ERROR":
+        event_type = getattr(update, "event_type", None)
+        self.stats.on_source_event(event_type)
+        if event_type != "INFERENCE_ERROR":
             return
         detail = format_inference_error(getattr(update, "payload", None))
         message = f"workflow inference failed: {detail}"
@@ -1321,7 +1268,7 @@ class JobRun:
                 "imageOutput": job.get("imageOutput"),
                 "error": job.get("error"),
             },
-            "stats": self.stats.snapshot(),
+            "stats": self.stats.snapshot(runtime=self.worker.runtime_identity),
             # image outputs redacted from /events; each is watchable at
             # /preview.mjpeg?output=<name>
             # from the raw store: always populated, unlike the JPEG store,
@@ -1351,9 +1298,13 @@ class JobRun:
         if transport == "whip":
             whip_url = self.job.get("outWhipUrl") or f"{WHIP_SIM_BASE}/out-{self.job_id}/whip"
             # raw frames: the whip transport encodes straight from ndarrays
-            return AiortcWhipPublisher(self.raw_frames, whip_url)
+            return AiortcWhipPublisher(
+                self.raw_frames, whip_url, on_published=self.stats.on_published
+            )
         publish_url = self.job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{self.job_id}"
-        return OutputPublisher(self.frames, publish_url)
+        return OutputPublisher(
+            self.frames, publish_url, on_published=self.stats.on_published
+        )
 
     def handle_watch(self, watch):
         """React to the watch signal riding the status-poll response: publish
@@ -1459,6 +1410,7 @@ class Worker:
             require_tokens=env_flag("REQUIRE_JOB_ACCESS_TOKEN", managed_pool)
         )
         self.metrics = ProcessorMetrics()
+        self.runtime_identity = build_runtime_identity(self.processor_id)
 
     # ---------- run bookkeeping ----------
 
@@ -1721,7 +1673,9 @@ class Worker:
                             f"/video-jobs/{run.job_id}/status",
                             json={
                                 "state": run.state,
-                                "stats": run.stats.snapshot(),
+                                "stats": run.stats.snapshot(
+                                    runtime=self.runtime_identity
+                                ),
                                 "processorId": self.processor_id,
                             },
                         )
