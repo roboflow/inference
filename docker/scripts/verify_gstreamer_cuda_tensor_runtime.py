@@ -26,6 +26,7 @@ def _run_gstreamer(*arguments: str) -> None:
 
 
 def _create_h26x(path: Path, encoder: str, parser: str, pattern: str = "red") -> None:
+    codec = "h264" if "h264" in parser else "h265"
     _run_gstreamer(
         "videotestsrc",
         "num-buffers=8",
@@ -44,7 +45,15 @@ def _create_h26x(path: Path, encoder: str, parser: str, pattern: str = "red") ->
         # as separate tokens.
         *encoder.split(),
         "!",
-        parser,
+        *parser.split(),
+        "!",
+        # Force byte-stream in the dumped file: the modern encoders' src
+        # template lists stream-format {avc, byte-stream} and caps-agnostic
+        # downstream negotiation picks avc, whose length-prefixed NALs (with
+        # codec_data lost in a raw dump) typefind cannot identify - decode
+        # then fails with "Could not determine type of stream". The legacy
+        # elements emitted byte-stream only; pin it explicitly.
+        f"video/x-{codec},stream-format=byte-stream,alignment=au",
         "!",
         "filesink",
         f"location={path}",
@@ -229,10 +238,10 @@ def main() -> None:
         # plugin use the supported p1-p7 preset API; pin p4 (the balanced
         # middle) so the fixture pipeline is deterministic across driver
         # generations.
-        _create_h26x(h264_path, "nvcudah264enc preset=p4", "h264parse")
-        _create_h26x(h265_path, "nvcudah265enc preset=p4", "h265parse")
+        _create_h26x(h264_path, "nvcudah264enc preset=p4", "h264parse config-interval=-1")
+        _create_h26x(h265_path, "nvcudah265enc preset=p4", "h265parse config-interval=-1")
         _create_h26x(
-            changing_h264_path, "nvcudah264enc preset=p4", "h264parse", pattern="ball"
+            changing_h264_path, "nvcudah264enc preset=p4", "h264parse config-interval=-1", pattern="ball"
         )
         _create_jpeg(jpeg_path)
         _validate_source(h264_path, minimum_frames=5)
