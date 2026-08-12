@@ -1,0 +1,22 @@
+{
+  "server_url": "http://127.0.0.1:8000",
+  "duration_s": 120,
+  "warmup_s": 15,
+  "sample_interval_s": 1,
+  "clients": [
+    {
+      "tenant_id": "workspace-a",
+      "api_key_env": "RF_BENCH_TENANT_A_KEY",
+      "model_id": "yolov8n-640",
+      "concurrency": 4,
+      "target_fps": 0
+    },
+    {
+      "tenant_id": "workspace-b",
+      "api_key_env": "RF_BENCH_TENANT_B_KEY",
+      "model_id": "yolov8n-640",
+      "concurrency": 4,
+      "target_fps": 0
+    }
+  ]
+}
