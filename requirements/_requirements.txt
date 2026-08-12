@@ -8,15 +8,15 @@ python-dotenv>=1.2.2,<2.0.0
 tzdata>=2024.1
 fastapi>=0.100,<0.129  # be careful with upper pin - fastapi might remove support for on_event
 numpy>=2.0.0,<2.4.0
-opencv-python>=4.8.1.78,<=4.10.0.84
-opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
+opencv-python>=4.8.1.78,<4.13.0
+opencv-contrib-python>=4.8.1.78,<4.13.0  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
 pillow>=12.3.0,<13.0.0
 prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
 redis~=5.0.0
 requests>=2.33.0,<3.0.0
 rich>=13.0.0,<15.0.0
-supervision>=0.27.0,<0.30.0
+supervision>=0.29.0,<0.30.0  # 0.30 changed __setitem__ validation, from_inference polygon skips, PolygonZone anchors, CompactMask degeneracy and NMM tie-breaks - conformance tracked separately
 pybase64~=1.0.0
 scikit-image>=0.19.0,<=0.25.2
 requests-toolbelt~=1.0.0

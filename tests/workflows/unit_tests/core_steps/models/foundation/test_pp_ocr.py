@@ -171,9 +171,7 @@ def test_pp_ocr_run_locally_full_mode() -> None:
     images = _make_images()
 
     # when
-    result = block.run(
-        images=images, text_detection="small", text_recognition="small"
-    )
+    result = block.run(images=images, text_detection="small", text_recognition="small")
 
     # then
     model_manager.infer_from_request_sync.assert_called_once()
@@ -219,9 +217,7 @@ def test_pp_ocr_run_locally_detect_only() -> None:
     images = _make_images()
 
     # when
-    result = block.run(
-        images=images, text_detection="small", text_recognition="none"
-    )
+    result = block.run(images=images, text_detection="small", text_recognition="none")
 
     # then
     assert len(result) == 1
@@ -247,9 +243,7 @@ def test_pp_ocr_run_locally_recognize_only() -> None:
     images = _make_images()
 
     # when
-    result = block.run(
-        images=images, text_detection="none", text_recognition="small"
-    )
+    result = block.run(images=images, text_detection="none", text_recognition="small")
 
     # then
     assert len(result) == 1

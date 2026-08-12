@@ -11,7 +11,11 @@ import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v1
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import (
+    v1,
+    v1_tensor,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     BatchCreationFrequency,
     RoboflowDatasetUploadBlockV1,
@@ -22,10 +26,21 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
     is_prediction_registration_forbidden,
     register_datapoint,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+    RoboflowDatasetUploadBlockV1 as TensorRoboflowDatasetUploadBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+    execute_registration as tensor_execute_registration,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
+)
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -861,9 +876,7 @@ def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropi
         numpy_image=np.zeros((orig_h, orig_w, 3), dtype=np.uint8),
     )
     detections = sv.Detections(
-        xyxy=np.array(
-            [[orig_w - 400, 0, orig_w - 1, orig_h - 1]], dtype=np.float64
-        ),
+        xyxy=np.array([[orig_w - 400, 0, orig_w - 1, orig_h - 1]], dtype=np.float64),
         mask=np.array([mask]),
         class_id=np.array([0]),
         confidence=np.array([0.9], dtype=np.float64),
@@ -902,6 +915,89 @@ def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropi
     return_strategy_credit_mock.assert_not_called()
 
 
+@_TENSOR_ONLY
+@mock.patch.object(v1_tensor, "return_strategy_credit")
+@mock.patch.object(v1_tensor, "register_datapoint")
+@mock.patch.object(v1_tensor, "use_credit_of_matching_strategy")
+def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropically_tensor_native(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # Ultra-wide 4000x1080 → max 2080x2080 yields 2080x561 (scale_x != scale_y)
+    import torch
+
+    from inference.core.workflows.execution_engine.constants import (
+        CLASS_NAMES_KEY,
+        IMAGE_DIMENSIONS_KEY,
+    )
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    cache = MemoryCache()
+    cache.set(
+        key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
+    )
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    orig_w, orig_h = 4000, 1080
+    target_w, target_h = 2080, 561
+    mask = np.zeros((orig_h, orig_w), dtype=bool)
+    mask[:, orig_w - 400 : orig_w] = True
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((orig_h, orig_w, 3), dtype=np.uint8),
+    )
+    detections = InstanceDetections(
+        xyxy=torch.tensor(
+            [[orig_w - 400, 0, orig_w - 1, orig_h - 1]], dtype=torch.float64
+        ),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9], dtype=torch.float64),
+        mask=torch.from_numpy(np.array([mask])),
+        image_metadata={
+            CLASS_NAMES_KEY: {0: "edge"},
+            IMAGE_DIMENSIONS_KEY: [orig_h, orig_w],
+        },
+        bboxes_metadata=[{"detection_id": "first", "class_name": "edge"}],
+    )
+
+    result = tensor_execute_registration(
+        image=image,
+        prediction=detections,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(2080, 2080),
+        compression_level=95,
+        registration_tags=[],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+    )
+
+    assert result == (False, "STATUS OK")
+    scaled = register_datapoint_mock.call_args[1]["prediction"]
+    assert tuple(scaled.mask.shape) == (1, target_h, target_w)
+    assert np.allclose(
+        np.asarray(scaled.image_metadata[IMAGE_DIMENSIONS_KEY]),
+        [target_h, target_w],
+    )
+    assert float(scaled.xyxy[0, 2]) <= target_w
+    assert float(scaled.xyxy[0, 3]) <= target_h
+    assert bool(
+        scaled.mask[0][:, -1].any()
+    ), "Edge mask must remain flush to JPEG right edge"
+    return_strategy_credit_mock.assert_not_called()
+
+
 @pytest.mark.parametrize("disable_sink", [False, True])
 def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
     # given
@@ -935,6 +1031,42 @@ def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
 
 def test_execution_policy_noops_without_api_key() -> None:
     data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=Batch(content=[MagicMock()], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=True,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
+
+
+@_TENSOR_ONLY
+def test_execution_policy_noops_without_api_key_tensor_native() -> None:
+    data_collector_block = TensorRoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
         api_key=None,
         background_tasks=None,

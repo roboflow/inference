@@ -76,9 +76,12 @@ runs:
             NORMALIZED_LATEST_RELEASE=""
           fi
 
-          # Logic for push events to main
-          if [ "$EVENT_NAME" == "push" ] && [ "$BRANCH" == "main" ]; then
-            IMAGE_TAGS="$BASE_IMAGE:main"
+          # Pushes to non-main release branches need a deterministic image tag,
+          # too. This is required for the MVP JP7.2 wheel workflow, which runs
+          # before its changes land on main.
+          if [ "$EVENT_NAME" == "push" ]; then
+            PUSH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//')
+            IMAGE_TAGS="$BASE_IMAGE:$PUSH_TAG"
           fi
 
           # Logic for release events

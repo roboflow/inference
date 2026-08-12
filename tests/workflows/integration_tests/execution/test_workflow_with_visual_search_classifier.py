@@ -2,8 +2,22 @@ from unittest import mock
 
 import numpy as np
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the loader swaps in the v1_tensor
+# sibling, which binds its own copies of the roboflow_api helpers - patch the
+# module that actually runs.
+_VISUAL_SEARCH_CLASSIFIER_MODULE = (
+    "inference.core.workflows.core_steps.integrations.roboflow."
+    "visual_search_classifier.v1_tensor"
+    if ENABLE_TENSOR_DATA_REPRESENTATION
+    else "inference.core.workflows.core_steps.integrations.roboflow."
+    "visual_search_classifier.v1"
+)
 
 WORKFLOW_WITH_VISUAL_SEARCH_CLASSIFIER = {
     "version": "1.0",
@@ -47,12 +61,10 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
     )
 
     with mock.patch(
-        "inference.core.workflows.core_steps.integrations.roboflow."
-        "visual_search_classifier.v1.get_roboflow_workspace",
+        f"{_VISUAL_SEARCH_CLASSIFIER_MODULE}.get_roboflow_workspace",
         return_value="my-workspace",
     ) as workspace_mock, mock.patch(
-        "inference.core.workflows.core_steps.integrations.roboflow."
-        "visual_search_classifier.v1.search_project_images_at_roboflow"
+        f"{_VISUAL_SEARCH_CLASSIFIER_MODULE}.search_project_images_at_roboflow"
     ) as search_mock:
         search_mock.return_value = {
             "results": [
@@ -78,12 +90,24 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
     assert result[0]["top_class"] == ["pass", "review"]
     visual_search_output = result[0]["visual_search_output"]
     assert "classification_predictions" not in visual_search_output
-    assert visual_search_output["predictions"]["predicted_classes"] == [
+    predictions_payload = visual_search_output["predictions"]
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        # In-process the flag ships a native MultiLabelClassificationPrediction;
+        # the classification-kind serializer restores the numpy dict shape the
+        # assertions below pin (the byte-parity contract).
+        from inference.core.workflows.core_steps.common.serializers_tensor import (
+            serialise_native_classification,
+        )
+
+        predictions_payload = serialise_native_classification(
+            prediction=predictions_payload
+        )
+    assert predictions_payload["predicted_classes"] == [
         "pass",
         "review",
     ]
-    assert visual_search_output["predictions"]["predictions"] == {
+    assert predictions_payload["predictions"] == {
         "pass": {"class_id": 2, "confidence": 0.82},
         "review": {"class_id": 5, "confidence": 0.82},
     }
-    assert visual_search_output["predictions"]["image"] == {"width": 12, "height": 8}
+    assert predictions_payload["image"] == {"width": 12, "height": 8}
