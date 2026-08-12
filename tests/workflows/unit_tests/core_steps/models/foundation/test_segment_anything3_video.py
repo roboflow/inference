@@ -1,16 +1,7 @@
-"""Unit tests for the SAM3 Video Tracker workflow block.
-
-The block fetches the actual model via ``inference_models.AutoModel``;
-we inject a fake model on the instance so tests don't touch
-``inference_models`` or the real SAM3 weights.  The fake mirrors
-``SAM3Video``'s concept-tracker contract: ``prompt(text=...)`` seeds a
-session, ``track`` propagates it, and both return per-frame results
-with detection scores and the prompt→object-ids mapping (which may grow
-mid-stream as new matching objects enter the scene).
-"""
+"""Unit tests for the SAM3 Video Tracker workflow block."""
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Dict, List
@@ -18,6 +9,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+import supervision as sv
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video import (
@@ -26,6 +18,12 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3_vid
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
     BlockManifest,
     SegmentAnything3VideoBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor import (
+    BlockManifest as TensorBlockManifest,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor import (
+    SegmentAnything3VideoBlockV1 as TensorSegmentAnything3VideoBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -120,6 +118,56 @@ class _FakeConceptModel:
         )
 
 
+class _FakeVisualModel:
+    """Stand-in for the point- and box-prompted SAM3 tracker."""
+
+    def __init__(self):
+        self.calls = []
+
+    @staticmethod
+    def _result(image, object_count):
+        height, width = image.shape[:2]
+        masks = np.zeros((object_count, height, width), dtype=bool)
+        for index in range(object_count):
+            masks[index, index, index] = True
+        return (
+            masks,
+            np.arange(object_count, dtype=np.int64),
+            {"object_count": object_count},
+        )
+
+    def prompt(
+        self,
+        image,
+        bboxes,
+        points,
+        state_dict=None,
+        clear_old_prompts=True,
+        frame_idx=0,
+    ):
+        self.calls.append(
+            (
+                "prompt",
+                {
+                    "bboxes": list(bboxes),
+                    "points": list(points),
+                    "frame_idx": frame_idx,
+                    "had_prior_state": state_dict is not None,
+                },
+            )
+        )
+        object_count = len(bboxes) + (1 if points else 0)
+        return self._result(image=image, object_count=object_count)
+
+    def track(self, image, state_dict=None):
+        assert state_dict is not None, "block must thread state into track"
+        self.calls.append(("track", {"had_prior_state": True}))
+        return self._result(
+            image=image,
+            object_count=state_dict["object_count"],
+        )
+
+
 def _make_block_with_fake_model():
     block = SegmentAnything3VideoBlockV1(
         model_manager=MagicMock(),
@@ -130,6 +178,29 @@ def _make_block_with_fake_model():
     block._model = fake
     block._current_model_id = "sam3video"
     return block, fake
+
+
+def _make_visual_block_with_fake_model():
+    block = SegmentAnything3VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    fake = _FakeVisualModel()
+    block._model = fake
+    block._current_model_id = "sam3trackervideo"
+    return block, fake
+
+
+def _make_box_detections() -> sv.Detections:
+    detections = sv.Detections(
+        xyxy=np.asarray([[10, 20, 80, 90]], dtype=np.float32),
+        confidence=np.asarray([0.91], dtype=np.float32),
+        class_id=np.asarray([7], dtype=int),
+    )
+    detections.data["class_name"] = np.asarray(["vehicle"], dtype=object)
+    detections.data["detection_id"] = np.asarray(["det-0"], dtype=object)
+    return detections
 
 
 def _run_single(block, frame, class_names=("person",), threshold=0.0):
@@ -169,6 +240,73 @@ def test_manifest_requires_class_names():
                 "images": "$inputs.image",
             }
         )
+
+
+def test_manifest_selects_visual_model_for_point_prompts():
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "sam3_video_step",
+            "images": "$inputs.image",
+            "tracking_mode": "visual",
+            "points": [{"x": 10, "y": 20, "positive": True}],
+        }
+    )
+
+    assert manifest.class_names is None
+    assert manifest.model_id == "sam3trackervideo"
+
+
+def test_manifest_updates_builtin_model_when_mode_changes():
+    concept_manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "sam3_video_step",
+            "images": "$inputs.image",
+            "tracking_mode": "concept",
+            "class_names": ["person"],
+            "model_id": "sam3trackervideo",
+        }
+    )
+    visual_manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "sam3_video_step",
+            "images": "$inputs.image",
+            "tracking_mode": "visual",
+            "boxes": "$steps.detector.predictions",
+            "model_id": "sam3video",
+        }
+    )
+
+    assert concept_manifest.model_id == "sam3video"
+    assert visual_manifest.model_id == "sam3trackervideo"
+
+
+def test_manifest_requires_visual_prompts():
+    with pytest.raises(Exception, match="Visual mode requires"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/sam3_video@v1",
+                "name": "sam3_video_step",
+                "images": "$inputs.image",
+                "tracking_mode": "visual",
+            }
+        )
+
+
+def test_tensor_manifest_selects_visual_model_for_point_prompts():
+    manifest = TensorBlockManifest.model_validate(
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "sam3_video_step",
+            "images": "$inputs.image",
+            "tracking_mode": "visual",
+            "points": [{"x": 10, "y": 20, "positive": True}],
+        }
+    )
+
+    assert manifest.model_id == "sam3trackervideo"
 
 
 # ---------------------------------------------------------------------------
@@ -362,3 +500,110 @@ def test_comma_separated_class_names_string_is_accepted():
     )
 
     assert fake.calls[0][1]["text"] == ["person", "dog"]
+
+
+# ---------------------------------------------------------------------------
+# Visual tracking
+# ---------------------------------------------------------------------------
+
+
+def test_visual_points_prompt_once_then_track():
+    block, fake = _make_visual_block_with_fake_model()
+    points = [
+        {"x": 10, "y": 12, "positive": True},
+        {"x": 14, "y": 16, "positive": False},
+    ]
+
+    results = []
+    for frame_number in range(3):
+        results.append(
+            block.run(
+                images=[_make_frame(frame_number=frame_number)],
+                class_names=None,
+                model_id="sam3video",
+                threshold=0.0,
+                tracking_mode="visual",
+                points=points,
+            )
+        )
+
+    assert [call[0] for call in fake.calls] == ["prompt", "track", "track"]
+    assert fake.calls[0][1]["points"] == [
+        (10.0, 12.0, True),
+        (14.0, 16.0, False),
+    ]
+    for result in results:
+        predictions = result[0]["predictions"]
+        assert len(predictions) == 1
+        assert predictions.tracker_id.tolist() == [0]
+        assert predictions.data["class_name"].tolist() == ["foreground"]
+
+
+def test_visual_boxes_and_points_keep_prompt_metadata():
+    block, fake = _make_visual_block_with_fake_model()
+
+    result = block.run(
+        images=[_make_frame()],
+        class_names=None,
+        model_id="sam3trackervideo",
+        threshold=0.0,
+        tracking_mode="visual",
+        points=[{"x": 14, "y": 16, "positive": True}],
+        boxes=[_make_box_detections()],
+    )
+
+    predictions = result[0]["predictions"]
+    assert fake.calls[0][1]["bboxes"] == [(10.0, 20.0, 80.0, 90.0)]
+    assert len(predictions) == 2
+    assert predictions.tracker_id.tolist() == [0, 1]
+    assert predictions.class_id.tolist() == [7, 0]
+    assert predictions.confidence.tolist() == pytest.approx([0.91, 1.0])
+    assert predictions.data["class_name"].tolist() == ["vehicle", "foreground"]
+
+
+def test_visual_every_n_frames_mode_reprompts_after_interval():
+    block, fake = _make_visual_block_with_fake_model()
+
+    for frame_number in range(5):
+        block.run(
+            images=[_make_frame(frame_number=frame_number)],
+            class_names=None,
+            model_id="sam3trackervideo",
+            threshold=0.0,
+            tracking_mode="visual",
+            points=[{"x": 10, "y": 12, "positive": True}],
+            prompt_mode="every_n_frames",
+            prompt_interval=2,
+        )
+
+    assert [call[0] for call in fake.calls] == [
+        "prompt",
+        "track",
+        "track",
+        "prompt",
+        "track",
+    ]
+
+
+def test_tensor_visual_mode_emits_native_predictions():
+    block = TensorSegmentAnything3VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    fake = _FakeVisualModel()
+    block._model = fake
+    block._current_model_id = "sam3trackervideo"
+
+    result = block.run(
+        images=[_make_frame()],
+        class_names=None,
+        model_id="sam3video",
+        threshold=0.0,
+        tracking_mode="visual",
+        points=[{"x": 10, "y": 12, "positive": True}],
+    )
+
+    predictions = result[0]["predictions"]
+    assert len(predictions) == 1
+    assert predictions.bboxes_metadata[0]["tracker_id"] == 0

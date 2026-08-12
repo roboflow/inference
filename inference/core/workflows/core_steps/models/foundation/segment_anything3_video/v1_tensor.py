@@ -1,11 +1,8 @@
-"""Tensor-native sibling of ``roboflow_core/sam3_video@v1``, loaded when
-``ENABLE_TENSOR_DATA_REPRESENTATION`` is on.
+"""Tensor-native sibling of ``roboflow_core/sam3_video@v1``.
 
-SAM3 Video Tracker is a STATEFUL, LOCAL-only streaming open-vocabulary
-concept tracker (see the numpy source for the full behavioural notes).
-The session bookkeeping, prompt-signature reseeding and prompt/track state
-machine are verbatim copies of the numpy source; only the prediction
-representation is rewritten:
+The block supports SAM3 concept tracking and point- or box-prompted visual
+tracking. It keeps the same manifest and session behavior as the NumPy
+sibling. Only image and prediction representations differ:
 
 - INPUT frame: when the workflow image is tensor-materialised the block
   forwards ``WorkflowImageData.tensor_image`` (CHW RGB) directly —
@@ -24,8 +21,8 @@ representation is rewritten:
   ``bboxes_metadata`` carries ``detection_id`` / ``class`` / ``tracker_id``;
   ``image_metadata`` is built via ``build_native_image_metadata`` with the
   full prompt-position ``class_id -> name`` map (``class_id`` is the
-  prompt's index in ``class_names``, exactly like the numpy sibling), which
-  replaces ``attach_prediction_type_info_to_sv_detections_batch`` +
+  prompt's index in ``class_names``, exactly like the NumPy sibling), which
+  replaces ``attach_prediction_type_info_to_sv_detections_batch`` and
   ``attach_parents_coordinates_to_batch_of_sv_detections``.
 - Objects whose id maps to no registered prompt keep the numpy fallback:
   ``class_id=0`` with per-box class name ``"foreground"`` (the per-box name
@@ -35,11 +32,11 @@ representation is rewritten:
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import (
     GCP_SERVERLESS,
@@ -53,7 +50,18 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
 from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+    SAM3_CONCEPT_VIDEO_MODEL_ID,
+    SAM3_VISUAL_VIDEO_MODEL_ID,
+    VideoSessionBookkeeping,
+    build_obj_id_metadata_from_visual_prompts,
+    decide_prompt_vs_track,
     normalise_class_names,
+    normalise_labeled_points,
+    resolve_sam3_video_model_id,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor import (
+    _extract_box_prompts_tensor,
+    _masks_to_instance_detections,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -67,10 +75,14 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     IMAGE_KIND,
+    INTEGER_KIND,
+    LABELED_POINTS_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
@@ -92,6 +104,21 @@ from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 PREDICTION_TYPE = "instance-segmentation"
+PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
+TrackingMode = Literal["concept", "visual"]
+
+
+def _frame_for_model(single_image: WorkflowImageData):
+    """Return a CHW RGB tensor or an HWC RGB NumPy frame."""
+    if single_image.is_tensor_materialised():
+        frame = single_image.tensor_image
+        if frame.dim() != 3:
+            raise ValueError(
+                "SAM3 video tracker expects a CHW (3-D) RGB frame tensor; got "
+                f"a tensor with {frame.dim()} dimensions."
+            )
+        return frame
+    return np.ascontiguousarray(single_image.numpy_image[:, :, ::-1])
 
 
 def _resolve_mask_representation() -> str:
@@ -107,29 +134,23 @@ def _resolve_mask_representation() -> str:
     return WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION
 
 
-SHORT_DESCRIPTION = (
-    "Segment and track objects across video frames from text prompts with "
-    "SAM3's streaming concept tracker."
-)
+SHORT_DESCRIPTION = "Track concepts or visually prompted objects across video frames."
 
 LONG_DESCRIPTION = """
 Run Segment Anything 3 on a live video stream frame by frame, keeping
 per-video temporal memory so object identities are preserved across
 frames.
 
-Provide the concepts to track as text in `class_names` (e.g.
-`["person", "forklift"]`) — no upstream detector is needed.  SAM3 runs
-fused detection and tracking on every frame, so objects matching a
-concept that enter the scene mid-stream are picked up automatically and
-assigned fresh `tracker_id`s.  Each emitted mask carries the prompt it
-matched as its class name and the model's detection score as its
-confidence.
+Use `concept` mode to track text concepts. SAM3 detects matching objects
+on every frame and assigns tracker IDs to objects that enter the scene.
+
+Use `visual` mode to track objects from points or boxes. The block reads
+the visual prompts according to `prompt_mode`, then keeps temporal state
+between frames.
 
 The block multiplexes a single SAM3 streaming model across many video
-streams by keying state on `video_metadata.video_identifier`; a session
-is re-seeded only when the source stream restarts or `class_names`
-changes.  For detector-driven (box-prompted) video tracking, use the
-SAM2 Video Tracker block instead.
+streams by keying state on `video_metadata.video_identifier`. The block
+uses `sam3video` for concept mode and `sam3trackervideo` for visual mode.
 
 Intended for use with `InferencePipeline`, which delivers one frame at
 a time and tags each frame with video metadata.
@@ -166,6 +187,10 @@ class BlockManifest(WorkflowBlockManifest):
                 "video",
                 "tracking",
                 "open vocabulary",
+                "visual tracking",
+                "point prompt",
+                "box prompt",
+                "PVS",
                 "META",
             ],
             "ui_manifest": {
@@ -182,21 +207,86 @@ class BlockManifest(WorkflowBlockManifest):
 
     type: Literal["roboflow_core/sam3_video@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    class_names: Union[
-        List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])
+    tracking_mode: TrackingMode = Field(
+        default="concept",
+        title="Tracking Mode",
+        description="Use `concept` for text prompts. Use `visual` for point or box prompts.",
+    )
+    class_names: Optional[
+        Union[List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
     ] = Field(
+        default=None,
         description=(
             "Concepts to segment and track, as a list of phrases (or a "
             "single comma-separated string).  Each emitted mask carries "
             "the concept it matched as its class name."
         ),
         examples=[["person", "forklift"]],
-        json_schema_extra={"always_visible": True},
+        json_schema_extra={
+            "always_visible": True,
+            "relevant_for": {
+                "tracking_mode": {"values": ["concept"], "required": True}
+            },
+        },
+    )
+    points: Optional[Union[List[Any], Selector(kind=[LABELED_POINTS_KIND])]] = Field(
+        default=None,
+        title="Point Prompts",
+        description=(
+            "Labeled points for one object. Positive points include regions. "
+            "Negative points exclude regions."
+        ),
+        examples=[
+            [{"x": 320, "y": 240, "positive": True}],
+            "$inputs.points",
+        ],
+        json_schema_extra={
+            "always_visible": True,
+            "relevant_for": {"tracking_mode": {"values": ["visual"]}},
+        },
+    )
+    boxes: Optional[
+        Selector(
+            kind=[
+                TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+            ]
+        )
+    ] = Field(
+        default=None,
+        description=(
+            "Bounding boxes for visual tracking. The block tracks one object "
+            "for each box."
+        ),
+        examples=["$steps.object_detection_model.predictions"],
+        json_schema_extra={
+            "always_visible": True,
+            "relevant_for": {"tracking_mode": {"values": ["visual"]}},
+        },
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="sam3video",
-        description="Streaming SAM3 model id resolved by `inference_models`.",
-        examples=["sam3video"],
+        default=SAM3_CONCEPT_VIDEO_MODEL_ID,
+        description=(
+            "Streaming SAM3 model ID. Concept mode defaults to `sam3video`. "
+            "Visual mode defaults to `sam3trackervideo`."
+        ),
+        examples=[SAM3_CONCEPT_VIDEO_MODEL_ID, SAM3_VISUAL_VIDEO_MODEL_ID],
+    )
+    prompt_mode: PromptMode = Field(
+        default="first_frame",
+        description=(
+            "When visual mode reads its prompts. `first_frame` reads prompts "
+            "once. `every_n_frames` reads them at the selected interval. "
+            "`every_frame` reads them on each frame."
+        ),
+        json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
+    )
+    prompt_interval: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=30,
+        description="The visual prompt interval for `every_n_frames` mode.",
+        examples=[30],
+        json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
     threshold: Union[
         Selector(kind=[FLOAT_KIND]),
@@ -204,15 +294,38 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=0.5,
         description=(
-            "Minimum detection score for emitted masks.  Scores come "
-            "from SAM3's per-object concept detection head."
+            "Minimum confidence for emitted masks. Concept mode uses the "
+            "SAM3 detection score. Visual mode uses prompt confidence."
         ),
         examples=[0.5],
     )
 
+    @model_validator(mode="after")
+    def validate_tracking_mode(self) -> "BlockManifest":
+        if self.tracking_mode == "concept" and not self.class_names:
+            raise ValueError("Concept mode requires `class_names`.")
+        if (
+            self.tracking_mode == "visual"
+            and self.points is None
+            and self.boxes is None
+        ):
+            raise ValueError("Visual mode requires `points`, `boxes`, or both.")
+        if isinstance(self.points, list):
+            normalise_labeled_points(self.points)
+        if isinstance(self.model_id, str) and not self.model_id.startswith("$"):
+            object.__setattr__(
+                self,
+                "model_id",
+                resolve_sam3_video_model_id(
+                    tracking_mode=self.tracking_mode,
+                    model_id=self.model_id,
+                ),
+            )
+        return self
+
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images"]
+        return ["images", "boxes"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -242,11 +355,11 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        return ["sam3video"]
+        return [SAM3_CONCEPT_VIDEO_MODEL_ID, SAM3_VISUAL_VIDEO_MODEL_ID]
 
 
 class SegmentAnything3VideoBlockV1(WorkflowBlock):
-    """Stateful SAM3 streaming concept tracking block (tensor-native output)."""
+    """Stateful SAM3 concept and visual tracking block."""
 
     _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
         "SAM3 Video Tracker only supports LOCAL workflow step "
@@ -268,7 +381,8 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         self._step_execution_mode = step_execution_mode
         self._model = None  # lazily loaded
         self._current_model_id: Optional[str] = None
-        self._sessions: Dict[str, _ConceptSessionBookkeeping] = {}
+        self._concept_sessions: Dict[str, _ConceptSessionBookkeeping] = {}
+        self._visual_sessions: Dict[str, VideoSessionBookkeeping] = {}
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -290,19 +404,53 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.
-            self._sessions.clear()
+            self._concept_sessions.clear()
+            self._visual_sessions.clear()
         return self._model
 
     def run(
         self,
         images: Batch[WorkflowImageData],
-        class_names: Union[List[str], str],
+        class_names: Optional[Union[List[str], str]],
         model_id: str,
         threshold: float,
+        tracking_mode: TrackingMode = "concept",
+        points: Optional[List[Any]] = None,
+        boxes: Optional[Batch] = None,
+        prompt_mode: PromptMode = "first_frame",
+        prompt_interval: int = 30,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
+        model_id = resolve_sam3_video_model_id(
+            tracking_mode=tracking_mode,
+            model_id=model_id,
+        )
         model = self._get_model(model_id=model_id)
+        if tracking_mode == "visual":
+            return self._run_visual(
+                model=model,
+                images=images,
+                points=points,
+                boxes=boxes,
+                prompt_mode=prompt_mode,
+                prompt_interval=prompt_interval,
+                threshold=threshold,
+            )
+        return self._run_concept(
+            model=model,
+            images=images,
+            class_names=class_names,
+            threshold=threshold,
+        )
+
+    def _run_concept(
+        self,
+        model,
+        images: Batch[WorkflowImageData],
+        class_names: Optional[Union[List[str], str]],
+        threshold: float,
+    ) -> BlockResult:
         class_list = normalise_class_names(class_names)
         prompt_signature = tuple(class_list)
 
@@ -312,7 +460,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             video_id = metadata.video_identifier
             frame_number = metadata.frame_number or 0
 
-            session = self._sessions.setdefault(video_id, _ConceptSessionBookkeeping())
+            session = self._concept_sessions.setdefault(
+                video_id, _ConceptSessionBookkeeping()
+            )
             stream_restarted = (
                 session.last_frame_number >= 0
                 and frame_number < session.last_frame_number
@@ -320,21 +470,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             if stream_restarted or session.prompt_signature != prompt_signature:
                 session.state_dict = None
 
-            # Same cross-repo contract as the SAM2 video sibling: SAM3Video's
-            # _ensure_numpy_image permutes a CHW tensor to HWC WITHOUT swapping
-            # channels and the HF processor expects RGB, so the materialised
-            # CHW RGB tensor is forwarded as-is, and a host-only frame is
-            # flipped BGR->RGB before the call.
-            if single_image.is_tensor_materialised():
-                frame = single_image.tensor_image
-                if frame.dim() != 3:
-                    raise ValueError(
-                        "SAM3 video tracker expects a CHW (3-D) RGB frame tensor; got "
-                        f"a tensor with {frame.dim()} dim(s). The model's "
-                        "_ensure_numpy_image permutes CHW->HWC and assumes this layout."
-                    )
-            else:
-                frame = np.ascontiguousarray(single_image.numpy_image[:, :, ::-1])
+            frame = _frame_for_model(single_image)
 
             if not class_list:
                 predictions = _empty_instance_detections(
@@ -366,6 +502,86 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             batch_predictions.append(predictions)
 
         return [{"predictions": predictions} for predictions in batch_predictions]
+
+    def _run_visual(
+        self,
+        model,
+        images: Batch[WorkflowImageData],
+        points: Optional[List[Any]],
+        boxes: Optional[Batch],
+        prompt_mode: PromptMode,
+        prompt_interval: int,
+        threshold: float,
+    ) -> BlockResult:
+        mask_representation = _resolve_mask_representation()
+        point_prompts = normalise_labeled_points(points)
+        boxes_iter = boxes if boxes is not None else [None] * len(images)
+        results: List[dict] = []
+
+        for single_image, boxes_for_image in zip(images, boxes_iter):
+            metadata = single_image.video_metadata
+            video_id = metadata.video_identifier
+            frame_number = metadata.frame_number or 0
+            session = self._visual_sessions.setdefault(
+                video_id, VideoSessionBookkeeping()
+            )
+            has_box_prompts = boxes_for_image is not None and len(boxes_for_image) > 0
+            has_prompts = has_box_prompts or bool(point_prompts)
+            should_reset, should_prompt = decide_prompt_vs_track(
+                session=session,
+                frame_number=frame_number,
+                prompt_mode=prompt_mode,
+                prompt_interval=prompt_interval,
+                has_prompts=has_prompts,
+            )
+            if should_reset:
+                session.state_dict = None
+                session.obj_id_metadata = {}
+                session.frames_since_prompt = 0
+
+            frame = _frame_for_model(single_image)
+            if should_prompt:
+                boxes_xyxy, per_box_meta = _extract_box_prompts_tensor(boxes_for_image)
+                masks, obj_ids, new_state = model.prompt(
+                    image=frame,
+                    bboxes=boxes_xyxy,
+                    points=point_prompts,
+                    state_dict=session.state_dict,
+                    clear_old_prompts=True,
+                    frame_idx=frame_number,
+                )
+                session.obj_id_metadata = build_obj_id_metadata_from_visual_prompts(
+                    obj_ids=obj_ids,
+                    box_metas=per_box_meta,
+                    has_point_prompt=bool(point_prompts),
+                )
+                session.state_dict = new_state
+                session.frames_since_prompt = 0
+            elif session.state_dict is not None:
+                masks, obj_ids, new_state = model.track(
+                    image=frame, state_dict=session.state_dict
+                )
+                session.state_dict = new_state
+                session.frames_since_prompt += 1
+            else:
+                height, width = single_image._read_shape_without_materialization()
+                masks = np.zeros((0, height, width), dtype=bool)
+                obj_ids = np.zeros((0,), dtype=np.int64)
+
+            session.last_frame_number = frame_number
+            results.append(
+                {
+                    "predictions": _masks_to_instance_detections(
+                        masks=masks,
+                        obj_ids=obj_ids,
+                        image=single_image,
+                        obj_id_metadata=session.obj_id_metadata,
+                        threshold=threshold,
+                        mask_representation=mask_representation,
+                    )
+                }
+            )
+        return results
 
 
 def _concept_frame_to_instance_detections(

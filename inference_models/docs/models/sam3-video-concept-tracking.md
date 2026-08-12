@@ -19,10 +19,10 @@ SAM3 Video provides open-vocabulary video object tracking:
 - **Streaming-first** - Consumes frames one at a time from memory (webcam, RTSP, frame loops);
   no video file required upfront
 
-!!! info "Looking for box-prompted video tracking?"
-    To seed tracking from detector boxes instead of text, use `sam3trackervideo` -
+!!! info "Looking for visually prompted video tracking?"
+    To seed tracking from points or detector boxes, use `sam3trackervideo` -
     SAM3's visually prompted tracker, which shares this checkpoint and the SAM2-shaped
-    `prompt`/`track` contract (see [below](#sam3-tracker-box-prompted-tracking)) - or
+    `prompt`/`track` contract (see [below](#sam3-tracker-visually-prompted-tracking)) - or
     the lighter `sam2video` family.
 
 ## License
@@ -36,9 +36,9 @@ SAM3 Video requires a **Roboflow API key**.
 | Model | Model ID |
 |-------|----------|
 | SAM3 Video concept tracker (text prompts) | `sam3video` |
-| SAM3 Tracker (box prompts, SAM2-shaped contract) | `sam3trackervideo` |
+| SAM3 Tracker (point or box prompts) | `sam3trackervideo` |
 
-Both ids resolve to the same weights package - the checkpoint contains the detector and
+Both IDs resolve to the same weights package - the checkpoint contains the detector and
 tracker weights, and each model class loads the subset it needs.
 
 ## Supported Backends
@@ -145,12 +145,12 @@ Every streaming step returns a `SAM3VideoFrameResult`:
   streams, periodically re-seeding with a fresh `prompt()` call bounds memory at the cost of
   resetting object ids.
 
-## SAM3 Tracker (box-prompted tracking)
+## SAM3 Tracker (visually prompted tracking)
 
 `sam3trackervideo` wraps `Sam3TrackerVideoModel` - the SAM2-style visually prompted
-tracker built into the same checkpoint. It exposes the exact `prompt`/`track` contract of
-the `sam2video` family (`prompt(image, bboxes=[...])` returning
-`(masks, object_ids, state_dict)` tuples), so it is a drop-in `model_id` swap wherever
+tracker built into the same checkpoint. It accepts point and box prompts. Its
+`prompt` method returns
+`(masks, object_ids, state_dict)` tuples, so it is a drop-in `model_id` swap wherever
 `sam2video` is used. Compared to SAM2 it shares SAM3's larger perception-encoder backbone,
 which substantially improves identity retention on long videos (LVOSv2 +8.9 J&F vs
 SAM 2.1-L) and crowded scenes (MOSEv2 +12.4), at higher compute cost - treat the
@@ -161,9 +161,14 @@ from inference_models import AutoModel
 
 model = AutoModel.from_pretrained("sam3trackervideo", api_key="your_api_key")
 
-# Seed tracking with boxes on the first frame, then track
+# Seed tracking with boxes or labeled points on the first frame, then track.
 masks, object_ids, state = model.prompt(frame0, bboxes=[(477, 337, 560, 529)])
 masks, object_ids, state = model.track(frame1, state_dict=state)
+
+masks, object_ids, state = model.prompt(
+    frame0,
+    points=[(520, 410, True), (470, 410, False)],
+)
 ```
 
 Text prompts are rejected by this model - concept tracking is `sam3video`'s job.
@@ -171,12 +176,12 @@ Text prompts are rejected by this model - concept tracking is `sam3video`'s job.
 ## Workflows
 
 The [`roboflow_core/sam3_video@v1`](https://inference.roboflow.com/workflows/blocks/sam_3_video/)
-block wraps the concept tracker for video workflows: text prompts via `class_names`, one
-tracking session per `video_identifier`, per-frame class labels from
-`prompt_to_object_ids`, and detection scores exposed as `confidence`. It requires local
-step execution (drive it with `InferencePipeline`) - see the
-[SAM3 docs](https://inference.roboflow.com/foundation/sam3/) for a full workflow example.
+supports two tracking modes:
 
-`sam3trackervideo` is available through the **SAM2 Video Tracker** block
-(`roboflow_core/segment_anything_2_video@v1`) - select it as the `model_id` to run
-detector-seeded tracking with SAM3 quality.
+- `concept` uses `class_names` and selects `sam3video` by default.
+- `visual` uses labeled points, boxes, or both. It selects `sam3trackervideo` by default
+  and applies `prompt_mode` when it reads new prompts.
+
+The block keeps one session per `video_identifier`. It requires local step execution with
+`InferencePipeline`. See the [SAM3 docs](https://inference.roboflow.com/foundation/sam3/)
+for a full workflow example.
