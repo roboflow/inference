@@ -401,6 +401,16 @@ RUN set -eu && \
     ldconfig && \
     python3 -c "import ctypes; ctypes.CDLL('libnvjpeg.so')"
 
+RUN set -eu && \
+    printf '%s\n' \
+        /opt/opencv/lib \
+        /opt/gstreamer/lib \
+        /opt/ffmpeg/lib \
+        /opt/roboflow/lib \
+        /usr/local/cuda/lib64 \
+        > /etc/ld.so.conf.d/roboflow-media.conf && \
+    ldconfig
+
 # VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false: this runtime intentionally
 # ships a C toolchain (gcc + libc6-dev + libpython3.10-dev) for RF-DETR's
 # Triton JIT preprocessing kernels; the hygiene scan would reject it. The
