@@ -35,7 +35,10 @@ WORKLOAD = re.compile(
     r"^(?P<profile>[A-Za-z0-9][A-Za-z0-9_.-]*)="
     r"(?P<count>[1-9][0-9]*)(?:@(?P<delay>[0-9]+(?:\.[0-9]+)?))?$"
 )
-STAGING_HOSTS = {"api.roboflow.one"}
+STAGING_HOSTS = {
+    "api.roboflow.one",
+    "us-central1-roboflow-staging.cloudfunctions.net",
+}
 TERMINAL_STATES = {"cancelled", "completed", "error"}
 REPORT_JOB_FIELDS = {
     "id",
@@ -142,10 +145,7 @@ def utc_now():
 def validate_api_base(api_base):
     parsed = urllib.parse.urlparse(api_base)
     host = (parsed.hostname or "").lower()
-    is_staging_function = host.endswith("-roboflow-staging.cloudfunctions.net")
-    if parsed.scheme != "https" or (
-        host not in STAGING_HOSTS and not is_staging_function
-    ):
+    if parsed.scheme != "https" or host not in STAGING_HOSTS:
         raise ValueError(
             "--api-base must be the staging API or roboflow-staging Cloud Function"
         )
@@ -1128,7 +1128,7 @@ def main(argv=None):
 
     api_key = os.environ.get(args.api_key_env)
     if not api_key:
-        print(f"error: {args.api_key_env} is not set", file=sys.stderr)
+        print("error: benchmark API key is not configured", file=sys.stderr)
         return 2
     client = VideoServiceClient(args.api_base, args.workspace, api_key)
     output_dir = Path(args.output_dir).resolve()

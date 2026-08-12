@@ -162,7 +162,7 @@ def main(argv=None):
 
     api_key = os.environ.get(args.api_key_env)
     if not api_key:
-        print(f"error: {args.api_key_env} is not set", file=sys.stderr)
+        print("error: benchmark API key is not configured", file=sys.stderr)
         return 2
     client = VideoServiceClient(api_base, workspace, api_key)
     result = cleanup_run(

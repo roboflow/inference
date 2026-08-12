@@ -313,7 +313,7 @@ def prepare_runtime(plan, execute):
         if client_key not in clients:
             api_key = os.environ.get(routing["apiKeyEnv"])
             if not api_key:
-                raise ValueError(f"{routing['apiKeyEnv']} is not set")
+                raise ValueError("benchmark API key is not configured")
             clients[client_key] = VideoServiceClient(
                 routing["apiBase"], routing["workspace"], api_key
             )

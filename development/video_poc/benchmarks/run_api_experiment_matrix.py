@@ -601,10 +601,7 @@ def main(argv=None):
             if args.execute and not os.environ.get(env_name)
         )
         if missing_api_key_envs:
-            raise ValueError(
-                "required API key environment variables are not set: "
-                + ", ".join(missing_api_key_envs)
-            )
+            raise ValueError("one or more benchmark API keys are not configured")
         multi_workspace_runner = Path(args.multi_workspace_runner).resolve()
         if any(item.get("multiWorkspace") for item in matrix["scenarios"]):
             if not multi_workspace_runner.is_file():

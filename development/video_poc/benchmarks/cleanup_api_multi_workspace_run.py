@@ -79,7 +79,7 @@ def build_clients(captured):
             continue
         credential = os.environ.get(routing["apiKeyEnv"])
         if not credential:
-            raise ValueError(f"{routing['apiKeyEnv']} is not set")
+            raise ValueError("benchmark API key is not configured")
         clients[key] = VideoServiceClient(
             routing["apiBase"], routing["workspace"], credential
         )

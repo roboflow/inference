@@ -46,9 +46,37 @@ def test_list_sources_does_not_require_a_workload(monkeypatch, capsys):
     }
 
 
+def test_missing_api_key_error_does_not_echo_environment_name(monkeypatch, capsys):
+    environment_name = "PRIVATE_BENCHMARK_CREDENTIAL"
+    monkeypatch.delenv(environment_name, raising=False)
+
+    assert (
+        runner.main(
+            [
+                "--workspace",
+                "workspace-a",
+                "--list-sources",
+                "--api-key-env",
+                environment_name,
+            ]
+        )
+        == 2
+    )
+    error = capsys.readouterr().err
+    assert error == "error: benchmark API key is not configured\n"
+    assert environment_name not in error
+
+
 def test_runner_refuses_production_and_builds_from_shared_corpus():
     with pytest.raises(ValueError, match="staging"):
         validate_api_base("https://api.roboflow.com")
+    with pytest.raises(ValueError, match="staging"):
+        validate_api_base(
+            "https://attacker-roboflow-staging.cloudfunctions.net/light-v2-device"
+        )
+    assert validate_api_base(
+        "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device"
+    ).startswith("https://us-central1-")
 
     profiles = load_corpus(MANIFEST)
     plan = build_run_plan(
