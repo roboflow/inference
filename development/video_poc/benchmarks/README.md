@@ -207,6 +207,12 @@ The `matrices/` directory keeps the next measurement program reviewable and
 repeatable. Every file is staging-only and contains API-key environment-variable
 names rather than credentials:
 
+The authoritative gate order and evidence required to advance between suites is
+[`STAGING_CAMPAIGN.md`](STAGING_CAMPAIGN.md). It covers the controlled curves,
+output/workflow mix, cross-workspace fairness, MMP/MPS, recovery, soaks, and
+distributed relay/networking work as one campaign rather than independent
+successful-looking runs.
+
 | Matrix | Purpose |
 |---|---|
 | `gpu-controlled-fps.staging.example.json` | Two repetitions of the 1/4/8/12/18/24 GPU concurrency curve at 5, 10, and 15 FPS |

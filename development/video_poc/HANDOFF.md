@@ -504,7 +504,19 @@ not implemented yet.
   `model_id:instance`, not workspace identity: tenants using the same model and
   empty instance can share one backend process, while distinct instances load
   separate processes. Treat raw MPS as a throughput/fairness experiment, never
-  as an authorization or memory-isolation boundary.
+  as an authorization or memory-isolation boundary. PR #2788 now also includes
+  a 200 GiB Cloud Build path and a digest-only renderer for one isolated L40S
+  Deployment in `video-proc-bench-mmp`; it refuses production repositories and
+  does not replace the normal `video-proc` pool. The first local image build
+  reached the pinned CUDA runtime but exhausted Docker Desktop's internal build
+  storage, so the registry build remains pending staging GCP reauthentication.
+- **Fault injection is bound to the actual video cell.** The dry-run controller
+  accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
+  API server and refuses a context alias pointed elsewhere. Earlier draft
+  examples incorrectly named the unrelated GKE platform staging cluster; they
+  were corrected before any pod deletion. Processor evidence revalidates the
+  exact service-reported job/pod immediately before the write and joins the
+  old/new pod identities to verified frame progress in a complete report.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
