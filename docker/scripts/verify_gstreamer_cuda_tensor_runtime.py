@@ -33,7 +33,11 @@ def _create_h26x(path: Path, encoder: str, parser: str, pattern: str = "red") ->
         "!",
         "video/x-raw,format=I420,width=320,height=180,framerate=30/1",
         "!",
-        encoder,
+        # gst-launch uses gst_parse_launchv, which ESCAPES each argv element as
+        # a single token - "nvcudah264enc preset=p4" as one argument becomes an
+        # element literally named that. Split so element and properties arrive
+        # as separate tokens.
+        *encoder.split(),
         "!",
         parser,
         "!",
