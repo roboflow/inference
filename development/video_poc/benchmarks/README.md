@@ -5,6 +5,12 @@ This directory turns the measurement tracks in
 and machine-readable results. The provisional workload classes are hypotheses,
 not scheduler settings or certified capacity.
 
+Record every direct staging mutation in
+[`STAGING_EXPERIMENT_LEDGER.md`](STAGING_EXPERIMENT_LEDGER.md). Useful changes
+must be committed and pushed with immutable image/config references; rejected
+changes must be reverted and documented so staging does not become the only
+copy of an experiment.
+
 Do not run active load against production. Use local MediaMTX, staging, or a
 dedicated performance cell after the environment owner approves the test load.
 
