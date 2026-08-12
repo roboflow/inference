@@ -70,11 +70,18 @@ profiles:
 | Profile | Hypothesis | What it isolates |
 |---|---|---|
 | `cpu-blur` | light | Decode + workflow + visualization without a model |
-| `single-detection` | light | Small detector and bounding boxes; same-model sharing baseline |
+| `single-detection` | light | YOLOv8 Nano 640 and bounding boxes; same-model sharing baseline |
 | `single-detection-cpu` | light | Exact same detector/spec on CPU for model-for-model economics |
 | `detection-tracking` | medium | Small detector + stateful ByteTrack + trace rendering |
 | `dual-detection` | heavy | Two model sessions and comparison visualization |
 | `instance-segmentation` | exclusive | Instance segmentation + mask rendering; conservative until measured |
+
+The staging canonical ID for YOLOv8 Nano 640 is
+`microsoft-coco-obj-det/8`. Do not substitute the generic `yolov8n-640`
+alias in staging: the current Inference alias table resolves it to the
+production-era `coco/3` resource. Keep model IDs environment-specific and
+validate the catalog mapping before carrying a matrix between staging and
+production.
 
 Generate standalone job files for one worker with:
 

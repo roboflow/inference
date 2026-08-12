@@ -474,9 +474,12 @@ not implemented yet.
   and 4.953 at c4, where it hit the 8-core limit. Therefore two streams is the
   current strict-SLO CPU packing point, three is a viable approximately-9-FPS
   throughput tier if the latency budget is relaxed slightly, and four is beyond
-  the safe boundary. This public model's architecture is not proven to be YOLO;
-  keep the result labeled by immutable model ID and add an explicitly provisioned
-  YOLO nano workflow before making YOLO-specific product recommendations.
+  the safe boundary. This is the requested simple YOLO comparison: the staging
+  pretrained-model catalog identifies `microsoft-coco-obj-det/8` as YOLOv8 Nano
+  640x640, and both tiers use the identical workflow/model. Do not replace that
+  staging canonical ID with the generic `yolov8n-640` alias: the current alias
+  table resolves it to the production-era `coco/3` resource, which is absent in
+  staging. Keep environment-specific canonical IDs explicit in future matrices.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
