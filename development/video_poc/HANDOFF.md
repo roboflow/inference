@@ -450,6 +450,17 @@ not implemented yet.
   60-second runs at concurrency 1, 2, and 4. The 2- and 4-job runs packed every
   job onto one worker, had zero retries, cancelled cleanly, and at concurrency 4
   reported final per-job decode-to-result latency between 10.8 and 13.3 ms.
+  A follow-up unbounded-file saturation probe raised the staging-only admission
+  ceiling to 24 but stopped the progression at concurrency 8: all eight jobs
+  packed onto one L40S worker and cleaned up successfully, yet delivered
+  aggregate FPS fell from 82.278 at concurrency 4 to 55.464 at concurrency 8,
+  stream FPS spread reached 41.5%, and worst sampled rolling-EMA latency p95
+  reached 104.3 ms. During the c8 measurement the assigned GPU averaged 4.63%
+  utilization (8% max) while the processor averaged 2.00 CPU cores (2.85 max).
+  This is evidence of a current worker/runtime scheduling or CPU-side knee, not
+  an L40S compute knee. The 24-job value remains a benchmark admission ceiling,
+  not certified capacity; further curves must use API-enforced source FPS and
+  the new per-job counters/histogram.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
