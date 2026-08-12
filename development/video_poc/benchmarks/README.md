@@ -85,6 +85,11 @@ an environment variable, redacts unexpected job fields from reports, and default
 to a no-network dry run. Generated reports are written under the ignored
 `results/` directory.
 
+Prefer an uploaded file source whose API status is `ready` for repeatable corpus
+runs. A connector-local file is useful when measuring one shared relay stream,
+but it depends on that exact file still existing on the connector host; a stale
+source record will fail when the processor follows its download URL.
+
 Use a dedicated staging service identity with `video-inference-job:read` and
 `video-inference-job:create`. Never put its key on the command line:
 

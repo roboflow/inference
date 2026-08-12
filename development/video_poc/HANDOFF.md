@@ -416,11 +416,12 @@ not implemented yet.
   estimate, multidimensional resource budget, model-affinity scheduler, or workspace
   fairness. Relay and workflow capacity benchmarks must establish safe workload
   classes before raising concurrency or admitting heavy mixes.
-- **Relay and cell capacity are not characterized.** Draft infra
-  [#2443](https://github.com/roboflow/roboflow-infra/pull/2443) adds an
-  internal-only MediaMTX scrape and first relay dashboard, but it is not active
-  until merged and applied. The draft inference PR adds a reproducible relay
-  harness, provisional workflow corpus, and bounded aggregate processor metrics.
+- **Relay and cell capacity are not characterized.** Infra
+  [#2443](https://github.com/roboflow/roboflow-infra/pull/2443) is applied on
+  staging with the internal-only MediaMTX scrape and first relay dashboard (the
+  approved PR still needs to be merged). The draft inference PR adds a
+  reproducible relay harness, provisional workflow corpus, bounded aggregate
+  processor metrics, and a staging-only service-API corpus runner.
   These are measurement tools, not certified limits. Public LB, relay-node,
   CNI/east-west, WHEP, and processor bandwidth still need independent capacity
   curves before choosing a relay shard size. Controlled pprof remains disabled.
@@ -431,6 +432,18 @@ not implemented yet.
   pod self-deletion. `PROCESSOR_FINAL_METRICS_GRACE_S=0` restores immediate
   retirement; changing the scrape interval should preserve at least two scrape
   opportunities.
+- **Staging measurement path is live (2026-08-12).** GPU and CPU pools run image
+  `2e4a97ee5`; MediaMTX and both processor PodMonitor targets report `up=1`.
+  Prometheus captured a cancelled stream-job terminal increment before the CPU
+  worker retired, and the ready pool replaced that worker after its metrics grace
+  window. [`benchmarks/run_api_workflow_corpus.py`](benchmarks/run_api_workflow_corpus.py)
+  now drives list/start/poll/cancel without the UI, defaults to dry-run, refuses
+  production hosts, and writes credential-free JSON reports. The first valid
+  uploaded-file smoke (`cpu-blur`, CPU, concurrency 1, output disabled) ran the
+  full 60-second window with zero retries, 1,083 API-reported frames, 4.03-second
+  pipeline start, 6.54-second first result, and clean cancellation. A prior
+  connector-local file attempt correctly failed with a structured redacted 404;
+  prefer an uploaded `ready` fixture unless the connector file is revalidated.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
