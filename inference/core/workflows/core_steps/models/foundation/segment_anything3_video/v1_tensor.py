@@ -49,7 +49,6 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
 from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
-    SAM3_AUTO_VIDEO_MODEL_ID,
     SAM3_CONCEPT_VIDEO_MODEL_ID,
     SAM3_VISUAL_VIDEO_MODEL_ID,
     VideoSessionBookkeeping,
@@ -57,7 +56,6 @@ from inference.core.workflows.core_steps.models.foundation._streaming_video_comm
     decide_prompt_vs_track,
     normalise_class_names,
     normalise_labeled_points,
-    resolve_sam3_video_model_id,
 )
 from inference.core.workflows.core_steps.models.foundation._streaming_video_common_tensor import (
     extract_box_prompts_tensor,
@@ -267,16 +265,18 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default=SAM3_AUTO_VIDEO_MODEL_ID,
-        description=(
-            "Streaming SAM3 model ID. Keep `auto` to use `sam3video` in concept "
-            "mode and `sam3trackervideo` in visual mode."
-        ),
-        examples=[
-            SAM3_AUTO_VIDEO_MODEL_ID,
-            SAM3_CONCEPT_VIDEO_MODEL_ID,
-            SAM3_VISUAL_VIDEO_MODEL_ID,
-        ],
+        default=SAM3_CONCEPT_VIDEO_MODEL_ID,
+        title="Model Id",
+        description="Streaming SAM3 model ID for concept tracking.",
+        examples=[SAM3_CONCEPT_VIDEO_MODEL_ID],
+        json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["concept"]}}},
+    )
+    pvs_model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
+        default=SAM3_VISUAL_VIDEO_MODEL_ID,
+        title="Model Id",
+        description="Streaming SAM3 model ID for visual tracking.",
+        examples=[SAM3_VISUAL_VIDEO_MODEL_ID],
+        json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
     prompt_mode: PromptMode = Field(
         default="first_frame",
@@ -321,16 +321,6 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError("Visual mode requires `points`, `boxes`, or both.")
         if isinstance(self.points, list):
             normalise_labeled_points(self.points)
-        if isinstance(self.model_id, str) and not self.model_id.startswith("$"):
-            # Assignment validation would re-enter this model validator.
-            object.__setattr__(
-                self,
-                "model_id",
-                resolve_sam3_video_model_id(
-                    tracking_mode=self.tracking_mode,
-                    model_id=self.model_id,
-                ),
-            )
         return self
 
     @classmethod
@@ -425,6 +415,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         model_id: str,
         threshold: float,
         tracking_mode: TrackingMode = "concept",
+        pvs_model_id: str = SAM3_VISUAL_VIDEO_MODEL_ID,
         points: Optional[List[Any]] = None,
         boxes: Optional[Batch] = None,
         prompt_mode: PromptMode = "first_frame",
@@ -432,11 +423,8 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
-        model_id = resolve_sam3_video_model_id(
-            tracking_mode=tracking_mode,
-            model_id=model_id,
-        )
-        model = self._get_model(model_id=model_id)
+        selected_model_id = model_id if tracking_mode == "concept" else pvs_model_id
+        model = self._get_model(model_id=selected_model_id)
         if tracking_mode == "visual":
             return self._run_visual(
                 model=model,

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Dict, List
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
@@ -238,6 +238,7 @@ def test_manifest_parses_valid_config():
     manifest = BlockManifest.model_validate(data)
     assert manifest.type == "roboflow_core/sam3_video@v1"
     assert manifest.model_id == "sam3video"
+    assert manifest.pvs_model_id == "sam3trackervideo"
     assert manifest.class_names == ["person", "forklift"]
     assert manifest.threshold == 0.5
 
@@ -259,10 +260,19 @@ def test_manifest_schema_keeps_mode_and_prompts_in_primary_fields(manifest_type)
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
-def test_manifest_schema_uses_automatic_model_default(manifest_type):
+def test_manifest_schema_shows_mode_specific_model_id(manifest_type):
     properties = manifest_type.model_json_schema()["properties"]
 
-    assert properties["model_id"]["default"] == "auto"
+    assert properties["model_id"]["title"] == "Model Id"
+    assert properties["model_id"]["default"] == "sam3video"
+    assert properties["model_id"]["relevant_for"] == {
+        "tracking_mode": {"values": ["concept"]}
+    }
+    assert properties["pvs_model_id"]["title"] == "Model Id"
+    assert properties["pvs_model_id"]["default"] == "sam3trackervideo"
+    assert properties["pvs_model_id"]["relevant_for"] == {
+        "tracking_mode": {"values": ["visual"]}
+    }
 
 
 def test_manifest_requires_class_names():
@@ -302,33 +312,25 @@ def test_manifest_selects_visual_model_for_point_prompts():
     )
 
     assert manifest.class_names is None
-    assert manifest.model_id == "sam3trackervideo"
+    assert manifest.model_id == "sam3video"
+    assert manifest.pvs_model_id == "sam3trackervideo"
 
 
-def test_manifest_updates_builtin_model_when_mode_changes():
-    concept_manifest = BlockManifest.model_validate(
-        {
-            "type": "roboflow_core/sam3_video@v1",
-            "name": "sam3_video_step",
-            "images": "$inputs.image",
-            "tracking_mode": "concept",
-            "class_names": ["person"],
-            "model_id": "sam3trackervideo",
-        }
-    )
-    visual_manifest = BlockManifest.model_validate(
+def test_manifest_keeps_mode_specific_model_overrides():
+    manifest = BlockManifest.model_validate(
         {
             "type": "roboflow_core/sam3_video@v1",
             "name": "sam3_video_step",
             "images": "$inputs.image",
             "tracking_mode": "visual",
             "boxes": "$steps.detector.predictions",
-            "model_id": "sam3video",
+            "model_id": "custom-concept-model",
+            "pvs_model_id": "custom-visual-model",
         }
     )
 
-    assert concept_manifest.model_id == "sam3video"
-    assert visual_manifest.model_id == "sam3trackervideo"
+    assert manifest.model_id == "custom-concept-model"
+    assert manifest.pvs_model_id == "custom-visual-model"
 
 
 def test_manifest_requires_visual_prompts():
@@ -354,7 +356,8 @@ def test_tensor_manifest_selects_visual_model_for_point_prompts():
         }
     )
 
-    assert manifest.model_id == "sam3trackervideo"
+    assert manifest.model_id == "sam3video"
+    assert manifest.pvs_model_id == "sam3trackervideo"
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +422,40 @@ def test_model_loader_forwards_extra_weight_provider_headers(monkeypatch):
         api_key="rf-test",
         weights_provider_extra_headers=headers,
     )
+
+
+@pytest.mark.parametrize(
+    "block_type", [SegmentAnything3VideoBlockV1, TensorSegmentAnything3VideoBlockV1]
+)
+def test_run_selects_model_id_for_tracking_mode(block_type):
+    block = block_type(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._get_model = MagicMock(return_value=object())
+
+    block.run(
+        images=[],
+        class_names=[],
+        model_id="custom-concept-model",
+        pvs_model_id="custom-visual-model",
+        threshold=0.5,
+    )
+    block.run(
+        images=[],
+        class_names=None,
+        model_id="custom-concept-model",
+        pvs_model_id="custom-visual-model",
+        threshold=0.5,
+        tracking_mode="visual",
+        points=[{"x": 10, "y": 20, "positive": True}],
+    )
+
+    assert block._get_model.call_args_list == [
+        call(model_id="custom-concept-model"),
+        call(model_id="custom-visual-model"),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +599,8 @@ def test_numpy_concept_and_visual_modes_convert_bgr_frames_to_rgb():
     visual_block.run(
         images=[visual_frame],
         class_names=None,
-        model_id="sam3trackervideo",
+        model_id="sam3video",
+        pvs_model_id="sam3trackervideo",
         threshold=0.0,
         tracking_mode="visual",
         points=[{"x": 1, "y": 1, "positive": True}],
@@ -591,6 +629,7 @@ def test_visual_points_prompt_once_then_track():
                 images=[_make_frame(frame_number=frame_number)],
                 class_names=None,
                 model_id="sam3video",
+                pvs_model_id="sam3trackervideo",
                 threshold=0.0,
                 tracking_mode="visual",
                 points=points,
@@ -615,7 +654,8 @@ def test_visual_boxes_and_points_keep_prompt_metadata():
     result = block.run(
         images=[_make_frame()],
         class_names=None,
-        model_id="sam3trackervideo",
+        model_id="sam3video",
+        pvs_model_id="sam3trackervideo",
         threshold=0.0,
         tracking_mode="visual",
         points=[{"x": 14, "y": 16, "positive": True}],
@@ -638,7 +678,8 @@ def test_visual_every_n_frames_mode_reprompts_after_interval():
         block.run(
             images=[_make_frame(frame_number=frame_number)],
             class_names=None,
-            model_id="sam3trackervideo",
+            model_id="sam3video",
+            pvs_model_id="sam3trackervideo",
             threshold=0.0,
             tracking_mode="visual",
             points=[{"x": 10, "y": 12, "positive": True}],
@@ -677,7 +718,8 @@ def test_tensor_visual_empty_path_does_not_prepare_model_frame(monkeypatch):
     result = block.run(
         images=[_make_frame()],
         class_names=None,
-        model_id="sam3trackervideo",
+        model_id="sam3video",
+        pvs_model_id="sam3trackervideo",
         threshold=0.0,
         tracking_mode="visual",
         points=None,
@@ -702,6 +744,7 @@ def test_tensor_visual_mode_emits_native_predictions():
         images=[_make_frame()],
         class_names=None,
         model_id="sam3video",
+        pvs_model_id="sam3trackervideo",
         threshold=0.0,
         tracking_mode="visual",
         points=[{"x": 10, "y": 12, "positive": True}],

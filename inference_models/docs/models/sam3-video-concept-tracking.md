@@ -183,6 +183,9 @@ supports two tracking modes:
   and applies `prompt_mode` when it reads new prompts. Each re-prompt starts a new session
   and restarts tracker IDs.
 
+The builder shows `model_id` in concept mode and `pvs_model_id` in visual mode. Both
+fields use the **Model Id** label and keep their mode-specific defaults.
+
 The block keeps one session per `video_identifier`. It requires local step execution with
 `InferencePipeline`. See the [SAM3 docs](https://inference.roboflow.com/foundation/sam3/)
 for a full workflow example.

@@ -27,11 +27,9 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
-SAM3TrackingMode = Literal["concept", "visual"]
 
 SAM3_CONCEPT_VIDEO_MODEL_ID = "sam3video"
 SAM3_VISUAL_VIDEO_MODEL_ID = "sam3trackervideo"
-SAM3_AUTO_VIDEO_MODEL_ID = "auto"
 
 
 @dataclass
@@ -90,30 +88,6 @@ def normalise_labeled_points(
             raise ValueError("Point coordinates must be numbers.")
         result.append((float(x), float(y), bool(positive)))
     return result
-
-
-def resolve_sam3_video_model_id(
-    tracking_mode: SAM3TrackingMode,
-    model_id: str,
-) -> str:
-    """Select the built-in model for a SAM3 tracking mode.
-
-    ``auto`` and either built-in model ID select the model for the active
-    mode. Other model IDs remain available as explicit overrides.
-    """
-    expected_model_id = (
-        SAM3_CONCEPT_VIDEO_MODEL_ID
-        if tracking_mode == "concept"
-        else SAM3_VISUAL_VIDEO_MODEL_ID
-    )
-    known_model_ids = {
-        SAM3_AUTO_VIDEO_MODEL_ID,
-        SAM3_CONCEPT_VIDEO_MODEL_ID,
-        SAM3_VISUAL_VIDEO_MODEL_ID,
-    }
-    if model_id in known_model_ids:
-        return expected_model_id
-    return model_id
 
 
 def extract_box_prompts(
