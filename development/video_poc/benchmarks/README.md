@@ -23,6 +23,19 @@ and output references. For example, the initial telemetry comparison uses the
 currently deployed `video-processor:2e4a97ee5` and
 `video-processor-cpu:2e4a97ee5` as its two bases.
 
+Prefer the staging-only wrapper, which rejects mutable bases, non-staging
+repositories, and shortened commit tags. It prints a dry plan by default; add
+`--execute` only after authenticating `gcloud`. The result JSON contains the
+resolved registry digests needed by the infra stack:
+
+```bash
+python development/video_poc/processor/build_staging_overlays.py \
+  --gpu-base 'us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor@sha256:REPLACE' \
+  --cpu-base 'us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-cpu@sha256:REPLACE' \
+  --git-sha REPLACE_WITH_FULL_PROCESSOR_COMMIT \
+  --result-json development/video_poc/benchmarks/results/overlay-build.json
+```
+
 Do not run active load against production. Use local MediaMTX, staging, or a
 dedicated performance cell after the environment owner approves the test load.
 
