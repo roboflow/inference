@@ -33,6 +33,18 @@ docker buildx build --platform linux/amd64 \
 Record the registry digest returned by `buildx`; deploy the resulting
 `IMAGE@sha256:...`, not the mutable tag.
 
+For Cloud Build, which avoids relying on a developer Docker Desktop disk, use
+the checked-in 200 GiB build configuration. Both substitutions are required:
+
+```bash
+gcloud builds submit \
+  --project roboflow-staging \
+  --config development/mmp_staging_benchmark/cloudbuild.yaml \
+  --substitutions \
+_SOURCE_REVISION="${REVISION}",_IMAGE="${IMAGE}" \
+  .
+```
+
 ## Required pod shape
 
 This image must run in a dedicated staging pod that exclusively owns one GPU.
@@ -76,6 +88,27 @@ env:
 
 Mount model cache storage at `/models/cache` if cold-load results should be
 separated from repeated warm-cache capacity runs.
+
+Render the dedicated Crusoe staging Deployment only after the pushed image has
+an immutable registry digest. The renderer refuses tags, production
+repositories, and malformed source revisions. It creates only the isolated
+`video-proc-bench-mmp` namespace and one Recreate Deployment pinned to an L40S;
+it does not modify the normal `video-proc` worker pool.
+
+```bash
+python development/mmp_staging_benchmark/render_staging_deployment.py \
+  --image "${IMAGE}@sha256:REGISTRY_DIGEST" \
+  --source-revision "${REVISION}" \
+  --output /tmp/mmp-staging.json
+
+kubectl --context ck8s-stg apply -f /tmp/mmp-staging.json
+```
+
+The renderer references `mmp-benchmark-api-keys` keys `tenant-a` and
+`tenant-b`; it never accepts secret values. Create that Secret out of band in
+the dedicated staging namespace. Run the capability probe and clients with
+`kubectl exec`, then copy `/results` before deleting the Deployment. Re-render
+with `--mps` only after the non-MPS capability run passes.
 
 ## Capability and MPS smoke
 

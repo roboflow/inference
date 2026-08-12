@@ -1,0 +1,18 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build-mmp-benchmark
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - --platform=linux/amd64
+      - --build-arg=SOURCE_REVISION=${_SOURCE_REVISION}
+      - --file=development/mmp_staging_benchmark/Dockerfile
+      - --tag=${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+options:
+  machineType: E2_HIGHCPU_32
+  diskSizeGb: 200
+timeout: 3600s
