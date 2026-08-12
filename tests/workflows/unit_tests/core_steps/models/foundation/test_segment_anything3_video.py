@@ -10,10 +10,14 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video import (
     v1 as sam3_video_module,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video import (
+    v1_tensor as sam3_video_tensor_module,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
     BlockManifest,
@@ -30,6 +34,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
+from inference_models.models.base.object_detection import Detections
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,7 +88,12 @@ class _FakeConceptModel:
     def prompt(self, image, text, state_dict=None, clear_old_prompts=True):
         self._session_counter += 1
         session = {"id": self._session_counter, "prompts": list(text), "frames": 0}
-        self.calls.append(("prompt", {"text": list(text)}))
+        self.calls.append(
+            (
+                "prompt",
+                {"text": list(text), "first_pixel": image[0, 0].tolist()},
+            )
+        )
         return self._step(image, session)
 
     def track(self, image, state_dict=None):
@@ -153,6 +163,7 @@ class _FakeVisualModel:
                     "points": list(points),
                     "frame_idx": frame_idx,
                     "had_prior_state": state_dict is not None,
+                    "first_pixel": image[0, 0].tolist(),
                 },
             )
         )
@@ -240,6 +251,20 @@ def test_manifest_requires_class_names():
                 "images": "$inputs.image",
             }
         )
+
+
+def test_manifest_accepts_empty_class_names_for_backward_compatibility():
+    data = {
+        "type": "roboflow_core/sam3_video@v1",
+        "name": "sam3_video_step",
+        "images": "$inputs.image",
+        "class_names": [],
+    }
+    manifest = BlockManifest.model_validate(data)
+    tensor_manifest = TensorBlockManifest.model_validate(data)
+
+    assert manifest.class_names == []
+    assert tensor_manifest.class_names == []
 
 
 def test_manifest_selects_visual_model_for_point_prompts():
@@ -502,6 +527,28 @@ def test_comma_separated_class_names_string_is_accepted():
     assert fake.calls[0][1]["text"] == ["person", "dog"]
 
 
+def test_numpy_concept_and_visual_modes_convert_bgr_frames_to_rgb():
+    concept_block, concept_model = _make_block_with_fake_model()
+    visual_block, visual_model = _make_visual_block_with_fake_model()
+    concept_frame = _make_frame(shape=(4, 4, 3))
+    visual_frame = _make_frame(shape=(4, 4, 3))
+    concept_frame.numpy_image[0, 0] = [10, 20, 30]
+    visual_frame.numpy_image[0, 0] = [40, 50, 60]
+
+    _run_single(concept_block, concept_frame)
+    visual_block.run(
+        images=[visual_frame],
+        class_names=None,
+        model_id="sam3trackervideo",
+        threshold=0.0,
+        tracking_mode="visual",
+        points=[{"x": 1, "y": 1, "positive": True}],
+    )
+
+    assert concept_model.calls[0][1]["first_pixel"] == [30, 20, 10]
+    assert visual_model.calls[0][1]["first_pixel"] == [60, 50, 40]
+
+
 # ---------------------------------------------------------------------------
 # Visual tracking
 # ---------------------------------------------------------------------------
@@ -583,6 +630,39 @@ def test_visual_every_n_frames_mode_reprompts_after_interval():
         "prompt",
         "track",
     ]
+    assert [
+        call[1]["had_prior_state"] for call in fake.calls if call[0] == "prompt"
+    ] == [False, False]
+
+
+def test_tensor_visual_empty_path_does_not_prepare_model_frame(monkeypatch):
+    block = TensorSegmentAnything3VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    fake = _FakeVisualModel()
+    block._model = fake
+    block._current_model_id = "sam3trackervideo"
+    frame_for_model = MagicMock(side_effect=AssertionError("frame was prepared"))
+    monkeypatch.setattr(
+        sam3_video_tensor_module,
+        "_frame_for_model",
+        frame_for_model,
+    )
+
+    result = block.run(
+        images=[_make_frame()],
+        class_names=None,
+        model_id="sam3trackervideo",
+        threshold=0.0,
+        tracking_mode="visual",
+        points=None,
+        boxes=None,
+    )
+
+    assert len(result[0]["predictions"]) == 0
+    frame_for_model.assert_not_called()
 
 
 def test_tensor_visual_mode_emits_native_predictions():
@@ -602,8 +682,18 @@ def test_tensor_visual_mode_emits_native_predictions():
         threshold=0.0,
         tracking_mode="visual",
         points=[{"x": 10, "y": 12, "positive": True}],
+        boxes=[
+            Detections(
+                xyxy=torch.tensor([[10, 20, 80, 90]], dtype=torch.float32),
+                class_id=torch.tensor([7], dtype=torch.int64),
+                confidence=torch.tensor([0.91], dtype=torch.float32),
+                bboxes_metadata=[{"class": "vehicle", "detection_id": "det-0"}],
+            )
+        ],
     )
 
     predictions = result[0]["predictions"]
-    assert len(predictions) == 1
+    assert len(predictions) == 2
     assert predictions.bboxes_metadata[0]["tracker_id"] == 0
+    assert predictions.bboxes_metadata[0]["class"] == "vehicle"
+    assert predictions.bboxes_metadata[1]["tracker_id"] == 1

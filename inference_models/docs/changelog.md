@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
+  They can also combine point and box prompts in one conditioning frame.
+
 ---
 
 ## `0.35.0`

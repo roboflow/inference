@@ -180,7 +180,8 @@ supports two tracking modes:
 
 - `concept` uses `class_names` and selects `sam3video` by default.
 - `visual` uses labeled points, boxes, or both. It selects `sam3trackervideo` by default
-  and applies `prompt_mode` when it reads new prompts.
+  and applies `prompt_mode` when it reads new prompts. Each re-prompt starts a new session
+  and restarts tracker IDs.
 
 The block keeps one session per `video_identifier`. It requires local step execution with
 `InferencePipeline`. See the [SAM3 docs](https://inference.roboflow.com/foundation/sam3/)

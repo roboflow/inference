@@ -7,10 +7,9 @@ sibling. Only image and prediction representations differ:
 - INPUT frame: when the workflow image is tensor-materialised the block
   forwards ``WorkflowImageData.tensor_image`` (CHW RGB) directly —
   ``SAM3Video``'s ``_ensure_numpy_image`` permutes CHW->HWC WITHOUT
-  reinterpreting channel order, so the HF processor receives HWC RGB (the
-  numpy sibling fed HWC BGR ``numpy_image``; the tensor path is the correct
-  colour order — the same cross-repo contract as the SAM2 video sibling).
-  Non-materialised inputs are flipped BGR->RGB on host.
+  reinterpreting channel order, so the HF processor receives HWC RGB.
+  Non-materialised inputs are converted from BGR to RGB on the host, matching
+  the NumPy sibling.
 - OUTPUT: native ``inference_models.InstanceDetections`` instead of
   ``sv.Detections``. Masks are carried as compact ``InstancesRLEMasks`` by
   default; the carrier is an execution-level choice driven by the
@@ -59,9 +58,9 @@ from inference.core.workflows.core_steps.models.foundation._streaming_video_comm
     normalise_labeled_points,
     resolve_sam3_video_model_id,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor import (
-    _extract_box_prompts_tensor,
-    _masks_to_instance_detections,
+from inference.core.workflows.core_steps.models.foundation._streaming_video_common_tensor import (
+    extract_box_prompts_tensor,
+    masks_to_instance_detections,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -146,7 +145,7 @@ on every frame and assigns tracker IDs to objects that enter the scene.
 
 Use `visual` mode to track objects from points or boxes. The block reads
 the visual prompts according to `prompt_mode`, then keeps temporal state
-between frames.
+between prompts. Each re-prompt starts a new session and restarts tracker IDs.
 
 The block multiplexes a single SAM3 streaming model across many video
 streams by keying state on `video_metadata.video_identifier`. The block
@@ -278,13 +277,17 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "When visual mode reads its prompts. `first_frame` reads prompts "
             "once. `every_n_frames` reads them at the selected interval. "
-            "`every_frame` reads them on each frame."
+            "`every_frame` reads them on each frame. Each re-prompt starts a "
+            "new session and restarts tracker IDs."
         ),
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
     prompt_interval: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=30,
-        description="The visual prompt interval for `every_n_frames` mode.",
+        description=(
+            "The visual prompt interval for `every_n_frames` mode. A scheduled "
+            "re-prompt starts a new session."
+        ),
         examples=[30],
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
@@ -302,7 +305,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_tracking_mode(self) -> "BlockManifest":
-        if self.tracking_mode == "concept" and not self.class_names:
+        if self.tracking_mode == "concept" and self.class_names is None:
             raise ValueError("Concept mode requires `class_names`.")
         if (
             self.tracking_mode == "visual"
@@ -313,6 +316,7 @@ class BlockManifest(WorkflowBlockManifest):
         if isinstance(self.points, list):
             normalise_labeled_points(self.points)
         if isinstance(self.model_id, str) and not self.model_id.startswith("$"):
+            # Assignment validation would re-enter this model validator.
             object.__setattr__(
                 self,
                 "model_id",
@@ -539,14 +543,13 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 session.obj_id_metadata = {}
                 session.frames_since_prompt = 0
 
-            frame = _frame_for_model(single_image)
             if should_prompt:
-                boxes_xyxy, per_box_meta = _extract_box_prompts_tensor(boxes_for_image)
+                frame = _frame_for_model(single_image)
+                boxes_xyxy, per_box_meta = extract_box_prompts_tensor(boxes_for_image)
                 masks, obj_ids, new_state = model.prompt(
                     image=frame,
                     bboxes=boxes_xyxy,
                     points=point_prompts,
-                    state_dict=session.state_dict,
                     clear_old_prompts=True,
                     frame_idx=frame_number,
                 )
@@ -558,6 +561,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 session.state_dict = new_state
                 session.frames_since_prompt = 0
             elif session.state_dict is not None:
+                frame = _frame_for_model(single_image)
                 masks, obj_ids, new_state = model.track(
                     image=frame, state_dict=session.state_dict
                 )
@@ -571,7 +575,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             session.last_frame_number = frame_number
             results.append(
                 {
-                    "predictions": _masks_to_instance_detections(
+                    "predictions": masks_to_instance_detections(
                         masks=masks,
                         obj_ids=obj_ids,
                         image=single_image,

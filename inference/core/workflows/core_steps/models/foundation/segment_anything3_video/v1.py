@@ -1,4 +1,21 @@
-"""SAM3 concept and visual video tracking workflow block."""
+"""SAM3 Video Tracker workflow block.
+
+Wraps ``inference_models``'s ``SAM3Video`` concept tracker and
+``SAM3TrackerVideo`` visual tracker so they can run in a workflow powered by
+``InferencePipeline``. The pipeline delivers one frame at a time with
+``WorkflowImageData.video_metadata``; this block keeps one state dictionary
+per ``video_identifier``.
+
+In concept mode, text prompts are registered once and the model runs fused
+detection and tracking on every frame. Objects that enter the scene and match
+a concept receive new tracker IDs automatically. The block re-seeds the
+session only when the stream restarts or ``class_names`` changes.
+
+In visual mode, labeled points define one object and each box defines a
+separate object. The ``prompt_mode`` policy controls when the block re-seeds
+the visual tracker. Each re-prompt starts a new session and restarts tracker
+IDs; temporal memory is preserved between prompts.
+"""
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
@@ -67,6 +84,12 @@ _EMPTY_IDS = np.zeros((0,), dtype=np.int64)
 _EMPTY_SCORES = np.zeros((0,), dtype=np.float32)
 _EMPTY_BOXES = np.zeros((0, 4), dtype=np.float32)
 
+
+def _frame_for_model(single_image: WorkflowImageData) -> np.ndarray:
+    """Convert a workflow BGR image into an HWC RGB model frame."""
+    return np.ascontiguousarray(single_image.numpy_image[:, :, ::-1])
+
+
 LONG_DESCRIPTION = """
 Run Segment Anything 3 on a live video stream frame by frame, keeping
 per-video temporal memory so object identities are preserved across
@@ -77,7 +100,7 @@ on every frame and assigns tracker IDs to objects that enter the scene.
 
 Use `visual` mode to track objects from points or boxes. The block reads
 the visual prompts according to `prompt_mode`, then keeps temporal state
-between frames.
+between prompts. Each re-prompt starts a new session and restarts tracker IDs.
 
 The block multiplexes a single SAM3 streaming model across many video
 streams by keying state on `video_metadata.video_identifier`. The block
@@ -209,13 +232,17 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "When visual mode reads its prompts. `first_frame` reads prompts "
             "once. `every_n_frames` reads them at the selected interval. "
-            "`every_frame` reads them on each frame."
+            "`every_frame` reads them on each frame. Each re-prompt starts a "
+            "new session and restarts tracker IDs."
         ),
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
     prompt_interval: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=30,
-        description="The visual prompt interval for `every_n_frames` mode.",
+        description=(
+            "The visual prompt interval for `every_n_frames` mode. A scheduled "
+            "re-prompt starts a new session."
+        ),
         examples=[30],
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
@@ -233,7 +260,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_tracking_mode(self) -> "BlockManifest":
-        if self.tracking_mode == "concept" and not self.class_names:
+        if self.tracking_mode == "concept" and self.class_names is None:
             raise ValueError("Concept mode requires `class_names`.")
         if (
             self.tracking_mode == "visual"
@@ -244,6 +271,7 @@ class BlockManifest(WorkflowBlockManifest):
         if isinstance(self.points, list):
             normalise_labeled_points(self.points)
         if isinstance(self.model_id, str) and not self.model_id.startswith("$"):
+            # Assignment validation would re-enter this model validator.
             object.__setattr__(
                 self,
                 "model_id",
@@ -405,8 +433,6 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             if stream_restarted or session.prompt_signature != prompt_signature:
                 session.state_dict = None
 
-            frame_np = single_image.numpy_image
-
             if not class_list:
                 detections = concept_frame_to_sv_detections(
                     masks=_EMPTY_MASKS,
@@ -419,6 +445,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                     threshold=threshold,
                 )
             else:
+                frame_np = _frame_for_model(single_image)
                 if session.state_dict is None:
                     result = model.prompt(
                         image=frame_np,
@@ -488,14 +515,13 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 session.obj_id_metadata = {}
                 session.frames_since_prompt = 0
 
-            frame_np = single_image.numpy_image
             if should_prompt:
+                frame_np = _frame_for_model(single_image)
                 boxes_xyxy, per_box_meta = extract_box_prompts(boxes_for_image)
                 masks, obj_ids, new_state = model.prompt(
                     image=frame_np,
                     bboxes=boxes_xyxy,
                     points=point_prompts,
-                    state_dict=session.state_dict,
                     clear_old_prompts=True,
                     frame_idx=frame_number,
                 )
@@ -507,13 +533,15 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 session.state_dict = new_state
                 session.frames_since_prompt = 0
             elif session.state_dict is not None:
+                frame_np = _frame_for_model(single_image)
                 masks, obj_ids, new_state = model.track(
                     image=frame_np, state_dict=session.state_dict
                 )
                 session.state_dict = new_state
                 session.frames_since_prompt += 1
             else:
-                masks = np.zeros((0, frame_np.shape[0], frame_np.shape[1]), dtype=bool)
+                height, width = single_image._read_shape_without_materialization()
+                masks = np.zeros((0, height, width), dtype=bool)
                 obj_ids = np.zeros((0,), dtype=np.int64)
 
             session.last_frame_number = frame_number
