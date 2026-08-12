@@ -384,6 +384,23 @@ RUN set -eu && \
     ldconfig && \
     python3 -c "import ctypes; ctypes.CDLL('libnvrtc.so')"
 
+# Same unversioned-soname class for nvJPEG. gst-plugins-bad's nvjpegenc loads
+# NVIDIA's nvJPEG library by trying the UNVERSIONED soname "libnvjpeg.so" first
+# and then falling back to "libnvjpeg.so.<CUDA major reported by the host
+# DRIVER>". CUDA *runtime* base images ship only libnvjpeg.so.MAJOR and
+# libnvjpeg.so.MAJOR.MINOR.PATCH - the unversioned link lives in the -dev
+# package, which is (correctly) absent here. On hosts whose driver reports the
+# image's CUDA major the fallback happens to match and masks the gap; on newer
+# drivers (e.g. CUDA 13) the fallback asks for a soname a CUDA 12 image can
+# never contain, nvjpegenc silently does not register, and the runtime element
+# check fails with "No such element or plugin 'nvjpegenc'". Recreate the link
+# the loader is looking for, then prove it actually resolves.
+RUN set -eu && \
+    nvjpeg_library="$(ls -1 /usr/local/cuda/lib64/libnvjpeg.so.* | sort -V | tail -n 1)" && \
+    ln -sf "${nvjpeg_library}" /usr/local/cuda/lib64/libnvjpeg.so && \
+    ldconfig && \
+    python3 -c "import ctypes; ctypes.CDLL('libnvjpeg.so')"
+
 # VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false: this runtime intentionally
 # ships a C toolchain (gcc + libc6-dev + libpython3.10-dev) for RF-DETR's
 # Triton JIT preprocessing kernels; the hygiene scan would reject it. The

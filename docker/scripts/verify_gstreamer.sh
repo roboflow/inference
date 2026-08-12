@@ -114,6 +114,24 @@ if [ "${GSTREAMER_REQUIRE_NVCODEC_NVRTC}" = "true" ]; then
     fi
 fi
 
+# Same GPU-FREE guard for nvJPEG. nvjpegenc loads NVIDIA's nvJPEG library by
+# trying the UNVERSIONED soname "libnvjpeg.so" first and then falling back to
+# "libnvjpeg.so.<CUDA major reported by the host DRIVER>". Without the
+# unversioned link the element only registers on hosts whose driver major
+# happens to match the image's CUDA toolkit, so the regression hides on
+# same-major machines and shows up as "No such element or plugin 'nvjpegenc'"
+# only on newer-driver runners. This check needs no GPU: it is exactly the
+# first, version-independent dlopen the plugin performs.
+if [ "${GSTREAMER_REQUIRE_NVCODEC_NVRTC}" = "true" ]; then
+    if ! python3 -c "import ctypes; ctypes.CDLL('libnvjpeg.so')" >/dev/null 2>&1; then
+        echo "libnvjpeg.so (unversioned soname) is not loadable - GStreamer" >&2
+        echo "nvjpegenc will not register on hosts whose driver reports a" >&2
+        echo "different CUDA major than the image's toolkit." >&2
+        echo "Symlink it onto the versioned library shipped by the CUDA runtime." >&2
+        exit 1
+    fi
+fi
+
 # Full element-registration + pipeline smoke test. Requires a real GPU (the
 # nvcodec plugin only registers elements after cuInit succeeds and a device is
 # enumerated), so it CANNOT run on a GPU-less build machine - it is driven from
