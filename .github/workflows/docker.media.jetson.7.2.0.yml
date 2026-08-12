@@ -4,8 +4,6 @@ permissions:
   contents: read
 
 on:
-  release:
-    types: [created]
   push:
     branches: [main]
     paths:
