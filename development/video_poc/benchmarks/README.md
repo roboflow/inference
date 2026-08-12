@@ -197,6 +197,36 @@ available GPU headroom. The example matrix covers the 1/4/8/12/15/18/24 light
 curve, delayed heavy arrivals, and output publishing. Suite and run reports stay
 under the ignored `results/` directory and never contain the API-key value.
 
+### Checked-in staging suites
+
+The `matrices/` directory keeps the next measurement program reviewable and
+repeatable. Every file is staging-only and contains API-key environment-variable
+names rather than credentials:
+
+| Matrix | Purpose |
+|---|---|
+| `gpu-controlled-fps.staging.example.json` | Two repetitions of the 1/4/8/12/18/24 GPU concurrency curve at 5, 10, and 15 FPS |
+| `cpu-controlled-fps.staging.example.json` | Two repetitions of the 1/2/3/4 CPU concurrency curve at 5, 8, 10, and 15 FPS using the same YOLO model as GPU |
+| `multi-workspace-fairness.staging.example.json` | Balanced tenants, delayed peer arrival, heavy-workflow arrival, reverse arrival order, and output-publisher noisy neighbors |
+| `output-overhead.staging.example.json` | Matched output-off/output-on pairs for GPU detection, GPU tracking, and CPU detection |
+| `long-soak.staging.example.json` | Independently selectable 15-minute, 1-hour, 4-hour, and 12-hour GPU and CPU stability gates |
+
+Replace only the explicit `REPLACE_WITH_...` workspace/source values, then dry
+run the exact scenario selection before using `--execute`. In particular, run
+soak gates one at a time and advance only after the shorter gate passes:
+
+```bash
+python development/video_poc/benchmarks/run_api_experiment_matrix.py \
+  --matrix development/video_poc/benchmarks/matrices/long-soak.staging.example.json \
+  --scenario gpu-soak-15m \
+  --suite-id gpu-soak-15m-001
+```
+
+The controlled-FPS and output suites use `VIDEO_BENCHMARK_API_KEY`. The
+cross-workspace suite uses `VIDEO_BENCHMARK_API_KEY_A` and
+`VIDEO_BENCHMARK_API_KEY_B`. Export values only in the runner environment; do
+not substitute them into a matrix.
+
 For cross-workspace noisy-neighbor and fairness runs, follow
 [`MULTI_WORKSPACE_FAIRNESS.md`](MULTI_WORKSPACE_FAIRNESS.md). Those scenarios
 keep credentials in separate environment variables, persist only safe labels,

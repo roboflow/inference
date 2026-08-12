@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "rf-inference-benchmark",
+    "sourceName": "REPLACE_WITH_STAGING_FIXTURE_SOURCE",
+    "durationSeconds": 180,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 20,
+    "maxPlannedJobs": 4
+  },
+  "scenarios": [
+    {"name": "cpu-fps05-c01", "workloads": ["single-detection-cpu=1"], "maxFps": 5, "repetitions": 2},
+    {"name": "cpu-fps05-c02", "workloads": ["single-detection-cpu=2"], "maxFps": 5, "repetitions": 2},
+    {"name": "cpu-fps05-c03", "workloads": ["single-detection-cpu=3"], "maxFps": 5, "repetitions": 2},
+    {"name": "cpu-fps05-c04", "workloads": ["single-detection-cpu=4"], "maxFps": 5, "repetitions": 2},
+    {"name": "cpu-fps08-c01", "workloads": ["single-detection-cpu=1"], "maxFps": 8, "repetitions": 2},
+    {"name": "cpu-fps08-c02", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "repetitions": 2},
+    {"name": "cpu-fps08-c03", "workloads": ["single-detection-cpu=3"], "maxFps": 8, "repetitions": 2},
+    {"name": "cpu-fps08-c04", "workloads": ["single-detection-cpu=4"], "maxFps": 8, "repetitions": 2},
+    {"name": "cpu-fps10-c01", "workloads": ["single-detection-cpu=1"], "maxFps": 10, "repetitions": 2},
+    {"name": "cpu-fps10-c02", "workloads": ["single-detection-cpu=2"], "maxFps": 10, "repetitions": 2},
+    {"name": "cpu-fps10-c03", "workloads": ["single-detection-cpu=3"], "maxFps": 10, "repetitions": 2},
+    {"name": "cpu-fps10-c04", "workloads": ["single-detection-cpu=4"], "maxFps": 10, "repetitions": 2},
+    {"name": "cpu-fps15-c01", "workloads": ["single-detection-cpu=1"], "maxFps": 15, "repetitions": 2},
+    {"name": "cpu-fps15-c02", "workloads": ["single-detection-cpu=2"], "maxFps": 15, "repetitions": 2},
+    {"name": "cpu-fps15-c03", "workloads": ["single-detection-cpu=3"], "maxFps": 15, "repetitions": 2},
+    {"name": "cpu-fps15-c04", "workloads": ["single-detection-cpu=4"], "maxFps": 15, "repetitions": 2}
+  ]
+}

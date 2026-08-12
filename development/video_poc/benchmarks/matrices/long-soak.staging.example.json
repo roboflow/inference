@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "rf-inference-benchmark",
+    "sourceName": "REPLACE_WITH_STAGING_FIXTURE_SOURCE",
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 120,
+    "pollIntervalSeconds": 5,
+    "cooldownSeconds": 60,
+    "maxPlannedJobs": 4
+  },
+  "scenarios": [
+    {"name": "gpu-soak-15m", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 900, "notes": "Gate the one-hour GPU soak."},
+    {"name": "gpu-soak-01h", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 3600, "notes": "Gate the four-hour GPU soak."},
+    {"name": "gpu-soak-04h", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 14400, "notes": "Gate the twelve-hour GPU soak."},
+    {"name": "gpu-soak-12h", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 43200, "notes": "Final GPU stability and leak observation window."},
+    {"name": "cpu-soak-15m", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 900, "notes": "Gate the one-hour CPU soak."},
+    {"name": "cpu-soak-01h", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 3600, "notes": "Gate the four-hour CPU soak."},
+    {"name": "cpu-soak-04h", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 14400, "notes": "Gate the twelve-hour CPU soak."},
+    {"name": "cpu-soak-12h", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 43200, "notes": "Final CPU stability and leak observation window."}
+  ]
+}
