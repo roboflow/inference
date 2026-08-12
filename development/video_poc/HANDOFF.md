@@ -510,6 +510,13 @@ not implemented yet.
   does not replace the normal `video-proc` pool. The first local image build
   reached the pinned CUDA runtime but exhausted Docker Desktop's internal build
   storage, so the registry build remains pending staging GCP reauthentication.
+  A read-only probe of the current staging image on `l40s-48gb.10x` confirmed
+  driver `570.133.20`, Torch `2.6.0+cu124`, CUDA `12.4`, and both raw-MPS
+  binaries. The live worker has only the Docker-default 64 MiB `/dev/shm` and
+  the node advertises `mig.capable=false`, `mps.capable=false`, GPU sharing
+  strategy `none`, and one replica per device. Therefore Gate 4 can test raw MPS
+  inside one exclusive-GPU pod after the 4 GiB shared-memory deployment, but it
+  cannot test MIG or Kubernetes device-plugin MPS sharing on this L40S fleet.
 - **Fault injection is bound to the actual video cell.** The dry-run controller
   accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
   API server and refuses a context alias pointed elsewhere. Earlier draft
