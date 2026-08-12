@@ -31,7 +31,12 @@ def _create_h26x(path: Path, encoder: str, parser: str, pattern: str = "red") ->
         "num-buffers=8",
         f"pattern={pattern}",
         "!",
-        "video/x-raw,format=I420,width=320,height=180,framerate=30/1",
+        # NV12, not I420: the modern nvcudah26xenc encoders build their format
+        # list from the device and only ever insert NV12 (+Y444/10-bit when
+        # supported) - I420 is never included, unlike the legacy elements.
+        # (_create_jpeg deliberately differs: nvjpegenc's system-memory list
+        # is {I420, Y42B, Y444} with NO NV12.)
+        "video/x-raw,format=NV12,width=320,height=180,framerate=30/1",
         "!",
         # gst-launch uses gst_parse_launchv, which ESCAPES each argv element as
         # a single token - "nvcudah264enc preset=p4" as one argument becomes an
