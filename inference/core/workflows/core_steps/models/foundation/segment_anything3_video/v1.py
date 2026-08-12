@@ -32,6 +32,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
 )
 from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+    SAM3_AUTO_VIDEO_MODEL_ID,
     SAM3_CONCEPT_VIDEO_MODEL_ID,
     SAM3_VISUAL_VIDEO_MODEL_ID,
     VideoSessionBookkeeping,
@@ -165,6 +166,7 @@ class BlockManifest(WorkflowBlockManifest):
         default="concept",
         title="Tracking Mode",
         description="Use `concept` for text prompts. Use `visual` for point or box prompts.",
+        json_schema_extra={"always_visible": True},
     )
     class_names: Optional[
         Union[List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
@@ -196,7 +198,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         json_schema_extra={
             "always_visible": True,
-            "relevant_for": {"tracking_mode": {"values": ["visual"]}},
+            "relevant_for": {"tracking_mode": {"values": ["visual"], "required": True}},
         },
     )
     boxes: Optional[
@@ -216,16 +218,20 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.object_detection_model.predictions"],
         json_schema_extra={
             "always_visible": True,
-            "relevant_for": {"tracking_mode": {"values": ["visual"]}},
+            "relevant_for": {"tracking_mode": {"values": ["visual"], "required": True}},
         },
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default=SAM3_CONCEPT_VIDEO_MODEL_ID,
+        default=SAM3_AUTO_VIDEO_MODEL_ID,
         description=(
-            "Streaming SAM3 model ID. Concept mode defaults to `sam3video`. "
-            "Visual mode defaults to `sam3trackervideo`."
+            "Streaming SAM3 model ID. Keep `auto` to use `sam3video` in concept "
+            "mode and `sam3trackervideo` in visual mode."
         ),
-        examples=[SAM3_CONCEPT_VIDEO_MODEL_ID, SAM3_VISUAL_VIDEO_MODEL_ID],
+        examples=[
+            SAM3_AUTO_VIDEO_MODEL_ID,
+            SAM3_CONCEPT_VIDEO_MODEL_ID,
+            SAM3_VISUAL_VIDEO_MODEL_ID,
+        ],
     )
     prompt_mode: PromptMode = Field(
         default="first_frame",

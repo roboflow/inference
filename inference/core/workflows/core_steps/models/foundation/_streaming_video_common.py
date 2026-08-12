@@ -31,6 +31,7 @@ SAM3TrackingMode = Literal["concept", "visual"]
 
 SAM3_CONCEPT_VIDEO_MODEL_ID = "sam3video"
 SAM3_VISUAL_VIDEO_MODEL_ID = "sam3trackervideo"
+SAM3_AUTO_VIDEO_MODEL_ID = "auto"
 
 
 @dataclass
@@ -97,8 +98,8 @@ def resolve_sam3_video_model_id(
 ) -> str:
     """Select the built-in model for a SAM3 tracking mode.
 
-    A mode switch replaces either built-in default. Other model IDs remain
-    available as explicit overrides.
+    ``auto`` and either built-in model ID select the model for the active
+    mode. Other model IDs remain available as explicit overrides.
     """
     expected_model_id = (
         SAM3_CONCEPT_VIDEO_MODEL_ID
@@ -106,6 +107,7 @@ def resolve_sam3_video_model_id(
         else SAM3_VISUAL_VIDEO_MODEL_ID
     )
     known_model_ids = {
+        SAM3_AUTO_VIDEO_MODEL_ID,
         SAM3_CONCEPT_VIDEO_MODEL_ID,
         SAM3_VISUAL_VIDEO_MODEL_ID,
     }

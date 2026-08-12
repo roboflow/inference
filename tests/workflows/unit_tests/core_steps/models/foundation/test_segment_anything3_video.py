@@ -242,6 +242,29 @@ def test_manifest_parses_valid_config():
     assert manifest.threshold == 0.5
 
 
+@pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
+def test_manifest_schema_keeps_mode_and_prompts_in_primary_fields(manifest_type):
+    properties = manifest_type.model_json_schema()["properties"]
+
+    assert properties["tracking_mode"]["always_visible"] is True
+    assert properties["class_names"]["relevant_for"]["tracking_mode"] == {
+        "values": ["concept"],
+        "required": True,
+    }
+    for prompt_name in ("points", "boxes"):
+        assert properties[prompt_name]["relevant_for"]["tracking_mode"] == {
+            "values": ["visual"],
+            "required": True,
+        }
+
+
+@pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
+def test_manifest_schema_uses_automatic_model_default(manifest_type):
+    properties = manifest_type.model_json_schema()["properties"]
+
+    assert properties["model_id"]["default"] == "auto"
+
+
 def test_manifest_requires_class_names():
     with pytest.raises(Exception):
         BlockManifest.model_validate(
