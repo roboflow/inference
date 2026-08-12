@@ -300,7 +300,7 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
 # Instal Cosmos 3 preview (requires override of transformers, since 21.07.2026 it was not released yet).
 # Must stay in the builder stage: it needs pip (stripped from the runtime image) and `git`
 # (the pins are git direct-URLs), and it must run last so its transformers/diffusers override wins.
-RUN python3 -m pip install --no-cache-dir -r requirements.cosmos.txt
+#RUN python3 -m pip install --no-cache-dir -r requirements.cosmos.txt
 
 RUN find /usr/local/lib/python3.10 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
