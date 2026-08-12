@@ -219,3 +219,22 @@ def test_schema_v2_uses_frame_histogram_and_counter_deltas_for_slo():
         "rendered": 40,
     }
     assert analysis["runs"][0]["capacitySlo"]["maxLatencyP95Ms"] == 20
+
+
+def test_capacity_curves_keep_controlled_fps_separate_from_unbounded():
+    unbounded = make_report("unbounded-c1", 1)
+    controlled = make_report("controlled-c1", 1)
+    controlled["profiles"][0]["maxFps"] = 15
+
+    analysis = analyze_reports(
+        [unbounded, controlled], AnalysisConfig(warmup_seconds=2)
+    )
+
+    assert len(analysis["capacitySummaries"]) == 2
+    assert {item["maxFps"] for item in analysis["capacitySummaries"]} == {
+        None,
+        15,
+    }
+    rendered = render_markdown(analysis)
+    assert "unbounded input" in rendered
+    assert "max 15 FPS" in rendered

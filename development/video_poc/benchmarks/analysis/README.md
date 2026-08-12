@@ -18,7 +18,8 @@ per-frame latency percentiles. True latency SLOs require processor histograms or
 per-frame observations to be attached to the report.
 
 Capacity summaries are only generated for homogeneous runs (one profile, tier,
-mode, and output setting). The lowest successful tested concurrency is used as
-the FPS/latency baseline. A run is certified only when it passes every configured
-gate, including successful execution, steady-state sample coverage, FPS
-retention, latency, fairness, startup, and single-processor placement.
+mode, output setting, and `maxFps` setting). Controlled-FPS and unbounded runs
+are never combined into one curve. The lowest successful tested concurrency is
+used as the FPS/latency baseline. A run is certified only when it passes every
+configured gate, including successful execution, steady-state sample coverage,
+FPS retention, latency, fairness, startup, and single-processor placement.

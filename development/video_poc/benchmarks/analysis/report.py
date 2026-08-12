@@ -65,6 +65,7 @@ def _job_metadata(report):
             "tier": job.get("tier") or profile.get("tier"),
             "mode": job.get("mode") or profile.get("mode"),
             "imageOutput": profile.get("imageOutput"),
+            "maxFps": profile.get("maxFps"),
         }
     return metadata
 
@@ -349,6 +350,7 @@ def analyze_report(report, config=None):
                 "tier": None,
                 "mode": None,
                 "imageOutput": None,
+                "maxFps": None,
             },
         )
     streams = []
@@ -433,6 +435,7 @@ def _workload_signature(run):
         stream.get("tier"),
         stream.get("mode"),
         bool(stream.get("imageOutput")),
+        stream.get("maxFps"),
     )
 
 
@@ -543,6 +546,7 @@ def _capacity_summary(signature, runs, config):
         "tier": signature[1],
         "mode": signature[2],
         "outputPublished": signature[3],
+        "maxFps": signature[4],
         "baselineConcurrency": baseline_concurrency,
         "baselineDeliveredFps": _rounded(baseline_fps),
         "baselineSampledEmaLatencyP95Ms": _rounded(baseline_latency),
@@ -592,9 +596,15 @@ def render_markdown(analysis):
     ]
     for capacity in analysis["capacitySummaries"]:
         output = "published" if capacity["outputPublished"] else "disabled"
+        fps_limit = (
+            f", max {capacity['maxFps']} FPS"
+            if capacity["maxFps"] is not None
+            else ", unbounded input"
+        )
         lines.extend(
             [
-                f"## {capacity['profile']} ({capacity['tier']}, output {output})",
+                f"## {capacity['profile']} ({capacity['tier']}, output "
+                f"{output}{fps_limit})",
                 "",
                 "| Run | Streams | Total FPS | FPS spread | Max latency p95 | "
                 "Processors | SLO |",
