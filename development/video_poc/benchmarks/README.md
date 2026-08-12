@@ -134,6 +134,43 @@ copies receive distinct non-executable benchmark metadata because the service
 correctly prevents the exact same workflow identity from running twice on one
 source; their steps and model IDs remain identical for model-sharing tests.
 
+For capacity and noisy-neighbor experiments, use explicit workload counts and
+staged arrivals. This example establishes twelve light streams, records a
+60-second baseline, then introduces one segmentation workflow on the same worker:
+
+```bash
+python development/video_poc/benchmarks/run_api_workflow_corpus.py \
+  --workspace rf-inference-benchmark \
+  --source-id SOURCE_ID \
+  --workload single-detection=12 \
+  --workload instance-segmentation=1@60 \
+  --max-fps 15 \
+  --require-single-processor \
+  --duration-seconds 300 \
+  --run-id light12-then-segmentation-001 \
+  --execute
+```
+
+`--require-single-processor` makes the run fail if the jobs spread across pods;
+without that assertion the result is not a single-worker packing measurement.
+The service API must support the job's `maxFps` field before FPS sweeps are run.
+
+`run_api_experiment_matrix.py` executes a resumable sequence of scenarios in
+fresh child processes and writes an incrementally updated suite ledger. Start by
+copying `workflow-matrix.staging.example.json`, selecting a staging fixture
+source, and dry-running the suite:
+
+```bash
+python development/video_poc/benchmarks/run_api_experiment_matrix.py \
+  --matrix /path/to/workflow-matrix.staging.json \
+  --suite-id gpu-current-worker-001
+```
+
+Add `--execute` only after checking the plans, staging worker capacity, and
+available GPU headroom. The example matrix covers the 1/4/8/12/15/18/24 light
+curve, delayed heavy arrivals, and output publishing. Suite and run reports stay
+under the ignored `results/` directory and never contain the API-key value.
+
 ## Aggregate processor metrics
 
 The processor endpoint exposes process-lifetime aggregates:

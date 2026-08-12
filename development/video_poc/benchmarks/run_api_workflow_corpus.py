@@ -27,6 +27,10 @@ DEFAULT_API_BASE = (
 )
 DEFAULT_MANIFEST = Path(__file__).with_name("workflows") / "manifest.json"
 SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+WORKLOAD = re.compile(
+    r"^(?P<profile>[A-Za-z0-9][A-Za-z0-9_.-]*)="
+    r"(?P<count>[1-9][0-9]*)(?:@(?P<delay>[0-9]+(?:\.[0-9]+)?))?$"
+)
 STAGING_HOSTS = {"api.roboflow.one"}
 TERMINAL_STATES = {"cancelled", "completed", "error"}
 REPORT_JOB_FIELDS = {
@@ -37,6 +41,7 @@ REPORT_JOB_FIELDS = {
     "imageOutput",
     "mode",
     "tier",
+    "maxFps",
     "state",
     "attempts",
     "cancelRequested",
@@ -109,16 +114,53 @@ def report_source(source):
     return {key: source[key] for key in REPORT_SOURCE_FIELDS if key in source}
 
 
-def build_run_plan(profiles, selections, repeat, publish_output, mode="stream"):
+def parse_workload(value):
+    """Parse PROFILE=COUNT[@START_AFTER_SECONDS]."""
+    match = WORKLOAD.fullmatch(value or "")
+    if not match:
+        raise ValueError(
+            "workload must use PROFILE=COUNT or PROFILE=COUNT@START_AFTER_SECONDS"
+        )
+    return {
+        "profile": match.group("profile"),
+        "count": int(match.group("count")),
+        "startAfterSeconds": float(match.group("delay") or 0),
+    }
+
+
+def build_run_plan(
+    profiles,
+    selections,
+    repeat,
+    publish_output,
+    mode="stream",
+    workloads=None,
+    max_fps=None,
+):
     if repeat < 1:
         raise ValueError("repeat must be at least 1")
+    if workloads and selections:
+        raise ValueError("use either profile selections or workloads, not both")
+    requested = workloads or [
+        {"profile": profile_id, "count": repeat, "startAfterSeconds": 0.0}
+        for profile_id in selections
+    ]
+    if not requested:
+        raise ValueError("at least one workload is required")
+    if min(item["startAfterSeconds"] for item in requested) != 0:
+        raise ValueError("at least one workload must start at zero seconds")
+
     plan = []
     ordinal = 0
-    for profile_id in selections:
+    for workload in sorted(
+        enumerate(requested), key=lambda item: (item[1]["startAfterSeconds"], item[0])
+    ):
+        _, workload = workload
+        profile_id = workload["profile"]
         if profile_id not in profiles:
             raise ValueError(f"unknown workflow profile: {profile_id}")
         profile = profiles[profile_id]
-        for copy_index in range(repeat):
+        for copy_index in range(workload["count"]):
             ordinal += 1
             specification = copy.deepcopy(profile["specification"])
             metadata = dict(specification.get("metadata") or {})
@@ -132,6 +174,8 @@ def build_run_plan(profiles, selections, repeat, publish_output, mode="stream"):
                     "provisionalClass": profile["provisionalClass"],
                     "tier": profile["tier"],
                     "mode": mode,
+                    "maxFps": max_fps,
+                    "startAfterSeconds": workload["startAfterSeconds"],
                     "imageOutput": (
                         profile.get("imageOutput") if publish_output else None
                     ),
@@ -220,6 +264,8 @@ class VideoServiceClient:
             "mode": item["mode"],
             "tier": item["tier"],
         }
+        if item.get("maxFps") is not None:
+            body["maxFps"] = item["maxFps"]
         status, payload = self._request(
             "POST",
             f"video-sources/v1/{source_id}/jobs",
@@ -301,11 +347,12 @@ def run_benchmark(
     poll_interval_seconds,
     startup_timeout_seconds,
     cleanup_timeout_seconds,
+    require_single_processor=False,
     sleep=time.sleep,
     monotonic=time.monotonic,
 ):
     report = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "runId": run_id,
         "startedAt": utc_now(),
         "apiBase": client.api_base,
@@ -323,6 +370,8 @@ def run_benchmark(
                     "tier",
                     "mode",
                     "imageOutput",
+                    "maxFps",
+                    "startAfterSeconds",
                 )
             }
             for item in plan
@@ -335,29 +384,73 @@ def run_benchmark(
     success = True
     interrupted = False
     try:
-        started, start_errors = _start_jobs(client, source["id"], plan, run_id)
-        for item, status, job in started:
-            jobs[job["id"]] = job
-            report.setdefault("starts", []).append(
+        waves = {}
+        for item in plan:
+            waves.setdefault(item.get("startAfterSeconds", 0.0), []).append(item)
+        baseline_started = None
+
+        for wave_index, (start_after, wave_plan) in enumerate(sorted(waves.items())):
+            if not success:
+                break
+            if baseline_started is not None:
+                target = baseline_started + start_after
+                while monotonic() < target:
+                    sleep(min(poll_interval_seconds, target - monotonic()))
+                    jobs = _poll_jobs(client, list(jobs))
+                    report["samples"].append(
+                        {
+                            "phase": "baseline",
+                            "elapsedSeconds": round(
+                                monotonic() - benchmark_started, 3
+                            ),
+                            "jobs": [report_job(job) for job in jobs.values()],
+                        }
+                    )
+                    if any(job.get("state") != "running" for job in jobs.values()):
+                        success = False
+                        report["errors"].append(
+                            {
+                                "phase": "baseline",
+                                "error": "job stopped before a later workload arrived",
+                            }
+                        )
+                        break
+            if not success:
+                break
+
+            started, start_errors = _start_jobs(
+                client, source["id"], wave_plan, run_id
+            )
+            report.setdefault("waves", []).append(
                 {
-                    "profile": item["profile"],
-                    "ordinal": item["ordinal"],
-                    "httpStatus": status,
-                    "job": report_job(job),
+                    "index": wave_index,
+                    "startAfterSeconds": start_after,
+                    "startedAt": utc_now(),
+                    "ordinals": [item["ordinal"] for item in wave_plan],
                 }
             )
+            for item, status, job in started:
+                jobs[job["id"]] = job
+                report.setdefault("starts", []).append(
+                    {
+                        "profile": item["profile"],
+                        "ordinal": item["ordinal"],
+                        "httpStatus": status,
+                        "job": report_job(job),
+                    }
+                )
+            if start_errors:
+                success = False
+                report["errors"].extend(start_errors)
+                break
 
-        if start_errors:
-            success = False
-            report["errors"].extend(start_errors)
-
-        if success:
             startup_deadline = monotonic() + startup_timeout_seconds
+            startup_phase = "startup" if wave_index == 0 else "arrival"
             while True:
                 jobs = _poll_jobs(client, list(jobs))
                 report["samples"].append(
                     {
-                        "phase": "startup",
+                        "phase": startup_phase,
                         "elapsedSeconds": round(monotonic() - benchmark_started, 3),
                         "jobs": [report_job(job) for job in jobs.values()],
                     }
@@ -369,7 +462,7 @@ def run_benchmark(
                     success = False
                     report["errors"].append(
                         {
-                            "phase": "startup",
+                            "phase": startup_phase,
                             "error": "job became terminal before all jobs ran",
                         }
                     )
@@ -377,10 +470,12 @@ def run_benchmark(
                 if monotonic() >= startup_deadline:
                     success = False
                     report["errors"].append(
-                        {"phase": "startup", "error": "startup timeout"}
+                        {"phase": startup_phase, "error": "startup timeout"}
                     )
                     break
                 sleep(poll_interval_seconds)
+            if baseline_started is None and success:
+                baseline_started = monotonic()
 
         if success:
             report["measurementStartedAt"] = utc_now()
@@ -433,6 +528,24 @@ def run_benchmark(
         if report["cancelErrors"]:
             success = False
         report["jobs"] = [report_job(job) for job in jobs.values()]
+        report["processorIds"] = sorted(
+            {
+                job.get("processorId")
+                for job in jobs.values()
+                if job.get("processorId")
+            }
+        )
+        if require_single_processor and len(report["processorIds"]) != 1:
+            success = False
+            report["errors"].append(
+                {
+                    "phase": "placement",
+                    "error": (
+                        "expected exactly one processor, observed "
+                        f"{len(report['processorIds'])}"
+                    ),
+                }
+            )
         report["interrupted"] = interrupted
         report["success"] = success
         report["endedAt"] = utc_now()
@@ -456,6 +569,14 @@ def parse_args(argv=None):
     parser.add_argument("--api-key-env", default="VIDEO_BENCHMARK_API_KEY")
     parser.add_argument("--manifest", default=DEFAULT_MANIFEST)
     parser.add_argument("--profile", action="append")
+    parser.add_argument(
+        "--workload",
+        action="append",
+        help=(
+            "PROFILE=COUNT[@START_AFTER_SECONDS]; repeat to build mixed and "
+            "staged-arrival experiments"
+        ),
+    )
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--mode", choices=["stream", "batch"], default="stream")
     source = parser.add_mutually_exclusive_group()
@@ -463,6 +584,8 @@ def parse_args(argv=None):
     source.add_argument("--source-name")
     parser.add_argument("--list-sources", action="store_true")
     parser.add_argument("--publish-output", action="store_true")
+    parser.add_argument("--max-fps")
+    parser.add_argument("--require-single-processor", action="store_true")
     parser.add_argument("--duration-seconds", default="60")
     parser.add_argument("--poll-interval-seconds", default="2")
     parser.add_argument("--startup-timeout-seconds", default="120")
@@ -482,8 +605,10 @@ def parse_args(argv=None):
         parser.error(str(error))
     if args.repeat < 1:
         parser.error("--repeat must be at least 1")
-    if not args.list_sources and not args.profile:
-        parser.error("at least one --profile is required")
+    if args.profile and args.workload:
+        parser.error("use either --profile or --workload, not both")
+    if not args.list_sources and not (args.profile or args.workload):
+        parser.error("at least one --profile or --workload is required")
     if not args.list_sources and not (args.source_id or args.source_name):
         parser.error("--source-id or --source-name is required")
     for name in (
@@ -494,6 +619,12 @@ def parse_args(argv=None):
     ):
         option = f"--{name.replace('_', '-')}"
         setattr(args, name, positive_float(parser, option, getattr(args, name)))
+    if args.max_fps is not None:
+        args.max_fps = positive_float(parser, "--max-fps", args.max_fps)
+    try:
+        args.workloads = [parse_workload(item) for item in args.workload or []]
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 
@@ -507,6 +638,8 @@ def main(argv=None):
             args.repeat,
             args.publish_output,
             args.mode,
+            workloads=args.workloads,
+            max_fps=args.max_fps,
         )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -562,6 +695,7 @@ def main(argv=None):
             poll_interval_seconds=args.poll_interval_seconds,
             startup_timeout_seconds=args.startup_timeout_seconds,
             cleanup_timeout_seconds=args.cleanup_timeout_seconds,
+            require_single_processor=args.require_single_processor,
         )
     except (ValueError, VideoServiceError, urllib.error.URLError) as error:
         print(f"error: {error}", file=sys.stderr)

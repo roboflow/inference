@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "rf-inference-benchmark",
+    "sourceName": "REPLACE_WITH_STAGING_FIXTURE_SOURCE",
+    "durationSeconds": 300,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 20,
+    "maxPlannedJobs": 24
+  },
+  "scenarios": [
+    {
+      "name": "gpu-light-c1",
+      "workloads": ["single-detection=1"],
+      "maxFps": 15,
+      "requireSingleProcessor": true,
+      "notes": "Cold and warm baseline for one small detector."
+    },
+    {
+      "name": "gpu-light-c4",
+      "workloads": ["single-detection=4"],
+      "maxFps": 15,
+      "requireSingleProcessor": true
+    },
+    {
+      "name": "gpu-light-c8",
+      "workloads": ["single-detection=8"],
+      "maxFps": 15,
+      "requireSingleProcessor": true
+    },
+    {
+      "name": "gpu-light-c12",
+      "workloads": ["single-detection=12"],
+      "maxFps": 15,
+      "requireSingleProcessor": true
+    },
+    {
+      "name": "gpu-light-c15",
+      "workloads": ["single-detection=15"],
+      "maxFps": 15,
+      "requireSingleProcessor": true,
+      "notes": "Commercial break-even floor from the product discussion."
+    },
+    {
+      "name": "gpu-light-c18",
+      "workloads": ["single-detection=18"],
+      "maxFps": 15,
+      "requireSingleProcessor": true
+    },
+    {
+      "name": "gpu-light-c24",
+      "workloads": ["single-detection=24"],
+      "maxFps": 15,
+      "requireSingleProcessor": true
+    },
+    {
+      "name": "gpu-light12-then-tracking",
+      "workloads": ["single-detection=12", "detection-tracking=1@60"],
+      "maxFps": 15,
+      "requireSingleProcessor": true,
+      "notes": "Noisy-neighbor arrival after a one-minute light-workload baseline."
+    },
+    {
+      "name": "gpu-light12-then-segmentation",
+      "workloads": ["single-detection=12", "instance-segmentation=1@60"],
+      "maxFps": 15,
+      "requireSingleProcessor": true,
+      "notes": "Adversarial heavy arrival and failure-containment case."
+    },
+    {
+      "name": "gpu-light-output-c8",
+      "workloads": ["single-detection=8"],
+      "maxFps": 15,
+      "publishOutput": true,
+      "requireSingleProcessor": true,
+      "notes": "Includes annotated-output publishing overhead."
+    }
+  ]
+}

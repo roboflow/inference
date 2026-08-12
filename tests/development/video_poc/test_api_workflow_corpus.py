@@ -13,6 +13,7 @@ from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import (  # noqa: E402
     build_run_plan,
     idempotency_key,
+    parse_workload,
     report_job,
     run_benchmark,
     select_source,
@@ -49,6 +50,41 @@ def test_runner_refuses_production_and_builds_from_shared_corpus():
         "instance": 1,
     }
     assert "metadata" not in profiles["single-detection"]["specification"]
+
+
+def test_runner_builds_staged_mixed_workloads_with_explicit_fps():
+    profiles = load_corpus(MANIFEST)
+    workloads = [
+        parse_workload("single-detection=3"),
+        parse_workload("instance-segmentation=1@30"),
+    ]
+
+    plan = build_run_plan(
+        profiles,
+        [],
+        repeat=1,
+        publish_output=False,
+        workloads=workloads,
+        max_fps=15,
+    )
+
+    assert [item["profile"] for item in plan] == [
+        "single-detection",
+        "single-detection",
+        "single-detection",
+        "instance-segmentation",
+    ]
+    assert [item["startAfterSeconds"] for item in plan] == [0, 0, 0, 30]
+    assert {item["maxFps"] for item in plan} == {15}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["single-detection", "single-detection=0", "single-detection=x@3"],
+)
+def test_invalid_workload_syntax_is_rejected(value):
+    with pytest.raises(ValueError, match="workload"):
+        parse_workload(value)
 
 
 def test_source_selection_requires_an_unambiguous_source():
@@ -129,6 +165,21 @@ class PartialStartFailureClient(FakeClient):
         return super().start_job(source_id, item, key)
 
 
+class PlacedClient(FakeClient):
+    def __init__(self, split=False):
+        super().__init__()
+        self.split = split
+
+    def start_job(self, source_id, item, key):
+        status, job = super().start_job(source_id, item, key)
+        processor_id = (
+            f"processor-{item['ordinal']}" if self.split else "processor-shared"
+        )
+        self.jobs[job["id"]]["processorId"] = processor_id
+        job["processorId"] = processor_id
+        return status, job
+
+
 def test_run_benchmark_starts_measures_and_cleans_up_every_job():
     clock = FakeClock()
     profiles = load_corpus(MANIFEST)
@@ -205,3 +256,74 @@ def test_partial_start_failure_still_cancels_started_jobs():
             "error": "synthetic start failure",
         }
     ]
+
+
+def test_staged_arrival_records_baseline_and_arrival_samples():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles,
+        [],
+        repeat=1,
+        publish_output=False,
+        workloads=[
+            parse_workload("single-detection=2"),
+            parse_workload("instance-segmentation=1@4"),
+        ],
+    )
+
+    report = run_benchmark(
+        client=PlacedClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="staged-arrival",
+        duration_seconds=2,
+        poll_interval_seconds=2,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        require_single_processor=True,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is True
+    assert report["processorIds"] == ["processor-shared"]
+    assert [wave["startAfterSeconds"] for wave in report["waves"]] == [0, 4]
+    assert {sample["phase"] for sample in report["samples"]} == {
+        "startup",
+        "baseline",
+        "arrival",
+        "measurement",
+    }
+
+
+def test_single_processor_requirement_rejects_spread_placement():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles,
+        ["single-detection"],
+        repeat=2,
+        publish_output=False,
+    )
+
+    report = run_benchmark(
+        client=PlacedClient(split=True),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="split-placement",
+        duration_seconds=2,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        require_single_processor=True,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is False
+    assert report["processorIds"] == ["processor-1", "processor-2"]
+    assert report["errors"][-1] == {
+        "phase": "placement",
+        "error": "expected exactly one processor, observed 2",
+    }
