@@ -50,3 +50,26 @@ service but whose response was never received cannot appear in the local
 checkpoint. Server-side run ownership or a list-by-idempotency-prefix endpoint
 would be required to make that rare ambiguous-acceptance case automatically
 recoverable.
+
+Startup fault injection is intentionally not opportunistic: start the fault
+controller first, then run a one-job corpus with a bounded
+`--startup-fault-ready-seconds` window. The runner checkpoints the exact claimed
+processor before pausing, and the controller refuses any startup target that is
+not in that explicit phase and `claimed` state.
+
+The parent matrix runner also checkpoints each child before starting it and
+forwards SIGINT/SIGTERM. Resume with the same suite ID and immutable matrix:
+
+```bash
+python development/video_poc/benchmarks/run_api_experiment_matrix.py \
+  --matrix /absolute/path/to/the-same-matrix.json \
+  --suite-id SUITE_ID \
+  --execute \
+  --resume
+```
+
+If the child already produced a complete report, resume reconciles it without
+starting duplicate jobs. If the suite says a child was running but no complete
+report exists, resume fails closed: use that child's exact-run janitor first,
+then start a new suite/run ID. Editing the matrix or changing dry-run/execute
+mode is never accepted as a resume.

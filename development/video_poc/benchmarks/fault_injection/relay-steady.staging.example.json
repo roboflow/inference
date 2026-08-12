@@ -6,7 +6,7 @@
   "namespace": "video-proc",
   "benchmark": {
     "runId": "replace-relay-run-id",
-    "checkpoint": "development/video_poc/benchmarks/results/api-corpus-replace-relay-run-id.json",
+    "checkpoint": "../results/api-corpus-replace-relay-run-id.json",
     "apiHost": "us-central1-roboflow-staging.cloudfunctions.net"
   },
   "fault": {

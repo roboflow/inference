@@ -6,7 +6,7 @@
   "namespace": "video-proc",
   "benchmark": {
     "runId": "replace-startup-run-id",
-    "checkpoint": "development/video_poc/benchmarks/results/api-corpus-replace-startup-run-id.json",
+    "checkpoint": "../results/api-corpus-replace-startup-run-id.json",
     "apiHost": "us-central1-roboflow-staging.cloudfunctions.net"
   },
   "fault": {
@@ -18,7 +18,7 @@
   },
   "deadlines": {
     "triggerSeconds": 180,
-    "recoverySeconds": 180,
+    "recoverySeconds": 300,
     "pollSeconds": 2
   }
 }

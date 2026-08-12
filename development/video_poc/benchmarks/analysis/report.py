@@ -334,6 +334,31 @@ def _fairness(streams):
     }
 
 
+def _recovery_summary(report):
+    events = report.get("recoveries") or []
+    durations = [
+        float(event["observedControlPlaneRecoverySeconds"])
+        for event in events
+        if event.get("observedControlPlaneRecoverySeconds") is not None
+    ]
+    return {
+        "toleranceSeconds": report.get("recoveryTimeoutSeconds", 0) or 0,
+        "eventCount": len(events),
+        "recoveredCount": sum(
+            event.get("outcome") == "recovered" for event in events
+        ),
+        "failedCount": sum(
+            bool(event.get("outcome")) and event.get("outcome") != "recovered"
+            for event in events
+        ),
+        "incompleteCount": sum(not event.get("outcome") for event in events),
+        "totalObservedControlPlaneRecoverySeconds": _rounded(sum(durations)),
+        "maxObservedControlPlaneRecoverySeconds": _rounded(
+            max(durations) if durations else None
+        ),
+    }
+
+
 def analyze_report(report, config=None):
     """Return a deterministic analysis of one corpus report."""
 
@@ -423,6 +448,7 @@ def analyze_report(report, config=None):
             "totalDeliveredFps": _rounded(sum(delivered_fps)),
             "streamsWithSteadyFps": len(delivered_fps),
         },
+        "recovery": _recovery_summary(report),
     }
 
 
@@ -566,6 +592,12 @@ def analyze_reports(reports, config=None):
     runs = [analyze_report(report, config) for report in reports]
     groups = {}
     for run in runs:
+        if (
+            run["recovery"]["toleranceSeconds"] > 0
+            or run["recovery"]["eventCount"] > 0
+        ):
+            run["capacityExcludedReason"] = "recovery-tolerant fault run"
+            continue
         signature = _workload_signature(run)
         if signature is not None:
             groups.setdefault(signature, []).append(run)

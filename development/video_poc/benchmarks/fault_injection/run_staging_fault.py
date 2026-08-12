@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -29,6 +30,12 @@ PRODUCTION_MARKER = re.compile(r"(?:^|[-_.])(prod|production)(?:$|[-_.])", re.I)
 STAGING_API_HOSTS = {
     "api.roboflow.one",
     "us-central1-roboflow-staging.cloudfunctions.net",
+}
+ALLOWED_STAGING_CLUSTERS = {
+    "gke_roboflow-staging_us-central1_k8s-staging-v3": {
+        "cluster": "gke_roboflow-staging_us-central1_k8s-staging-v3",
+        "server": "https://34.123.73.192",
+    }
 }
 FAULT_TYPES = {"processor-pod-loss", "relay-pod-loss"}
 PHASES = {"startup", "steady-state"}
@@ -97,9 +104,13 @@ def validate_scenario(raw, source_path=None):
         raise ValueError("fault injection is restricted to staging")
 
     context = str(raw.get("clusterContext") or "")
-    if PRODUCTION_MARKER.search(context) or not STAGING_CONTEXT.search(context):
+    if (
+        PRODUCTION_MARKER.search(context)
+        or not STAGING_CONTEXT.search(context)
+        or context not in ALLOWED_STAGING_CLUSTERS
+    ):
         raise ValueError(
-            "clusterContext must be recognizably staging and not production"
+            "clusterContext must be an explicitly allowlisted staging context"
         )
     namespace = str(raw.get("namespace") or "")
     if PRODUCTION_MARKER.search(namespace) or not ALLOWED_NAMESPACE.fullmatch(
@@ -110,6 +121,8 @@ def validate_scenario(raw, source_path=None):
     benchmark = raw.get("benchmark") or {}
     run_id = _dns_label(benchmark.get("runId"), "benchmark.runId")
     checkpoint = Path(str(benchmark.get("checkpoint") or "")).expanduser()
+    if not checkpoint.is_absolute() and source_path:
+        checkpoint = Path(source_path).resolve().parent / checkpoint
     if not checkpoint.name or run_id not in checkpoint.name:
         raise ValueError("benchmark.checkpoint filename must contain the exact runId")
     api_host = str(benchmark.get("apiHost") or "")
@@ -253,12 +266,8 @@ def trigger_target(scenario, checkpoint):
     phase = (checkpoint.get("checkpoint") or {}).get("phase")
     jobs = checkpoint.get("jobs") or []
     if fault["phase"] == "startup":
-        if phase not in {"started", "startup", "arrival"}:
+        if phase != "fault-ready":
             return None
-        if jobs and all(job.get("state") in READY_STATES for job in jobs):
-            raise RuntimeError(
-                "startup trigger was missed; all captured jobs are running"
-            )
     else:
         if phase != "measurement" or not jobs:
             return None
@@ -270,6 +279,10 @@ def trigger_target(scenario, checkpoint):
     job = checkpoint_job(checkpoint, fault["jobOrdinal"])
     if not job or not job.get("processorId"):
         return None
+    if fault["phase"] == "startup" and job.get("state") != "claimed":
+        raise RuntimeError(
+            "startup target must be claimed in the explicit fault-ready window"
+        )
     if job.get("state") in TERMINAL_STATES:
         raise RuntimeError("selected benchmark job is already terminal")
     pod_name = _dns_label(job["processorId"], "checkpoint processorId")
@@ -353,6 +366,30 @@ class Kubectl:
         )
         return result.stdout.strip()
 
+    def cluster_identity(self):
+        output = self._run_config(
+            [
+                "view",
+                "--minify",
+                "-o",
+                "jsonpath={.contexts[0].context.cluster}{'\\t'}"
+                "{.clusters[0].cluster.server}",
+            ]
+        )
+        cluster, separator, server = output.partition("\t")
+        if not separator:
+            raise RuntimeError("could not resolve active Kubernetes cluster identity")
+        return {"cluster": cluster, "server": server}
+
+    def _run_config(self, args):
+        result = subprocess.run(
+            ["kubectl", "--context", self.context, "config"] + list(args),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
     def pods(self, selector):
         if set(selector) == {"metadata.name"}:
             data = json.loads(
@@ -398,7 +435,7 @@ class Evidence:
         event = {
             "schemaVersion": 1,
             "sequence": getattr(self, "sequence", 0),
-            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "at": datetime.now(timezone.utc).isoformat(),
             "type": event_type,
             "payload": payload,
             "previousDigest": self.previous,
@@ -438,6 +475,11 @@ def execute(scenario, evidence_dir, confirm_run_id, kube=None):
         raise RuntimeError(
             "current kubectl context does not exactly match clusterContext"
         )
+    expected_identity = ALLOWED_STAGING_CLUSTERS[scenario["clusterContext"]]
+    if kube.cluster_identity() != expected_identity:
+        raise RuntimeError(
+            "kubectl cluster name/server do not match the allowlisted staging identity"
+        )
     plan = render_plan(scenario)
     evidence = Evidence(evidence_dir, plan)
     old_handlers = {}
@@ -474,7 +516,28 @@ def execute(scenario, evidence_dir, confirm_run_id, kube=None):
         )
         if verified["uid"] != captured["uid"]:
             raise RuntimeError("target pod changed after capture; refusing deletion")
+        recovery_event_offset = 0
+        if target.get("benchmarkJob"):
+            checkpoint = read_checkpoint(
+                scenario["benchmark"]["checkpoint"],
+                run_id,
+                scenario["benchmark"]["apiHost"],
+            )
+            revalidated = checkpoint and trigger_target(scenario, checkpoint)
+            if (
+                not revalidated
+                or revalidated.get("podName") != captured["name"]
+                or revalidated.get("benchmarkJob") != target.get("benchmarkJob")
+            ):
+                raise RuntimeError(
+                    "benchmark job assignment changed before deletion"
+                )
+            recovery_event_offset = len(checkpoint.get("recoveries") or [])
         evidence.append("target-verified", verified)
+        evidence.append(
+            "fault-requested",
+            {"podName": captured["name"], "podUid": captured["uid"]},
+        )
         kube.delete_pod(captured, scenario["fault"]["gracePeriodSeconds"])
         evidence.append(
             "fault-applied", {"podName": captured["name"], "podUid": captured["uid"]}
@@ -497,7 +560,27 @@ def execute(scenario, evidence_dir, confirm_run_id, kube=None):
                     or not new_processor
                     or new_processor == captured["name"]
                 ):
-                    return None
+                    matching_events = []
+                    for recovery_event in (
+                        (checkpoint or {}).get("recoveries") or []
+                    )[recovery_event_offset:]:
+                        if (
+                            recovery_event.get("outcome") != "recovered"
+                            or target["benchmarkJob"]["id"]
+                            not in (recovery_event.get("jobIds") or [])
+                        ):
+                            continue
+                        after = [
+                            item
+                            for item in recovery_event.get("after") or []
+                            if item.get("id") == target["benchmarkJob"]["id"]
+                            and item.get("processorId") != captured["name"]
+                        ]
+                        if len(after) == 1:
+                            matching_events.append(after[0])
+                    if len(matching_events) != 1:
+                        return None
+                    new_processor = matching_events[0].get("processorId")
                 candidates = kube.pods({"metadata.name": new_processor})
                 if len(candidates) != 1 or not pod_ready(candidates[0]):
                     return None

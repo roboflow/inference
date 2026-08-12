@@ -23,3 +23,25 @@ are never combined into one curve. The lowest successful tested concurrency is
 used as the FPS/latency baseline. A run is certified only when it passes every
 configured gate, including successful execution, steady-state sample coverage,
 FPS retention, latency, fairness, startup, and single-processor placement.
+
+Recovery-tolerant fault runs are summarized separately (event count and observed
+control-plane recovery interval) and are deliberately excluded from capacity
+certification. This interval starts at the runner's first non-running/requeue
+observation, not pod deletion, and ends only after running state plus subsequent
+frame progress are verified; it must not be presented as end-to-end media
+downtime. Otherwise a successful requeue could hide an unstable worker inside
+an apparently passing capacity curve.
+
+For a fault-injection run, `recovery.py` verifies the controller evidence hash
+chain and successful outcome, then binds the exact benchmark job, captured
+processor pod, replacement processor pod, and runner recovery assertions. It
+joins the pre-delete `fault-requested` timestamp to the runner's
+`progressVerifiedAt`. The result is labeled as a verified frame-recovery upper
+bound rather than exact media downtime; relay replacement evidence is rejected
+because it cannot prove processor frame recovery.
+
+`recommendations.py` compares strict and explicitly relaxed latency gates for
+each homogeneous curve and emits a provisional streams-per-worker class. It
+labels right-censored curves, repetitions, failing boundaries, and missing FPS,
+resource, soak, output, and cost evidence. It never derives pricing from frame
+throughput alone.

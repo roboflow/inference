@@ -238,3 +238,44 @@ def test_capacity_curves_keep_controlled_fps_separate_from_unbounded():
     rendered = render_markdown(analysis)
     assert "unbounded input" in rendered
     assert "max 15 FPS" in rendered
+
+
+def test_recovery_tolerant_fault_runs_are_summarized_but_not_certified():
+    report = make_report("recovered", 1)
+    report["recoveryTimeoutSeconds"] = 180
+    report["recoveries"] = [
+        {
+            "outcome": "recovered",
+            "observedControlPlaneRecoverySeconds": 8.5,
+        },
+        {
+            "outcome": "recovered",
+            "observedControlPlaneRecoverySeconds": 3.0,
+        },
+    ]
+
+    analysis = analyze_reports([report], AnalysisConfig(warmup_seconds=2))
+
+    assert analysis["capacitySummaries"] == []
+    assert analysis["runs"][0]["capacityExcludedReason"] == (
+        "recovery-tolerant fault run"
+    )
+    assert analysis["runs"][0]["recovery"] == {
+        "toleranceSeconds": 180,
+        "eventCount": 2,
+        "recoveredCount": 2,
+        "failedCount": 0,
+        "incompleteCount": 0,
+        "totalObservedControlPlaneRecoverySeconds": 11.5,
+        "maxObservedControlPlaneRecoverySeconds": 8.5,
+    }
+
+
+def test_incomplete_recovery_is_counted_and_excluded_from_capacity():
+    report = make_report("incomplete", 1)
+    report["recoveries"] = [{"startedElapsedSeconds": 12.0}]
+
+    analysis = analyze_reports([report], AnalysisConfig(warmup_seconds=2))
+
+    assert analysis["capacitySummaries"] == []
+    assert analysis["runs"][0]["recovery"]["incompleteCount"] == 1

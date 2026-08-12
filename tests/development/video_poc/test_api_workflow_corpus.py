@@ -133,6 +133,14 @@ def test_report_job_is_an_allowlist_that_drops_future_credentials():
     ) == {"id": "job-a", "state": "running", "stats": {"fps": 30}}
 
 
+def test_report_job_deep_copies_nested_stats_evidence():
+    job = {"id": "job-a", "state": "running", "stats": {"frames": 1}}
+    reported = report_job(job)
+    job["stats"]["frames"] = 99
+
+    assert reported["stats"]["frames"] == 1
+
+
 def test_atomic_report_writer_replaces_complete_document(tmp_path):
     path = tmp_path / "report.json"
     write_report_atomic(path, {"schemaVersion": 2, "samples": [1]})
@@ -260,6 +268,107 @@ class PlacedClient(FakeClient):
         return status, job
 
 
+class RecoveringClient(FakeClient):
+    def __init__(self, recover=True):
+        super().__init__()
+        self.recover = recover
+        self.polls = {}
+
+    def get_job(self, job_id):
+        job = self.jobs[job_id]
+        if job.get("cancelRequested"):
+            job["state"] = "cancelled"
+            return dict(job)
+        poll = self.polls.get(job_id, 0) + 1
+        self.polls[job_id] = poll
+        if poll == 1:
+            job.update(
+                {
+                    "state": "running",
+                    "processorId": "processor-before",
+                    "stats": {"frames": 1, "fps": 30},
+                }
+            )
+        elif poll == 2:
+            job.update({"state": "queued", "attempts": 1})
+        elif self.recover and poll == 3:
+            job.update({"state": "claimed", "processorId": "processor-after"})
+        elif self.recover and poll >= 4:
+            job.update({"state": "running", "processorId": "processor-after"})
+            job["stats"]["frames"] += 30
+        return dict(job)
+
+
+class FastRecoveringClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.polls = {}
+
+    def get_job(self, job_id):
+        job = self.jobs[job_id]
+        if job.get("cancelRequested"):
+            job["state"] = "cancelled"
+            return dict(job)
+        poll = self.polls.get(job_id, 0) + 1
+        self.polls[job_id] = poll
+        if poll == 1:
+            job.update(
+                {
+                    "state": "running",
+                    "processorId": "processor-before",
+                    "stats": {"frames": 10, "fps": 30},
+                }
+            )
+        elif poll == 2:
+            job.update(
+                {
+                    "state": "running",
+                    "processorId": "processor-after",
+                    "attempts": 1,
+                    "stats": {"frames": 1, "fps": 30},
+                }
+            )
+        else:
+            job["stats"]["frames"] += 30
+        return dict(job)
+
+
+class ClaimedThenRunningClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.polls = {}
+
+    def get_job(self, job_id):
+        job = self.jobs[job_id]
+        if job.get("cancelRequested"):
+            job["state"] = "cancelled"
+            return dict(job)
+        poll = self.polls.get(job_id, 0) + 1
+        self.polls[job_id] = poll
+        if poll == 1:
+            job.update(
+                {"state": "claimed", "processorId": "processor-before"}
+            )
+        else:
+            job.update(
+                {
+                    "state": "running",
+                    "processorId": "processor-before",
+                    "stats": {"frames": poll * 10, "fps": 30},
+                }
+            )
+        return dict(job)
+
+
+class InitialClaimAdvancesAttemptClient(ClaimedThenRunningClient):
+    def get_job(self, job_id):
+        job = super().get_job(job_id)
+        if self.polls[job_id] == 1:
+            job["attempts"] = 1
+            self.jobs[job_id]["attempts"] = 1
+        return job
+
+
 def test_run_benchmark_starts_measures_and_cleans_up_every_job():
     clock = FakeClock()
     profiles = load_corpus(MANIFEST)
@@ -324,6 +433,218 @@ def test_run_benchmark_checkpoints_every_poll_and_on_completion():
     assert checkpoint_phases[0] == "initialized"
     assert checkpoint_phases[-1] == "complete"
     assert checkpoints[-1]["success"] is True
+
+
+def test_recovery_tolerance_records_requeue_and_new_processor():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    report = run_benchmark(
+        client=RecoveringClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="recovery-success",
+        duration_seconds=5,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        recovery_timeout_seconds=3,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is True
+    assert {sample["phase"] for sample in report["samples"]} >= {
+        "startup",
+        "measurement",
+        "recovery",
+    }
+    event = report["recoveries"][0]
+    assert event["sourcePhase"] == "measurement"
+    assert event["startedElapsedSeconds"] == 1.0
+    assert event["observedControlPlaneRecoverySeconds"] == 3.0
+    assert event["outcome"] == "recovered"
+    assert event["before"][0]["processorId"] == "processor-before"
+    assert event["before"][0]["state"] == "running"
+    assert event["firstObserved"][0]["state"] == "queued"
+    assert event["after"][0]["processorId"] == "processor-after"
+    assert event["after"][0]["state"] == "running"
+    assert event["after"][0]["attempts"] == 1
+    assert event["after"][0]["stats"]["frames"] > (
+        event["runningObserved"][0]["stats"]["frames"]
+    )
+    assert event["assertions"]["job-1"] == {
+        "processorChanged": True,
+        "attemptAdvanced": True,
+        "framesAdvancedAfterRunning": True,
+        "requeueIdentityChanged": True,
+    }
+
+
+def test_recovery_timeout_fails_and_still_cleans_up():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    report = run_benchmark(
+        client=RecoveringClient(recover=False),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="recovery-timeout",
+        duration_seconds=5,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        recovery_timeout_seconds=2,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is False
+    assert report["recoveries"][0]["outcome"] == "timeout"
+    assert report["errors"][0] == {
+        "phase": "measurement",
+        "error": "job did not recover during measurement",
+    }
+    assert {job["state"] for job in report["jobs"]} == {"cancelled"}
+
+
+def test_fast_requeue_between_polls_is_detected_and_progress_verified():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    report = run_benchmark(
+        client=FastRecoveringClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="fast-recovery",
+        duration_seconds=3,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        recovery_timeout_seconds=2,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is True
+    event = report["recoveries"][0]
+    assert event["firstObserved"][0]["state"] == "running"
+    assert event["firstObserved"][0]["processorId"] == "processor-after"
+    assert event["outcome"] == "recovered"
+    assert event["observedControlPlaneRecoverySeconds"] == 1.0
+    assert event["assertions"]["job-1"]["processorChanged"] is True
+    assert event["assertions"]["job-1"]["framesAdvancedAfterRunning"] is True
+
+
+def test_recovery_timeout_cli_is_opt_in_and_nonnegative():
+    args = runner.parse_args(
+        [
+            "--workspace",
+            "workspace-a",
+            "--source-id",
+            "source-a",
+            "--profile",
+            "single-detection",
+        ]
+    )
+    assert args.recovery_timeout_seconds == 0
+    assert args.startup_fault_ready_seconds == 0
+
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                "--workspace",
+                "workspace-a",
+                "--source-id",
+                "source-a",
+                "--profile",
+                "single-detection",
+                "--recovery-timeout-seconds",
+                "-1",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                "--workspace",
+                "workspace-a",
+                "--source-id",
+                "source-a",
+                "--profile",
+                "single-detection",
+                "--startup-fault-ready-seconds",
+                "30",
+            ]
+        )
+
+
+def test_startup_fault_ready_checkpoint_holds_claimed_assignment():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+    checkpoints = []
+
+    report = run_benchmark(
+        client=ClaimedThenRunningClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="startup-fault-ready",
+        duration_seconds=1,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        startup_fault_ready_seconds=3,
+        checkpoint=lambda value: checkpoints.append(
+            json.loads(json.dumps(value))
+        ),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    fault_ready = [
+        item for item in checkpoints if item["checkpoint"]["phase"] == "fault-ready"
+    ]
+    assert report["success"] is True
+    assert clock.value >= 3
+    assert len(fault_ready) == 1
+    assert fault_ready[0]["jobs"][0]["state"] == "claimed"
+    assert fault_ready[0]["jobs"][0]["processorId"] == "processor-before"
+
+
+def test_normal_first_claim_attempt_increment_is_not_a_recovery():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    report = run_benchmark(
+        client=InitialClaimAdvancesAttemptClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="ordinary-first-claim",
+        duration_seconds=1,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        recovery_timeout_seconds=3,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is True
+    assert report.get("recoveries", []) == []
 
 
 def test_initial_checkpoint_failure_prevents_any_job_start():

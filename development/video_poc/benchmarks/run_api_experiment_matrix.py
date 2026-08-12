@@ -7,8 +7,11 @@ never copied into commands, suite manifests, or result reports.
 """
 
 import argparse
+import hashlib
 import json
+import math
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -22,6 +25,7 @@ from run_api_multi_workspace_corpus import (
 from run_api_workflow_corpus import (
     RunLock,
     SAFE_RUN_ID,
+    SignalStop,
     parse_workload,
     validate_api_base,
 )
@@ -41,13 +45,24 @@ def _positive(value, field):
         parsed = float(value)
     except (TypeError, ValueError) as error:
         raise ValueError(f"{field} must be a number") from error
-    if parsed <= 0:
+    if not math.isfinite(parsed) or parsed <= 0:
         raise ValueError(f"{field} must be greater than zero")
+    return parsed
+
+
+def _nonnegative(value, field):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field} must be a number") from error
+    if not math.isfinite(parsed) or parsed < 0:
+        raise ValueError(f"{field} must be finite and nonnegative")
     return parsed
 
 
 def load_matrix(path):
     path = Path(path).resolve()
+    matrix_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     with path.open() as source:
         document = json.load(source)
     if document.get("schemaVersion") != 1:
@@ -140,6 +155,20 @@ def load_matrix(path):
                     ),
                     f"scenario {name} cleanupTimeoutSeconds",
                 ),
+                "recoveryTimeoutSeconds": _nonnegative(
+                    raw.get(
+                        "recoveryTimeoutSeconds",
+                        defaults.get("recoveryTimeoutSeconds", 0),
+                    ),
+                    f"scenario {name} recoveryTimeoutSeconds",
+                ),
+                "startupFaultReadySeconds": _nonnegative(
+                    raw.get(
+                        "startupFaultReadySeconds",
+                        defaults.get("startupFaultReadySeconds", 0),
+                    ),
+                    f"scenario {name} startupFaultReadySeconds",
+                ),
                 "pollIntervalSeconds": _positive(
                     raw.get(
                         "pollIntervalSeconds",
@@ -168,9 +197,30 @@ def load_matrix(path):
                 ],
             }
         )
+        if scenarios[-1]["recoveryTimeoutSeconds"] > 3600:
+            raise ValueError(
+                f"scenario {name} recoveryTimeoutSeconds cannot exceed 3600"
+            )
+        if scenarios[-1]["startupFaultReadySeconds"] > 300:
+            raise ValueError(
+                f"scenario {name} startupFaultReadySeconds cannot exceed 300"
+            )
+        if 0 < scenarios[-1]["startupFaultReadySeconds"] < 60:
+            raise ValueError(
+                f"scenario {name} startupFaultReadySeconds must be at least 60"
+            )
+        if scenarios[-1]["startupFaultReadySeconds"] > 0 and planned_jobs != 1:
+            raise ValueError(
+                f"scenario {name} startup fault-ready mode requires one job"
+            )
     if not scenarios:
         raise ValueError("matrix must contain at least one scenario")
-    return {"path": path, "defaults": defaults, "scenarios": scenarios}
+    return {
+        "path": path,
+        "sha256": matrix_sha256,
+        "defaults": defaults,
+        "scenarios": scenarios,
+    }
 
 
 def scenario_run_id(suite_id, scenario_name, repetition):
@@ -228,6 +278,10 @@ def build_command(
         str(scenario["startupTimeoutSeconds"]),
         "--cleanup-timeout-seconds",
         str(scenario["cleanupTimeoutSeconds"]),
+        "--recovery-timeout-seconds",
+        str(scenario["recoveryTimeoutSeconds"]),
+        "--startup-fault-ready-seconds",
+        str(scenario["startupFaultReadySeconds"]),
         "--poll-interval-seconds",
         str(scenario["pollIntervalSeconds"]),
     ]
@@ -251,7 +305,61 @@ def _write_summary(path, summary):
     with temporary.open("w") as output:
         json.dump(summary, output, indent=2, sort_keys=True)
         output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
     temporary.replace(path)
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _result_path(output_dir, scenario, run_id):
+    prefix = "api-multi-workspace" if scenario.get("multiWorkspace") else "api-corpus"
+    return output_dir / f"{prefix}-{run_id}.json"
+
+
+def _completed_result(path, expected_run_id):
+    try:
+        with path.open() as source:
+            report = json.load(source)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if report.get("runId") != expected_run_id:
+        return None
+    if report.get("checkpoint", {}).get("phase") != "complete":
+        return None
+    if not report.get("endedAt") or not isinstance(report.get("success"), bool):
+        return None
+    return report
+
+
+def _load_resume_summary(
+    path,
+    matrix,
+    suite_id,
+    execute,
+    selected_scenarios,
+    continue_on_error,
+):
+    with path.open() as source:
+        summary = json.load(source)
+    expected = {
+        "schemaVersion": 2,
+        "suiteId": suite_id,
+        "environment": "staging",
+        "matrixSha256": matrix["sha256"],
+        "execute": execute,
+        "selectedScenarios": selected_scenarios,
+        "continueOnError": continue_on_error,
+    }
+    for field, value in expected.items():
+        if summary.get(field) != value:
+            raise ValueError(f"suite resume mismatch for {field}")
+    if not isinstance(summary.get("runs"), list):
+        raise ValueError("suite resume document has invalid runs")
+    return summary
 
 
 def run_matrix(
@@ -264,6 +372,9 @@ def run_matrix(
     continue_on_error=False,
     multi_workspace_runner=DEFAULT_MULTI_WORKSPACE_RUNNER,
     sleep=time.sleep,
+    stop_requested=lambda: None,
+    popen_factory=subprocess.Popen,
+    resume_summary=None,
 ):
     selected = set(selected or [])
     scenarios = [
@@ -275,22 +386,90 @@ def run_matrix(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_path = output_dir / f"suite-{suite_id}.json"
-    summary = {
-        "schemaVersion": 1,
+    summary = resume_summary or {
+        "schemaVersion": 2,
         "suiteId": suite_id,
         "environment": "staging",
         "matrix": str(matrix["path"]),
+        "matrixSha256": matrix["sha256"],
         "startedAt": utc_now(),
         "execute": execute,
+        "selectedScenarios": sorted(selected),
+        "continueOnError": continue_on_error,
         "runs": [],
         "success": True,
     }
+    summary.pop("endedAt", None)
+    summary["resumedAt"] = utc_now() if resume_summary else None
+    summary["success"] = True
+    summary["interrupted"] = False
     _write_summary(summary_path, summary)
 
     stop = False
+    existing = {item.get("runId"): item for item in summary["runs"]}
     for scenario in scenarios:
         for repetition in range(1, scenario["repetitions"] + 1):
             run_id = scenario_run_id(suite_id, scenario["name"], repetition)
+            prior = existing.get(run_id)
+            if prior is not None:
+                if prior.get("status") == "spawn-failed":
+                    summary["success"] = False
+                    if not continue_on_error:
+                        stop = True
+                    if stop:
+                        break
+                    continue
+                if prior.get("status") == "completed":
+                    if execute:
+                        result_report = _completed_result(
+                            _result_path(output_dir, scenario, run_id), run_id
+                        )
+                        if result_report is None:
+                            raise ValueError(
+                                f"completed run {run_id} has no valid complete result"
+                            )
+                        expected_return = 0 if result_report["success"] else 1
+                        if prior.get("returnCode") != expected_return:
+                            raise ValueError(
+                                f"completed run {run_id} disagrees with its result"
+                            )
+                    else:
+                        expected_return = prior.get("returnCode")
+                        if expected_return not in {0, 1}:
+                            raise ValueError(
+                                f"completed dry run {run_id} has invalid return code"
+                            )
+                    if expected_return != 0:
+                        summary["success"] = False
+                        if not continue_on_error:
+                            stop = True
+                    if stop:
+                        break
+                    continue
+                result_report = _completed_result(
+                    _result_path(output_dir, scenario, run_id), run_id
+                )
+                if result_report is None:
+                    raise ValueError(
+                        f"run {run_id} was interrupted without a complete result; "
+                        "use its exact-run cleanup tool before resuming"
+                    )
+                prior.update(
+                    {
+                        "status": "completed",
+                        "endedAt": result_report["endedAt"],
+                        "returnCode": 0 if result_report["success"] else 1,
+                        "reconciledOnResume": True,
+                    }
+                )
+                if not result_report["success"]:
+                    summary["success"] = False
+                    if not continue_on_error:
+                        stop = True
+                _write_summary(summary_path, summary)
+                if stop:
+                    break
+                continue
             command = build_command(
                 runner,
                 matrix,
@@ -300,21 +479,75 @@ def run_matrix(
                 execute,
                 multi_workspace_runner=multi_workspace_runner,
             )
-            started = utc_now()
-            result = subprocess.run(command, check=False)
             run = {
                 "scenario": scenario["name"],
                 "repetition": repetition,
                 "runId": run_id,
                 "plannedJobs": scenario["plannedJobs"],
                 "notes": scenario["notes"],
-                "startedAt": started,
-                "endedAt": utc_now(),
-                "returnCode": result.returncode,
+                "startedAt": utc_now(),
+                "status": "starting",
                 "command": command,
             }
             summary["runs"].append(run)
-            if result.returncode != 0:
+            _write_summary(summary_path, summary)
+            try:
+                process = popen_factory(command)
+            except OSError as error:
+                run.update(
+                    {
+                        "status": "spawn-failed",
+                        "endedAt": utc_now(),
+                        "error": {
+                            "type": type(error).__name__,
+                            "message": str(error),
+                        },
+                    }
+                )
+                summary["success"] = False
+                _write_summary(summary_path, summary)
+                if not continue_on_error:
+                    stop = True
+                    break
+                continue
+            run.update({"status": "running", "pid": process.pid})
+            _write_summary(summary_path, summary)
+            forwarded_signal = None
+            while process.poll() is None:
+                forwarded_signal = stop_requested()
+                if forwarded_signal:
+                    process.send_signal(forwarded_signal)
+                    try:
+                        process.wait(
+                            timeout=scenario["cleanupTimeoutSeconds"] + 30
+                        )
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                        run["cleanupUncertain"] = True
+                    break
+                sleep(0.2)
+            pending_signal = forwarded_signal or stop_requested()
+            run.update(
+                {
+                    "status": "interrupted" if forwarded_signal else "completed",
+                    "endedAt": utc_now(),
+                    "returnCode": process.returncode,
+                }
+            )
+            if pending_signal:
+                if forwarded_signal:
+                    run["forwardedSignal"] = signal.Signals(
+                        forwarded_signal
+                    ).name
+                else:
+                    run["stopObservedAfterChildExit"] = signal.Signals(
+                        pending_signal
+                    ).name
+                summary["interrupted"] = True
+                summary["success"] = False
+                stop = True
+            elif process.returncode != 0:
                 summary["success"] = False
                 if not continue_on_error:
                     stop = True
@@ -342,6 +575,7 @@ def main(argv=None):
     parser.add_argument("--output-dir", default=Path(__file__).with_name("results"))
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
 
     try:
@@ -379,21 +613,41 @@ def main(argv=None):
                 )
         output_dir = Path(args.output_dir).resolve()
         summary_path = output_dir / f"suite-{suite_id}.json"
-        if summary_path.exists():
+        if summary_path.exists() and not args.resume:
             raise ValueError(
-                f"suite result already exists for suite id {suite_id}; use a new id"
+                f"suite result already exists for suite id {suite_id}; "
+                "use --resume or a new id"
             )
+        if args.resume and not summary_path.exists():
+            raise ValueError("--resume requires an existing suite result")
+        resume_summary = (
+            _load_resume_summary(
+                summary_path,
+                matrix,
+                suite_id,
+                args.execute,
+                sorted(args.scenario or []),
+                args.continue_on_error,
+            )
+            if args.resume
+            else None
+        )
         with RunLock(output_dir / f".suite-{suite_id}.lock"):
-            path, summary = run_matrix(
-                matrix=matrix,
-                runner=runner,
-                suite_id=suite_id,
-                output_dir=output_dir,
-                execute=args.execute,
-                selected=args.scenario,
-                continue_on_error=args.continue_on_error,
-                multi_workspace_runner=multi_workspace_runner,
-            )
+            with SignalStop() as stop:
+                path, summary = run_matrix(
+                    matrix=matrix,
+                    runner=runner,
+                    suite_id=suite_id,
+                    output_dir=output_dir,
+                    execute=args.execute,
+                    selected=args.scenario,
+                    continue_on_error=args.continue_on_error,
+                    multi_workspace_runner=multi_workspace_runner,
+                    stop_requested=(
+                        lambda: stop.signum if stop.requested.is_set() else None
+                    ),
+                    resume_summary=resume_summary,
+                )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

@@ -182,7 +182,11 @@ without that assertion the result is not a single-worker packing measurement.
 The service API must support the job's `maxFps` field before FPS sweeps are run.
 
 `run_api_experiment_matrix.py` executes a resumable sequence of scenarios in
-fresh child processes and writes an incrementally updated suite ledger. Start by
+fresh child processes and writes an incrementally updated suite ledger. It
+records each child before spawn and forwards SIGINT/SIGTERM so the child can
+cancel captured jobs. `--resume` is allowed only with the exact matrix digest;
+a completed child report is reconciled, while an ambiguous in-progress child is
+refused until its exact-run cleanup tool has been used. Start by
 copying `workflow-matrix.staging.example.json`, selecting a staging fixture
 source, and dry-running the suite:
 
@@ -241,6 +245,8 @@ After a recovery baseline is clean, use the dry-run-first
 during startup or steady state and relay loss during steady state. Rendering is
 read-only. Its `--execute` mode deletes one exact staging pod after a UID
 recheck, so every live run still requires explicit staging-cluster approval.
+Pair processor fault runs with `--recovery-timeout-seconds`; ordinary capacity
+runs leave it at zero so unexpected requeues remain hard failures.
 
 ## Aggregate processor metrics
 

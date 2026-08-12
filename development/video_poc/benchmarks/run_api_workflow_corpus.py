@@ -11,6 +11,7 @@ import concurrent.futures
 import copy
 import fcntl
 import json
+import math
 import os
 import re
 import signal
@@ -88,10 +89,12 @@ class SignalStop:
     def __init__(self):
         self.requested = threading.Event()
         self.signal_name = None
+        self.signum = None
         self._handlers = {}
 
     def _request_stop(self, signum, _frame):
         self.signal_name = signal.Signals(signum).name
+        self.signum = signum
         self.requested.set()
 
     def __enter__(self):
@@ -164,7 +167,12 @@ def default_run_id():
 
 
 def report_job(job):
-    return {key: job[key] for key in REPORT_JOB_FIELDS if key in job}
+    # Keep every sample immutable even when a test/client mutates a cached job
+    # object in place. This also prevents a later stats update from rewriting
+    # the recovery event's before/running-observed evidence.
+    return {
+        key: copy.deepcopy(job[key]) for key in REPORT_JOB_FIELDS if key in job
+    }
 
 
 def report_source(source):
@@ -181,7 +189,14 @@ def write_report_atomic(path, report):
     with temporary.open("w") as output:
         json.dump(report, output, indent=2, sort_keys=True)
         output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
     temporary.replace(path)
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def recovery_checkpoint(report):
@@ -435,6 +450,8 @@ def run_benchmark(
     poll_interval_seconds,
     startup_timeout_seconds,
     cleanup_timeout_seconds,
+    recovery_timeout_seconds=0.0,
+    startup_fault_ready_seconds=0.0,
     require_single_processor=False,
     checkpoint=None,
     should_stop=None,
@@ -451,6 +468,8 @@ def run_benchmark(
         "workspace": client.workspace,
         "source": report_source(source),
         "plannedConcurrency": len(plan),
+        "recoveryTimeoutSeconds": recovery_timeout_seconds,
+        "startupFaultReadySeconds": startup_fault_ready_seconds,
         "profiles": [
             {
                 key: item[key]
@@ -486,6 +505,206 @@ def run_benchmark(
             if fail_run:
                 raise BenchmarkInterrupted("checkpoint write failure") from error
 
+    def recovery_candidates(previous_jobs, established):
+        candidates = {}
+        for job_id, current in jobs.items():
+            previous = previous_jobs.get(job_id) or {}
+            previous_attempts = int(previous.get("attempts") or 0)
+            current_attempts = int(current.get("attempts") or 0)
+            processor_changed = bool(previous.get("processorId")) and (
+                current.get("processorId") != previous.get("processorId")
+            )
+            ownership_observed = (
+                established
+                or previous.get("state") in {"claimed", "running"}
+                or bool(previous.get("processorId"))
+            )
+            if ownership_observed and (
+                (
+                    current.get("state") not in {"claimed", "running"}
+                    and previous.get("state") in {"claimed", "running"}
+                )
+                or processor_changed
+                or current_attempts > previous_attempts
+            ):
+                candidates[job_id] = report_job(previous or current)
+        return candidates
+
+    def frame_count(job):
+        value = (job.get("stats") or {}).get("frames")
+        return value if isinstance(value, (int, float)) else None
+
+    def recover_running_jobs(source_phase, previous_jobs, established):
+        """Wait for a non-terminal requeue without hiding its downtime.
+
+        Recovery tolerance is opt-in. Every poll remains in the sample stream,
+        and the event records the exact before/after processor and attempt
+        metadata so a fault run can measure re-placement rather than merely
+        surviving it.
+        """
+
+        nonlocal jobs
+        affected = recovery_candidates(previous_jobs, established)
+        if not affected:
+            return None
+        if any(job.get("state") in TERMINAL_STATES for job in jobs.values()):
+            return False
+        if recovery_timeout_seconds <= 0:
+            return False
+
+        started = monotonic()
+        event = {
+            "index": len(report.setdefault("recoveries", [])) + 1,
+            "sourcePhase": source_phase,
+            "startedAt": utc_now(),
+            "startedElapsedSeconds": round(started - benchmark_started, 3),
+            "jobIds": sorted(affected),
+            "before": [affected[job_id] for job_id in sorted(affected)],
+            "firstObserved": [
+                report_job(jobs[job_id]) for job_id in sorted(affected)
+            ],
+        }
+        report["recoveries"].append(event)
+        save_checkpoint("recovery")
+        deadline = started + recovery_timeout_seconds
+        running_baseline = None
+        if {job.get("state") for job in jobs.values()} == {"running"}:
+            running_baseline = {
+                job_id: frame_count(jobs[job_id]) for job_id in affected
+            }
+            event["runningObservedAt"] = utc_now()
+            event["runningObservedElapsedSeconds"] = round(
+                monotonic() - benchmark_started, 3
+            )
+            event["runningObserved"] = [
+                report_job(jobs[job_id]) for job_id in sorted(affected)
+            ]
+            save_checkpoint("recovery")
+        while monotonic() < deadline:
+            should_stop()
+            sleep(min(poll_interval_seconds, deadline - monotonic()))
+            should_stop()
+            previous_recovery_jobs = {
+                job_id: report_job(job) for job_id, job in jobs.items()
+            }
+            jobs = _poll_jobs(client, list(jobs))
+            report["samples"].append(
+                {
+                    "phase": "recovery",
+                    "elapsedSeconds": round(monotonic() - benchmark_started, 3),
+                    "jobs": [report_job(job) for job in jobs.values()],
+                }
+            )
+            save_checkpoint("recovery")
+            secondary = set(
+                recovery_candidates(previous_recovery_jobs, established=True)
+            ) - set(affected)
+            if secondary:
+                event.update(
+                    {
+                        "outcome": "secondary-requeue",
+                        "endedAt": utc_now(),
+                        "observedControlPlaneRecoverySeconds": round(
+                            monotonic() - started, 3
+                        ),
+                        "secondaryAffectedJobIds": sorted(secondary),
+                        "after": [report_job(job) for job in jobs.values()],
+                    }
+                )
+                save_checkpoint("recovery")
+                return False
+            states = {job.get("state") for job in jobs.values()}
+            if states & TERMINAL_STATES:
+                event.update(
+                    {
+                        "outcome": "terminal",
+                        "endedAt": utc_now(),
+                        "observedControlPlaneRecoverySeconds": round(
+                            monotonic() - started, 3
+                        ),
+                        "after": [report_job(job) for job in jobs.values()],
+                    }
+                )
+                save_checkpoint("recovery")
+                return False
+            if states == {"running"}:
+                if running_baseline is None:
+                    running_baseline = {
+                        job_id: frame_count(jobs[job_id]) for job_id in affected
+                    }
+                    event["runningObservedAt"] = utc_now()
+                    event["runningObservedElapsedSeconds"] = round(
+                        monotonic() - benchmark_started, 3
+                    )
+                    event["runningObserved"] = [
+                        report_job(jobs[job_id]) for job_id in sorted(affected)
+                    ]
+                    save_checkpoint("recovery")
+                    continue
+                progress = {
+                    job_id: (
+                        frame_count(jobs[job_id]) is not None
+                        and running_baseline[job_id] is not None
+                        and frame_count(jobs[job_id]) > running_baseline[job_id]
+                    )
+                    for job_id in affected
+                }
+                if all(progress.values()):
+                    assertions = {}
+                    for job_id, before in affected.items():
+                        after = jobs[job_id]
+                        previous_attempts = int(before.get("attempts") or 0)
+                        current_attempts = int(after.get("attempts") or 0)
+                        assertions[job_id] = {
+                            "processorChanged": bool(before.get("processorId"))
+                            and after.get("processorId")
+                            != before.get("processorId"),
+                            "attemptAdvanced": current_attempts
+                            > previous_attempts,
+                            "framesAdvancedAfterRunning": progress[job_id],
+                        }
+                        assertions[job_id]["requeueIdentityChanged"] = (
+                            assertions[job_id]["processorChanged"]
+                            or assertions[job_id]["attemptAdvanced"]
+                        )
+                    if all(
+                        item["requeueIdentityChanged"]
+                        and item["framesAdvancedAfterRunning"]
+                        for item in assertions.values()
+                    ):
+                        event.update(
+                            {
+                                "outcome": "recovered",
+                                "progressVerifiedAt": utc_now(),
+                                "endedAt": utc_now(),
+                                "observedControlPlaneRecoverySeconds": round(
+                                    monotonic() - started, 3
+                                ),
+                                "after": [
+                                    report_job(jobs[job_id])
+                                    for job_id in sorted(affected)
+                                ],
+                                "assertions": assertions,
+                            }
+                        )
+                        save_checkpoint(source_phase)
+                        return True
+            else:
+                running_baseline = None
+
+        event.update(
+            {
+                "outcome": "timeout",
+                "endedAt": utc_now(),
+                "observedControlPlaneRecoverySeconds": round(
+                    monotonic() - started, 3
+                ),
+                "after": [report_job(job) for job in jobs.values()],
+            }
+        )
+        save_checkpoint("recovery")
+        return False
+
     save_checkpoint("initialized")
     try:
         waves = {}
@@ -502,6 +721,9 @@ def run_benchmark(
                     should_stop()
                     sleep(min(poll_interval_seconds, target - monotonic()))
                     should_stop()
+                    previous_jobs = {
+                        job_id: report_job(job) for job_id, job in jobs.items()
+                    }
                     jobs = _poll_jobs(client, list(jobs))
                     report["samples"].append(
                         {
@@ -513,7 +735,10 @@ def run_benchmark(
                         }
                     )
                     save_checkpoint("baseline")
-                    if any(job.get("state") != "running" for job in jobs.values()):
+                    recovery = recover_running_jobs(
+                        "baseline", previous_jobs, established=True
+                    )
+                    if recovery is False:
                         success = False
                         report["errors"].append(
                             {
@@ -560,8 +785,12 @@ def run_benchmark(
 
             startup_deadline = monotonic() + startup_timeout_seconds
             startup_phase = "startup" if wave_index == 0 else "arrival"
+            fault_ready_emitted = False
             while True:
                 should_stop()
+                previous_jobs = {
+                    job_id: report_job(job) for job_id, job in jobs.items()
+                }
                 jobs = _poll_jobs(client, list(jobs))
                 report["samples"].append(
                     {
@@ -571,6 +800,37 @@ def run_benchmark(
                     }
                 )
                 save_checkpoint(startup_phase)
+                if (
+                    startup_fault_ready_seconds > 0
+                    and not fault_ready_emitted
+                    and any(
+                        job.get("state") == "claimed" and job.get("processorId")
+                        for job in jobs.values()
+                    )
+                    and not any(
+                        job.get("state") == "running" for job in jobs.values()
+                    )
+                ):
+                    fault_ready_emitted = True
+                    report["startupFaultReadyAt"] = utc_now()
+                    save_checkpoint("fault-ready")
+                    pause_deadline = monotonic() + startup_fault_ready_seconds
+                    while monotonic() < pause_deadline:
+                        should_stop()
+                        sleep(min(0.5, pause_deadline - monotonic()))
+                    should_stop()
+                recovery = recover_running_jobs(
+                    startup_phase, previous_jobs, established=False
+                )
+                if recovery is False:
+                    success = False
+                    report["errors"].append(
+                        {
+                            "phase": startup_phase,
+                            "error": "job did not recover during startup",
+                        }
+                    )
+                    break
                 states = {job.get("state") for job in jobs.values()}
                 if states == {"running"}:
                     break
@@ -601,6 +861,9 @@ def run_benchmark(
                 should_stop()
                 sleep(min(poll_interval_seconds, measurement_deadline - monotonic()))
                 should_stop()
+                previous_jobs = {
+                    job_id: report_job(job) for job_id, job in jobs.items()
+                }
                 jobs = _poll_jobs(client, list(jobs))
                 report["samples"].append(
                     {
@@ -610,12 +873,19 @@ def run_benchmark(
                     }
                 )
                 save_checkpoint("measurement")
-                if any(job.get("state") != "running" for job in jobs.values()):
+                recovery = recover_running_jobs(
+                    "measurement", previous_jobs, established=True
+                )
+                if recovery is False:
                     success = False
                     report["errors"].append(
                         {
                             "phase": "measurement",
-                            "error": "job stopped during measurement",
+                            "error": (
+                                "job did not recover during measurement"
+                                if recovery_timeout_seconds > 0
+                                else "job stopped during measurement"
+                            ),
                         }
                     )
                     break
@@ -689,8 +959,18 @@ def positive_float(parser, name, value):
         parsed = float(value)
     except ValueError:
         parser.error(f"{name} must be a number")
-    if parsed <= 0:
+    if not math.isfinite(parsed) or parsed <= 0:
         parser.error(f"{name} must be greater than zero")
+    return parsed
+
+
+def nonnegative_float(parser, name, value):
+    try:
+        parsed = float(value)
+    except ValueError:
+        parser.error(f"{name} must be a number")
+    if not math.isfinite(parsed) or parsed < 0:
+        parser.error(f"{name} must be finite and nonnegative")
     return parsed
 
 
@@ -722,6 +1002,22 @@ def parse_args(argv=None):
     parser.add_argument("--poll-interval-seconds", default="2")
     parser.add_argument("--startup-timeout-seconds", default="120")
     parser.add_argument("--cleanup-timeout-seconds", default="30")
+    parser.add_argument(
+        "--recovery-timeout-seconds",
+        default="0",
+        help=(
+            "allow queued/claimed jobs this many seconds to return to running "
+            "during baseline/measurement; 0 preserves fail-fast capacity runs"
+        ),
+    )
+    parser.add_argument(
+        "--startup-fault-ready-seconds",
+        default="0",
+        help=(
+            "after a claimed processor is checkpointed, hold a fault-ready "
+            "window this many seconds before polling again; staging faults only"
+        ),
+    )
     parser.add_argument("--run-id", default=default_run_id())
     parser.add_argument("--output-dir", default=Path(__file__).with_name("results"))
     parser.add_argument(
@@ -751,6 +1047,22 @@ def parse_args(argv=None):
     ):
         option = f"--{name.replace('_', '-')}"
         setattr(args, name, positive_float(parser, option, getattr(args, name)))
+    args.recovery_timeout_seconds = nonnegative_float(
+        parser,
+        "--recovery-timeout-seconds",
+        args.recovery_timeout_seconds,
+    )
+    args.startup_fault_ready_seconds = nonnegative_float(
+        parser,
+        "--startup-fault-ready-seconds",
+        args.startup_fault_ready_seconds,
+    )
+    if args.recovery_timeout_seconds > 3600:
+        parser.error("--recovery-timeout-seconds cannot exceed 3600")
+    if args.startup_fault_ready_seconds > 300:
+        parser.error("--startup-fault-ready-seconds cannot exceed 300")
+    if 0 < args.startup_fault_ready_seconds < 60:
+        parser.error("--startup-fault-ready-seconds must be at least 60 when enabled")
     if args.max_fps is not None:
         args.max_fps = positive_float(parser, "--max-fps", args.max_fps)
     try:
@@ -779,6 +1091,13 @@ def main(argv=None):
         )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    if args.startup_fault_ready_seconds > 0 and len(plan) != 1:
+        print(
+            "error: --startup-fault-ready-seconds requires exactly one job",
+            file=sys.stderr,
+        )
         return 2
 
     if not args.execute and not args.list_sources:
@@ -842,6 +1161,8 @@ def main(argv=None):
                 poll_interval_seconds=args.poll_interval_seconds,
                 startup_timeout_seconds=args.startup_timeout_seconds,
                 cleanup_timeout_seconds=args.cleanup_timeout_seconds,
+                recovery_timeout_seconds=args.recovery_timeout_seconds,
+                startup_fault_ready_seconds=args.startup_fault_ready_seconds,
                 require_single_processor=args.require_single_processor,
                 checkpoint=lambda value: write_report_atomic(
                     output_path, recovery_checkpoint(value)
