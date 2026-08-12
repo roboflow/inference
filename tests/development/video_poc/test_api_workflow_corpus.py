@@ -12,6 +12,7 @@ sys.path.insert(0, str(BENCHMARK_DIR))
 import run_api_workflow_corpus as runner  # noqa: E402
 from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import (  # noqa: E402
+    BenchmarkInterrupted,
     build_run_plan,
     idempotency_key,
     parse_workload,
@@ -19,6 +20,7 @@ from run_api_workflow_corpus import (  # noqa: E402
     run_benchmark,
     select_source,
     validate_api_base,
+    write_report_atomic,
 )
 
 MANIFEST = BENCHMARK_DIR / "workflows" / "manifest.json"
@@ -128,6 +130,15 @@ def test_report_job_is_an_allowlist_that_drops_future_credentials():
     ) == {"id": "job-a", "state": "running", "stats": {"fps": 30}}
 
 
+def test_atomic_report_writer_replaces_complete_document(tmp_path):
+    path = tmp_path / "report.json"
+    write_report_atomic(path, {"schemaVersion": 2, "samples": [1]})
+    write_report_atomic(path, {"schemaVersion": 2, "samples": [1, 2]})
+
+    assert json.loads(path.read_text()) == {"schemaVersion": 2, "samples": [1, 2]}
+    assert not path.with_suffix(".json.tmp").exists()
+
+
 class FakeClock:
     def __init__(self):
         self.value = 0.0
@@ -229,6 +240,72 @@ def test_run_benchmark_starts_measures_and_cleans_up_every_job():
         "measurement",
     }
     assert all(start["httpStatus"] == 201 for start in report["starts"])
+
+
+def test_run_benchmark_checkpoints_every_poll_and_on_completion():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+    checkpoints = []
+
+    report = run_benchmark(
+        client=FakeClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="checkpointed",
+        duration_seconds=2,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        checkpoint=lambda value: checkpoints.append(
+            json.loads(json.dumps(value))
+        ),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    sampled_phases = [sample["phase"] for sample in report["samples"]]
+    checkpoint_phases = [item["checkpoint"]["phase"] for item in checkpoints]
+    for phase in sampled_phases:
+        assert checkpoint_phases.count(phase) >= sampled_phases.count(phase)
+    assert checkpoint_phases[0] == "initialized"
+    assert checkpoint_phases[-1] == "complete"
+    assert checkpoints[-1]["success"] is True
+
+
+def test_stop_request_reaches_cleanup_and_records_interruption():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    def stop_after_start():
+        raise BenchmarkInterrupted("SIGTERM")
+
+    report = run_benchmark(
+        client=FakeClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="interrupted",
+        duration_seconds=2,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        should_stop=stop_after_start,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["interrupted"] is True
+    assert report["success"] is False
+    assert report["errors"][0] == {
+        "phase": "run",
+        "error": "interrupted by SIGTERM",
+    }
+    assert {job["state"] for job in report["jobs"]} == {"cancelled"}
 
 
 def test_partial_start_failure_still_cancels_started_jobs():

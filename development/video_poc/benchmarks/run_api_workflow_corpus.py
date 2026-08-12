@@ -12,7 +12,9 @@ import copy
 import json
 import os
 import re
+import signal
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -75,6 +77,36 @@ class VideoServiceError(RuntimeError):
         self.payload = payload
 
 
+class BenchmarkInterrupted(RuntimeError):
+    """Raised at a safe point after SIGINT or SIGTERM requests cleanup."""
+
+
+class SignalStop:
+    """Turn process stop signals into a flag so the runner reaches ``finally``."""
+
+    def __init__(self):
+        self.requested = threading.Event()
+        self.signal_name = None
+        self._handlers = {}
+
+    def _request_stop(self, signum, _frame):
+        self.signal_name = signal.Signals(signum).name
+        self.requested.set()
+
+    def __enter__(self):
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            self._handlers[signum] = signal.signal(signum, self._request_stop)
+        return self
+
+    def __exit__(self, _type, _value, _traceback):
+        for signum, handler in self._handlers.items():
+            signal.signal(signum, handler)
+
+    def raise_if_requested(self):
+        if self.requested.is_set():
+            raise BenchmarkInterrupted(self.signal_name or "signal")
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -112,6 +144,17 @@ def report_job(job):
 
 def report_source(source):
     return {key: source[key] for key in REPORT_SOURCE_FIELDS if key in source}
+
+
+def write_report_atomic(path, report):
+    """Persist an already-redacted report without exposing partial JSON."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w") as output:
+        json.dump(report, output, indent=2, sort_keys=True)
+        output.write("\n")
+    temporary.replace(path)
 
 
 def parse_workload(value):
@@ -348,9 +391,13 @@ def run_benchmark(
     startup_timeout_seconds,
     cleanup_timeout_seconds,
     require_single_processor=False,
+    checkpoint=None,
+    should_stop=None,
     sleep=time.sleep,
     monotonic=time.monotonic,
 ):
+    checkpoint = checkpoint or (lambda _report: None)
+    should_stop = should_stop or (lambda: None)
     report = {
         "schemaVersion": 2,
         "runId": run_id,
@@ -383,6 +430,13 @@ def run_benchmark(
     benchmark_started = monotonic()
     success = True
     interrupted = False
+
+    def save_checkpoint(phase):
+        report["checkpoint"] = {"phase": phase, "updatedAt": utc_now()}
+        report["jobs"] = [report_job(job) for job in jobs.values()]
+        checkpoint(report)
+
+    save_checkpoint("initialized")
     try:
         waves = {}
         for item in plan:
@@ -395,7 +449,9 @@ def run_benchmark(
             if baseline_started is not None:
                 target = baseline_started + start_after
                 while monotonic() < target:
+                    should_stop()
                     sleep(min(poll_interval_seconds, target - monotonic()))
+                    should_stop()
                     jobs = _poll_jobs(client, list(jobs))
                     report["samples"].append(
                         {
@@ -406,6 +462,7 @@ def run_benchmark(
                             "jobs": [report_job(job) for job in jobs.values()],
                         }
                     )
+                    save_checkpoint("baseline")
                     if any(job.get("state") != "running" for job in jobs.values()):
                         success = False
                         report["errors"].append(
@@ -439,6 +496,7 @@ def run_benchmark(
                         "job": report_job(job),
                     }
                 )
+            save_checkpoint("started")
             if start_errors:
                 success = False
                 report["errors"].extend(start_errors)
@@ -447,6 +505,7 @@ def run_benchmark(
             startup_deadline = monotonic() + startup_timeout_seconds
             startup_phase = "startup" if wave_index == 0 else "arrival"
             while True:
+                should_stop()
                 jobs = _poll_jobs(client, list(jobs))
                 report["samples"].append(
                     {
@@ -455,6 +514,7 @@ def run_benchmark(
                         "jobs": [report_job(job) for job in jobs.values()],
                     }
                 )
+                save_checkpoint(startup_phase)
                 states = {job.get("state") for job in jobs.values()}
                 if states == {"running"}:
                     break
@@ -474,6 +534,7 @@ def run_benchmark(
                     )
                     break
                 sleep(poll_interval_seconds)
+                should_stop()
             if baseline_started is None and success:
                 baseline_started = monotonic()
 
@@ -481,7 +542,9 @@ def run_benchmark(
             report["measurementStartedAt"] = utc_now()
             measurement_deadline = monotonic() + duration_seconds
             while monotonic() < measurement_deadline:
+                should_stop()
                 sleep(min(poll_interval_seconds, measurement_deadline - monotonic()))
+                should_stop()
                 jobs = _poll_jobs(client, list(jobs))
                 report["samples"].append(
                     {
@@ -490,6 +553,7 @@ def run_benchmark(
                         "jobs": [report_job(job) for job in jobs.values()],
                     }
                 )
+                save_checkpoint("measurement")
                 if any(job.get("state") != "running" for job in jobs.values()):
                     success = False
                     report["errors"].append(
@@ -500,15 +564,19 @@ def run_benchmark(
                     )
                     break
             report["measurementEndedAt"] = utc_now()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, BenchmarkInterrupted) as error:
         interrupted = True
         success = False
-        report["errors"].append({"phase": "run", "error": "interrupted"})
+        detail = str(error)
+        message = "interrupted" if not detail else f"interrupted by {detail}"
+        report["errors"].append({"phase": "run", "error": message})
+        save_checkpoint("interrupted")
     except Exception as error:
         success = False
         report["errors"].append({"phase": "run", "error": str(error)})
     finally:
         report["cancelErrors"] = _cancel_jobs(client, jobs)
+        save_checkpoint("cleanup-requested")
         cleanup_deadline = monotonic() + cleanup_timeout_seconds
         while jobs and monotonic() < cleanup_deadline:
             try:
@@ -517,6 +585,7 @@ def run_benchmark(
                 success = False
                 report["errors"].append({"phase": "cleanup", "error": str(error)})
                 break
+            save_checkpoint("cleanup")
             if all(job.get("state") in TERMINAL_STATES for job in jobs.values()):
                 break
             sleep(poll_interval_seconds)
@@ -549,6 +618,7 @@ def run_benchmark(
         report["interrupted"] = interrupted
         report["success"] = success
         report["endedAt"] = utc_now()
+        save_checkpoint("complete")
     return report
 
 
@@ -680,6 +750,8 @@ def main(argv=None):
         print(f"error: {args.api_key_env} is not set", file=sys.stderr)
         return 2
     client = VideoServiceClient(args.api_base, args.workspace, api_key)
+    output_dir = Path(args.output_dir).resolve()
+    output_path = output_dir / f"api-corpus-{args.run_id}.json"
     try:
         sources = client.list_sources()
         if args.list_sources:
@@ -690,27 +762,25 @@ def main(argv=None):
             )
             return 0
         source = select_source(sources, args.source_id, args.source_name)
-        report = run_benchmark(
-            client=client,
-            source=source,
-            plan=plan,
-            run_id=args.run_id,
-            duration_seconds=args.duration_seconds,
-            poll_interval_seconds=args.poll_interval_seconds,
-            startup_timeout_seconds=args.startup_timeout_seconds,
-            cleanup_timeout_seconds=args.cleanup_timeout_seconds,
-            require_single_processor=args.require_single_processor,
-        )
+        with SignalStop() as stop:
+            report = run_benchmark(
+                client=client,
+                source=source,
+                plan=plan,
+                run_id=args.run_id,
+                duration_seconds=args.duration_seconds,
+                poll_interval_seconds=args.poll_interval_seconds,
+                startup_timeout_seconds=args.startup_timeout_seconds,
+                cleanup_timeout_seconds=args.cleanup_timeout_seconds,
+                require_single_processor=args.require_single_processor,
+                checkpoint=lambda value: write_report_atomic(output_path, value),
+                should_stop=stop.raise_if_requested,
+            )
     except (ValueError, VideoServiceError, urllib.error.URLError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
-    output_dir = Path(args.output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"api-corpus-{args.run_id}.json"
-    with output_path.open("w") as output:
-        json.dump(report, output, indent=2, sort_keys=True)
-        output.write("\n")
+    write_report_atomic(output_path, report)
     print(output_path)
     return 0 if report["success"] else 1
 
