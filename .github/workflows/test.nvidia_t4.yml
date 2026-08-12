@@ -57,6 +57,10 @@ jobs:
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
 
+      - name: Show NVIDIA driver - GPU
+        if: ${{ github.event.inputs.test_name == '' }}
+        run: nvidia-smi
+
       - name: Verify CUDA OpenCV - GPU
         if: ${{ github.event.inputs.test_name == '' }}
         run: |

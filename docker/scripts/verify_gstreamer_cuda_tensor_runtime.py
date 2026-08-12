@@ -212,9 +212,19 @@ def main() -> None:
         h265_path = root / "test.h265"
         jpeg_path = root / "test.jpg"
         changing_h264_path = root / "changing.h264"
-        _create_h26x(h264_path, "nvh264enc", "h264parse")
-        _create_h26x(h265_path, "nvh265enc", "h265parse")
-        _create_h26x(changing_h264_path, "nvh264enc", "h264parse", pattern="ball")
+        # The legacy nvh264enc/nvh265enc elements only speak the pre-SDK-10
+        # NVENC preset GUIDs, which CUDA-13-era drivers removed - on such
+        # hosts EVERY preset value fails set_format with "Selected preset not
+        # supported" (the element's property enum has no modern value to
+        # switch to). The modern nvcudah26xenc elements from the same nvcodec
+        # plugin use the supported p1-p7 preset API; pin p4 (the balanced
+        # middle) so the fixture pipeline is deterministic across driver
+        # generations.
+        _create_h26x(h264_path, "nvcudah264enc preset=p4", "h264parse")
+        _create_h26x(h265_path, "nvcudah265enc preset=p4", "h265parse")
+        _create_h26x(
+            changing_h264_path, "nvcudah264enc preset=p4", "h264parse", pattern="ball"
+        )
         _create_jpeg(jpeg_path)
         _validate_source(h264_path, minimum_frames=5)
         _validate_source(h265_path, minimum_frames=5)
