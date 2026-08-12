@@ -463,6 +463,20 @@ not implemented yet.
   or CPU-side knee, not an L40S compute knee. The 24-job value remains a
   benchmark admission ceiling, not certified capacity; further curves must use
   API-enforced source FPS and the new per-job counters/histogram.
+  A model-for-model CPU curve used the exact same immutable
+  `microsoft-coco-obj-det/8` workflow specification with output disabled. C1
+  passed at 9.417 delivered FPS and 39.12 ms sampled latency p95; c2 passed at
+  18.570 aggregate FPS, 2.9% spread, and 43.38 ms. C3 retained 97.6% or better
+  of c1 throughput per stream and had only 3.5% spread at 27.403 aggregate FPS,
+  but narrowly failed the strict 50 ms latency gate at 55.72 ms. C4 reached the
+  CPU limit and failed clearly: 30.842 aggregate FPS, 37.8% spread, and 190.58
+  ms latency. Prometheus container CPU averaged 1.287 cores at c1, 2.360 at c2,
+  and 4.953 at c4, where it hit the 8-core limit. Therefore two streams is the
+  current strict-SLO CPU packing point, three is a viable approximately-9-FPS
+  throughput tier if the latency budget is relaxed slightly, and four is beyond
+  the safe boundary. This public model's architecture is not proven to be YOLO;
+  keep the result labeled by immutable model ID and add an explicitly provisioned
+  YOLO nano workflow before making YOLO-specific product recommendations.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
