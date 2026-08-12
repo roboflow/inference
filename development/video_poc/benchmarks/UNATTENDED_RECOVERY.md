@@ -1,9 +1,12 @@
 # Unattended run recovery
 
-The staging API corpus runner atomically replaces its JSON report after job
-creation and after every status poll. A reader therefore sees either the prior
-complete checkpoint or the new complete checkpoint, never partially written
-JSON. Reports remain credential-free: API keys are read only from the configured
+The staging API corpus runner atomically replaces its JSON recovery checkpoint
+after job creation and after every status poll. A reader therefore sees either
+the prior complete checkpoint or the new complete checkpoint, never partially
+written JSON. The checkpoint is bounded: it retains job/start identity, the
+latest sample, and a sample count instead of rewriting the complete measurement
+history on every poll. A successful run replaces it with the complete report.
+Reports remain credential-free: API keys are read only from the configured
 environment variable, and job/source fields use explicit allowlists.
 
 During an executing run, the runner handles both `SIGINT` and `SIGTERM` as a

@@ -9,6 +9,7 @@ or written to the result report.
 import argparse
 import concurrent.futures
 import copy
+import fcntl
 import json
 import os
 import re
@@ -107,6 +108,30 @@ class SignalStop:
             raise BenchmarkInterrupted(self.signal_name or "signal")
 
 
+class RunLock:
+    """Hold a non-blocking advisory lock for one run/suite identifier."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._file = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = self.path.open("a+")
+        try:
+            fcntl.flock(self._file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            self._file.close()
+            self._file = None
+            raise ValueError(f"run is already active: {self.path.stem}") from error
+        return self
+
+    def __exit__(self, _type, _value, _traceback):
+        if self._file is not None:
+            fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
+            self._file.close()
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -150,11 +175,27 @@ def write_report_atomic(path, report):
     """Persist an already-redacted report without exposing partial JSON."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary = path.with_suffix(
+        path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
+    )
     with temporary.open("w") as output:
         json.dump(report, output, indent=2, sort_keys=True)
         output.write("\n")
     temporary.replace(path)
+
+
+def recovery_checkpoint(report):
+    """Bounded checkpoint for cleanup without rewriting the sample history."""
+    bounded = {
+        key: value
+        for key, value in report.items()
+        if key not in {"samples", "jobs"}
+    }
+    bounded["sampleCount"] = len(report.get("samples") or [])
+    if report.get("samples"):
+        bounded["lastSample"] = report["samples"][-1]
+    bounded["jobs"] = list(report.get("jobs") or [])
+    return bounded
 
 
 def parse_workload(value):
@@ -328,7 +369,7 @@ class VideoServiceClient:
         return payload["job"]
 
 
-def _start_jobs(client, source_id, plan, run_id):
+def _start_jobs(client, source_id, plan, run_id, on_started=None):
     def start(item):
         status, job = client.start_job(source_id, item, idempotency_key(run_id, item))
         return item, status, job
@@ -337,9 +378,13 @@ def _start_jobs(client, source_id, plan, run_id):
     errors = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(plan)) as executor:
         futures = {executor.submit(start, item): item for item in plan}
-        for future, item in ((future, futures[future]) for future in futures):
+        for future in concurrent.futures.as_completed(futures):
+            item = futures[future]
             try:
-                started.append(future.result())
+                result = future.result()
+                started.append(result)
+                if on_started is not None:
+                    on_started(*result)
             except Exception as error:
                 errors.append(
                     {
@@ -431,10 +476,15 @@ def run_benchmark(
     success = True
     interrupted = False
 
-    def save_checkpoint(phase):
+    def save_checkpoint(phase, fail_run=True):
         report["checkpoint"] = {"phase": phase, "updatedAt": utc_now()}
         report["jobs"] = [report_job(job) for job in jobs.values()]
-        checkpoint(report)
+        try:
+            checkpoint(report)
+        except Exception as error:
+            report["checkpointError"] = "checkpoint write failed"
+            if fail_run:
+                raise BenchmarkInterrupted("checkpoint write failure") from error
 
     save_checkpoint("initialized")
     try:
@@ -475,9 +525,6 @@ def run_benchmark(
             if not success:
                 break
 
-            started, start_errors = _start_jobs(
-                client, source["id"], wave_plan, run_id
-            )
             report.setdefault("waves", []).append(
                 {
                     "index": wave_index,
@@ -486,7 +533,8 @@ def run_benchmark(
                     "ordinals": [item["ordinal"] for item in wave_plan],
                 }
             )
-            for item, status, job in started:
+
+            def record_started(item, status, job):
                 jobs[job["id"]] = job
                 report.setdefault("starts", []).append(
                     {
@@ -496,7 +544,15 @@ def run_benchmark(
                         "job": report_job(job),
                     }
                 )
-            save_checkpoint("started")
+                save_checkpoint("started")
+
+            _started, start_errors = _start_jobs(
+                client,
+                source["id"],
+                wave_plan,
+                run_id,
+                on_started=record_started,
+            )
             if start_errors:
                 success = False
                 report["errors"].extend(start_errors)
@@ -576,7 +632,7 @@ def run_benchmark(
         report["errors"].append({"phase": "run", "error": str(error)})
     finally:
         report["cancelErrors"] = _cancel_jobs(client, jobs)
-        save_checkpoint("cleanup-requested")
+        save_checkpoint("cleanup-requested", fail_run=False)
         cleanup_deadline = monotonic() + cleanup_timeout_seconds
         while jobs and monotonic() < cleanup_deadline:
             try:
@@ -585,7 +641,7 @@ def run_benchmark(
                 success = False
                 report["errors"].append({"phase": "cleanup", "error": str(error)})
                 break
-            save_checkpoint("cleanup")
+            save_checkpoint("cleanup", fail_run=False)
             if all(job.get("state") in TERMINAL_STATES for job in jobs.values()):
                 break
             sleep(poll_interval_seconds)
@@ -616,9 +672,15 @@ def run_benchmark(
                 }
             )
         report["interrupted"] = interrupted
+        if report.get("checkpointError"):
+            success = False
+            if not any(item.get("phase") == "checkpoint" for item in report["errors"]):
+                report["errors"].append(
+                    {"phase": "checkpoint", "error": report["checkpointError"]}
+                )
         report["success"] = success
         report["endedAt"] = utc_now()
-        save_checkpoint("complete")
+        save_checkpoint("complete", fail_run=False)
     return report
 
 
@@ -752,6 +814,13 @@ def main(argv=None):
     client = VideoServiceClient(args.api_base, args.workspace, api_key)
     output_dir = Path(args.output_dir).resolve()
     output_path = output_dir / f"api-corpus-{args.run_id}.json"
+    if not args.list_sources and output_path.exists():
+        print(
+            f"error: result already exists for run id {args.run_id}; "
+            "use a new run id or the exact-run cleanup tool",
+            file=sys.stderr,
+        )
+        return 2
     try:
         sources = client.list_sources()
         if args.list_sources:
@@ -762,7 +831,8 @@ def main(argv=None):
             )
             return 0
         source = select_source(sources, args.source_id, args.source_name)
-        with SignalStop() as stop:
+        lock_path = output_dir / f".api-corpus-{args.run_id}.lock"
+        with RunLock(lock_path), SignalStop() as stop:
             report = run_benchmark(
                 client=client,
                 source=source,
@@ -773,7 +843,9 @@ def main(argv=None):
                 startup_timeout_seconds=args.startup_timeout_seconds,
                 cleanup_timeout_seconds=args.cleanup_timeout_seconds,
                 require_single_processor=args.require_single_processor,
-                checkpoint=lambda value: write_report_atomic(output_path, value),
+                checkpoint=lambda value: write_report_atomic(
+                    output_path, recovery_checkpoint(value)
+                ),
                 should_stop=stop.raise_if_requested,
             )
     except (ValueError, VideoServiceError, urllib.error.URLError) as error:

@@ -43,6 +43,18 @@ class FakeClient:
         return dict(self.jobs[job_id])
 
 
+class TransientInspectClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.first = True
+
+    def get_job(self, job_id):
+        if job_id == "job-active" and self.first:
+            self.first = False
+            raise RuntimeError("transient inspect failure")
+        return super().get_job(job_id)
+
+
 def write_checkpoint(tmp_path, run_id="run-001", api_base="https://api.roboflow.one"):
     path = tmp_path / f"api-corpus-{run_id}.json"
     path.write_text(
@@ -97,4 +109,33 @@ def test_cleanup_only_cancels_active_captured_jobs():
     assert result["success"] is True
     assert result["expectedRecoveryState"] == "all captured jobs terminal"
     assert result["actualRecoveryState"] == "all captured jobs terminal"
+    assert {job["state"] for job in result["jobs"]} == {"cancelled", "completed"}
+
+
+def test_cleanup_still_cancels_exact_captured_job_after_transient_inspect_failure():
+    client = TransientInspectClient()
+    clock = FakeClock()
+
+    result = cleanup_run(
+        client=client,
+        run_id="run-001",
+        jobs={
+            "job-active": {"id": "job-active", "state": "running"},
+            "job-done": {"id": "job-done", "state": "completed"},
+        },
+        timeout_seconds=10,
+        poll_interval_seconds=1,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert client.cancelled == ["job-active"]
+    assert result["success"] is False
+    assert result["errors"] == [
+        {
+            "phase": "inspect",
+            "jobId": "job-active",
+            "error": "transient inspect failure",
+        }
+    ]
     assert {job["state"] for job in result["jobs"]} == {"cancelled", "completed"}

@@ -13,9 +13,12 @@ import run_api_workflow_corpus as runner  # noqa: E402
 from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import (  # noqa: E402
     BenchmarkInterrupted,
+    RunLock,
+    _start_jobs,
     build_run_plan,
     idempotency_key,
     parse_workload,
+    recovery_checkpoint,
     report_job,
     run_benchmark,
     select_source,
@@ -136,7 +139,55 @@ def test_atomic_report_writer_replaces_complete_document(tmp_path):
     write_report_atomic(path, {"schemaVersion": 2, "samples": [1, 2]})
 
     assert json.loads(path.read_text()) == {"schemaVersion": 2, "samples": [1, 2]}
-    assert not path.with_suffix(".json.tmp").exists()
+    assert not list(tmp_path.glob("report.json.*.tmp"))
+
+
+def test_recovery_checkpoint_bounds_sample_history_but_keeps_cleanup_identity():
+    report = {
+        "runId": "run-a",
+        "samples": [{"phase": "measurement", "jobs": [{"id": "job-a"}]}] * 100,
+        "starts": [{"job": {"id": "job-a"}}],
+        "jobs": [{"id": "job-a", "state": "running"}],
+    }
+
+    checkpoint = recovery_checkpoint(report)
+
+    assert "samples" not in checkpoint
+    assert checkpoint["sampleCount"] == 100
+    assert checkpoint["lastSample"]["jobs"] == [{"id": "job-a"}]
+    assert checkpoint["starts"] == [{"job": {"id": "job-a"}}]
+    assert checkpoint["jobs"] == [{"id": "job-a", "state": "running"}]
+
+
+def test_run_lock_rejects_a_concurrent_duplicate(tmp_path):
+    path = tmp_path / ".run-a.lock"
+    with RunLock(path):
+        with pytest.raises(ValueError, match="already active"):
+            with RunLock(path):
+                pass
+
+
+def test_successful_concurrent_starts_are_reported_incrementally():
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=3, publish_output=False
+    )
+    client = FakeClient()
+    observed = []
+
+    started, errors = _start_jobs(
+        client,
+        "source-a",
+        plan,
+        "incremental",
+        on_started=lambda item, _status, job: observed.append(
+            (item["ordinal"], job["id"])
+        ),
+    )
+
+    assert not errors
+    assert len(started) == 3
+    assert sorted(observed) == [(1, "job-1"), (2, "job-2"), (3, "job-3")]
 
 
 class FakeClock:
@@ -273,6 +324,32 @@ def test_run_benchmark_checkpoints_every_poll_and_on_completion():
     assert checkpoint_phases[0] == "initialized"
     assert checkpoint_phases[-1] == "complete"
     assert checkpoints[-1]["success"] is True
+
+
+def test_initial_checkpoint_failure_prevents_any_job_start():
+    clock = FakeClock()
+    client = FakeClient()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    with pytest.raises(BenchmarkInterrupted, match="checkpoint write failure"):
+        run_benchmark(
+            client=client,
+            source={"id": "source-a", "name": "Fixture"},
+            plan=plan,
+            run_id="no-checkpoint-no-start",
+            duration_seconds=2,
+            poll_interval_seconds=1,
+            startup_timeout_seconds=10,
+            cleanup_timeout_seconds=10,
+            checkpoint=lambda _value: (_ for _ in ()).throw(OSError("disk full")),
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+
+    assert client.jobs == {}
 
 
 def test_stop_request_reaches_cleanup_and_records_interruption():

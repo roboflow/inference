@@ -66,7 +66,10 @@ def cleanup_run(
         "requestedJobIds": sorted(jobs),
         "errors": [],
     }
-    current = {}
+    # Keep every checkpoint-captured ID in the cleanup set even when the first
+    # status read is transiently unavailable. The ID itself is the trusted,
+    # exact-run boundary; inspection is useful context, not admission to cleanup.
+    current = {job_id: dict(job) for job_id, job in jobs.items()}
     for job_id in sorted(jobs):
         try:
             current[job_id] = client.get_job(job_id)

@@ -197,6 +197,15 @@ available GPU headroom. The example matrix covers the 1/4/8/12/15/18/24 light
 curve, delayed heavy arrivals, and output publishing. Suite and run reports stay
 under the ignored `results/` directory and never contain the API-key value.
 
+For cross-workspace noisy-neighbor and fairness runs, follow
+[`MULTI_WORKSPACE_FAIRNESS.md`](MULTI_WORKSPACE_FAIRNESS.md). Those scenarios
+keep credentials in separate environment variables, persist only safe labels,
+and can assert either same-worker packing or deliberate distribution. For
+unattended runs, interruption recovery, and exact-run cleanup, read
+[`UNATTENDED_RECOVERY.md`](UNATTENDED_RECOVERY.md) before enabling `--execute`.
+Both runners write compact atomic checkpoints after every successful start and
+at bounded poll intervals; staging-only janitors act only on captured job IDs.
+
 ## Aggregate processor metrics
 
 The processor endpoint exposes process-lifetime aggregates:
