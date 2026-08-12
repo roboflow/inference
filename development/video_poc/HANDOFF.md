@@ -24,7 +24,8 @@ worker. Production deployment mechanics now live in the roboflow-infra chart/sta
 [DEPLOY_PLAN_STAGING.md](DEPLOY_PLAN_STAGING.md) is retained for the rationale and
 history of the first deployment. Draft infra
 [#2443](https://github.com/roboflow/roboflow-infra/pull/2443) adds internal
-MediaMTX metrics scraping and the first relay dashboard; it has not been applied.
+MediaMTX metrics scraping and the first relay dashboard; it is applied on
+staging. Production rollout remains separately approved and controlled.
 
 There is also an internal video strategy deck that motivates all of this — the POC
 deliberately implements the shapes recommended there:
@@ -480,6 +481,30 @@ not implemented yet.
   staging canonical ID with the generic `yolov8n-640` alias: the current alias
   table resolves it to the production-era `coco/3` resource, which is absent in
   staging. Keep environment-specific canonical IDs explicit in future matrices.
+  The API harness now also supports credential-separated multi-workspace waves,
+  delayed arrivals, same-worker fairness assertions, compact atomic recovery
+  checkpoints, SIGINT/SIGTERM cleanup, and staging-only exact-run janitors. A
+  matrix digest binds cleanup to the original routing configuration, so editing
+  a workspace mapping cannot retarget an old job ID. See
+  [`benchmarks/MULTI_WORKSPACE_FAIRNESS.md`](benchmarks/MULTI_WORKSPACE_FAIRNESS.md)
+  and [`benchmarks/UNATTENDED_RECOVERY.md`](benchmarks/UNATTENDED_RECOVERY.md).
+- **Process isolation is an experiment, not a current guarantee.** The worker
+  has a default-off staging mode, `PROCESSOR_EXECUTION_DOMAIN_MODE=workspace_probe`,
+  that starts one empty lifecycle child per active workspace while pipelines,
+  models, frames, and credentials deliberately remain in the parent. It proves
+  ownership, crash containment, and cleanup hooks only; reports must not call it
+  tenant isolation. Domain failure stops all owned parent runs concurrently. If
+  a wedged pipeline exceeds the bounded containment deadline, the experimental
+  worker hard-exits so Kubernetes and the heartbeat reaper can requeue its held
+  jobs instead of losing the sole monitor. Full blockers are documented in
+  [`experiments/process_isolation/WORKER_INTEGRATION.md`](experiments/process_isolation/WORKER_INTEGRATION.md).
+  Separately, draft inference
+  [#2788](https://github.com/roboflow/inference/pull/2788) packages the new
+  multi-process model manager benchmark. Its current routing key is
+  `model_id:instance`, not workspace identity: tenants using the same model and
+  empty instance can share one backend process, while distinct instances load
+  separate processes. Treat raw MPS as a throughput/fairness experiment, never
+  as an authorization or memory-isolation boundary.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
@@ -581,11 +606,11 @@ questions live in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
    watched outputs.
 3. Next: complete Phase 0 of
    [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md): agree on SLOs; review,
-   merge, and apply the MediaMTX observability chart from infra
-   [#2443](https://github.com/roboflow/roboflow-infra/pull/2443) to staging;
-   validate the aggregate processor metrics and benchmark tools in inference
-   [#2616](https://github.com/roboflow/inference/pull/2616); then measure the
-   current topology. A production apply remains a separate approval step.
+   merge the already-applied staging MediaMTX observability chart from infra
+   [#2443](https://github.com/roboflow/roboflow-infra/pull/2443); deploy and
+   validate the aggregate processor telemetry overlay; then run the controlled
+   FPS, multi-workspace, MPS/MMP, recovery, mixed-workload, and soak matrices.
+   A production apply remains a separate approval step.
 4. Then introduce cell-aware source/job contracts while only East is registered;
    prove claim isolation before deploying a second non-production cell.
 5. Remaining adjacent hardening: job-addressed live events, connector-source polish,

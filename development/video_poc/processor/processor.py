@@ -92,6 +92,7 @@ try:
 except Exception:  # PyAV missing: fall back to cv2 URL ingest
     LowLatencyRtspProducer = None
 
+from execution_domains import build_execution_domains, wait_for_threads
 from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
 from security import (
@@ -138,6 +139,14 @@ POOL_FRESH_CLAIM_HOLDOFF_S = float(os.getenv("POOL_FRESH_CLAIM_HOLDOFF_S", "3"))
 # scrape opportunities. 0 restores immediate retirement.
 FINAL_METRICS_SCRAPE_GRACE_S = max(
     0.0, float(os.getenv("PROCESSOR_FINAL_METRICS_GRACE_S", "35"))
+)
+
+# The workspace-probe monitor must never wait forever for a wedged parent-side
+# pipeline. If containment cannot finish inside this deadline, hard-exit the
+# experimental worker so Kubernetes restarts/retires the detached pod and the
+# platform heartbeat reaper can safely requeue every held job.
+DOMAIN_CONTAINMENT_TIMEOUT_S = max(
+    0.1, float(os.getenv("PROCESSOR_DOMAIN_CONTAINMENT_TIMEOUT_S", "10"))
 )
 
 # Used by stream-mode jobs on file sources: the file is replayed at native speed
@@ -896,7 +905,13 @@ class JobRun:
 
     def start(self):
         with self.lifecycle_lock:
+            if self.cancelling:
+                return
             self._start_locked()
+        # Startup failures return without passing through Worker.finish_run;
+        # release their lifecycle domain here so an empty probe cannot linger.
+        if not self.active:
+            self.worker.execution_domains.release_job(self.job_id)
 
     def _start_locked(self):
         job = self.job
@@ -1091,11 +1106,15 @@ class JobRun:
             self._finalize_recorder()
             self._cleanup_download()
             self._upload_results()
+            release_local_domain = False
             with self.lock:
                 if self.state == "running":
                     self.state = "completed"
                     self._record_outcome("completed")
                     print(f"[processor] job {self.job_id} completed; results are scrubbable")
+                    release_local_domain = bool(self.worker.args.job_file)
+            if release_local_domain:
+                self.worker.execution_domains.release_job(self.job_id)
         else:
             # a live pipeline ending on its own means the stream died (camera
             # offline, sim replay crashed). Free the slot; the platform reaper
@@ -1411,6 +1430,17 @@ class Worker:
         )
         self.metrics = ProcessorMetrics()
         self.runtime_identity = build_runtime_identity(self.processor_id)
+        # Default is the existing single-process worker. The staging-only
+        # workspace_probe mode exercises ownership and crash handling with one
+        # empty child per workspace; JobRun still executes in this parent, so
+        # this is deliberately not described as an isolation boundary.
+        self.execution_domains = build_execution_domains(
+            os.getenv("PROCESSOR_EXECUTION_DOMAIN_MODE")
+        )
+        # Kept injectable for a focused monitor test. The real worker must use
+        # a process-wide hard exit here: normal signal shutdown calls stop_all,
+        # which could block on the same pipeline that exceeded containment.
+        self._fatal_exit = os._exit
 
     # ---------- run bookkeeping ----------
 
@@ -1443,6 +1473,7 @@ class Worker:
         with self.runs_lock:
             if self.runs.get(run.job_id) is run:
                 del self.runs[run.job_id]
+        self.execution_domains.release_job(run.job_id)
         self.maybe_retire()
 
     def maybe_retire(self):
@@ -1521,6 +1552,7 @@ class Worker:
                 {"id": r.job_id, "state": r.state, "mode": r.job.get("mode"), "error": r.job.get("error")}
                 for r in runs
             ],
+            "executionDomains": self.execution_domains.snapshot(),
         }
         run = self.resolve_run(job_id)
         if run is not None:
@@ -1537,7 +1569,66 @@ class Worker:
             "capacity": self.capacity,
             "activeJobs": self.active_count(),
             "retiring": self.retiring,
+            "executionDomains": self.execution_domains.snapshot(),
         }
+
+    def _execution_domain_monitor(self):
+        """Contain a failed experimental workspace probe to its owned jobs.
+
+        This validates the parent-side lifecycle before pipeline execution is
+        moved into children. The failure text and aggregate status contain no
+        workspace identity, job payload, access token, or API key.
+        """
+        while not self._stop_requested:
+            for failure in self.execution_domains.poll_failures():
+                print(
+                    f"[processor] {failure.domain_id}: {failure.diagnostic}",
+                    file=sys.stderr,
+                )
+                runs = [
+                    run
+                    for job_id in failure.job_ids
+                    if (run := self.resolve_run(job_id)) is not None
+                ]
+                # Stop all affected pipelines before any synchronous platform
+                # status call; one slow API response must not extend execution
+                # after the workspace domain has died.
+                for run in runs:
+                    run._record_outcome("error")
+                    run.log_ring.note(f"[processor] {failure.diagnostic}")
+                    run.cancelling = True
+                stop_threads = [
+                    threading.Thread(target=run.stop, daemon=True) for run in runs
+                ]
+                for thread in stop_threads:
+                    thread.start()
+                if not wait_for_threads(
+                    stop_threads, DOMAIN_CONTAINMENT_TIMEOUT_S
+                ):
+                    print(
+                        "[processor] fatal: workspace-domain containment "
+                        "deadline exceeded; retiring worker so held jobs can "
+                        "be requeued",
+                        file=sys.stderr,
+                    )
+                    self._stop_requested = True
+                    self.retiring = True
+                    sys.stdout.flush()
+                    sys.stderr.flush()
+                    self._fatal_exit(70)
+                    return
+                for run in runs:
+                    with self.runs_lock:
+                        if self.runs.get(run.job_id) is run:
+                            del self.runs[run.job_id]
+                    self.execution_domains.release_job(run.job_id)
+                if runs:
+                    self.maybe_retire()
+                for run in runs:
+                    self.report_job_failure(
+                        run.job, failure.diagnostic, run.log_ring.tail()
+                    )
+            time.sleep(0.25)
 
     # ---------- platform polling ----------
 
@@ -1588,23 +1679,55 @@ class Worker:
             # Remove it before the job dict is retained or surfaced by status.
             job = dict(job)
             access_token = job.pop("processorAccessToken", None)
+            # Shutdown may have started while the blocking claim request was in
+            # flight. Do not create a run after stop_all() took its snapshot;
+            # leave a bounded failing diagnostic so the platform reaper can
+            # safely place this already-claimed job elsewhere.
+            if self._stop_requested:
+                self.report_job_failure(job, "processor shutting down before job start")
+                return False
             try:
                 self.security.register_job(job.get("id"), access_token)
             except (MissingJobAccessToken, ValueError) as exc:
                 self.report_job_failure(job, str(exc))
                 return job
+            run = JobRun(self, job)
+            with self.runs_lock:
+                # Register ownership before the execution domain becomes
+                # monitor-visible. An immediately dying child can therefore
+                # always resolve and contain its run.
+                for jid in [j for j, r in self.runs.items() if not r.active]:
+                    del self.runs[jid]
+                self.runs[run.job_id] = run
+            try:
+                self.execution_domains.start_job(
+                    job.get("id"), job.get("workspace") or job.get("workspaceName")
+                )
+            except (RuntimeError, ValueError) as exc:
+                with self.runs_lock:
+                    if self.runs.get(run.job_id) is run:
+                        del self.runs[run.job_id]
+                self.execution_domains.release_job(run.job_id)
+                run._record_outcome("error")
+                self.report_job_failure(job, sanitize_diagnostic(exc))
+                return job
+            if self._stop_requested:
+                with self.runs_lock:
+                    if self.runs.get(run.job_id) is run:
+                        del self.runs[run.job_id]
+                self.execution_domains.release_job(run.job_id)
+                self.report_job_failure(job, "processor shutting down before job start")
+                return False
+            # The domain monitor may have consumed an immediate child failure
+            # and removed this run while start_job() returned.
+            with self.runs_lock:
+                if self.runs.get(run.job_id) is not run:
+                    return job
             if not self.had_job:
                 self.had_job = True
                 # leave the ready pool BEFORE the (slow) pipeline start so the
                 # replacement worker is already warming while we work
                 self.pod.detach_from_pool(job.get("id"))
-            run = JobRun(self, job)
-            with self.runs_lock:
-                # finished/errored runs are kept only so /status can show
-                # them; a new claim supersedes that history
-                for jid in [j for j, r in self.runs.items() if not r.active]:
-                    del self.runs[jid]
-                self.runs[run.job_id] = run
             threading.Thread(target=run.start, daemon=True).start()
             return job
 
@@ -1713,8 +1836,17 @@ class Worker:
     def stop_all(self):
         for run in self.snapshot_runs():
             run.stop()
+        self.execution_domains.shutdown()
 
     def run(self):
+        if self.execution_domains.experimental:
+            print(
+                "[processor] staging experiment enabled: workspace execution "
+                "probe (pipelines remain in-process)"
+            )
+            threading.Thread(
+                target=self._execution_domain_monitor, daemon=True
+            ).start()
         if self.args.job_file:
             if len(self.args.job_file) > self.capacity:
                 raise ValueError(
@@ -1722,6 +1854,8 @@ class Worker:
                     f"{self.capacity}"
                 )
             for index, job_file in enumerate(self.args.job_file):
+                if self._stop_requested:
+                    break
                 with open(job_file) as f:
                     job = json.load(f)
                 job.setdefault("id", f"local-job-{index + 1}")
@@ -1733,6 +1867,25 @@ class Worker:
                     if run.job_id in self.runs:
                         raise ValueError(f"duplicate local job id: {run.job_id}")
                     self.runs[run.job_id] = run
+                try:
+                    self.execution_domains.start_job(
+                        job.get("id"),
+                        job.get("workspace") or job.get("workspaceName"),
+                    )
+                except Exception:
+                    with self.runs_lock:
+                        if self.runs.get(run.job_id) is run:
+                            del self.runs[run.job_id]
+                    self.execution_domains.release_job(run.job_id)
+                    run._record_outcome("error")
+                    raise
+                if self._stop_requested:
+                    with self.runs_lock:
+                        if self.runs.get(run.job_id) is run:
+                            del self.runs[run.job_id]
+                    self.execution_domains.release_job(run.job_id)
+                    run._record_outcome("stopped")
+                    break
                 threading.Thread(target=run.start, daemon=True).start()
         else:
             if self.pod.is_detached():
