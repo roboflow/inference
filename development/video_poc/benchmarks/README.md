@@ -17,6 +17,12 @@ currently deployed processor tag or digest. Rebuilding from an
 `inference-server:latest` base changes the runtime and invalidates a controlled
 A/B comparison.
 
+`processor/cloudbuild.overlay.yaml` builds GPU and CPU overlays together. All
+four image substitutions and `_GIT_SHA` are required; use full immutable input
+and output references. For example, the initial telemetry comparison uses the
+currently deployed `video-processor:2e4a97ee5` and
+`video-processor-cpu:2e4a97ee5` as its two bases.
+
 Do not run active load against production. Use local MediaMTX, staging, or a
 dedicated performance cell after the environment owner approves the test load.
 
