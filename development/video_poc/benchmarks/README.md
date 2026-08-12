@@ -77,6 +77,58 @@ with watched output publishing disabled and enabled. Record processor `/metrics`
 DCGM, container CPU/memory/network, image/runtime versions, input resolution/FPS,
 and whether model weights were cold or cached.
 
+### Staging service API runner
+
+`run_api_workflow_corpus.py` runs the same manifest through the workspace video
+service API, without the UI. It only accepts staging API hosts, reads the key from
+an environment variable, redacts unexpected job fields from reports, and defaults
+to a no-network dry run. Generated reports are written under the ignored
+`results/` directory.
+
+Use a dedicated staging service identity with `video-inference-job:read` and
+`video-inference-job:create`. Never put its key on the command line:
+
+```bash
+export VIDEO_BENCHMARK_API_KEY='...'
+
+python development/video_poc/benchmarks/run_api_workflow_corpus.py \
+  --workspace my-staging-workspace \
+  --list-sources
+```
+
+Inspect a deterministic four-job plan before starting it:
+
+```bash
+python development/video_poc/benchmarks/run_api_workflow_corpus.py \
+  --workspace my-staging-workspace \
+  --source-id SOURCE_ID \
+  --profile single-detection \
+  --repeat 4 \
+  --run-id single-detection-c4-001
+```
+
+Run the plan for 60 measured seconds and cancel every job afterward:
+
+```bash
+python development/video_poc/benchmarks/run_api_workflow_corpus.py \
+  --workspace my-staging-workspace \
+  --source-id SOURCE_ID \
+  --profile single-detection \
+  --repeat 4 \
+  --run-id single-detection-c4-001 \
+  --duration-seconds 60 \
+  --execute
+```
+
+Append `--publish-output` for the annotated-output variant. Repeat `--profile`
+with different values to create a mixed workload. The runner starts the group in
+parallel, waits until every job is running, records API job statistics, cancels
+all non-terminal jobs on success, failure, or interruption, and returns non-zero
+for startup timeouts, early terminal states, or incomplete cleanup. Repeated
+copies receive distinct non-executable benchmark metadata because the service
+correctly prevents the exact same workflow identity from running twice on one
+source; their steps and model IDs remain identical for model-sharing tests.
+
 ## Aggregate processor metrics
 
 The processor endpoint exposes process-lifetime aggregates:
