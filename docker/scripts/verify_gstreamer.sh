@@ -137,14 +137,19 @@ fi
 # enumerated), so it CANNOT run on a GPU-less build machine - it is driven from
 # the GPU CI job (.github/workflows/test.nvidia_t4.yml) against the built image.
 if [ "${GSTREAMER_REQUIRE_NVCODEC_RUNTIME}" = "true" ]; then
+    # Encoder requirement is the MODERN nvcudah26xenc elements, not the legacy
+    # nvh26xenc ones: the legacy elements still register but can only request
+    # pre-SDK-10 preset GUIDs, which CUDA-13-era drivers removed - they fail
+    # at set_format on such hosts. Everything that encodes in this image (the
+    # tensor-runtime verifier's fixture synthesis) uses the modern elements.
     for element in \
         cudaconvertscale \
         cudadownload \
         cudaupload \
+        nvcudah264enc \
+        nvcudah265enc \
         nvh264dec \
-        nvh264enc \
         nvh265dec \
-        nvh265enc \
         nvjpegdec \
         nvjpegenc
     do
