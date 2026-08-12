@@ -19,7 +19,7 @@ def test_workflow_corpus_has_one_profile_per_provisional_class():
         "single-detection",
         "detection-tracking",
         "dual-detection",
-        "semantic-segmentation",
+        "instance-segmentation",
     }
     assert {profile["provisionalClass"] for profile in profiles.values()} == {
         "light",

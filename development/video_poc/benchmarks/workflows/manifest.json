@@ -19,7 +19,7 @@
       "imageOutput": "visualization",
       "spec": "single-detection.json",
       "models": [
-        "yolov8n-640"
+        "microsoft-coco-obj-det/8"
       ],
       "purpose": "Baseline one small detector plus bounding-box visualization; repeat it to test shared-model packing."
     },
@@ -31,7 +31,7 @@
       "imageOutput": "visualization",
       "spec": "detection-tracking.json",
       "models": [
-        "yolov8n-640"
+        "microsoft-coco-obj-det/8"
       ],
       "purpose": "Measure a stateful detector, ByteTrack, and trace-visualization pipeline with additional CPU work."
     },
@@ -43,22 +43,22 @@
       "imageOutput": "visualization",
       "spec": "dual-detection.json",
       "models": [
-        "yolov8n-640",
-        "yolov8n-1280"
+        "microsoft-coco-obj-det/8",
+        "microsoft-coco-instance-segmentation/1"
       ],
-      "purpose": "Exercise two different detector sessions, model memory pressure, and comparison visualization."
+      "purpose": "Exercise detection and instance-segmentation sessions together, model memory pressure, and comparison visualization."
     },
     {
-      "id": "semantic-segmentation",
+      "id": "instance-segmentation",
       "provisionalClass": "exclusive",
       "tier": "gpu",
       "stateful": false,
       "imageOutput": "visualization",
-      "spec": "semantic-segmentation.json",
+      "spec": "instance-segmentation.json",
       "models": [
-        "deep-lab-v3-plus/2"
+        "microsoft-coco-instance-segmentation/1"
       ],
-      "purpose": "Initial high-cost segmentation and mask-visualization case; exclusive is a conservative hypothesis until measured."
+      "purpose": "Initial instance-segmentation and mask-visualization case; exclusive is a conservative hypothesis until measured."
     }
   ]
 }

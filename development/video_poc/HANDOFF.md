@@ -444,6 +444,12 @@ not implemented yet.
   pipeline start, 6.54-second first result, and clean cancellation. A prior
   connector-local file attempt correctly failed with a structured redacted 404;
   prefer an uploaded `ready` fixture unless the connector file is revalidated.
+  The original provisional `yolov8n-*` aliases also resolved as nonexistent
+  workspace resources; the corpus now uses the public model IDs already proven
+  in this staging workspace. The corrected single-detection GPU profile passed
+  60-second runs at concurrency 1, 2, and 4. The 2- and 4-job runs packed every
+  job onto one worker, had zero retries, cancelled cleanly, and at concurrency 4
+  reported final per-job decode-to-result latency between 10.8 and 13.3 ms.
 - **No recording** (phase 3 by design).
 - ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,

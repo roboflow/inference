@@ -55,7 +55,7 @@ profiles:
 | `single-detection` | light | Small detector and bounding boxes; same-model sharing baseline |
 | `detection-tracking` | medium | Small detector + stateful ByteTrack + trace rendering |
 | `dual-detection` | heavy | Two model sessions and comparison visualization |
-| `semantic-segmentation` | exclusive | Segmentation + mask rendering; conservative until measured |
+| `instance-segmentation` | exclusive | Instance segmentation + mask rendering; conservative until measured |
 
 Generate standalone job files for one worker with:
 
