@@ -56,7 +56,35 @@ jobs:
       - name: �🔨 Build and Push Test Docker - GPU
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
-      
+
+      - name: Verify CUDA OpenCV - GPU
+        if: ${{ github.event.inputs.test_name == '' }}
+        run: |
+          docker run --rm --gpus all --entrypoint sh \
+            -e OPENCV_REQUIRE_CUDA_BUILD=true \
+            -e OPENCV_REQUIRE_CUDA_RUNTIME=true \
+            -v "$PWD/docker/scripts/verify_opencv.sh:/tmp/verify_opencv:ro" \
+            roboflow/roboflow-inference-server-gpu:test \
+            /tmp/verify_opencv
+
+      - name: Verify NVIDIA GStreamer codecs - GPU
+        if: ${{ github.event.inputs.test_name == '' }}
+        run: |
+          docker run --rm --gpus all --entrypoint sh \
+            -e GSTREAMER_REQUIRE_NVCODEC=true \
+            -e GSTREAMER_REQUIRE_NVCODEC_RUNTIME=true \
+            -v "$PWD/docker/scripts/verify_gstreamer.sh:/tmp/verify_gstreamer:ro" \
+            roboflow/roboflow-inference-server-gpu:test \
+            /tmp/verify_gstreamer
+
+      - name: Verify CUDA GStreamer tensor bridge - GPU
+        if: ${{ github.event.inputs.test_name == '' }}
+        run: |
+          docker run --rm --gpus all --entrypoint python3 \
+            -v "$PWD/docker/scripts/verify_gstreamer_cuda_tensor_runtime.py:/tmp/verify_gstreamer_cuda_tensor_runtime.py:ro" \
+            roboflow/roboflow-inference-server-gpu:test \
+            /tmp/verify_gstreamer_cuda_tensor_runtime.py
+
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |

@@ -24,13 +24,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -42,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e .[test] --python .venv
+          python -m uv pip install -e .[torch-cpu,test] --python .venv
       - name: 🧪 Unit Tests
         timeout-minutes: 30
         working-directory: inference_models
