@@ -81,6 +81,6 @@ jobs:
           files: ./docker/docker-bake.jetson.7.2.0.hcl
           targets: jetson-server-jp72
           project: v1xzfwkc4b
-          push: ${{ github.event_name == 'release' || inputs.force_push }}
+          push: ${{ github.event_name == 'release' || inputs.force_push == true }}
           save: ${{ github.event_name != 'release' && !inputs.force_push }}
           save-tag: ${{ github.event_name != 'release' && !inputs.force_push && format('server-jp72-{0}', github.sha) || '' }}
