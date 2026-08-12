@@ -17,6 +17,7 @@ def test_workflow_corpus_has_one_profile_per_provisional_class():
     assert set(profiles) == {
         "cpu-blur",
         "single-detection",
+        "single-detection-cpu",
         "detection-tracking",
         "dual-detection",
         "instance-segmentation",
@@ -27,6 +28,12 @@ def test_workflow_corpus_has_one_profile_per_provisional_class():
         "heavy",
         "exclusive",
     }
+    assert (
+        profiles["single-detection"]["specification"]
+        == profiles["single-detection-cpu"]["specification"]
+    )
+    assert profiles["single-detection"]["tier"] == "gpu"
+    assert profiles["single-detection-cpu"]["tier"] == "cpu"
     for profile in profiles.values():
         specification = profile["specification"]
         assert specification["version"]

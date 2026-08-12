@@ -24,6 +24,18 @@
       "purpose": "Baseline one small detector plus bounding-box visualization; repeat it to test shared-model packing."
     },
     {
+      "id": "single-detection-cpu",
+      "provisionalClass": "light",
+      "tier": "cpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "single-detection.json",
+      "models": [
+        "microsoft-coco-obj-det/8"
+      ],
+      "purpose": "Run the exact single-detection workflow on CPU for model-for-model GPU economics and pod-sizing comparisons."
+    },
+    {
       "id": "detection-tracking",
       "provisionalClass": "medium",
       "tier": "gpu",
