@@ -9,6 +9,7 @@ BENCHMARK_DIR = (
 )
 sys.path.insert(0, str(BENCHMARK_DIR))
 
+import run_api_workflow_corpus as runner  # noqa: E402
 from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import (  # noqa: E402
     build_run_plan,
@@ -21,6 +22,23 @@ from run_api_workflow_corpus import (  # noqa: E402
 )
 
 MANIFEST = BENCHMARK_DIR / "workflows" / "manifest.json"
+
+
+def test_list_sources_does_not_require_a_workload(monkeypatch, capsys):
+    class SourceClient:
+        def __init__(self, api_base, workspace, api_key):
+            assert api_key == "test-key"
+
+        def list_sources(self):
+            return [{"id": "source-a", "name": "Fixture", "status": "ready"}]
+
+    monkeypatch.setenv("VIDEO_BENCHMARK_API_KEY", "test-key")
+    monkeypatch.setattr(runner, "VideoServiceClient", SourceClient)
+
+    assert runner.main(["--workspace", "workspace-a", "--list-sources"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "sources": [{"id": "source-a", "name": "Fixture", "status": "ready"}]
+    }
 
 
 def test_runner_refuses_production_and_builds_from_shared_corpus():

@@ -632,14 +632,18 @@ def main(argv=None):
     args = parse_args(argv)
     profiles = load_corpus(args.manifest)
     try:
-        plan = build_run_plan(
-            profiles,
-            args.profile or [],
-            args.repeat,
-            args.publish_output,
-            args.mode,
-            workloads=args.workloads,
-            max_fps=args.max_fps,
+        plan = (
+            []
+            if args.list_sources
+            else build_run_plan(
+                profiles,
+                args.profile or [],
+                args.repeat,
+                args.publish_output,
+                args.mode,
+                workloads=args.workloads,
+                max_fps=args.max_fps,
+            )
         )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
