@@ -4,6 +4,9 @@
 # to mp4. Two tiers from one Dockerfile:
 #   gpu (default) — CUDA onnxruntime base
 #   cpu — --build-arg BASE_IMAGE=roboflow/roboflow-inference-server-cpu:latest
+# For an A/B experiment that only changes these worker files, prefer
+# Dockerfile.overlay with the currently deployed immutable processor image as
+# its base. That avoids silently changing the inference runtime under test.
 ARG BASE_IMAGE=roboflow/roboflow-inference-server-gpu:latest
 FROM ${BASE_IMAGE}
 

@@ -11,6 +11,12 @@ must be committed and pushed with immutable image/config references; rejected
 changes must be reverted and documented so staging does not become the only
 copy of an experiment.
 
+When only POC worker files change, build
+[`processor/Dockerfile.overlay`](../processor/Dockerfile.overlay) on the exact
+currently deployed processor tag or digest. Rebuilding from an
+`inference-server:latest` base changes the runtime and invalidates a controlled
+A/B comparison.
+
 Do not run active load against production. Use local MediaMTX, staging, or a
 dedicated performance cell after the environment owner approves the test load.
 
