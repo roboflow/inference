@@ -8,16 +8,25 @@ from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
 from inference.core.cache import MemoryCache
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v2
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     BlockManifest,
     RoboflowDatasetUploadBlockV2,
     maybe_register_datapoint_at_roboflow,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
+    RoboflowDatasetUploadBlockV2 as TensorRoboflowDatasetUploadBlockV2,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
+)
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -351,6 +360,43 @@ def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
 
 def test_execution_policy_noops_without_api_key() -> None:
     data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
+
+
+@_TENSOR_ONLY
+def test_execution_policy_noops_without_api_key_tensor_native() -> None:
+    data_collector_block = TensorRoboflowDatasetUploadBlockV2(
         cache=MemoryCache(),
         api_key=None,
         background_tasks=None,

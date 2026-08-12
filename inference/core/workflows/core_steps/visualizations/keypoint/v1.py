@@ -312,8 +312,13 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
 
         keypoints = self.convert_detections_to_keypoints(predictions)
 
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+            scene=scene,
             key_points=keypoints,
         )
         return {

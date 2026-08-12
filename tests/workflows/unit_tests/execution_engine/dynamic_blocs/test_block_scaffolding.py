@@ -37,6 +37,18 @@ def _clear_modal_executor_cache() -> None:
         block_scaffolding._MODAL_EXECUTOR_CACHE.clear()
 
 
+@pytest.fixture
+def isolated_modal_executor_cache():
+    # The modal arm reuses executors through the module-level
+    # _MODAL_EXECUTOR_CACHE, so a warm entry left by an earlier test starves
+    # the current test's patched ModalExecutor of the construction call its
+    # assertions depend on - and the current test's mock would leak to later
+    # ones. Clear on both sides, like the cache-lifecycle tests below do.
+    _clear_modal_executor_cache()
+    yield
+    _clear_modal_executor_cache()
+
+
 def test_create_dynamic_module_when_syntax_error_happens() -> None:
     # given
     init_function = """
@@ -463,6 +475,305 @@ def run_function(self, a, b) -> BlockResult:
     assert trace == [
         {"step": "debug_step", "value": {"sum": 8, "inputs": [3, 5]}},
     ]
+
+
+def _boundary_wiring_manifest_description():
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+        DynamicInputDefinition,
+        DynamicOutputDefinition,
+        ManifestDescription,
+        SelectorType,
+    )
+
+    return ManifestDescription(
+        type="ManifestDescription",
+        block_type="BoundaryProbe",
+        inputs={
+            "predictions": DynamicInputDefinition(
+                type="DynamicInputDefinition",
+                selector_types=[SelectorType.STEP_OUTPUT],
+                selector_data_kind={
+                    SelectorType.STEP_OUTPUT: ["object_detection_prediction"]
+                },
+            ),
+        },
+        outputs={
+            "result": DynamicOutputDefinition(
+                type="DynamicOutputDefinition", kind=["object_detection_prediction"]
+            ),
+            "was_sv": DynamicOutputDefinition(type="DynamicOutputDefinition"),
+        },
+    )
+
+
+def _native_od_fixture():
+    import torch
+
+    from inference_models.models.base.object_detection import Detections
+
+    return Detections(
+        xyxy=torch.tensor([[10.0, 10.0, 20.0, 20.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        image_metadata={"class_names": {0: "dog"}},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+
+
+def test_run_wrapper_applies_representation_boundary_both_ways() -> None:
+    # given
+    import supervision as sv
+
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        representation_boundary,
+    )
+    from inference_models.models.base.object_detection import Detections
+
+    run_function = """
+def run_function(self, predictions) -> BlockResult:
+    return {"result": predictions, "was_sv": isinstance(predictions, sv.Detections)}
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+    )
+    block_class = assembly_custom_python_block(
+        block_type_name="BoundaryProbe",
+        unique_identifier="boundary-probe-id",
+        manifest=BlockManifest,
+        python_code=python_code,
+        manifest_description=_boundary_wiring_manifest_description(),
+    )
+
+    # when
+    with mock.patch.object(
+        representation_boundary, "_TENSOR_REPRESENTATION_ACTIVE", True
+    ):
+        result = block_class().run(predictions=_native_od_fixture())
+
+    # then - IN boundary delivered sv to user code, OUT boundary restored native
+    assert result["was_sv"] is True, "User code must have received sv.Detections"
+    assert isinstance(
+        result["result"], Detections
+    ), "Declared-kind output must be converted back to native"
+    assert result["result"].bboxes_metadata[0]["detection_id"] == "det-1"
+
+
+def test_run_wrapper_boundary_error_not_wrapped_as_user_code_error() -> None:
+    # given - user code succeeds, but returns a value that cannot satisfy the
+    # declared output kind; the boundary error must surface as itself, NOT as a
+    # DynamicBlockCodeError blaming the user's code.
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        representation_boundary,
+    )
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+        RepresentationBoundaryError,
+    )
+
+    run_function = """
+def run_function(self, predictions) -> BlockResult:
+    return {"result": object(), "was_sv": True}
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+    )
+    block_class = assembly_custom_python_block(
+        block_type_name="BoundaryProbe",
+        unique_identifier="boundary-probe-err-id",
+        manifest=BlockManifest,
+        python_code=python_code,
+        manifest_description=_boundary_wiring_manifest_description(),
+    )
+
+    # when
+    with mock.patch.object(
+        representation_boundary, "_TENSOR_REPRESENTATION_ACTIVE", True
+    ), pytest.raises(RepresentationBoundaryError) as error:
+        _ = block_class().run(predictions=_native_od_fixture())
+
+    # then
+    assert not isinstance(error.value, DynamicBlockCodeError)
+    assert "BoundaryProbe" in str(error.value)
+    assert "result" in str(error.value)
+
+
+def _legacy_sv_fixture():
+    import numpy as np
+    import supervision as sv
+
+    return sv.Detections(
+        xyxy=np.array([[10.0, 10.0, 20.0, 20.0]], dtype=np.float32),
+        class_id=np.array([0]),
+        confidence=np.array([0.9], dtype=np.float32),
+        data={
+            "class_name": np.array(["dog"]),
+            "detection_id": np.array(["det-remote-1"]),
+        },
+    )
+
+
+def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result(
+    isolated_modal_executor_cache,
+) -> None:
+    # given - D2-REVISED Option A: the Modal arm must ship CONVERTED (sv) inputs
+    # to the executor and convert the sv result coming back into native objects.
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        block_scaffolding,
+        modal_executor,
+        representation_boundary,
+    )
+    from inference_models.models.base.object_detection import Detections
+
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code="def run_function(self, predictions) -> BlockResult:\n    return None\n",
+        run_function_name="run_function",
+    )
+    block_class = assembly_custom_python_block(
+        block_type_name="BoundaryProbe",
+        unique_identifier="boundary-probe-modal-id",
+        manifest=BlockManifest,
+        python_code=python_code,
+        manifest_description=_boundary_wiring_manifest_description(),
+    )
+    executor_instance = mock.MagicMock()
+    executor_instance.execute_remote.return_value = {
+        "result": _legacy_sv_fixture(),
+        "was_sv": True,
+    }
+
+    # when
+    with mock.patch.object(
+        representation_boundary, "_TENSOR_REPRESENTATION_ACTIVE", True
+    ), mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ), mock.patch.object(
+        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
+    ), mock.patch.object(
+        modal_executor, "ModalExecutor", return_value=executor_instance
+    ):
+        result = block_class().run(predictions=_native_od_fixture())
+
+    # then - inputs leg: executor received sv (the `_type='sv_detections'` arm
+    # territory), not native objects
+    import supervision as sv
+
+    sent_inputs = executor_instance.execute_remote.call_args.kwargs["inputs"]
+    assert isinstance(
+        sent_inputs["predictions"], sv.Detections
+    ), "Modal arm must ship converted sv inputs"
+    # then - return leg: sv result converted to native before entering the engine
+    assert isinstance(
+        result["result"], Detections
+    ), "Modal arm must convert the sv result back to native"
+    assert result["result"].bboxes_metadata[0]["detection_id"] == "det-remote-1"
+
+
+def test_run_wrapper_modal_arm_is_passthrough_when_flag_off(
+    isolated_modal_executor_cache,
+) -> None:
+    # given
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        block_scaffolding,
+        modal_executor,
+        representation_boundary,
+    )
+
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code="def run_function(self, predictions) -> BlockResult:\n    return None\n",
+        run_function_name="run_function",
+    )
+    block_class = assembly_custom_python_block(
+        block_type_name="BoundaryProbe",
+        unique_identifier="boundary-probe-modal-off-id",
+        manifest=BlockManifest,
+        python_code=python_code,
+        manifest_description=_boundary_wiring_manifest_description(),
+    )
+    legacy_input = _legacy_sv_fixture()
+    remote_result = {"result": _legacy_sv_fixture(), "was_sv": True}
+    executor_instance = mock.MagicMock()
+    executor_instance.execute_remote.return_value = remote_result
+
+    # when
+    with mock.patch.object(
+        representation_boundary, "_TENSOR_REPRESENTATION_ACTIVE", False
+    ), mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ), mock.patch.object(
+        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
+    ), mock.patch.object(
+        modal_executor, "ModalExecutor", return_value=executor_instance
+    ):
+        result = block_class().run(predictions=legacy_input)
+
+    # then - flag-off byte-parity: both legs are is-identity
+    sent_inputs = executor_instance.execute_remote.call_args.kwargs["inputs"]
+    assert sent_inputs["predictions"] is legacy_input
+    assert result is remote_result
+
+
+def test_run_wrapper_local_forbidden_gate_wins_over_conversion_error() -> None:
+    # given - local mode, custom python forbidden, and kwargs that WOULD raise a
+    # RepresentationBoundaryError at IN conversion (wrong type for the declared
+    # kind). The clearer misconfiguration error must fire first.
+    import torch
+
+    from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        block_scaffolding,
+        representation_boundary,
+    )
+
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code="def run_function(self, predictions) -> BlockResult:\n    return None\n",
+        run_function_name="run_function",
+    )
+    block_class = assembly_custom_python_block(
+        block_type_name="BoundaryProbe",
+        unique_identifier="boundary-probe-gate-id",
+        manifest=BlockManifest,
+        python_code=python_code,
+        manifest_description=_boundary_wiring_manifest_description(),
+    )
+
+    # when
+    with mock.patch.object(
+        representation_boundary, "_TENSOR_REPRESENTATION_ACTIVE", True
+    ), mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
+    ), mock.patch.object(
+        block_scaffolding, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", False
+    ), pytest.raises(
+        WorkflowEnvironmentConfigurationError
+    ):
+        _ = block_class().run(predictions=torch.tensor([1.0]))
+
+
+def test_imports_lines_tensor_native_extension_tracks_the_flag() -> None:
+    # given - the extension is resolved at import time (load-time swap philosophy):
+    # flag-on ships the tensor-native authoring imports, flag-off must keep the
+    # generated module source byte-identical to the legacy list. This test runs in
+    # both CI directions, locking each side of the contract.
+    from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
+        IMPORTS_LINES,
+        TENSOR_NATIVE_IMPORTS_LINES,
+    )
+
+    # then
+    assert len(TENSOR_NATIVE_IMPORTS_LINES) > 0
+    for line in TENSOR_NATIVE_IMPORTS_LINES:
+        assert (line in IMPORTS_LINES) == ENABLE_TENSOR_DATA_REPRESENTATION
+    # the legacy prefix is untouched in both directions
+    assert IMPORTS_LINES[0] == "from typing import Any, List, Dict, Set, Optional"
+    assert "import supervision as sv" in IMPORTS_LINES
+    assert "import numpy as np" in IMPORTS_LINES
 
 
 def test_modal_executor_cache_closes_idle_entries(monkeypatch) -> None:
