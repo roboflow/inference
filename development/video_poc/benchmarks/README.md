@@ -236,6 +236,12 @@ unattended runs, interruption recovery, and exact-run cleanup, read
 Both runners write compact atomic checkpoints after every successful start and
 at bounded poll intervals; staging-only janitors act only on captured job IDs.
 
+After a recovery baseline is clean, use the dry-run-first
+[`fault_injection/`](fault_injection/) controller to exercise processor loss
+during startup or steady state and relay loss during steady state. Rendering is
+read-only. Its `--execute` mode deletes one exact staging pod after a UID
+recheck, so every live run still requires explicit staging-cluster approval.
+
 ## Aggregate processor metrics
 
 The processor endpoint exposes process-lifetime aggregates:

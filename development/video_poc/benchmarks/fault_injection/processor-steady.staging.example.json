@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "name": "processor-steady-loss",
+  "clusterContext": "gke_roboflow-staging_us-central1_k8s-staging-v3",
+  "namespace": "video-proc",
+  "benchmark": {
+    "runId": "replace-steady-run-id",
+    "checkpoint": "development/video_poc/benchmarks/results/api-corpus-replace-steady-run-id.json",
+    "apiHost": "us-central1-roboflow-staging.cloudfunctions.net"
+  },
+  "fault": {
+    "name": "delete-running-processor",
+    "type": "processor-pod-loss",
+    "phase": "steady-state",
+    "jobOrdinal": 1,
+    "gracePeriodSeconds": 0
+  },
+  "deadlines": {
+    "triggerSeconds": 180,
+    "recoverySeconds": 180,
+    "pollSeconds": 2
+  }
+}
