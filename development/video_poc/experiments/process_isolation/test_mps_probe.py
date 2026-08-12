@@ -23,4 +23,3 @@ def test_mps_active_thread_percentage_is_validated():
         assert "[1, 100]" in str(error)
     else:
         raise AssertionError("expected ValueError")
-

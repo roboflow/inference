@@ -76,4 +76,3 @@ def test_domain_key_never_contains_payload_credentials():
 def test_workspace_mode_rejects_missing_workspace():
     with pytest.raises(ValueError, match="workspace_id"):
         isolation_key(_job("job", ""), IsolationMode.WORKSPACE)
-
