@@ -38,7 +38,7 @@ def scenario(tmp_path, fault_type="processor-pod-loss", phase="steady-state"):
         "schemaVersion": 1,
         "environment": "staging",
         "name": "recovery-test",
-        "clusterContext": "gke_roboflow-staging_us-central1_k8s-staging-v3",
+        "clusterContext": "ck8s-stg",
         "namespace": "video-proc",
         "benchmark": {
             "runId": run_id,

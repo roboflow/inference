@@ -32,9 +32,12 @@ STAGING_API_HOSTS = {
     "us-central1-roboflow-staging.cloudfunctions.net",
 }
 ALLOWED_STAGING_CLUSTERS = {
-    "gke_roboflow-staging_us-central1_k8s-staging-v3": {
-        "cluster": "gke_roboflow-staging_us-central1_k8s-staging-v3",
-        "server": "https://34.123.73.192",
+    "ck8s-stg": {
+        "cluster": "ck8s-stg",
+        "server": (
+            "https://ck8s-stg-83c07ac7.us-east1-a."
+            "cmk.crusoecloudcompute.com"
+        ),
     }
 }
 FAULT_TYPES = {"processor-pod-loss", "relay-pod-loss"}

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "environment": "staging",
   "name": "processor-startup-loss",
-  "clusterContext": "gke_roboflow-staging_us-central1_k8s-staging-v3",
+  "clusterContext": "ck8s-stg",
   "namespace": "video-proc",
   "benchmark": {
     "runId": "replace-startup-run-id",
