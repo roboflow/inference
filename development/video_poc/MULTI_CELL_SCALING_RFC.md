@@ -582,6 +582,8 @@ and failure/recovery evidence. Its cross-cell case is South origin to an East
 CPU reader; it never mutates the East relay or schedules onto L40S. Applying the
 cell, DNS, functions, benchmark prerequisites/Jobs, network impairment, or
 failure experiment still requires the documented staging approval.
+The isolated East benchmark namespace prerequisite is review-only in
+[roboflow-infra#2461](https://github.com/roboflow/roboflow-infra/pull/2461).
 
 ### Phase 0: RFC, instrumentation, and baseline
 

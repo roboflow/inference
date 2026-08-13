@@ -671,7 +671,10 @@ staging-only gates; none of these branches has been deployed:
   `c1a.16x` nodes, so it does not schedule onto or alter the active L40S capacity
   campaign. It requires observed connector, preview, claim, relay, pod/node,
   Prometheus, network, and bounded failure/recovery evidence rather than
-  accepting requested placement as proof.
+  accepting requested placement as proof. Stacked infra draft
+  [roboflow-infra#2461](https://github.com/roboflow/roboflow-infra/pull/2461)
+  prepares only the isolated East benchmark namespace/ServiceAccount; it does
+  not touch the live East video-processing release or active source.
 
 No second-cell resources, DNS, Kubernetes objects, functions, or test jobs had
 been applied when this status was written. The South stack, DNS, East identity
