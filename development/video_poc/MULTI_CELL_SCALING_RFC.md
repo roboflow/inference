@@ -562,7 +562,10 @@ dependency overlay being available.
 
 Phase 2 infrastructure is prepared in draft
 [roboflow-infra#2460](https://github.com/roboflow/roboflow-infra/pull/2460), not
-applied. The chosen cell is `crusoe-ussc1` on
+applied. Stacked staging-config draft
+[roboflow#14445](https://github.com/roboflow/roboflow/pull/14445) registers the
+South cell as `unavailable` and binds only its cell-specific secret name after
+that infra prerequisite. The chosen cell is `crusoe-ussc1` on
 `ck8s-stg-us-southcentral1`. Its own stack begins
 `unavailable` with both processor pools disabled, non-runnable image placeholders,
 cell-specific credentials/subscription, fixed c1a.16x relay/gateway placement,

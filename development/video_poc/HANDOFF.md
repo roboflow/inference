@@ -641,6 +641,10 @@ staging-only gates; none of these branches has been deployed:
   idle reassignment/remote-experiment primitives, and a staging-only scheduled
   orphan reaper. The first control-plane rollout registers only
   `crusoe-use1`; missing placement remains a default-cell compatibility path;
+- stacked staging-config draft
+  [roboflow#14445](https://github.com/roboflow/roboflow/pull/14445) adds the
+  explicit South registry entry as `unavailable` and binds its cell-specific
+  secret name only after the infra prerequisite exists;
 - processor/harness draft
   [inference#2793](https://github.com/roboflow/inference/pull/2793) reads
   immutable `VIDEO_PROC_CELL` identity once at startup,
