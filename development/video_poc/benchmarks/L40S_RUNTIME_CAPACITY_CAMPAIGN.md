@@ -70,8 +70,8 @@ the second repetition while the previous worker exists.
 
 ## Dedicated control API deployment gate
 
-The capacity runner must use staging API Hosting:
-`https://roboflow-api-staging.web.app`. Processor claim/status and connector,
+The capacity runner must use the staging API Hosting route:
+`https://api.roboflow.one`. Processor claim/status and connector,
 relay, and fleet routes intentionally remain on `light-v2-device`; do not
 change the worker's `RF_API_URL` or the connector's internal control-plane URL.
 
@@ -97,7 +97,8 @@ The required rewrite order is:
 Before deployment, the observed and expected staging state is:
 
 - `light-v2-video` does not exist;
-- both `roboflow-api-staging.web.app` and its `firebaseapp.com` alias return
+- `api.roboflow.one`, `roboflow-api-staging.web.app`, and the
+  `firebaseapp.com` alias return
   JSON 404 `Endpoint not found.` for both benchmark workspaces; and
 - direct `light-v2-device` calls return the old misleading HTTP 200 empty list.
 

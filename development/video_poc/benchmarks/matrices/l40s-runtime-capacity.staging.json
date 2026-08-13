@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "environment": "staging",
   "defaults": {
-    "apiBase": "https://roboflow-api-staging.web.app",
+    "apiBase": "https://api.roboflow.one",
     "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
     "workspace": "thomas-workspace",
     "sourceId": "9g7UzPcDyVBFBJ0dLei6",

@@ -72,8 +72,7 @@ def load_matrix(path):
 
     defaults = dict(document.get("defaults") or {})
     defaults["apiBase"] = validate_api_base(
-        defaults.get("apiBase")
-        or "https://roboflow-api-staging.web.app"
+        defaults.get("apiBase") or "https://api.roboflow.one"
     )
     max_jobs = int(defaults.get("maxPlannedJobs", 32))
     if max_jobs < 1:

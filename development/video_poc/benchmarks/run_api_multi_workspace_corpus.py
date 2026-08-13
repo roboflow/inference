@@ -163,7 +163,7 @@ def normalize_scenario(document, raw):
         if max_fps is not None:
             max_fps = _positive(max_fps, f"{field} maxFps")
         api_base = validate_api_base(
-            merged.get("apiBase") or DEFAULT_API_BASE
+            merged.get("apiBase") or "https://api.roboflow.one"
         )
         normalized.append(
             {

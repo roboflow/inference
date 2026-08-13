@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "environment": "staging",
   "defaults": {
-    "apiBase": "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device",
+    "apiBase": "https://api.roboflow.one",
     "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
     "workspace": "REPLACE_WITH_STAGING_WORKSPACE",
     "sourceName": "REPLACE_WITH_READY_STAGING_FIXTURE",

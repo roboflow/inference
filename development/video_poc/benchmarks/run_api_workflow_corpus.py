@@ -26,7 +26,7 @@ from pathlib import Path
 
 from build_processor_jobs import load_corpus
 
-DEFAULT_API_BASE = "https://roboflow-api-staging.web.app"
+DEFAULT_API_BASE = "https://api.roboflow.one"
 DEFAULT_MANIFEST = Path(__file__).with_name("workflows") / "manifest.json"
 SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 WORKLOAD = re.compile(

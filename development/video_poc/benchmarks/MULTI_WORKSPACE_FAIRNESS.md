@@ -12,7 +12,7 @@ environment variable, tier, FPS limit, processing mode, and output publishing:
   "schemaVersion": 1,
   "environment": "staging",
   "defaults": {
-    "apiBase": "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device",
+    "apiBase": "https://api.roboflow.one",
     "durationSeconds": 300,
     "maxPlannedJobs": 16
   },

@@ -13,6 +13,7 @@ import run_api_workflow_corpus as runner  # noqa: E402
 from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import (  # noqa: E402
     BenchmarkInterrupted,
+    DEFAULT_API_BASE,
     RunLock,
     _start_jobs,
     build_run_plan,
@@ -68,6 +69,8 @@ def test_missing_api_key_error_does_not_echo_environment_name(monkeypatch, capsy
 
 
 def test_runner_refuses_production_and_builds_from_shared_corpus():
+    assert DEFAULT_API_BASE == "https://api.roboflow.one"
+    assert validate_api_base(DEFAULT_API_BASE) == DEFAULT_API_BASE
     with pytest.raises(ValueError, match="staging"):
         validate_api_base("https://api.roboflow.com")
     with pytest.raises(ValueError, match="staging"):

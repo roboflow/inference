@@ -133,6 +133,8 @@ def test_checked_in_staging_matrices_are_valid_and_credential_free():
         matrix = load_matrix(path)
 
         assert document["environment"] == "staging"
+        assert document["defaults"]["apiBase"] == "https://api.roboflow.one"
+        assert matrix["defaults"]["apiBase"] == "https://api.roboflow.one"
         assert len(matrix["scenarios"]) == EXPECTED_STAGING_MATRICES[path.name]
         assert all(
             scenario["requireSingleProcessor"] for scenario in matrix["scenarios"]
