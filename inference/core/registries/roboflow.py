@@ -61,6 +61,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json_atomic, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.model_types import record_model_type
 from inference_models.models.auto_loaders import core as inference_models_auto_loaders
 from inference_models.models.auto_loaders.core import parse_model_config
 from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
@@ -439,7 +440,30 @@ def get_model_type(
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
+    task_type, model_type = _resolve_model_type(
+        model_id=model_id,
+        api_key=api_key,
+        countinference=countinference,
+        service_secret=service_secret,
+    )
+    # Usage tracking labels rows with the model architecture by reading this map,
+    # which keeps the registry (and its API calls) off the inference hot path.
+    # Both spellings are recorded because callers may pass an alias while the
+    # loaded model reports its resolved id.
+    record_model_type(model_id=model_id, model_type=model_type)
+    record_model_type(
+        model_id=resolve_roboflow_model_alias(model_id=model_id),
+        model_type=model_type,
+    )
+    return task_type, model_type
 
+
+def _resolve_model_type(
+    model_id: ModelID,
+    api_key: Optional[str] = None,
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
+) -> Tuple[TaskType, ModelType]:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     local_model_type = _get_local_model_type(model_id=model_id)
     if local_model_type is not None:
