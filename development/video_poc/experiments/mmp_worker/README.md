@@ -57,8 +57,9 @@ INFERENCE_BATCH_MAX_WAIT_MS=5
 ```
 
 Eight 12 MB slots reserve roughly 96 MB of shared-memory payload capacity per
-active workspace, excluding manager metadata and model memory. The pod must
-have a memory-backed `/dev/shm`; 4 GiB is the initial staging target.
+active workspace, excluding manager metadata and model memory. The standalone
+one-workspace smoke Pod uses the staging deployment's proven 2 GiB
+memory-backed `/dev/shm`; use 4 GiB before a multi-workspace load test.
 
 `mmp-bundled-direct` is an explicit control variant. It exercises the new
 manager and adapter without model subprocess isolation and should not be the
@@ -80,3 +81,31 @@ primary safety or fairness result.
 
 The external MMP process mode and Kubernetes GPU sharing are deliberately out
 of scope for this first integration test.
+
+## Standalone workflow smoke
+
+`render_staging_local_job.py` produces a ConfigMap and a bounded, standalone
+Pod in the Crusoe staging `video-proc` namespace. It never joins the ready pool
+or calls the video-job service. The Pod runs the existing embedded test video
+as a batch through the staging YOLOv8 Nano workflow, owns one L40S, has a
+15-minute deadline, and does not mount a Kubernetes service-account token.
+
+The renderer accepts only an immutable image digest in the
+`roboflow-staging/video-proc` repository. It puts no API key in the rendered
+manifest. Create an exact-run Secret containing only the staging workspace key
+under `api-key`, then render with its name:
+
+```bash
+python development/video_poc/experiments/mmp_worker/render_staging_local_job.py \
+  --image us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-mmp@sha256:REPLACE \
+  --run-id smoke-001 \
+  --workspace rf-inference-benchmark \
+  --api-key-secret video-mmp-smoke-001 \
+  > /tmp/video-mmp-smoke-001.json
+```
+
+Applying the Secret or rendered manifest is a staging cluster write and
+requires explicit operator approval. After apply, inspect the exact Pod's logs
+and `/status`; require a completed job, frames greater than zero, manager mode
+`mmp-bundled-subprocess`, and one active manager domain. Delete the exact Pod,
+ConfigMap, and API-key Secret after collecting evidence.
