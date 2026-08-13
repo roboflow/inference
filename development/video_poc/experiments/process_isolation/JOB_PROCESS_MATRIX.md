@@ -37,8 +37,8 @@ remains blocked while either smoke gate is pending.
 
 | Use | Rebuilt image | Cloud Build | Exact source | Exact base | State |
 |---|---|---|---|---|---|
-| D | `video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd` | `638f8d41-3984-4a27-85f9-f30a323fed67` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | built with provenance; non-GPU smoke `a33d853b-b970-4a0b-9ccb-850798c1a413` and disposable L40S parent/child smoke pending |
-| E/F | `video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c` | `d3f3a1a5-ff33-4944-a443-5db177dd92a2` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | built with provenance; non-GPU smoke `6a815bab-7b78-4b31-8ae8-e11371100de8` and disposable L40S parent/child smoke pending |
+| D | `video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd` | `638f8d41-3984-4a27-85f9-f30a323fed67` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | built with provenance; non-GPU smoke `a33d853b-b970-4a0b-9ccb-850798c1a413` passed; disposable L40S parent/child smoke pending |
+| E/F | `video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c` | `d3f3a1a5-ff33-4944-a443-5db177dd92a2` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | built with provenance; non-GPU smoke `6a815bab-7b78-4b31-8ae8-e11371100de8` passed; disposable L40S parent/child smoke pending |
 
 The rebuilt D and E/F overlays must contain the same processor, process child,
 runtime-compatibility, and bounded cleanup files from one exact source SHA.
