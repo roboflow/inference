@@ -13,7 +13,9 @@ from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
 
 from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
+from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
@@ -1013,6 +1015,25 @@ def _convert_classification_to_vision_events_format(
     return classifications
 
 
+def _build_cloud_request_headers(
+    api_key: str,
+    explicit_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, Union[str, List[str]]]:
+    """Build headers for a Vision Events API call.
+
+    Goes through the shared builder so the headers configured in
+    `ROBOFLOW_API_EXTRA_HEADERS` are attached. Where the API key is a
+    placeholder, one of those headers is the real credential, so a configured
+    `Authorization` wins over the bearer token built from the key.
+
+    The key stays out of the URL deliberately: query strings reach proxy,
+    gateway, and access logs before any redaction could apply.
+    """
+    headers = build_roboflow_api_headers(explicit_headers=explicit_headers)
+    headers.setdefault("Authorization", f"Bearer {api_key}")
+    return headers
+
+
 def _upload_image(
     api_base_url: str,
     api_key: str,
@@ -1029,11 +1050,11 @@ def _upload_image(
     )
     response = requests.post(
         wrap_url(f"{api_base_url}/vision-events/upload"),
-        headers={"Authorization": f"Bearer {api_key}"},
+        headers=_build_cloud_request_headers(api_key=api_key),
         files={"file": ("image.jpg", image_bytes, "image/jpeg")},
         timeout=30,
     )
-    response.raise_for_status()
+    api_key_safe_raise_for_status(response=response)
     result = response.json()
     return result["sourceId"], result.get("url", "")
 
@@ -1081,14 +1102,14 @@ def _send_event(
     try:
         response = requests.post(
             wrap_url(f"{api_base_url}/vision-events"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=_build_cloud_request_headers(
+                api_key=api_key,
+                explicit_headers={"Content-Type": "application/json"},
+            ),
             json=payload,
             timeout=30,
         )
-        response.raise_for_status()
+        api_key_safe_raise_for_status(response=response)
         return False, "Vision event sent successfully"
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
