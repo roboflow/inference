@@ -69,7 +69,6 @@ class JobTelemetry:
             self.pipeline_started_at = None
             self.first_result_at = None
             self.frames = 0
-            self.ema_fps = None
             self.last_latency_ms = None
             self.ema_latency_ms = None
             self._last_frame_time = None
@@ -122,15 +121,6 @@ class JobTelemetry:
                 self.first_result_at = now
             self.frames += 1
             self._counters["inferred"] += 1
-            if self._last_frame_time is not None:
-                dt = now - self._last_frame_time
-                if dt > 0:
-                    instantaneous_fps = 1.0 / dt
-                    self.ema_fps = (
-                        instantaneous_fps
-                        if self.ema_fps is None
-                        else 0.9 * self.ema_fps + 0.1 * instantaneous_fps
-                    )
             self._last_frame_time = now
             frame_timestamp = video_frame.frame_timestamp
             latency_ms = (
@@ -211,6 +201,21 @@ class JobTelemetry:
     def snapshot(self, runtime=None):
         now = self._clock()
         with self.lock:
+            delivered_fps = None
+            if (
+                self.frames > 1
+                and self.first_result_at is not None
+                and self._last_frame_time > self.first_result_at
+            ):
+                # Report delivered throughput, not an EMA of instantaneous
+                # 1/dt samples. The latter explodes when an RTSP decoder emits
+                # several frames in a burst: the uploaded-file control really
+                # delivered 4.91 FPS while its old stats.fps ranged as high as
+                # 82.5 and finished at 27.62. End-to-end count/time remains
+                # truthful for both evenly paced and bursty delivery.
+                delivered_fps = (self.frames - 1) / (
+                    self._last_frame_time - self.first_result_at
+                )
             counters = dict(self._counters)
             cumulative_counts = []
             cumulative = 0
@@ -265,7 +270,7 @@ class JobTelemetry:
                 "schemaVersion": STATS_SCHEMA_VERSION,
                 # Backward-compatible fields used by existing UI/benchmarks.
                 "frames": self.frames,
-                "fps": round(self.ema_fps, 2) if self.ema_fps else None,
+                "fps": round(delivered_fps, 2) if delivered_fps else None,
                 "decodeToResultLatencyMs": (
                     round(self.ema_latency_ms, 1)
                     if self.ema_latency_ms is not None

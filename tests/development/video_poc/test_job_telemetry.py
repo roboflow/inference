@@ -87,6 +87,33 @@ def test_latency_histogram_is_fixed_size_mergeable_and_reports_approx_quantiles(
     assert cumulative[-1] == 6
 
 
+def test_fps_reports_delivered_throughput_instead_of_burst_instantaneous_rate():
+    clock = FakeClock(
+        0,
+        1,
+        1.001,
+        2,
+        2.001,
+        3,
+        3.001,
+        4,
+        4.001,
+        5,
+        5.001,
+        6,
+    )
+    telemetry = JobTelemetry(monotonic_clock=clock)
+    telemetry.on_job()
+    frame = SimpleNamespace(frame_timestamp=datetime.now())
+    for _ in range(10):
+        telemetry.on_result(frame)
+
+    snapshot = telemetry.snapshot()
+
+    assert snapshot["frames"] == 10
+    assert snapshot["fps"] == 2.25
+
+
 def test_runtime_identity_uses_only_allowlisted_bounded_environment(monkeypatch):
     monkeypatch.setenv("VIDEO_PROC_IMAGE", "registry/video-processor:benchmark")
     monkeypatch.setenv("VIDEO_PROC_GIT_SHA", "deadbeef")
