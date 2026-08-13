@@ -22,6 +22,11 @@ steps:
             )
       - ${_IMAGE}
   - name: gcr.io/cloud-builders/docker
+    id: pull-image
+    args:
+      - pull
+      - ${_IMAGE}
+  - name: gcr.io/cloud-builders/docker
     id: inspect-image-config
     args:
       - image
