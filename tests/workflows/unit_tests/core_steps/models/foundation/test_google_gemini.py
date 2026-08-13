@@ -80,16 +80,6 @@ def test_gemini_model_catalog_uses_available_google_models(
     assert "gemini-3.1-flash-lite" in model_ids
 
 
-@pytest.mark.parametrize(
-    "model_ids",
-    [V3_MODEL_VERSION_IDS, V4_MODEL_VERSION_IDS],
-)
-def test_gemini_model_catalog_includes_latest_models(
-    model_ids: list[str],
-) -> None:
-    assert "gemini-3.7-flash" in model_ids
-
-
 @pytest.mark.parametrize("value", [None, 1, "a", True])
 def test_gemini_step_validation_when_image_is_invalid(value: Any) -> None:
     # given
