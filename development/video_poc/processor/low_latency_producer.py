@@ -13,6 +13,7 @@ path (VideoSourceIdentifier accepts Callable[[], VideoFrameProducer]).
 """
 
 import logging
+import time
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -29,16 +30,74 @@ DEFAULT_OPTIONS = {
     "fflags": "nobuffer",
 }
 
+DEFAULT_OPEN_ATTEMPTS = 10
+DEFAULT_OPEN_RETRY_DELAY_SECONDS = 0.5
+
+
+def _retryable_open_error(av_module, error: Exception) -> bool:
+    """Return whether a fresh RTSP publisher can plausibly recover on retry."""
+    retryable_names = (
+        "ConnectionRefusedError",
+        "EOFError",
+        "InvalidDataError",
+        "TimeoutError",
+    )
+    retryable_types = tuple(
+        candidate
+        for candidate in (
+            getattr(getattr(av_module, "error", None), name, None)
+            for name in retryable_names
+        )
+        if isinstance(candidate, type)
+    )
+    return bool(retryable_types) and isinstance(error, retryable_types)
+
+
+def _open_rtsp_with_retry(
+    av_module,
+    url: str,
+    options: Dict[str, str],
+    attempts: int,
+    retry_delay_seconds: float,
+):
+    """Open a just-published relay path without leaking its credentialed URL."""
+    attempts = max(1, int(attempts))
+    for attempt in range(1, attempts + 1):
+        try:
+            return av_module.open(
+                url,
+                options=options,
+                timeout=(10.0, 10.0),  # (open, read) seconds
+            )
+        except Exception as error:
+            if attempt >= attempts or not _retryable_open_error(av_module, error):
+                raise
+            logger.info(
+                "low-latency RTSP publisher not ready (%s, attempt %d/%d)",
+                type(error).__name__,
+                attempt,
+                attempts,
+            )
+            time.sleep(max(0.0, retry_delay_seconds))
+
 
 class LowLatencyRtspProducer(VideoFrameProducer):
-    def __init__(self, url: str, options: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        url: str,
+        options: Optional[Dict[str, str]] = None,
+        open_attempts: int = DEFAULT_OPEN_ATTEMPTS,
+        open_retry_delay_seconds: float = DEFAULT_OPEN_RETRY_DELAY_SECONDS,
+    ):
         import av
 
         self._url = url
-        self._container = av.open(
+        self._container = _open_rtsp_with_retry(
+            av,
             url,
-            options={**DEFAULT_OPTIONS, **(options or {})},
-            timeout=(10.0, 10.0),  # (open, read) seconds
+            {**DEFAULT_OPTIONS, **(options or {})},
+            open_attempts,
+            open_retry_delay_seconds,
         )
         self._stream = self._container.streams.video[0]
         codec_ctx = self._stream.codec_context
@@ -53,6 +112,29 @@ class LowLatencyRtspProducer(VideoFrameProducer):
         self._demuxer = self._container.demux(self._stream)
         self._pending: Optional[np.ndarray] = None
         self._open = True
+
+    @property
+    def source_stream_metadata(self) -> Dict[str, object]:
+        """Return bounded, non-secret evidence for the opened encoded stream."""
+        codec_ctx = self._stream.codec_context
+        rate = self._stream.average_rate or self._stream.guessed_rate
+        codec_name = getattr(codec_ctx, "name", None)
+        if codec_name is None:
+            codec_name = getattr(getattr(codec_ctx, "codec", None), "name", None)
+        metadata = {
+            "width": int(codec_ctx.width),
+            "height": int(codec_ctx.height),
+        }
+        if codec_name:
+            metadata["codec"] = str(codec_name)[:64]
+        if rate:
+            metadata["fps"] = float(rate)
+            numerator = getattr(rate, "numerator", None)
+            denominator = getattr(rate, "denominator", None)
+            if numerator is not None and denominator:
+                metadata["fpsNumerator"] = int(numerator)
+                metadata["fpsDenominator"] = int(denominator)
+        return metadata
 
     def isOpened(self) -> bool:
         return self._open

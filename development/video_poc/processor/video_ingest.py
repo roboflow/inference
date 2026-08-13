@@ -82,6 +82,23 @@ def producer_runtime_identity(producer):
         return {}
     runtime = {"videoProducer": type(producer).__name__[:128]}
     try:
+        raw_stream = producer.source_stream_metadata
+    except Exception:
+        raw_stream = None
+    if isinstance(raw_stream, dict):
+        stream = {}
+        for key in ("width", "height", "fps", "fpsNumerator", "fpsDenominator"):
+            value = raw_stream.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)) and math.isfinite(value):
+                stream[key] = value
+        codec = raw_stream.get("codec")
+        if isinstance(codec, str) and _SAFE_STAT_KEY.fullmatch(codec):
+            stream["codec"] = codec
+        if stream:
+            runtime["sourceStream"] = stream
+    try:
         raw_stats = producer.tensor_bridge_stats
     except Exception:
         return runtime

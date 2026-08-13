@@ -104,6 +104,32 @@ def test_producer_stats_drop_unbounded_or_non_numeric_values():
     assert runtime["tensorBridge"] == {"frames": 4, "ratio": 0.5}
 
 
+def test_pyav_stream_identity_records_exact_bounded_fixture_metadata():
+    producer = SimpleNamespace(
+        source_stream_metadata={
+            "width": 3840,
+            "height": 2160,
+            "fps": 59.94005994005994,
+            "fpsNumerator": 60000,
+            "fpsDenominator": 1001,
+            "codec": "h264",
+            "url": "rtsp://secret@relay/source",
+        }
+    )
+
+    runtime = producer_runtime_identity(producer)
+
+    assert runtime["sourceStream"] == {
+        "width": 3840,
+        "height": 2160,
+        "fps": 59.94005994005994,
+        "fpsNumerator": 60000,
+        "fpsDenominator": 1001,
+        "codec": "h264",
+    }
+    assert "secret" not in str(runtime)
+
+
 def test_cuda_frame_verification_rejects_host_fallback():
     verify_cuda_frame(SimpleNamespace(is_cuda=True))
     with pytest.raises(RuntimeError, match="refusing CPU fallback"):
