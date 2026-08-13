@@ -17,6 +17,7 @@ COPY processor_metrics.py /app/processor_metrics.py
 COPY job_telemetry.py /app/job_telemetry.py
 COPY worker_lifecycle.py /app/worker_lifecycle.py
 COPY execution_domains.py /app/execution_domains.py
+COPY workspace_model_managers.py /app/workspace_model_managers.py
 COPY security.py /app/security.py
 COPY low_latency_producer.py /app/low_latency_producer.py
 
