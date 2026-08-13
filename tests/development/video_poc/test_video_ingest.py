@@ -117,3 +117,13 @@ def test_processor_images_include_ingest_selector(dockerfile):
     source = (PROCESSOR_DIR / dockerfile).read_text()
 
     assert "COPY video_ingest.py /app/video_ingest.py" in source
+
+
+def test_nvdec_cloud_build_uses_full_immutable_base_seam():
+    source = (PROCESSOR_DIR / "cloudbuild.nvdec.yaml").read_text()
+
+    assert "--file=Dockerfile" in source
+    assert "--build-arg=BASE_IMAGE=${_BASE_IMAGE}" in source
+    assert "--build-arg=VIDEO_PROC_GIT_SHA=${_GIT_SHA}" in source
+    assert "VIDEO_PROC_RUNTIME_VARIANT=nvdec-tensor-v1.4" in source
+    assert "Dockerfile.overlay" not in source

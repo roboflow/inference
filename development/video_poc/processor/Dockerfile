@@ -10,6 +10,9 @@
 ARG BASE_IMAGE=roboflow/roboflow-inference-server-gpu:latest
 FROM ${BASE_IMAGE}
 
+ARG VIDEO_PROC_GIT_SHA
+ARG VIDEO_PROC_RUNTIME_VARIANT=video-poc
+
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -30,5 +33,7 @@ COPY low_latency_producer.py /app/low_latency_producer.py
 
 # ffmpeg is on PATH in this image (no bundled ../bin), results under /tmp
 ENV FFMPEG_BIN=ffmpeg
+ENV VIDEO_PROC_GIT_SHA=${VIDEO_PROC_GIT_SHA}
+ENV VIDEO_PROC_RUNTIME_VARIANT=${VIDEO_PROC_RUNTIME_VARIANT}
 
 ENTRYPOINT ["python", "/app/processor.py"]
