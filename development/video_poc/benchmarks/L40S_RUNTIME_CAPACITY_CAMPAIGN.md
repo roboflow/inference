@@ -198,6 +198,18 @@ CUDA/GStreamer tensor construction. Its c1 report must additionally show
 counters, and zero image-output host materializations; otherwise C fails before
 the capacity curve.
 
+The C producer is also structurally different at the backpressure boundary,
+not merely a hardware codec toggle. For live RTSP it uses a native GStreamer
+pipeline with a two-buffer downstream-leaky queue and an appsink configured as
+`max-buffers=1 drop=true sync=false`. Decode therefore continues in native
+pipeline threads and retains only the freshest CUDA frame when the workflow is
+slower than the source. B instead runs eight PyAV-backed `VideoSource` drain
+threads inside one Python process. If C removes the MediaMTX slow-reader errors
+and raises c4/c8 throughput while pod and GPU utilization remain low, attribute
+the gain to the combined native drain plus NVDEC/CUDA ingest path; this A/B does
+not isolate NVDEC compute from native GStreamer scheduling. D/E/F separately
+test whether one Python process per job removes the shared-interpreter portion.
+
 The server-side-dry-run-validated patches are in
 [`runtime_variants/`](runtime_variants/). Apply only after any active staging
 experiment is complete:
