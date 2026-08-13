@@ -1,0 +1,34 @@
+spec:
+  template:
+    metadata:
+      annotations:
+        roboflow.com/staging-rollout: l40s-capacity-c-v14-nvdec
+    spec:
+      containers:
+        - name: processor
+          image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326
+          env:
+            - name: VIDEO_PROC_IMAGE
+              value: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326
+            - name: VIDEO_PROC_GIT_SHA
+              value: 6ca38194bdc3c312c0adf6a3a275b9014c79f4b6
+            - name: VIDEO_PROC_RUNTIME_VARIANT
+              value: v14-tensor-nvdec
+            - name: PROCESSOR_VIDEO_INGEST_MODE
+              value: gstreamer_cuda
+            - name: ENABLE_TENSOR_DATA_REPRESENTATION
+              value: "true"
+            - name: USE_INFERENCE_MODELS
+              value: "true"
+            - name: WORKFLOWS_IMAGE_TENSOR_DEVICE
+              value: cuda
+            - name: VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE
+              value: "true"
+            - name: ROBOFLOW_RTSP_LATENCY_MS
+              value: "200"
+            - name: ROBOFLOW_RTSP_PROTOCOLS
+              value: tcp
+            - name: ROBOFLOW_RTSP_VIDEO_CODEC
+              value: h264
+            - $patch: delete
+              name: ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING
