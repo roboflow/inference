@@ -1,0 +1,42 @@
+# Credential-free, non-GPU inspection for an already-built staging experiment
+# image. Submit with --no-source and an immutable staging Artifact Registry
+# digest as _IMAGE. This never starts a processor or contacts the job API.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: inspect-image-config
+    args:
+      - image
+      - inspect
+      - --format={{json .Config}}
+      - ${_IMAGE}
+  - name: gcr.io/cloud-builders/docker
+    id: verify-job-process-runtime
+    args:
+      - run
+      - --rm
+      - --entrypoint=python
+      - ${_IMAGE}
+      - -c
+      - |
+        import os
+        import job_process
+
+        assert job_process.PROTOCOL_VERSION == 1
+        assert job_process.resolve_job_execution_mode("thread") == "thread"
+        assert job_process.resolve_job_execution_mode("process") == "process"
+        assert os.path.isfile("/app/processor.py")
+        assert os.path.isfile("/app/job_process.py")
+        event = job_process.bounded_child_event(
+            {
+                "version": 1,
+                "type": "status",
+                "state": "running",
+                "stats": {"frames": 1},
+                "runtime": {"processId": 2},
+            }
+        )
+        assert event["runtime"]["processId"] == 2
+        print("job-process image smoke passed")
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 600s

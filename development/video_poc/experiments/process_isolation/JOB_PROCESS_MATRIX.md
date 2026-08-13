@@ -101,3 +101,17 @@ Before capacity testing, run c1 and c2 and require:
 Rollback is an environment-only topology switch back to
 `PROCESSOR_JOB_EXECUTION_MODE=thread` plus the previously pinned image digest.
 No control-plane schema or job payload change is required.
+
+After building an image, run the credential-free non-GPU inspection before any
+staging Pod is created:
+
+```bash
+gcloud builds submit --no-source \
+  --project=roboflow-staging \
+  --config=development/video_poc/processor/cloudbuild.job-process-smoke.yaml \
+  --substitutions=_IMAGE=us-central1-docker.pkg.dev/roboflow-staging/video-proc/<package>@sha256:<digest>
+```
+
+Use an immutable digest, never a tag. The smoke verifies the image config,
+process-mode module/protocol, and required worker files without claiming jobs,
+accessing credentials, requesting a GPU, or contacting the cluster.
