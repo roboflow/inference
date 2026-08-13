@@ -492,6 +492,22 @@ not implemented yet.
   is unstable. Treat c1/c4/c8, with conditional c12, as the legacy A/B set for
   a new-manager worker; investigate the roughly-half-rate `maxFps`
   under-delivery separately before certifying target-FPS capacity.
+  The c1 counter deltas localized that under-delivery before model execution:
+  the worker captured about 59.6 FPS, consumed about 31.2, explicitly dropped
+  about 24.8, and inferred only 2.46 while frame-latency p95 stayed 20 ms. The
+  uploaded `traffic.mp4` replay—not the connector—fed those runs. Inference
+  v1.4 already contains the targeted demand-driven
+  `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` fix for starvation in the legacy
+  open-loop estimator. The POC branch is now based on v1.4 and adds an explicit
+  `PROCESSOR_VIDEO_INGEST_MODE=pyav|gstreamer_cuda` A/B: PyAV remains the
+  default; CUDA mode directly constructs the GStreamer/NVDEC tensor producer,
+  refuses host-frame fallback, and reports producer/bridge identity. Both
+  variants use `freshest`, `DROP_OLDEST`, and a one-frame decoding queue so the
+  comparison does not confound decoder choice with buffering. Tensor-aware
+  result serialization is selected at process start, and image outputs retain
+  `WorkflowImageData` until an actual MJPEG/RTSP/WHIP/batch sink requires a host
+  image. Run the c1 unbounded/5/10/15 gate twice per variant and require at
+  least 90% target attainment before restarting any concurrency curve.
   The API harness now also supports credential-separated multi-workspace waves,
   delayed arrivals, same-worker fairness assertions, compact atomic recovery
   checkpoints, SIGINT/SIGTERM cleanup, and staging-only exact-run janitors. A
