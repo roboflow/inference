@@ -44,6 +44,7 @@ def test_snapshot_keeps_legacy_fields_and_adds_bounded_job_counters():
     )
     telemetry.on_rendered()
     telemetry.on_published()
+    telemetry.on_image_output_materialized()
 
     snapshot = telemetry.snapshot(runtime={"revision": "abc123"})
 
@@ -60,6 +61,7 @@ def test_snapshot_keeps_legacy_fields_and_adds_bounded_job_counters():
         "inferred": 2,
         "rendered": 1,
         "published": 1,
+        "imageOutputHostMaterializations": 1,
     }
     assert snapshot["decodeToResultLatency"]["count"] == 2
     assert snapshot["runtime"] == {"revision": "abc123"}

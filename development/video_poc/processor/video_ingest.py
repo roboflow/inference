@@ -97,3 +97,11 @@ def producer_runtime_identity(producer):
     if stats:
         runtime["tensorBridge"] = stats
     return runtime
+
+
+def verify_cuda_frame(frame_image):
+    """Fail an NVDEC experiment if a reconnect ever yields a host frame."""
+    if not bool(getattr(frame_image, "is_cuda", False)):
+        raise RuntimeError(
+            "gstreamer_cuda ingest produced a non-CUDA frame; refusing CPU fallback"
+        )

@@ -82,9 +82,16 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.workflows.core_steps.common.serializers import (
-    serialize_wildcard_kind,
-)
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialize_wildcard_kind,
+    )
+else:
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialize_wildcard_kind,
+    )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 try:
@@ -111,6 +118,7 @@ from video_ingest import (
     process_runtime_identity,
     producer_runtime_identity,
     resolve_video_ingest_mode,
+    verify_cuda_frame,
 )
 from worker_lifecycle import schedule_retirement
 
@@ -237,12 +245,12 @@ class EventBus:
 
 
 class FrameStore:
-    """Latest annotated JPEG per image output, for MJPEG preview.
+    """Latest value per image output plus a monotonically increasing sequence.
 
     Keeping the latest frame for every image output (not just the designated one)
     is what makes late attachment possible: a viewer can pick any output after the
-    job started. The frames are already JPEG-encoded by the pipeline's serializer,
-    so the only extra cost per output is a base64 decode.
+    job started. One instance stores JPEGs for MJPEG/RTSP consumers; another
+    stores WorkflowImageData so WHIP can materialize pixels only at its sink.
     """
 
     def __init__(self):
@@ -532,10 +540,17 @@ class AiortcWhipPublisher:
 
     transport = "whip"
 
-    def __init__(self, frames: FrameStore, whip_url: str, on_published=None):
+    def __init__(
+        self,
+        frames: FrameStore,
+        whip_url: str,
+        on_published=None,
+        on_materialized=None,
+    ):
         self.frames = frames
         self.whip_url = whip_url
         self.on_published = on_published or (lambda: None)
+        self.on_materialized = on_materialized or (lambda: None)
         self.output = None
         self._thread = None
         self._stopped = threading.Event()
@@ -589,7 +604,7 @@ class AiortcWhipPublisher:
         from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
         from av import VideoFrame
 
-        frames = self.frames  # raw ndarrays per output (no JPEG round trip)
+        frames = self.frames  # WorkflowImageData per output (no JPEG round trip)
         stopped = self._stopped
         publisher = self
 
@@ -614,12 +629,14 @@ class AiortcWhipPublisher:
                     if output != self._output:
                         # per-output seq counters aren't comparable
                         self._output, self._seq = output, -1
-                    image, seq = await loop.run_in_executor(
+                    workflow_image, seq = await loop.run_in_executor(
                         None, frames.wait_next, output, self._seq, 0.25
                     )
-                    if image is not None and seq != self._seq:
+                    if workflow_image is not None and seq != self._seq:
                         self._seq = seq
                         break
+                image = workflow_image.numpy_image
+                publisher.on_materialized()
                 # yuv420 conversion requires even dimensions
                 h, w = image.shape[:2]
                 if h % 2 or w % 2:
@@ -812,6 +829,7 @@ class JobRun:
         self.raw_frames = FrameStore()
         self.pipeline = None
         self.video_producer = None
+        self.hardware_decode_verified = False
         self.pipeline_error = None
         self.sim_process = None
         self.recorder = None
@@ -836,6 +854,12 @@ class JobRun:
             predictions, video_frame = predictions[0], video_frame[0]
         if predictions is None or video_frame is None:
             return
+        if self.worker.video_ingest_mode == GSTREAMER_CUDA_INGEST:
+            # The direct producer factory is also used on reconnect. Verify
+            # every delivered frame so a future producer/runtime change cannot
+            # silently turn this into CPU decode plus a host-to-device upload.
+            verify_cuda_frame(video_frame.image)
+            self.hardware_decode_verified = True
         latency_seconds, first_result_seconds = self.stats.on_result(video_frame)
         self.worker.metrics.frame_processed(
             self.mode,
@@ -862,10 +886,15 @@ class JobRun:
                 rendered = True
                 if self.image_output is None:
                     self.image_output = key
+                # Retain the latest WorkflowImageData itself. In tensor mode
+                # this keeps the CUDA representation and avoids a device-to-
+                # host copy while nobody is watching. Each output slot is
+                # overwritten, so old tensor leases are released promptly.
+                self.raw_frames.set(key, value)
                 try:
-                    image = value.numpy_image
-                    self.raw_frames.set(key, image)
                     if want_jpeg:
+                        image = value.numpy_image
+                        self.stats.on_image_output_materialized()
                         ok, buf = cv2.imencode(".jpg", image)
                         if ok:
                             jpeg = buf.tobytes()
@@ -1010,6 +1039,24 @@ class JobRun:
             mode == "stream"
             and isinstance(video_reference, str)
             and video_reference.startswith("rtsp")
+        ):
+            # Hold buffering semantics constant across the decoder A/B. This
+            # also opts PyAV into v1.4's demand-driven latest-frame behavior
+            # instead of the legacy open-loop adaptive estimator.
+            pipeline_kwargs.update(
+                {
+                    "video_processing_mode": "freshest",
+                    "decoding_buffer_size": 1,
+                    "source_buffer_filling_strategy": (
+                        BufferFillingStrategy.DROP_OLDEST
+                    ),
+                }
+            )
+
+        if (
+            mode == "stream"
+            and isinstance(video_reference, str)
+            and video_reference.startswith("rtsp")
             and self.worker.video_ingest_mode == GSTREAMER_CUDA_INGEST
         ):
             # Construct the hardware producer directly so an unavailable
@@ -1027,12 +1074,6 @@ class JobRun:
                 )
 
             video_reference = create_cuda_producer
-            pipeline_kwargs.update(
-                {
-                    "video_processing_mode": "freshest",
-                    "decoding_buffer_size": 1,
-                }
-            )
             print(
                 f"[processor] fail-loud NVDEC tensor ingest for "
                 f"{sanitize_diagnostic(rtsp_url)}"
@@ -1344,6 +1385,8 @@ class JobRun:
     def runtime_identity(self):
         runtime = dict(self.worker.runtime_identity)
         runtime.update(producer_runtime_identity(self.video_producer))
+        if self.worker.video_ingest_mode == GSTREAMER_CUDA_INGEST:
+            runtime["hardwareDecodeVerified"] = self.hardware_decode_verified
         return runtime
 
     # ---------- output publishing ----------
@@ -1368,7 +1411,10 @@ class JobRun:
             whip_url = self.job.get("outWhipUrl") or f"{WHIP_SIM_BASE}/out-{self.job_id}/whip"
             # raw frames: the whip transport encodes straight from ndarrays
             return AiortcWhipPublisher(
-                self.raw_frames, whip_url, on_published=self.stats.on_published
+                self.raw_frames,
+                whip_url,
+                on_published=self.stats.on_published,
+                on_materialized=self.stats.on_image_output_materialized,
             )
         publish_url = self.job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{self.job_id}"
         return OutputPublisher(

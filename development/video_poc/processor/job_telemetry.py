@@ -80,6 +80,7 @@ class JobTelemetry:
                 "inferred": 0,
                 "rendered": 0,
                 "published": 0,
+                "imageOutputHostMaterializations": 0,
             }
             self._latency_count = 0
             self._latency_sum_ms = 0.0
@@ -187,6 +188,10 @@ class JobTelemetry:
     def on_published(self):
         with self.lock:
             self._counters["published"] += 1
+
+    def on_image_output_materialized(self):
+        with self.lock:
+            self._counters["imageOutputHostMaterializations"] += 1
 
     def _approx_quantile_locked(self, quantile):
         if not self._latency_count:

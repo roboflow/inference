@@ -17,6 +17,7 @@ from video_ingest import (  # noqa: E402
     process_runtime_identity,
     producer_runtime_identity,
     resolve_video_ingest_mode,
+    verify_cuda_frame,
 )
 
 
@@ -103,13 +104,29 @@ def test_producer_stats_drop_unbounded_or_non_numeric_values():
     assert runtime["tensorBridge"] == {"frames": 4, "ratio": 0.5}
 
 
+def test_cuda_frame_verification_rejects_host_fallback():
+    verify_cuda_frame(SimpleNamespace(is_cuda=True))
+    with pytest.raises(RuntimeError, match="refusing CPU fallback"):
+        verify_cuda_frame(SimpleNamespace(is_cuda=False))
+
+
 def test_processor_uses_fail_loud_cuda_and_freshest_frame_mode():
     source = (PROCESSOR_DIR / "processor.py").read_text()
 
     assert "build_cuda_producer(" in source
     assert '"video_processing_mode": "freshest"' in source
     assert '"decoding_buffer_size": 1' in source
+    assert "BufferFillingStrategy.DROP_OLDEST" in source
     assert "discover_hardware_video_frame_producer" not in source
+
+
+def test_processor_selects_tensor_serializer_and_materializes_at_sink_only():
+    source = (PROCESSOR_DIR / "processor.py").read_text()
+
+    assert "if ENABLE_TENSOR_DATA_REPRESENTATION:" in source
+    assert "common.serializers_tensor" in source
+    assert "self.raw_frames.set(key, value)" in source
+    assert "image = workflow_image.numpy_image" in source
 
 
 @pytest.mark.parametrize("dockerfile", ("Dockerfile", "Dockerfile.overlay"))
