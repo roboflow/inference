@@ -208,9 +208,13 @@ class EasyOCRTorch(
             while_image_text_joined = text_regions_separator.join(whole_image_text)
             rendered_texts.append(while_image_text_joined)
             data = [{"text": text} for text in whole_image_text]
+            if xyxy:
+                xyxy_tensor = torch.tensor(xyxy, device=self._device)
+            else:
+                xyxy_tensor = torch.empty((0, 4), device=self._device)
             all_detections.append(
                 Detections(
-                    xyxy=torch.tensor(xyxy, device=self._device),
+                    xyxy=xyxy_tensor,
                     class_id=torch.tensor(class_id, device=self._device),
                     confidence=torch.tensor(
                         predictions_confidence, device=self._device

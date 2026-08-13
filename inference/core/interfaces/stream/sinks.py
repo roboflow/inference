@@ -14,7 +14,10 @@ from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import SinkHandler
-from inference.core.interfaces.stream.utils import wrap_in_list
+from inference.core.interfaces.stream.utils import (
+    materialise_video_frame_for_sink,
+    wrap_in_list,
+)
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
 
@@ -163,6 +166,9 @@ def _handle_frame_rendering(
     if frame is None:
         image = np.zeros((256, 256, 3), dtype=np.uint8)
     else:
+        # This sink draws on CPU pixels — materialise a tensor frame here, at
+        # the consumer boundary (dispatch hands tensor frames through as-is).
+        frame = materialise_video_frame_for_sink(frame)
         try:
             labels = [p["class"] for p in prediction["predictions"]]
             if hasattr(sv.Detections, "from_inference"):
@@ -393,7 +399,11 @@ def active_learning_sink(
     """
     video_frame = wrap_in_list(element=video_frame)
     predictions = wrap_in_list(element=predictions)
-    images = [f.image for f in video_frame if f is not None]
+    # Active learning ships CPU pixels to the backend — materialise tensor
+    # frames at this consumer boundary.
+    images = [
+        materialise_video_frame_for_sink(f).image for f in video_frame if f is not None
+    ]
     predictions = [p for p in predictions if p is not None]
     active_learning_middleware.register_batch(
         inference_inputs=images,

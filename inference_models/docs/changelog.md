@@ -4,6 +4,41 @@
 
 ---
 
+## `0.35.0`
+
+### Added
+
+- Adjustment to `KeyPoints` interface to expose `__len__(...)` method.
+- Adjustment to `InstanceDetections` interface to expose `__len__(...)` and `__iter__(...)` method.
+- Adjustment to `Detections` interface to expose `__len__(...)` and `__iter__(...)` method.
+- Iteration over `Detections` / `InstanceDetections` yields 7-tuples
+  `(xyxy, mask, class_id, confidence, tracker_id, data, metadata)`, mirroring the positional
+  iteration contract of `sv.Detections`. `xyxy` is a `(4, )` tensor and `class_id` / `confidence`
+  are 0-dim tensors for a single detection; `mask` is always `None` for `Detections`, and for
+  `InstanceDetections` it is either a per-instance dense `(H, W)` tensor or - when masks are held
+  as `InstancesRLEMasks` - a COCO RLE mapping `{"size": [h, w], "counts": ...}`. `tracker_id` and
+  `data` are taken from `bboxes_metadata[i]` (`data` defaults to `{}`, `tracker_id` to `None`) and
+  `metadata` from `image_metadata` (defaults to `{}`).
+  `len(...)` counts bounding boxes (`xyxy.shape[0]`) for `Detections` / `InstanceDetections`
+  regardless of the mask representation, and counts **skeleton instances** (`xy.shape[0]`) for
+  `KeyPoints` - not keypoints per instance. `KeyPoints` deliberately remains **non-iterable**, so
+  that adding a positional iteration order for it later is an explicit, tested decision rather than
+  a silent contract downstream code could come to depend on.
+
+### Fixed
+
+- `EasyOCRTorch` no longer emits a malformed `Detections.xyxy` when no text region passes the
+  confidence threshold. The empty case previously produced `torch.tensor([])` with shape `(0, )`;
+  an explicit `(0, 4)` empty tensor is now built instead, so empty results keep the declared
+  bounding-box shape.
+- Streaming video models based on `HFStreamingVideoBase` (SAM2 Video, SAM3 Tracker Video) now
+  accept channels-first (`CHW`) `torch.Tensor` frames. `_ensure_numpy_image(...)` permutes such
+  inputs to channels-last (`HWC`) before the host transfer, so the HuggingFace processor receives
+  a correctly-shaped image instead of silently mis-interpreting the channel axis.
+
+
+---
+
 ## `0.34.6`
 
 ### Fixed
