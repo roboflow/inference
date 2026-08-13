@@ -110,7 +110,12 @@ class LowLatencyRtspProducer(VideoFrameProducer):
         # frame-threaded decode adds thread_count-1 frames of delay
         codec_ctx.thread_count = 1
         self._demuxer = self._container.demux(self._stream)
-        self._pending: Optional[np.ndarray] = None
+        # Keep the decoded AV frame until the consumer explicitly retrieves it.
+        # VideoSource's source-side FPS limiter calls grab() for every encoded
+        # frame but retrieve() only for the selected stride.  Converting here
+        # would therefore materialise every 60 FPS source frame into a host BGR
+        # array even when a maxFps=5 job keeps only one in twelve.
+        self._pending = None
         self._open = True
 
     @property
@@ -143,7 +148,7 @@ class LowLatencyRtspProducer(VideoFrameProducer):
         try:
             for packet in self._demuxer:
                 for frame in packet.decode():
-                    self._pending = frame.to_ndarray(format="bgr24")
+                    self._pending = frame
                     return True
             return False
         except Exception as error:
@@ -155,7 +160,8 @@ class LowLatencyRtspProducer(VideoFrameProducer):
         if self._pending is None:
             if not self.grab():
                 return False, None
-        image, self._pending = self._pending, None
+        frame, self._pending = self._pending, None
+        image = frame.to_ndarray(format="bgr24")
         return True, image
 
     def initialize_source_properties(self, properties: Dict[str, float]) -> None:
