@@ -52,8 +52,8 @@ def test_render_concurrent_legacy_control():
         max_fps=5,
     )
     config_map, pod_manifest = manifest["items"]
-    worker = pod_manifest["spec"]["containers"][0]
-    assert sorted(config_map["data"]) == [
+    worker, relay = pod_manifest["spec"]["containers"]
+    assert sorted(key for key in config_map["data"] if key.startswith("job-")) == [
         "job-1.json",
         "job-2.json",
         "job-3.json",
@@ -64,9 +64,16 @@ def test_render_concurrent_legacy_control():
     env = {item["name"]: item.get("value") for item in worker["env"]}
     assert env["PROCESSOR_MODEL_MANAGER_MODE"] == "legacy"
     assert env["LEGACY_MMP_ADAPTER_MODE"] == "off"
-    jobs = [__import__("json").loads(value) for value in config_map["data"].values()]
+    jobs = [
+        __import__("json").loads(value)
+        for key, value in config_map["data"].items()
+        if key.startswith("job-")
+    ]
     assert {job["maxFps"] for job in jobs} == {5.0}
     assert len({job["id"] for job in jobs}) == 4
+    assert relay["image"].endswith(
+        "@sha256:59aaad04627c7c8f40ceb01a5ff1c43f91e01939da147c3419f1aaa0c78d6cf5"
+    )
 
 
 def test_render_stream_jobs_have_unique_internal_relay_paths():
@@ -81,13 +88,14 @@ def test_render_stream_jobs_have_unique_internal_relay_paths():
     )
     jobs = [
         __import__("json").loads(value)
-        for value in manifest["items"][0]["data"].values()
+        for key, value in manifest["items"][0]["data"].items()
+        if key.startswith("job-")
     ]
     assert {job["mode"] for job in jobs} == {"stream"}
     assert len({job["simPublishUrl"] for job in jobs}) == 2
     assert all(
         job["simPublishUrl"].startswith(
-            "rtsp://mediamtx.video-proc.svc:8554/sim-mmp-c2-"
+            "rtsp://127.0.0.1:8554/sim-mmp-c2-"
         )
         for job in jobs
     )

@@ -105,7 +105,7 @@ def render(
                 **(
                     {
                         "simPublishUrl": (
-                            "rtsp://mediamtx.video-proc.svc:8554/"
+                            "rtsp://127.0.0.1:8554/"
                             f"sim-{run_id}-{ordinal}"
                         )
                     }
@@ -140,7 +140,20 @@ def render(
                         "roboflow.com/run-id": run_id,
                     },
                 },
-                "data": job_data,
+                "data": {
+                    **job_data,
+                    "mediamtx.yml": (
+                        "logLevel: warn\n"
+                        "rtsp: yes\n"
+                        "rtspAddress: :8554\n"
+                        "rtspTransports: [tcp]\n"
+                        "webrtc: no\n"
+                        "hls: no\n"
+                        "rtmp: no\n"
+                        "srt: no\n"
+                        "paths:\n  all_others:\n"
+                    ),
+                },
             },
             {
                 "apiVersion": "v1",
@@ -237,7 +250,29 @@ def render(
                                     "readOnly": True,
                                 },
                             ],
-                        }
+                        },
+                        {
+                            "name": "relay",
+                            "image": (
+                                "docker.io/bluenviron/mediamtx@sha256:"
+                                "59aaad04627c7c8f40ceb01a5ff1c43f91e01939da147c3419f1aaa0c78d6cf5"
+                            ),
+                            "args": ["/etc/mediamtx/mediamtx.yml"],
+                            "ports": [
+                                {"containerPort": 8554, "name": "local-rtsp"}
+                            ],
+                            "resources": {
+                                "requests": {"cpu": "100m", "memory": "64Mi"},
+                                "limits": {"cpu": "500m", "memory": "256Mi"},
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/etc/mediamtx",
+                                    "name": "relay-config",
+                                    "readOnly": True,
+                                }
+                            ],
+                        },
                     ],
                     "volumes": [
                         {
@@ -254,6 +289,19 @@ def render(
                                         "path": f"job-{ordinal}.json",
                                     }
                                     for ordinal in range(1, concurrency + 1)
+                                ],
+                                "name": job_config_name,
+                            },
+                        },
+                        {
+                            "name": "relay-config",
+                            "configMap": {
+                                "defaultMode": 0o400,
+                                "items": [
+                                    {
+                                        "key": "mediamtx.yml",
+                                        "path": "mediamtx.yml",
+                                    }
                                 ],
                                 "name": job_config_name,
                             },
