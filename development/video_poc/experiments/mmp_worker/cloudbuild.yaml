@@ -11,6 +11,11 @@ steps:
       - --tag=${_BASE_OUTPUT}
       - .
   - name: gcr.io/cloud-builders/docker
+    id: push-merged-gpu-inference
+    args:
+      - push
+      - ${_BASE_OUTPUT}
+  - name: gcr.io/cloud-builders/docker
     id: build-video-worker
     dir: development/video_poc/processor
     env:
