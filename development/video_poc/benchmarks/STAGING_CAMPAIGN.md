@@ -33,6 +33,15 @@ The first smoke is one GPU and one CPU YOLOv8 Nano stream at 5 FPS for 60
 seconds. Require one attempt, positive frame deltas, finite latency, matching
 runtime/image identity, clean cancellation, and no processor/container restart.
 
+Before any concurrency curve, run `gpu-ingest-gate.staging.example.json`
+separately for the v1.4 PyAV and NVDEC/tensor worker variants. The buffering
+configuration must be identical (`freshest`, `DROP_OLDEST`, decoding queue 1).
+Require every controlled c1 run to deliver at least 90% of requested FPS. For
+NVDEC additionally require `GstreamerCudaVideoFrameProducer`, verified CUDA
+frames, advancing bridge CUDA-map counters, zero host-pixel maps/copies, and no
+image-output host materialization while output is disabled. A failed c1 gate
+blocks the larger packing matrix.
+
 ## Gate 1: controlled single-workload capacity
 
 Run `gpu-controlled-fps.staging.example.json` and

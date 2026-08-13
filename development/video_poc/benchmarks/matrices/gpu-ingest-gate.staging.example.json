@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "REPLACE_WITH_STAGING_WORKSPACE",
+    "sourceName": "REPLACE_WITH_READY_STAGING_FIXTURE",
+    "durationSeconds": 180,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 20,
+    "maxPlannedJobs": 1
+  },
+  "scenarios": [
+    {
+      "name": "gpu-ingest-unbounded-c01",
+      "workloads": ["single-detection=1"],
+      "repetitions": 2
+    },
+    {
+      "name": "gpu-ingest-fps05-c01",
+      "workloads": ["single-detection=1"],
+      "maxFps": 5,
+      "repetitions": 2
+    },
+    {
+      "name": "gpu-ingest-fps10-c01",
+      "workloads": ["single-detection=1"],
+      "maxFps": 10,
+      "repetitions": 2
+    },
+    {
+      "name": "gpu-ingest-fps15-c01",
+      "workloads": ["single-detection=1"],
+      "maxFps": 15,
+      "repetitions": 2
+    }
+  ]
+}

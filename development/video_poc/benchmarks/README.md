@@ -228,6 +228,7 @@ successful-looking runs.
 
 | Matrix | Purpose |
 |---|---|
+| `gpu-ingest-gate.staging.example.json` | Two c1 repetitions at unbounded, 5, 10, and 15 FPS; run once per decoder/runtime variant before capacity tests |
 | `gpu-controlled-fps.staging.example.json` | Two repetitions of the 1/4/8/12/18/24 GPU concurrency curve at 5, 10, and 15 FPS |
 | `cpu-controlled-fps.staging.example.json` | Two repetitions of the 1/2/3/4 CPU concurrency curve at 5, 8, 10, and 15 FPS using the same YOLO model as GPU |
 | `multi-workspace-fairness.staging.example.json` | Balanced tenants, delayed peer arrival, heavy-workflow arrival, reverse arrival order, and output-publisher noisy neighbors |

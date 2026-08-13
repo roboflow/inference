@@ -26,6 +26,7 @@ MATRIX_DIR = BENCHMARK_DIR / "matrices"
 EXPECTED_STAGING_MATRICES = {
     "cpu-controlled-fps.staging.example.json": 16,
     "gpu-controlled-fps.staging.example.json": 18,
+    "gpu-ingest-gate.staging.example.json": 4,
     "long-soak.staging.example.json": 8,
     "multi-workspace-fairness.staging.example.json": 6,
     "output-overhead.staging.example.json": 8,
