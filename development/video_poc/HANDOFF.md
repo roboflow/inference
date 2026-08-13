@@ -546,7 +546,19 @@ not implemented yet.
   see the pod filesystem/download cache, so this is not a tenant security
   boundary. It includes a full merged GPU-image build, an image-level manager
   readiness smoke, and a digest-only bounded local-workflow Pod that never
-  joins the staging ready pool.
+  joins the staging ready pool. Cloud Build
+  `984175ce-625d-42aa-9f93-ba691d1006b1` passed and produced worker digest
+  `sha256:c6ad147dd30897874dc3a5dda4fc97345ab9f4220d15405139bf76fde415b1cd`.
+  The standalone Crusoe staging smoke completed the YOLOv8 Nano workflow for
+  all 538 frames with zero drops at 15.38 delivered FPS. Status reported one
+  `mmp-bundled-subprocess` workspace domain; the worker remained PID 1 while
+  the loaded model ran in PID 169 using 892 MiB VRAM. Decoded frames exceeded
+  the original 12 MB shared-memory slot, so the minimum tested configuration
+  is eight 32 MB slots (256 MB total) inside the 2 GiB `/dev/shm`. The test Pod,
+  ConfigMap, and short-lived API-key Secret were removed after evidence
+  collection. This establishes workflow compatibility and real model-process
+  separation; concurrency, auto-batching benefit, cross-workspace fairness,
+  failure containment, and raw-MPS comparisons remain unmeasured.
 - **Fault injection is bound to the actual video cell.** The dry-run controller
   accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
   API server and refuses a context alias pointed elsewhere. Earlier draft
