@@ -61,27 +61,56 @@ def _workflow():
     }
 
 
-def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
+def render(
+    image,
+    run_id,
+    workspace,
+    api_key_secret,
+    backend="subprocess",
+    concurrency=1,
+    max_fps=5.0,
+):
     if not IMAGE_RE.fullmatch(str(image or "")):
         raise ValueError("image must be an immutable staging MMP worker digest")
     run_id = dns_label(run_id, "run ID", max_length=40)
     workspace = workspace_name(workspace)
     api_key_secret = dns_label(api_key_secret, "API key Secret")
-    if backend not in {"subprocess", "direct"}:
-        raise ValueError("backend must be subprocess or direct")
-    manager_mode = f"mmp-bundled-{backend}"
+    if backend not in {"legacy", "subprocess", "direct"}:
+        raise ValueError("backend must be legacy, subprocess, or direct")
+    if not isinstance(concurrency, int) or not 1 <= concurrency <= 8:
+        raise ValueError("concurrency must be an integer between 1 and 8")
+    if not isinstance(max_fps, (int, float)) or not 0 < max_fps <= 30:
+        raise ValueError("max FPS must be greater than 0 and at most 30")
+    manager_mode = (
+        "legacy" if backend == "legacy" else f"mmp-bundled-{backend}"
+    )
     job_config_name = f"video-mmp-{run_id}-job"
-    job = {
-        "id": f"local-mmp-{run_id}",
-        "workspace": workspace,
-        "sourceUrl": (
-            "https://media.roboflow.com/supervision/"
-            "video-examples/vehicles.mp4"
-        ),
-        "mode": "batch",
-        "imageOutput": "visualization",
-        "workflowSpecification": _workflow(),
+    jobs = []
+    for ordinal in range(1, concurrency + 1):
+        jobs.append(
+            {
+                "id": f"local-{run_id}-{ordinal}",
+                "workspace": workspace,
+                "sourceUrl": (
+                    "https://media.roboflow.com/supervision/"
+                    "video-examples/vehicles.mp4"
+                ),
+                "mode": "batch",
+                "maxFps": float(max_fps),
+                "imageOutput": "visualization",
+                "workflowSpecification": _workflow(),
+            }
+        )
+    job_data = {
+        f"job-{ordinal}.json": json.dumps(job, sort_keys=True)
+        for ordinal, job in enumerate(jobs, start=1)
     }
+    job_args = []
+    for ordinal in range(1, concurrency + 1):
+        job_args.extend(
+            ["--job-file", f"/var/run/video-job/job-{ordinal}.json"]
+        )
+    job_args.extend(["--max-jobs", str(concurrency), "--tier", "gpu"])
     return {
         "apiVersion": "v1",
         "kind": "List",
@@ -98,7 +127,7 @@ def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
                         "roboflow.com/run-id": run_id,
                     },
                 },
-                "data": {"job.json": json.dumps(job, sort_keys=True)},
+                "data": job_data,
             },
             {
                 "apiVersion": "v1",
@@ -128,14 +157,7 @@ def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
                             "name": "worker",
                             "image": image,
                             "imagePullPolicy": "IfNotPresent",
-                            "args": [
-                                "--job-file",
-                                "/var/run/video-job/job.json",
-                                "--max-jobs",
-                                "1",
-                                "--tier",
-                                "gpu",
-                            ],
+                            "args": job_args,
                             "env": [
                                 {"name": "PROJECT", "value": "roboflow-staging"},
                                 {
@@ -148,11 +170,17 @@ def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
                                 },
                                 {
                                     "name": "LEGACY_MMP_ADAPTER_MODE",
-                                    "value": "bundled",
+                                    "value": (
+                                        "off" if backend == "legacy" else "bundled"
+                                    ),
                                 },
                                 {
                                     "name": "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND",
-                                    "value": backend,
+                                    "value": (
+                                        "subprocess"
+                                        if backend == "legacy"
+                                        else backend
+                                    ),
                                 },
                                 {"name": "INFERENCE_N_SLOTS", "value": "8"},
                                 {"name": "INFERENCE_INPUT_MB", "value": "32"},
@@ -208,7 +236,11 @@ def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
                             "configMap": {
                                 "defaultMode": 0o400,
                                 "items": [
-                                    {"key": "job.json", "path": "job.json"}
+                                    {
+                                        "key": f"job-{ordinal}.json",
+                                        "path": f"job-{ordinal}.json",
+                                    }
+                                    for ordinal in range(1, concurrency + 1)
                                 ],
                                 "name": job_config_name,
                             },
@@ -227,8 +259,12 @@ def main(argv=None):
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--api-key-secret", required=True)
     parser.add_argument(
-        "--backend", choices=("subprocess", "direct"), default="subprocess"
+        "--backend",
+        choices=("legacy", "subprocess", "direct"),
+        default="subprocess",
     )
+    parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--max-fps", type=float, default=5.0)
     args = parser.parse_args(argv)
     try:
         manifest = render(
@@ -237,6 +273,8 @@ def main(argv=None):
             args.workspace,
             args.api_key_secret,
             args.backend,
+            args.concurrency,
+            args.max_fps,
         )
     except ValueError as exc:
         parser.error(str(exc))

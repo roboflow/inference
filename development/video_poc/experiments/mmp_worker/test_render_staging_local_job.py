@@ -30,7 +30,7 @@ def test_render_is_staging_bounded_and_credential_free():
     rendered = str(manifest)
     assert "apiKey" not in rendered
     assert "Ocx" not in rendered
-    job = __import__("json").loads(config_map["data"]["job.json"])
+    job = __import__("json").loads(config_map["data"]["job-1.json"])
     assert job["workspace"] == "rf-inference-benchmark"
     assert job["mode"] == "batch"
     assert job["workflowSpecification"]["steps"][0]["model_id"] == (
@@ -39,6 +39,34 @@ def test_render_is_staging_bounded_and_credential_free():
     secret_ref = worker["env"][-1]["valueFrom"]["secretKeyRef"]
     assert secret_ref == {"key": "api-key", "name": "video-mmp-smoke-001"}
     assert pod["volumes"][1]["configMap"]["name"] == "video-mmp-smoke-001-job"
+
+
+def test_render_concurrent_legacy_control():
+    manifest = render(
+        IMAGE,
+        "legacy-c4",
+        "rf-inference-benchmark",
+        "video-mmp-smoke-001",
+        backend="legacy",
+        concurrency=4,
+        max_fps=5,
+    )
+    config_map, pod_manifest = manifest["items"]
+    worker = pod_manifest["spec"]["containers"][0]
+    assert sorted(config_map["data"]) == [
+        "job-1.json",
+        "job-2.json",
+        "job-3.json",
+        "job-4.json",
+    ]
+    assert worker["args"].count("--job-file") == 4
+    assert worker["args"][-4:] == ["--max-jobs", "4", "--tier", "gpu"]
+    env = {item["name"]: item.get("value") for item in worker["env"]}
+    assert env["PROCESSOR_MODEL_MANAGER_MODE"] == "legacy"
+    assert env["LEGACY_MMP_ADAPTER_MODE"] == "off"
+    jobs = [__import__("json").loads(value) for value in config_map["data"].values()]
+    assert {job["maxFps"] for job in jobs} == {5.0}
+    assert len({job["id"] for job in jobs}) == 4
 
 
 @pytest.mark.parametrize(
@@ -80,4 +108,12 @@ def test_render_rejects_unsafe_names_and_unknown_backend():
             "rf-inference-benchmark",
             "video-mmp-smoke-001",
             "external",
+        )
+    with pytest.raises(ValueError, match="concurrency"):
+        render(
+            IMAGE,
+            "smoke-001",
+            "rf-inference-benchmark",
+            "video-mmp-smoke-001",
+            concurrency=9,
         )
