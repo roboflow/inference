@@ -160,6 +160,7 @@ def test_processor_images_include_ingest_selector(dockerfile):
     source = (PROCESSOR_DIR / dockerfile).read_text()
 
     assert "COPY video_ingest.py /app/video_ingest.py" in source
+    assert "COPY file_replay.py /app/file_replay.py" in source
 
 
 def test_full_processor_restores_pip_removed_from_v14_runtime():

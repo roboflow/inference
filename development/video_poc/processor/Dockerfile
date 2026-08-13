@@ -32,6 +32,7 @@ COPY worker_lifecycle.py /app/worker_lifecycle.py
 COPY execution_domains.py /app/execution_domains.py
 COPY security.py /app/security.py
 COPY video_ingest.py /app/video_ingest.py
+COPY file_replay.py /app/file_replay.py
 # low-latency RTSP ingest (PyAV, codec-level low_delay); without it the
 # processor silently falls back to cv2 ingest and its ~550ms decoder buffer
 COPY low_latency_producer.py /app/low_latency_producer.py

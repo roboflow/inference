@@ -27,6 +27,7 @@ OVERLAY_FILES = (
     "development/video_poc/processor/execution_domains.py",
     "development/video_poc/processor/security.py",
     "development/video_poc/processor/video_ingest.py",
+    "development/video_poc/processor/file_replay.py",
     "development/video_poc/processor/low_latency_producer.py",
 )
 

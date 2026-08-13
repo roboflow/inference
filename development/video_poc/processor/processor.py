@@ -100,6 +100,7 @@ except Exception:  # PyAV missing: fall back to cv2 URL ingest
     LowLatencyRtspProducer = None
 
 from execution_domains import build_execution_domains, wait_for_threads
+from file_replay import DEFAULT_BITRATE_KBPS, build_file_replay_command
 from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
 from security import (
@@ -173,6 +174,9 @@ FFMPEG_BIN = os.getenv(
 )
 if not os.path.exists(FFMPEG_BIN):
     FFMPEG_BIN = "ffmpeg"
+FILE_REPLAY_BITRATE_KBPS = int(
+    os.getenv("VIDEO_PROC_FILE_REPLAY_BITRATE_KBPS", str(DEFAULT_BITRATE_KBPS))
+)
 
 # Batch-job results (annotated mp4 + per-frame JSONL) are kept here so the UI can
 # scrub them after the job completes. Survives until the OS clears temp storage;
@@ -1005,26 +1009,39 @@ class JobRun:
             # Stream mode on a file: replay it at native speed through the local
             # relay and consume RTSP, so the pipeline sees a genuine live stream
             # (real-time pacing, drops under load) — a recording standing in for
-            # a camera that will be hooked up later. The platform hands us a
-            # credentialed publish URL; the env base is the local-dev fallback.
+            # a camera that will be hooked up later. Download once before replay
+            # so HTTP jitter, range support, and signed-URL expiry do not shape
+            # the live stream. Normalise to zerolatency H.264 rather than stream-
+            # copying arbitrary B-frames: LowLatencyRtspProducer deliberately
+            # disables decoder reordering, which is only valid for a low-delay
+            # encoded stream. This mirrors rf-connector's file-source path.
+            # The platform hands us a credentialed publish URL; the env base is
+            # the local-dev fallback.
             video_reference = job.get("simPublishUrl") or f"{RTSP_SIM_BASE}/sim-{self.job_id}"
             try:
-                # -stream_loop -1: a test source should keep behaving like a camera
-                # until the job is stopped, not end when the recording runs out
+                replay_path = self._download_source(source_url)
                 self.sim_process = subprocess.Popen(
-                    [
-                        FFMPEG_BIN, "-re", "-stream_loop", "-1", "-i", source_url,
-                        "-c", "copy", "-f", "rtsp", "-rtsp_transport", "tcp",
-                        video_reference,
-                    ],
+                    build_file_replay_command(
+                        ffmpeg_bin=FFMPEG_BIN,
+                        source_path=replay_path,
+                        publish_url=video_reference,
+                        bitrate_kbps=FILE_REPLAY_BITRATE_KBPS,
+                    ),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
                 time.sleep(2.0)  # let the publisher register with the relay
-            except OSError as exc:
+                replay_exit = self.sim_process.poll()
+                if replay_exit is not None:
+                    raise RuntimeError(
+                        f"ffmpeg replay exited during startup (code {replay_exit})"
+                    )
+            except Exception as exc:
                 error = f"ffmpeg replay failed: {sanitize_diagnostic(exc)}"
                 print(f"[processor] {error}", file=sys.stderr)
                 self.report_failure(error)
+                self._stop_sim_process()
+                self._cleanup_download()
                 with self.lock:
                     self.state = "error"
                     self.job = {**job, "error": error}
@@ -1306,7 +1323,7 @@ class JobRun:
                     pass
 
     def _download_source(self, source_url: str) -> str:
-        """Fetch a batch job's file to local disk so it gets true file semantics."""
+        """Fetch an uploaded source once for batch decode or stable live replay."""
         suffix = os.path.splitext(urlparse(source_url).path)[1] or ".mp4"
         fd, path = tempfile.mkstemp(prefix=f"rfv-job-{self.job_id}-", suffix=suffix)
         # track immediately so a mid-download failure still gets cleaned up
