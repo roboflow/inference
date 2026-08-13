@@ -517,6 +517,10 @@ not implemented yet.
   strategy `none`, and one replica per device. Therefore Gate 4 can test raw MPS
   inside one exclusive-GPU pod after the 4 GiB shared-memory deployment, but it
   cannot test MIG or Kubernetes device-plugin MPS sharing on this L40S fleet.
+  Staging Cloud Build `f0bd00b6-f0d1-410a-8ba6-bf9f8e8ccfd0` subsequently
+  produced the dedicated benchmark image at
+  `mmp-benchmark@sha256:6a6592f77e0eb1d3bfc8b82d7add6a7206e946a437a072f7f3a58cf693b1716d`
+  from PR #2788 revision `5f02db12ebdda013ff92e6607f92f88c7f9582ec`.
 - **Fault injection is bound to the actual video cell.** The dry-run controller
   accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
   API server and refuses a context alias pointed elsewhere. Earlier draft
