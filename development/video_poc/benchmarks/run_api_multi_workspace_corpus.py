@@ -18,14 +18,15 @@ import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
+from analysis.fairness import FairnessConfig, analyze_fairness
 from build_processor_jobs import load_corpus
 from run_api_workflow_corpus import (
-    BenchmarkInterrupted,
     DEFAULT_API_BASE,
-    RunLock,
     SAFE_RUN_ID,
-    SignalStop,
     TERMINAL_STATES,
+    BenchmarkInterrupted,
+    RunLock,
+    SignalStop,
     VideoServiceClient,
     VideoServiceError,
     build_run_plan,
@@ -113,9 +114,7 @@ def normalize_scenario(document, raw):
     labels_by_workspace = {}
     for index, item in enumerate(raw.get("workloads") or []):
         if not isinstance(item, dict):
-            raise ValueError(
-                f"scenario {name} cannot mix string and object workloads"
-            )
+            raise ValueError(f"scenario {name} cannot mix string and object workloads")
         merged = {**scenario_defaults, **item}
         field = f"scenario {name} workload {index + 1}"
         profile = str(merged.get("profile") or "")
@@ -209,9 +208,7 @@ def normalize_scenario(document, raw):
             f"scenario {name} startupTimeoutSeconds",
         ),
         "cleanupTimeoutSeconds": _positive(
-            raw.get(
-                "cleanupTimeoutSeconds", defaults.get("cleanupTimeoutSeconds", 60)
-            ),
+            raw.get("cleanupTimeoutSeconds", defaults.get("cleanupTimeoutSeconds", 60)),
             f"scenario {name} cleanupTimeoutSeconds",
         ),
         "pollIntervalSeconds": _positive(
@@ -331,7 +328,7 @@ def prepare_runtime(plan, execute):
 
 def _job_view(job, item):
     return {
-        **report_job(job),
+        **_redact_report_value(report_job(job), item),
         "workspaceLabel": item["workspaceLabel"],
         "profile": item["profile"],
         "ordinal": item["ordinal"],
@@ -350,7 +347,42 @@ def _safe_error(error, item):
     message = message.replace(
         urllib.parse.quote(workspace, safe=""), item["workspaceLabel"]
     )
+    message = re.sub(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [redacted credential]",
+        message,
+    )
+    message = re.sub(
+        r"(?i)([\"']?\b(?:api[_-]?key|x-api-key|token|authorization|credential|"
+        r"password|secret)[\"']?\s*[=:]\s*)"
+        r"(?:\"[^\"]*\"|'[^']*'|[^\s&,;}]+)",
+        r"\1[redacted credential]",
+        message,
+    )
     return message
+
+
+def _redact_report_value(value, item):
+    """Recursively scrub tenant routing and credentials from API-owned fields."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                "[redacted credential]"
+                if any(
+                    marker in re.sub(r"[^a-z0-9]", "", str(key).lower())
+                    for marker in SECRET_FIELD_MARKERS
+                )
+                else _redact_report_value(child, item)
+            )
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_report_value(child, item) for child in value]
+    if isinstance(value, tuple):
+        return [_redact_report_value(child, item) for child in value]
+    if isinstance(value, str):
+        return _safe_error(value, item)
+    return value
 
 
 def _start_wave(clients, sources, wave, run_id, on_started=None):
@@ -390,9 +422,7 @@ def _poll(clients, active):
     def get(handle_and_record):
         handle, record = handle_and_record
         try:
-            job = clients[record["item"]["_clientKey"]].get_job(
-                record["job"]["id"]
-            )
+            job = clients[record["item"]["_clientKey"]].get_job(record["job"]["id"])
         except Exception as error:
             raise RuntimeError(
                 f"{record['item']['workspaceLabel']}: "
@@ -430,6 +460,7 @@ def run_benchmark(
     run_id,
     checkpoint=None,
     should_stop=None,
+    defer_complete=False,
     sleep=time.sleep,
     monotonic=time.monotonic,
 ):
@@ -461,8 +492,7 @@ def run_benchmark(
     def save_checkpoint(phase, fail_run=True):
         report["checkpoint"] = {"phase": phase, "updatedAt": utc_now()}
         report["jobs"] = [
-            _job_view(record["job"], record["item"])
-            for record in active.values()
+            _job_view(record["job"], record["item"]) for record in active.values()
         ]
         try:
             checkpoint(report)
@@ -613,9 +643,7 @@ def run_benchmark(
             try:
                 active = _poll(clients, active)
             except Exception as error:
-                report["errors"].append(
-                    {"phase": "cleanup", "error": str(error)}
-                )
+                report["errors"].append({"phase": "cleanup", "error": str(error)})
                 success = False
                 break
             save_checkpoint("cleanup", fail_run=False)
@@ -626,8 +654,7 @@ def run_benchmark(
                 break
             sleep(scenario["pollIntervalSeconds"])
         if active and not all(
-            record["job"].get("state") in TERMINAL_STATES
-            for record in active.values()
+            record["job"].get("state") in TERMINAL_STATES for record in active.values()
         ):
             report["errors"].append({"phase": "cleanup", "error": "cleanup timeout"})
             success = False
@@ -662,7 +689,26 @@ def run_benchmark(
                 )
         report["success"] = success
         report["endedAt"] = utc_now()
-        save_checkpoint("complete", fail_run=False)
+        save_checkpoint(
+            "operational-complete" if defer_complete else "complete",
+            fail_run=False,
+        )
+    return report
+
+
+def attach_fairness_analysis(report, scenario):
+    """Promote operationally green but unfair runs to a failed suite result."""
+    operational_success = report.get("success") is True
+    analysis = analyze_fairness(
+        report,
+        FairnessConfig(
+            require_shared_processor=scenario.get("requireSingleProcessor", True)
+        ),
+    )
+    report["operationalSuccess"] = operational_success
+    report["fairnessAnalysis"] = analysis
+    report["success"] = operational_success and analysis["success"]
+    report["checkpoint"] = {"phase": "complete", "updatedAt": utc_now()}
     return report
 
 
@@ -735,7 +781,9 @@ def main(argv=None):
                     output_path, recovery_checkpoint(value)
                 ),
                 should_stop=stop.raise_if_requested,
+                defer_complete=True,
             )
+            report = attach_fairness_analysis(report, scenario)
     except (OSError, ValueError, VideoServiceError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

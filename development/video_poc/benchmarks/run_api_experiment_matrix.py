@@ -18,13 +18,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from run_api_multi_workspace_corpus import is_multi_workspace_scenario
 from run_api_multi_workspace_corpus import (
-    is_multi_workspace_scenario,
     normalize_scenario as normalize_multi_workspace_scenario,
 )
 from run_api_workflow_corpus import (
-    RunLock,
     SAFE_RUN_ID,
+    RunLock,
     SignalStop,
     parse_workload,
     validate_api_base,
@@ -178,16 +178,12 @@ def load_matrix(path):
                 "cooldownSeconds": max(
                     0.0,
                     float(
-                        raw.get(
-                            "cooldownSeconds", defaults.get("cooldownSeconds", 15)
-                        )
+                        raw.get("cooldownSeconds", defaults.get("cooldownSeconds", 15))
                     ),
                 ),
                 "maxFps": max_fps,
                 "publishOutput": bool(raw.get("publishOutput", False)),
-                "requireSingleProcessor": bool(
-                    raw.get("requireSingleProcessor", True)
-                ),
+                "requireSingleProcessor": bool(raw.get("requireSingleProcessor", True)),
                 "repetitions": repetitions,
                 "notes": str(raw.get("notes") or ""),
                 "multiWorkspace": False,
@@ -319,7 +315,7 @@ def _result_path(output_dir, scenario, run_id):
     return output_dir / f"{prefix}-{run_id}.json"
 
 
-def _completed_result(path, expected_run_id):
+def _completed_result(path, expected_run_id, scenario=None):
     try:
         with path.open() as source:
             report = json.load(source)
@@ -331,6 +327,40 @@ def _completed_result(path, expected_run_id):
         return None
     if not report.get("endedAt") or not isinstance(report.get("success"), bool):
         return None
+    if scenario and scenario.get("multiWorkspace"):
+        if (
+            report.get("schemaVersion") != 1
+            or report.get("kind") != "multi-workspace-api-corpus"
+            or report.get("scenarioName") != scenario["name"]
+            or report.get("matrixSha256") != scenario["matrixSha256"]
+            or not isinstance(report.get("operationalSuccess"), bool)
+        ):
+            return None
+        cleanup = report.get("recoveryCleanup")
+        if cleanup is not None:
+            if not (
+                isinstance(cleanup, dict)
+                and cleanup.get("success") is True
+                and cleanup.get("actualRecoveryState") == "all captured jobs terminal"
+                and bool(cleanup.get("endedAt"))
+                and isinstance(cleanup.get("jobCount"), int)
+                and cleanup["jobCount"] >= 0
+                and report["operationalSuccess"] is False
+                and report["success"] is False
+            ):
+                return None
+            return report
+        analysis = report.get("fairnessAnalysis")
+        if not (
+            isinstance(analysis, dict)
+            and analysis.get("analysisSchemaVersion") == 2
+            and analysis.get("runId") == expected_run_id
+            and analysis.get("scenarioName") == scenario["name"]
+            and isinstance(analysis.get("success"), bool)
+            and report["success"]
+            == (report["operationalSuccess"] and analysis["success"])
+        ):
+            return None
     return report
 
 
@@ -421,7 +451,9 @@ def run_matrix(
                 if prior.get("status") == "completed":
                     if execute:
                         result_report = _completed_result(
-                            _result_path(output_dir, scenario, run_id), run_id
+                            _result_path(output_dir, scenario, run_id),
+                            run_id,
+                            scenario,
                         )
                         if result_report is None:
                             raise ValueError(
@@ -429,9 +461,15 @@ def run_matrix(
                             )
                         expected_return = 0 if result_report["success"] else 1
                         if prior.get("returnCode") != expected_return:
-                            raise ValueError(
-                                f"completed run {run_id} disagrees with its result"
-                            )
+                            if result_report.get("recoveryCleanup", {}).get("success"):
+                                prior["childReturnCode"] = prior.get("returnCode")
+                                prior["returnCode"] = expected_return
+                                prior["reconciledAfterCleanup"] = True
+                                _write_summary(summary_path, summary)
+                            else:
+                                raise ValueError(
+                                    f"completed run {run_id} disagrees with its result"
+                                )
                     else:
                         expected_return = prior.get("returnCode")
                         if expected_return not in {0, 1}:
@@ -446,7 +484,7 @@ def run_matrix(
                         break
                     continue
                 result_report = _completed_result(
-                    _result_path(output_dir, scenario, run_id), run_id
+                    _result_path(output_dir, scenario, run_id), run_id, scenario
                 )
                 if result_report is None:
                     raise ValueError(
@@ -517,9 +555,7 @@ def run_matrix(
                 if forwarded_signal:
                     process.send_signal(forwarded_signal)
                     try:
-                        process.wait(
-                            timeout=scenario["cleanupTimeoutSeconds"] + 30
-                        )
+                        process.wait(timeout=scenario["cleanupTimeoutSeconds"] + 30)
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
@@ -536,9 +572,7 @@ def run_matrix(
             )
             if pending_signal:
                 if forwarded_signal:
-                    run["forwardedSignal"] = signal.Signals(
-                        forwarded_signal
-                    ).name
+                    run["forwardedSignal"] = signal.Signals(forwarded_signal).name
                 else:
                     run["stopObservedAfterChildExit"] = signal.Signals(
                         pending_signal

@@ -67,6 +67,13 @@ same-worker noisy-neighbor test, but it is a placement assertion, not tenant
 isolation. Use separate scenarios for same-worker fairness and scheduler-level
 distribution.
 
+The production execution unit remains a job: one source, workflow, and runtime
+configuration. Workspace identity does not define a process or model-cache
+boundary. The analyzer always certifies per-job progress first. Its per-workspace
+aggregation is an explicit noisy-neighbor/admission-policy view that answers
+whether one tenant submitting many jobs harms another tenant; it is not a
+requirement to create one worker or model manager per workspace.
+
 ## Current staging fixtures
 
 The 2026-08-13 preflight verified two feature-enabled staging workspaces through
@@ -93,6 +100,33 @@ Either deploy the merged claim propagation change or move the fleet claim route
 to `light-v2-video` before using these fairness results. Native-rate A/B/C
 capacity runs intentionally omit `maxFps` and are unaffected.
 
+Analyze a completed report with:
+
+```bash
+python -m development.video_poc.benchmarks.analysis.fairness \
+  development/video_poc/benchmarks/results/api-multi-workspace-RUN_ID.json
+```
+
+The analyzer derives per-job and per-tenant delivered FPS, target attainment,
+within-tenant and cross-tenant Jain fairness, target-attainment spread,
+incumbent baseline retention after a later tenant arrives, p95 latency, and
+processor placement/migrations. It fails a same-worker fairness run if the
+planned, started, and sampled jobs do not match exactly; any job lacks a target
+or enough steady samples; a frame counter resets; the configured FPS limit was
+not propagated; either job misses its target; tenant attainment differs by more
+than 10%; a delayed-arrival scenario lacks an incumbent baseline or loses more
+than 10% of it; frame-histogram p95 latency is unavailable or exceeds 50 ms;
+jobs migrate; or the tenants did not share one processor. Sampled EMA latency
+is retained as diagnostic telemetry but is not accepted as a frame-level p95
+SLO. Use `--allow-distributed` only for scheduler-placement scenarios; that mode
+retains every other fairness and stability gate.
+
+Executed multi-workspace runs attach this analysis to the final report. The
+runner preserves `operationalSuccess` separately and sets overall `success`
+only when both lifecycle execution and the fairness SLO pass. The parent matrix
+therefore stops before longer or more expensive scenarios when a short fairness
+gate is operationally healthy but unfair.
+
 Executing runs atomically checkpoint after every poll and handle `SIGINT` or
 `SIGTERM` by cancelling all captured jobs. After an abrupt runner loss, inspect
 the exact checkpoint and original matrix without network access:
@@ -110,3 +144,8 @@ therefore does not persist workspace IDs, credential environment names, or
 keys, while a later routing edit cannot retarget a colliding job ID. Add
 `--execute` only after inspecting the exact run-scoped plan; credentials are
 then resolved from the original matrix's environment-variable declarations.
+When exact cleanup succeeds, the janitor also atomically finalizes the original
+checkpoint as a complete failed run. The parent suite can then reconcile it on
+`--resume`: the normal fail-fast policy stops there, while an explicitly
+unchanged `--continue-on-error` suite may advance. Retrying the failed scenario
+uses a new suite/run ID rather than reusing its idempotency keys.

@@ -13,8 +13,9 @@ import run_api_multi_workspace_corpus as multi  # noqa: E402
 from build_processor_jobs import load_corpus  # noqa: E402
 from cleanup_api_multi_workspace_run import (  # noqa: E402
     cleanup_run as cleanup_multi_run,
-    load_run_report as load_multi_run_report,
 )
+from cleanup_api_multi_workspace_run import finalize_recovered_checkpoint
+from cleanup_api_multi_workspace_run import load_run_report as load_multi_run_report
 from run_api_experiment_matrix import build_command, load_matrix  # noqa: E402
 from run_api_workflow_corpus import BenchmarkInterrupted  # noqa: E402
 
@@ -96,9 +97,10 @@ def test_matrix_dispatches_object_workloads_without_credentials_in_command(tmp_p
 
     assert Path(command[1]).name == "run_api_multi_workspace_corpus.py"
     assert command[command.index("--scenario") + 1] == "two-tenant-fairness"
-    assert command[command.index("--expected-matrix-sha256") + 1] == scenario[
-        "matrixSha256"
-    ]
+    assert (
+        command[command.index("--expected-matrix-sha256") + 1]
+        == scenario["matrixSha256"]
+    )
     assert "--execute" in command
     assert "workspace-private-a" not in command
     assert "VIDEO_KEY_A" not in command
@@ -131,9 +133,7 @@ def test_single_workspace_matrix_keeps_existing_runner_command(tmp_path):
 
 def test_multi_workspace_matrix_rejects_production_and_inline_secrets(tmp_path):
     def production(document):
-        document["scenarios"][0]["workloads"][0]["apiBase"] = (
-            "https://api.roboflow.com"
-        )
+        document["scenarios"][0]["workloads"][0]["apiBase"] = "https://api.roboflow.com"
 
     with pytest.raises(ValueError, match="staging"):
         load_matrix(write_matrix(tmp_path, production))
@@ -174,12 +174,12 @@ def test_plan_preserves_per_workload_routing_and_runtime_options(tmp_path):
     assert [item["mode"] for item in plan] == ["stream", "stream", "batch"]
     assert plan[2]["imageOutput"] == "visualization"
     assert plan[2]["_routing"]["sourceName"] == "Fixture B"
-    assert len(
-        {
-            json.dumps(item["workflowSpecification"], sort_keys=True)
-            for item in plan
-        }
-    ) == 3
+    assert (
+        len(
+            {json.dumps(item["workflowSpecification"], sort_keys=True) for item in plan}
+        )
+        == 3
+    )
 
 
 def test_error_sanitizer_removes_workspace_routing_and_credential(
@@ -189,9 +189,67 @@ def test_error_sanitizer_removes_workspace_routing_and_credential(
     item = multi.build_plan(load_corpus(MANIFEST), scenario)[0]
     monkeypatch.setenv("VIDEO_KEY_A", "secret-a")
 
-    assert multi._safe_error(
-        RuntimeError("secret-a rejected for workspace-private-a"), item
-    ) == "[redacted credential] rejected for tenant-a"
+    assert (
+        multi._safe_error(
+            RuntimeError("secret-a rejected for workspace-private-a"), item
+        )
+        == "[redacted credential] rejected for tenant-a"
+    )
+
+    view = multi._job_view(
+        {
+            "id": "job-a",
+            "error": "secret-a rejected for workspace-private-a",
+            "stats": {
+                "runtime": {
+                    "lastError": "workspace-private-a used secret-a",
+                }
+            },
+        },
+        item,
+    )
+    serialized = json.dumps(view)
+    assert "secret-a" not in serialized
+    assert "workspace-private-a" not in serialized
+    assert "[redacted credential]" in serialized
+    assert "tenant-a" in serialized
+
+    generic = multi._safe_error(
+        RuntimeError(
+            "Bearer other-secret api_key=another-secret token: third-secret "
+            "credential=fourth-secret password: fifth-secret "
+            "x-api-key=sixth-secret"
+        ),
+        item,
+    )
+    assert "other-secret" not in generic
+    assert "another-secret" not in generic
+    assert "third-secret" not in generic
+    assert "fourth-secret" not in generic
+    assert "fifth-secret" not in generic
+    assert "sixth-secret" not in generic
+
+    unknown = multi._redact_report_value(
+        {
+            "token": "opaque-token-value",
+            "apiKey": "opaque-api-key-value",
+            "authorization": {"nested": "opaque-auth-value"},
+            "message": (
+                '{"token":"opaque-json-value"} '
+                "headers={'authorization':'opaque-header-value'}"
+            ),
+        },
+        item,
+    )
+    unknown_serialized = json.dumps(unknown)
+    for secret in (
+        "opaque-token-value",
+        "opaque-api-key-value",
+        "opaque-auth-value",
+        "opaque-json-value",
+        "opaque-header-value",
+    ):
+        assert secret not in unknown_serialized
 
 
 class FakeClock:
@@ -460,6 +518,37 @@ def test_multi_workspace_janitor_cancels_after_transient_inspect_failure(tmp_pat
     assert result["jobs"][0]["state"] == "cancelled"
 
 
+def test_successful_cleanup_finalizes_interrupted_checkpoint_for_resume(tmp_path):
+    path = tmp_path / "api-multi-workspace-interrupted.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "kind": "multi-workspace-api-corpus",
+                "runId": "interrupted",
+                "scenarioName": "two-tenant-fairness",
+                "matrixSha256": "matrix-sha",
+                "checkpoint": {"phase": "measurement"},
+                "errors": [],
+            }
+        )
+    )
+    cleanup = {
+        "success": True,
+        "endedAt": "cleanup-end",
+        "actualRecoveryState": "all captured jobs terminal",
+        "jobs": [{"id": "job-a"}],
+    }
+
+    assert finalize_recovered_checkpoint(path, cleanup) is True
+    report = json.loads(path.read_text())
+    assert report["checkpoint"]["phase"] == "complete"
+    assert report["operationalSuccess"] is False
+    assert report["success"] is False
+    assert report["recoveryCleanup"]["success"] is True
+    assert finalize_recovered_checkpoint(path, cleanup) is False
+
+
 def test_multi_workspace_janitor_rejects_matrix_checkpoint_identity_drift(tmp_path):
     matrix = write_matrix(tmp_path)
     scenario = multi.load_scenario(matrix, "two-tenant-fairness")
@@ -493,7 +582,9 @@ def test_multi_workspace_janitor_rejects_matrix_checkpoint_identity_drift(tmp_pa
         )
 
 
-def test_multi_workspace_janitor_rejects_changed_routing_with_same_safe_identity(tmp_path):
+def test_multi_workspace_janitor_rejects_changed_routing_with_same_safe_identity(
+    tmp_path,
+):
     matrix = write_matrix(tmp_path)
     scenario = multi.load_scenario(matrix, "two-tenant-fairness")
     (tmp_path / "api-multi-workspace-multi-route-drift.json").write_text(

@@ -11,14 +11,15 @@ BENCHMARK_DIR = (
 )
 sys.path.insert(0, str(BENCHMARK_DIR))
 
+from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_experiment_matrix import (  # noqa: E402
+    _completed_result,
     _load_resume_summary,
     build_command,
     load_matrix,
     run_matrix,
     scenario_run_id,
 )
-from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import parse_workload  # noqa: E402
 
 MANIFEST = BENCHMARK_DIR / "workflows" / "manifest.json"
@@ -388,9 +389,7 @@ def test_resume_identity_includes_selection_and_continue_policy(tmp_path):
     )
 
     with pytest.raises(ValueError, match="selectedScenarios"):
-        _load_resume_summary(
-            summary_path, matrix, "suite-a", True, [], False
-        )
+        _load_resume_summary(summary_path, matrix, "suite-a", True, [], False)
     with pytest.raises(ValueError, match="continueOnError"):
         _load_resume_summary(
             summary_path,
@@ -400,3 +399,161 @@ def test_resume_identity_includes_selection_and_continue_policy(tmp_path):
             ["light-then-heavy"],
             True,
         )
+
+
+def test_multi_workspace_resume_requires_exact_fairness_certification(tmp_path):
+    path = tmp_path / "result.json"
+    scenario = {
+        "name": "fairness",
+        "multiWorkspace": True,
+        "matrixSha256": "matrix-sha",
+    }
+    base = {
+        "schemaVersion": 1,
+        "kind": "multi-workspace-api-corpus",
+        "runId": "fairness-r1",
+        "scenarioName": "fairness",
+        "matrixSha256": "matrix-sha",
+        "operationalSuccess": True,
+        "success": True,
+        "endedAt": "end",
+        "checkpoint": {"phase": "complete"},
+    }
+    path.write_text(json.dumps(base))
+    assert _completed_result(path, "fairness-r1", scenario) is None
+
+    base["fairnessAnalysis"] = {
+        "analysisSchemaVersion": 1,
+        "runId": "fairness-r1",
+        "scenarioName": "fairness",
+        "success": True,
+    }
+    path.write_text(json.dumps(base))
+    assert _completed_result(path, "fairness-r1", scenario) is None
+
+    base["fairnessAnalysis"]["analysisSchemaVersion"] = 2
+    path.write_text(json.dumps(base))
+    assert _completed_result(path, "fairness-r1", scenario) == base
+
+    base["fairnessAnalysis"]["success"] = False
+    path.write_text(json.dumps(base))
+    assert _completed_result(path, "fairness-r1", scenario) is None
+
+
+def test_multi_workspace_resume_accepts_exact_cleanup_finalized_failure(tmp_path):
+    path = tmp_path / "result.json"
+    scenario = {
+        "name": "fairness",
+        "multiWorkspace": True,
+        "matrixSha256": "matrix-sha",
+    }
+    report = {
+        "schemaVersion": 1,
+        "kind": "multi-workspace-api-corpus",
+        "runId": "fairness-r1",
+        "scenarioName": "fairness",
+        "matrixSha256": "matrix-sha",
+        "operationalSuccess": False,
+        "success": False,
+        "recoveryCleanup": {
+            "success": True,
+            "actualRecoveryState": "all captured jobs terminal",
+            "endedAt": "cleanup-end",
+            "jobCount": 2,
+        },
+        "endedAt": "end",
+        "checkpoint": {"phase": "complete"},
+    }
+    path.write_text(json.dumps(report))
+
+    assert _completed_result(path, "fairness-r1", scenario) == report
+
+
+def test_completed_crashed_child_reconciles_after_exact_cleanup(tmp_path):
+    path = write_matrix(tmp_path)
+    document = json.loads(path.read_text())
+    document["scenarios"] = [
+        {
+            "name": "fairness",
+            "workloads": [
+                {
+                    "profile": "single-detection",
+                    "workspaceLabel": "tenant-a",
+                    "workspace": "workspace-a",
+                    "sourceId": "source-a",
+                    "maxFps": 5,
+                },
+                {
+                    "profile": "single-detection",
+                    "workspaceLabel": "tenant-b",
+                    "workspace": "workspace-b",
+                    "sourceId": "source-b",
+                    "maxFps": 5,
+                },
+            ],
+        }
+    ]
+    path.write_text(json.dumps(document))
+    matrix = load_matrix(path)
+    scenario = matrix["scenarios"][0]
+    output_dir = tmp_path / "results"
+    output_dir.mkdir()
+    run_id = scenario_run_id("cleanup-suite", "fairness", 1)
+    report = {
+        "schemaVersion": 1,
+        "kind": "multi-workspace-api-corpus",
+        "runId": run_id,
+        "scenarioName": "fairness",
+        "matrixSha256": scenario["matrixSha256"],
+        "operationalSuccess": False,
+        "success": False,
+        "recoveryCleanup": {
+            "success": True,
+            "actualRecoveryState": "all captured jobs terminal",
+            "endedAt": "cleanup-end",
+            "jobCount": 2,
+        },
+        "endedAt": "cleanup-end",
+        "checkpoint": {"phase": "complete"},
+    }
+    (output_dir / f"api-multi-workspace-{run_id}.json").write_text(json.dumps(report))
+    summary = {
+        "schemaVersion": 2,
+        "suiteId": "cleanup-suite",
+        "environment": "staging",
+        "matrix": str(matrix["path"]),
+        "matrixSha256": matrix["sha256"],
+        "startedAt": "start",
+        "execute": True,
+        "selectedScenarios": [],
+        "continueOnError": False,
+        "success": False,
+        "runs": [
+            {
+                "scenario": "fairness",
+                "repetition": 1,
+                "runId": run_id,
+                "status": "completed",
+                "returnCode": -9,
+            }
+        ],
+    }
+
+    _path, resumed = run_matrix(
+        matrix,
+        BENCHMARK_DIR / "run_api_workflow_corpus.py",
+        "cleanup-suite",
+        output_dir,
+        execute=True,
+        resume_summary=summary,
+        popen_factory=lambda _command: (_ for _ in ()).throw(
+            AssertionError("failed gate must not spawn")
+        ),
+        sleep=lambda _seconds: None,
+    )
+
+    run = resumed["runs"][0]
+    assert resumed["success"] is False
+    assert run["childReturnCode"] == -9
+    assert run["returnCode"] == 1
+    assert run["reconciledAfterCleanup"] is True

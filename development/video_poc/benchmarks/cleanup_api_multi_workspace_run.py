@@ -39,7 +39,9 @@ def load_run_report(output_dir, run_id, matrix, scenario_name, manifest):
     if report.get("environment") != "staging":
         raise ValueError("checkpoint environment must be staging")
     if report.get("scenarioName") != scenario_name:
-        raise ValueError("checkpoint scenarioName does not match the requested scenario")
+        raise ValueError(
+            "checkpoint scenarioName does not match the requested scenario"
+        )
 
     scenario = load_scenario(matrix, scenario_name)
     if report.get("matrixSha256") != scenario["matrixSha256"]:
@@ -155,9 +157,7 @@ def cleanup_run(
             record = current[handle]
             item = record["item"]
             try:
-                record["job"] = clients[item["_clientKey"]].get_job(
-                    record["job"]["id"]
-                )
+                record["job"] = clients[item["_clientKey"]].get_job(record["job"]["id"])
             except Exception as error:
                 result["errors"].append(_safe_failure("poll", error, record))
         active = {
@@ -188,6 +188,37 @@ def cleanup_run(
     result["success"] = not result["errors"] and not active
     result["endedAt"] = utc_now()
     return result
+
+
+def finalize_recovered_checkpoint(path, cleanup_result):
+    """Make a successfully cleaned interrupted run terminal for matrix resume."""
+    if cleanup_result.get("success") is not True:
+        return False
+    with Path(path).open() as source:
+        report = json.load(source)
+    if report.get("checkpoint", {}).get("phase") == "complete":
+        return False
+    report.setdefault("errors", []).append(
+        {
+            "phase": "recovery-cleanup",
+            "error": "interrupted run was finalized after exact-job cleanup",
+        }
+    )
+    report["operationalSuccess"] = False
+    report["success"] = False
+    report["recoveryCleanup"] = {
+        "success": True,
+        "endedAt": cleanup_result["endedAt"],
+        "actualRecoveryState": cleanup_result["actualRecoveryState"],
+        "jobCount": len(cleanup_result.get("jobs", [])),
+    }
+    report["endedAt"] = cleanup_result["endedAt"]
+    report["checkpoint"] = {
+        "phase": "complete",
+        "updatedAt": cleanup_result["endedAt"],
+    }
+    write_report_atomic(path, report)
+    return True
 
 
 def main(argv=None):
@@ -243,6 +274,8 @@ def main(argv=None):
         / f"cleanup-api-multi-workspace-{args.run_id}.json"
     )
     write_report_atomic(result_path, result)
+    if result["success"]:
+        finalize_recovered_checkpoint(path, result)
     print(result_path)
     return 0 if result["success"] else 1
 

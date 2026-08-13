@@ -73,3 +73,10 @@ starting duplicate jobs. If the suite says a child was running but no complete
 report exists, resume fails closed: use that child's exact-run janitor first,
 then start a new suite/run ID. Editing the matrix or changing dry-run/execute
 mode is never accepted as a resume.
+
+For multi-workspace runs, a successful exact-run janitor also atomically marks
+the interrupted checkpoint complete with a failed `recoveryCleanup` outcome.
+The same suite can then reconcile that terminal failure: normal fail-fast
+resume stops at it, while a suite originally launched with
+`--continue-on-error` may continue. A fresh execution of the failed scenario
+still uses a new suite/run ID.
