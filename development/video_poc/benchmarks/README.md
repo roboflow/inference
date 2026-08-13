@@ -235,9 +235,14 @@ successful-looking runs.
 | `output-overhead.staging.example.json` | Matched output-off/output-on pairs for GPU detection, GPU tracking, and CPU detection |
 | `long-soak.staging.example.json` | Independently selectable 15-minute, 1-hour, 4-hour, and 12-hour GPU and CPU stability gates |
 
-Replace only the explicit `REPLACE_WITH_...` workspace/source values, then dry
-run the exact scenario selection before using `--execute`. In particular, run
-soak gates one at a time and advance only after the shorter gate passes:
+The controlled GPU, CPU, fairness, output, ingest, and soak matrices now carry
+the verified staging workspace/source IDs from the campaign runbook. Treat
+them as staging fixture identities, not proof of liveness: list both sources
+and require `connected` immediately before every run. Other example matrices
+that still contain explicit `REPLACE_WITH_...` values must be copied and
+resolved before use. Always dry-run the exact scenario selection before
+`--execute`. In particular, run soak gates one at a time and advance only after
+the shorter gate passes:
 
 ```bash
 python development/video_poc/benchmarks/run_api_experiment_matrix.py \

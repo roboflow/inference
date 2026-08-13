@@ -16,16 +16,18 @@ All must be true before a controlled run:
 
 - `gcloud projects describe roboflow-staging` succeeds non-interactively;
 - `kubectl --context ck8s-stg get namespace video-proc` succeeds;
-- Roboflow service API PR #14376 and its `maxFps` follow-up #14402 are deployed
-  to staging, and a one-job report echoes the requested finite `maxFps`;
+- the staging `light-v2-video` and Hosting deployment contains the `maxFps`
+  create/read/claim contract now present in PR #14376, and a fresh one-job
+  report echoes the requested finite `maxFps` before a controlled curve;
 - GPU and CPU telemetry overlays are pushed and their registry digests recorded;
 - infra PR #2454 is applied to staging or the equivalent live configuration is
   reconciled in the ledger;
 - MediaMTX, GPU processor, CPU processor, kubelet/cAdvisor, and DCGM scrape
   targets are healthy for the intended Prometheus window;
-- `VIDEO_BENCHMARK_API_KEY` is set only in the runner environment and
-  `traffic.mp4` is still a `ready` uploaded fixture in the chosen staging
-  workspace;
+- `VIDEO_BENCHMARK_API_KEY` is set only in the runner environment and the
+  selected connector source is currently `connected` (`traffic.mp4` for GPU,
+  dedicated `vehicles.mp4` for CPU); source IDs are checked in, but source
+  liveness is always revalidated immediately before a run;
 - no prior suite has an ambiguous running checkpoint; use the exact-run janitor
   before continuing.
 

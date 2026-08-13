@@ -92,13 +92,13 @@ staging matrix; key values are not. The two source contents and native frame
 rates differ, so use an admitted `maxFps` limit when comparing tenant fairness
 and treat model/post-processing content sensitivity as a remaining covariate.
 
-Do not run the controlled-FPS fairness matrix against the current internal
-fleet claim surface yet. The dedicated public API persists `maxFps`, but the
-currently deployed `light-v2-device` claim handler predates propagation of that
-field to workers; a 5 FPS control smoke therefore ran at the native 60 FPS.
-Either deploy the merged claim propagation change or move the fleet claim route
-to `light-v2-video` before using these fairness results. Native-rate A/B/C
-capacity runs intentionally omit `maxFps` and are unaffected.
+The checked-in code now propagates `maxFps` through create, read, and fleet
+claim, but deployment history has previously mixed independent function refs.
+Do not certify controlled-FPS fairness from source inspection alone. Immediately
+before the first fairness run, create one 5 FPS job and require both the public
+job response and worker runtime report to echo 5 while delivered FPS remains
+within the configured attainment bounds. Native-rate A/B/C capacity runs
+intentionally omitted `maxFps` and are unaffected.
 
 Analyze a completed report with:
 

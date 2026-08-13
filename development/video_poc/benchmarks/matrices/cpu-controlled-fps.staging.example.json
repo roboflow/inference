@@ -5,7 +5,7 @@
     "apiBase": "https://api.roboflow.one",
     "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
     "workspace": "rf-inference-benchmark",
-    "sourceName": "REPLACE_WITH_STAGING_FIXTURE_SOURCE",
+    "sourceId": "d5XmPQAZssPpE3clCmcY",
     "durationSeconds": 180,
     "startupTimeoutSeconds": 300,
     "cleanupTimeoutSeconds": 90,
