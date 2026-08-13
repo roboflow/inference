@@ -34,6 +34,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel, Detections
 from inference_models.models.owlv2.cache import (
     InMemoryOwlV2ClassEmbeddingsCache,
@@ -244,6 +245,7 @@ class InferenceModelsOwlV2Adapter(Model):
         )
         return image_embeddings.image_hash, image_embeds
 
+    @usage_collector("model")
     def infer(
         self,
         image: Any,
