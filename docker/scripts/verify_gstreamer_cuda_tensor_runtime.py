@@ -26,16 +26,34 @@ def _run_gstreamer(*arguments: str) -> None:
 
 
 def _create_h26x(path: Path, encoder: str, parser: str, pattern: str = "red") -> None:
+    codec = "h264" if "h264" in parser else "h265"
     _run_gstreamer(
         "videotestsrc",
         "num-buffers=8",
         f"pattern={pattern}",
         "!",
-        "video/x-raw,format=I420,width=320,height=180,framerate=30/1",
+        # NV12, not I420: the modern nvcudah26xenc encoders build their format
+        # list from the device and only ever insert NV12 (+Y444/10-bit when
+        # supported) - I420 is never included, unlike the legacy elements.
+        # (_create_jpeg deliberately differs: nvjpegenc's system-memory list
+        # is {I420, Y42B, Y444} with NO NV12.)
+        "video/x-raw,format=NV12,width=320,height=180,framerate=30/1",
         "!",
-        encoder,
+        # gst-launch uses gst_parse_launchv, which ESCAPES each argv element as
+        # a single token - "nvcudah264enc preset=p4" as one argument becomes an
+        # element literally named that. Split so element and properties arrive
+        # as separate tokens.
+        *encoder.split(),
         "!",
-        parser,
+        *parser.split(),
+        "!",
+        # Force byte-stream in the dumped file: the modern encoders' src
+        # template lists stream-format {avc, byte-stream} and caps-agnostic
+        # downstream negotiation picks avc, whose length-prefixed NALs (with
+        # codec_data lost in a raw dump) typefind cannot identify - decode
+        # then fails with "Could not determine type of stream". The legacy
+        # elements emitted byte-stream only; pin it explicitly.
+        f"video/x-{codec},stream-format=byte-stream,alignment=au",
         "!",
         "filesink",
         f"location={path}",
@@ -212,9 +230,19 @@ def main() -> None:
         h265_path = root / "test.h265"
         jpeg_path = root / "test.jpg"
         changing_h264_path = root / "changing.h264"
-        _create_h26x(h264_path, "nvh264enc", "h264parse")
-        _create_h26x(h265_path, "nvh265enc", "h265parse")
-        _create_h26x(changing_h264_path, "nvh264enc", "h264parse", pattern="ball")
+        # The legacy nvh264enc/nvh265enc elements only speak the pre-SDK-10
+        # NVENC preset GUIDs, which CUDA-13-era drivers removed - on such
+        # hosts EVERY preset value fails set_format with "Selected preset not
+        # supported" (the element's property enum has no modern value to
+        # switch to). The modern nvcudah26xenc elements from the same nvcodec
+        # plugin use the supported p1-p7 preset API; pin p4 (the balanced
+        # middle) so the fixture pipeline is deterministic across driver
+        # generations.
+        _create_h26x(h264_path, "nvcudah264enc preset=p4", "h264parse config-interval=-1")
+        _create_h26x(h265_path, "nvcudah265enc preset=p4", "h265parse config-interval=-1")
+        _create_h26x(
+            changing_h264_path, "nvcudah264enc preset=p4", "h264parse config-interval=-1", pattern="ball"
+        )
         _create_jpeg(jpeg_path)
         _validate_source(h264_path, minimum_frames=5)
         _validate_source(h265_path, minimum_frames=5)
