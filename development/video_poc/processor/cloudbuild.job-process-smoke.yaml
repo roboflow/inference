@@ -2,6 +2,25 @@
 # image. Submit with --no-source and an immutable staging Artifact Registry
 # digest as _IMAGE. This never starts a processor or contacts the job API.
 steps:
+  - name: python:3.12-slim
+    id: validate-staging-digest
+    entrypoint: python
+    args:
+      - -c
+      - |
+        import re
+        import sys
+
+        reference = sys.argv[1]
+        pattern = (
+            r"us-central1-docker[.]pkg[.]dev/roboflow-staging/"
+            r"video-proc/[a-z0-9-]+@sha256:[0-9a-f]{64}"
+        )
+        if re.fullmatch(pattern, reference) is None:
+            raise SystemExit(
+                "_IMAGE must be an immutable roboflow-staging/video-proc digest"
+            )
+      - ${_IMAGE}
   - name: gcr.io/cloud-builders/docker
     id: inspect-image-config
     args:
