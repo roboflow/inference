@@ -7,6 +7,7 @@ steps:
       - build
       - --platform=linux/amd64
       - --file=docker/dockerfiles/Dockerfile.onnx.gpu
+      - --label=org.opencontainers.image.revision=${_SOURCE_SHA}
       - --tag=${_BASE_OUTPUT}
       - .
   - name: gcr.io/cloud-builders/docker
@@ -19,6 +20,7 @@ steps:
       - --platform=linux/amd64
       - --file=Dockerfile
       - --build-arg=BASE_IMAGE=${_BASE_OUTPUT}
+      - --label=org.opencontainers.image.revision=${_SOURCE_SHA}
       - --tag=${_WORKER_OUTPUT}
       - .
   - name: gcr.io/cloud-builders/docker
