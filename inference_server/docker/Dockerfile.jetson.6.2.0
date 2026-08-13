@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+#
+# Jetson / JetPack 6.2 (L4T r36.4, Orin). Build platform: linux/arm64.
+# jp6 wheels (torch, onnxruntime-gpu) are cp310 aarch64 → MUST use the
+# system python3.10; do not let uv download a managed 3.12.
+# pycuda has no jp6 wheel → built from sdist against the JetPack CUDA toolkit
+# (that's why the base is l4t-jetpack, not l4t-cuda runtime).
+
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates openssl \
+        libgl1 libglib2.0-0 libvips ffmpeg \
+        build-essential python3.10-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# JetPack CUDA toolkit (nvcc) on PATH so pycuda's sdist build finds it.
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/opt/venv/bin:/usr/local/cuda/bin:$PATH \
+    VIRTUAL_ENV=/opt/venv
+
+WORKDIR /app
+
+COPY inference_models        /app/inference_models
+COPY inference_model_manager /app/inference_model_manager
+COPY inference_server        /app/inference_server
+
+# CWD = inference_models so its [tool.uv] index/sources apply (jp6-cu126 index).
+# --system-site-packages exposes JetPack's system tensorrt + CUDA python bindings
+# (no trt pip extra on jp6 → TRT model backends rely on the system module).
+WORKDIR /app/inference_models
+RUN uv venv --python 3.10 --system-site-packages /opt/venv \
+    && uv pip install \
+        -e ".[torch-jp6-cu126,onnx-jp6-cu126]" \
+        -e "../inference_model_manager[cuda]" \
+        -e "../inference_server"
+
+WORKDIR /app/inference_server
+
+EXPOSE 8000
+
+CMD ["/bin/bash", "start_server.sh"]

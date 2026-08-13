@@ -86,9 +86,10 @@ def str2bool(value: Any, variable_name: str) -> bool:
             message=f"Expected a environment variable `{variable_name}` to be (true or false) but got '{value}'",
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
         )
-    if value.lower() == "true":
+    v = value.strip().lower()
+    if v in ("true", "1", "t", "yes", "y", "on"):
         return True
-    elif value.lower() == "false":
+    elif v in ("false", "0", "f", "no", "n", "off", ""):
         return False
     else:
         raise InvalidEnvVariable(

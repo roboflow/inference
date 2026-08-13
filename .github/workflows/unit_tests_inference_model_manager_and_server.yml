@@ -6,11 +6,13 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - inference_models/**
       - inference_model_manager/**
       - inference_server/**
   push:
     branches: [main]
     paths:
+      - inference_models/**
       - inference_model_manager/**
       - inference_server/**
   workflow_dispatch:

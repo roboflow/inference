@@ -4835,7 +4835,7 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.get(
+    workflow_request = requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
             "workflow": {
@@ -4865,7 +4865,9 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     )
 
     # then
-    assert requests_mock.call_count == 1, "Expected remote API to be called only once"
+    assert (
+        workflow_request.call_count == 1
+    ), "Expected remote API to be called only once"
     assert (
         requests_mock.last_request.query == "api_key=my_api_key"
     ), "API key must be given in query"
@@ -4956,7 +4958,7 @@ def test_get_workflow_specification_with_version_id_uses_separate_cache(
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.get(
+    workflow_request = requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
             "workflow": {
@@ -4989,7 +4991,7 @@ def test_get_workflow_specification_with_version_id_uses_separate_cache(
 
     # then
     assert (
-        requests_mock.call_count == 2
+        workflow_request.call_count == 2
     ), "Expected two API calls since versioned and unversioned use separate cache keys"
     assert len(ephemeral_cache.cache) == 2, "Expected two cache entries"
 

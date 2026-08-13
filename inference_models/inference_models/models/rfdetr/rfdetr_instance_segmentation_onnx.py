@@ -14,6 +14,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
+    RFDETR_MAX_INPUT_RESOLUTION,
 )
 from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
@@ -85,6 +86,8 @@ class RFDetrForInstanceSegmentationOnnx(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationOnnx":
+        if rf_detr_max_input_resolution is None:
+            rf_detr_max_input_resolution = RFDETR_MAX_INPUT_RESOLUTION
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
