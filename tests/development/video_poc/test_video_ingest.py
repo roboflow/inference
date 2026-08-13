@@ -136,6 +136,13 @@ def test_processor_images_include_ingest_selector(dockerfile):
     assert "COPY video_ingest.py /app/video_ingest.py" in source
 
 
+def test_full_processor_restores_pip_removed_from_v14_runtime():
+    source = (PROCESSOR_DIR / "Dockerfile").read_text()
+
+    assert "python3-pip" in source
+    assert "python3 -m pip install" in source
+
+
 def test_nvdec_cloud_build_uses_full_immutable_base_seam():
     source = (PROCESSOR_DIR / "cloudbuild.nvdec.yaml").read_text()
 

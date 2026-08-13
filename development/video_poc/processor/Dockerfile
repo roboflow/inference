@@ -14,10 +14,15 @@ ARG VIDEO_PROC_GIT_SHA
 ARG VIDEO_PROC_RUNTIME_VARIANT=video-poc
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir google-cloud-pubsub requests aiortc
+# Inference v1.4 deliberately strips its build-time package manager from the
+# runtime image. The video worker still needs three runtime-only integrations,
+# so install them after restoring Ubuntu's Python 3 pip package explicitly.
+RUN python3 -m pip install --no-cache-dir google-cloud-pubsub requests aiortc
 
 WORKDIR /app
 COPY processor.py /app/processor.py
