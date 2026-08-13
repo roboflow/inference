@@ -166,13 +166,42 @@ worker process. Its legacy-equivalent throughput and much smaller memory
 footprint show that same-workspace model reuse works; the adapter and manager
 lookup are not the throughput bottleneck.
 
-The likely bottleneck is the subprocess transport of decoded 4K frames. One
-BGR frame is about 24.9 MB, so eight 5 FPS inputs imply roughly 1 GB/s of raw
-input payload before accounting for copies, synchronization, and model work.
-That diagnosis is strongly supported by the direct control but is not yet a
-proof. The next isolating test should repeat c4/c8 at 640p or after preprocessing
-to model-sized tensors, while recording MMP batch formation, slot wait time,
-copy time, and GPU utilization.
+The bottleneck is the subprocess transport of decoded 4K frames. One BGR frame
+is about 24.9 MB, so eight 5 FPS inputs imply roughly 1 GB/s of raw input payload
+before accounting for copies, synchronization, and model work. The current
+standalone ndarray path performs several full-frame CPU copies: `np.save` into
+a parent-side `BytesIO`, a copy into the SHM slot, then child-side `bytes(mv)`,
+another `BytesIO`, and `np.load`. Shared memory removes socket payload transfer,
+but this path does not provide zero-copy ndarray handoff.
+
+### 640p isolation control
+
+The c4/c8 matrix was repeated after one pod-local fixture producer downscaled
+the source to 640 pixels high before MediaMTX and worker decode. All jobs in a
+point subscribed to that one local RTSP path. This changes the relay topology
+from the 4K run, so only comparisons among the 640p rows are causal.
+
+| Backend | Streams | Aggregate FPS | Versus 640p legacy | GPU memory | First result |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| legacy | 4 | 16.812 | baseline | 2016 MiB | 7.85-8.65 s |
+| subprocess MMP | 4 | 17.067 | +1.5% | 890 MiB | 12.65-12.66 s |
+| direct control | 4 | 16.952 | +0.8% | 962 MiB | 6.73-6.74 s |
+| legacy | 8 | 33.852 | baseline | 3516 MiB | 6.86-10.18 s |
+| subprocess MMP | 8 | 33.097 | -2.2% | 890 MiB | 13.22-13.25 s |
+| direct control | 8 | 33.829 | -0.1% | 1078 MiB | 7.42-7.47 s |
+
+Subprocess MMP recovered from 26.3% and 65.7% below legacy at 4K to within
+2.2% of legacy at 640p, with even per-stream delivery. This confirms that the
+model subprocess and shared model can sustain eight simple YOLO streams; the
+full-resolution ndarray marshaling is the observed throughput limiter. Cold
+first-result time remains roughly four to six seconds slower in subprocess
+mode and needs separate optimization.
+
+The next implementation experiment should avoid serializing full decoded
+frames. Prefer a typed SHM descriptor for an already-owned frame buffer, or do
+resize/letterbox preprocessing in the pipeline process and pass a model-sized
+tensor/buffer handle. Add slot-wait, marshal-copy, child-unmarshal, batch-size,
+batch-wait, and GPU-utilization telemetry before tuning batch parameters.
 
 Do not replace the legacy staging pool with subprocess MMP from this result.
 The direct control is a useful throughput/model-reuse option, but it has no
@@ -180,3 +209,23 @@ model subprocess boundary and is not a tenant security or failure-isolation
 result. Multi-workspace separation, subprocess failure containment, MPS, and a
 long soak remain untested. The standalone Pods, ConfigMaps, and short-lived
 API-key Secret used by this matrix were deleted after evidence collection.
+
+## Recommended process boundary
+
+For the production design, isolate each processing job (one source plus one
+workflow execution) rather than treating the model subprocess as the complete
+job boundary. The source connector/relay remains independent. Within a worker
+pod, a source-ingest owner can decode once into a bounded shared frame ring;
+one process per workflow consumes immutable frame references, performs workflow
+preprocessing, and calls a workspace-scoped shared model service using compact
+model inputs or buffer descriptors. This preserves multiple workflows per
+source without reconnecting and decoding the same stream for every workflow.
+
+A per-job process is useful for GIL avoidance, crash containment, cancellation,
+resource accounting, and keeping one workflow's Python state out of another.
+It is not by itself a hard cross-tenant security boundary when processes share
+a pod filesystem, UID, secrets, and GPU. Initial production packing should be
+workspace-affine: never place jobs from different workspaces in the same worker
+pod/model-manager domain. Stronger cross-workspace isolation requires separate
+pods plus an appropriate GPU-sharing boundary; L40S has no MIG support, and raw
+MPS is a throughput mechanism rather than a security boundary.

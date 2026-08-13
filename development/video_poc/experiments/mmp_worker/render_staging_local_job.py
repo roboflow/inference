@@ -70,6 +70,7 @@ def render(
     concurrency=1,
     max_fps=5.0,
     mode="batch",
+    input_height=None,
 ):
     if not IMAGE_RE.fullmatch(str(image or "")):
         raise ValueError("image must be an immutable staging MMP worker digest")
@@ -84,6 +85,11 @@ def render(
         raise ValueError("max FPS must be greater than 0 and at most 30")
     if mode not in {"batch", "stream"}:
         raise ValueError("mode must be batch or stream")
+    if input_height is not None:
+        if mode != "stream":
+            raise ValueError("input height is supported only in stream mode")
+        if not isinstance(input_height, int) or not 64 <= input_height <= 2160:
+            raise ValueError("input height must be an integer from 64 to 2160")
     manager_mode = (
         "legacy" if backend == "legacy" else f"mmp-bundled-{backend}"
     )
@@ -95,8 +101,12 @@ def render(
                 "id": f"local-{run_id}-{ordinal}",
                 "workspace": workspace,
                 "sourceUrl": (
-                    "https://media.roboflow.com/supervision/"
-                    "video-examples/vehicles.mp4"
+                    "rtsp://127.0.0.1:8554/fixture-scaled"
+                    if input_height is not None
+                    else (
+                        "https://media.roboflow.com/supervision/"
+                        "video-examples/vehicles.mp4"
+                    )
                 ),
                 "mode": mode,
                 "maxFps": float(max_fps),
@@ -109,7 +119,7 @@ def render(
                             f"sim-{run_id}-{ordinal}"
                         )
                     }
-                    if mode == "stream"
+                    if mode == "stream" and input_height is None
                     else {}
                 ),
             }
@@ -183,7 +193,18 @@ def render(
                             "name": "worker",
                             "image": image,
                             "imagePullPolicy": "IfNotPresent",
-                            "args": job_args,
+                            **(
+                                {
+                                    "command": ["/bin/sh", "-c"],
+                                    "args": [
+                                        "sleep 8; exec python /app/processor.py \"$@\"",
+                                        "processor",
+                                        *job_args,
+                                    ],
+                                }
+                                if input_height is not None
+                                else {"args": job_args}
+                            ),
                             "env": [
                                 {"name": "PROJECT", "value": "roboflow-staging"},
                                 {
@@ -273,6 +294,41 @@ def render(
                                 }
                             ],
                         },
+                        *(
+                            [
+                                {
+                                    "name": "fixture-scaler",
+                                    "image": image,
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "command": ["/bin/sh", "-c"],
+                                    "args": [
+                                        "while true; do "
+                                        "ffmpeg -hide_banner -loglevel warning "
+                                        "-re -stream_loop -1 -i "
+                                        "https://media.roboflow.com/supervision/"
+                                        "video-examples/vehicles.mp4 "
+                                        f"-vf scale=-2:{input_height} -an "
+                                        "-c:v mpeg4 -q:v 5 -pix_fmt yuv420p "
+                                        "-g 30 "
+                                        "-f rtsp -rtsp_transport tcp "
+                                        "rtsp://127.0.0.1:8554/fixture-scaled; "
+                                        "sleep 1; done"
+                                    ],
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "1",
+                                            "memory": "512Mi",
+                                        },
+                                        "limits": {
+                                            "cpu": "4",
+                                            "memory": "2Gi",
+                                        },
+                                    },
+                                }
+                            ]
+                            if input_height is not None
+                            else []
+                        ),
                     ],
                     "volumes": [
                         {
@@ -327,6 +383,7 @@ def main(argv=None):
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--max-fps", type=float, default=5.0)
     parser.add_argument("--mode", choices=("batch", "stream"), default="batch")
+    parser.add_argument("--input-height", type=int)
     args = parser.parse_args(argv)
     try:
         manifest = render(
@@ -338,6 +395,7 @@ def main(argv=None):
             args.concurrency,
             args.max_fps,
             args.mode,
+            args.input_height,
         )
     except ValueError as exc:
         parser.error(str(exc))

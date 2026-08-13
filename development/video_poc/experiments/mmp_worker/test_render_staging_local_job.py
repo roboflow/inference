@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from render_staging_local_job import render
@@ -99,6 +101,58 @@ def test_render_stream_jobs_have_unique_internal_relay_paths():
         )
         for job in jobs
     )
+
+
+def test_render_scaled_stream_uses_one_shared_fixture_producer():
+    manifest = render(
+        IMAGE,
+        "scale-640",
+        "rf-inference-benchmark",
+        "video-mmp-smoke-001",
+        backend="subprocess",
+        concurrency=8,
+        max_fps=5,
+        mode="stream",
+        input_height=640,
+    )
+    config_map, pod_manifest = manifest["items"]
+    jobs = [
+        json.loads(config_map["data"][f"job-{ordinal}.json"])
+        for ordinal in range(1, 9)
+    ]
+    assert {job["sourceUrl"] for job in jobs} == {
+        "rtsp://127.0.0.1:8554/fixture-scaled"
+    }
+    assert all("simPublishUrl" not in job for job in jobs)
+    containers = {
+        item["name"]: item for item in pod_manifest["spec"]["containers"]
+    }
+    assert set(containers) == {"worker", "relay", "fixture-scaler"}
+    scaler_command = containers["fixture-scaler"]["args"][0]
+    assert "scale=-2:640" in scaler_command
+    assert "-c:v mpeg4" in scaler_command
+    assert containers["worker"]["command"] == ["/bin/sh", "-c"]
+    assert containers["worker"]["args"][0].startswith("sleep 8;")
+
+
+def test_render_rejects_scale_for_batch_or_unsafe_height():
+    with pytest.raises(ValueError, match="only in stream"):
+        render(
+            IMAGE,
+            "scale-batch",
+            "rf-inference-benchmark",
+            "video-mmp-smoke-001",
+            input_height=640,
+        )
+    with pytest.raises(ValueError, match="64 to 2160"):
+        render(
+            IMAGE,
+            "scale-small",
+            "rf-inference-benchmark",
+            "video-mmp-smoke-001",
+            mode="stream",
+            input_height=32,
+        )
 
 
 @pytest.mark.parametrize(

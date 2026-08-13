@@ -555,10 +555,17 @@ not implemented yet.
   boundary and delivered 17.992 FPS at c4 and 33.070 FPS at c8 using 962 and
   1078 MiB. This isolates the current regression to the subprocess path rather
   than the manager/adapter lookup; decoded 4K shared-memory transport is the
-  leading hypothesis. Do not replace the legacy pool yet. Repeat at lower input
-  resolution or with preprocessed tensors and add MMP slot/copy/batch telemetry
-  before tuning batches or testing MPS. Direct mode is not a process-isolation
-  or tenant-security result. Full method and results are in
+  leading hypothesis. The 640p control confirmed it: subprocess MMP delivered
+  17.067 FPS versus legacy's 16.812 at c4 and 33.097 versus 33.852 at c8, still
+  using only 890 MiB. The ndarray path currently serializes with parent-side
+  `np.save`, copies into SHM, then copies and loads the `.npy` payload again in
+  the child. Replace that with typed buffer descriptors or pipeline-side
+  preprocessing to a model-sized tensor; add slot, marshal/unmarshal, batch,
+  and GPU telemetry. The target boundary is one process per processing job,
+  fed by a shared bounded source-frame ring and using a workspace-scoped model
+  service. Keep worker pods workspace-affine because same-pod processes and
+  L40S MPS are not hard tenant boundaries. Direct mode is not a process-
+  isolation or tenant-security result. Full method and results are in
   [`experiments/mmp_worker/README.md`](experiments/mmp_worker/README.md).
 - **Fault injection is bound to the actual video cell.** The dry-run controller
   accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
