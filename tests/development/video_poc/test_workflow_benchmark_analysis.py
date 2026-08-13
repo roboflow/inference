@@ -240,6 +240,24 @@ def test_capacity_curves_keep_controlled_fps_separate_from_unbounded():
     assert "max 15 FPS" in rendered
 
 
+def test_controlled_fps_must_attain_target_not_only_retain_baseline():
+    controlled = make_report("controlled-c1", 1)
+    controlled["profiles"][0]["maxFps"] = 15
+
+    analysis = analyze_reports(
+        [controlled],
+        AnalysisConfig(warmup_seconds=2),
+    )
+
+    run = analysis["runs"][0]
+    assert run["streams"][0]["steadyState"]["deliveredFps"] == 10
+    assert run["capacitySlo"]["checks"]["fpsRetention"] is True
+    assert run["capacitySlo"]["checks"]["targetFps"] is False
+    assert run["capacitySlo"]["minTargetFpsRatio"] == 0.667
+    assert run["capacitySlo"]["passed"] is False
+    assert analysis["capacitySummaries"][0]["maxPassingConcurrency"] is None
+
+
 def test_recovery_tolerant_fault_runs_are_summarized_but_not_certified():
     report = make_report("recovered", 1)
     report["recoveryTimeoutSeconds"] = 180

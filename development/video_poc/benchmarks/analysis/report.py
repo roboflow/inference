@@ -23,6 +23,7 @@ class AnalysisConfig:
     warmup_seconds: float = 10.0
     min_steady_intervals: int = 2
     min_fps_retention_ratio: float = 0.90
+    min_target_fps_ratio: float = 0.90
     max_sampled_ema_latency_p95_ms: float = 50.0
     max_fps_spread_ratio: float = 0.10
     max_time_to_first_result_s: float = 30.0
@@ -528,6 +529,12 @@ def _capacity_summary(signature, runs, config):
             if fps_values and baseline_fps
             else None
         )
+        target_fps = signature[4]
+        min_target_attainment = (
+            min(value / target_fps for value in fps_values)
+            if fps_values and target_fps
+            else None
+        )
         max_latency = max(latency_values) if latency_values else None
         max_startup = max(startup_values) if startup_values else None
         checks = {
@@ -537,6 +544,11 @@ def _capacity_summary(signature, runs, config):
             "baselineAvailable": baseline_fps is not None,
             "fpsRetention": min_retention is not None
             and min_retention >= config.min_fps_retention_ratio,
+            "targetFps": target_fps is None
+            or (
+                min_target_attainment is not None
+                and min_target_attainment >= config.min_target_fps_ratio
+            ),
             "latencyP95": max_latency is not None
             and max_latency <= config.max_sampled_ema_latency_p95_ms,
             "fpsFairness": run["fairness"]["deliveredFpsSpreadRatio"] is not None
@@ -555,6 +567,7 @@ def _capacity_summary(signature, runs, config):
             "passed": passed,
             "checks": checks,
             "minFpsRetentionRatio": _rounded(min_retention),
+            "minTargetFpsRatio": _rounded(min_target_attainment),
             "maxSampledEmaLatencyP95Ms": _rounded(max_latency),
             "maxLatencyP95Ms": _rounded(max_latency),
             "maxTimeToFirstResultS": _rounded(max_startup),

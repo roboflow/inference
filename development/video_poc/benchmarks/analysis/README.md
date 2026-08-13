@@ -22,7 +22,9 @@ mode, output setting, and `maxFps` setting). Controlled-FPS and unbounded runs
 are never combined into one curve. The lowest successful tested concurrency is
 used as the FPS/latency baseline. A run is certified only when it passes every
 configured gate, including successful execution, steady-state sample coverage,
-FPS retention, latency, fairness, startup, and single-processor placement.
+FPS retention, controlled target-FPS attainment, latency, fairness, startup,
+and single-processor placement. This prevents an under-performing concurrency-1
+baseline from making the entire controlled-FPS curve appear healthy.
 
 Recovery-tolerant fault runs are summarized separately (event count and observed
 control-plane recovery interval) and are deliberately excluded from capacity
