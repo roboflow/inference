@@ -22,14 +22,25 @@ silently upgrade its inference packages.
 
 ## Immutable staging artifacts
 
-Both controlled D/E/F images are thin overlays from source
-`ba0a10f3dcda8e9930e9a4e8c0b86af921c7190d`. They change the worker files and
-job topology while preserving the exact previously tested runtime underneath:
+The controlled images are thin overlays. They change worker files and job
+topology while preserving the exact previously tested runtime underneath. E/F
+use source `ba0a10f3dcda8e9930e9a4e8c0b86af921c7190d`; corrected D uses source
+`080337004be5507cfb2d6e050abf8ad08c1c5389`, whose only runtime-relevant delta
+is the guarded inference 1.3.5 compatibility seam.
 
 | Use | Exact image | Cloud Build | Exact base | Purpose |
 |---|---|---|---|---|
+| D | `video-processor-process@sha256:1c2bfea740d41c3440db2b244efd068a2cbf2190c4b27c9eb4e6650a1690c86a` | `8a24fdac-2488-46e9-a442-4c4234e9024c` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | original runtime plus per-job processes; legacy serializer and pipeline options selected by runtime capability |
 | D (rejected) | `video-processor-process@sha256:debf846be8bc1b329cd15f0e109da9cd3f68a54a49c617c8d5d813d64934249f` | `366987b7-d67c-4a67-bfb9-d105d2ed1bd0` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | invalid: current worker imported a v1.4-only tensor flag on inference 1.3.5; never deploy |
 | E/F | `video-processor-process@sha256:5cd7ecada7aba58fafba94aa47e05cce3e39f0e0305d2dbb13f91a226d642bd0` | `7675f50c-9177-4be6-ac2e-f5cf46c043a7` | deployed v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | v1.4 plus per-job processes; select PyAV or NVDEC by environment |
+
+Credential-free Cloud Build inspection passed for E/F in build
+`3d380a9a-b6bc-4516-9bba-660bf17bb668`. Corrected D passed an isolated L40S
+import/spawn smoke: the exact `1c2b...` image imported the legacy parent and
+spawned child, reported process mode, used distinct supervisor/child PIDs, and
+both exited zero; the disposable pod was deleted. These are image/lifecycle
+gates only. API claim, cancellation, crash containment, and c1/c2 workload
+gates remain required before a capacity run.
 
 A separate full-image validation build, Cloud Build
 `68a27111-c69f-481f-8072-8e1e5742f939`, produced
