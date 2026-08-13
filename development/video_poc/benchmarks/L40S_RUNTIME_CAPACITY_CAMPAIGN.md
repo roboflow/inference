@@ -142,6 +142,22 @@ The exact resume sequence is:
    cancellation, crash-containment, credential-redaction, and c1/c2 topology
    gates before any capacity point.
 
+The first resumed B c8 repetition,
+`l40s-b-v14-pyav-c08-r1-20260813-connector-native-c08-r1`, is preserved as an
+operational failure rather than a capacity sample. All eight jobs initially ran
+on one processor, but MediaMTX repeatedly reported slow TCP readers and dropped
+large frame bursts; one PyAV pipeline then lost its RTSP session and the job
+requeued during measurement. Before that failure, the 10-second-warmup window
+delivered `70.537 FPS` aggregate (`8.675`-`8.942 FPS` per stream), with Jain
+fairness `0.999891`, cohort spread `3.0%`, and frame-latency p95 buckets of
+`250`-`500 ms`. Resource evidence shows processor CPU p95 `2.242` cores,
+memory p95 `2.074 GB`, GPU p95 `12%`, framebuffer max `3524 MiB`, decoder
+`0%`, memory-copy p95 `1%`, and MediaMTX CPU p95 `0.021` cores. This rules out
+whole-pod CPU, memory, GPU, VRAM, decoder, relay CPU, and aggregate relay
+bandwidth saturation; it is direct evidence of reader/pipeline backpressure in
+the shared-process PyAV topology. Repeat c8 after exact-worker reconciliation
+to establish whether the operational failure reproduces.
+
 ## Immutable variants
 
 | Variant | Image and source | Runtime contract |
@@ -149,6 +165,17 @@ The exact resume sequence is:
 | A — original | `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a`; `c63f9720c25a27e7aa290cea601b09590a6de9f2` | original inference runtime and processor, low-latency PyAV, ndarray workflow path; no v1.4 tensor flags |
 | B — v1.4 PyAV | `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326`; `6ca38194bdc3c312c0adf6a3a275b9014c79f4b6` | tensor workflow serializer/model path, CUDA image device, adaptive backpressure, PyAV ingest |
 | C — v1.4 NVDEC | same exact image and source as B | same flags as B; only ingest mode changes to fail-loud `gstreamer_cuda` and the telemetry label names the NVDEC leg |
+
+A cancellation-safe in-process v1.4 overlay is also available at
+`video-processor-inprocess-v14@sha256:df170c8b6e569f9bffb23540fc3ace143c6e5b92b2ef1ee48a9719de24df8148`
+(Cloud Build `9e6e4d38-8230-4eb9-9454-a99d4cc95a2a`, source
+`8b6709e66c7092c0599bf7e24edd870fa1c18e4e`, credential-free import smoke
+`f811a2aa-c9e7-45d8-b072-9eaec0cffd2d` passed). It carries bounded
+cancellation cleanup and current `maxFps` worker wiring over the exact B/C base.
+Do not substitute it mid-curve: B and C intentionally retain the same older
+worker image so decoder mode is their only runtime difference. Use the overlay
+for a separate cancellation/capped-input validation after the immutable B/C
+comparison.
 
 Artifact Registry returned both exact digests and SLSA build level 3 during
 preflight. Variant C already passed the disposable L40S capability probe for
