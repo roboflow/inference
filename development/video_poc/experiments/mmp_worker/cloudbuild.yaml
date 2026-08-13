@@ -1,6 +1,8 @@
 steps:
   - name: gcr.io/cloud-builders/docker
     id: build-merged-gpu-inference
+    env:
+      - DOCKER_BUILDKIT=1
     args:
       - build
       - --platform=linux/amd64
@@ -10,6 +12,8 @@ steps:
   - name: gcr.io/cloud-builders/docker
     id: build-video-worker
     dir: development/video_poc/processor
+    env:
+      - DOCKER_BUILDKIT=1
     args:
       - build
       - --platform=linux/amd64
