@@ -2,7 +2,7 @@
 
 **Status:** Draft
 
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-13
 
 **Scope:** Live connector sources, MediaMTX relay capacity, processor placement,
 multi-stream GPU allocation, dedicated cells, and remote execution experiments
@@ -546,7 +546,11 @@ URL. The minimum safe change was therefore to make placement, identity, relay
 authorization, URL resolution, and claims explicit—not to add cell selection to
 the connector.
 
-Phase 1 code now exists on isolated review branches but is not deployed. It uses
+Phase 1 code is in control-plane draft
+[roboflow#14444](https://github.com/roboflow/roboflow/pull/14444) and
+processor/harness draft
+[inference#2793](https://github.com/roboflow/inference/pull/2793), but is not
+deployed. It uses
 an East-only explicit registry first, transactional first activation, persisted
 placement metadata, generation-aware connector reports/commands, per-cell fleet
 credentials, a deployment-fixed relay auth cell, transactional cell+tier claim
@@ -556,8 +560,10 @@ and job activation against two eligible test cells and prove one committed sourc
 assignment; local execution still depends on the repository's current Node
 dependency overlay being available.
 
-Phase 2 infrastructure is prepared, not applied. The chosen cell is
-`crusoe-ussc1` on `ck8s-stg-us-southcentral1`. Its own stack begins
+Phase 2 infrastructure is prepared in draft
+[roboflow-infra#2460](https://github.com/roboflow/roboflow-infra/pull/2460), not
+applied. The chosen cell is `crusoe-ussc1` on
+`ck8s-stg-us-southcentral1`. Its own stack begins
 `unavailable` with both processor pools disabled, non-runnable image placeholders,
 cell-specific credentials/subscription, fixed c1a.16x relay/gateway placement,
 fixed processor node classes, `.one` endpoints, metrics/dashboard coverage, and

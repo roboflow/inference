@@ -629,17 +629,21 @@ questions live in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
 
 ### Multi-cell implementation status (2026-08-13)
 
-Phase 1 is implemented on isolated, not-yet-deployed branches and Phase 2 is
-prepared behind staging-only gates:
+Phase 1 is implemented in review-only draft PRs and Phase 2 is prepared behind
+staging-only gates; none of these branches has been deployed:
 
-- the Roboflow control plane has an explicit deployed-config cell registry,
+- control-plane draft
+  [roboflow#14444](https://github.com/roboflow/roboflow/pull/14444) has an
+  explicit deployed-config cell registry,
   per-workspace preferred/dedicated policy, transactional first activation,
   persisted source/job placement and generations, cell-specific URLs,
   cell-bound relay and fleet identities, cell+tier claim rechecks, explicit
   idle reassignment/remote-experiment primitives, and a staging-only scheduled
   orphan reaper. The first control-plane rollout registers only
   `crusoe-use1`; missing placement remains a default-cell compatibility path;
-- the processor reads immutable `VIDEO_PROC_CELL` identity once at startup,
+- processor/harness draft
+  [inference#2793](https://github.com/roboflow/inference/pull/2793) reads
+  immutable `VIDEO_PROC_CELL` identity once at startup,
   asserts it on platform calls, and rejects mismatched or implicit cross-cell
   claims before registering a token, constructing a run, touching media, or
   detaching a ready-pool pod. Health, runtime telemetry, and bounded Prometheus
@@ -648,8 +652,10 @@ prepared behind staging-only gates:
   [rf-video-connector#2](https://github.com/roboflow/rf-video-connector/pull/2)
   keeps selection server-side, reports cell/generation, fences stale route
   commands, and redacts credentialed media URLs;
-- the infrastructure branch models `crusoe-ussc1` as a separate staging-only
-  South Central cell stack. It starts `unavailable`, with processors disabled,
+- infrastructure draft
+  [roboflow-infra#2460](https://github.com/roboflow/roboflow-infra/pull/2460)
+  models `crusoe-ussc1` as a separate staging-only South Central cell stack. It
+  starts `unavailable`, with processors disabled,
   cell-specific credentials/subscription, exact relay/gateway/processor node
   classes, explicit `.one` endpoints, RTSPS for the opt-in WAN experiment,
   and per-cell monitoring. Production renders are unchanged. The existing East
