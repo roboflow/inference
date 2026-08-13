@@ -9,12 +9,16 @@ from typing import Any, Dict, Optional, Union
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.yolo26.optimization.ids import (
     YOLO26_DEPTH_ONNX_SCHEDULER_ENV_NAME,
+    YOLO26_DEPTH_ONNX_SCHEDULER_ORT_CUDA_GRAPH_V1,
 )
 
 
 @dataclass(frozen=True)
 class YOLO26DepthOnnxExecutionPlan(InferenceExecutionPlan):
     """Independent implementation selections for YOLO26 depth ONNX."""
+
+    scheduler_id: str = YOLO26_DEPTH_ONNX_SCHEDULER_ORT_CUDA_GRAPH_V1
+    allow_compatibility_fallback: bool = False
 
     @classmethod
     def resolve(
