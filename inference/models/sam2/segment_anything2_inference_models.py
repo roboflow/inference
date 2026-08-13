@@ -54,7 +54,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.megapixel_buckets import record_sam_model_input
+from inference.usage_tracking.decorator_helpers import record_fixed_model_input_for_request
 from inference_models.errors import ModelInputError
 
 if DEVICE is None:
@@ -150,7 +150,7 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        record_sam_model_input(self, request)
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())

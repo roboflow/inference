@@ -265,6 +265,31 @@ def test_registry_records_model_type_for_usage_tracking():
         clear_recorded_model_types()
 
 
+def test_recorded_model_types_evict_oldest_when_full(monkeypatch):
+    import inference.usage_tracking.model_types as model_types
+
+    monkeypatch.setattr(model_types, "_MAX_TRACKED_MODELS", 2)
+    clear_recorded_model_types()
+    try:
+        record_model_type(model_id="a/1", model_type="yolov8n")
+        record_model_type(model_id="b/1", model_type="yolov8s")
+        record_model_type(model_id="c/1", model_type="yolov8m")
+
+        assert get_recorded_model_type("a/1") is None
+        assert get_recorded_model_type("b/1") == "yolov8s"
+        assert get_recorded_model_type("c/1") == "yolov8m"
+
+        # Refreshing an existing key keeps it from being the next eviction victim.
+        record_model_type(model_id="b/1", model_type="yolov8s")
+        record_model_type(model_id="d/1", model_type="yolov8l")
+
+        assert get_recorded_model_type("c/1") is None
+        assert get_recorded_model_type("b/1") == "yolov8s"
+        assert get_recorded_model_type("d/1") == "yolov8l"
+    finally:
+        clear_recorded_model_types()
+
+
 def test_explicit_model_usage_api_key_takes_precedence_over_request(
     usage_collector_with_mocked_threads,
 ):

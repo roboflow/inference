@@ -290,21 +290,3 @@ def resolve_model_input_hw(
     ):
         return int(measured_hw[0]), int(measured_hw[1])
     return None
-
-
-def record_sam_model_input(model: Any, request: Any = None) -> None:
-    """Publish the SAM encoder input size for usage telemetry.
-
-    SAM entrypoints decorate ``infer_from_request`` rather than
-    ``BaseInference.infer``, so they publish their input size explicitly. The
-    model's fixed encoder size is preferred over native upload resolution.
-    """
-    clear_measured_model_input()
-    input_hw = resolve_model_input_hw(model)
-    if input_hw is None:
-        return
-    record_measured_model_hw(
-        height=input_hw[0],
-        width=input_hw[1],
-        frames=count_inference_images(getattr(request, "image", None)),
-    )

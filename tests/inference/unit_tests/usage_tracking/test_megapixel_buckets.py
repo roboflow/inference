@@ -3,6 +3,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference.usage_tracking.megapixel_buckets import (
     MEGAPIXEL_BUCKET_UNKNOWN,
     build_megapixel_buckets,
@@ -13,7 +16,6 @@ from inference.usage_tracking.megapixel_buckets import (
     get_tensor_spatial_hw,
     megapixel_bucket_for_hw,
     record_measured_model_input,
-    record_sam_model_input,
     resolve_model_input_hw,
 )
 from inference.usage_tracking.payload_helpers import (
@@ -207,8 +209,8 @@ def test_get_fixed_model_input_hw_from_image_size_and_nested_backend():
     ) == (1024, 1024)
 
 
-def test_record_sam_model_input_publishes_encoder_size():
-    record_sam_model_input(
+def test_record_fixed_model_input_for_request_publishes_encoder_size():
+    record_fixed_model_input_for_request(
         SimpleNamespace(image_size=1024),
         SimpleNamespace(image=object()),
     )
@@ -216,10 +218,12 @@ def test_record_sam_model_input_publishes_encoder_size():
     assert consume_measured_model_input() == ((1024, 1024), 1)
 
 
-def test_record_sam_model_input_clears_stale_value_for_unknown_encoder():
+def test_record_fixed_model_input_for_request_clears_stale_value_for_unknown_encoder():
     record_measured_model_input(np.zeros((1, 3, 4000, 4000)))
 
-    record_sam_model_input(SimpleNamespace(), SimpleNamespace(image=object()))
+    record_fixed_model_input_for_request(
+        SimpleNamespace(), SimpleNamespace(image=object())
+    )
 
     assert consume_measured_model_input() == (None, None)
 

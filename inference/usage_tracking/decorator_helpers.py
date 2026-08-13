@@ -7,8 +7,10 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
+    clear_measured_model_input,
     consume_measured_model_input,
     count_inference_images,
+    record_measured_model_hw,
     resolve_model_input_hw,
 )
 from inference.usage_tracking.model_types import get_recorded_model_type
@@ -140,6 +142,25 @@ def get_model_megapixel_buckets(
         width=width,
         frames=frames,
         execution_duration=execution_duration,
+    )
+
+
+def record_fixed_model_input_for_request(model: Any, request: Any = None) -> None:
+    """Publish a model's fixed input size for usage telemetry on a request call.
+
+    Use this for entrypoints that decorate ``infer_from_request`` (rather than
+    ``BaseInference.infer``), so they never hit the preprocess hook that normally
+    records measured tensor size. The model's configured/fixed size is preferred
+    over native upload resolution.
+    """
+    clear_measured_model_input()
+    input_hw = resolve_model_input_hw(model)
+    if input_hw is None:
+        return
+    record_measured_model_hw(
+        height=input_hw[0],
+        width=input_hw[1],
+        frames=count_inference_images(getattr(request, "image", None)),
     )
 
 
