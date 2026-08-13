@@ -54,7 +54,9 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.decorator_helpers import record_fixed_model_input_for_request
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models.errors import ModelInputError
 
 if DEVICE is None:

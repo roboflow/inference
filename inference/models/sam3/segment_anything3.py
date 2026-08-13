@@ -67,7 +67,9 @@ from inference.core.roboflow_api import (
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.decorator_helpers import record_fixed_model_input_for_request
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
