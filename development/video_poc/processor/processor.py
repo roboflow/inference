@@ -34,6 +34,7 @@ import argparse
 import base64
 import copy
 import json
+import multiprocessing as mp
 import os
 import re
 import signal
@@ -92,6 +93,7 @@ else:
     from inference.core.workflows.core_steps.common.serializers import (
         serialize_wildcard_kind,
     )
+
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 try:
@@ -101,6 +103,18 @@ except Exception:  # PyAV missing: fall back to cv2 URL ingest
 
 from execution_domains import build_execution_domains, wait_for_threads
 from file_replay import DEFAULT_BITRATE_KBPS, build_file_replay_command
+from job_process import JOB_EXECUTION_PROCESS
+from job_process import PROTOCOL_VERSION as JOB_PROCESS_PROTOCOL_VERSION
+from job_process import (
+    RemoteStats,
+    bounded_child_event,
+    bounded_log_tail,
+    bounded_parent_command,
+    drop_supervisor_credentials,
+    remove_supervisor_credentials,
+    resolve_job_execution_mode,
+    restore_supervisor_credentials,
+)
 from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
 from security import (
@@ -141,6 +155,9 @@ def _parse_capture_options(options):
 POLL_INTERVAL_S = 2.0
 EVENT_BUFFER_SIZE = 50
 MJPEG_MAX_FPS = 12
+JOB_PROCESS_STOP_GRACE_S = float(
+    os.getenv("PROCESSOR_JOB_PROCESS_STOP_GRACE_S", "10")
+)
 
 # Bin-packing bias: pool workers that have never claimed wait this long before
 # each claim attempt, so a partially-filled worker (free slot, claims eagerly)
@@ -1493,6 +1510,437 @@ class JobRun:
             # the next watch tick recreates the publisher on rtsp
 
 
+class _ChildMetrics:
+    """The supervisor owns scrapeable aggregate metrics in process mode."""
+
+    def job_started(self, *_args, **_kwargs):
+        pass
+
+    def job_finished(self, *_args, **_kwargs):
+        pass
+
+    def pipeline_started(self, *_args, **_kwargs):
+        pass
+
+    def frame_processed(self, *_args, **_kwargs):
+        pass
+
+
+class _ChildExecutionDomains:
+    def release_job(self, _job_id):
+        pass
+
+
+class _ChildWorker:
+    """Minimal worker surface used by a child-owned ``JobRun``.
+
+    It intentionally has no claim/status API credentials. Structured failures
+    travel to the supervisor, which remains the only process allowed to mutate
+    the platform job record.
+    """
+
+    def __init__(self, job, config, connection):
+        from types import SimpleNamespace
+
+        self.args = SimpleNamespace(api_key=None, api_url=None)
+        self.processor_id = str(config.get("processorId") or "process-child")[:256]
+        self.capture_env_lock = threading.Lock()
+        self.execution_domains = _ChildExecutionDomains()
+        self.metrics = _ChildMetrics()
+        self.security = JobSecurityRegistry(require_tokens=False)
+        self.security.register_job(job["id"])
+        self.video_ingest_mode = resolve_video_ingest_mode()
+        self.runtime_identity = build_runtime_identity(self.processor_id)
+        self.runtime_identity.update(process_runtime_identity(self.video_ingest_mode))
+        self.runtime_identity.update(
+            {
+                "jobExecutionMode": JOB_EXECUTION_PROCESS,
+                "jobProcessProtocolVersion": JOB_PROCESS_PROTOCOL_VERSION,
+            }
+        )
+        self._connection = connection
+        self._send_lock = threading.Lock()
+        self._failure = None
+
+    def send(self, event):
+        event = bounded_child_event(event)
+        with self._send_lock:
+            self._connection.send(event)
+
+    def report_job_failure(self, _job, message, log_tail=None):
+        safe_error = sanitize_diagnostic(message)[:2000]
+        self._failure = safe_error
+        self.send(
+            {
+                "version": JOB_PROCESS_PROTOCOL_VERSION,
+                "type": "failure",
+                "state": "error",
+                "error": safe_error,
+                "logTail": bounded_log_tail(log_tail or [safe_error]),
+            }
+        )
+
+    def finish_run(self, run, outcome=None):
+        del outcome
+        with run.lock:
+            if run.state == "running":
+                run.state = "error" if self._failure else "stopped"
+                if self._failure:
+                    run.job = {**run.job, "error": self._failure}
+
+    def maybe_retire(self):
+        pass
+
+    def api(self, *_args, **_kwargs):
+        raise RuntimeError("platform APIs are supervisor-owned in process mode")
+
+
+def _child_status_event(run, event_type="status"):
+    status = run.status()
+    stats = dict(status.get("stats") or {})
+    runtime = stats.pop("runtime", None) or run.runtime_identity()
+    return {
+        "version": JOB_PROCESS_PROTOCOL_VERSION,
+        "type": event_type,
+        "state": status.get("state"),
+        "stats": stats,
+        "runtime": runtime,
+        "imageOutputs": list(status.get("imageOutputs") or [])[:64],
+        "defaultImageOutput": status.get("defaultImageOutput"),
+        "error": (status.get("job") or {}).get("error"),
+    }
+
+
+def _isolated_job_child_main(job, config, connection):
+    """Spawn target: own decoder, workflow, model, and output publisher."""
+
+    drop_supervisor_credentials()
+    worker = None
+    run = None
+    try:
+        worker = _ChildWorker(job, config, connection)
+        run = JobRun(worker, job)
+        run.start()
+        if run.state == "running":
+            worker.send(_child_status_event(run, "started"))
+        last_status = 0.0
+        while run.active:
+            if connection.poll(0.2):
+                command = bounded_parent_command(connection.recv())
+                if command["type"] == "stop":
+                    run.stop()
+                    worker.send(_child_status_event(run, "stopped"))
+                    return
+                run.handle_watch(command.get("watch") or {})
+            now = time.monotonic()
+            if now - last_status >= 1.0:
+                worker.send(_child_status_event(run))
+                last_status = now
+        event_type = "completed" if run.state == "completed" else "stopped"
+        if run.state == "error":
+            event_type = "failure"
+        worker.send(_child_status_event(run, event_type))
+    except (EOFError, BrokenPipeError):
+        if run is not None:
+            run.stop()
+    except BaseException as exc:
+        safe_error = sanitize_diagnostic(exc)[:2000]
+        try:
+            bounded_traceback = bounded_log_tail(
+                sanitize_diagnostic(traceback.format_exc()).splitlines()
+            )
+            if worker is not None:
+                worker.send(
+                    {
+                        "version": JOB_PROCESS_PROTOCOL_VERSION,
+                        "type": "failure",
+                        "state": "error",
+                        "error": f"job process failed: {safe_error}",
+                        "logTail": bounded_traceback,
+                    }
+                )
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+class ProcessJobRun:
+    """Parent-side proxy for one spawned, child-owned stream pipeline."""
+
+    def __init__(self, worker, job):
+        self.worker = worker
+        self.job = job
+        self.job_id = validate_job_id(job.get("id", "local"))
+        source_url = str(job.get("sourceUrl") or "")
+        self.mode = job.get("mode") or (
+            "batch" if source_url.startswith("http") else "stream"
+        )
+        self.state = "starting"
+        self.cancelling = False
+        self.lifecycle_lock = threading.Lock()
+        self.lock = threading.Lock()
+        self.log_ring = DiagnosticRing()
+        self.stats = RemoteStats()
+        self.events = EventBus()
+        self.frames = FrameStore()
+        self.raw_frames = FrameStore()
+        self.image_output = job.get("imageOutput")
+        self.publisher = None
+        self._image_outputs = []
+        self._runtime = {
+            **worker.runtime_identity,
+            "jobExecutionMode": JOB_EXECUTION_PROCESS,
+            "jobProcessProtocolVersion": JOB_PROCESS_PROTOCOL_VERSION,
+        }
+        self._process = None
+        self._connection = None
+        self._monitor_thread = None
+        self._send_lock = threading.Lock()
+        self._outcome_lock = threading.Lock()
+        self._outcome_recorded = False
+        self._failure_reported = False
+        self._last_inferred = 0
+        self._pipeline_started_recorded = False
+        self.worker.metrics.job_started(self.mode)
+
+    @property
+    def active(self):
+        return self.state in ("starting", "running")
+
+    def start(self):
+        with self.lifecycle_lock:
+            if self.cancelling:
+                return
+            if self.mode != "stream":
+                self.report_failure(
+                    "per-job process experiment currently supports stream jobs only"
+                )
+                with self.lock:
+                    self.state = "error"
+                self.worker.execution_domains.release_job(self.job_id)
+                return
+            parent, child = self.worker.job_process_context.Pipe(duplex=True)
+            child_job = dict(self.job)
+            if not child_job.get("apiKey"):
+                child_job["apiKey"] = self.worker.args.api_key or os.getenv(
+                    "ROBOFLOW_API_KEY"
+                )
+            process = self.worker.job_process_context.Process(
+                target=_isolated_job_child_main,
+                args=(
+                    child_job,
+                    {"processorId": self.worker.processor_id},
+                    child,
+                ),
+                name=f"video-job-{self.job_id}",
+                daemon=False,
+            )
+            self._connection = parent
+            self._process = process
+            try:
+                # multiprocessing.spawn otherwise copies the supervisor's
+                # fleet/status credentials into the child's initial OS
+                # environment. Serialize this short exec window with API auth
+                # lookup, remove those values before exec, then restore them
+                # immediately in the supervisor. The child receives only its
+                # required job-scoped authorization in ``child_job``.
+                with self.worker.spawn_env_lock:
+                    removed_environment = remove_supervisor_credentials()
+                    try:
+                        process.start()
+                    finally:
+                        restore_supervisor_credentials(removed_environment)
+            except BaseException as exc:
+                child.close()
+                parent.close()
+                self._connection = None
+                self._process = None
+                safe_error = sanitize_diagnostic(exc)
+                self.report_failure(f"job process failed to spawn: {safe_error}")
+                with self.lock:
+                    self.state = "error"
+                self.worker.execution_domains.release_job(self.job_id)
+                self.worker.maybe_retire()
+                return
+            child.close()
+            self._monitor_thread = threading.Thread(
+                target=self._monitor_child,
+                name=f"video-job-monitor-{self.job_id}",
+                daemon=True,
+            )
+            self._monitor_thread.start()
+
+    def _monitor_child(self):
+        process = self._process
+        connection = self._connection
+        try:
+            while connection is not None:
+                if connection.poll(0.5):
+                    self._apply_child_event(bounded_child_event(connection.recv()))
+                if process is not None and not process.is_alive():
+                    while connection.poll():
+                        self._apply_child_event(bounded_child_event(connection.recv()))
+                    break
+        except (EOFError, BrokenPipeError, OSError, ValueError) as exc:
+            if not self.cancelling:
+                self.log_ring.note(
+                    f"job process IPC failed: {sanitize_diagnostic(exc)}"
+                )
+        finally:
+            exit_code = process.exitcode if process is not None else None
+            if not self.cancelling and self.state in ("starting", "running"):
+                self.report_failure(
+                    f"job process exited unexpectedly (code {exit_code})"
+                )
+                with self.lock:
+                    self.state = "error"
+            if not self.cancelling and self.state == "error":
+                # Remove this one run and stop its heartbeats immediately;
+                # sibling job processes in the pod are unaffected.
+                self.worker.finish_run(self)
+
+    def _apply_child_event(self, event):
+        stats = event.get("stats")
+        if isinstance(stats, dict):
+            self.stats.replace(stats)
+            runtime = event.get("runtime")
+            if isinstance(runtime, dict):
+                self._runtime = dict(runtime)
+            counters = stats.get("counters") or {}
+            inferred = max(0, int(counters.get("inferred", 0) or 0))
+            delta = max(0, inferred - self._last_inferred)
+            if delta:
+                latency_ms = float(
+                    (stats.get("decodeToResultLatency") or {}).get("mean") or 0
+                )
+                for _ in range(delta):
+                    self.worker.metrics.frame_processed(
+                        self.mode, max(0.0, latency_ms) / 1000.0
+                    )
+                self._last_inferred = inferred
+            if not self._pipeline_started_recorded:
+                start_s = (stats.get("timing") or {}).get("pipelineStartS")
+                if start_s is not None:
+                    self.worker.metrics.pipeline_started(self.mode, float(start_s))
+                    self._pipeline_started_recorded = True
+        self._image_outputs = list(event.get("imageOutputs") or [])
+        self.image_output = event.get("defaultImageOutput") or self.image_output
+        event_type = event["type"]
+        state = event.get("state")
+        if event_type in ("started", "status") and state in ("starting", "running"):
+            with self.lock:
+                self.state = state
+        elif event_type == "completed":
+            with self.lock:
+                self.state = "completed"
+            self._record_outcome("completed")
+        elif event_type == "stopped":
+            with self.lock:
+                self.state = "stopped"
+        elif event_type == "failure":
+            self.report_failure(
+                event.get("error") or "job process failed", event.get("logTail")
+            )
+            with self.lock:
+                self.state = "error"
+
+    def _send(self, command):
+        command = bounded_parent_command(command)
+        with self._send_lock:
+            if self._connection is None:
+                return
+            self._connection.send(command)
+
+    def handle_watch(self, watch):
+        # Output publishing remains in the child and goes directly to MediaMTX;
+        # no frame or CUDA tensor crosses this control connection.
+        self._send(
+            {
+                "version": JOB_PROCESS_PROTOCOL_VERSION,
+                "type": "watch",
+                "watch": {
+                    key: watch[key]
+                    for key in ("output", "requested")
+                    if key in watch
+                },
+            }
+        )
+
+    def report_failure(self, message, log_tail=None):
+        safe_error = sanitize_diagnostic(message)[:2000]
+        self._record_outcome("error")
+        self.log_ring.note(safe_error)
+        for line in bounded_log_tail(log_tail or []):
+            self.log_ring.note(line)
+        if not self._failure_reported:
+            self._failure_reported = True
+            self.worker.report_job_failure(self.job, safe_error, self.log_ring.tail())
+        with self.lock:
+            self.job = {**self.job, "error": safe_error}
+
+    def _record_outcome(self, outcome):
+        with self._outcome_lock:
+            if self._outcome_recorded:
+                return
+            self._outcome_recorded = True
+        self.worker.metrics.job_finished(self.mode, outcome)
+
+    def stop(self):
+        self.cancelling = True
+        self._record_outcome("stopped")
+        with self.lifecycle_lock:
+            process = self._process
+            try:
+                if process is not None and process.is_alive():
+                    self._send(
+                        {
+                            "version": JOB_PROCESS_PROTOCOL_VERSION,
+                            "type": "stop",
+                        }
+                    )
+                    process.join(timeout=max(0.0, JOB_PROCESS_STOP_GRACE_S))
+                if process is not None and process.is_alive():
+                    process.terminate()
+                    process.join(timeout=2.0)
+                if process is not None and process.is_alive():
+                    process.kill()
+                    process.join(timeout=1.0)
+            finally:
+                if self._connection is not None:
+                    try:
+                        self._connection.close()
+                    except Exception:
+                        pass
+                    self._connection = None
+                with self.lock:
+                    self.state = "stopped"
+
+    def status(self):
+        with self.lock:
+            state = self.state
+            job = self.job
+        return {
+            "state": state,
+            "job": {
+                "id": job.get("id"),
+                "mode": job.get("mode"),
+                "imageOutput": job.get("imageOutput"),
+                "error": job.get("error"),
+            },
+            "stats": self.stats.snapshot(runtime=self.runtime_identity()),
+            "imageOutputs": list(self._image_outputs),
+            "defaultImageOutput": self.image_output,
+        }
+
+    def runtime_identity(self):
+        return dict(self._runtime)
+
+
 class Worker:
     def __init__(self, args):
         self.args = args
@@ -1532,6 +1980,9 @@ class Worker:
         self.runs_lock = threading.Lock()
         # cv2 capture options travel via process-global env — see JobRun
         self.capture_env_lock = threading.Lock()
+        # Guards the few milliseconds in which process-mode spawn strips
+        # supervisor-only credentials from the inherited child environment.
+        self.spawn_env_lock = threading.Lock()
         self._pubsub_client = None
         self._stop_requested = False
         # Managed fleet jobs must be inaccessible without their platform-minted
@@ -1543,10 +1994,19 @@ class Worker:
         )
         self.metrics = ProcessorMetrics()
         self.video_ingest_mode = resolve_video_ingest_mode()
-        self.runtime_identity = build_runtime_identity(self.processor_id)
-        self.runtime_identity.update(
-            process_runtime_identity(self.video_ingest_mode)
+        self.job_execution_mode = resolve_job_execution_mode()
+        self.job_process_context = (
+            mp.get_context("spawn")
+            if self.job_execution_mode == JOB_EXECUTION_PROCESS
+            else None
         )
+        self.runtime_identity = build_runtime_identity(self.processor_id)
+        self.runtime_identity.update(process_runtime_identity(self.video_ingest_mode))
+        self.runtime_identity["jobExecutionMode"] = self.job_execution_mode
+        if self.job_execution_mode == JOB_EXECUTION_PROCESS:
+            self.runtime_identity["jobProcessProtocolVersion"] = (
+                JOB_PROCESS_PROTOCOL_VERSION
+            )
         # Default is the existing single-process worker. The staging-only
         # workspace_probe mode exercises ownership and crash handling with one
         # empty child per workspace; JobRun still executes in this parent, so
@@ -1554,6 +2014,14 @@ class Worker:
         self.execution_domains = build_execution_domains(
             os.getenv("PROCESSOR_EXECUTION_DOMAIN_MODE")
         )
+        if (
+            self.job_execution_mode == JOB_EXECUTION_PROCESS
+            and self.execution_domains.experimental
+        ):
+            raise ValueError(
+                "PROCESSOR_JOB_EXECUTION_MODE=process cannot be combined with "
+                "the lifecycle-only workspace execution probe"
+            )
         # Kept injectable for a focused monitor test. The real worker must use
         # a process-wide hard exit here: normal signal shutdown calls stop_all,
         # which could block on the same pipeline that exceeded containment.
@@ -1664,6 +2132,7 @@ class Worker:
             "processorId": self.processor_id,
             "tier": self.tier,
             "capacity": self.capacity,
+            "jobExecutionMode": self.job_execution_mode,
             "activeJobs": sum(1 for r in runs if r.active),
             "jobs": [
                 {"id": r.job_id, "state": r.state, "mode": r.job.get("mode"), "error": r.job.get("error")}
@@ -1684,6 +2153,7 @@ class Worker:
             "state": "ready",
             "tier": self.tier,
             "capacity": self.capacity,
+            "jobExecutionMode": self.job_execution_mode,
             "activeJobs": self.active_count(),
             "retiring": self.retiring,
             "executionDomains": self.execution_domains.snapshot(),
@@ -1756,7 +2226,8 @@ class Worker:
         # Managed-pool (fleet) mode: authenticate with the service secret and
         # claim jobs across all workspaces. Without it, the worker key keeps
         # today's self-hosted behavior: workspace API key, workspace-scoped.
-        fleet_secret = os.getenv("VIDEO_PROC_SERVICE_SECRET")
+        with self.spawn_env_lock:
+            fleet_secret = os.getenv("VIDEO_PROC_SERVICE_SECRET")
         if fleet_secret:
             headers["x-video-proc-service-access-token"] = fleet_secret
         else:
@@ -1808,7 +2279,12 @@ class Worker:
             except (MissingJobAccessToken, ValueError) as exc:
                 self.report_job_failure(job, str(exc))
                 return job
-            run = JobRun(self, job)
+            run_type = (
+                ProcessJobRun
+                if self.job_execution_mode == JOB_EXECUTION_PROCESS
+                else JobRun
+            )
+            run = run_type(self, job)
             with self.runs_lock:
                 # Register ownership before the execution domain becomes
                 # monitor-visible. An immediately dying child can therefore
@@ -1956,6 +2432,11 @@ class Worker:
         self.execution_domains.shutdown()
 
     def run(self):
+        if self.job_execution_mode == JOB_EXECUTION_PROCESS:
+            print(
+                "[processor] staging experiment enabled: one spawned execution "
+                "process per live job"
+            )
         if self.execution_domains.experimental:
             print(
                 "[processor] staging experiment enabled: workspace execution "
@@ -1979,7 +2460,12 @@ class Worker:
                 job = dict(job)
                 access_token = job.pop("processorAccessToken", None)
                 self.security.register_job(job["id"], access_token)
-                run = JobRun(self, job)
+                run_type = (
+                    ProcessJobRun
+                    if self.job_execution_mode == JOB_EXECUTION_PROCESS
+                    else JobRun
+                )
+                run = run_type(self, job)
                 with self.runs_lock:
                     if run.job_id in self.runs:
                         raise ValueError(f"duplicate local job id: {run.job_id}")

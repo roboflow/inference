@@ -23,6 +23,7 @@ OVERLAY_FILES = (
     "development/video_poc/processor/processor.py",
     "development/video_poc/processor/processor_metrics.py",
     "development/video_poc/processor/job_telemetry.py",
+    "development/video_poc/processor/job_process.py",
     "development/video_poc/processor/worker_lifecycle.py",
     "development/video_poc/processor/execution_domains.py",
     "development/video_poc/processor/security.py",

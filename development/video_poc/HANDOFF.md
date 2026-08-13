@@ -525,6 +525,13 @@ not implemented yet.
   worker hard-exits so Kubernetes and the heartbeat reaper can requeue its held
   jobs instead of losing the sole monitor. Full blockers are documented in
   [`experiments/process_isolation/WORKER_INTEGRATION.md`](experiments/process_isolation/WORKER_INTEGRATION.md).
+  A separate default-off staging topology,
+  `PROCESSOR_JOB_EXECUTION_MODE=process`, now moves each live job's decoder,
+  workflow, model, CUDA context, and direct MediaMTX publisher into a spawned OS
+  process. Claims, heartbeats, cancellation, browser tokens, aggregate metrics,
+  and durable failures remain supervisor-owned; frames/tensors never cross IPC.
+  Use the controlled original/PyAV vs v1.4/PyAV vs v1.4/NVDEC D/E/F matrix in
+  [`experiments/process_isolation/JOB_PROCESS_MATRIX.md`](experiments/process_isolation/JOB_PROCESS_MATRIX.md).
   Separately, draft inference
   [#2788](https://github.com/roboflow/inference/pull/2788) packages the new
   multi-process model manager benchmark. Its current routing key is

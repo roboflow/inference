@@ -1,4 +1,4 @@
-# Worker integration: lifecycle-only workspace probe
+# Worker integration: lifecycle probe and per-job execution experiment
 
 The POC worker now has a deliberately narrow, feature-gated execution-domain
 seam. Its default remains `PROCESSOR_EXECUTION_DOMAIN_MODE=in_process`, which
@@ -54,15 +54,14 @@ the corresponding parent-side jobs so failure ownership can be exercised.
 MPS would not change that conclusion. MPS can share and schedule GPU work, but
 it neither isolates tenants nor authorizes model or shared-memory access.
 
-## Blockers before executing workflows in children
+## Production blockers beyond the staging capacity experiment
 
-1. Define a versioned, bounded IPC protocol for start, cancel, status,
-   structured errors, aggregate counters, frame/event delivery, and graceful
-   shutdown. It needs explicit backpressure so a slow browser or parent cannot
-   grow child memory without bound.
-2. Decide which side owns decoders and output publishers. Moving the full
-   `JobRun` into a child is the clearest fault boundary, but the parent HTTP API
-   then needs bounded access to events, previews, and completed result files.
+1. Extend the experiment's versioned, bounded status/control protocol for batch
+   results and any browser-facing event stream that production requires. Do not
+   add raw frames or unbounded per-frame events to the parent connection.
+2. Decide the production contract for debug MJPEG, structured per-frame events,
+   and completed batch result files. Live output publishing already stays in
+   the child and goes directly to MediaMTX.
 3. Remove broad workspace credentials from long-lived parent and cross-process
    state. A child must use a short-lived, job-scoped model authorization or a
    broker that re-authorizes every model operation; merely sending the current
@@ -84,5 +83,29 @@ it neither isolates tenants nor authorizes model or shared-memory access.
    decode-to-result latency, throughput, and fairness before selecting
    workspace-process versus job-process granularity.
 
-Until those items are complete, benchmark reports must call this mode
-`workspace_probe`; they must not label it process-isolated execution.
+Until those items are complete, reports for the empty lifecycle mode must call
+it `workspace_probe`; they must not label that mode process-isolated execution.
+Reports using `PROCESSOR_JOB_EXECUTION_MODE=process` may accurately describe
+per-job execution isolation, but not a hardened tenant-security boundary.
+
+## Real per-job execution experiment
+
+The worker now also has a separate staging topology switch:
+
+```text
+PROCESSOR_JOB_EXECUTION_MODE=process
+```
+
+Unlike `workspace_probe`, this mode moves the real decoder, `InferencePipeline`,
+workflow/model execution, CUDA context, and output publisher into one spawned OS
+process per live job. It is independent of the inference runtime and ingest
+mode, enabling the D/E/F matrix documented in
+[`JOB_PROCESS_MATRIX.md`](JOB_PROCESS_MATRIX.md). The supervisor retains
+claims, access tokens, heartbeats, cancellation, aggregate metrics, and durable
+failure reporting. Only bounded control and telemetry cross the connection;
+frames and tensors never do.
+
+Do not combine `workspace_probe` and per-job process mode. The former remains a
+lifecycle-only prototype; the latter is the actual execution-isolation capacity
+experiment. It is not yet a production tenant sandbox or a replacement for the
+authorization/fairness work required by a shared model manager.

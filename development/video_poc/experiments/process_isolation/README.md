@@ -29,10 +29,12 @@ using other models; the MMP already detects worker death and reloads the model.
 A fatal GPU or MPS-server fault can still affect the entire pod. Process
 isolation reduces that blast radius but does not eliminate it.
 
-Workspace mode is the recommended first production shape: it provides the
-requested cross-workspace Python-process boundary without multiplying decoder,
-workflow, and IPC processes per stream. Job mode is useful as a benchmark and
-for a future dedicated/exclusive tier.
+The first integrated staging capacity experiment uses one process per job. It
+is deliberately stricter than the earlier workspace recommendation because it
+cleanly answers whether shared-interpreter contention explains the observed
+scaling ceiling. See [`JOB_PROCESS_MATRIX.md`](JOB_PROCESS_MATRIX.md). Workspace
+grouping remains a possible production optimization after D/E/F establish the
+per-process cost and throughput bound.
 
 ## Integration work on the worker
 
