@@ -17,7 +17,7 @@ from typing import Optional
 # ids so it is capped to keep a pathological caller from growing it without end.
 _MAX_TRACKED_MODELS = 1024
 
-_model_types: OrderedDict[str, str] = OrderedDict()
+_MODEL_TYPES: OrderedDict[str, str] = OrderedDict()
 
 
 def record_model_type(model_id: Optional[str], model_type: Optional[str]) -> None:
@@ -25,20 +25,20 @@ def record_model_type(model_id: Optional[str], model_type: Optional[str]) -> Non
         return
     model_id = str(model_id)
     model_type = str(model_type)
-    if model_id in _model_types:
-        _model_types.move_to_end(model_id)
-        _model_types[model_id] = model_type
+    if model_id in _MODEL_TYPES:
+        _MODEL_TYPES.move_to_end(model_id)
+        _MODEL_TYPES[model_id] = model_type
         return
-    while len(_model_types) >= _MAX_TRACKED_MODELS:
-        _model_types.popitem(last=False)
-    _model_types[model_id] = model_type
+    while len(_MODEL_TYPES) >= _MAX_TRACKED_MODELS:
+        _MODEL_TYPES.popitem(last=False)
+    _MODEL_TYPES[model_id] = model_type
 
 
 def get_recorded_model_type(model_id: Optional[str]) -> Optional[str]:
     if not model_id:
         return None
-    return _model_types.get(str(model_id))
+    return _MODEL_TYPES.get(str(model_id))
 
 
 def clear_recorded_model_types() -> None:
-    _model_types.clear()
+    _MODEL_TYPES.clear()
