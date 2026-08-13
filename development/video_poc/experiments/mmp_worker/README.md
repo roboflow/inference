@@ -109,3 +109,28 @@ requires explicit operator approval. After apply, inspect the exact Pod's logs
 and `/status`; require a completed job, frames greater than zero, manager mode
 `mmp-bundled-subprocess`, and one active manager domain. Delete the exact Pod,
 ConfigMap, and API-key Secret after collecting evidence.
+
+## Validated staging smoke
+
+Run `smoke-886488932` completed on Crusoe staging with worker image
+`video-processor-mmp@sha256:c6ad147dd30897874dc3a5dda4fc97345ab9f4220d15405139bf76fde415b1cd`
+built by Cloud Build `984175ce-625d-42aa-9f93-ba691d1006b1`.
+
+- the YOLOv8 Nano workflow completed all 538 frames with zero drops;
+- 538 frames were decoded, inferred, and rendered at 15.38 delivered FPS;
+- time to first result was 12.99 seconds, including source download and cold
+  model loading;
+- status reported one `mmp-bundled-subprocess` workspace manager domain;
+- the worker was PID 1 and the loaded model ran in subprocess PID 169 using
+  892 MiB of GPU memory;
+- the Pod, ConfigMap, and short-lived API-key Secret were removed after the
+  result was collected.
+
+The batch decoder ran ahead of inference, so its frame-capture-to-result
+latency histogram accumulated queue residence and is not an inference-latency
+measurement. Use the controlled-FPS stream corpus for latency comparisons.
+
+Two harness assumptions were corrected during the run: the final runtime image
+does not include repository test videos, so the smoke now uses the published
+Roboflow fixture; decoded frames require more than 12 MB per shared-memory
+slot, so the tested bounded value is 32 MB.
