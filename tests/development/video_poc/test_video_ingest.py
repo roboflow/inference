@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 
-
 PROCESSOR_DIR = (
     Path(__file__).resolve().parents[3] / "development" / "video_poc" / "processor"
 )
@@ -39,6 +38,14 @@ def test_cuda_ingest_requires_tensor_mode_at_process_start(monkeypatch):
     assert resolve_video_ingest_mode() == GSTREAMER_CUDA_INGEST
 
 
+def test_legacy_runtime_rejects_cuda_even_if_tensor_env_was_left_set(monkeypatch):
+    monkeypatch.setenv("PROCESSOR_VIDEO_INGEST_MODE", GSTREAMER_CUDA_INGEST)
+    monkeypatch.setenv("ENABLE_TENSOR_DATA_REPRESENTATION", "true")
+
+    with pytest.raises(ValueError, match="requires.*TENSOR_DATA_REPRESENTATION"):
+        resolve_video_ingest_mode(tensor_runtime_available=False)
+
+
 def test_unknown_ingest_mode_fails_before_the_worker_claims_jobs(monkeypatch):
     monkeypatch.setenv("PROCESSOR_VIDEO_INGEST_MODE", "best-effort-auto")
 
@@ -59,6 +66,14 @@ def test_runtime_identity_is_bounded_and_contains_no_credentials(monkeypatch):
         "rtspLatencyMs": 80,
     }
     assert "must-not-leak" not in str(runtime)
+
+
+def test_legacy_runtime_identity_does_not_claim_tensor_support(monkeypatch):
+    monkeypatch.setenv("ENABLE_TENSOR_DATA_REPRESENTATION", "true")
+
+    runtime = process_runtime_identity(PYAV_INGEST, tensor_runtime_available=False)
+
+    assert runtime["tensorRepresentationEnabled"] is False
 
 
 def test_cuda_factory_constructs_tensor_producer_and_reports_it(monkeypatch):
@@ -149,8 +164,8 @@ def test_processor_uses_fail_loud_cuda_and_freshest_frame_mode():
 def test_processor_selects_tensor_serializer_and_materializes_at_sink_only():
     source = (PROCESSOR_DIR / "processor.py").read_text()
 
-    assert "if ENABLE_TENSOR_DATA_REPRESENTATION:" in source
-    assert "common.serializers_tensor" in source
+    assert "resolve_workflow_serializer()" in source
+    assert "INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE" in source
     assert "self.raw_frames.set(key, value)" in source
     assert "image = workflow_image.numpy_image" in source
 
@@ -161,6 +176,7 @@ def test_processor_images_include_ingest_selector(dockerfile):
 
     assert "COPY video_ingest.py /app/video_ingest.py" in source
     assert "COPY file_replay.py /app/file_replay.py" in source
+    assert "COPY inference_runtime_compat.py /app/inference_runtime_compat.py" in source
 
 
 def test_full_processor_restores_pip_removed_from_v14_runtime():

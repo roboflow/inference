@@ -20,6 +20,45 @@ Select E/F using the same immutable v1.4 image and change only
 files over the immutable original-runtime processor image. The overlay must not
 silently upgrade its inference packages.
 
+## Immutable staging artifacts
+
+Both controlled D/E/F images are thin overlays from source
+`ba0a10f3dcda8e9930e9a4e8c0b86af921c7190d`. They change the worker files and
+job topology while preserving the exact previously tested runtime underneath:
+
+| Use | Exact image | Cloud Build | Exact base | Purpose |
+|---|---|---|---|---|
+| D (rejected) | `video-processor-process@sha256:debf846be8bc1b329cd15f0e109da9cd3f68a54a49c617c8d5d813d64934249f` | `366987b7-d67c-4a67-bfb9-d105d2ed1bd0` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | invalid: current worker imported a v1.4-only tensor flag on inference 1.3.5; never deploy |
+| E/F | `video-processor-process@sha256:5cd7ecada7aba58fafba94aa47e05cce3e39f0e0305d2dbb13f91a226d642bd0` | `7675f50c-9177-4be6-ac2e-f5cf46c043a7` | deployed v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | v1.4 plus per-job processes; select PyAV or NVDEC by environment |
+
+A separate full-image validation build, Cloud Build
+`68a27111-c69f-481f-8072-8e1e5742f939`, produced
+`video-processor-job-process-v14@sha256:85540632e4350c40835be285b32f7a191a489d38895dc028beabc72c79c2cbae`
+from the immutable inference v1.4 GPU base
+`sha256:61a6d295424d4130cfbd4418719445df234d7f84f3c54dff3aab74a998f69d16`.
+It reinstalls the worker's apt and pip integrations, so it introduces package
+and image-build variables that the thin E/F overlay avoids. Keep it as a
+validation/fallback artifact or an explicitly separate leg; do not substitute
+it into D/E/F and call the result apples-to-apples.
+
+Use this common staging configuration for D/E/F:
+
+```text
+PROCESSOR_JOB_EXECUTION_MODE=process
+PROCESSOR_EXECUTION_DOMAIN_MODE=in_process
+VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE=true
+ROBOFLOW_RTSP_LATENCY_MS=200
+ROBOFLOW_RTSP_PROTOCOLS=tcp
+ROBOFLOW_RTSP_VIDEO_CODEC=h264
+```
+
+Keep output publishing off for the first capacity pass. For D, select PyAV and
+remove the tensor representation, inference-model, CUDA tensor-device, and
+video-file rate-limit overrides. For E, select PyAV plus
+`ENABLE_TENSOR_DATA_REPRESENTATION=true`, `USE_INFERENCE_MODELS=true`, and
+`WORKFLOWS_IMAGE_TENSOR_DEVICE=cuda`. F uses those same v1.4 flags with
+`PROCESSOR_VIDEO_INGEST_MODE=gstreamer_cuda`.
+
 Run the identical connector-to-MediaMTX source, workflow, output-watch state,
 FPS cap, concurrency steps, dwell time, and repetitions for D/E/F. Record the
 exact image digest and child `stats.runtime.processId` for every job. At

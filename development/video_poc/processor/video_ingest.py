@@ -10,7 +10,6 @@ import math
 import os
 import re
 
-
 PYAV_INGEST = "pyav"
 GSTREAMER_CUDA_INGEST = "gstreamer_cuda"
 SUPPORTED_INGEST_MODES = (PYAV_INGEST, GSTREAMER_CUDA_INGEST)
@@ -24,7 +23,7 @@ def _env_flag(name, default=False):
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-def resolve_video_ingest_mode(value=None):
+def resolve_video_ingest_mode(value=None, tensor_runtime_available=None):
     mode = (value or os.getenv("PROCESSOR_VIDEO_INGEST_MODE", PYAV_INGEST)).strip()
     mode = mode.lower()
     if mode not in SUPPORTED_INGEST_MODES:
@@ -32,9 +31,10 @@ def resolve_video_ingest_mode(value=None):
             "PROCESSOR_VIDEO_INGEST_MODE must be one of "
             + ", ".join(SUPPORTED_INGEST_MODES)
         )
-    if mode == GSTREAMER_CUDA_INGEST and not _env_flag(
-        "ENABLE_TENSOR_DATA_REPRESENTATION"
-    ):
+    tensor_enabled = _env_flag("ENABLE_TENSOR_DATA_REPRESENTATION")
+    if tensor_runtime_available is not None:
+        tensor_enabled = tensor_enabled and bool(tensor_runtime_available)
+    if mode == GSTREAMER_CUDA_INGEST and not tensor_enabled:
         raise ValueError(
             "gstreamer_cuda ingest requires "
             "ENABLE_TENSOR_DATA_REPRESENTATION=true at process startup"
@@ -42,13 +42,14 @@ def resolve_video_ingest_mode(value=None):
     return mode
 
 
-def process_runtime_identity(mode):
+def process_runtime_identity(mode, tensor_runtime_available=None):
     """Return bounded, non-secret ingest configuration for job telemetry."""
+    tensor_enabled = _env_flag("ENABLE_TENSOR_DATA_REPRESENTATION")
+    if tensor_runtime_available is not None:
+        tensor_enabled = tensor_enabled and bool(tensor_runtime_available)
     runtime = {
         "videoIngestMode": mode,
-        "tensorRepresentationEnabled": _env_flag(
-            "ENABLE_TENSOR_DATA_REPRESENTATION"
-        ),
+        "tensorRepresentationEnabled": tensor_enabled,
     }
     latency = os.getenv("ROBOFLOW_RTSP_LATENCY_MS")
     if latency:

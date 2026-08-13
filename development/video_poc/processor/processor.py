@@ -83,17 +83,6 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-
-if ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.common.serializers_tensor import (
-        serialize_wildcard_kind,
-    )
-else:
-    from inference.core.workflows.core_steps.common.serializers import (
-        serialize_wildcard_kind,
-    )
-
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 try:
@@ -103,6 +92,10 @@ except Exception:  # PyAV missing: fall back to cv2 URL ingest
 
 from execution_domains import build_execution_domains, wait_for_threads
 from file_replay import DEFAULT_BITRATE_KBPS, build_file_replay_command
+from inference_runtime_compat import (
+    pipeline_supports_freshest_mode,
+    resolve_workflow_serializer,
+)
 from job_process import JOB_EXECUTION_PROCESS
 from job_process import PROTOCOL_VERSION as JOB_PROCESS_PROTOCOL_VERSION
 from job_process import (
@@ -136,6 +129,15 @@ from video_ingest import (
     verify_cuda_frame,
 )
 from worker_lifecycle import schedule_retirement
+
+
+(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    serialize_wildcard_kind,
+) = resolve_workflow_serializer()
+INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE = pipeline_supports_freshest_mode(
+    InferencePipeline
+)
 
 
 def _parse_capture_options(options):
@@ -1073,6 +1075,7 @@ class JobRun:
             mode == "stream"
             and isinstance(video_reference, str)
             and video_reference.startswith("rtsp")
+            and INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE
         ):
             # Hold buffering semantics constant across the decoder A/B. This
             # also opts PyAV into v1.4's demand-driven latest-frame behavior
@@ -1549,9 +1552,16 @@ class _ChildWorker:
         self.metrics = _ChildMetrics()
         self.security = JobSecurityRegistry(require_tokens=False)
         self.security.register_job(job["id"])
-        self.video_ingest_mode = resolve_video_ingest_mode()
+        self.video_ingest_mode = resolve_video_ingest_mode(
+            tensor_runtime_available=ENABLE_TENSOR_DATA_REPRESENTATION
+        )
         self.runtime_identity = build_runtime_identity(self.processor_id)
-        self.runtime_identity.update(process_runtime_identity(self.video_ingest_mode))
+        self.runtime_identity.update(
+            process_runtime_identity(
+                self.video_ingest_mode,
+                tensor_runtime_available=ENABLE_TENSOR_DATA_REPRESENTATION,
+            )
+        )
         self.runtime_identity.update(
             {
                 "jobExecutionMode": JOB_EXECUTION_PROCESS,
@@ -1993,7 +2003,9 @@ class Worker:
             require_tokens=env_flag("REQUIRE_JOB_ACCESS_TOKEN", managed_pool)
         )
         self.metrics = ProcessorMetrics()
-        self.video_ingest_mode = resolve_video_ingest_mode()
+        self.video_ingest_mode = resolve_video_ingest_mode(
+            tensor_runtime_available=ENABLE_TENSOR_DATA_REPRESENTATION
+        )
         self.job_execution_mode = resolve_job_execution_mode()
         self.job_process_context = (
             mp.get_context("spawn")
@@ -2001,7 +2013,12 @@ class Worker:
             else None
         )
         self.runtime_identity = build_runtime_identity(self.processor_id)
-        self.runtime_identity.update(process_runtime_identity(self.video_ingest_mode))
+        self.runtime_identity.update(
+            process_runtime_identity(
+                self.video_ingest_mode,
+                tensor_runtime_available=ENABLE_TENSOR_DATA_REPRESENTATION,
+            )
+        )
         self.runtime_identity["jobExecutionMode"] = self.job_execution_mode
         if self.job_execution_mode == JOB_EXECUTION_PROCESS:
             self.runtime_identity["jobProcessProtocolVersion"] = (

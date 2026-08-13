@@ -29,6 +29,7 @@ COPY processor.py /app/processor.py
 COPY processor_metrics.py /app/processor_metrics.py
 COPY job_telemetry.py /app/job_telemetry.py
 COPY job_process.py /app/job_process.py
+COPY inference_runtime_compat.py /app/inference_runtime_compat.py
 COPY worker_lifecycle.py /app/worker_lifecycle.py
 COPY execution_domains.py /app/execution_domains.py
 COPY security.py /app/security.py

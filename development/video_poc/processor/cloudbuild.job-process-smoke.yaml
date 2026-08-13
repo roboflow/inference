@@ -1,6 +1,7 @@
 # Credential-free, non-GPU inspection for an already-built staging experiment
 # image. Submit with --no-source and an immutable staging Artifact Registry
-# digest as _IMAGE. This never starts a processor or contacts the job API.
+# digest as _IMAGE. This imports worker modules but never starts the processor
+# entrypoint or contacts the job API.
 steps:
   - name: python:3.12-slim
     id: validate-staging-digest
@@ -42,14 +43,32 @@ steps:
       - ${_IMAGE}
       - -c
       - |
+        import inspect
         import os
         import job_process
+        import processor
+        from inference.core import env as inference_env
 
         assert job_process.PROTOCOL_VERSION == 1
         assert job_process.resolve_job_execution_mode("thread") == "thread"
         assert job_process.resolve_job_execution_mode("process") == "process"
         assert os.path.isfile("/app/processor.py")
         assert os.path.isfile("/app/job_process.py")
+        assert os.path.isfile("/app/inference_runtime_compat.py")
+        runtime_supports_freshest = (
+            "video_processing_mode"
+            in inspect.signature(
+                processor.InferencePipeline.init_with_workflow
+            ).parameters
+        )
+        assert (
+            processor.INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE
+            is runtime_supports_freshest
+        )
+        if not hasattr(
+            inference_env, "ENABLE_TENSOR_DATA_REPRESENTATION"
+        ):
+            assert processor.ENABLE_TENSOR_DATA_REPRESENTATION is False
         event = job_process.bounded_child_event(
             {
                 "version": 1,
