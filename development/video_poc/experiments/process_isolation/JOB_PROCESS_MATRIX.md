@@ -97,6 +97,47 @@ video-file rate-limit overrides. For E, select PyAV plus
 `WORKFLOWS_IMAGE_TENSOR_DEVICE=cuda`. F uses those same v1.4 flags with
 `PROCESSOR_VIDEO_INGEST_MODE=gstreamer_cuda`.
 
+The audited, exact strategic patches are checked in under
+[`benchmarks/runtime_variants`](../../benchmarks/runtime_variants):
+
+- D: `l40s-capacity-d-legacy-process.yaml`
+- E: `l40s-capacity-e-v14-process-pyav.yaml`
+- F: `l40s-capacity-f-v14-process-nvdec.yaml`
+
+They mutate only the Pod-template rollout annotation, processor image, and the
+named experiment environment variables. Kubernetes strategic merge preserves
+the current service identity, credentials, probes, resources, scheduling,
+volumes, ports, and every unrelated Deployment field. Validate the exact
+server render before each authorized rollout:
+
+First stop or pause every staging benchmark runner that can submit a video job
+and confirm with its owner that no run is between repetitions. A momentary
+absence of `pool=working` Pods is not a lock: an active runner could claim again
+between this preflight and the Deployment patch.
+
+```bash
+set -euo pipefail
+test "$(kubectl config current-context)" = "ck8s-stg"
+test "$(kubectl --context ck8s-stg -n video-proc get namespace video-proc -o jsonpath='{.metadata.name}')" = "video-proc"
+test "$(kubectl --context ck8s-stg -n video-proc get deployment video-processor-pool -o jsonpath='{.status.unavailableReplicas}')" = ""
+test "$(kubectl --context ck8s-stg -n video-proc get pods -l app=video-processor,pool=working -o name)" = ""
+
+PATCH=development/video_poc/benchmarks/runtime_variants/l40s-capacity-d-legacy-process.yaml
+kubectl --context ck8s-stg -n video-proc patch deployment video-processor-pool --type=strategic --patch-file "$PATCH" --dry-run=server -o yaml
+```
+
+Repeat the server dry-run for E and F. Immediately before an authorized write,
+capture the live Deployment UID, generation, revision annotation, full
+Deployment YAML, immutable image ID, and complete environment. Those live
+values—not a value copied into this document—are the rollback anchor. Do not
+patch while a benchmark runner is active, a working-pool Pod exists, a job is
+active, the ready Pod is not healthy, or the rendered diff contains anything
+outside the intended image, annotation, and environment keys.
+
+Credential-free disposable L40S manifests and their guarded execution/cleanup
+procedure live in [`smoke/`](smoke/README.md). All three image smokes must pass
+before D/E/F capacity or lifecycle testing begins.
+
 Run the identical connector-to-MediaMTX source, workflow, output-watch state,
 FPS cap, concurrency steps, dwell time, and repetitions for D/E/F. Record the
 exact image digest and child `stats.runtime.processId` for every job. At
@@ -174,6 +215,23 @@ Before capacity testing, run c1 and c2 and require:
    bridge maps advancing, and zero host/device copy counters when output is off;
 6. worker and job counters remain monotonic and no credential appears in
    process argv, status, metrics, or logs.
+
+For an actual D/E/F rollout, require all of the following after the exact
+strategic patch is separately authorized:
+
+1. rollout completes and the new Pod `imageID` equals the intended immutable
+   digest;
+2. `/status` reports the intended runtime variant, ingest mode, and
+   `jobExecutionMode=process` before any claim is allowed;
+3. c1 produces one child PID distinct from the supervisor PID;
+4. c2 produces two distinct child PIDs and cancelling one job leaves its
+   sibling processing;
+5. a deliberately killed child reports one sanitized failure while its sibling
+   stays live;
+6. cancelled/failed jobs drain to `activeJobs=0`, the Pod relabels from
+   `pool=working` to `pool=ready`, and no replacement Pod appears;
+7. rollback to the pre-captured image/environment restores a healthy ready Pod
+   before proceeding to the next leg.
 
 Rollback is an environment-only topology switch back to
 `PROCESSOR_JOB_EXECUTION_MODE=thread` plus the previously pinned image digest.

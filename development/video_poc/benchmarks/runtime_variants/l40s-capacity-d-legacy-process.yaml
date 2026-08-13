@@ -1,0 +1,38 @@
+spec:
+  template:
+    metadata:
+      annotations:
+        roboflow.com/staging-rollout: l40s-capacity-d-legacy-process
+    spec:
+      containers:
+        - name: processor
+          image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd
+          env:
+            - name: VIDEO_PROC_IMAGE
+              value: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd
+            - name: VIDEO_PROC_GIT_SHA
+              value: 008d5e64b27d19c7c5da6334ec9497ba756827ad
+            - name: VIDEO_PROC_RUNTIME_VARIANT
+              value: legacy-process-pyav
+            - name: PROCESSOR_JOB_EXECUTION_MODE
+              value: process
+            - name: PROCESSOR_EXECUTION_DOMAIN_MODE
+              value: in_process
+            - name: PROCESSOR_VIDEO_INGEST_MODE
+              value: pyav
+            - name: VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE
+              value: "true"
+            - name: ROBOFLOW_RTSP_LATENCY_MS
+              value: "200"
+            - name: ROBOFLOW_RTSP_PROTOCOLS
+              value: tcp
+            - name: ROBOFLOW_RTSP_VIDEO_CODEC
+              value: h264
+            - $patch: delete
+              name: ENABLE_TENSOR_DATA_REPRESENTATION
+            - $patch: delete
+              name: USE_INFERENCE_MODELS
+            - $patch: delete
+              name: WORKFLOWS_IMAGE_TENSOR_DEVICE
+            - $patch: delete
+              name: ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING

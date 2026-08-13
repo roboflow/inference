@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: video-process-smoke-d-0e12efc9
+  namespace: video-proc
+  labels:
+    app: video-processor-process-smoke
+    roboflow.com/environment: staging
+    roboflow.com/variant: d-legacy-process
+spec:
+  automountServiceAccountToken: false
+  activeDeadlineSeconds: 180
+  terminationGracePeriodSeconds: 10
+  restartPolicy: Never
+  imagePullSecrets:
+    - name: gcp-ar-pull-secret
+  nodeSelector:
+    gpu_type: L40S
+  tolerations:
+    - key: gpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  containers:
+    - name: smoke
+      image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd
+      command: ["python", "-c"]
+      args:
+        - >-
+          import importlib, multiprocessing as mp, os, torch;
+          import processor;
+          from job_process import resolve_job_execution_mode;
+          from video_ingest import resolve_video_ingest_mode;
+          ctx = mp.get_context("spawn");
+          child = ctx.Process(target=importlib.import_module, args=("processor",), name="d-process-smoke-child");
+          child.daemon = True;
+          child.start();
+          child.join(60);
+          print("variant=d");
+          print("execution_mode=" + resolve_job_execution_mode());
+          print("ingest_mode=" + resolve_video_ingest_mode());
+          print("start_method=" + ctx.get_start_method());
+          print("supervisor_pid=" + str(os.getpid()));
+          print("child_pid=" + str(child.pid));
+          print("child_exitcode=" + str(child.exitcode));
+          print("cuda_available=" + str(torch.cuda.is_available()));
+          print("cuda_device=" + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none"));
+          assert resolve_job_execution_mode() == "process";
+          assert resolve_video_ingest_mode() == "pyav";
+          assert ctx.get_start_method() == "spawn";
+          assert child.pid != os.getpid();
+          assert child.exitcode == 0;
+          assert torch.cuda.is_available();
+          assert "L40S" in torch.cuda.get_device_name(0)
+      env:
+        - name: PROJECT
+          value: roboflow-staging
+        - name: PROCESSOR_JOB_EXECUTION_MODE
+          value: process
+        - name: PROCESSOR_EXECUTION_DOMAIN_MODE
+          value: in_process
+        - name: PROCESSOR_VIDEO_INGEST_MODE
+          value: pyav
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
