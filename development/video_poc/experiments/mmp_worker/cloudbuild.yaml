@@ -1,0 +1,62 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build-merged-gpu-inference
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - --platform=linux/amd64
+      - --file=docker/dockerfiles/Dockerfile.onnx.gpu
+      - --label=org.opencontainers.image.revision=${_SOURCE_SHA}
+      - --tag=${_BASE_OUTPUT}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    id: push-merged-gpu-inference
+    args:
+      - push
+      - ${_BASE_OUTPUT}
+  - name: gcr.io/cloud-builders/docker
+    id: build-video-worker
+    dir: development/video_poc/processor
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - --platform=linux/amd64
+      - --file=Dockerfile
+      - --build-arg=BASE_IMAGE=${_BASE_OUTPUT}
+      - --label=org.opencontainers.image.revision=${_SOURCE_SHA}
+      - --tag=${_WORKER_OUTPUT}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    id: smoke-bundled-model-manager
+    args:
+      - run
+      - --rm
+      - --shm-size=256m
+      - --entrypoint=python
+      - --env=PROCESSOR_MODEL_MANAGER_MODE=mmp-bundled-subprocess
+      - --env=LEGACY_MMP_ADAPTER_MODE=bundled
+      - --env=LEGACY_MMP_ADAPTER_BUNDLED_BACKEND=subprocess
+      - --env=INFERENCE_N_SLOTS=2
+      - --env=INFERENCE_INPUT_MB=8
+      - ${_WORKER_OUTPUT}
+      - -c
+      - >-
+        from workspace_model_managers import WorkspaceModelManagerDomains;
+        domains = WorkspaceModelManagerDomains('mmp-bundled-subprocess');
+        adapter = domains.get('image-smoke');
+        assert adapter.mmp_ready();
+        domains.shutdown()
+images:
+  - ${_BASE_OUTPUT}
+  - ${_WORKER_OUTPUT}
+options:
+  machineType: E2_HIGHCPU_32
+  diskSizeGb: 300
+  dynamicSubstitutions: true
+substitutions:
+  _SOURCE_SHA: local
+  _BASE_OUTPUT: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-inference-mmp:${_SOURCE_SHA}
+  _WORKER_OUTPUT: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-mmp:${_SOURCE_SHA}
+timeout: 7200s

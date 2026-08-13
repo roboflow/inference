@@ -28,11 +28,22 @@ on:
           - all
           - "true"
           - "false"
+      mmp-configuration:
+        description: "Legacy MMP adapter configuration"
+        type: choice
+        default: mmp
+        options:
+          - mmp
+          - bundled-subprocess
+          - bundled-direct
 
 jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
+    env:
+      LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
+      LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
     strategy:
       matrix:
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
@@ -92,13 +103,13 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - GPU
         id: regression_tests_without_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} LEGACY_MMP_ADAPTER_ENABLED=true MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: make stop_test_docker
@@ -106,13 +117,13 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - GPU
         id: regression_tests_with_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} LEGACY_MMP_ADAPTER_ENABLED=true MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: make stop_test_docker
@@ -120,7 +131,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Paligemma - GPU
         id: paligemma_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
@@ -133,7 +144,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Florence - GPU
         id: florence_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
@@ -146,7 +157,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM2
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
@@ -159,7 +170,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM3
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM3
         id: sam3_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
@@ -172,7 +183,7 @@ jobs:
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
 #        run: |
-#          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+#          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
 #      - name: 🧪 Regression Tests - Qwen2.5
 #        id: qwen25_tests
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
@@ -185,7 +196,7 @@ jobs:
       - name: 🔋 Start Test Docker - MoonDream
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu LEGACY_MMP_ADAPTER_ENABLED=true make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}

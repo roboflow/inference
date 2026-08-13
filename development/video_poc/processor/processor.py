@@ -106,6 +106,7 @@ from security import (
     validate_job_id,
 )
 from worker_lifecycle import schedule_retirement
+from workspace_model_managers import WorkspaceModelManagerDomains
 
 
 def _parse_capture_options(options):
@@ -1027,6 +1028,9 @@ class JobRun:
             else:
                 os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
         try:
+            model_manager = self.worker.model_manager_domains.get(
+                job.get("workspace") or job.get("workspaceName")
+            )
             pipeline = InferencePipeline.init_with_workflow(
                 video_reference=video_reference,
                 workflow_specification=job.get("workflowSpecification"),
@@ -1041,6 +1045,7 @@ class JobRun:
                 # the publisher; the rest goes through inference's serializer)
                 serialize_results=False,
                 max_fps=job.get("maxFps"),
+                model_manager=model_manager,
                 **pipeline_kwargs,
             )
             self.pipeline = pipeline
@@ -1437,6 +1442,9 @@ class Worker:
         self.execution_domains = build_execution_domains(
             os.getenv("PROCESSOR_EXECUTION_DOMAIN_MODE")
         )
+        self.model_manager_domains = WorkspaceModelManagerDomains(
+            os.getenv("PROCESSOR_MODEL_MANAGER_MODE")
+        )
         # Kept injectable for a focused monitor test. The real worker must use
         # a process-wide hard exit here: normal signal shutdown calls stop_all,
         # which could block on the same pipeline that exceeded containment.
@@ -1553,6 +1561,7 @@ class Worker:
                 for r in runs
             ],
             "executionDomains": self.execution_domains.snapshot(),
+            "modelManagerDomains": self.model_manager_domains.snapshot(),
         }
         run = self.resolve_run(job_id)
         if run is not None:
@@ -1570,6 +1579,7 @@ class Worker:
             "activeJobs": self.active_count(),
             "retiring": self.retiring,
             "executionDomains": self.execution_domains.snapshot(),
+            "modelManagerDomains": self.model_manager_domains.snapshot(),
         }
 
     def _execution_domain_monitor(self):
@@ -1837,6 +1847,7 @@ class Worker:
         for run in self.snapshot_runs():
             run.stop()
         self.execution_domains.shutdown()
+        self.model_manager_domains.shutdown()
 
     def run(self):
         if self.execution_domains.experimental:

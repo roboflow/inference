@@ -11,10 +11,12 @@ ARG BASE_IMAGE=roboflow/roboflow-inference-server-gpu:latest
 FROM ${BASE_IMAGE}
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir google-cloud-pubsub requests aiortc
+RUN python3 -m pip install --no-cache-dir google-cloud-pubsub requests aiortc
 
 WORKDIR /app
 COPY processor.py /app/processor.py
@@ -22,6 +24,7 @@ COPY processor_metrics.py /app/processor_metrics.py
 COPY job_telemetry.py /app/job_telemetry.py
 COPY worker_lifecycle.py /app/worker_lifecycle.py
 COPY execution_domains.py /app/execution_domains.py
+COPY workspace_model_managers.py /app/workspace_model_managers.py
 COPY security.py /app/security.py
 # low-latency RTSP ingest (PyAV, codec-level low_delay); without it the
 # processor silently falls back to cv2 ingest and its ~550ms decoder buffer

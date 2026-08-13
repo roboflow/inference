@@ -9,6 +9,8 @@ from uuid import uuid4
 import cv2
 import numpy as np
 
+from inference_models.utils.performance import performance_profiler
+
 try:
     from inference_sdk.config import (
         apply_duration_minimum,
@@ -537,21 +539,27 @@ def run_simd_step_in_batch_mode(
             "data_size": len(step_input.indices),
         },
     ):
-        if not step_input.indices:
-            # no inputs - discarded either by conditional exec or by not accepting empty
-            outputs = []
-        else:
-            try:
-                outputs = step_instance.run(**step_input.parameters)
-            except Exception as exc:
-                if INFERENCE_DEBUG_OUTPUT_DIR:
-                    _store_crash_info(
-                        image=execution_data_manager._runtime_parameters["image"][
-                            0
-                        ].numpy_image,
-                        exception=exc,
-                    )
-                raise exc
+        step_started = performance_profiler.start()
+        try:
+            if not step_input.indices:
+                # no inputs - discarded either by conditional exec or by not accepting empty
+                outputs = []
+            else:
+                try:
+                    outputs = step_instance.run(**step_input.parameters)
+                except Exception as exc:
+                    if INFERENCE_DEBUG_OUTPUT_DIR:
+                        _store_crash_info(
+                            image=execution_data_manager._runtime_parameters["image"][
+                                0
+                            ].numpy_image,
+                            exception=exc,
+                        )
+                    raise exc
+        finally:
+            performance_profiler.stop(
+                f"workflow.step_code.{step_selector}", step_started
+            )
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],
@@ -588,7 +596,13 @@ def run_simd_step_in_non_batch_mode(
                     "step": step_selector,
                 },
             ):
-                result = step_instance.run(**input_definition.parameters)
+                step_started = performance_profiler.start()
+                try:
+                    result = step_instance.run(**input_definition.parameters)
+                finally:
+                    performance_profiler.stop(
+                        f"workflow.step_code.{step_selector}", step_started
+                    )
             results.append(result)
             indices.append(input_definition.index)
     with profiler.profile_execution_phase(
@@ -629,7 +643,13 @@ def run_non_simd_step(
             "step": step_selector,
         },
     ):
-        step_result = step_instance.run(**step_input)
+        step_started = performance_profiler.start()
+        try:
+            step_result = step_instance.run(**step_input)
+        finally:
+            performance_profiler.stop(
+                f"workflow.step_code.{step_selector}", step_started
+            )
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],
