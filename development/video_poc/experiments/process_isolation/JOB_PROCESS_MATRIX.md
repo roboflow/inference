@@ -22,6 +22,33 @@ silently upgrade its inference packages.
 
 ## Immutable staging artifacts
 
+### Resume rebuild gate
+
+Do not start D/E/F capacity from the historical `1c2b...` or `5cd7...`
+overlays. They predate commit
+`008d5e64b27d19c7c5da6334ec9497ba756827ad` (`Bound video job cancellation
+cleanup`) and can strand a cancelled run as `activeJobs=1` on a detached
+`pool=working` pod. Rebuild from that exact commit or a reviewed descendant,
+without changing either underlying runtime base.
+
+Record every field below from Artifact Registry and Cloud Build evidence before
+rendering a Deployment patch. A tag is never sufficient, and a built image
+remains blocked while either smoke gate is pending.
+
+| Use | Rebuilt image | Cloud Build | Exact source | Exact base | State |
+|---|---|---|---|---|---|
+| D | `video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd` | `638f8d41-3984-4a27-85f9-f30a323fed67` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | built with provenance; non-GPU smoke `a33d853b-b970-4a0b-9ccb-850798c1a413` and disposable L40S parent/child smoke pending |
+| E/F | `video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c` | `d3f3a1a5-ff33-4944-a443-5db177dd92a2` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | built with provenance; non-GPU smoke `6a815bab-7b78-4b31-8ae8-e11371100de8` and disposable L40S parent/child smoke pending |
+
+The rebuilt D and E/F overlays must contain the same processor, process child,
+runtime-compatibility, and bounded cleanup files from one exact source SHA.
+Verify the image labels/source provenance, base digest, `imageID`, process mode,
+spawned-child import, distinct parent/child PIDs, exit zero, and zero restarts.
+Delete each disposable pod after collecting evidence. None of these image gates
+authorizes a ready-pool rollout.
+
+### Historical smoke artifacts (do not use for resumed capacity)
+
 The controlled images are thin overlays. They change worker files and job
 topology while preserving the exact previously tested runtime underneath. E/F
 use source `ba0a10f3dcda8e9930e9a4e8c0b86af921c7190d`; corrected D uses source
@@ -30,9 +57,9 @@ is the guarded inference 1.3.5 compatibility seam.
 
 | Use | Exact image | Cloud Build | Exact base | Purpose |
 |---|---|---|---|---|
-| D | `video-processor-process@sha256:1c2bfea740d41c3440db2b244efd068a2cbf2190c4b27c9eb4e6650a1690c86a` | `8a24fdac-2488-46e9-a442-4c4234e9024c` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | original runtime plus per-job processes; legacy serializer and pipeline options selected by runtime capability |
+| D (historical smoke only) | `video-processor-process@sha256:1c2bfea740d41c3440db2b244efd068a2cbf2190c4b27c9eb4e6650a1690c86a` | `8a24fdac-2488-46e9-a442-4c4234e9024c` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | original runtime plus per-job processes; passed import/spawn smoke but lacks bounded cleanup |
 | D (rejected) | `video-processor-process@sha256:debf846be8bc1b329cd15f0e109da9cd3f68a54a49c617c8d5d813d64934249f` | `366987b7-d67c-4a67-bfb9-d105d2ed1bd0` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | invalid: current worker imported a v1.4-only tensor flag on inference 1.3.5; never deploy |
-| E/F | `video-processor-process@sha256:5cd7ecada7aba58fafba94aa47e05cce3e39f0e0305d2dbb13f91a226d642bd0` | `7675f50c-9177-4be6-ac2e-f5cf46c043a7` | deployed v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | v1.4 plus per-job processes; select PyAV or NVDEC by environment |
+| E/F (historical smoke only) | `video-processor-process@sha256:5cd7ecada7aba58fafba94aa47e05cce3e39f0e0305d2dbb13f91a226d642bd0` | `7675f50c-9177-4be6-ac2e-f5cf46c043a7` | deployed v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | v1.4 plus per-job processes; passed import smoke but lacks bounded cleanup |
 
 Credential-free Cloud Build inspection passed for E/F in build
 `3d380a9a-b6bc-4516-9bba-660bf17bb668`. Corrected D passed an isolated L40S

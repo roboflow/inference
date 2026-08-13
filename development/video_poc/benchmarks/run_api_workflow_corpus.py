@@ -26,9 +26,7 @@ from pathlib import Path
 
 from build_processor_jobs import load_corpus
 
-DEFAULT_API_BASE = (
-    "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device"
-)
+DEFAULT_API_BASE = "https://roboflow-api-staging.web.app"
 DEFAULT_MANIFEST = Path(__file__).with_name("workflows") / "manifest.json"
 SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 WORKLOAD = re.compile(
@@ -37,6 +35,8 @@ WORKLOAD = re.compile(
 )
 STAGING_HOSTS = {
     "api.roboflow.one",
+    "roboflow-api-staging.firebaseapp.com",
+    "roboflow-api-staging.web.app",
     "us-central1-roboflow-staging.cloudfunctions.net",
 }
 TERMINAL_STATES = {"cancelled", "completed", "error"}
@@ -147,7 +147,8 @@ def validate_api_base(api_base):
     host = (parsed.hostname or "").lower()
     if parsed.scheme != "https" or host not in STAGING_HOSTS:
         raise ValueError(
-            "--api-base must be the staging API or roboflow-staging Cloud Function"
+            "--api-base must be an allowlisted staging API or "
+            "roboflow-staging Cloud Function"
         )
     return api_base.rstrip("/")
 

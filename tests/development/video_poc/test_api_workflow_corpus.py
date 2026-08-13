@@ -74,9 +74,17 @@ def test_runner_refuses_production_and_builds_from_shared_corpus():
         validate_api_base(
             "https://attacker-roboflow-staging.cloudfunctions.net/light-v2-device"
         )
+    with pytest.raises(ValueError, match="staging"):
+        validate_api_base("https://roboflow-api-staging.web.app.attacker.example")
     assert validate_api_base(
         "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device"
     ).startswith("https://us-central1-")
+    assert validate_api_base("https://roboflow-api-staging.web.app") == (
+        "https://roboflow-api-staging.web.app"
+    )
+    assert validate_api_base("https://roboflow-api-staging.firebaseapp.com/") == (
+        "https://roboflow-api-staging.firebaseapp.com"
+    )
 
     profiles = load_corpus(MANIFEST)
     plan = build_run_plan(

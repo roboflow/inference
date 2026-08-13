@@ -21,6 +21,7 @@ from pathlib import Path
 from build_processor_jobs import load_corpus
 from run_api_workflow_corpus import (
     BenchmarkInterrupted,
+    DEFAULT_API_BASE,
     RunLock,
     SAFE_RUN_ID,
     SignalStop,
@@ -162,8 +163,7 @@ def normalize_scenario(document, raw):
         if max_fps is not None:
             max_fps = _positive(max_fps, f"{field} maxFps")
         api_base = validate_api_base(
-            merged.get("apiBase")
-            or "https://us-central1-roboflow-staging.cloudfunctions.net/light-v2-device"
+            merged.get("apiBase") or DEFAULT_API_BASE
         )
         normalized.append(
             {
