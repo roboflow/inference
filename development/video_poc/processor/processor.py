@@ -110,6 +110,7 @@ from job_process import (
 )
 from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
+from run_lifecycle import finish_run_once
 from security import (
     DiagnosticRing,
     JobSecurityRegistry,
@@ -182,6 +183,15 @@ FINAL_METRICS_SCRAPE_GRACE_S = max(
 # platform heartbeat reaper can safely requeue every held job.
 DOMAIN_CONTAINMENT_TIMEOUT_S = max(
     0.1, float(os.getenv("PROCESSOR_DOMAIN_CONTAINMENT_TIMEOUT_S", "10"))
+)
+
+# InferencePipeline.join() has no timeout in either the legacy or v1.4 runtime.
+# A decoder/model thread that ignores terminate() previously left the cancelled
+# run in ``runs`` forever, so status stayed activeJobs=1 and a detached
+# pool=working pod never retired. A threaded pipeline cannot be abandoned
+# safely; contain the whole pod and let the platform reaper place sibling jobs.
+JOB_STOP_TIMEOUT_S = max(
+    0.1, float(os.getenv("PROCESSOR_JOB_STOP_TIMEOUT_S", "30"))
 )
 
 # Used by stream-mode jobs on file sources: the file is replayed at native speed
@@ -2069,14 +2079,29 @@ class Worker:
         """A run is over (completed and reported, cancelled, or its stream
         died): tear it down, free the slot, and retire the pod if this was the
         last one."""
-        if outcome is not None:
-            run._record_outcome(outcome)
-        run.stop()
-        with self.runs_lock:
-            if self.runs.get(run.job_id) is run:
-                del self.runs[run.job_id]
-        self.execution_domains.release_job(run.job_id)
-        self.maybe_retire()
+        return finish_run_once(
+            self,
+            run,
+            outcome=outcome,
+            stop_timeout_s=JOB_STOP_TIMEOUT_S,
+            on_stop_failure=self._contain_wedged_run,
+        )
+
+    def _contain_wedged_run(self, run, reason):
+        # Never remove a run while its old in-process pipeline might still use
+        # GPU/model/source state. Stop new claims, then restart the whole pod;
+        # heartbeat expiry safely requeues every sibling held by this worker.
+        self._stop_requested = True
+        self.retiring = True
+        print(
+            f"[processor] fatal: job {run.job_id} stop failed ({reason}; "
+            f"deadline={JOB_STOP_TIMEOUT_S:g}s); restarting worker to "
+            "contain stale threaded pipeline",
+            file=sys.stderr,
+        )
+        sys.stdout.flush()
+        sys.stderr.flush()
+        self._fatal_exit(71)
 
     def maybe_retire(self):
         """Pool pods are single-GENERATION: they detach from the ready pool on
