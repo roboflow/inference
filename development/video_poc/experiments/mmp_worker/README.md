@@ -51,12 +51,12 @@ PROCESSOR_MODEL_MANAGER_MODE=mmp-bundled-subprocess
 LEGACY_MMP_ADAPTER_MODE=bundled
 LEGACY_MMP_ADAPTER_BUNDLED_BACKEND=subprocess
 INFERENCE_N_SLOTS=8
-INFERENCE_INPUT_MB=12
+INFERENCE_INPUT_MB=32
 INFERENCE_BATCH_MAX_SIZE=8
 INFERENCE_BATCH_MAX_WAIT_MS=5
 ```
 
-Eight 12 MB slots reserve roughly 96 MB of shared-memory payload capacity per
+Eight 32 MB slots reserve roughly 256 MB of shared-memory payload capacity per
 active workspace, excluding manager metadata and model memory. The standalone
 one-workspace smoke Pod uses the staging deployment's proven 2 GiB
 memory-backed `/dev/shm`; use 4 GiB before a multi-workspace load test.

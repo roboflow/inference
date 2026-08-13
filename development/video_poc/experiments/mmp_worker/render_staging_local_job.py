@@ -155,7 +155,7 @@ def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
                                     "value": backend,
                                 },
                                 {"name": "INFERENCE_N_SLOTS", "value": "8"},
-                                {"name": "INFERENCE_INPUT_MB", "value": "12"},
+                                {"name": "INFERENCE_INPUT_MB", "value": "32"},
                                 {"name": "INFERENCE_BATCH_MAX_SIZE", "value": "8"},
                                 {
                                     "name": "INFERENCE_BATCH_MAX_WAIT_MS",
