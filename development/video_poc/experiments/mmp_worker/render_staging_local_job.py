@@ -69,6 +69,7 @@ def render(
     backend="subprocess",
     concurrency=1,
     max_fps=5.0,
+    mode="batch",
 ):
     if not IMAGE_RE.fullmatch(str(image or "")):
         raise ValueError("image must be an immutable staging MMP worker digest")
@@ -81,6 +82,8 @@ def render(
         raise ValueError("concurrency must be an integer between 1 and 8")
     if not isinstance(max_fps, (int, float)) or not 0 < max_fps <= 30:
         raise ValueError("max FPS must be greater than 0 and at most 30")
+    if mode not in {"batch", "stream"}:
+        raise ValueError("mode must be batch or stream")
     manager_mode = (
         "legacy" if backend == "legacy" else f"mmp-bundled-{backend}"
     )
@@ -95,10 +98,20 @@ def render(
                     "https://media.roboflow.com/supervision/"
                     "video-examples/vehicles.mp4"
                 ),
-                "mode": "batch",
+                "mode": mode,
                 "maxFps": float(max_fps),
                 "imageOutput": "visualization",
                 "workflowSpecification": _workflow(),
+                **(
+                    {
+                        "simPublishUrl": (
+                            "rtsp://mediamtx.video-proc.svc:8554/"
+                            f"sim-{run_id}-{ordinal}"
+                        )
+                    }
+                    if mode == "stream"
+                    else {}
+                ),
             }
         )
     job_data = {
@@ -265,6 +278,7 @@ def main(argv=None):
     )
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--max-fps", type=float, default=5.0)
+    parser.add_argument("--mode", choices=("batch", "stream"), default="batch")
     args = parser.parse_args(argv)
     try:
         manifest = render(
@@ -275,6 +289,7 @@ def main(argv=None):
             args.backend,
             args.concurrency,
             args.max_fps,
+            args.mode,
         )
     except ValueError as exc:
         parser.error(str(exc))

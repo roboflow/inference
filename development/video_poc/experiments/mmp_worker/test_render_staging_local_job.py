@@ -69,6 +69,30 @@ def test_render_concurrent_legacy_control():
     assert len({job["id"] for job in jobs}) == 4
 
 
+def test_render_stream_jobs_have_unique_internal_relay_paths():
+    manifest = render(
+        IMAGE,
+        "mmp-c2",
+        "rf-inference-benchmark",
+        "video-mmp-smoke-001",
+        backend="subprocess",
+        concurrency=2,
+        mode="stream",
+    )
+    jobs = [
+        __import__("json").loads(value)
+        for value in manifest["items"][0]["data"].values()
+    ]
+    assert {job["mode"] for job in jobs} == {"stream"}
+    assert len({job["simPublishUrl"] for job in jobs}) == 2
+    assert all(
+        job["simPublishUrl"].startswith(
+            "rtsp://mediamtx.video-proc.svc:8554/sim-mmp-c2-"
+        )
+        for job in jobs
+    )
+
+
 @pytest.mark.parametrize(
     "image",
     [
