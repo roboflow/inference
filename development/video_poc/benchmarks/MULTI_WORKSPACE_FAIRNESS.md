@@ -67,6 +67,32 @@ same-worker noisy-neighbor test, but it is a placement assertion, not tenant
 isolation. Use separate scenarios for same-worker fairness and scheduler-level
 distribution.
 
+## Current staging fixtures
+
+The 2026-08-13 preflight verified two feature-enabled staging workspaces through
+the dedicated `https://api.roboflow.one` video surface:
+
+- label `tenant-a`: workspace route `thomas-workspace`, connector source ID
+  `9g7UzPcDyVBFBJ0dLei6`, `traffic.mp4`, H.264 1280x720 at 60 FPS, credential
+  environment variable `VIDEO_BENCHMARK_API_KEY_A`;
+- label `tenant-b`: workspace route `rf-inference-benchmark`, connector source
+  ID `d5XmPQAZssPpE3clCmcY`, `vehicles.mp4`, dedicated connector
+  `bench-l40s-capacity`, credential environment variable
+  `VIDEO_BENCHMARK_API_KEY_B`.
+
+These identifiers and environment-variable names are safe to check into a
+staging matrix; key values are not. The two source contents and native frame
+rates differ, so use an admitted `maxFps` limit when comparing tenant fairness
+and treat model/post-processing content sensitivity as a remaining covariate.
+
+Do not run the controlled-FPS fairness matrix against the current internal
+fleet claim surface yet. The dedicated public API persists `maxFps`, but the
+currently deployed `light-v2-device` claim handler predates propagation of that
+field to workers; a 5 FPS control smoke therefore ran at the native 60 FPS.
+Either deploy the merged claim propagation change or move the fleet claim route
+to `light-v2-video` before using these fairness results. Native-rate A/B/C
+capacity runs intentionally omit `maxFps` and are unaffected.
+
 Executing runs atomically checkpoint after every poll and handle `SIGINT` or
 `SIGTERM` by cancelling all captured jobs. After an abrupt runner loss, inspect
 the exact checkpoint and original matrix without network access:
