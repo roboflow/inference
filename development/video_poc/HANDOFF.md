@@ -546,7 +546,20 @@ not implemented yet.
   see the pod filesystem/download cache, so this is not a tenant security
   boundary. It includes a full merged GPU-image build, an image-level manager
   readiness smoke, and a digest-only bounded local-workflow Pod that never
-  joins the staging ready pool.
+  joins the staging ready pool. Its first same-workspace staging A/B used the
+  same immutable image, one L40S, real-time pod-local RTSP replay of the 4K
+  public vehicles fixture, YOLOv8 Nano, and 5 FPS per stream. Legacy delivered
+  18.053 FPS at c4 and 33.134 FPS at c8 using 2016 and 3516 MiB. Bundled
+  subprocess MMP used only 890 MiB but fell to 13.305 FPS at c4 and 11.363 FPS
+  at c8. The bundled direct control retained model reuse without the subprocess
+  boundary and delivered 17.992 FPS at c4 and 33.070 FPS at c8 using 962 and
+  1078 MiB. This isolates the current regression to the subprocess path rather
+  than the manager/adapter lookup; decoded 4K shared-memory transport is the
+  leading hypothesis. Do not replace the legacy pool yet. Repeat at lower input
+  resolution or with preprocessed tensors and add MMP slot/copy/batch telemetry
+  before tuning batches or testing MPS. Direct mode is not a process-isolation
+  or tenant-security result. Full method and results are in
+  [`experiments/mmp_worker/README.md`](experiments/mmp_worker/README.md).
 - **Fault injection is bound to the actual video cell.** The dry-run controller
   accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
   API server and refuses a context alias pointed elsewhere. Earlier draft

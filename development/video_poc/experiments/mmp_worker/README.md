@@ -134,3 +134,49 @@ Two harness assumptions were corrected during the run: the final runtime image
 does not include repository test videos, so the smoke now uses the published
 Roboflow fixture; decoded frames require more than 12 MB per shared-memory
 slot, so the tested bounded value is 32 MB.
+
+## Staging same-workspace A/B
+
+The production-shaped stream matrix ran on one staging L40S using the same
+immutable worker image as the smoke. Each stream replayed the public 3840x2160
+vehicles fixture in real time through a pod-local MediaMTX relay, ran YOLOv8
+Nano (`microsoft-coco-obj-det/8`), targeted 5 FPS, and did not publish output.
+Each result is a fixed roughly 60-second frame delta after every stream had
+produced a first result. All points used one workspace and the same pod resource
+shape; only the model-manager backend and concurrency changed.
+
+| Backend | Streams | Aggregate FPS | Versus legacy | GPU memory | First result |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| legacy | 1 | 4.380 | baseline | 890 MiB | 13.17 s |
+| subprocess MMP | 1 | 4.509 | +2.9% | 892 MiB | 18.11 s |
+| legacy | 2 | 8.982 | baseline | 1266 MiB | 12.51 s |
+| subprocess MMP | 2 | 8.815 | -1.9% | 890 MiB | 18.41-18.45 s |
+| legacy | 4 | 18.053 | baseline | 2016 MiB | 12.43-13.09 s |
+| subprocess MMP | 4 | 13.305 | -26.3% | 890 MiB | 18.74-18.83 s |
+| direct control | 4 | 17.992 | -0.3% | 962 MiB | 13.00-13.03 s |
+| legacy | 8 | 33.134 | baseline | 3516 MiB | 13.12-15.11 s |
+| subprocess MMP | 8 | 11.363 | -65.7% | 890 MiB | 19.38-19.63 s |
+| direct control | 8 | 33.070 | -0.2% | 1078 MiB | 14.08-14.10 s |
+
+Legacy and the direct control were evenly shared at c4 and c8. Subprocess MMP
+was reasonably even at c1/c2, became about 20% uneven at c4, and lost aggregate
+throughput at c8 instead of merely dividing a fixed ceiling. The direct control
+uses the new manager and compatibility adapter but keeps the model in the
+worker process. Its legacy-equivalent throughput and much smaller memory
+footprint show that same-workspace model reuse works; the adapter and manager
+lookup are not the throughput bottleneck.
+
+The likely bottleneck is the subprocess transport of decoded 4K frames. One
+BGR frame is about 24.9 MB, so eight 5 FPS inputs imply roughly 1 GB/s of raw
+input payload before accounting for copies, synchronization, and model work.
+That diagnosis is strongly supported by the direct control but is not yet a
+proof. The next isolating test should repeat c4/c8 at 640p or after preprocessing
+to model-sized tensors, while recording MMP batch formation, slot wait time,
+copy time, and GPU utilization.
+
+Do not replace the legacy staging pool with subprocess MMP from this result.
+The direct control is a useful throughput/model-reuse option, but it has no
+model subprocess boundary and is not a tenant security or failure-isolation
+result. Multi-workspace separation, subprocess failure containment, MPS, and a
+long soak remain untested. The standalone Pods, ConfigMaps, and short-lived
+API-key Secret used by this matrix were deleted after evidence collection.
