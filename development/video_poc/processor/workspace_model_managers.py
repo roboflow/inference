@@ -2,8 +2,9 @@
 
 The default mode returns ``None`` and preserves the current InferencePipeline
 model manager. Experimental bundled modes create one new ModelManagerAdapter
-per workspace. Jobs in one workspace share models and batching, while jobs in
-different workspaces never share a model subprocess or model-manager cache.
+per workspace. Jobs in one workspace share loaded models and batching, while
+jobs in different workspaces never share a loaded model subprocess or in-memory
+model-manager routing cache. The pod filesystem cache remains process-visible.
 """
 
 import asyncio
@@ -152,7 +153,7 @@ class WorkspaceModelManagerDomains:
             "mode": self.mode,
             "experimental": self.experimental,
             "activeDomains": count,
-            "crossWorkspaceModelSharing": False,
+            "crossWorkspaceLoadedModelSharing": False,
         }
 
     def shutdown(self):

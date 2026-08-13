@@ -29,7 +29,7 @@ def test_legacy_mode_is_noop():
         "mode": "legacy",
         "experimental": False,
         "activeDomains": 0,
-        "crossWorkspaceModelSharing": False,
+        "crossWorkspaceLoadedModelSharing": False,
     }
 
 

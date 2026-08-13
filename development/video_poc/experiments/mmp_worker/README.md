@@ -9,14 +9,19 @@ normal worker remains unchanged unless `PROCESSOR_MODEL_MANAGER_MODE` is set.
 The experimental worker creates one bundled model manager per workspace:
 
 - jobs in the same workspace share model subprocesses, weights, and batching;
-- jobs in different workspaces use different model-manager caches and model
-  subprocesses;
+- jobs in different workspaces use different in-memory routing caches and
+  loaded model subprocesses;
 - the parent video worker still owns claims, credentials, media pipelines,
   publishing, and heartbeats.
 
 This is model-process isolation, not complete tenant-process isolation. It is
 suitable for staging throughput, fairness, and failure-containment tests. It
 must not be represented as a cross-tenant security boundary.
+
+The pod filesystem and its downloaded-weight cache are still visible to every
+process. A real tenant boundary requires workspace-scoped cache roots (or a
+broker that authenticates each cache access), in addition to moving the full
+pipeline and credentials out of the parent process.
 
 ## Build
 
