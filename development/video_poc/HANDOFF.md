@@ -481,6 +481,17 @@ not implemented yet.
   staging canonical ID with the generic `yolov8n-640` alias: the current alias
   table resolves it to the production-era `coco/3` resource, which is absent in
   staging. Keep environment-specific canonical IDs explicit in future matrices.
+  The first API-enforced `maxFps=5` GPU matrix then ran two repetitions at
+  c1/c4/c8/c12/c18. It delivered only about 2.46 FPS even at c1, so none of
+  those runs certifies a 5-FPS target. C4 stayed at 9.706/9.838 aggregate FPS
+  with 20 ms p95, c8 at 19.694/19.824 FPS with 35 ms, and c12 at
+  31.632/32.094 FPS with 150 ms. C18 regressed to 29.412/22.534 FPS at
+  250/500 ms, and one repetition lost a pipeline after its frame counter
+  stalled for about 35 seconds. Fairness remained strong through successful
+  runs, but the current operational latency knee is between c8 and c12 and c18
+  is unstable. Treat c1/c4/c8, with conditional c12, as the legacy A/B set for
+  a new-manager worker; investigate the roughly-half-rate `maxFps`
+  under-delivery separately before certifying target-FPS capacity.
   The API harness now also supports credential-separated multi-workspace waves,
   delayed arrivals, same-worker fairness assertions, compact atomic recovery
   checkpoints, SIGINT/SIGTERM cleanup, and staging-only exact-run janitors. A
@@ -512,8 +523,10 @@ not implemented yet.
   storage, so the registry build remains pending staging GCP reauthentication.
   A read-only probe of the current staging image on `l40s-48gb.10x` confirmed
   driver `570.133.20`, Torch `2.6.0+cu124`, CUDA `12.4`, and both raw-MPS
-  binaries. The live worker has only the Docker-default 64 MiB `/dev/shm` and
-  the node advertises `mig.capable=false`, `mps.capable=false`, GPU sharing
+  binaries. At probe time the live worker had only the Docker-default 64 MiB
+  `/dev/shm`; applied staging infra PR #2454 later replaced it with a 2 GiB
+  memory-backed volume. The node advertises `mig.capable=false`,
+  `mps.capable=false`, GPU sharing
   strategy `none`, and one replica per device. Therefore Gate 4 can test raw MPS
   inside one exclusive-GPU pod after the 4 GiB shared-memory deployment, but it
   cannot test MIG or Kubernetes device-plugin MPS sharing on this L40S fleet.
@@ -521,6 +534,19 @@ not implemented yet.
   produced the dedicated benchmark image at
   `mmp-benchmark@sha256:6a6592f77e0eb1d3bfc8b82d7add6a7206e946a437a072f7f3a58cf693b1716d`
   from PR #2788 revision `5f02db12ebdda013ff92e6607f92f88c7f9582ec`.
+  A separate multi-workspace MMP load pod should still start with 4 GiB.
+  Draft inference
+  [#2789](https://github.com/roboflow/inference/pull/2789) is the isolated
+  video-worker integration: it merges the exact #2251 manager head, passes its
+  compatibility adapter into workflow-backed `InferencePipeline` instances,
+  and creates one bundled manager per workspace. Same-workspace jobs can share
+  loaded model subprocesses and auto-batching, while different workspaces use
+  separate loaded model processes and in-memory route caches. The parent still
+  owns all pipelines, frames, credentials, and publishing, and every child can
+  see the pod filesystem/download cache, so this is not a tenant security
+  boundary. It includes a full merged GPU-image build, an image-level manager
+  readiness smoke, and a digest-only bounded local-workflow Pod that never
+  joins the staging ready pool.
 - **Fault injection is bound to the actual video cell.** The dry-run controller
   accepts only kubeconfig context/cluster `ck8s-stg` at the exact Crusoe staging
   API server and refuses a context alias pointed elsewhere. Earlier draft
