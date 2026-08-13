@@ -86,7 +86,7 @@ of scope for this first integration test.
 
 `render_staging_local_job.py` produces a ConfigMap and a bounded, standalone
 Pod in the Crusoe staging `video-proc` namespace. It never joins the ready pool
-or calls the video-job service. The Pod runs the existing embedded test video
+or calls the video-job service. The Pod runs Roboflow's public benchmark video
 as a batch through the staging YOLOv8 Nano workflow, owns one L40S, has a
 15-minute deadline, and does not mount a Kubernetes service-account token.
 

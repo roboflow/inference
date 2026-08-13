@@ -74,7 +74,10 @@ def render(image, run_id, workspace, api_key_secret, backend="subprocess"):
     job = {
         "id": f"local-mmp-{run_id}",
         "workspace": workspace,
-        "sourceUrl": "/build/tests/inference/unit_tests/core/interfaces/assets/example_video.mp4",
+        "sourceUrl": (
+            "https://media.roboflow.com/supervision/"
+            "video-examples/vehicles.mp4"
+        ),
         "mode": "batch",
         "imageOutput": "visualization",
         "workflowSpecification": _workflow(),
