@@ -112,12 +112,15 @@ from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
 from security import (
     DiagnosticRing,
+    JobPlacementMismatch,
     JobSecurityRegistry,
     MissingJobAccessToken,
     env_flag,
     extract_access_token,
     format_inference_error,
     sanitize_diagnostic,
+    validate_cell_id,
+    validate_job_placement,
     validate_job_id,
 )
 from video_ingest import (
@@ -1297,7 +1300,7 @@ class JobRun:
             resp = self.worker.api(
                 "POST",
                 f"/video-jobs/{self.job_id}/results/upload-urls",
-                json={"processorId": self.worker.processor_id},
+                json=self.worker.platform_identity(),
             )
             uploads = resp.get("uploads", {})
             uploaded = []
@@ -1315,7 +1318,7 @@ class JobRun:
                 self.worker.api(
                     "POST",
                     f"/video-jobs/{self.job_id}/results/complete",
-                    json={"files": uploaded, "processorId": self.worker.processor_id},
+                    json={"files": uploaded, **self.worker.platform_identity()},
                 )
                 print(f"[processor] uploaded results for {self.job_id}: {', '.join(uploaded)}")
         except Exception as exc:
@@ -1547,6 +1550,7 @@ class _ChildWorker:
 
         self.args = SimpleNamespace(api_key=None, api_url=None)
         self.processor_id = str(config.get("processorId") or "process-child")[:256]
+        self.cell = config.get("cell")
         self.capture_env_lock = threading.Lock()
         self.execution_domains = _ChildExecutionDomains()
         self.metrics = _ChildMetrics()
@@ -1555,7 +1559,7 @@ class _ChildWorker:
         self.video_ingest_mode = resolve_video_ingest_mode(
             tensor_runtime_available=ENABLE_TENSOR_DATA_REPRESENTATION
         )
-        self.runtime_identity = build_runtime_identity(self.processor_id)
+        self.runtime_identity = build_runtime_identity(self.processor_id, self.cell)
         self.runtime_identity.update(
             process_runtime_identity(
                 self.video_ingest_mode,
@@ -1744,7 +1748,10 @@ class ProcessJobRun:
                 target=_isolated_job_child_main,
                 args=(
                     child_job,
-                    {"processorId": self.worker.processor_id},
+                    {
+                        "processorId": self.worker.processor_id,
+                        "cell": self.worker.cell,
+                    },
                     child,
                 ),
                 name=f"video-job-{self.job_id}",
@@ -1955,6 +1962,7 @@ class Worker:
     def __init__(self, args):
         self.args = args
         self.processor_id = args.processor_id or f"proc-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+        self.cell = validate_cell_id(os.getenv("VIDEO_PROC_CELL"))
         self.pod = PodSelf()
         self.retiring = False
         # gpu/cpu: this worker only claims jobs created for its tier, so light
@@ -2012,7 +2020,7 @@ class Worker:
             if self.job_execution_mode == JOB_EXECUTION_PROCESS
             else None
         )
-        self.runtime_identity = build_runtime_identity(self.processor_id)
+        self.runtime_identity = build_runtime_identity(self.processor_id, self.cell)
         self.runtime_identity.update(
             process_runtime_identity(
                 self.video_ingest_mode,
@@ -2110,6 +2118,12 @@ class Worker:
 
     # ---------- job failure reporting ----------
 
+    def platform_identity(self):
+        identity = {"processorId": self.processor_id}
+        if self.cell is not None:
+            identity["cell"] = self.cell
+        return identity
+
     def report_job_failure(self, job, message, log_tail=None):
         """Best-effort: persist why this attempt died (message + recent log
         tail) on the job doc BEFORE the run is torn down. state="failing"
@@ -2131,7 +2145,7 @@ class Worker:
                     "state": "failing",
                     "error": sanitize_diagnostic(message)[:2000],
                     "logTail": diagnostics.tail(),
-                    "processorId": self.processor_id,
+                    **self.platform_identity(),
                 },
             )
         except Exception as exc:
@@ -2147,6 +2161,7 @@ class Worker:
         runs = self.snapshot_runs()
         doc = {
             "processorId": self.processor_id,
+            "cell": self.cell,
             "tier": self.tier,
             "capacity": self.capacity,
             "jobExecutionMode": self.job_execution_mode,
@@ -2168,6 +2183,7 @@ class Worker:
         """Non-sensitive readiness response for unauthenticated pool probes."""
         return {
             "state": "ready",
+            "cell": self.cell,
             "tier": self.tier,
             "capacity": self.capacity,
             "jobExecutionMode": self.job_execution_mode,
@@ -2272,17 +2288,34 @@ class Worker:
                 "POST",
                 "/video-jobs/claim",
                 json={
-                    "processorId": self.processor_id,
                     "processorUrl": self.public_url,
                     "tier": self.tier,
+                    **self.platform_identity(),
                 },
             )
             job = resp.get("job")
             if not job:
                 return None
+            # Validate placement before the access token is registered or any
+            # job-owned state is constructed.
+            job = dict(job)
+            try:
+                validate_job_placement(job, self.cell)
+            except JobPlacementMismatch as exc:
+                # The claim already committed server-side. Do not heartbeat it,
+                # register its token, detach the pod, spawn a child, or start a
+                # pipeline. Quarantine this worker so it cannot strand more jobs;
+                # the normal heartbeat reaper releases this claim after its
+                # bounded timeout.
+                self.metrics.claim_rejected(exc.reason)
+                self.retiring = True
+                print(
+                    f"[processor] rejected claimed job placement: {exc}",
+                    file=sys.stderr,
+                )
+                return job
             # The access token is transport authorization, not workflow input.
             # Remove it before the job dict is retained or surfaced by status.
-            job = dict(job)
             access_token = job.pop("processorAccessToken", None)
             # Shutdown may have started while the blocking claim request was in
             # flight. Do not create a run after stop_all() took its snapshot;
@@ -2409,7 +2442,7 @@ class Worker:
                                 "stats": run.stats.snapshot(
                                     runtime=run.runtime_identity()
                                 ),
-                                "processorId": self.processor_id,
+                                **self.platform_identity(),
                             },
                         )
                     except requests.RequestException as exc:
@@ -2697,6 +2730,7 @@ def make_handler(worker: Worker):
                     capacity=worker.capacity,
                     tier=worker.tier,
                     retiring=worker.retiring,
+                    cell=worker.cell,
                     active_publishers=publishers,
                 ).encode()
                 self.send_response(200)

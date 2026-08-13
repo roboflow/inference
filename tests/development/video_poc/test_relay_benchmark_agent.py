@@ -123,7 +123,15 @@ def test_prometheus_contract_uses_only_bounded_role_location_labels():
 def test_placement_distinguishes_observed_node_from_requested_instance(monkeypatch):
     monkeypatch.setenv("NODE_NAME", "observed-node-1")
     monkeypatch.setenv("REQUESTED_NODE_INSTANCE_TYPE", "c1a.16x")
+    monkeypatch.setenv("EXPECTED_CELL_ID", "crusoe-use1")
+    monkeypatch.setenv("EXPECTED_CLUSTER_CONTEXT", "ck8s-stg")
+    monkeypatch.setenv("MEDIA_PATH", "south-to-east")
+    monkeypatch.setenv("MEDIA_PATH_KIND", "explicit-cross-cell")
     placement = _placement()
     assert placement["nodeName"] == "observed-node-1"
     assert placement["requestedNodeInstanceType"] == "c1a.16x"
+    assert placement["expectedCell"] == "crusoe-use1"
+    assert placement["expectedClusterContext"] == "ck8s-stg"
+    assert placement["mediaPath"] == "south-to-east"
+    assert placement["mediaPathKind"] == "explicit-cross-cell"
     assert "nodeInstanceType" not in placement

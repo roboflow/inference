@@ -40,6 +40,7 @@ RUNTIME_KEYS = frozenset(
     {
         "schemaVersion",
         "processorId",
+        "cell",
         "hostname",
         "processId",
         "image",

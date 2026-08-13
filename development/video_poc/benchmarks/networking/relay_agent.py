@@ -356,6 +356,10 @@ def _placement():
             "REQUESTED_NODE_INSTANCE_TYPE"
         ),
         "requestedImageReference": os.environ.get("AGENT_IMAGE_REFERENCE"),
+        "expectedCell": os.environ.get("EXPECTED_CELL_ID"),
+        "expectedClusterContext": os.environ.get("EXPECTED_CLUSTER_CONTEXT"),
+        "mediaPath": os.environ.get("MEDIA_PATH"),
+        "mediaPathKind": os.environ.get("MEDIA_PATH_KIND"),
     }
 
 

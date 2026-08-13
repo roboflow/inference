@@ -10,6 +10,16 @@ dedicated namespace containing `bench`. The renderer never invokes `kubectl`.
 It writes a Kubernetes JSON `List` for operator inspection plus a redacted run
 manifest. Kubernetes accepts the JSON list anywhere it accepts YAML.
 
+`render_two_cell_validation.py` adds the Phase 1/2 routing-validation contract.
+It remains render-only and writes one Job list per staging cell, a redacted
+collection manifest, and an initially empty validation-report template. The
+South+East example is `two-cell-south-east.staging.example.json`.
+It uses the canonical `crusoe-use1` / `crusoe-ussc1` cell IDs and
+`ck8s-stg` / `ck8s-stg-us-southcentral1` contexts. The explicit WAN case is
+South-origin to an East `c1a.16x` CPU reader through the South public RTSPS
+endpoint; it neither schedules on nor requires changes to the active East L40S
+capacity fleet.
+
 ## Contract
 
 The version 1 scenario declares:
@@ -59,6 +69,13 @@ node name against Kubernetes node inventory and add the actual instance type to
 the aggregate run report. Child maximum RSS is explicitly reported in KiB,
 matching the Linux load-agent contract.
 
+For two-cell runs the agent also records the expected cell, expected cluster
+context, media-path name, and whether the path is same-cell or explicitly
+cross-cell. These are requested assertions, not observed truth. The collection
+contract requires the controller to join each Pod UID and node name with the
+actual cluster, node labels, image ID, and cell release before marking placement
+as proven.
+
 `read-copy` keeps decode CPU out of capacity curves. Use a small
 `read-decode` group to enforce the fixture FPS and catch media corruption or
 continuity problems.
@@ -79,6 +96,42 @@ Inspect `run-manifest.json` and `jobs.json`. In particular, verify the current
 Kubernetes context independently, requested node placement, immutable image,
 fixture hash/FPS, job count, active deadline, resource bounds, and cleanup
 selector. Rendering makes no cluster changes.
+
+## Render a deterministic two-cell validation
+
+Copy the South+East example and replace every placeholder, including the agent
+digest, cell endpoint Secret references, fixture hash, cluster contexts,
+instance types, release/config hashes, and evidence artifact paths. Endpoint,
+fixture, monitoring, and control-plane values are accepted only through
+Kubernetes Secret name/key references.
+
+```bash
+python development/video_poc/benchmarks/networking/render_two_cell_validation.py \
+  --scenario /path/to/two-cell-south-east.staging.json \
+  --run-id south-east-routing-001 \
+  --output-dir development/video_poc/benchmarks/results/south-east-routing-001
+```
+
+Inspect `jobs-east.json`, `jobs-south.json`, `validation-manifest.json`, and
+`validation-report.template.json`. The scenario must explicitly declare:
+
+- exactly two recognizable staging contexts and dedicated benchmark namespaces;
+- cell-specific ingest, internal consume, public consume, preview, processor,
+  and Prometheus endpoint Secret references;
+- first-activation, reconnect-stickiness, and dedicated-workspace evidence
+  cases;
+- both local media paths and a separately authorized
+  `explicit-cross-cell`/`remoteExecution=true` experiment;
+- baseline and impaired latency/loss/bandwidth/egress profiles; and
+- an approval-gated failure experiment with recovery timeline and rollback
+  artifacts.
+
+The rendered manifest contains read-only placement collection argument vectors,
+required MediaMTX/processor/Prometheus/network evidence, per-cell cleanup
+commands, and the failure-event timeline schema. Rendering does not execute any
+of those commands. Applying either Job list, changing network impairment,
+running a failure experiment, or revoking credentials remains an operator-owned
+staging mutation requiring the normal approval and rollback review.
 
 Once the dedicated staging benchmark cell and short-lived media Secret exist,
 an operator can apply the inspected manifest:

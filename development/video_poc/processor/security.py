@@ -13,6 +13,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+CELL_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _BEARER_VALUE_RE = re.compile(r"(?i)\bBearer\s+[^\s,;]+")
 _SECRET_PARAM_RE = re.compile(
     r"(?i)(\b(?:api[_-]?key|token|access_token|signature|sig)=)[^\s&#]+"
@@ -22,6 +23,76 @@ _URL_RE = re.compile(r"(?P<url>(?:https?|rtsp)://[^\s\"'<>]+)", re.IGNORECASE)
 
 class MissingJobAccessToken(ValueError):
     """A managed-pool claim did not include its browser-facing job token."""
+
+
+class JobPlacementMismatch(ValueError):
+    """A server-issued job placement is unsafe for this worker."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
+def validate_cell_id(value, *, required=False):
+    """Normalize a bounded deployment cell identifier.
+
+    Cell identity is optional only for the single-cell migration path. Once a
+    worker is configured, this value is read once at startup and job payloads
+    cannot override it.
+    """
+
+    cell = str(value or "").strip()
+    if not cell:
+        if required:
+            raise ValueError("processor cell is required")
+        return None
+    if not CELL_ID_RE.fullmatch(cell):
+        raise ValueError("processor cell must be a lowercase DNS label")
+    return cell
+
+
+def validate_job_placement(job, processor_cell):
+    """Fail closed on wrong-cell or implicit cross-cell claim payloads.
+
+    Missing placement remains valid for legacy jobs during the one-cell
+    migration. A placed job, however, requires a configured worker cell. Remote
+    media consumption is accepted only when the control plane explicitly marks
+    it as such.
+    """
+
+    job = job if isinstance(job, dict) else {}
+    execution_cell = job.get("executionCell")
+    source_cell = job.get("sourceCell")
+    if execution_cell is None and source_cell is None:
+        return
+    try:
+        execution_cell = validate_cell_id(execution_cell, required=True)
+        source_cell = (
+            validate_cell_id(source_cell, required=True)
+            if source_cell is not None
+            else None
+        )
+    except ValueError as error:
+        raise JobPlacementMismatch("invalid_placement", str(error)) from error
+    if processor_cell is None:
+        raise JobPlacementMismatch(
+            "processor_cell_missing",
+            "placed job cannot run on a worker without cell identity",
+        )
+    if execution_cell != processor_cell:
+        raise JobPlacementMismatch(
+            "execution_cell_mismatch",
+            "job execution cell does not match processor cell",
+        )
+    if (
+        source_cell is not None
+        and source_cell != execution_cell
+        and job.get("remoteExecution") is not True
+    ):
+        raise JobPlacementMismatch(
+            "implicit_cross_cell",
+            "cross-cell media execution was not explicitly authorized",
+        )
 
 
 def env_flag(name: str, default: bool = False) -> bool:

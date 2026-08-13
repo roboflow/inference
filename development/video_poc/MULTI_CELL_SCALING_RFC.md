@@ -537,6 +537,43 @@ not yet an approved target.
 
 ## Rollout plan
 
+### Implementation checkpoint (2026-08-13)
+
+The summary invariants above were checked against the current code rather than
+treated as an implementation specification. Registration was already
+metadata-only and the connector already consumed a complete server-issued ingest
+URL. The minimum safe change was therefore to make placement, identity, relay
+authorization, URL resolution, and claims explicit—not to add cell selection to
+the connector.
+
+Phase 1 code now exists on isolated review branches but is not deployed. It uses
+an East-only explicit registry first, transactional first activation, persisted
+placement metadata, generation-aware connector reports/commands, per-cell fleet
+credentials, a deployment-fixed relay auth cell, transactional cell+tier claim
+filters, wrong-cell processor rejection, legacy default-cell interpretation, and
+a bounded scheduled reaper. Emulator-backed tests exercise simultaneous preview
+and job activation against two eligible test cells and prove one committed source
+assignment; local execution still depends on the repository's current Node
+dependency overlay being available.
+
+Phase 2 infrastructure is prepared, not applied. The chosen cell is
+`crusoe-ussc1` on `ck8s-stg-us-southcentral1`. Its own stack begins
+`unavailable` with both processor pools disabled, non-runnable image placeholders,
+cell-specific credentials/subscription, fixed c1a.16x relay/gateway placement,
+fixed processor node classes, `.one` endpoints, metrics/dashboard coverage, and
+a default-off RTSPS listener for an explicitly authorized South-origin WAN read.
+The production Helm render is byte-for-byte unchanged. The East render changes
+only by adding immutable processor identity; the active L40S capacity settings
+and source are outside this workstream.
+
+The two-cell validation renderer is staging-only and offline. It emits separate
+East/South Job lists and requires actual pod/node/cluster/cell, connector route,
+preview, claim, MediaMTX session/reader, processor, latency/loss/bandwidth/egress,
+and failure/recovery evidence. Its cross-cell case is South origin to an East
+CPU reader; it never mutates the East relay or schedules onto L40S. Applying the
+cell, DNS, functions, benchmark prerequisites/Jobs, network impairment, or
+failure experiment still requires the documented staging approval.
+
 ### Phase 0: RFC, instrumentation, and baseline
 
 - agree on terminology, invariants, and SLOs;
@@ -564,6 +601,10 @@ bottlenecks.
 **Gate:** all existing behavior works with one registered cell, and a synthetic
 worker from another cell cannot claim East work.
 
+**Current status:** implemented and locally validated; review, Firestore index,
+East-only functions rollout, East processor identity rollout, and live synthetic
+claim-isolation evidence remain.
+
 ### Phase 2: Second non-production cell
 
 - deploy a second staging/performance cell;
@@ -574,6 +615,10 @@ worker from another cell cannot claim East work.
 
 **Gate:** deterministic two-cell operation with no cross-cell misclaims or missing
 local streams.
+
+**Current status:** repeatable South cell and deterministic validation contracts
+are prepared with processors default-off. No South resource/DNS/function binding
+or benchmark Job has been applied, and no two-cell validation result is claimed.
 
 ### Phase 3: Workload-aware admission and fairness
 
@@ -615,12 +660,16 @@ security, and cost envelope.
 
 1. What initial SLOs define acceptable preview startup, delivered FPS,
    decode-to-result latency, relay loss, and recovery time?
-2. Is the first second cell another Crusoe region, GCP, or a performance-only
-   environment?
-3. Where should the cell registry live initially: deployed configuration,
-   Firestore, or an existing infrastructure/service registry?
-4. What is the stable cell identity presented by a fleet worker, and how does the
-   platform verify it rather than trusting request data?
+2. ~~Is the first second cell another Crusoe region, GCP, or a performance-only
+   environment?~~ **Resolved for Phase 2:** Crusoe South Central staging,
+   `crusoe-ussc1`; this is not a production-region commitment.
+3. ~~Where should the cell registry live initially: deployed configuration,
+   Firestore, or an existing infrastructure/service registry?~~ **Resolved for
+   Phase 1:** validated deployed configuration behind one registry adapter.
+4. ~~What is the stable cell identity presented by a fleet worker, and how does the
+   platform verify it rather than trusting request data?~~ **Resolved for Phase
+   1:** immutable `VIDEO_PROC_CELL` plus a cell-scoped fleet secret; the body cell
+   is only a matching assertion and cannot grant placement.
 5. What workspace placement modes are product commitments versus internal testing
    controls?
 6. Which metrics are available from Crusoe LoadBalancers and GPU nodes, and what
