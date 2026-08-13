@@ -105,6 +105,13 @@ from security import (
     sanitize_diagnostic,
     validate_job_id,
 )
+from video_ingest import (
+    GSTREAMER_CUDA_INGEST,
+    build_cuda_producer,
+    process_runtime_identity,
+    producer_runtime_identity,
+    resolve_video_ingest_mode,
+)
 from worker_lifecycle import schedule_retirement
 
 
@@ -804,6 +811,7 @@ class JobRun:
         # in-process publisher without any JPEG round trip
         self.raw_frames = FrameStore()
         self.pipeline = None
+        self.video_producer = None
         self.pipeline_error = None
         self.sim_process = None
         self.recorder = None
@@ -1000,6 +1008,37 @@ class JobRun:
 
         if (
             mode == "stream"
+            and isinstance(video_reference, str)
+            and video_reference.startswith("rtsp")
+            and self.worker.video_ingest_mode == GSTREAMER_CUDA_INGEST
+        ):
+            # Construct the hardware producer directly so an unavailable
+            # GStreamer/NVDEC/tensor bridge fails this staging experiment. The
+            # generic v1.4 discovery path intentionally falls back to CPU,
+            # which would make the A/B result look valid when it is not.
+            rtsp_url = video_reference
+
+            def create_cuda_producer():
+                return build_cuda_producer(
+                    rtsp_url,
+                    on_created=lambda producer: setattr(
+                        self, "video_producer", producer
+                    ),
+                )
+
+            video_reference = create_cuda_producer
+            pipeline_kwargs.update(
+                {
+                    "video_processing_mode": "freshest",
+                    "decoding_buffer_size": 1,
+                }
+            )
+            print(
+                f"[processor] fail-loud NVDEC tensor ingest for "
+                f"{sanitize_diagnostic(rtsp_url)}"
+            )
+        elif (
+            mode == "stream"
             and LowLatencyRtspProducer is not None
             and isinstance(video_reference, str)
             and video_reference.startswith("rtsp")
@@ -1011,7 +1050,13 @@ class JobRun:
             # on the pixel-clock harness: cv2 586ms → PyAV 40ms glass-to-glass.
             rtsp_url = video_reference
             av_options = _parse_capture_options(capture_options)
-            video_reference = lambda: LowLatencyRtspProducer(rtsp_url, av_options)
+
+            def create_pyav_producer():
+                producer = LowLatencyRtspProducer(rtsp_url, av_options)
+                self.video_producer = producer
+                return producer
+
+            video_reference = create_pyav_producer
             print(f"[processor] low-latency ingest for {sanitize_diagnostic(rtsp_url)}")
 
         # cv2 reads capture options from process-global env at capture-open time
@@ -1287,7 +1332,7 @@ class JobRun:
                 "imageOutput": job.get("imageOutput"),
                 "error": job.get("error"),
             },
-            "stats": self.stats.snapshot(runtime=self.worker.runtime_identity),
+            "stats": self.stats.snapshot(runtime=self.runtime_identity()),
             # image outputs redacted from /events; each is watchable at
             # /preview.mjpeg?output=<name>
             # from the raw store: always populated, unlike the JPEG store,
@@ -1295,6 +1340,11 @@ class JobRun:
             "imageOutputs": self.raw_frames.outputs(),
             "defaultImageOutput": self.image_output,
         }
+
+    def runtime_identity(self):
+        runtime = dict(self.worker.runtime_identity)
+        runtime.update(producer_runtime_identity(self.video_producer))
+        return runtime
 
     # ---------- output publishing ----------
 
@@ -1429,7 +1479,11 @@ class Worker:
             require_tokens=env_flag("REQUIRE_JOB_ACCESS_TOKEN", managed_pool)
         )
         self.metrics = ProcessorMetrics()
+        self.video_ingest_mode = resolve_video_ingest_mode()
         self.runtime_identity = build_runtime_identity(self.processor_id)
+        self.runtime_identity.update(
+            process_runtime_identity(self.video_ingest_mode)
+        )
         # Default is the existing single-process worker. The staging-only
         # workspace_probe mode exercises ownership and crash handling with one
         # empty child per workspace; JobRun still executes in this parent, so
@@ -1797,7 +1851,7 @@ class Worker:
                             json={
                                 "state": run.state,
                                 "stats": run.stats.snapshot(
-                                    runtime=self.runtime_identity
+                                    runtime=run.runtime_identity()
                                 ),
                                 "processorId": self.processor_id,
                             },

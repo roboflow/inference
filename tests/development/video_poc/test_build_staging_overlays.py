@@ -33,6 +33,7 @@ def test_build_plan_is_staging_only_and_commit_derived():
         "cpu": f"{MODULE.CPU_OUTPUT_REPOSITORY}:{GIT_SHA}",
     }
     assert "development/video_poc/processor/processor.py" in plan["sourceFiles"]
+    assert "development/video_poc/processor/video_ingest.py" in plan["sourceFiles"]
     assert "development/video_poc/processor/Dockerfile.overlay" in plan["sourceFiles"]
     command = plan["submitCommand"]
     assert command[:3] == ["gcloud", "builds", "submit"]

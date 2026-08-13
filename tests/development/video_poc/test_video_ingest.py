@@ -1,0 +1,119 @@
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+PROCESSOR_DIR = (
+    Path(__file__).resolve().parents[3] / "development" / "video_poc" / "processor"
+)
+sys.path.insert(0, str(PROCESSOR_DIR))
+
+from video_ingest import (  # noqa: E402
+    GSTREAMER_CUDA_INGEST,
+    PYAV_INGEST,
+    build_cuda_producer,
+    process_runtime_identity,
+    producer_runtime_identity,
+    resolve_video_ingest_mode,
+)
+
+
+def test_pyav_is_the_unchanged_default(monkeypatch):
+    monkeypatch.delenv("PROCESSOR_VIDEO_INGEST_MODE", raising=False)
+    monkeypatch.delenv("ENABLE_TENSOR_DATA_REPRESENTATION", raising=False)
+
+    assert resolve_video_ingest_mode() == PYAV_INGEST
+
+
+def test_cuda_ingest_requires_tensor_mode_at_process_start(monkeypatch):
+    monkeypatch.setenv("PROCESSOR_VIDEO_INGEST_MODE", GSTREAMER_CUDA_INGEST)
+    monkeypatch.delenv("ENABLE_TENSOR_DATA_REPRESENTATION", raising=False)
+
+    with pytest.raises(ValueError, match="requires.*TENSOR_DATA_REPRESENTATION"):
+        resolve_video_ingest_mode()
+
+    monkeypatch.setenv("ENABLE_TENSOR_DATA_REPRESENTATION", "true")
+    assert resolve_video_ingest_mode() == GSTREAMER_CUDA_INGEST
+
+
+def test_unknown_ingest_mode_fails_before_the_worker_claims_jobs(monkeypatch):
+    monkeypatch.setenv("PROCESSOR_VIDEO_INGEST_MODE", "best-effort-auto")
+
+    with pytest.raises(ValueError, match="must be one of"):
+        resolve_video_ingest_mode()
+
+
+def test_runtime_identity_is_bounded_and_contains_no_credentials(monkeypatch):
+    monkeypatch.setenv("ENABLE_TENSOR_DATA_REPRESENTATION", "yes")
+    monkeypatch.setenv("ROBOFLOW_RTSP_LATENCY_MS", "80")
+    monkeypatch.setenv("ROBOFLOW_API_KEY", "must-not-leak")
+
+    runtime = process_runtime_identity(GSTREAMER_CUDA_INGEST)
+
+    assert runtime == {
+        "videoIngestMode": GSTREAMER_CUDA_INGEST,
+        "tensorRepresentationEnabled": True,
+        "rtspLatencyMs": 80,
+    }
+    assert "must-not-leak" not in str(runtime)
+
+
+def test_cuda_factory_constructs_tensor_producer_and_reports_it(monkeypatch):
+    created = []
+
+    class FakeCudaProducer:
+        def __init__(self, video_reference, output_tensor):
+            self.video_reference = video_reference
+            self.output_tensor = output_tensor
+            self.tensor_bridge_stats = {"zeroCopyFrames": 7}
+
+    module_name = "inference.core.interfaces.camera.gstreamer_cuda_producer"
+    monkeypatch.setitem(
+        sys.modules,
+        module_name,
+        SimpleNamespace(GstreamerCudaVideoFrameProducer=FakeCudaProducer),
+    )
+
+    producer = build_cuda_producer("rtsp://relay/source", created.append)
+
+    assert producer.video_reference == "rtsp://relay/source"
+    assert producer.output_tensor is True
+    assert created == [producer]
+    assert producer_runtime_identity(producer) == {
+        "videoProducer": "FakeCudaProducer",
+        "tensorBridge": {"zeroCopyFrames": 7},
+    }
+
+
+def test_producer_stats_drop_unbounded_or_non_numeric_values():
+    producer = SimpleNamespace(
+        tensor_bridge_stats={
+            "frames": 4,
+            "ratio": 0.5,
+            "healthy": True,
+            "secret/value": "do-not-return",
+            "nan": float("nan"),
+        }
+    )
+
+    runtime = producer_runtime_identity(producer)
+
+    assert runtime["tensorBridge"] == {"frames": 4, "ratio": 0.5}
+
+
+def test_processor_uses_fail_loud_cuda_and_freshest_frame_mode():
+    source = (PROCESSOR_DIR / "processor.py").read_text()
+
+    assert "build_cuda_producer(" in source
+    assert '"video_processing_mode": "freshest"' in source
+    assert '"decoding_buffer_size": 1' in source
+    assert "discover_hardware_video_frame_producer" not in source
+
+
+@pytest.mark.parametrize("dockerfile", ("Dockerfile", "Dockerfile.overlay"))
+def test_processor_images_include_ingest_selector(dockerfile):
+    source = (PROCESSOR_DIR / dockerfile).read_text()
+
+    assert "COPY video_ingest.py /app/video_ingest.py" in source
