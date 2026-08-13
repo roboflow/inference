@@ -1,3 +1,4 @@
+import importlib
 import sys
 from dataclasses import dataclass
 from types import ModuleType
@@ -27,16 +28,27 @@ class SourceProperties:
 
 entities.VideoFrameProducer = VideoFrameProducer
 entities.SourceProperties = SourceProperties
-for package in (
+_module_names = (
     "inference",
     "inference.core",
     "inference.core.interfaces",
     "inference.core.interfaces.camera",
-):
-    sys.modules.setdefault(package, ModuleType(package))
-sys.modules.setdefault("inference.core.interfaces.camera.entities", entities)
-
-from low_latency_producer import LowLatencyRtspProducer
+    "inference.core.interfaces.camera.entities",
+)
+_previous_modules = {name: sys.modules.get(name) for name in _module_names}
+try:
+    for package in _module_names[:-1]:
+        sys.modules.setdefault(package, ModuleType(package))
+    sys.modules.setdefault(_module_names[-1], entities)
+    LowLatencyRtspProducer = importlib.import_module(
+        "low_latency_producer"
+    ).LowLatencyRtspProducer
+finally:
+    for name, previous in _previous_modules.items():
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
 
 
 class _Frame:
