@@ -11,10 +11,12 @@ ARG BASE_IMAGE=roboflow/roboflow-inference-server-gpu:latest
 FROM ${BASE_IMAGE}
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir google-cloud-pubsub requests aiortc
+RUN python3 -m pip install --no-cache-dir google-cloud-pubsub requests aiortc
 
 WORKDIR /app
 COPY processor.py /app/processor.py
