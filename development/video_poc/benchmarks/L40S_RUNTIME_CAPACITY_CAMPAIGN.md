@@ -35,7 +35,8 @@ invalid if jobs spread across workers.
 
 ## Resume checkpoint (2026-08-13)
 
-Do not repeat completed A or B points. The authoritative threaded results are:
+Do not repeat completed A, B, or C points. The authoritative threaded results
+are:
 
 | Variant | Point | State | Evidence |
 |---|---:|---|---|
@@ -44,13 +45,38 @@ Do not repeat completed A or B points. The authoritative threaded results are:
 | B — v1.4 tensor PyAV | c1, c2 | pass x2 | c1 median 59.3825 FPS; c2 retains approximately 59 FPS per stream |
 | B — v1.4 tensor PyAV | c4 | fail x2 | 120.096/119.762 aggregate FPS, approximately 30 FPS per stream, p95 100 ms |
 | B — v1.4 tensor PyAV | c8 | fail x2 | r1 operational failure; clean r2 91.711 aggregate FPS and p95 250 ms; B is complete |
-| C — v1.4 tensor NVDEC | c1 | after B | re-run the decoder validity gate, then start its independent curve |
+| C — v1.4 tensor NVDEC | c1, c2 | pass x2 | c1 median 57.821 FPS; c2 retains 91.2-91.7% per stream with p95 50 ms |
+| C — v1.4 tensor NVDEC | c4 | fail x2 | 142.179/141.554 aggregate FPS, approximately 35.3 FPS per stream, p95 up to 100 ms |
+| C — v1.4 tensor NVDEC | c8 | fail x2 | 108.914/102.056 aggregate FPS, approximately 12.5-13.7 FPS per stream, p95 150 ms; C is complete |
 | D/E/F — one process per job | c1/c2 topology gate | after C | use only rebuilt immutable overlays recorded in `JOB_PROCESS_MATRIX.md` |
 
 B c4 failed throughput and latency while CPU p95 was approximately 2.23 cores,
 GPU utilization was 17-18%, framebuffer use was 2,024 MiB, decoder utilization
 was 0%, copy utilization was 1%, and MediaMTX reported four readers with zero
 packet loss/errors. It is not a whole-pod, GPU, or relay saturation result.
+
+C completed from `2026-08-13T22:13:50Z` through `22:55:05Z`. Both c1 runs
+passed at `57.397/58.245 FPS`, p95 `50 ms`, and p99 `75 ms`. Both c2 runs
+passed at `106.034/105.440 FPS` aggregate, Jain fairness `1.0`, p95 `50 ms`,
+and p99 `75 ms`. C then failed both c4 repetitions at `142.179/141.554 FPS`
+aggregate with p95 up to `100 ms`, and failed both c8 repetitions at
+`108.914/102.056 FPS` aggregate with p95 `150 ms`. Its strict maximum is c2;
+the fail-fast rule forbids c12 and above.
+
+Every C job remained on one processor without retry, recovery, counter reset,
+or output host materialization. Runtime evidence reported
+`GstreamerCudaVideoFrameProducer`, `hardwareDecodeVerified=true`, advancing
+CUDA maps, and zero host pixel maps, device-to-host copies, and host-to-device
+copies. At c8, processor CPU p95 was `1.999/1.957` cores, memory max was
+`1.973/1.722 GB`, GPU utilization max was `18/17%`, framebuffer max was
+`3913/3905 MiB`, decoder utilization max was `11%`, and memory-copy
+utilization max was `2%`. MediaMTX held eight readers with zero RTSP packet
+loss/errors and at most approximately `1.513 MB/s` egress. The c4/c8 boundary
+is therefore not whole-pod CPU, memory, GPU, VRAM, NVDEC, or relay saturation.
+Compared with B, C improved aggregate c4/c8 throughput and eliminated the
+PyAV slow-reader failure, but did not raise the strict low-latency maximum
+above c2. Because C changes both native GStreamer draining and NVDEC/CUDA
+ingest, do not attribute that improvement to decoder compute alone.
 
 Exclude these non-measurements from conclusions:
 
