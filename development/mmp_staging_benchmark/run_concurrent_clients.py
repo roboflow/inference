@@ -21,6 +21,26 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import urlencode, urlparse
 
+EXPERIMENT_FIELDS = frozenset(
+    {
+        "run_id",
+        "phase",
+        "server_image_ref",
+        "server_source_revision",
+        "harness_revision",
+        "server_pod",
+        "server_node",
+        "mps_enabled",
+        "mps_active_thread_percentage",
+        "decoder",
+        "slots",
+        "input_mb_per_slot",
+        "batch_max_size",
+        "batch_max_wait_ms",
+        "fixture_sha256",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ClientSpec:
@@ -44,6 +64,7 @@ class RunSpec:
     clients: tuple[ClientSpec, ...]
     request_timeout_s: float = 60.0
     max_latency_samples_per_client: int = 250_000
+    experiment: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -202,32 +223,25 @@ def routing_key(client: ClientSpec) -> str:
 def _is_safe_staging_host(host: str | None) -> bool:
     if not host:
         return False
-    normalized = host.lower().rstrip(".")
-    if normalized in {"localhost", "host.docker.internal"}:
-        return True
     try:
-        address = ipaddress.ip_address(normalized)
-        return address.is_private or address.is_loopback or address.is_link_local
+        address = ipaddress.ip_address(host)
+        return address.is_loopback
     except ValueError:
-        pass
-    return (
-        normalized.endswith(".roboflow.one")
-        or normalized.endswith(".svc")
-        or normalized.endswith(".svc.cluster.local")
-        or "staging" in normalized
-    )
+        return False
 
 
 def validate_staging_url(server_url: str) -> str:
     parsed = urlparse(server_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError("server_url must use http or https")
+    if parsed.scheme != "http":
+        raise ValueError("server_url must use plain HTTP over a local port-forward")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("server_url must not contain credentials, query, or fragment")
+    if parsed.path not in {"", "/"}:
+        raise ValueError("server_url must not contain a path")
     if not _is_safe_staging_host(parsed.hostname):
         raise ValueError(
-            f"refusing non-staging benchmark target {parsed.hostname!r}; "
-            "use localhost/private IP, Kubernetes service DNS, or a staging host"
+            f"refusing non-loopback benchmark target {parsed.hostname!r}; "
+            "use an explicit numeric loopback port-forward"
         )
     return server_url.rstrip("/")
 
@@ -245,6 +259,7 @@ def load_spec(path: Path) -> RunSpec:
         max_latency_samples_per_client=int(
             raw.get("max_latency_samples_per_client", 250_000)
         ),
+        experiment=raw.get("experiment", {}),
     )
     validate_spec(spec)
     return spec
@@ -259,6 +274,12 @@ def validate_spec(spec: RunSpec) -> None:
         )
     if spec.request_timeout_s <= 0 or spec.max_latency_samples_per_client <= 0:
         raise ValueError("request timeout and sample cap must be positive")
+    unknown_experiment_fields = set(spec.experiment) - EXPERIMENT_FIELDS
+    if unknown_experiment_fields:
+        raise ValueError(
+            "unknown experiment metadata fields: "
+            + ", ".join(sorted(unknown_experiment_fields))
+        )
     seen: set[str] = set()
     for client in spec.clients:
         name = client_name(client)
@@ -286,10 +307,41 @@ def _client_url(server_url: str, client: ClientSpec) -> str:
     return f"{server_url}/infer?{urlencode(query, doseq=True)}"
 
 
-def _safe_error(status: int | None, body: str | None, exc: Exception | None) -> str:
+def _redact_text(value: str, secrets: Sequence[str]) -> str:
+    redacted = value
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
+def _redact_value(value: Any, secrets: Sequence[str]) -> Any:
+    """Remove key material from every string in a report before serialization."""
+    if isinstance(value, str):
+        return _redact_text(value, secrets)
+    if isinstance(value, list):
+        return [_redact_value(item, secrets) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(item, secrets) for item in value)
+    if isinstance(value, dict):
+        return {
+            _redact_value(key, secrets): _redact_value(item, secrets)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _safe_error(
+    status: int | None,
+    body: str | None,
+    exc: Exception | None,
+    *,
+    secrets: Sequence[str] = (),
+) -> str:
     if exc is not None:
-        return f"{type(exc).__name__}: {str(exc)[:160]}"
-    compact = " ".join((body or "").split())[:160]
+        detail = _redact_text(str(exc), secrets)[:160]
+        return f"{type(exc).__name__}: {detail}"
+    compact = _redact_text(" ".join((body or "").split()), secrets)[:160]
     return f"HTTP {status}: {compact}" if compact else f"HTTP {status}"
 
 
@@ -330,7 +382,9 @@ async def _run_worker(
         body: str | None = None
         caught: Exception | None = None
         try:
-            async with session.post(url, data=image, headers=headers) as response:
+            async with session.post(
+                url, data=image, headers=headers, allow_redirects=False
+            ) as response:
                 status = response.status
                 payload = await response.read()
                 if not 200 <= status < 300:
@@ -339,7 +393,7 @@ async def _run_worker(
             caught = exc
         finished = time.monotonic()
         if caught is not None or status is None or not 200 <= status < 300:
-            error = _safe_error(status, body, caught)
+            error = _safe_error(status, body, caught, secrets=(key,))
         recorder.record(
             offset_s=request_started - started,
             measured_offset_s=request_started - measure_started,
@@ -369,7 +423,9 @@ async def _metrics_sampler(
     while time.monotonic() < stop_at:
         sample_started = time.monotonic()
         try:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(
+                url, headers=headers, allow_redirects=False
+            ) as response:
                 payload: Any
                 if response.status == 200:
                     payload = await response.json()
@@ -582,23 +638,75 @@ async def execute(spec: RunSpec, image: bytes) -> dict[str, Any]:
         )
         for report in client_reports
     ]
-    return {
+    report = {
         "schema_version": 1,
+        "experiment": {
+            "run_id": spec.experiment.get(
+                "run_id", os.environ.get("MMP_BENCHMARK_RUN_ID", "unknown")
+            ),
+            "mode": spec.experiment.get(
+                "phase", os.environ.get("MMP_BENCHMARK_MODE", "unknown")
+            ),
+            "harness_revision": spec.experiment.get(
+                "harness_revision",
+                os.environ.get("MMP_BENCHMARK_HARNESS_REVISION", "unknown"),
+            ),
+            "mps_enabled": spec.experiment.get(
+                "mps_enabled", os.environ.get("NVIDIA_MPS", "unknown")
+            ),
+            "mps_active_thread_percentage": spec.experiment.get(
+                "mps_active_thread_percentage",
+                os.environ.get("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE"),
+            ),
+            "decoder": spec.experiment.get(
+                "decoder", os.environ.get("INFERENCE_DECODER", "unknown")
+            ),
+            "slots": spec.experiment.get(
+                "slots", os.environ.get("INFERENCE_N_SLOTS", "unknown")
+            ),
+            "input_mb_per_slot": spec.experiment.get(
+                "input_mb_per_slot", os.environ.get("INFERENCE_INPUT_MB", "unknown")
+            ),
+            "batch_max_size": spec.experiment.get(
+                "batch_max_size",
+                os.environ.get("INFERENCE_BATCH_MAX_SIZE", "unknown"),
+            ),
+            "batch_max_wait_ms": spec.experiment.get(
+                "batch_max_wait_ms",
+                os.environ.get("INFERENCE_BATCH_MAX_WAIT_MS", "unknown"),
+            ),
+            "server_image_ref": spec.experiment.get("server_image_ref", "unknown"),
+            "server_source_revision": spec.experiment.get(
+                "server_source_revision", "unknown"
+            ),
+            "server_pod": spec.experiment.get("server_pod", "unknown"),
+            "server_node": spec.experiment.get("server_node", "unknown"),
+            "fixture_sha256": spec.experiment.get("fixture_sha256", "unknown"),
+        },
         "run": {
             "server_url": spec.server_url,
             "duration_s": spec.duration_s,
             "warmup_s": spec.warmup_s,
+            "sample_interval_s": spec.sample_interval_s,
             "actual_elapsed_s": finished - started,
             "started_unix_s": time.time() - (finished - started),
             "finished_unix_s": time.time(),
             "image_bytes": len(image),
             "image_sha256": hashlib.sha256(image).hexdigest(),
-            "source_revision": os.environ.get(
-                "MMP_BENCHMARK_SOURCE_REVISION", "unknown"
+            "source_revision": spec.experiment.get(
+                "server_source_revision",
+                os.environ.get("MMP_BENCHMARK_SOURCE_REVISION", "unknown"),
             ),
-            "image_ref": os.environ.get("MMP_BENCHMARK_IMAGE_REF", "unknown"),
-            "node_name": os.environ.get("NODE_NAME", "unknown"),
-            "pod_name": os.environ.get("POD_NAME", "unknown"),
+            "image_ref": spec.experiment.get(
+                "server_image_ref",
+                os.environ.get("MMP_BENCHMARK_IMAGE_REF", "unknown"),
+            ),
+            "node_name": spec.experiment.get(
+                "server_node", os.environ.get("NODE_NAME", "unknown")
+            ),
+            "pod_name": spec.experiment.get(
+                "server_pod", os.environ.get("POD_NAME", "unknown")
+            ),
             "python": platform.python_version(),
             "clients": [asdict(client) for client in spec.clients],
         },
@@ -615,6 +723,7 @@ async def execute(spec: RunSpec, image: bytes) -> dict[str, Any]:
         "metrics_evidence": _metrics_evidence(metrics_samples),
         "metrics_samples": metrics_samples,
     }
+    return _redact_value(report, tuple(keys.values()))
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -642,6 +751,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         image = args.image.read_bytes()
         if not image:
             raise ValueError("image file is empty")
+        image_sha256 = hashlib.sha256(image).hexdigest()
+        expected_fixture_sha256 = spec.experiment.get("fixture_sha256")
+        if (
+            expected_fixture_sha256 is not None
+            and image_sha256 != expected_fixture_sha256
+        ):
+            raise ValueError(
+                "fixture SHA256 does not match the selected benchmark matrix"
+            )
         if args.validate_only:
             print(
                 json.dumps(
@@ -650,6 +768,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "clients": len(spec.clients),
                         "total_concurrency": sum(c.concurrency for c in spec.clients),
                         "image_bytes": len(image),
+                        "image_sha256": image_sha256,
                     },
                     indent=2,
                 )

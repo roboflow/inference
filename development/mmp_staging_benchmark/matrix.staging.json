@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "artifact": {
+    "source_revision": "5f02db12ebdda013ff92e6607f92f88c7f9582ec",
+    "image": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/mmp-benchmark@sha256:6a6592f77e0eb1d3bfc8b82d7add6a7206e946a437a072f7f3a58cf693b1716d",
+    "cloud_build_id": "f0bd00b6-f0d1-410a-8ba6-bf9f8e8ccfd0"
+  },
+  "fixed_runtime": {
+    "gpu": "L40S",
+    "exclusive_gpu": true,
+    "http_workers": 4,
+    "shm_slots": 128,
+    "shm_input_mb_per_slot": 20,
+    "shm_size_limit": "4Gi",
+    "batch_max_size": 0,
+    "batch_max_wait_ms": 5,
+    "decoder": "imagecodecs",
+    "duration_s": 120,
+    "warmup_s": 15,
+    "sample_interval_s": 1,
+    "repetitions": 2,
+    "fixture_path": "tests/workflows/integration_tests/execution/assets/dogs.jpg",
+    "fixture_sha256": "83bfa4e706f274ce1da7309cec6374d542f9938b3538481035588681cdaff139"
+  },
+  "phases": [
+    {
+      "id": "mmp-shared-no-mps",
+      "execution": "MMP subprocess backend with cross-client auto-batching",
+      "mps": false,
+      "spec": "spec.same-model.example.json",
+      "total_concurrency": [1, 2, 4, 8, 12, 16, 24, 32]
+    },
+    {
+      "id": "mmp-isolated-no-mps",
+      "execution": "MMP with one routing-key subprocess per client",
+      "mps": false,
+      "spec": "spec.same-model-isolated.example.json",
+      "total_concurrency": [2, 4, 8, 12, 16, 24, 32]
+    },
+    {
+      "id": "mmp-mixed-no-mps",
+      "execution": "MMP with independent detection and segmentation subprocesses",
+      "mps": false,
+      "spec": "spec.mixed-model.example.json",
+      "total_concurrency": [2, 4, 8, 12]
+    },
+    {
+      "id": "mmp-shared-mps",
+      "execution": "same MMP shared-backend matrix with raw same-pod NVIDIA MPS",
+      "mps": true,
+      "spec": "spec.same-model.example.json",
+      "total_concurrency": [1, 2, 4, 8, 12, 16, 24, 32]
+    },
+    {
+      "id": "mmp-isolated-mps",
+      "execution": "same MMP isolated-backend matrix with raw same-pod NVIDIA MPS",
+      "mps": true,
+      "spec": "spec.same-model-isolated.example.json",
+      "total_concurrency": [2, 4, 8, 12, 16, 24, 32]
+    },
+    {
+      "id": "mmp-mixed-mps",
+      "execution": "same mixed-model matrix with raw same-pod NVIDIA MPS",
+      "mps": true,
+      "spec": "spec.mixed-model.example.json",
+      "total_concurrency": [2, 4, 8, 12]
+    }
+  ],
+  "strict_gates": {
+    "success_rate": 1.0,
+    "latency_p95_ms_max": 50,
+    "jain_fairness_min": 0.95,
+    "mmp_pool_full_rejects_delta_max": 0,
+    "worker_restarts_max": 0,
+    "cuda_errors_max": 0,
+    "minimum_metrics_coverage": 0.9,
+    "capacity_rule": "highest point passing twice with the next point failing twice"
+  }
+}

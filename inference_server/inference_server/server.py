@@ -32,9 +32,10 @@ Environment variables::
     INFERENCE_BATCH_MAX_SIZE    Max images per worker batch (default: 0 = use model's max).
     INFERENCE_BATCH_MAX_WAIT_MS Max ms to wait for a full batch (default: 5.0).
     NVIDIA_MPS              Set to "1" to start NVIDIA MPS before launching.
-                            MPS daemon is guaranteed to be stopped on exit
-                            (even on crash / SIGKILL of this process — via atexit
-                            + signal handlers).
+                            MPS is stopped on normal exit and handled signals.
+                            SIGKILL cannot run Python cleanup; only use this in
+                            an exclusive, disposable GPU pod whose container
+                            teardown removes the full process cgroup.
 
     LOG_LEVEL               uvicorn log level (default: warning)
 """

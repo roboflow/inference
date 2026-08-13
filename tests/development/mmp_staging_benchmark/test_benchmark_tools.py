@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -11,7 +12,10 @@ from development.mmp_staging_benchmark.run_concurrent_clients import (
     ClientRecorder,
     ClientSpec,
     _metrics_evidence,
+    _redact_value,
+    _safe_error,
     client_name,
+    execute,
     jain_fairness,
     latency_summary,
     load_spec,
@@ -22,14 +26,26 @@ from development.mmp_staging_benchmark.run_concurrent_clients import (
 DiskUsage = namedtuple("DiskUsage", "total used free")
 
 
+def load_spec_from_dict(raw):
+    with tempfile.TemporaryDirectory() as root:
+        path = Path(root) / "spec.json"
+        path.write_text(json.dumps(raw))
+        return load_spec(path)
+
+
+async def empty_async(**_kwargs):
+    return None
+
+
+async def empty_metrics(**_kwargs):
+    return []
+
+
 class StagingTargetTests(unittest.TestCase):
-    def test_accepts_local_private_kubernetes_and_staging(self) -> None:
+    def test_accepts_only_local_loopback(self) -> None:
         accepted = [
             "http://127.0.0.1:8000",
-            "http://10.1.2.3:8000",
-            "http://mmp.video-proc.svc:8000",
-            "https://mmp-benchmark.roboflow.one",
-            "https://inference-staging.example.net",
+            "http://[::1]:8000",
         ]
         for target in accepted:
             with self.subTest(target=target):
@@ -37,12 +53,25 @@ class StagingTargetTests(unittest.TestCase):
 
     def test_rejects_known_or_arbitrary_public_hosts(self) -> None:
         for target in [
-            "https://api.roboflow.com",
-            "https://video-processors.crusoe.roboflow.com",
-            "https://example.com",
+            "http://api.roboflow.com",
+            "http://video-processors.crusoe.roboflow.com",
+            "http://10.1.2.3:8000",
+            "http://mmp.video-proc.svc:8000",
+            "http://mmp-benchmark.roboflow.one",
+            "http://example.com",
         ]:
             with self.subTest(target=target):
-                with self.assertRaisesRegex(ValueError, "refusing non-staging"):
+                with self.assertRaisesRegex(ValueError, "refusing non-loopback"):
+                    validate_staging_url(target)
+
+    def test_rejects_dns_https_and_paths_even_on_loopback(self) -> None:
+        for target in [
+            "http://localhost:8000",
+            "https://127.0.0.1:8000",
+            "http://127.0.0.1:8000/proxy",
+        ]:
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError):
                     validate_staging_url(target)
 
 
@@ -89,14 +118,49 @@ class SpecTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "client_id"):
                 load_spec(path)
 
+    def test_rejects_unknown_experiment_metadata(self) -> None:
+        raw = {
+            "server_url": "http://127.0.0.1:8000",
+            "experiment": {"api_key": "must-not-be-serialized"},
+            "clients": [
+                {"tenant_id": "a", "api_key_env": "A", "model_id": "m"},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "spec.json"
+            path.write_text(json.dumps(raw))
+            with self.assertRaisesRegex(ValueError, "experiment metadata"):
+                load_spec(path)
+
     def test_instance_creates_distinct_mmp_routing_key(self) -> None:
         shared = ClientSpec("tenant-a", "KEY", "model")
         isolated = ClientSpec("tenant-a", "KEY", "model", instance="tenant-a")
         self.assertEqual(routing_key(shared), "model")
         self.assertEqual(routing_key(isolated), "model:tenant-a")
 
+    def test_rejects_hostname_that_only_contains_staging(self) -> None:
+        with self.assertRaisesRegex(ValueError, "refusing non-loopback"):
+            validate_staging_url("http://staging-attacker.invalid")
+
 
 class StatisticsTests(unittest.TestCase):
+    def test_recursive_report_redaction_removes_keys_from_values_and_keys(self) -> None:
+        secret = "super-secret-key"
+        value = {f"prefix-{secret}": [secret, {"nested": f"x-{secret}-y"}]}
+        rendered = json.dumps(_redact_value(value, (secret,)))
+        self.assertNotIn(secret, rendered)
+
+    def test_safe_error_redacts_api_key_from_body_and_exception(self) -> None:
+        secret = "super-secret-key"
+        self.assertNotIn(
+            secret,
+            _safe_error(500, f"reflected {secret}", None, secrets=(secret,)),
+        )
+        self.assertNotIn(
+            secret,
+            _safe_error(None, None, RuntimeError(secret), secrets=(secret,)),
+        )
+
     def test_latency_summary_interpolates_quantiles(self) -> None:
         summary = latency_summary([1.0, 2.0, 3.0, 4.0])
         self.assertEqual(summary["p50"], 2.5)
@@ -184,6 +248,45 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(evidence["mmp_pool_full_rejects_delta"], 2)
         self.assertEqual(evidence["model_deltas"]["m"]["inference_count_delta"], 20)
         self.assertEqual(evidence["model_deltas"]["m"]["batch_count_delta"], 5)
+
+    def test_report_records_exact_experiment_configuration(self) -> None:
+        spec = load_spec_from_dict(
+            {
+                "server_url": "http://127.0.0.1:8000",
+                "duration_s": 0.001,
+                "warmup_s": 0,
+                "sample_interval_s": 0.001,
+                "clients": [
+                    {
+                        "tenant_id": "tenant-a",
+                        "api_key_env": "TENANT_A_KEY",
+                        "model_id": "model",
+                    }
+                ],
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "TENANT_A_KEY": "secret",
+                "MMP_BENCHMARK_RUN_ID": "mmp-smoke-001",
+                "MMP_BENCHMARK_MODE": "mps",
+                "MMP_BENCHMARK_HARNESS_REVISION": "a" * 40,
+                "NVIDIA_MPS": "1",
+                "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE": "50",
+            },
+            clear=False,
+        ), patch(
+            "development.mmp_staging_benchmark.run_concurrent_clients._run_worker",
+            new=empty_async,
+        ), patch(
+            "development.mmp_staging_benchmark.run_concurrent_clients._metrics_sampler",
+            new=empty_metrics,
+        ):
+            report = asyncio.run(execute(spec, b"image"))
+        self.assertEqual(report["experiment"]["run_id"], "mmp-smoke-001")
+        self.assertEqual(report["experiment"]["mps_enabled"], "1")
+        self.assertEqual(report["experiment"]["mps_active_thread_percentage"], "50")
 
 
 class CapabilityProbeTests(unittest.TestCase):

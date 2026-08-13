@@ -106,7 +106,6 @@ COPY development/mmp_staging_benchmark/run_concurrent_clients.py /opt/mmp-benchm
 COPY development/mmp_staging_benchmark/spec.same-model.example.json /opt/mmp-benchmark/spec.same-model.example.json
 COPY development/mmp_staging_benchmark/spec.same-model-isolated.example.json /opt/mmp-benchmark/spec.same-model-isolated.example.json
 COPY development/mmp_staging_benchmark/spec.mixed-model.example.json /opt/mmp-benchmark/spec.mixed-model.example.json
-
 WORKDIR /app/inference_server
 EXPOSE 8000
 
