@@ -43,7 +43,7 @@ Do not repeat completed A or B points. The authoritative threaded results are:
 | A — original PyAV | c4, c8 | fail x2 | second failed point reached; A is complete |
 | B — v1.4 tensor PyAV | c1, c2 | pass x2 | c1 median 59.3825 FPS; c2 retains approximately 59 FPS per stream |
 | B — v1.4 tensor PyAV | c4 | fail x2 | 120.096/119.762 aggregate FPS, approximately 30 FPS per stream, p95 100 ms |
-| B — v1.4 tensor PyAV | c8 | next | run twice; it is B's second fail-fast point |
+| B — v1.4 tensor PyAV | c8 | fail x2 | r1 operational failure; clean r2 91.711 aggregate FPS and p95 250 ms; B is complete |
 | C — v1.4 tensor NVDEC | c1 | after B | re-run the decoder validity gate, then start its independent curve |
 | D/E/F — one process per job | c1/c2 topology gate | after C | use only rebuilt immutable overlays recorded in `JOB_PROCESS_MATRIX.md` |
 
@@ -129,9 +129,7 @@ The exact resume sequence is:
 
 1. deploy and verify the dedicated function plus Hosting rewrite;
 2. run the excluded short API/c1 control smoke;
-3. run B c8 r1, reconcile the exact worker, repeat the full preflight, then run
-   B c8 r2; c8 is B's second failed point if both repetitions fail, so do not
-   run B c12+ in that case;
+3. B c8 is complete and is the second failed point; do not run B c12+;
 4. roll C using the existing immutable B/C image and change only the decoder
    configuration; run C c1 twice only after CUDA/NVDEC validity is proven, then
    continue its stepped curve and stop after c1 failure or two failed points;
@@ -155,8 +153,24 @@ memory p95 `2.074 GB`, GPU p95 `12%`, framebuffer max `3524 MiB`, decoder
 `0%`, memory-copy p95 `1%`, and MediaMTX CPU p95 `0.021` cores. This rules out
 whole-pod CPU, memory, GPU, VRAM, decoder, relay CPU, and aggregate relay
 bandwidth saturation; it is direct evidence of reader/pipeline backpressure in
-the shared-process PyAV topology. Repeat c8 after exact-worker reconciliation
-to establish whether the operational failure reproduces.
+the shared-process PyAV topology. The reconciled repetition below separates
+that operational failure from the capacity result.
+
+The reconciled second repetition,
+`l40s-b-v14-pyav-c08-r2-20260813-connector-native-c08-r1`, completed without a
+pipeline loss and confirms the capacity boundary independently of the first
+run's failure. All eight jobs stayed on one processor with zero recovery,
+migration, or counter reset. It delivered `91.711 FPS` aggregate
+(`11.335`-`11.724 FPS` per stream), Jain fairness `0.999899`, cohort spread
+`3.4%`, and frame-latency p95 `250 ms`; the strict low-latency SLO therefore
+fails. Processor CPU p95 was `2.237` cores, memory p95 `2.044 GB`, GPU p95
+`17%`, framebuffer max `3524 MiB`, decoder `0%`, and memory-copy p95 `1%`.
+MediaMTX held all eight readers with zero packet loss/errors, used p95 `0.013`
+CPU cores, and sent at most approximately `1.512 MB/s`. This clean repetition
+again rules out aggregate pod, GPU, VRAM, or relay saturation and confirms B's
+strict maximum at c2. The recurring post-cancel stuck worker is a separate
+known lifecycle defect in this older image and is not counted as an in-window
+capacity failure.
 
 ## Immutable variants
 
