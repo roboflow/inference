@@ -6,8 +6,6 @@ managed-key proxy. Object-detection prompting uses the percent-of-image
 ``box_2d`` contract validated in the vlm-exam benchmark for Grok 4.5/4.6.
 """
 
-from __future__ import annotations
-
 import base64
 import json
 from functools import partial
@@ -69,9 +67,7 @@ GROK_MODELS = [
 
 MODEL_VERSION_IDS = [model["id"] for model in GROK_MODELS]
 
-MODEL_VERSION_METADATA = {
-    model["id"]: {"name": model["name"]} for model in GROK_MODELS
-}
+MODEL_VERSION_METADATA = {model["id"]: {"name": model["name"]} for model in GROK_MODELS}
 
 OBJECT_DETECTION_PROMPT_TEMPLATE = (
     "Detect all objects in this image. "
@@ -254,8 +250,9 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description=(
             "Optional reasoning effort passed to xAI as "
-            '`reasoning: {"effort": ...}`. When the model rejects the parameter, '
-            "the request is retried without reasoning."
+            '`reasoning: {"effort": ...}`. For requests with a direct xAI key, '
+            "the request is retried without reasoning when the model rejects "
+            "the parameter."
         ),
         examples=["low", "high"],
     )
@@ -772,9 +769,7 @@ def _extract_output_text(response_data: dict) -> str:
     return output_text
 
 
-def _image_content(
-    base64_image: str, *, media_type: str, detail: str = "auto"
-) -> dict:
+def _image_content(base64_image: str, *, media_type: str, detail: str = "auto") -> dict:
     return {
         "type": "input_image",
         "image_url": f"data:{media_type};base64,{base64_image}",
@@ -987,11 +982,7 @@ def prepare_object_detection_prompt(
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/png;base64,{base64_image}",
-                        "detail": "high",
-                    },
+                    _image_content(base64_image, media_type="image/png", detail="high"),
                     {"type": "input_text", "text": prompt_text},
                 ],
             }

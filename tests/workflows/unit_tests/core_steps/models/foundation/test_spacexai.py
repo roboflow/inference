@@ -1,3 +1,4 @@
+import base64
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -139,9 +140,10 @@ def test_prepare_object_detection_prompt_uses_percent_contract() -> None:
     assert content[1]["type"] == "input_text"
     assert "floats between 0 and 100" in content[1]["text"]
     assert "cat, dog" in content[1]["text"]
-    assert OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list="cat, dog") == content[1][
-        "text"
-    ]
+    assert (
+        OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list="cat, dog")
+        == content[1]["text"]
+    )
 
 
 def test_encode_image_for_task_uses_png_for_detection() -> None:
@@ -150,8 +152,6 @@ def test_encode_image_for_task_uses_png_for_detection() -> None:
     base64_image, width, height = encode_image_for_task(
         image, task_type="object-detection"
     )
-
-    import base64
 
     raw = base64.b64decode(base64_image)
     assert raw.startswith(PNG_MAGIC_BYTES)
@@ -162,8 +162,6 @@ def test_encode_image_for_task_uses_jpeg_for_caption() -> None:
     image = np.zeros((100, 200, 3), dtype=np.uint8)
 
     base64_image, width, height = encode_image_for_task(image, task_type="caption")
-
-    import base64
 
     raw = base64.b64decode(base64_image)
     assert raw.startswith(JPEG_MAGIC_BYTES)
