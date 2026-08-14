@@ -296,6 +296,86 @@ def test_run_method_for_openai_legacy_detections_output() -> None:
     assert np.allclose(result["predictions"].confidence, np.array([0.98, 0.97]))
 
 
+def test_run_method_for_spacexai_percent_box_2d_output() -> None:
+    # given - SpaceXAI Grok returns [x_min, y_min, x_max, y_max] as percentages 0-100
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((200, 100, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [10.0, 20.0, 50.0, 80.0], "label": "cat", "confidence": 0.9},
+  {"box_2d": [60.0, 10.0, 110.0, 40.0], "label": "dog"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="spacexai",
+        task_type="object-detection",
+    )
+
+    # then - second box x_max clamped to 100 before scaling to width=100
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [10, 40, 50, 160],
+                [60, 20, 100, 80],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([0.9, 1.0]))
+
+
+def test_run_method_for_spacexai_unknown_label_gets_class_id_minus_one() -> None:
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = '[{"box_2d": [0, 0, 50, 50], "label": "bird"}]'
+
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="spacexai",
+        task_type="object-detection",
+    )
+
+    assert result["error_status"] is False
+    assert np.allclose(result["predictions"].class_id, np.array([-1]))
+
+
+def test_run_method_for_spacexai_malformed_json() -> None:
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    result = block.run(
+        image=image,
+        vlm_output="not json",
+        classes=["cat"],
+        model_type="spacexai",
+        task_type="object-detection",
+    )
+
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
 def test_run_method_for_invalid_claude_and_gemini_output() -> None:
     # given
     block = VLMAsDetectorBlockV2()

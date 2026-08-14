@@ -179,3 +179,43 @@ def test_run_method_for_openai_legacy_detections_output_tensor_native() -> None:
     assert np.allclose(
         result["predictions"].confidence.cpu().numpy(), np.array([0.98, 0.97])
     )
+
+
+def test_run_method_for_spacexai_percent_box_2d_output_tensor_native() -> None:
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((200, 100, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [10.0, 20.0, 50.0, 80.0], "label": "cat", "confidence": 0.9},
+  {"box_2d": [60.0, 10.0, 110.0, 40.0], "label": "dog"}
+]
+    """
+
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="spacexai",
+        task_type="object-detection",
+    )
+
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], Detections)
+    assert _class_names(result["predictions"]) == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id.cpu().numpy(), np.array([0, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy.cpu().numpy(),
+        np.array(
+            [
+                [10, 40, 50, 160],
+                [60, 20, 100, 80],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(
+        result["predictions"].confidence.cpu().numpy(), np.array([0.9, 1.0])
+    )
