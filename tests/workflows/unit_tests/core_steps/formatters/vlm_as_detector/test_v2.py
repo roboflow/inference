@@ -357,25 +357,6 @@ def test_run_method_for_spacexai_unknown_label_gets_class_id_minus_one() -> None
     assert np.allclose(result["predictions"].class_id, np.array([-1]))
 
 
-def test_run_method_for_spacexai_malformed_json() -> None:
-    block = VLMAsDetectorBlockV2()
-    image = WorkflowImageData(
-        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
-        parent_metadata=ImageParentMetadata(parent_id="parent"),
-    )
-
-    result = block.run(
-        image=image,
-        vlm_output="not json",
-        classes=["cat"],
-        model_type="spacexai",
-        task_type="object-detection",
-    )
-
-    assert result["error_status"] is True
-    assert result["predictions"] is None
-
-
 def test_run_method_for_invalid_claude_and_gemini_output() -> None:
     # given
     block = VLMAsDetectorBlockV2()

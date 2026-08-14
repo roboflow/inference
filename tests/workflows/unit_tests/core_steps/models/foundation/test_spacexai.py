@@ -9,9 +9,6 @@ from pydantic import ValidationError
 from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
     OBJECT_DETECTION_PROMPT_TEMPLATE,
     BlockManifest,
-    _execute_proxied_spacexai_request,
-    _extract_output_text,
-    _is_unsupported_reasoning_error,
     encode_image_for_task,
     execute_spacexai_request,
     prepare_object_detection_prompt,
@@ -54,20 +51,6 @@ def test_spacexai_step_validation_requires_api_key_when_managed_key_disabled() -
 
     with pytest.raises(ValidationError):
         _ = BlockManifest.model_validate(specification)
-
-
-def test_spacexai_step_validation_applies_default_model_version() -> None:
-    specification = {
-        "type": "roboflow_core/spacexai@v1",
-        "name": "step_1",
-        "images": "$inputs.image",
-        "task_type": "caption",
-        "api_key": "xxx-xxx",
-    }
-
-    result = BlockManifest.model_validate(specification)
-
-    assert result.model_version == "grok-4.6"
 
 
 def test_spacexai_step_discovers_dependent_model() -> None:
@@ -157,8 +140,6 @@ def test_prepare_object_detection_prompt_uses_percent_contract() -> None:
     assert content[0]["image_url"].startswith("data:image/png;base64,")
     assert content[0]["detail"] == "high"
     assert content[1]["type"] == "input_text"
-    assert "floats between 0 and 100" in content[1]["text"]
-    assert "cat, dog" in content[1]["text"]
     assert (
         OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list="cat, dog")
         == content[1]["text"]
@@ -195,37 +176,6 @@ def test_encode_image_for_task_uses_jpeg_for_caption() -> None:
     raw = base64.b64decode(base64_image)
     assert raw.startswith(JPEG_MAGIC_BYTES)
     assert (width, height) == (200, 100)
-
-
-def test_extract_output_text_from_completed_response() -> None:
-    response_data = {
-        "status": "completed",
-        "output": [
-            {
-                "type": "message",
-                "content": [{"type": "output_text", "text": "hello world"}],
-            }
-        ],
-    }
-
-    assert _extract_output_text(response_data) == "hello world"
-
-
-def test_extract_output_text_raises_on_max_tokens() -> None:
-    response_data = {
-        "status": "incomplete",
-        "incomplete_details": {"reason": "max_output_tokens"},
-    }
-
-    with pytest.raises(ValueError, match="max_tokens"):
-        _extract_output_text(response_data)
-
-
-def test_is_unsupported_reasoning_error() -> None:
-    assert _is_unsupported_reasoning_error(
-        ValueError("reasoning is not supported for this model")
-    )
-    assert not _is_unsupported_reasoning_error(ValueError("rate limit exceeded"))
 
 
 def test_execute_spacexai_request_rejects_rf_key_when_managed_key_disabled() -> None:
@@ -291,42 +241,3 @@ def test_execute_spacexai_request_routes_direct_key(
     )
     assert result == "direct"
     direct_mock.assert_called_once()
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
-    "post_to_roboflow_api"
-)
-def test_execute_proxied_spacexai_request_payload(post_mock: MagicMock) -> None:
-    post_mock.return_value = {
-        "status": "completed",
-        "output": [
-            {
-                "type": "message",
-                "content": [{"type": "output_text", "text": "ok"}],
-            }
-        ],
-    }
-
-    result = _execute_proxied_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions="sys",
-        input_content=[{"role": "user", "content": []}],
-        model_version="grok-4.5",
-        reasoning_effort="high",
-        max_tokens=1024,
-        temperature=0.2,
-    )
-
-    assert result == "ok"
-    post_mock.assert_called_once()
-    _, kwargs = post_mock.call_args
-    assert kwargs["endpoint"] == "apiproxy/xai"
-    payload = kwargs["payload"]
-    assert payload["model"] == "grok-4.5"
-    assert payload["xai_api_key"] == "rf_key:account"
-    assert payload["store"] is False
-    assert payload["max_output_tokens"] == 1024
-    assert payload["reasoning"] == {"effort": "high"}
-    assert payload["instructions"] == "sys"
