@@ -10,7 +10,7 @@ Triggers when a PR touches:
 - `inference/core/workflows/core_steps/**` — Roboflow Core plugin blocks (`{category}/{block}/v{N}.py`, `common/`, `common/query_language/**`, `loader.py`).
 - `inference/core/workflows/execution_engine/entities/types.py` — only when a NEW **kind** is added for a block (review it alongside the block).
 
-OUT of scope (other skills own these): Execution Engine internals under `inference/core/workflows/execution_engine/v1/**` (compiler, executor, output_constructor — `review-workflows-execution-engine`); model backends under `inference_models/`; the tensor-data-representation `_tensor` sibling pivot on `mvp/new-inference-pipeline`. This skill covers the **stable numpy/`sv.Detections` blocks on `main`**. UQL / `common/query_language/**` has no dedicated skill, so it IS reviewed here (see the query-language standard below).
+OUT of scope (other skills own these): Execution Engine internals under `inference/core/workflows/execution_engine/v1/**` (compiler, executor, output_constructor — `review-workflows-execution-engine`); model backends under `inference_models/`. Since the tensor-data-representation merge (#2357), the `vN_tensor.py` siblings ARE in scope here — review them with the *Tensor-native parity* items below; authoring-side counterpart: `create-workflow-block`. UQL / `common/query_language/**` has no dedicated skill, so it IS reviewed here (see the query-language standard below).
 
 ## Review checklist
 Severity: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** = optional. Each item maps to one canonical rule in `## Standards` below.
@@ -26,8 +26,18 @@ Severity: **BLOCK** = must fix before merge; **FLAG** = raise it; **NIT** = opti
 9. **FLAG — Cross-block kinds**: output kinds upstream ⊆ input kinds accepted downstream (esp. detections/segmentation/keypoint interplay).
 10. **FLAG — Model-version changes** update defaults/enums (not silent deletion) and keep old identifiers loadable.
 11. **FLAG — Batch handling** for model/foundation blocks: `run` iterates `Batch[...]` correctly and declares `get_parameters_accepting_batches()`.
+11a. **FLAG — Dependent-resource declaration**: any block that loads a model or external resource overrides `discover_dependent_resources()` (helpers `roboflow_platform_model()` / `third_party_model()`) so resource discovery and model pre-loading see it. A general block contract — not tensor-specific; a missing declaration means video pipelines pay the cold model load on the first frame.
 12. **FLAG — UQL correctness over speed**: be skeptical of micro-optimizations to `common/query_language/**` ops that change behavior (#1112/#1161/#1162 were reverted).
 13. **NIT — Field metadata**: new inputs have `title`/`description`/`examples`; `default=` correct (no stray `default=None` on required fields); `json_schema_extra` (`relevant_for`, `always_visible`) sensible.
+
+### Tensor-native parity (blocks with `vN_tensor.py` siblings)
+14. **BLOCK — Sibling drift**: a PR editing a numpy block's behavior without the mirrored edit in its `_tensor` sibling (or vice versa) is a finding — main-merge compensation sweeps found dozens of drifted siblings; drift ships divergent flag-on behavior silently.
+15. **BLOCK — Manifest surface identical across flags**: field set, supported variants, batch-parameter declarations, AND output-kind list **order** must match between siblings — serializer selection is first-kind-that-serializes-wins, so kind-order divergence changes the wire payload per deployment flag (instance-seg v1–v3 RLE-vs-polygon lesson).
+16. **BLOCK — Both-sibling companions**: general contracts hold on BOTH manifests — `discover_dependent_resources()` (the general rule is 11a; the tensor trap is that a numpy-side-only declaration silently disappears flag-on and pre-loading skips the block); sink siblings both honor `disable_sinks`.
+17. **BLOCK — Host-mirror hygiene**: any tensor sibling rewriting `xyxy`/`class_id`/`confidence` strips the per-box host mirror (`strip_host_mirror_metadata`/`HOST_MIRROR_KEYS`) — a carried mirror makes downstream visualizations draw stale geometry with no error.
+18. **FLAG — Mutation declarations**: every `copy_image=False` in-place draw calls `declare_numpy_image_mutated()`/`declare_tensor_image_mutated()` — including NEW mainline blocks arriving via merge without the retrofit (label v2 / rich_label class).
+19. **FLAG — CPU-only import safety**: every module registered in the flag-on loader branch must import without CUDA (no module-level device initialization); the flag-on suite runs on CPU-only CI runners.
+20. **FLAG — Flag-off registration is frozen**: the loader's flag-off block list and import bindings must stay byte-identical to pre-tensor `main` behavior — flag-off is the compatibility contract; any flag-off divergence riding a tensor PR is a finding.
 
 ### Not blocking
 - Do NOT demand an `inference/core/version.py` bump — inference releases are versioned separately from feature/bugfix PRs.
@@ -54,6 +64,7 @@ The one canonical statement of each rule. Past regressions are cited inline; see
 - **Visualization blocks are fragile across supervision versions**: verify against the pinned supervision public API, not internals (#814/#811/#1868 — label/line regressions; #1725/#1951 — sv 0.27.0 handling).
 - **Query language (UQL)**: `common/query_language/**` ops must preserve exact behavior; reject micro-optimizations that alter results (#1112/#1161/#1162 — automated speed-up PRs reverted).
 - **Rich `Field` metadata**: `title`, `description`, `examples`, and `json_schema_extra` (`relevant_for`, `always_visible`) drive the FE app; block docs are generated from these (#623/#704; #2058 — property options propagated to FE).
+- **Tensor-sibling contract** (#2357): siblings are standalone verbatim re-implementations against native objects — no delegation/method-binding to the numpy manifest (wholesale subclassing OK). Same-name registration in the loader's flag-on branch; the flag swaps implementations, never the registry (block-name lists identical both directions). Testing convention: per-file `_TENSOR_ONLY`/`_NUMPY_ONLY` skipif markers, mirrored assertions, and the shared `image_as_workflow_input` integration fixture parametrizing image inputs as numpy AND `torch.Tensor` — new tensor-native integration tests should take it.
 
 ## Required companions
 Block a functional change that lacks these (canonical rules above; conditions here):

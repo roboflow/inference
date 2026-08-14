@@ -31,6 +31,9 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import AutoModel
 from inference_models.models.sam3.sam3_torch import SAM3Torch
 
@@ -76,9 +79,15 @@ class InferenceModelsSAM3Adapter(Model):
             backend=backend,
             **kwargs,
         )
+        self.image_size = int(
+            getattr(self._model, "image_size", None)
+            or getattr(self._model, "_image_size", None)
+            or 1008
+        )
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam3InferenceRequest):
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam3SegmentationRequest):
             return self.segment_image(

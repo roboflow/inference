@@ -9,6 +9,6 @@
 # weights (L4, 2026-07-20). Replace with pypi version pins once released --
 # git direct-URL deps cannot ship in the pypi extras (see .release/pypi/*.setup.py),
 # so this file is intentionally NOT wired into extras_require yet.
-transformers @ git+https://github.com/huggingface/transformers.git@cbf4d720ec734edb77d25452b2790c7e4be2f8d7
+# THIS FILE IS FOR EXAMPLE INSTALLATION ONLY, we are shipping diffusers 0.39.0 in clean bulds now
+# to make basic Cosmos 3 compatibility to work.
 diffusers @ git+https://github.com/huggingface/diffusers.git@86e6dac5360703ddf09fe250db50be667eb93662
-sentencepiece>=0.2.1,<0.3.0
