@@ -52,6 +52,12 @@ MODEL_ALIASES = {
 
 GEMINI_MODELS = [
     {
+        "id": "gemini-3.7-flash",
+        "name": "Gemini 3.7 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
         "id": "gemini-3.6-flash",
         "name": "Gemini 3.6 Flash",
         "supports_thinking_level": True,

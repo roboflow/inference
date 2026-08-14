@@ -31,6 +31,9 @@ from inference.core.env import (
     SAM3_MAX_LOGITS_CACHE_SIZE,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
+from inference.core.managers.sam3_metrics import (
+    record_sam3_visual_segment_embedding_cache_outcome,
+)
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_rgb
@@ -230,7 +233,12 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             except ModelInputError as error:
                 if "no embeddings were found in the cache" not in str(error):
                     raise
+                record_sam3_visual_segment_embedding_cache_outcome("miss")
                 prediction = None
+            else:
+                record_sam3_visual_segment_embedding_cache_outcome("hit")
+        else:
+            record_sam3_visual_segment_embedding_cache_outcome("not_attempted")
         if prediction is None:
             loaded_image = self.preproc_image(image)
             prediction = self._model.segment_with_visual_prompts(
