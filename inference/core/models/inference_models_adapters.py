@@ -238,6 +238,16 @@ class InferenceModelsObjectDetectionAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -429,6 +439,29 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             return bool(supports_stream_pipeline())
         return bool(supports_stream_pipeline)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[InstanceDetections]:
+        enforce_dense_masks = (
+            False
+            if GCP_SERVERLESS
+            else kwargs.get("enforce_dense_masks_in_inference_models", False)
+        )
+        if not enforce_dense_masks and "rle" not in self._model.supported_mask_formats:
+            raise PostProcessingError(
+                "RLE masks are required on the tensor-native instance-segmentation "
+                "path (enforce_dense_masks_in_inference_models is False) but the loaded "
+                f"model only supports mask formats {self._model.supported_mask_formats}. "
+                "Either use a model that supports 'rle' or set "
+                "enforce_dense_masks_in_inference_models=True to receive dense masks."
+            )
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -443,6 +476,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 "enforce_dense_masks_in_inference_models",
                 False,
             )
+        # Consumed here — must not leak into the model call, whose deeper
+        # pre/post stages do not accept arbitrary kwargs.
+        kwargs.pop("enforce_dense_masks_in_inference_models", None)
         kwargs["pre_processing_overrides"] = pre_processing_overrides
         if (
             "rle" in self._model.supported_mask_formats
@@ -1070,6 +1106,17 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+        self.key_points_classes = list(self._model.key_points_classes)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -1279,6 +1326,16 @@ class InferenceModelsClassificationAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -1311,7 +1368,7 @@ class InferenceModelsClassificationAdapter(Model):
 
     def postprocess(
         self,
-        predictions: Tuple[List[KeyPoints], Optional[List[Detections]]],
+        predictions: torch.Tensor,
         returned_metadata: List[Tuple[int, int]],
         **kwargs,
     ) -> Union[
@@ -1610,6 +1667,16 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         # match segment.roboflow.com
         return {str(k): v for k, v in enumerate(self.class_names)}
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[SemanticSegmentationResult]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -1757,6 +1824,33 @@ class InferenceModelsDepthEstimationAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        depth_maps = self._model(images, **kwargs)
+        # Models behind this adapter (YOLO26-depth) emit metric depth, where
+        # larger means FARTHER. The tensor-native depth contract mirrors the
+        # DepthAnything adapters: raw per-image maps in which larger means
+        # CLOSER, with the caller (depth-estimation block) applying
+        # `(map - min) / (max - min)` itself. Negate so that formula reproduces
+        # this adapter's numpy-path `(max - map) / (max - min)` exactly.
+        return [-depth_map for depth_map in depth_maps]
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
+        return kwargs
 
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):

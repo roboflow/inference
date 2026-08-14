@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 from pydantic import ValidationError
 
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.visualizations.common.fonts import (
     FONTS_REGISTRY,
 )
@@ -10,9 +12,27 @@ from inference.core.workflows.core_steps.visualizations.rich_label.v1 import (
     RichLabelManifest,
     RichLabelVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.rich_label.v1_tensor import (
+    RichLabelVisualizationBlockV1 as RichLabelVisualizationBlockV1Tensor,
+)
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
+)
+from inference_models.models.base.object_detection import Detections as NativeDetections
+
+# The loader binds `_tensor` siblings under the same names when
+# ENABLE_TENSOR_DATA_REPRESENTATION is set - hence the flag-opposed
+# _NUMPY_ONLY / _TENSOR_ONLY split below.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="loader binds the tensor-native sibling under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -168,12 +188,26 @@ def test_manifest_font_family_enum_matches_fonts_registry() -> None:
     }
 
 
+@_NUMPY_ONLY
 def test_rich_label_block_is_registered_in_loader() -> None:
     # given
     from inference.core.workflows.core_steps.loader import load_blocks
 
     # then
     assert RichLabelVisualizationBlockV1 in load_blocks()
+
+
+@_TENSOR_ONLY
+def test_rich_label_tensor_block_is_registered_in_loader() -> None:
+    # given
+    from inference.core.workflows.core_steps.loader import load_blocks
+
+    # when
+    blocks = load_blocks()
+
+    # then
+    assert RichLabelVisualizationBlockV1Tensor in blocks
+    assert RichLabelVisualizationBlockV1 not in blocks
 
 
 def test_rich_label_visualization_block(bundled_fonts) -> None:
@@ -285,4 +319,153 @@ def test_rich_label_visualization_block_with_max_line_length(bundled_fonts) -> N
     # then
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((400, 400, 3), dtype=np.uint8)
+    )
+
+
+def _build_native_predictions(class_names=("person", "car")) -> NativeDetections:
+    boxes = [[10 + 120 * i, 10, 100 + 120 * i, 100] for i in range(len(class_names))]
+
+    return NativeDetections(
+        xyxy=torch.tensor(boxes, dtype=torch.float32),
+        class_id=torch.arange(len(class_names), dtype=torch.long),
+        confidence=torch.full((len(class_names),), 0.9, dtype=torch.float32),
+        image_metadata={
+            CLASS_NAMES_KEY: {i: name for i, name in enumerate(class_names)}
+        },
+    )
+
+
+def _run_tensor_block(block: RichLabelVisualizationBlockV1Tensor, **overrides):
+    kwargs = {
+        "image": _build_image(),
+        "predictions": _build_native_predictions(),
+        "copy_image": True,
+        "color_palette": "DEFAULT",
+        "palette_size": 10,
+        "custom_colors": None,
+        "color_axis": "CLASS",
+        "text": "Class",
+        "text_position": "TOP_LEFT",
+        "text_color": "WHITE",
+        "font_family": "geist_mono",
+        "text_size_mode": "Manual",
+        "font_size": 14,
+        "text_padding": 10,
+        "border_radius": 0,
+        "max_line_length": None,
+    }
+    kwargs.update(overrides)
+
+    return block.run(**kwargs)
+
+
+@_TENSOR_ONLY
+def test_rich_label_visualization_block_tensor_native(bundled_fonts) -> None:
+    # given
+    block = RichLabelVisualizationBlockV1Tensor()
+
+    # when
+    output = _run_tensor_block(block)
+
+    # then
+    assert output is not None
+    assert "image" in output
+    assert hasattr(output.get("image"), "numpy_image")
+    assert output.get("image").numpy_image.shape == (400, 400, 3)
+    assert output.get("image").numpy_image.dtype == np.uint8
+    assert not np.array_equal(
+        output.get("image").numpy_image, np.zeros((400, 400, 3), dtype=np.uint8)
+    ), "Image should be modified by label rendering"
+
+
+@_TENSOR_ONLY
+def test_rich_label_tensor_native_output_matches_numpy_block(bundled_fonts) -> None:
+    # given - the same frame and semantically-identical predictions in both
+    # representations; the tensor sibling must reproduce the numpy block's
+    # rendering byte-for-byte (it reuses the numpy drawing internals).
+    numpy_block = RichLabelVisualizationBlockV1()
+    tensor_block = RichLabelVisualizationBlockV1Tensor()
+
+    # when
+    numpy_output = _run_block(numpy_block, text_size_mode="Automatic")
+    tensor_output = _run_tensor_block(tensor_block, text_size_mode="Automatic")
+
+    # then
+    assert np.array_equal(
+        numpy_output["image"].numpy_image, tensor_output["image"].numpy_image
+    )
+
+
+@_TENSOR_ONLY
+def test_rich_label_visualization_block_tensor_native_raises_on_unknown_font() -> None:
+    # given - an unknown font id may reach run() through an input selector
+    block = RichLabelVisualizationBlockV1Tensor()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        _ = _run_tensor_block(block, font_family="comic_sans")
+
+    # then
+    assert "comic_sans" in str(error.value)
+
+
+@_TENSOR_ONLY
+def test_rich_label_visualization_block_with_empty_detections_tensor_native() -> None:
+    # given
+    block = RichLabelVisualizationBlockV1Tensor()
+    empty_predictions = NativeDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+    )
+
+    # when
+    output = _run_tensor_block(block, predictions=empty_predictions)
+
+    # then
+    assert output.get("image").numpy_image.shape == (400, 400, 3)
+    assert np.array_equal(
+        output.get("image").numpy_image, np.zeros((400, 400, 3), dtype=np.uint8)
+    ), "Image should be unmodified when there are no detections"
+
+
+@_TENSOR_ONLY
+def test_rich_label_tensor_native_empty_predictions_passthrough_is_device_resident() -> (
+    None
+):
+    # given - a tensor-source image and an empty prediction: the sibling must
+    # pass the tensor representation through without materialising numpy
+    block = RichLabelVisualizationBlockV1Tensor()
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        tensor_image=torch.zeros((3, 240, 320), dtype=torch.uint8),
+    )
+    empty_predictions = NativeDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+    )
+
+    # when
+    copied_output = _run_tensor_block(
+        block, image=image, predictions=empty_predictions, copy_image=True
+    )
+    shared_output = _run_tensor_block(
+        block, image=image, predictions=empty_predictions, copy_image=False
+    )
+
+    # then
+    assert image._numpy_image is None, "passthrough must not materialise numpy"
+    for output in [copied_output, shared_output]:
+        assert output["image"].is_tensor_materialised() is True
+        assert output["image"]._numpy_image is None
+        assert torch.equal(output["image"].tensor_image, image.tensor_image)
+    # copy semantics: independent storage when copy_image=True, shared otherwise
+    assert (
+        copied_output["image"].tensor_image.data_ptr()
+        != image.tensor_image.data_ptr()
+    )
+    assert (
+        shared_output["image"].tensor_image.data_ptr()
+        == image.tensor_image.data_ptr()
     )

@@ -2,6 +2,7 @@ from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
+import torch
 from PIL import Image
 
 from inference.core.entities.responses.inference import (
@@ -51,6 +52,13 @@ class InferenceModelsMoondream2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        return self._model.detect(images=images, **kwargs)
 
     def preprocess(self, image: Any, **kwargs):
         is_batch = isinstance(image, list)

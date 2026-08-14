@@ -31,6 +31,9 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import AutoModel
 from inference_models.models.sam3.sam3_torch import SAM3Torch
 
@@ -76,9 +79,15 @@ class InferenceModelsSAM3Adapter(Model):
             backend=backend,
             **kwargs,
         )
+        self.image_size = int(
+            getattr(self._model, "image_size", None)
+            or getattr(self._model, "_image_size", None)
+            or 1008
+        )
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam3InferenceRequest):
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam3SegmentationRequest):
             return self.segment_image(
@@ -90,6 +99,20 @@ class InferenceModelsSAM3Adapter(Model):
                 inference_start_timestamp=t1,
             )
         raise ValueError(f"Invalid request type {type(request)}")
+
+    def run_tensor_native_inference(self, **kwargs) -> List[List[Dict]]:
+        """Minimal tensor-native bridge to the inference_models SAM3 model function.
+
+        Forwards straight to ``SAM3Torch.segment_with_text_prompts`` — the library
+        model function — which accepts CHW image tensors directly (its
+        ``_normalize_to_hwc_uint8`` transposes channels-first to HWC and rescales).
+        The workflow block passes ``images`` (tensor) / ``prompts`` /
+        ``output_prob_thresh`` as kwargs and owns all downstream shaping (per-prompt
+        threshold, cross-prompt NMS, InstanceDetections build); this method performs
+        none of the ``load_image_rgb`` / polygon-RLE response work that
+        ``segment_image`` does.
+        """
+        return self._model.segment_with_text_prompts(**kwargs)
 
     def segment_image(
         self,

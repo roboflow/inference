@@ -18,9 +18,15 @@ from typing import (
 
 import cv2
 import numpy as np
+import torch
 from pydantic import BaseModel, Field
+from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+)
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
     encode_image_to_jpeg_bytes,
@@ -264,6 +270,31 @@ class ImageParentMetadata:
 
 
 class WorkflowImageData:
+    """Container hosting the image in one of several representations, materialised
+    lazily on access.
+
+    Layout contract:
+      * ``numpy_image``: HWC uint8 BGR (cv2 native); 2-D ``(H, W)`` for
+        single-channel images (grayscale / threshold outputs).
+      * ``tensor_image``: CHW uint8 RGB on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``;
+        ``(1, H, W)`` for single-channel images. Single-channel data carries no
+        BGR/RGB semantics, so it is never channel-reversed in either direction.
+
+    Mutation contract: representations may be cached simultaneously (fan-out
+    readers alternate between them for free) and are exposed as the raw mutable
+    buffers - legacy blocks mutate ``numpy_image`` in place (e.g. visualizations
+    with ``copy_image=False``) and the class does not police that. A client
+    that mutates a representation in place MUST fetch the buffer via the
+    property, mutate it, and then declare the mutation via
+    ``declare_numpy_image_mutated()`` / ``declare_tensor_image_mutated()``.
+    Declaring makes the mutated representation the SOLE source of truth: the
+    derived sibling caches are removed so later readers re-derive from the
+    mutated pixels, and the original source (base64 string / file / URL
+    reference) is cut off as well - it no longer describes the pixels, so
+    serialization must never hand it out. A ``base64_image`` access AFTER the
+    declare re-encodes from the mutated pixels - that re-derived value is
+    valid and cached again. Undeclared in-place mutation leaves sibling caches
+    stale."""
 
     def __init__(
         self,
@@ -273,8 +304,14 @@ class WorkflowImageData:
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
         video_metadata: Optional[VideoMetadata] = None,
+        tensor_image: Optional[torch.Tensor] = None,
     ):
-        if not base64_image and numpy_image is None and not image_reference:
+        if (
+            not base64_image
+            and numpy_image is None
+            and not image_reference
+            and tensor_image is None
+        ):
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
         self._parent_metadata = parent_metadata
         self._workflow_root_ancestor_metadata = (
@@ -285,7 +322,17 @@ class WorkflowImageData:
         self._image_reference = image_reference
         self._base64_image = base64_image
         self._numpy_image = numpy_image
+        self._tensor_image = (
+            tensor_image.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+            if tensor_image is not None
+            else None
+        )
         self._video_metadata = video_metadata
+        # Flipped by declare_*_image_mutated(): once an in-place mutation is
+        # declared, the original base64/reference sources no longer describe
+        # the pixels and must never be decoded again (see the guard in the
+        # image properties).
+        self._sources_invalidated_by_mutation = False
 
     @classmethod
     def copy_and_replace(
@@ -300,10 +347,11 @@ class WorkflowImageData:
         * image_reference
         * base64_image
         * numpy_image
+        * tensor_image
         * video_metadata
 
-        When more than one from ["numpy_image", "base64_image", "image_reference"] args are
-        given, they MUST be compliant.
+        When more than one from ["numpy_image", "base64_image", "image_reference", "tensor_image"]
+        args are given, they MUST be compliant.
         """
         parent_metadata = origin_image_data._parent_metadata
         workflow_root_ancestor_metadata = (
@@ -312,11 +360,16 @@ class WorkflowImageData:
         image_reference = origin_image_data._image_reference
         base64_image = origin_image_data._base64_image
         numpy_image = origin_image_data._numpy_image
+        tensor_image = origin_image_data._tensor_image
         video_metadata = origin_image_data._video_metadata
-        if any(k in kwargs for k in ["numpy_image", "base64_image", "image_reference"]):
+        if any(
+            k in kwargs
+            for k in ["numpy_image", "base64_image", "image_reference", "tensor_image"]
+        ):
             numpy_image = kwargs.get("numpy_image")
             base64_image = kwargs.get("base64_image")
             image_reference = kwargs.get("image_reference")
+            tensor_image = kwargs.get("tensor_image")
         if "parent_metadata" in kwargs:
             if workflow_root_ancestor_metadata is parent_metadata:
                 workflow_root_ancestor_metadata = kwargs["parent_metadata"]
@@ -333,6 +386,7 @@ class WorkflowImageData:
             image_reference=image_reference,
             base64_image=base64_image,
             numpy_image=numpy_image,
+            tensor_image=tensor_image,
             video_metadata=video_metadata,
         )
 
@@ -383,15 +437,63 @@ class WorkflowImageData:
             video_metadata=video_metadata,
         )
 
+    @classmethod
+    def create_crop_from_tensor(
+        cls,
+        origin_image_data: "WorkflowImageData",
+        crop_identifier: str,
+        cropped_tensor_image: torch.Tensor,
+        offset_x: int,
+        offset_y: int,
+        preserve_video_metadata: bool = False,
+    ) -> "WorkflowImageData":
+        """
+        Tensor-native mirror of `create_crop`. Identical metadata math;
+        the child carries `tensor_image` instead of `numpy_image`.
+        """
+        origin_h, origin_w = origin_image_data._read_shape_without_materialization()
+        parent_metadata = ImageParentMetadata(
+            parent_id=crop_identifier,
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=offset_x,
+                left_top_y=offset_y,
+                origin_width=origin_w,
+                origin_height=origin_h,
+            ),
+        )
+        workflow_root_ancestor_coordinates = replace(
+            origin_image_data.workflow_root_ancestor_metadata.origin_coordinates,
+            left_top_x=origin_image_data.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
+            + offset_x,
+            left_top_y=origin_image_data.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
+            + offset_y,
+        )
+        workflow_root_ancestor_metadata = ImageParentMetadata(
+            parent_id=origin_image_data.workflow_root_ancestor_metadata.parent_id,
+            origin_coordinates=workflow_root_ancestor_coordinates,
+        )
+        video_metadata = None
+        if preserve_video_metadata and origin_image_data._video_metadata is not None:
+            video_metadata = copy(origin_image_data._video_metadata)
+            video_metadata.video_identifier = (
+                f"{video_metadata.video_identifier} | crop: {crop_identifier}"
+            )
+        return WorkflowImageData(
+            parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+            tensor_image=cropped_tensor_image,
+            video_metadata=video_metadata,
+        )
+
     @property
     def parent_metadata(self) -> ImageParentMetadata:
         if self._parent_metadata.origin_coordinates is None:
-            numpy_image = self.numpy_image
+            h, w = self._read_shape_without_materialization()
             origin_coordinates = OriginCoordinatesSystem(
                 left_top_y=0,
                 left_top_x=0,
-                origin_width=numpy_image.shape[1],
-                origin_height=numpy_image.shape[0],
+                origin_width=w,
+                origin_height=h,
             )
             self._parent_metadata = replace(
                 self._parent_metadata, origin_coordinates=origin_coordinates
@@ -401,12 +503,12 @@ class WorkflowImageData:
     @property
     def workflow_root_ancestor_metadata(self) -> ImageParentMetadata:
         if self._workflow_root_ancestor_metadata.origin_coordinates is None:
-            numpy_image = self.numpy_image
+            h, w = self._read_shape_without_materialization()
             origin_coordinates = OriginCoordinatesSystem(
                 left_top_y=0,
                 left_top_x=0,
-                origin_width=numpy_image.shape[1],
-                origin_height=numpy_image.shape[0],
+                origin_width=w,
+                origin_height=h,
             )
             self._workflow_root_ancestor_metadata = replace(
                 self._workflow_root_ancestor_metadata,
@@ -414,13 +516,54 @@ class WorkflowImageData:
             )
         return self._workflow_root_ancestor_metadata
 
+    def _read_shape_without_materialization(self) -> Tuple[int, int]:
+        """Returns (height, width). Prefers whichever representation is already
+        set, so no numpy<->tensor conversion is ever triggered. When neither is
+        materialised yet (a base64/reference-born image), the source is decoded
+        into the representation the current mode works with - tensor under
+        ENABLE_TENSOR_DATA_REPRESENTATION (every caller of this helper is a
+        tensor-mode block that will need the tensor anyway), numpy otherwise -
+        so the shape read does not leave behind a representation the run has no
+        use for."""
+        if self._numpy_image is not None:
+            return self._numpy_image.shape[0], self._numpy_image.shape[1]
+        if self._tensor_image is not None:
+            # tensor_image is CHW -> H=shape[1], W=shape[2]
+            return (
+                int(self._tensor_image.shape[1]),
+                int(self._tensor_image.shape[2]),
+            )
+        if ENABLE_TENSOR_DATA_REPRESENTATION:
+            tensor = self.tensor_image
+            return int(tensor.shape[1]), int(tensor.shape[2])
+        np_img = self.numpy_image
+        return np_img.shape[0], np_img.shape[1]
+
     @property
     def numpy_image(self) -> np.ndarray:
+        # Layout + mutation contract: see the class docstring. In-place mutators
+        # of the returned buffer must call declare_numpy_image_mutated().
         if self._numpy_image is not None:
             return self._numpy_image
+        if self._tensor_image is not None:
+            if int(self._tensor_image.shape[0]) == 1:
+                # Single-channel: (1, H, W) -> (H, W), no channel reversal.
+                self._numpy_image = (
+                    self._tensor_image.detach().squeeze(0).to("cpu").numpy().copy()
+                )
+            else:
+                # CHW RGB -> HWC (permute on-device before host transfer) -> BGR
+                hwc_rgb = self._tensor_image.detach().permute(1, 2, 0).to("cpu").numpy()
+                self._numpy_image = hwc_rgb[:, :, ::-1].copy()
+            return self._numpy_image
         if self._base64_image:
+            # Post-mutation this can only be a RE-DERIVED base64 (the declare
+            # nulls the original and base64_image re-encodes from the mutated
+            # pixels), so decoding it is always valid - the staleness guard
+            # only covers the reference branch below.
             self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
             return self._numpy_image
+        self._ensure_original_sources_usable()
         if self._image_reference.startswith(
             "http://"
         ) or self._image_reference.startswith("https://"):
@@ -428,6 +571,139 @@ class WorkflowImageData:
         else:
             self._numpy_image = cv2.imread(self._image_reference)
         return self._numpy_image
+
+    @property
+    def tensor_image(self) -> torch.Tensor:
+        # Layout + mutation contract: see the class docstring. In-place mutators
+        # of the returned tensor must call declare_tensor_image_mutated().
+        if self._tensor_image is not None:
+            return self._tensor_image
+        if self._numpy_image is not None:
+            bgr_np = self._numpy_image
+            if bgr_np.ndim == 2:
+                # Single-channel (grayscale / threshold outputs): (H, W) ->
+                # (1, H, W), no channel reversal - there is no BGR/RGB
+                # semantics to convert. `.copy()` so the tensor owns its buffer:
+                # without it a CPU grayscale tensor aliases `self._numpy_image`
+                # (the trailing `.to(...)` is a no-op on CPU), breaking mutation
+                # isolation between the two representations - the 3-channel branch
+                # below already copies.
+                chw = torch.from_numpy(np.ascontiguousarray(bgr_np).copy()).unsqueeze(0)
+            else:
+                # HWC BGR -> HWC RGB -> CHW RGB; contiguous so model ingestion
+                # gets a dense buffer.
+                chw = torch.from_numpy(bgr_np[:, :, ::-1].copy()).permute(2, 0, 1)
+        else:
+            # A base64/reference-born image asked for the tensor first: the
+            # source decodes DIRECTLY into a CHW RGB tensor - no numpy hop and
+            # nothing cached besides the tensor itself.
+            chw = self._decode_source_to_tensor()
+        self._tensor_image = chw.contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        return self._tensor_image
+
+    def _decode_source_to_tensor(self) -> torch.Tensor:
+        """Decode the base64 / file / URL source straight into a CHW RGB uint8
+        tensor via ``torchvision.io`` - no numpy intermediate, no cv2. Only
+        reached when neither in-memory representation exists (the constructor
+        guarantees a source). EXIF handling mirrors the numpy path: cv2.imdecode
+        (the base64 route) does not apply EXIF orientation, cv2.imread (local
+        files) does. URLs are the one exception: their bytes come through the
+        SSRF-guarded numpy loader today, so they keep a single numpy hop until a
+        bytes-level guarded fetcher exists."""
+        if self._base64_image:
+            # Post-mutation this can only be a RE-DERIVED base64 (see the
+            # matching note in numpy_image) - always valid to decode.
+            payload = torch.frombuffer(
+                bytearray(base64.b64decode(self._base64_image)), dtype=torch.uint8
+            )
+            return decode_image(payload, mode=ImageReadMode.RGB)
+        self._ensure_original_sources_usable()
+        if self._image_reference.startswith(
+            "http://"
+        ) or self._image_reference.startswith("https://"):
+            hwc_bgr = load_image_from_url(value=self._image_reference)
+            return torch.from_numpy(hwc_bgr[:, :, ::-1].copy()).permute(2, 0, 1)
+        return decode_image(
+            read_file(self._image_reference),
+            mode=ImageReadMode.RGB,
+            apply_exif_orientation=True,
+        )
+
+    def _ensure_original_sources_usable(self) -> None:
+        """Guard for the properties' reference-decoding fallback: once an
+        in-place mutation was declared, the original file/URL reference no
+        longer describes the pixels, so loading from it would silently
+        resurrect the pre-mutation image. A cached base64 is deliberately NOT
+        covered: the declare nulls the original one, so any base64 present
+        afterwards was re-derived from the mutated pixels by ``base64_image``
+        and is valid. Reaching this with the flag set means every valid
+        channel (mutated representation, re-derived base64) is gone - an
+        internal-consistency bug worth failing loudly on, with the cause
+        named."""
+        if self._sources_invalidated_by_mutation:
+            raise ValueError(
+                "Cannot load this WorkflowImageData from its original source "
+                "reference: an in-place mutation was declared "
+                "(declare_numpy_image_mutated / declare_tensor_image_mutated), "
+                "which invalidated the original source, and neither the mutated "
+                "representation nor a re-derived base64 is materialised any "
+                "more. This state is induced by the image mutation - the "
+                "pre-mutation source must not be decoded as it no longer "
+                "describes the image."
+            )
+
+    def declare_numpy_image_mutated(self) -> None:
+        """A client that mutated the ``numpy_image`` buffer in place declares it
+        here: the mutated numpy becomes the SOLE source of truth. Every other
+        channel is cut off - the derived siblings (tensor / base64) are removed
+        so later readers re-derive from the mutated pixels, and the original
+        source reference is removed too, because it no longer describes these
+        pixels (serialization such as ``to_inference_format`` must never hand
+        out the pre-mutation source). Declaring a mutation of a representation
+        that was never materialised is a caller bug and raises."""
+        if self._numpy_image is None:
+            raise ValueError(
+                "declare_numpy_image_mutated() called, but no numpy representation "
+                "is materialised - nothing could have been mutated. Access "
+                "`numpy_image` before declaring."
+            )
+        self._tensor_image = None
+        self._base64_image = None
+        self._image_reference = None
+        self._sources_invalidated_by_mutation = True
+
+    def declare_tensor_image_mutated(self) -> None:
+        """A client that mutated the ``tensor_image`` in place declares it here:
+        the mutated tensor becomes the SOLE source of truth. Every other channel
+        is cut off - the derived siblings (numpy / base64) are removed so later
+        readers re-derive from the mutated pixels, and the original source
+        reference is removed too, because it no longer describes these pixels.
+        Declaring a mutation of a representation that was never materialised is
+        a caller bug and raises."""
+        if self._tensor_image is None:
+            raise ValueError(
+                "declare_tensor_image_mutated() called, but no tensor representation "
+                "is materialised - nothing could have been mutated. Access "
+                "`tensor_image` before declaring."
+            )
+        self._numpy_image = None
+        self._base64_image = None
+        self._image_reference = None
+        self._sources_invalidated_by_mutation = True
+
+    def is_tensor_materialised(self) -> bool:
+        """Whether the CHW RGB tensor image already exists on device.
+
+        ``True`` only when a tensor representation is already present (the caller fed
+        one in, or something downstream already built it) — reading ``tensor_image`` is
+        then free. ``False`` means only the numpy (HWC BGR) representation is available,
+        so accessing ``tensor_image`` would trigger an eager numpy->device conversion.
+
+        Blocks use this to pick the representation that is already materialised instead
+        of forcing a conversion: ``tensor_image`` (RGB) when ``True``, ``numpy_image``
+        (BGR) otherwise. The check itself does no I/O and never materialises anything.
+        """
+        return self._tensor_image is not None
 
     @property
     def base64_image(self) -> str:

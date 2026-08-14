@@ -845,6 +845,41 @@ def test_init_with_workflow_injects_sink_execution_policy(
     )
 
 
+def test_init_with_workflow_gives_execution_engine_a_separate_thread_pool(
+    monkeypatch,
+) -> None:
+    # A shared pool lets slow fire-and-forget sink tasks starve step execution,
+    # so the Execution Engine must get its own executor.
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    execution_engine = MagicMock()
+    execution_engine_init = MagicMock(return_value=execution_engine)
+    pipeline = MagicMock()
+    monkeypatch.setattr(ExecutionEngine, "init", execution_engine_init)
+    monkeypatch.setattr(
+        InferencePipeline,
+        "init_with_custom_logic",
+        MagicMock(return_value=pipeline),
+    )
+
+    result = InferencePipeline.init_with_workflow(
+        video_reference="video.mp4",
+        workflow_specification={"version": "1.0"},
+        model_manager=MagicMock(),
+        workflows_thread_pool_workers=3,
+        execution_engine_thread_pool_workers=5,
+    )
+
+    assert result is pipeline
+    blocks_executor = execution_engine_init.call_args.kwargs["init_parameters"][
+        "workflows_core.thread_pool_executor"
+    ]
+    execution_engine_executor = execution_engine_init.call_args.kwargs["executor"]
+    assert execution_engine_executor is not blocks_executor
+    assert blocks_executor._max_workers == 3
+    assert execution_engine_executor._max_workers == 5
+
+
 def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
     from threading import Thread
     from unittest.mock import MagicMock

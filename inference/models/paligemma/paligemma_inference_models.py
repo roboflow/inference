@@ -1,5 +1,6 @@
-from typing import Any, List
+from typing import Any, List, Union
 
+import numpy as np
 import torch
 
 from inference.core.entities.responses import (
@@ -51,6 +52,14 @@ class InferenceModelsPaligemmaAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[str]:
+        kwargs = self.map_inference_kwargs(kwargs)
+        return self._model.prompt(images=images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         pre_processing_overrides = PreProcessingOverrides(
