@@ -21,16 +21,16 @@ SMOKE = (
     / "smoke"
 )
 
-SOURCE_SHA = "008d5e64b27d19c7c5da6334ec9497ba756827ad"
+SOURCE_SHA = "699c7809bc2e87f528a903bf762e3541d26c55d6"
 D_IMAGE = (
     "us-central1-docker.pkg.dev/roboflow-staging/video-proc/"
     "video-processor-process@sha256:"
-    "0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd"
+    "10edc9b2f9afc8d0fd161dccee621a2d714f94547e5fdc1bd59c618dfa6be43f"
 )
 EF_IMAGE = (
     "us-central1-docker.pkg.dev/roboflow-staging/video-proc/"
     "video-processor-process@sha256:"
-    "4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c"
+    "e65500ef0414bb74b0f9d84b416dffdc4c6ce8c8023ff31b153b4930a72e4f9d"
 )
 
 PATCH_CASES = (
@@ -122,21 +122,21 @@ def test_process_variant_patch_is_exact_and_atomic(
 SMOKE_CASES = (
     (
         "l40s-d-legacy-process.yaml",
-        "video-process-smoke-d-0e12efc9",
+        "video-process-smoke-d-10edc9b2",
         D_IMAGE,
         "pyav",
         False,
     ),
     (
         "l40s-e-v14-process-pyav.yaml",
-        "video-process-smoke-e-4f1767d4",
+        "video-process-smoke-e-e65500ef",
         EF_IMAGE,
         "pyav",
         True,
     ),
     (
         "l40s-f-v14-process-nvdec.yaml",
-        "video-process-smoke-f-4f1767d4",
+        "video-process-smoke-f-e65500ef",
         EF_IMAGE,
         "gstreamer_cuda",
         True,

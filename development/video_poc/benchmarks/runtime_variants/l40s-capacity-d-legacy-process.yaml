@@ -6,12 +6,12 @@ spec:
     spec:
       containers:
         - name: processor
-          image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd
+          image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:10edc9b2f9afc8d0fd161dccee621a2d714f94547e5fdc1bd59c618dfa6be43f
           env:
             - name: VIDEO_PROC_IMAGE
-              value: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd
+              value: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:10edc9b2f9afc8d0fd161dccee621a2d714f94547e5fdc1bd59c618dfa6be43f
             - name: VIDEO_PROC_GIT_SHA
-              value: 008d5e64b27d19c7c5da6334ec9497ba756827ad
+              value: 699c7809bc2e87f528a903bf762e3541d26c55d6
             - name: VIDEO_PROC_RUNTIME_VARIANT
               value: legacy-process-pyav
             - name: PROCESSOR_JOB_EXECUTION_MODE

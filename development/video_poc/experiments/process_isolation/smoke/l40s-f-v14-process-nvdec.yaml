@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: video-process-smoke-f-4f1767d4
+  name: video-process-smoke-f-e65500ef
   namespace: video-proc
   labels:
     app: video-processor-process-smoke
@@ -23,7 +23,7 @@ spec:
       effect: NoSchedule
   containers:
     - name: smoke
-      image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c
+      image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:e65500ef0414bb74b0f9d84b416dffdc4c6ce8c8023ff31b153b4930a72e4f9d
       command: ["python", "-c"]
       args:
         - >-

@@ -6,12 +6,12 @@ spec:
     spec:
       containers:
         - name: processor
-          image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c
+          image: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:e65500ef0414bb74b0f9d84b416dffdc4c6ce8c8023ff31b153b4930a72e4f9d
           env:
             - name: VIDEO_PROC_IMAGE
-              value: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c
+              value: us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-process@sha256:e65500ef0414bb74b0f9d84b416dffdc4c6ce8c8023ff31b153b4930a72e4f9d
             - name: VIDEO_PROC_GIT_SHA
-              value: 008d5e64b27d19c7c5da6334ec9497ba756827ad
+              value: 699c7809bc2e87f528a903bf762e3541d26c55d6
             - name: VIDEO_PROC_RUNTIME_VARIANT
               value: v14-process-nvdec
             - name: PROCESSOR_JOB_EXECUTION_MODE

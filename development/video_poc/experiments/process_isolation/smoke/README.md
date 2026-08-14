@@ -32,7 +32,7 @@ ambient defaults.
 ```bash
 set -euo pipefail
 MANIFEST=development/video_poc/experiments/process_isolation/smoke/l40s-d-legacy-process.yaml
-POD=video-process-smoke-d-0e12efc9
+POD=video-process-smoke-d-10edc9b2
 CONTEXT=ck8s-stg
 NAMESPACE=video-proc
 

@@ -24,11 +24,13 @@ silently upgrade its inference packages.
 
 ### Resume rebuild gate
 
-Do not start D/E/F capacity from the historical `1c2b...` or `5cd7...`
-overlays. They predate commit
-`008d5e64b27d19c7c5da6334ec9497ba756827ad` (`Bound video job cancellation
-cleanup`) and can strand a cancelled run as `activeJobs=1` on a detached
-`pool=working` pod. Rebuild from that exact commit or a reviewed descendant,
+Do not start D/E/F capacity from the historical `1c2b...`, `5cd7...`,
+`0e12...`, or `4f17...` overlays. The first pair predates bounded cancellation
+cleanup. Live D validation on `0e12...` then exposed an EOF/reap race: an
+ordinary killed child could report exit code `None`, write to its broken
+control pipe during cleanup, and trigger the whole-worker fail-closed restart.
+Commit `699c7809bc2e87f528a903bf762e3541d26c55d6` fixes both edges and retains the
+real signal exit code. Rebuild from that exact commit or a reviewed descendant,
 without changing either underlying runtime base.
 
 Record every field below from Artifact Registry and Cloud Build evidence before
@@ -37,15 +39,17 @@ remains blocked while either smoke gate is pending.
 
 | Use | Rebuilt image | Cloud Build | Exact source | Exact base | State |
 |---|---|---|---|---|---|
-| D | `video-processor-process@sha256:0e12efc9321dc495540dfa1fda0a2413286df468f2b6c5e8dd869aaf52f1a1bd` | `638f8d41-3984-4a27-85f9-f30a323fed67` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | built with provenance; non-GPU smoke `a33d853b-b970-4a0b-9ccb-850798c1a413` passed; disposable L40S parent/child smoke passed on `2026-08-13` |
-| E/F | `video-processor-process@sha256:4f1767d45ec3d90e07215f377ebbbba21b7c8b1a42ffa8acedf4b6217c06a70c` | `d3f3a1a5-ff33-4944-a443-5db177dd92a2` | `008d5e64b27d19c7c5da6334ec9497ba756827ad` | v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | built with provenance; non-GPU smoke `6a815bab-7b78-4b31-8ae8-e11371100de8` passed; disposable L40S parent/child smokes E and F passed on `2026-08-13` |
+| D | `video-processor-process@sha256:10edc9b2f9afc8d0fd161dccee621a2d714f94547e5fdc1bd59c618dfa6be43f` | `47557ba7-fde3-4743-b160-cb29261e6552` | `699c7809bc2e87f528a903bf762e3541d26c55d6` | legacy A `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a` | built with provenance; non-GPU smoke `9304a2f5-c122-408f-9499-c05cce40f9a4` passed; disposable L40S Pod was rejected before start because all 10 shared-node GPUs were allocated, so the rollout readiness/c1 gate must supply the live-GPU import proof |
+| E/F | `video-processor-process@sha256:e65500ef0414bb74b0f9d84b416dffdc4c6ce8c8023ff31b153b4930a72e4f9d` | `a1fa2b66-8253-446a-8ba7-2cbeabbbdf9d` | `699c7809bc2e87f528a903bf762e3541d26c55d6` | v1.4 B/C `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326` | built with provenance; non-GPU smoke `8b1c969d-8607-4fbe-a25c-497f59b29e64` passed; live-GPU import remains a rollout gate while the shared L40S node has no spare GPU |
 
 The rebuilt D and E/F overlays must contain the same processor, process child,
 runtime-compatibility, and bounded cleanup files from one exact source SHA.
 Verify the image labels/source provenance, base digest, `imageID`, process mode,
 spawned-child import, distinct parent/child PIDs, exit zero, and zero restarts.
-Delete each disposable pod after collecting evidence. None of these image gates
-authorizes a ready-pool rollout.
+Delete each disposable pod after collecting evidence. When the shared node has
+no spare GPU, do not evict unrelated workloads to manufacture a disposable
+slot: retain the admission failure, remove the failed Pod, and use an immediate
+ready-pool readiness/c1 gate with the exact rollback anchor instead.
 
 ### Historical smoke artifacts (do not use for resumed capacity)
 
