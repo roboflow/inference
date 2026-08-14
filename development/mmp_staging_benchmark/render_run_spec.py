@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from development.mmp_staging_benchmark.run_concurrent_clients import (  # noqa: 
     load_spec,
 )
 from development.mmp_staging_benchmark.validate_staging_plan import (  # noqa: E402
+    canonical_sha256,
     load_and_validate,
 )
 
@@ -83,6 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--phase", required=True)
     parser.add_argument("--server-pod", required=True)
     parser.add_argument("--server-node", required=True)
+    parser.add_argument("--cache-state", choices=("cold", "warm"), required=True)
     args = parser.parse_args(argv)
     harness_revision = current_clean_revision(Path(__file__).resolve().parents[2])
     matrix = load_and_validate(args.matrix)
@@ -94,28 +97,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     fixed = matrix["fixed_runtime"]
     artifact = matrix["artifact"]
     template = args.matrix.parent / phase["spec"]
-    rendered = render_point(
+    workload = render_point(
         template,
         args.total_concurrency,
         fixed["duration_s"],
         fixed["warmup_s"],
-        experiment={
-            "run_id": args.run_id,
-            "phase": args.phase,
-            "server_image_ref": artifact["image"],
-            "server_source_revision": artifact["source_revision"],
-            "harness_revision": harness_revision,
-            "server_pod": args.server_pod,
-            "server_node": args.server_node,
-            "mps_enabled": "1" if phase["mps"] else "0",
-            "decoder": fixed["decoder"],
-            "slots": fixed["shm_slots"],
-            "input_mb_per_slot": fixed["shm_input_mb_per_slot"],
-            "batch_max_size": fixed["batch_max_size"],
-            "batch_max_wait_ms": fixed["batch_max_wait_ms"],
-            "fixture_sha256": fixed["fixture_sha256"],
-        },
     )
+    experiment = {
+        "run_id": args.run_id,
+        "phase": args.phase,
+        "server_image_ref": artifact["image"],
+        "server_source_revision": artifact["source_revision"],
+        "harness_revision": harness_revision,
+        "server_pod": args.server_pod,
+        "server_node": args.server_node,
+        "mps_enabled": "1" if phase["mps"] else "0",
+        "decoder": fixed["decoder"],
+        "slots": fixed["shm_slots"],
+        "input_mb_per_slot": fixed["shm_input_mb_per_slot"],
+        "batch_max_size": fixed["batch_max_size"],
+        "batch_max_wait_ms": fixed["batch_max_wait_ms"],
+        "fixture_sha256": fixed["fixture_sha256"],
+        "matrix_sha256": canonical_sha256(matrix),
+        "template_sha256": hashlib.sha256(template.read_bytes()).hexdigest(),
+        "workload_sha256": canonical_sha256(workload),
+        "cache_state": args.cache_state,
+    }
+    rendered = {**workload, "experiment": experiment}
     args.output.write_text(json.dumps(rendered, indent=2, sort_keys=True) + "\n")
     load_spec(args.output)
     return 0

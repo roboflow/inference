@@ -162,6 +162,7 @@ python development/mmp_staging_benchmark/render_run_spec.py \
   --total-concurrency 8 \
   --run-id mmp-shared-no-mps-c08-r1 \
   --phase mmp-shared-no-mps \
+  --cache-state warm \
   --server-pod "${SERVER_POD}" \
   --server-node "${SERVER_NODE}" \
   --output /tmp/mmp-point.json
@@ -260,16 +261,50 @@ the dedicated namespace is the complete rollback.
 
 Apply the strict analyzer to every report and preserve the matching server log:
 
+Immediately before starting each run, capture the actual MMP route table and
+model-cache contents through the local port-forward. The API key remains in the
+named environment variable and is never serialized:
+
+```bash
+python development/mmp_staging_benchmark/capture_cache_evidence.py \
+  --pod "${SERVER_POD}" \
+  --api-key-env TENANT_A_KEY \
+  --output development/mmp_staging_benchmark/results/shared-c08-r1-cache.json
+```
+
+`cold` means the pre-run route table and `/models/cache` are both empty. `warm`
+means the cache is nonempty and the pre-run route table contains exactly the
+workload's expected routing keys, each with a live PID and positive inference
+and batch counters. The analyzer requires the snapshot within 60 seconds before
+the run on the same staging pod UID.
+
 ```bash
 python development/mmp_staging_benchmark/analyze_report.py \
   development/mmp_staging_benchmark/results/shared-c08-r1.json \
   --phase mmp-shared-no-mps \
+  --matrix development/mmp_staging_benchmark/matrix.staging.json \
   --server-log development/mmp_staging_benchmark/results/shared-c08-r1.log \
   --pod-evidence development/mmp_staging_benchmark/results/pod.json \
   --capability-report development/mmp_staging_benchmark/results/capability-no-mps.json \
   --expected-node "${BASELINE_NODE}" \
-  --expected-gpu-uuid "${BASELINE_GPU_UUID}"
+  --expected-gpu-uuid "${BASELINE_GPU_UUID}" \
+  --cache-evidence development/mmp_staging_benchmark/results/shared-c08-r1-cache.json
 ```
+
+For an MPS phase, capture a live MPS control observation during the measurement
+window. The helper binds it to `ck8s-stg`, the dedicated namespace, pod UID,
+and GPU UUID, then captures `get_client_list` for every live MPS server:
+
+```bash
+python development/mmp_staging_benchmark/capture_mps_evidence.py \
+  --pod "${SERVER_POD}" \
+  --output development/mmp_staging_benchmark/results/mps-live.json
+```
+
+Pass that JSON as `--mps-evidence`. The analyzer requires successful numeric
+server/client lists captured after warmup and before the report's finish
+timestamp, and every stable measured model-worker PID must be an MPS client;
+environment flags or an idle MPS server do not certify the MPS leg.
 
 A passing single-report analyzer result is not a capacity claim. After both
 repetitions at every point through the first failing boundary, certify the
@@ -283,6 +318,10 @@ python development/mmp_staging_benchmark/analyze_curve.py \
   --phase mmp-shared-no-mps \
   --output development/mmp_staging_benchmark/results/shared-curve.json
 ```
+
+Use `--compare-with` on the second curve to certify a no-MPS/MPS A/B. The
+comparison fails unless image, source, clean harness, fixture, matrix, template,
+cache state, node, and GPU UUID are identical.
 
 The exact head image is already built at the digest pinned by the matrix
 (Cloud Build `f0bd00b6-f0d1-410a-8ba6-bf9f8e8ccfd0`). Its provenance records

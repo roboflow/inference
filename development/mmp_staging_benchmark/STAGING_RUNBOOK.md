@@ -155,10 +155,12 @@ For each phase and allowed concurrency in `matrix.staging.json`:
 
 1. capture the exact ready pod and node;
 2. render one point with `render_run_spec.py`;
-3. run it twice in ascending concurrency order;
-4. save the server log for the exact measurement interval;
-5. apply `analyze_report.py`;
-6. stop after two consecutive points fail the same strict gate.
+3. immediately before each run, capture `capture_cache_evidence.py` output and
+   require the operational cold/warm state declared in the rendered spec;
+4. run it twice in ascending concurrency order;
+5. save the server log for the exact measurement interval;
+6. apply `analyze_report.py` with the matching cache evidence;
+7. stop after two consecutive points fail the same strict gate.
 
 The strict capacity gate is 100% success, per-client p95 <= 50 ms, Jain >=
 0.95 for equal-work same-model runs, zero pool-full rejects, one stable worker
@@ -195,6 +197,13 @@ private pipe/log volumes. It does not use Kubernetes device-plugin MPS sharing;
 the L40S node advertises that feature as unavailable. It also does not use CUDA
 IPC—the current subprocess argument is reserved and unused.
 
+After warmup during every MPS measurement window, run
+`capture_mps_evidence.py` against the
+exact server pod and retain its JSON beside the report. The analyzer rejects a
+different context, namespace, pod UID, GPU UUID, failed control query, empty
+server list, a measured worker absent from every MPS server's client list, or a
+timestamp outside the measured interval.
+
 ## Gate 4: fairness and failure sensitivity
 
 Only after both capacity curves:
@@ -222,6 +231,7 @@ kubectl --context ck8s-stg -n video-proc-bench-mmp get pod "${SERVER_POD}" \
   -o json > development/mmp_staging_benchmark/results/pod.json
 python development/mmp_staging_benchmark/analyze_report.py REPORT.json \
   --phase mmp-shared-no-mps \
+  --matrix development/mmp_staging_benchmark/matrix.staging.json \
   --server-log SERVER.log \
   --pod-evidence development/mmp_staging_benchmark/results/pod.json \
   --capability-report development/mmp_staging_benchmark/results/capability-no-mps.json \

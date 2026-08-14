@@ -38,6 +38,10 @@ EXPERIMENT_FIELDS = frozenset(
         "batch_max_size",
         "batch_max_wait_ms",
         "fixture_sha256",
+        "matrix_sha256",
+        "template_sha256",
+        "workload_sha256",
+        "cache_state",
     }
 )
 
@@ -682,12 +686,18 @@ async def execute(spec: RunSpec, image: bytes) -> dict[str, Any]:
             "server_pod": spec.experiment.get("server_pod", "unknown"),
             "server_node": spec.experiment.get("server_node", "unknown"),
             "fixture_sha256": spec.experiment.get("fixture_sha256", "unknown"),
+            "matrix_sha256": spec.experiment.get("matrix_sha256", "unknown"),
+            "template_sha256": spec.experiment.get("template_sha256", "unknown"),
+            "workload_sha256": spec.experiment.get("workload_sha256", "unknown"),
+            "cache_state": spec.experiment.get("cache_state", "unknown"),
         },
         "run": {
             "server_url": spec.server_url,
             "duration_s": spec.duration_s,
             "warmup_s": spec.warmup_s,
             "sample_interval_s": spec.sample_interval_s,
+            "request_timeout_s": spec.request_timeout_s,
+            "max_latency_samples_per_client": spec.max_latency_samples_per_client,
             "actual_elapsed_s": finished - started,
             "started_unix_s": time.time() - (finished - started),
             "finished_unix_s": time.time(),
