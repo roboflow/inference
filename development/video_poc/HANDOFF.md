@@ -620,6 +620,20 @@ not implemented yet.
 - **No metering** (the intended model: stream-hours + GPU-seconds).
 - **`imageOutput` list outputs** (arrays of images) are redacted from events but not
   stored/previewable.
+- **Soak and recovery certification is prepared, not yet measured.** The staging
+  harness has an exact GPU/CPU 15-minute -> 1-hour -> 4-hour -> 12-hour ladder.
+  Every point publishes output through the external 60-second watch lease,
+  renewed every 20 seconds by the runner, and is promoted only by a hash-bound
+  analyzer that recomputes report, counter, cleanup, watch, latency, restart,
+  relay, Prometheus coverage, and host/relay/VRAM drift evidence, including
+  every shorter predecessor. Processor-pod
+  faults already join exact old/new workers to post-requeue frame progress;
+  relay faults now join exact old/new relay ownership to stable processor
+  identity plus post-replacement frame/output progress, explicitly as a polled
+  upper bound rather than gapless-media proof. Per-job child crashes remain in
+  the c2 process-containment evidence procedure rather than a generic PID-kill
+  controller. No soak or live fault result should be inferred from this harness
+  preparation.
 
 ## 9. Where the design is heading (updated 2026-08-10)
 

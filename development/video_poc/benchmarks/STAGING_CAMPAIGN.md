@@ -122,8 +122,11 @@ runner report and verified post-replacement frame progress.
 
 Capacity suites keep recovery tolerance at zero. Fault suites use the explicit
 bounded recovery window and are excluded from capacity certification. Relay
-replacement alone does not prove media continuity; pair it with frame-identity
-evidence before making a continuity claim.
+replacement or a processor-side `published` counter alone does not prove media
+continuity. The recovery join additionally requires exact old/new relay UID
+metrics plus post-replacement MediaMTX `out-*` path-count/ingress and aggregate
+reader/traffic evidence from the replacement pod after a clean rate window.
+Even that proves downstream relay acceptance, not gapless or frame-exact media.
 
 ## Gate 6: soak progression
 
@@ -132,6 +135,35 @@ For the selected strict capacity point, run the 15-minute, 1-hour, 4-hour, and
 or ambiguous shorter gate blocks every longer gate. Preserve time-series
 resource evidence and check drift, latency tails, reconnects, restarts, model
 reloads, memory growth, GPU errors, and frame-counter continuity.
+
+The promotion analyzer also requires credential-free watch-lease evidence for
+every job, continuously advancing published counters without a multi-interval
+stall, frame-histogram p95/p99 within the strict 50/150 ms SLO, stable processor
+and relay restart counters, and bounded host/relay/VRAM endpoint growth plus
+linear slope. These are initial engineering guardrails, not measured results;
+record any threshold revision in the experiment ledger before rerunning.
+
+Before starting, update the matrix's concurrency only if the earlier capacity
+campaign selected a different point, then freeze its digest for the whole
+ladder. Every checked-in soak publishes output. After each run, attach
+Prometheus evidence with `collect_staging_capacity_telemetry.py` and run
+`analysis/soak.py`; stages after 15 minutes must provide all shorter
+`--prior-certification` artifacts. The analyzer recomputes those raw reports
+instead of trusting their booleans. Do not launch the next scenario merely
+because the API runner exited zero.
+
+The telemetry collector also requires a separately approved, unexpired staging
+cluster identity containing the exact API server and immutable `kube-system`
+namespace UID. It checks the local kubeconfig server before its first live
+request, validates the UID before pod discovery or exec, and records the
+approved digest plus observed identity for the soak analyzer. Do not let an
+unattended campaign self-approve the identity it will use. Approval is capped
+at 48 hours and must cover the complete measurement window.
+
+The matrix's memory growth and linear-slope bounds are initial regression
+guardrails selected before the campaign. They are not observed fleet limits or
+production SLOs. If they prove too noisy, stop, retain the failed result, and
+review a new matrix digest rather than editing thresholds mid-ladder.
 
 ## Gate 7: relay and multi-cell networking
 

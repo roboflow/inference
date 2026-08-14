@@ -10,6 +10,7 @@ import argparse
 import concurrent.futures
 import copy
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -40,6 +41,7 @@ STAGING_HOSTS = {
     "us-central1-roboflow-staging.cloudfunctions.net",
 }
 TERMINAL_STATES = {"cancelled", "completed", "error"}
+WATCH_LEASE_RENEW_INTERVAL_SECONDS = 20.0
 REPORT_JOB_FIELDS = {
     "id",
     "sourceId",
@@ -142,6 +144,31 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def canonical_sha256(value):
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def corpus_bundle_sha256(manifest_path):
+    """Bind the manifest and every referenced workflow specification."""
+
+    manifest_path = Path(manifest_path).resolve()
+    manifest = json.loads(manifest_path.read_text())
+    specifications = {}
+    for profile in manifest.get("profiles") or []:
+        relative = Path(str(profile.get("spec") or ""))
+        specification_path = (manifest_path.parent / relative).resolve()
+        if (
+            not relative.parts
+            or relative.is_absolute()
+            or manifest_path.parent not in specification_path.parents
+        ):
+            raise ValueError("workflow specification escapes the corpus directory")
+        specifications[str(relative)] = json.loads(specification_path.read_text())
+    return canonical_sha256({"manifest": manifest, "specifications": specifications})
+
+
 def validate_api_base(api_base):
     parsed = urllib.parse.urlparse(api_base)
     host = (parsed.hostname or "").lower()
@@ -171,13 +198,39 @@ def report_job(job):
     # Keep every sample immutable even when a test/client mutates a cached job
     # object in place. This also prevents a later stats update from rewriting
     # the recovery event's before/running-observed evidence.
-    return {
-        key: copy.deepcopy(job[key]) for key in REPORT_JOB_FIELDS if key in job
-    }
+    return {key: copy.deepcopy(job[key]) for key in REPORT_JOB_FIELDS if key in job}
 
 
 def report_source(source):
     return {key: source[key] for key in REPORT_SOURCE_FIELDS if key in source}
+
+
+def report_profile(item):
+    specification = item.get("workflowSpecification")
+    if not isinstance(specification, dict):
+        raise ValueError("run plan has no workflow specification")
+    specification_sha256 = canonical_sha256(specification)
+    if item.get("workflowSpecificationSha256") not in (
+        None,
+        specification_sha256,
+    ):
+        raise ValueError("run plan workflow specification digest is inconsistent")
+    profile = {
+        key: item[key]
+        for key in (
+            "ordinal",
+            "copy",
+            "profile",
+            "provisionalClass",
+            "tier",
+            "mode",
+            "imageOutput",
+            "maxFps",
+            "startAfterSeconds",
+        )
+    }
+    profile["workflowSpecificationSha256"] = specification_sha256
+    return profile
 
 
 def write_report_atomic(path, report):
@@ -203,9 +256,7 @@ def write_report_atomic(path, report):
 def recovery_checkpoint(report):
     """Bounded checkpoint for cleanup without rewriting the sample history."""
     bounded = {
-        key: value
-        for key, value in report.items()
-        if key not in {"samples", "jobs"}
+        key: value for key, value in report.items() if key not in {"samples", "jobs"}
     }
     bounded["sampleCount"] = len(report.get("samples") or [])
     if report.get("samples"):
@@ -266,6 +317,7 @@ def build_run_plan(
             metadata = dict(specification.get("metadata") or {})
             metadata["benchmark"] = {"profile": profile_id, "instance": ordinal}
             specification["metadata"] = metadata
+            specification_sha256 = canonical_sha256(specification)
             plan.append(
                 {
                     "ordinal": ordinal,
@@ -283,6 +335,7 @@ def build_run_plan(
                     # twice on one source. Metadata makes logical copies distinct
                     # without changing their executable steps or model sharing.
                     "workflowSpecification": specification,
+                    "workflowSpecificationSha256": specification_sha256,
                 }
             )
     return plan
@@ -311,11 +364,19 @@ def idempotency_key(run_id, item):
 
 
 class VideoServiceClient:
-    def __init__(self, api_base, workspace, api_key, timeout_seconds=30):
+    def __init__(
+        self,
+        api_base,
+        workspace,
+        api_key,
+        timeout_seconds=30,
+        wall_time=time.time,
+    ):
         self.api_base = validate_api_base(api_base)
         self.workspace = workspace
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
+        self.wall_time = wall_time
 
     def _path(self, suffix):
         workspace = urllib.parse.quote(self.workspace, safe="")
@@ -383,6 +444,119 @@ class VideoServiceClient:
         job_id = urllib.parse.quote(job_id, safe="")
         _, payload = self._request("POST", f"video-jobs/v1/{job_id}/cancel")
         return payload["job"]
+
+    def watch_job(self, job_id, output):
+        """Request or renew the credential-free 60-second output watch lease."""
+
+        job_id = urllib.parse.quote(job_id, safe="")
+        status, payload = self._request(
+            "POST", f"video-jobs/v1/{job_id}/watch", body={"output": output}
+        )
+        watch = payload.get("watch")
+        requested_until = (
+            watch.get("requestedUntil") if isinstance(watch, dict) else None
+        )
+        now_ms = self.wall_time() * 1000
+        if (
+            not isinstance(requested_until, (int, float))
+            or isinstance(requested_until, bool)
+            or not math.isfinite(requested_until)
+            or status != 200
+            or requested_until - now_ms < 30_000
+            or requested_until - now_ms > 120_000
+            or watch.get("output") != output
+        ):
+            raise ValueError("watch API returned an invalid credential-free lease")
+        return watch
+
+
+class WatchLeaseRenewer:
+    """Renew output watches without retaining any streaming credentials.
+
+    The control API owns the 60-second lease. Keeping the renewal interval at
+    20 seconds leaves room for one delayed status poll while still failing the
+    benchmark if a renewal request itself fails.
+    """
+
+    def __init__(
+        self,
+        client,
+        evidence,
+        monotonic=time.monotonic,
+        interval_seconds=WATCH_LEASE_RENEW_INTERVAL_SECONDS,
+    ):
+        self.client = client
+        self.evidence = evidence
+        self.monotonic = monotonic
+        self.interval_seconds = interval_seconds
+        self.outputs = {}
+        self.last_renewed = {}
+
+    def register(self, job_id, output):
+        if not output:
+            return
+        self.outputs[job_id] = output
+        self.evidence[job_id] = {
+            "jobId": job_id,
+            "output": output,
+            "renewalIntervalSeconds": self.interval_seconds,
+            "renewalCount": 0,
+            "firstRequestedAt": None,
+            "lastRequestedAt": None,
+            "maximumRenewalGapSeconds": None,
+            "errors": [],
+        }
+
+    def renew(self, jobs):
+        now = self.monotonic()
+        due = [
+            (job_id, self.outputs[job_id])
+            for job_id, job in jobs.items()
+            if job_id in self.outputs
+            and job.get("state") in {"claimed", "running"}
+            and (
+                job_id not in self.last_renewed
+                or now - self.last_renewed[job_id] >= self.interval_seconds
+            )
+        ]
+        if not due:
+            return
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(due)) as executor:
+            futures = {
+                executor.submit(self.client.watch_job, job_id, output): job_id
+                for job_id, output in due
+            }
+            failures = []
+            for future, job_id in ((future, futures[future]) for future in futures):
+                item = self.evidence[job_id]
+                try:
+                    # The client validates the credential-free response. The
+                    # runner deliberately discards it so no server payload can
+                    # enter the evidence report.
+                    future.result()
+                except Exception as error:
+                    item["errors"].append(
+                        {"requestedAt": utc_now(), "error": str(error)}
+                    )
+                    failures.append(job_id)
+                    continue
+                requested_at = utc_now()
+                completed_at = self.monotonic()
+                previous = self.last_renewed.get(job_id)
+                if previous is not None:
+                    gap = round(completed_at - previous, 3)
+                    item["maximumRenewalGapSeconds"] = max(
+                        item["maximumRenewalGapSeconds"] or 0.0, gap
+                    )
+                item["renewalCount"] += 1
+                item["firstRequestedAt"] = item["firstRequestedAt"] or requested_at
+                item["lastRequestedAt"] = requested_at
+                self.last_renewed[job_id] = completed_at
+        if failures:
+            raise RuntimeError(
+                "output watch lease renewal failed for " + ", ".join(sorted(failures))
+            )
 
 
 def _start_jobs(client, source_id, plan, run_id, on_started=None):
@@ -454,11 +628,19 @@ def run_benchmark(
     recovery_timeout_seconds=0.0,
     startup_fault_ready_seconds=0.0,
     require_single_processor=False,
+    corpus_bundle_digest=None,
     checkpoint=None,
     should_stop=None,
     sleep=time.sleep,
     monotonic=time.monotonic,
 ):
+    if any(item.get("imageOutput") for item in plan) and (
+        poll_interval_seconds > WATCH_LEASE_RENEW_INTERVAL_SECONDS
+    ):
+        raise ValueError(
+            "output publishing requires --poll-interval-seconds <= "
+            f"{WATCH_LEASE_RENEW_INTERVAL_SECONDS:g} so the watch lease is renewed"
+        )
     checkpoint = checkpoint or (lambda _report: None)
     should_stop = should_stop or (lambda: None)
     report = {
@@ -467,34 +649,26 @@ def run_benchmark(
         "startedAt": utc_now(),
         "apiBase": client.api_base,
         "workspace": client.workspace,
+        "corpusBundleSha256": corpus_bundle_digest,
         "source": report_source(source),
         "plannedConcurrency": len(plan),
         "recoveryTimeoutSeconds": recovery_timeout_seconds,
         "startupFaultReadySeconds": startup_fault_ready_seconds,
-        "profiles": [
-            {
-                key: item[key]
-                for key in (
-                    "ordinal",
-                    "copy",
-                    "profile",
-                    "provisionalClass",
-                    "tier",
-                    "mode",
-                    "imageOutput",
-                    "maxFps",
-                    "startAfterSeconds",
-                )
-            }
-            for item in plan
-        ],
+        "profiles": [report_profile(item) for item in plan],
         "samples": [],
         "errors": [],
+        "watchLeases": {},
     }
     jobs = {}
     benchmark_started = monotonic()
     success = True
     interrupted = False
+    watch_leases = WatchLeaseRenewer(client, report["watchLeases"], monotonic=monotonic)
+
+    def poll_jobs():
+        nonlocal jobs
+        jobs = _poll_jobs(client, list(jobs))
+        watch_leases.renew(jobs)
 
     def save_checkpoint(phase, fail_run=True):
         report["checkpoint"] = {"phase": phase, "updatedAt": utc_now()}
@@ -544,7 +718,6 @@ def run_benchmark(
         surviving it.
         """
 
-        nonlocal jobs
         affected = recovery_candidates(previous_jobs, established)
         if not affected:
             return None
@@ -561,9 +734,7 @@ def run_benchmark(
             "startedElapsedSeconds": round(started - benchmark_started, 3),
             "jobIds": sorted(affected),
             "before": [affected[job_id] for job_id in sorted(affected)],
-            "firstObserved": [
-                report_job(jobs[job_id]) for job_id in sorted(affected)
-            ],
+            "firstObserved": [report_job(jobs[job_id]) for job_id in sorted(affected)],
         }
         report["recoveries"].append(event)
         save_checkpoint("recovery")
@@ -588,10 +759,11 @@ def run_benchmark(
             previous_recovery_jobs = {
                 job_id: report_job(job) for job_id, job in jobs.items()
             }
-            jobs = _poll_jobs(client, list(jobs))
+            poll_jobs()
             report["samples"].append(
                 {
                     "phase": "recovery",
+                    "sampledAt": utc_now(),
                     "elapsedSeconds": round(monotonic() - benchmark_started, 3),
                     "jobs": [report_job(job) for job in jobs.values()],
                 }
@@ -658,10 +830,8 @@ def run_benchmark(
                         current_attempts = int(after.get("attempts") or 0)
                         assertions[job_id] = {
                             "processorChanged": bool(before.get("processorId"))
-                            and after.get("processorId")
-                            != before.get("processorId"),
-                            "attemptAdvanced": current_attempts
-                            > previous_attempts,
+                            and after.get("processorId") != before.get("processorId"),
+                            "attemptAdvanced": current_attempts > previous_attempts,
                             "framesAdvancedAfterRunning": progress[job_id],
                         }
                         assertions[job_id]["requeueIdentityChanged"] = (
@@ -697,9 +867,7 @@ def run_benchmark(
             {
                 "outcome": "timeout",
                 "endedAt": utc_now(),
-                "observedControlPlaneRecoverySeconds": round(
-                    monotonic() - started, 3
-                ),
+                "observedControlPlaneRecoverySeconds": round(monotonic() - started, 3),
                 "after": [report_job(job) for job in jobs.values()],
             }
         )
@@ -725,13 +893,12 @@ def run_benchmark(
                     previous_jobs = {
                         job_id: report_job(job) for job_id, job in jobs.items()
                     }
-                    jobs = _poll_jobs(client, list(jobs))
+                    poll_jobs()
                     report["samples"].append(
                         {
                             "phase": "baseline",
-                            "elapsedSeconds": round(
-                                monotonic() - benchmark_started, 3
-                            ),
+                            "sampledAt": utc_now(),
+                            "elapsedSeconds": round(monotonic() - benchmark_started, 3),
                             "jobs": [report_job(job) for job in jobs.values()],
                         }
                     )
@@ -762,6 +929,7 @@ def run_benchmark(
 
             def record_started(item, status, job):
                 jobs[job["id"]] = job
+                watch_leases.register(job["id"], item.get("imageOutput"))
                 report.setdefault("starts", []).append(
                     {
                         "profile": item["profile"],
@@ -792,10 +960,11 @@ def run_benchmark(
                 previous_jobs = {
                     job_id: report_job(job) for job_id, job in jobs.items()
                 }
-                jobs = _poll_jobs(client, list(jobs))
+                poll_jobs()
                 report["samples"].append(
                     {
                         "phase": startup_phase,
+                        "sampledAt": utc_now(),
                         "elapsedSeconds": round(monotonic() - benchmark_started, 3),
                         "jobs": [report_job(job) for job in jobs.values()],
                     }
@@ -808,9 +977,7 @@ def run_benchmark(
                         job.get("state") == "claimed" and job.get("processorId")
                         for job in jobs.values()
                     )
-                    and not any(
-                        job.get("state") == "running" for job in jobs.values()
-                    )
+                    and not any(job.get("state") == "running" for job in jobs.values())
                 ):
                     fault_ready_emitted = True
                     report["startupFaultReadyAt"] = utc_now()
@@ -819,6 +986,7 @@ def run_benchmark(
                     while monotonic() < pause_deadline:
                         should_stop()
                         sleep(min(0.5, pause_deadline - monotonic()))
+                        watch_leases.renew(jobs)
                     should_stop()
                 recovery = recover_running_jobs(
                     startup_phase, previous_jobs, established=False
@@ -865,10 +1033,11 @@ def run_benchmark(
                 previous_jobs = {
                     job_id: report_job(job) for job_id, job in jobs.items()
                 }
-                jobs = _poll_jobs(client, list(jobs))
+                poll_jobs()
                 report["samples"].append(
                     {
                         "phase": "measurement",
+                        "sampledAt": utc_now(),
                         "elapsedSeconds": round(monotonic() - benchmark_started, 3),
                         "jobs": [report_job(job) for job in jobs.values()],
                     }
@@ -921,15 +1090,23 @@ def run_benchmark(
         ):
             success = False
             report["errors"].append({"phase": "cleanup", "error": "cleanup timeout"})
+        failed_terminal_ids = sorted(
+            job_id for job_id, job in jobs.items() if job.get("state") == "error"
+        )
+        if failed_terminal_ids:
+            success = False
+            report["errors"].append(
+                {
+                    "phase": "cleanup",
+                    "error": "jobs reached error terminal state during cleanup: "
+                    + ", ".join(failed_terminal_ids),
+                }
+            )
         if report["cancelErrors"]:
             success = False
         report["jobs"] = [report_job(job) for job in jobs.values()]
         report["processorIds"] = sorted(
-            {
-                job.get("processorId")
-                for job in jobs.values()
-                if job.get("processorId")
-            }
+            {job.get("processorId") for job in jobs.values() if job.get("processorId")}
         )
         if require_single_processor and len(report["processorIds"]) != 1:
             success = False
@@ -1165,6 +1342,7 @@ def main(argv=None):
                 recovery_timeout_seconds=args.recovery_timeout_seconds,
                 startup_fault_ready_seconds=args.startup_fault_ready_seconds,
                 require_single_processor=args.require_single_processor,
+                corpus_bundle_digest=corpus_bundle_sha256(args.manifest),
                 checkpoint=lambda value: write_report_atomic(
                     output_path, recovery_checkpoint(value)
                 ),

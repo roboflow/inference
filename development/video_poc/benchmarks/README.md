@@ -242,7 +242,8 @@ and require `connected` immediately before every run. Other example matrices
 that still contain explicit `REPLACE_WITH_...` values must be copied and
 resolved before use. Always dry-run the exact scenario selection before
 `--execute`. In particular, run soak gates one at a time and advance only after
-the shorter gate passes:
+the shorter gate passes. The checked-in soak scenarios publish output and the
+matrix contains reviewable sample-coverage and memory-drift guardrails:
 
 ```bash
 python development/video_poc/benchmarks/run_api_experiment_matrix.py \
@@ -251,10 +252,62 @@ python development/video_poc/benchmarks/run_api_experiment_matrix.py \
   --suite-id gpu-soak-15m-001
 ```
 
+After adding `--execute` and receiving a complete report, collect the exact
+measurement-window resource series and certify the first stage. The collector
+requires a separately reviewed, time-bounded identity file so a stale or
+repointed `ck8s-stg` kubeconfig alias cannot reach pod discovery or exec. The
+JSON must contain schema/version/environment/context plus the exact API server,
+`kube-system` namespace UID, `approvedAt`, `validUntil`, and `approvedBy`:
+
+```json
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "context": "ck8s-stg",
+  "apiServer": "https://REPLACE_WITH_REVIEWED_STAGING_API_SERVER",
+  "kubeSystemNamespaceUid": "REPLACE_WITH_REVIEWED_STAGING_UID",
+  "approvedAt": "2026-08-13T00:00:00Z",
+  "validUntil": "2026-08-14T00:00:00Z",
+  "approvedBy": "REPLACE_WITH_REVIEWER_IDENTITY"
+}
+```
+
+The approval window may not exceed 48 hours and must cover the whole soak
+measurement. Do not derive and approve this file inside the same unattended
+campaign. With that review artifact prepared:
+
+```bash
+python development/video_poc/benchmarks/collect_staging_capacity_telemetry.py \
+  development/video_poc/benchmarks/results/api-corpus-gpu-soak-15m-001-gpu-soak-15m-r1.json \
+  --cluster-identity development/video_poc/benchmarks/results/staging-cluster-identity.approved.json
+
+python development/video_poc/benchmarks/analysis/soak.py \
+  --matrix development/video_poc/benchmarks/matrices/long-soak.staging.example.json \
+  --scenario gpu-soak-15m \
+  --report development/video_poc/benchmarks/results/api-corpus-gpu-soak-15m-001-gpu-soak-15m-r1.json \
+  --resources development/video_poc/benchmarks/results/api-corpus-gpu-soak-15m-001-gpu-soak-15m-r1-resources.json \
+  --output development/video_poc/benchmarks/results/gpu-soak-15m-certification.json
+```
+
+The 1-hour certification must additionally pass the 15-minute file as
+`--prior-certification`; the 4-hour and 12-hour stages must pass every shorter
+certification. Prior files are not trusted summaries: their source report,
+resource artifact, approved cluster identity file, hashes, and checks are
+recomputed. Preserve that reviewed identity file with the run artifacts. A
+runner exit code alone never promotes a soak stage.
+
 The controlled-FPS and output suites use `VIDEO_BENCHMARK_API_KEY`. The
 cross-workspace suite uses `VIDEO_BENCHMARK_API_KEY_A` and
 `VIDEO_BENCHMARK_API_KEY_B`. Export values only in the runner environment; do
 not substitute them into a matrix.
+
+`--publish-output` now requests the selected output through the external watch
+API after a job is claimed and renews its 60-second lease every 20 seconds. The
+runner stores only credential-free renewal timestamps/counts and fails the run
+on a renewal error or a poll interval above 20 seconds. It never persists the
+watch response, processor access token, stream key, or WHEP URL.
+This mode therefore requires the companion external `/video-jobs/v1/:jobId/watch`
+route; non-output benchmarks remain compatible with an older control API.
 
 For cross-workspace noisy-neighbor and fairness runs, follow
 [`MULTI_WORKSPACE_FAIRNESS.md`](MULTI_WORKSPACE_FAIRNESS.md). Those scenarios

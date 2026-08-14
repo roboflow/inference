@@ -151,6 +151,39 @@ The joined value is explicitly an upper bound from the recorded deletion
 request to a poll proving replacement-frame progress, not an exact per-frame
 outage duration.
 
+The same command supports the steady-state relay scenario. Run its matching API
+corpus with output publishing enabled and zero recovery tolerance: the processor
+job should not requeue merely because MediaMTX restarted. Collect the same
+measurement-window telemetry artifact used by the soak campaign and pass it as
+`--resources`. The join accepts the relay result only when the replacement has
+the captured controller UID; the raw `kube_pod_info` series match the exact old
+and new relay pod UIDs; every job remains running with unchanged processor and
+attempt identity; frame counters remain monotonic; and at least two
+post-replacement MediaMTX samples, taken after the one-minute Prometheus rate
+window can no longer include pre-fault traffic, show the expected count of
+`out-*` paths, positive `out-*` ingress, and healthy aggregate readers/traffic
+on the replacement pod. Processor `published` alone is not treated as
+downstream relay recovery. The two reported durations are poll-derived upper bounds from
+the fault request and last pre-fault sample. They do not claim gapless playback,
+exact frame loss, or restored stateful-workflow semantics.
+
+```bash
+python development/video_poc/benchmarks/analysis/recovery.py \
+  --report development/video_poc/benchmarks/results/api-corpus-RELAY_RUN_ID.json \
+  --evidence /absolute/path/evidence/RELAY_RUN_ID/events.jsonl \
+  --resources development/video_poc/benchmarks/results/api-corpus-RELAY_RUN_ID-resources.json \
+  --output /absolute/path/evidence/RELAY_RUN_ID/recovery-summary.json
+```
+
+Per-job child death is intentionally not added to this pod controller. For a
+process-topology worker, capture and inject the exact child PID using the c2
+procedure in
+[`../../experiments/process_isolation/JOB_PROCESS_MATRIX.md`](../../experiments/process_isolation/JOB_PROCESS_MATRIX.md),
+then validate the raw topology, process table, sibling progress, sanitized
+failure, and cleanup bundle with
+[`../cpu_sizing/validate_process_gate.py`](../cpu_sizing/validate_process_gate.py).
+This avoids broad pod-local PID killing in a generic chaos controller.
+
 Deleting a pod is the cleanup action: its existing Deployment/StatefulSet must
 replace it. The controller never scales, patches, or restarts a workload. If the
 replacement deadline expires, the evidence ends as failed and an operator must
@@ -169,8 +202,10 @@ cancelling benchmark jobs, including after the fault controller exits.
 - Recovery tolerance is opt-in. Ordinary capacity and fairness runs retain the
   fail-fast default (`--recovery-timeout-seconds 0`) so a requeue cannot hide an
   unstable worker from a capacity result.
-- Relay recovery proves Kubernetes replacement readiness, not decoded-frame
-  continuity, connector retry behavior, or stream-key preservation.
+- Relay controller success alone proves Kubernetes replacement readiness. The
+  recovery join adds polled processor/output progress but still cannot prove
+  connector retry internals, stream-key preservation, exact frame loss, or
+  gapless playback.
 - Do not run relay injection during a rollout. A Deployment rollout can produce
   multiple matching relay pods or change the ReplicaSet controller UID; both are
   deliberately treated as ambiguous rather than successful recovery. Processor

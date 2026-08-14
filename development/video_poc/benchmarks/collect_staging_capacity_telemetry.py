@@ -15,19 +15,140 @@ import math
 import statistics
 import subprocess
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-
 
 STAGING_CONTEXT = "ck8s-stg"
 PROMETHEUS_NAMESPACE = "monitoring"
 PROMETHEUS_SELECTOR = "prometheus=kube-prometheus-stack-prometheus"
 PROMETHEUS_CONTAINER = "prometheus"
 PROMETHEUS_URL = "http://127.0.0.1:9090"
+MAX_CLUSTER_IDENTITY_VALIDITY_SECONDS = 48 * 60 * 60
 
 
 def parse_timestamp(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+
+
+def canonical_sha256(value):
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _parse_aware_time(value, field):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"approved cluster identity has invalid {field}") from error
+    if parsed.tzinfo is None:
+        raise ValueError(f"approved cluster identity has invalid {field}")
+    return parsed
+
+
+def load_approved_cluster_identity(path, now=None):
+    identity = json.loads(Path(path).read_text())
+    if (
+        identity.get("schemaVersion") != 1
+        or identity.get("environment") != "staging"
+        or identity.get("context") != STAGING_CONTEXT
+    ):
+        raise ValueError("approved cluster identity must be schema 1 staging ck8s-stg")
+    parsed_server = urllib.parse.urlparse(str(identity.get("apiServer") or ""))
+    if (
+        parsed_server.scheme != "https"
+        or not parsed_server.hostname
+        or parsed_server.username
+        or parsed_server.password
+        or parsed_server.query
+        or parsed_server.fragment
+    ):
+        raise ValueError("approved cluster identity has invalid apiServer")
+    uid = identity.get("kubeSystemNamespaceUid")
+    approved_by = identity.get("approvedBy")
+    if not isinstance(uid, str) or not uid.strip():
+        raise ValueError("approved cluster identity has no kube-system UID")
+    if not isinstance(approved_by, str) or not approved_by.strip():
+        raise ValueError("approved cluster identity has no approver")
+    approved_at = _parse_aware_time(identity.get("approvedAt"), "approvedAt")
+    valid_until = _parse_aware_time(identity.get("validUntil"), "validUntil")
+    now = now or datetime.now(timezone.utc)
+    if (
+        approved_at > now
+        or valid_until <= now
+        or valid_until <= approved_at
+        or (valid_until - approved_at).total_seconds()
+        > MAX_CLUSTER_IDENTITY_VALIDITY_SECONDS
+    ):
+        raise ValueError(
+            "approved cluster identity is not currently valid or exceeds 48 hours"
+        )
+    return identity
+
+
+def _kubeconfig_server(context):
+    command = ["kubectl", "config", "view", "--raw", "-o", "json"]
+    payload = json.loads(
+        subprocess.run(command, check=True, capture_output=True).stdout
+    )
+    matching_contexts = [
+        item for item in payload.get("contexts") or [] if item.get("name") == context
+    ]
+    if len(matching_contexts) != 1:
+        raise ValueError(f"kubeconfig has no unique context {context}")
+    cluster_name = (matching_contexts[0].get("context") or {}).get("cluster")
+    matching_clusters = [
+        item
+        for item in payload.get("clusters") or []
+        if item.get("name") == cluster_name
+    ]
+    if len(matching_clusters) != 1:
+        raise ValueError("kubeconfig context has no unique cluster")
+    server = (matching_clusters[0].get("cluster") or {}).get("server")
+    if not server:
+        raise ValueError("kubeconfig cluster has no API server")
+    return server
+
+
+def validate_cluster_identity(context, identity_path, now=None):
+    """Fail before any exec unless local and live immutable identity both match."""
+
+    identity_path = Path(identity_path).resolve()
+    identity_bytes = identity_path.read_bytes()
+    identity = load_approved_cluster_identity(identity_path, now=now)
+    if context != identity["context"]:
+        raise ValueError("context does not match the approved cluster identity")
+    configured_server = _kubeconfig_server(context)
+    if configured_server != identity["apiServer"]:
+        raise ValueError("kubeconfig API server is not the approved staging server")
+    # This is the sole cluster read allowed before identity validation. No pod
+    # discovery or exec occurs until the immutable namespace UID also matches.
+    command = [
+        "kubectl",
+        "--context",
+        context,
+        "get",
+        "namespace",
+        "kube-system",
+        "-o",
+        "json",
+    ]
+    namespace = json.loads(
+        subprocess.run(command, check=True, capture_output=True).stdout
+    )
+    observed_uid = (namespace.get("metadata") or {}).get("uid")
+    if observed_uid != identity["kubeSystemNamespaceUid"]:
+        raise ValueError("live cluster UID is not the approved staging cluster UID")
+    return {
+        "approved": identity,
+        "approvedPath": str(identity_path),
+        "approvedFileSha256": hashlib.sha256(identity_bytes).hexdigest(),
+        "approvedSha256": canonical_sha256(identity),
+        "observed": {
+            "apiServer": configured_server,
+            "kubeSystemNamespaceUid": observed_uid,
+        },
+    }
 
 
 def report_processor_pods(report):
@@ -43,21 +164,22 @@ def report_processor_pods(report):
 
 def metric_queries(pods):
     pod_pattern = "|".join(urllib.parse.quote(pod, safe="-") for pod in pods)
-    processor = (
-        'namespace="video-proc",container="processor",'
-        f'pod=~"{pod_pattern}"'
-    )
+    processor = 'namespace="video-proc",container="processor",' f'pod=~"{pod_pattern}"'
     dcgm = (
         'exported_namespace="video-proc",exported_container="processor",'
         f'exported_pod=~"{pod_pattern}"'
     )
     relay = 'namespace="video-proc",pod=~"mediamtx-.*"'
+    relay_output = relay + ',name=~"out-.*"'
     return {
         "processorCpuCores": (
             f"sum(rate(container_cpu_usage_seconds_total{{{processor}}}[1m]))"
         ),
         "processorMemoryWorkingSetBytes": (
             f"sum(container_memory_working_set_bytes{{{processor}}})"
+        ),
+        "processorContainerRestarts": (
+            "sum(kube_pod_container_status_restarts_total{" + processor + "})"
         ),
         "gpuUtilPercent": f"max(DCGM_FI_DEV_GPU_UTIL{{{dcgm}}})",
         "gpuFramebufferUsedMiB": f"sum(DCGM_FI_DEV_FB_USED{{{dcgm}}})",
@@ -70,13 +192,27 @@ def metric_queries(pods):
             + ',container="mediamtx"}[1m]))'
         ),
         "relayMemoryWorkingSetBytes": (
-            f"sum(container_memory_working_set_bytes{{{relay},container=\"mediamtx\"}})"
+            f'sum(container_memory_working_set_bytes{{{relay},container="mediamtx"}})'
         ),
-        "relayReaders": f"sum(paths_readers{{{relay}}})",
+        "relayContainerRestarts": (
+            "max by (pod) (kube_pod_container_status_restarts_total{"
+            + relay
+            + ',container="mediamtx"})'
+        ),
+        "relayPodIdentity": f"max by (pod, uid) (kube_pod_info{{{relay}}})",
+        "relayReaders": f"sum by (pod) (paths_readers{{{relay}}})",
         "relayIngressBytesPerSecond": (
-            f"sum(rate(paths_bytes_received{{{relay}}}[1m]))"
+            f"sum by (pod) (rate(paths_bytes_received{{{relay}}}[1m]))"
         ),
-        "relayEgressBytesPerSecond": f"sum(rate(paths_bytes_sent{{{relay}}}[1m]))",
+        "relayEgressBytesPerSecond": (
+            f"sum by (pod) (rate(paths_bytes_sent{{{relay}}}[1m]))"
+        ),
+        "relayOutputPathCount": (
+            f"count by (pod) (paths_bytes_received{{{relay_output}}})"
+        ),
+        "relayOutputIngressBytesPerSecond": (
+            f"sum by (pod) (rate(paths_bytes_received{{{relay_output}}}[1m]))"
+        ),
         "relayRtspPacketsLostPerSecond": (
             f"sum(rate(rtsp_sessions_rtp_packets_lost{{{relay}}}[1m]))"
         ),
@@ -100,7 +236,9 @@ def discover_prometheus_pod(context):
         "-o",
         "json",
     ]
-    payload = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
+    payload = json.loads(
+        subprocess.run(command, check=True, capture_output=True).stdout
+    )
     ready = []
     for item in payload.get("items") or []:
         conditions = item.get("status", {}).get("conditions") or []
@@ -182,9 +320,10 @@ def summarize(samples):
     }
 
 
-def collect(report_path, context, step_seconds):
+def collect(report_path, context, step_seconds, cluster_identity_path):
     if context != STAGING_CONTEXT:
         raise ValueError(f"context must be exactly {STAGING_CONTEXT}")
+    cluster_identity = validate_cluster_identity(context, cluster_identity_path)
     report_bytes = report_path.read_bytes()
     report = json.loads(report_bytes)
     start = parse_timestamp(report["measurementStartedAt"])
@@ -204,6 +343,7 @@ def collect(report_path, context, step_seconds):
         "schemaVersion": 1,
         "environment": "staging",
         "clusterContext": context,
+        "clusterIdentity": cluster_identity,
         "sourceReport": str(report_path),
         "sourceReportSha256": hashlib.sha256(report_bytes).hexdigest(),
         "runId": report.get("runId"),
@@ -227,6 +367,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path)
     parser.add_argument("--context", default=STAGING_CONTEXT)
+    parser.add_argument(
+        "--cluster-identity",
+        required=True,
+        type=Path,
+        help="independently approved, time-bounded immutable staging identity JSON",
+    )
     parser.add_argument("--step-seconds", type=int, default=15)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -238,7 +384,15 @@ def parse_args():
 def main():
     args = parse_args()
     output = args.output or args.report.with_name(args.report.stem + "-resources.json")
-    write_atomic(output, collect(args.report.resolve(), args.context, args.step_seconds))
+    write_atomic(
+        output,
+        collect(
+            args.report.resolve(),
+            args.context,
+            args.step_seconds,
+            args.cluster_identity.resolve(),
+        ),
+    )
     print(output)
     return 0
 

@@ -12,11 +12,12 @@ sys.path.insert(0, str(BENCHMARK_DIR))
 import run_api_workflow_corpus as runner  # noqa: E402
 from build_processor_jobs import load_corpus  # noqa: E402
 from run_api_workflow_corpus import (  # noqa: E402
-    BenchmarkInterrupted,
     DEFAULT_API_BASE,
+    BenchmarkInterrupted,
     RunLock,
     _start_jobs,
     build_run_plan,
+    corpus_bundle_sha256,
     idempotency_key,
     parse_workload,
     recovery_checkpoint,
@@ -112,6 +113,124 @@ def test_runner_refuses_production_and_builds_from_shared_corpus():
         "instance": 1,
     }
     assert "metadata" not in profiles["single-detection"]["specification"]
+    assert len(plan[0]["workflowSpecificationSha256"]) == 64
+
+
+def test_corpus_bundle_digest_binds_manifest_and_referenced_specifications(tmp_path):
+    expected = json.loads(
+        (BENCHMARK_DIR / "matrices" / "long-soak.staging.example.json").read_text()
+    )["soakPolicy"]["corpusBundleSha256"]
+    assert corpus_bundle_sha256(MANIFEST) == expected
+
+    manifest = json.loads(MANIFEST.read_text())
+    source_spec = BENCHMARK_DIR / "workflows" / manifest["profiles"][0]["spec"]
+    copied_spec = tmp_path / source_spec.name
+    copied_spec.write_text(source_spec.read_text())
+    manifest["profiles"] = [manifest["profiles"][0]]
+    copied_manifest = tmp_path / "manifest.json"
+    copied_manifest.write_text(json.dumps(manifest))
+    before = corpus_bundle_sha256(copied_manifest)
+    specification = json.loads(copied_spec.read_text())
+    specification["metadata"] = {"changed": True}
+    copied_spec.write_text(json.dumps(specification))
+
+    assert corpus_bundle_sha256(copied_manifest) != before
+
+
+def test_report_profile_recomputes_and_rejects_inconsistent_spec_digest():
+    plan = build_run_plan(
+        load_corpus(MANIFEST),
+        ["single-detection"],
+        repeat=1,
+        publish_output=False,
+    )
+    item = plan[0]
+    item["workflowSpecificationSha256"] = "0" * 64
+
+    with pytest.raises(ValueError, match="digest is inconsistent"):
+        runner.report_profile(item)
+
+
+def test_watch_api_uses_workspace_bound_job_route_and_credential_free_result(
+    monkeypatch,
+):
+    client = runner.VideoServiceClient(
+        DEFAULT_API_BASE, "workspace-a", "never-reported"
+    )
+    client.wall_time = lambda: 1_786_000_000
+    calls = []
+
+    def request(method, suffix, body=None, headers=None):
+        calls.append((method, suffix, body, headers))
+        return 200, {
+            "watch": {
+                "requestedUntil": 1_786_000_060_000,
+                "output": "visualization",
+            }
+        }
+
+    monkeypatch.setattr(client, "_request", request)
+
+    result = client.watch_job("job/unsafe", "visualization")
+
+    assert calls == [
+        (
+            "POST",
+            "video-jobs/v1/job%2Funsafe/watch",
+            {"output": "visualization"},
+            None,
+        )
+    ]
+    assert result == {
+        "requestedUntil": 1_786_000_060_000,
+        "output": "visualization",
+    }
+
+
+@pytest.mark.parametrize(
+    "watch",
+    [
+        {},
+        {"requestedUntil": "2099-01-01T00:00:00Z", "output": "visualization"},
+        {"requestedUntil": 1_786_000_060_000, "output": "another-output"},
+        {"requestedUntil": 1_786_000_001_000, "output": "visualization"},
+        {"requestedUntil": float("nan"), "output": "visualization"},
+    ],
+)
+def test_watch_api_rejects_invalid_lease_contract(monkeypatch, watch):
+    client = runner.VideoServiceClient(
+        DEFAULT_API_BASE, "workspace-a", "never-reported"
+    )
+    client.wall_time = lambda: 1_786_000_000
+    monkeypatch.setattr(
+        client, "_request", lambda *_args, **_kwargs: (200, {"watch": watch})
+    )
+
+    with pytest.raises(ValueError, match="invalid credential-free lease"):
+        client.watch_job("job-a", "visualization")
+
+
+def test_watch_api_requires_exact_success_status(monkeypatch):
+    client = runner.VideoServiceClient(
+        DEFAULT_API_BASE, "workspace-a", "never-reported"
+    )
+    client.wall_time = lambda: 1_786_000_000
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda *_args, **_kwargs: (
+            201,
+            {
+                "watch": {
+                    "requestedUntil": 1_786_000_060_000,
+                    "output": "visualization",
+                }
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invalid credential-free lease"):
+        client.watch_job("job-a", "visualization")
 
 
 def test_runner_builds_staged_mixed_workloads_with_explicit_fps():
@@ -254,6 +373,7 @@ class FakeClient:
 
     def __init__(self):
         self.jobs = {}
+        self.watch_calls = []
 
     def start_job(self, source_id, item, key):
         job_id = f"job-{item['ordinal']}"
@@ -283,6 +403,35 @@ class FakeClient:
         if self.jobs[job_id]["state"] == "queued":
             self.jobs[job_id]["state"] = "cancelled"
         return dict(self.jobs[job_id])
+
+    def watch_job(self, job_id, output):
+        self.watch_calls.append((job_id, output))
+        return {"requestedUntil": 4102444800000, "output": output}
+
+
+class WatchFailureClient(FakeClient):
+    def watch_job(self, job_id, output):
+        super().watch_job(job_id, output)
+        raise RuntimeError("synthetic watch failure")
+
+
+class SlowWatchClient(FakeClient):
+    def __init__(self, clock):
+        super().__init__()
+        self.clock = clock
+
+    def watch_job(self, job_id, output):
+        self.clock.sleep(7)
+        return super().watch_job(job_id, output)
+
+
+class ErrorDuringCleanupClient(FakeClient):
+    def get_job(self, job_id):
+        job = self.jobs[job_id]
+        if job.get("cancelRequested"):
+            job["state"] = "error"
+            return dict(job)
+        return super().get_job(job_id)
 
 
 class PartialStartFailureClient(FakeClient):
@@ -385,9 +534,7 @@ class ClaimedThenRunningClient(FakeClient):
         poll = self.polls.get(job_id, 0) + 1
         self.polls[job_id] = poll
         if poll == 1:
-            job.update(
-                {"state": "claimed", "processorId": "processor-before"}
-            )
+            job.update({"state": "claimed", "processorId": "processor-before"})
         else:
             job.update(
                 {
@@ -438,7 +585,126 @@ def test_run_benchmark_starts_measures_and_cleans_up_every_job():
         "startup",
         "measurement",
     }
+    assert all(sample.get("sampledAt") for sample in report["samples"])
     assert all(start["httpStatus"] == 201 for start in report["starts"])
+    assert set(report["watchLeases"]) == {"job-1", "job-2"}
+    assert all(
+        item["renewalCount"] == 1 and not item["errors"]
+        for item in report["watchLeases"].values()
+    )
+
+
+def test_output_watch_is_renewed_and_report_never_retains_response_credentials():
+    clock = FakeClock()
+    client = FakeClient()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(profiles, ["single-detection"], repeat=1, publish_output=True)
+
+    report = run_benchmark(
+        client=client,
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="watch-renewal",
+        duration_seconds=45,
+        poll_interval_seconds=5,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    lease = report["watchLeases"]["job-1"]
+    assert report["success"] is True
+    assert len(client.watch_calls) == 3
+    assert lease["renewalCount"] == 3
+    assert lease["maximumRenewalGapSeconds"] == 20
+    assert "requestedUntil" not in json.dumps(report)
+    assert "processorAccessToken" not in json.dumps(report)
+
+
+def test_watch_gap_is_measured_between_completed_renewals():
+    clock = FakeClock()
+    evidence = {}
+    renewer = runner.WatchLeaseRenewer(
+        SlowWatchClient(clock), evidence, monotonic=clock.monotonic
+    )
+    renewer.register("job-1", "visualization")
+    running = {"job-1": {"state": "running"}}
+
+    renewer.renew(running)
+    clock.sleep(20)
+    renewer.renew(running)
+
+    assert evidence["job-1"]["renewalCount"] == 2
+    assert evidence["job-1"]["maximumRenewalGapSeconds"] == 27
+
+
+def test_output_watch_failure_fails_run_but_still_cleans_up():
+    clock = FakeClock()
+    client = WatchFailureClient()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(profiles, ["single-detection"], repeat=1, publish_output=True)
+
+    report = run_benchmark(
+        client=client,
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="watch-failure",
+        duration_seconds=2,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is False
+    assert {job["state"] for job in report["jobs"]} == {"cancelled"}
+    assert report["watchLeases"]["job-1"]["renewalCount"] == 0
+    assert len(report["watchLeases"]["job-1"]["errors"]) == 1
+    assert "watch lease renewal failed" in report["errors"][0]["error"]
+
+
+def test_output_watch_rejects_poll_interval_that_cannot_safely_renew_lease():
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(profiles, ["single-detection"], repeat=1, publish_output=True)
+
+    with pytest.raises(ValueError, match="watch lease"):
+        run_benchmark(
+            client=FakeClient(),
+            source={"id": "source-a", "name": "Fixture"},
+            plan=plan,
+            run_id="watch-too-slow",
+            duration_seconds=60,
+            poll_interval_seconds=21,
+            startup_timeout_seconds=10,
+            cleanup_timeout_seconds=10,
+        )
+
+
+def test_error_terminal_during_cleanup_fails_an_otherwise_successful_run():
+    clock = FakeClock()
+    profiles = load_corpus(MANIFEST)
+    plan = build_run_plan(
+        profiles, ["single-detection"], repeat=1, publish_output=False
+    )
+
+    report = run_benchmark(
+        client=ErrorDuringCleanupClient(),
+        source={"id": "source-a", "name": "Fixture"},
+        plan=plan,
+        run_id="cleanup-error",
+        duration_seconds=2,
+        poll_interval_seconds=1,
+        startup_timeout_seconds=10,
+        cleanup_timeout_seconds=10,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert report["success"] is False
+    assert report["jobs"][0]["state"] == "error"
+    assert "error terminal state" in report["errors"][-1]["error"]
 
 
 def test_run_benchmark_checkpoints_every_poll_and_on_completion():
@@ -458,9 +724,7 @@ def test_run_benchmark_checkpoints_every_poll_and_on_completion():
         poll_interval_seconds=1,
         startup_timeout_seconds=10,
         cleanup_timeout_seconds=10,
-        checkpoint=lambda value: checkpoints.append(
-            json.loads(json.dumps(value))
-        ),
+        checkpoint=lambda value: checkpoints.append(json.loads(json.dumps(value))),
         sleep=clock.sleep,
         monotonic=clock.monotonic,
     )
@@ -644,9 +908,7 @@ def test_startup_fault_ready_checkpoint_holds_claimed_assignment():
         startup_timeout_seconds=10,
         cleanup_timeout_seconds=10,
         startup_fault_ready_seconds=3,
-        checkpoint=lambda value: checkpoints.append(
-            json.loads(json.dumps(value))
-        ),
+        checkpoint=lambda value: checkpoints.append(json.loads(json.dumps(value))),
         sleep=clock.sleep,
         monotonic=clock.monotonic,
     )
