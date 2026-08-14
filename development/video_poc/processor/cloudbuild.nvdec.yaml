@@ -1,0 +1,21 @@
+# Full staging experiment image. _BASE_IMAGE must be the immutable digest of an
+# Inference v1.4+ GPU image containing the native GStreamer CUDA tensor bridge;
+# an overlay on the older video-processor image cannot add that runtime.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build-nvdec-video-processor
+    args:
+      - build
+      - --platform=linux/amd64
+      - --file=Dockerfile
+      - --build-arg=BASE_IMAGE=${_BASE_IMAGE}
+      - --build-arg=VIDEO_PROC_GIT_SHA=${_GIT_SHA}
+      - --build-arg=VIDEO_PROC_RUNTIME_VARIANT=nvdec-tensor-v1.4
+      - --tag=${_OUTPUT}
+      - .
+images:
+  - ${_OUTPUT}
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+timeout: 1800s
