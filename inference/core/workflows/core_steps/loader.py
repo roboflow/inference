@@ -627,6 +627,9 @@ from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
+    SpaceXAIBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
@@ -1723,6 +1726,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
+        SpaceXAIBlockV1,
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
