@@ -5,6 +5,21 @@ service. The supervisor claims jobs, maintains platform heartbeats, and exposes
 the authenticated status/event surface. Each job can run either in that
 supervisor or in its own spawned OS process.
 
+This runtime is one part of a larger system. The durable project context that
+originally lived with the broad video POC in inference
+[#2616](https://github.com/roboflow/inference/pull/2616) is maintained here now:
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — project intent, repository ownership,
+  end-to-end control/media/result flows, process boundaries, and security.
+- [DEPLOYMENT.md](DEPLOYMENT.md) — cell topology, ready-pool lifecycle, runtime
+  configuration, rollout order, smoke gates, and rollback boundaries.
+- [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md) — the draft design for
+  sticky source placement, multiple cells, dedicated capacity, and
+  workload-aware admission.
+
+PR #2616 remains the experiment notebook and evidence archive. This directory
+is the source of truth for the deployable processor and its architecture.
+
 The intended hosted topology is one spawned process per video job. The child
 owns the decoder, `InferencePipeline`, workflow/model instances, CUDA context,
 and direct MediaMTX output publisher. Pixels and tensors never cross IPC.
