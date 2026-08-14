@@ -53,15 +53,20 @@ def test_acquire_lock_with_expire_still_records_the_expiry():
 
 def test_concurrent_first_acquisition_shares_one_lock():
     # given - a barrier that holds both callers past their first read, so the
-    # two would build separate locks if the lookup-and-create were not guarded
+    # two would build separate locks if the lookup-and-create were not guarded.
+    #
+    # Once it is guarded the second caller cannot reach the barrier while the
+    # first holds the guard, so the barrier is expected to time out rather than
+    # trip. That timeout is the whole wait in this test, hence a short one.
     cache = _build_cache()
     barrier = threading.Barrier(2)
+    barrier_timeout = 0.5
     original_get = cache.get
 
     def get_with_scheduling_gap(key):
         value = original_get(key)
         try:
-            barrier.wait(timeout=5)
+            barrier.wait(timeout=barrier_timeout)
         except threading.BrokenBarrierError:
             pass
         return value
