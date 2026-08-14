@@ -146,21 +146,26 @@ For either shape:
 Do not infer deployability from a local unit test or from an image tag that can
 move.
 
+The current production-runtime candidate was built from exact revision
+`7fc1d0de2ebacbbed0d734e446610ee5616b6613` by staging Cloud Build
+`c4e0b84b-7d15-4fe7-83e0-605f0ca6af00` and published as
+`video-processor-runtime@sha256:2fb362f24dd23e6a8c928480c97fddec8e92087bd424de9283a460ad43df0e49`.
+Credential-free image smoke `5dade8e2-9959-4cfa-84b0-f2dae5b01eaa` passed on
+that exact digest. Cluster lifecycle and workload gates remain separate.
+
 ## Control-plane functions and routing
 
 The API is intentionally split:
 
 | Surface | Function | Examples |
 |---|---|---|
-| Workspace/user automation | `light-v2-video` | `/:workspace/video-sources/v1`, create/get/cancel/watch jobs |
-| Connector, relay, and processor fleet | `light-v2-device` | connector healthcheck/acks, relay auth, fleet claim/status/results |
+| Video control plane | `light-v2-video` | workspace automation, connector healthcheck/acks, relay auth, fleet claim/status/results |
 | Browser session UI | Existing query/session functions | `/query/video-sources*`, `/query/video-jobs/*` |
 
-API Hosting routes workspace video-source and video-job paths to
+API Hosting routes workspace and machine-to-machine video paths to
 `light-v2-video`. A function deploy and a Hosting deploy are separate artifacts;
 both must reference compatible code before automation is considered restored.
-The internal connector/relay/fleet routes stay on `light-v2-device` so unrelated
-workspace API deploys cannot erase or replace the edge-management surface.
+`light-v2-device` retains only the RFDM and edge-device management surface.
 
 ## Deployment ownership and order
 
@@ -168,7 +173,8 @@ workspace API deploys cannot erase or replace the edge-management surface.
 2. **Image build:** build and smoke the exact merged or approved revision;
    capture its digest.
 3. **Roboflow #14376:** deploy the dedicated video function and API Hosting;
-   verify authenticated list/create/get/cancel/watch behavior.
+   verify workspace, connector, relay-auth, and processor-fleet behavior before
+   removing the legacy device-function routes.
 4. **Roboflow-infra #2454 or successor:** pin the image digest and explicit
    runtime switches in the environment values.
 5. Review the staging Spacelift plan. Production plans are not staging approval.

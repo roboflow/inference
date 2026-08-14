@@ -70,11 +70,9 @@ flowchart LR
     end
 
     subgraph control["Global control plane"]
-        device["light-v2-device<br/>connector + relay + fleet API"]
-        videoapi["light-v2-video<br/>workspace automation API"]
+        videoapi["light-v2-video<br/>workspace + connector + relay + fleet API"]
         session["Session/query API<br/>Video Sources UI"]
         store["VideoSource + VideoJob state<br/>Firestore"]
-        device <--> store
         videoapi <--> store
         session <--> store
     end
@@ -95,10 +93,10 @@ flowchart LR
         runner["API client / benchmark runner"]
     end
 
-    connector -->|"HTTPS healthcheck + command ack"| device
-    device -->|"start_stream / stop_stream"| connector
+    connector -->|"HTTPS healthcheck + command ack"| videoapi
+    videoapi -->|"start_stream / stop_stream"| connector
     connector -->|"RTSP/TCP encoded publish src-sourceId"| relay
-    supervisor -->|"fleet claim + status + result metadata"| device
+    supervisor -->|"fleet claim + status + result metadata"| videoapi
     ui -->|"session API"| session
     runner -->|"workspace API key or OAuth"| videoapi
     ui -->|"WHEP source or output preview"| relay
