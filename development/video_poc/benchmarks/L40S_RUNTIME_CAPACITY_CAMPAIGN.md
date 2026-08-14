@@ -3,8 +3,9 @@
 This campaign finds the maximum number of live MediaMTX streams that one L40S
 can process with the exact staging YOLOv8 Nano workflow. It compares the
 original processor/runtime, Inference v1.4 tensor workflows with PyAV, and the
-same v1.4 tensor workflows with NVDEC. MMP, process isolation, and autobatching
-are out of scope. Production reads, writes, and applies are forbidden.
+same v1.4 tensor workflows with NVDEC. A follow-up compares per-job OS-process
+isolation with PyAV and NVDEC. MMP and autobatching are out of scope.
+Production reads, writes, and applies are forbidden.
 
 ## Fixed workload
 
@@ -48,7 +49,25 @@ are:
 | C — v1.4 tensor NVDEC | c1, c2 | pass x2 | c1 median 57.821 FPS; c2 retains 91.2-91.7% per stream with p95 50 ms |
 | C — v1.4 tensor NVDEC | c4 | fail x2 | 142.179/141.554 aggregate FPS, approximately 35.3 FPS per stream, p95 up to 100 ms |
 | C — v1.4 tensor NVDEC | c8 | fail x2 | 108.914/102.056 aggregate FPS, approximately 12.5-13.7 FPS per stream, p95 150 ms; C is complete |
-| D/E/F — one process per job | c1/c2 topology gate | after C | use only rebuilt immutable overlays recorded in `JOB_PROCESS_MATRIX.md` |
+| D — legacy PyAV, one process per job | c1, c4 | pass x2 | strict maximum c4; 229.722-230.510 aggregate FPS at c4 |
+| D — legacy PyAV, one process per job | c8, c12 | fail x2 | c8 333.010/336.093 aggregate, p95 75 ms; c12 235.572/233.658, p95 150 ms |
+| F — v1.4 tensor NVDEC, one process per job | c1, c4 | pass x2 | strict maximum c4; 222.334-226.774 aggregate FPS at c4 |
+| F — v1.4 tensor NVDEC, one process per job | c8, c12 | fail x2 | c8 334.415/335.221 aggregate, p95 75 ms; c12 209.014/208.538, p95 150 ms |
+
+D and F prove that the dominant c4 limit in A/B/C was the shared worker
+process, not the L40S. Moving each complete decoder/workflow/model pipeline to
+its own spawned process raises the strict maximum from c2 to c4 and raises c4
+throughput from `104.502/98.952` in A and `142.179/141.554` in C to
+`230.510/229.722` in D and `226.774/222.334` in F. D's c4 CPU p95 was
+`3.546/3.582` cores; F c4 r1 used `2.904` cores, so NVDEC reduced processor CPU
+by about 19% without raising throughput where both variants already sustained
+the native stream rate. At c8, D and F both reached the eight-core pod limit;
+D c8 r1 used CPU p95 `7.997`, GPU p95 `87%`, and no decoder engine, while F
+used CPU p95 `7.956`, GPU p95 `99%`, and decoder p95 `12%`. F therefore does
+not move this YOLOv8 Nano capacity boundary: after decode is offloaded, model
+execution saturates the GPU while the remaining per-process work still reaches
+the CPU limit. Every accepted F report verified the GStreamer CUDA producer,
+advancing CUDA maps, hardware decode, and zero host/D2H/H2D frame copies.
 
 B c4 failed throughput and latency while CPU p95 was approximately 2.23 cores,
 GPU utilization was 17-18%, framebuffer use was 2,024 MiB, decoder utilization
@@ -205,6 +224,8 @@ capacity failure.
 | A — original | `video-processor-telemetry@sha256:50d4c922f5cd760f43fd982e04819c9a9ad18a1e17a43f67268ff8f917c80e6a`; `c63f9720c25a27e7aa290cea601b09590a6de9f2` | original inference runtime and processor, low-latency PyAV, ndarray workflow path; no v1.4 tensor flags |
 | B — v1.4 PyAV | `video-processor-nvdec@sha256:214196ff30e8ac912830617138d32789c08456349528e0dd44e42cba7e8ac326`; `6ca38194bdc3c312c0adf6a3a275b9014c79f4b6` | tensor workflow serializer/model path, CUDA image device, adaptive backpressure, PyAV ingest |
 | C — v1.4 NVDEC | same exact image and source as B | same flags as B; only ingest mode changes to fail-loud `gstreamer_cuda` and the telemetry label names the NVDEC leg |
+| D — legacy process PyAV | `video-processor-process@sha256:10edc9b2f9afc8d0fd161dccee621a2d714f94547e5fdc1bd59c618dfa6be43f`; `699c7809bc2e87f528a903bf762e3541d26c55d6` | original inference 1.3.5 runtime with one complete decoder/workflow/model child process per job |
+| F — v1.4 process NVDEC | `video-processor-process@sha256:e65500ef0414bb74b0f9d84b416dffdc4c6ce8c8023ff31b153b4930a72e4f9d`; `699c7809bc2e87f528a903bf762e3541d26c55d6` | v1.4 tensor-native workflow, GStreamer CUDA/NVDEC ingest, and one complete child process per job |
 
 A cancellation-safe in-process v1.4 overlay is also available at
 `video-processor-inprocess-v14@sha256:df170c8b6e569f9bffb23540fc3ace143c6e5b92b2ef1ee48a9719de24df8148`
