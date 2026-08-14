@@ -5,6 +5,12 @@ capacity limit observed when several video pipelines share one L40S worker.
 Set `PROCESSOR_JOB_EXECUTION_MODE=process` to spawn one real OS process for
 each claimed stream job. The existing default is `thread`.
 
+The child owns the decoder, workflow, model, CUDA context, and direct MediaMTX
+publisher. Pixels and tensors never cross the process boundary. Image-redacted
+JSON workflow results return to the supervisor through a bounded latest-value
+queue so `/events` and `/events/poll` keep their existing browser contract
+without allowing a slow consumer to backpressure inference.
+
 The topology switch is independent of inference/runtime and decoder selection,
 so the same child boundary is used for all three comparison legs:
 

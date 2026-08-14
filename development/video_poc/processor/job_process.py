@@ -1,14 +1,16 @@
 """Bounded IPC primitives for the staging per-job process experiment.
 
-Video pixels and workflow results deliberately never use this protocol.  A child
-publishes watched image output directly to MediaMTX; the supervisor receives only
-small control-plane snapshots needed for heartbeats and failure handling.
+Video pixels and tensors deliberately never use this protocol. A child publishes
+watched image output directly to MediaMTX. Small, image-redacted JSON workflow
+results cross this boundary through a latest-value queue so browser consumers keep
+working without allowing a slow reader to backpressure inference.
 """
 
 from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import threading
 from typing import Any, Mapping
@@ -18,7 +20,9 @@ MAX_MESSAGE_BYTES = 64 * 1024
 MAX_LOG_LINES = 40
 MAX_LOG_LINE_BYTES = 1000
 
-CHILD_EVENT_TYPES = frozenset({"started", "status", "failure", "completed", "stopped"})
+CHILD_EVENT_TYPES = frozenset(
+    {"started", "status", "result", "failure", "completed", "stopped"}
+)
 PARENT_COMMAND_TYPES = frozenset({"watch", "stop"})
 JOB_EXECUTION_THREAD = "thread"
 JOB_EXECUTION_PROCESS = "process"
@@ -113,6 +117,25 @@ def _contains_forbidden_field(value: Any) -> bool:
     return False
 
 
+def _is_bounded_json_value(value: Any, depth: int = 0) -> bool:
+    """Reject pickle-capable objects even when ``json.dumps(default=str)`` works."""
+
+    if depth > 16:
+        return False
+    if value is None or isinstance(value, (str, bool, int)):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, list):
+        return all(_is_bounded_json_value(item, depth + 1) for item in value)
+    if isinstance(value, Mapping):
+        return all(
+            isinstance(key, str) and _is_bounded_json_value(nested, depth + 1)
+            for key, nested in value.items()
+        )
+    return False
+
+
 def bounded_child_event(event: Mapping[str, Any]) -> dict[str, Any]:
     """Validate one child event before the supervisor accepts it.
 
@@ -129,6 +152,32 @@ def bounded_child_event(event: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported job-process IPC version")
     if event.get("type") not in CHILD_EVENT_TYPES:
         raise ValueError("unsupported job-process IPC event")
+    if event["type"] == "result":
+        if set(event) != {"version", "type", "result"}:
+            raise ValueError("job-process result event has unexpected fields")
+        result = event.get("result")
+        if not isinstance(result, dict) or set(result) != {
+            "frameId",
+            "timestamp",
+            "latencyMs",
+            "outputs",
+        }:
+            raise ValueError("job-process result event is invalid")
+        if not isinstance(result["frameId"], (str, int)):
+            raise ValueError("job-process result frame ID is invalid")
+        if not isinstance(result["timestamp"], str) or len(result["timestamp"]) > 64:
+            raise ValueError("job-process result timestamp is invalid")
+        if result["latencyMs"] is not None and not isinstance(
+            result["latencyMs"], (int, float)
+        ):
+            raise ValueError("job-process result latency is invalid")
+        if not isinstance(result["outputs"], dict):
+            raise ValueError("job-process result outputs are invalid")
+        if not _is_bounded_json_value(result):
+            raise ValueError("job-process result must contain only JSON values")
+        if _encoded_size(event) > MAX_MESSAGE_BYTES:
+            raise ValueError("job-process IPC event exceeds size limit")
+        return copy.deepcopy(event)
     allowed = {
         "version",
         "type",

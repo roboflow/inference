@@ -36,6 +36,7 @@ import copy
 import json
 import multiprocessing as mp
 import os
+import queue
 import re
 import signal
 import socket
@@ -967,6 +968,9 @@ class JobRun:
         if recorder is not None:
             recorder.add(designated_jpeg, video_frame.fps, event)
         self.events.publish(event)
+        publish_result_event = getattr(self.worker, "publish_result_event", None)
+        if publish_result_event is not None:
+            publish_result_event(event)
 
     # ---------- lifecycle ----------
 
@@ -1590,11 +1594,53 @@ class _ChildWorker:
         self._connection = connection
         self._send_lock = threading.Lock()
         self._failure = None
+        self._result_events = queue.Queue(maxsize=1)
+        self._result_sender = threading.Thread(
+            target=self._send_result_events,
+            name="video-job-result-sender",
+            daemon=True,
+        )
+        self._result_sender.start()
 
     def send(self, event):
         event = bounded_child_event(event)
         with self._send_lock:
             self._connection.send(event)
+
+    def publish_result_event(self, result):
+        """Queue the newest JSON result without blocking the inference thread."""
+
+        try:
+            event = bounded_child_event(
+                {
+                    "version": JOB_PROCESS_PROTOCOL_VERSION,
+                    "type": "result",
+                    "result": result,
+                }
+            )
+        except (TypeError, ValueError):
+            # Fail closed for oversized, non-JSON, or credential-shaped output.
+            return False
+        try:
+            self._result_events.put_nowait(event)
+        except queue.Full:
+            try:
+                self._result_events.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._result_events.put_nowait(event)
+            except queue.Full:
+                return False
+        return True
+
+    def _send_result_events(self):
+        while True:
+            event = self._result_events.get()
+            try:
+                self.send(event)
+            except (EOFError, BrokenPipeError, OSError):
+                return
 
     def report_job_failure(self, _job, message, log_tail=None):
         safe_error = sanitize_diagnostic(message)[:2000]
@@ -1842,6 +1888,9 @@ class ProcessJobRun:
                 self.worker.finish_run(self)
 
     def _apply_child_event(self, event):
+        if event["type"] == "result":
+            self.events.publish(event["result"])
+            return
         stats = event.get("stats")
         if isinstance(stats, dict):
             self.stats.replace(stats)

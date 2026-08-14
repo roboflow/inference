@@ -101,6 +101,53 @@ def test_child_protocol_rejects_unbounded_event():
         )
 
 
+def test_child_protocol_accepts_only_bounded_image_redacted_results():
+    event = {
+        "version": PROTOCOL_VERSION,
+        "type": "result",
+        "result": {
+            "frameId": 41,
+            "timestamp": "2026-08-14T12:00:00Z",
+            "latencyMs": 12.5,
+            "outputs": {
+                "predictions": [{"class": "car", "confidence": 0.9}],
+                "visualization": {
+                    "type": "image_ref",
+                    "output": "visualization",
+                },
+            },
+        },
+    }
+    assert bounded_child_event(event) == event
+    with pytest.raises(ValueError, match="forbidden field"):
+        bounded_child_event(
+            {
+                **event,
+                "result": {**event["result"], "apiKey": "secret"},
+            }
+        )
+    with pytest.raises(ValueError, match="size limit"):
+        bounded_child_event(
+            {
+                **event,
+                "result": {
+                    **event["result"],
+                    "outputs": {"predictions": "x" * MAX_MESSAGE_BYTES},
+                },
+            }
+        )
+    with pytest.raises(ValueError, match="only JSON values"):
+        bounded_child_event(
+            {
+                **event,
+                "result": {
+                    **event["result"],
+                    "outputs": {"encoded": b"not-json"},
+                },
+            }
+        )
+
+
 def test_parent_protocol_is_control_only_and_bounded():
     command = {
         "version": PROTOCOL_VERSION,
