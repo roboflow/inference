@@ -3,7 +3,7 @@ import hashlib
 from io import BytesIO
 from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, TypeVar, Union
 
 import numpy as np
 import sam2.utils.misc
@@ -18,6 +18,7 @@ from inference_models.models.sam2.cache import (
     Sam2ImageEmbeddingsInMemoryCache,
     Sam2LowResolutionMasksInMemoryCache,
 )
+from inference_models.models.sam2.entities import SAM2ImageEmbeddings, SAM2Prediction
 from inference_models.models.sam2.sam2_torch import SAM2Torch
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
@@ -53,6 +54,9 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models.errors import ModelInputError
 
 if DEVICE is None:
@@ -124,6 +128,19 @@ class InferenceModelsSAM2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+        nested_model = getattr(self._model, "_model", None)
+        self.image_size = int(
+            getattr(self._model, "image_size", None)
+            or getattr(nested_model, "image_size", None)
+            or 1024
+        )
+
+    def run_tensor_native_inference(
+        self, action: Literal["embed", "segment"], **kwargs
+    ) -> List[Union[SAM2ImageEmbeddings, SAM2Prediction]]:
+        if action == "embed":
+            return self._model.embed_images(**kwargs)
+        return self._model.segment_images(**kwargs)
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
@@ -135,6 +152,7 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())

@@ -1,7 +1,7 @@
 import copy
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -39,12 +39,16 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import AutoModel
 from inference_models.errors import ModelInputError
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsInMemoryCache,
     Sam3LowResolutionMasksInMemoryCache,
 )
+from inference_models.models.sam3.entities import SAM3ImageEmbeddings, SAM3Prediction
 from inference_models.models.sam3.sam3_torch import SAM3Torch
 
 if DEVICE is None:
@@ -105,9 +109,22 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        self.image_size = int(
+            getattr(self._model, "image_size", None)
+            or getattr(self._model, "_image_size", None)
+            or 1008
+        )
+
+    def run_tensor_native_inference(
+        self, action: Literal["embed", "segment"], **kwargs
+    ) -> List[Union[SAM3ImageEmbeddings, SAM3Prediction]]:
+        if action == "embed":
+            return self._model.embed_images(**kwargs)
+        return self._model.segment_with_visual_prompts(**kwargs)
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())

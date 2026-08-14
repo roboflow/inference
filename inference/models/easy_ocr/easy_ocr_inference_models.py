@@ -4,6 +4,7 @@ from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
+import torch
 
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -63,6 +64,13 @@ class InferenceModelsEasyOCRAdapter(Model):
             **kwargs,
         )
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[List[str], List[Detections]]:
+        return self._model.infer(images=images, **kwargs)
+
     def predict(self, image_in: np.ndarray, **kwargs) -> Tuple[str, Detections]:
         parsed_texts, parsed_structures = self._model.infer(images=image_in, **kwargs)
         parsed_text = parsed_texts[0]
@@ -105,6 +113,7 @@ class InferenceModelsEasyOCRAdapter(Model):
         predictions_for_image = []
         for instance_id in range(prediction_result[1].xyxy.shape[0]):
             x_min, y_min, x_max, y_max = prediction_result[1].xyxy[instance_id].tolist()
+            instance_confidence = prediction_result[1].confidence[instance_id].item()
             width = x_max - x_min
             height = y_max - y_min
             center_x = (x_min + x_max) / 2
@@ -117,7 +126,7 @@ class InferenceModelsEasyOCRAdapter(Model):
                         "y": center_y,
                         "width": width,
                         "height": height,
-                        "confidence": 1.0,  # confidence is not returned by the model
+                        "confidence": instance_confidence,
                         "class": prediction_result[1].bboxes_metadata[instance_id][
                             "text"
                         ],

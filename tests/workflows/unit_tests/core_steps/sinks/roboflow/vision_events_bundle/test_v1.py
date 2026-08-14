@@ -636,3 +636,70 @@ def test_valid_float_in_payload_is_serialized_correctly(tmp_path) -> None:
     assert payload["images"][0]["objectDetections"][0]["confidence"] == pytest.approx(
         0.9
     )
+
+
+# === Tensor-native sibling smoke coverage ===
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not __import__(
+        "inference.core.env", fromlist=["ENABLE_TENSOR_DATA_REPRESENTATION"]
+    ).ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+
+@_TENSOR_ONLY
+def test_sync_write_with_native_detections_tensor_native(tmp_path) -> None:
+    # end-to-end write through the v1_tensor sibling with a native
+    # inference_models.Detections carrier - mirrors
+    # test_sync_write_with_both_images_and_predictions
+    import torch
+
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
+        _convert_predictions_to_annotations as tensor_convert_predictions,
+    )
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
+        VisionEventBundleSinkBlockV1 as TensorVisionEventBundleSinkBlockV1,
+    )
+    from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+    from inference_models.models.base.object_detection import Detections
+
+    block = TensorVisionEventBundleSinkBlockV1(
+        background_tasks=None,
+        thread_pool_executor=None,
+        allow_access_to_file_system=True,
+        allowed_write_directory=None,
+        disable_sinks=False,
+    )
+    detections = Detections(
+        xyxy=torch.tensor([[10, 20, 50, 60]], dtype=torch.float32),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {0: "cat"}},
+        bboxes_metadata=[{"detection_id": "d0"}],
+    )
+
+    result = block.run(
+        target_directory=str(tmp_path),
+        input_image=_make_workflow_image(),
+        output_image=_make_workflow_image(),
+        predictions=detections,
+        event_type="quality_check",
+        custom_metadata={"camera_id": "cam_01"},
+        fire_and_forget=False,
+        disable_sink=False,
+        solution=None,
+        cooldown_seconds=0,
+        qc_result="pass",
+    )
+
+    assert result["error_status"] is False
+    assert result["message"] == "Vision event bundle written successfully"
+    payload, members = _read_bundle(result["bundle_path"])
+    assert payload["bundleFormatVersion"] == BUNDLE_FORMAT_VERSION
+    assert payload["eventType"] == "quality_check"
+    image_entry = payload["images"][0]
+    expected_annotations = tensor_convert_predictions(detections)
+    assert image_entry["objectDetections"] == expected_annotations["objectDetections"]
+    assert image_entry["objectDetections"][0]["class"] == "cat"
+    assert image_entry["objectDetections"][0]["confidence"] == pytest.approx(0.9)
