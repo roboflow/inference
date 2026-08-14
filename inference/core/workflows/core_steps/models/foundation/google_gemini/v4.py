@@ -34,8 +34,10 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    third_party_model,
 )
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
@@ -49,6 +51,12 @@ MODEL_ALIASES = {
 }
 
 GEMINI_MODELS = [
+    {
+        "id": "gemini-3.7-flash",
+        "name": "Gemini 3.7 Flash",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
     {
         "id": "gemini-3.6-flash",
         "name": "Gemini 3.6 Flash",
@@ -393,6 +401,9 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [third_party_model(provider="google", model_id=self.model_version)]
 
 
 class GoogleGeminiBlockV4(WorkflowBlock):

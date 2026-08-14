@@ -1,0 +1,35 @@
+name: Validate GitHub Actions
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/actionlint.y*"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/actionlint.y*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: Lint every workflow
+    runs-on: depot-ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # Running without file arguments makes actionlint discover and lint every
+      # workflow under .github/workflows, not only the workflow that changed.
+      - name: Validate workflow syntax and semantics
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          # Shell/Python static analysis belongs to their dedicated checks;
+          # this gate is strictly for Actions YAML, expressions, and actions.
+          args: -no-color -shellcheck= -pyflakes=

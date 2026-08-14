@@ -1,4 +1,7 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
+import torch
 
 from inference.core.entities.requests import ObjectDetectionInferenceRequest
 from inference.core.entities.responses import (
@@ -21,6 +24,7 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.owlv2.owlv2_inference_models import Owlv2AdapterSingleton
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AnyModel, AutoModel, Detections
 from inference_models.models.auto_loaders.access_manager import (
     LiberalModelAccessManager,
@@ -86,6 +90,14 @@ class InferenceModelsRFInstantModelAdapter(Model):
             **kwargs,
         )
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        return self._model.infer(images=images, **kwargs)
+
+    @usage_collector("model")
     def infer(
         self,
         image,

@@ -52,7 +52,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["mqtt_writer_sink@v1"]
+    type: Literal["roboflow_enterprise/mqtt_writer_sink@v1", "mqtt_writer_sink@v1"]
     host: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Host of the MQTT broker.",
         examples=["localhost", "$inputs.mqtt_host"],

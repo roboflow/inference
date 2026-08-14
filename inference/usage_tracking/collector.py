@@ -50,7 +50,9 @@ except ImportError:
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
     get_model_api_key_from_kwargs,
+    get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
+    get_model_megapixel_buckets,
     get_model_resource_details_from_kwargs,
     get_request_api_key_from_kwargs,
     get_request_resource_details_from_kwargs,
@@ -67,6 +69,7 @@ from .payload_helpers import (
     ResourceID,
     SystemDetails,
     UsagePayload,
+    merge_megapixel_buckets,
     send_usage_payload,
     sha256_hash,
     zip_usage_payloads,
@@ -210,6 +213,7 @@ class UsageCollector:
             "inference_version": inference_version,
             "enterprise": False,
             "execution_duration": 0,
+            "megapixel_buckets": {},
         }
         if ROBOFLOW_INTERNAL_SERVICE_SECRET:
             usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
@@ -501,6 +505,7 @@ class UsageCollector:
         execution_duration: float = 0,
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
+        megapixel_buckets: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         source = str(source) if source else ""
         try:
@@ -562,6 +567,11 @@ class UsageCollector:
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             source_usage["execution_duration"] += execution_duration
+            if megapixel_buckets and not inference_test_run:
+                source_usage["megapixel_buckets"] = merge_megapixel_buckets(
+                    source_usage.get("megapixel_buckets"),
+                    megapixel_buckets,
+                )
             if (
                 roboflow_service_name
                 and roboflow_service_name != "external"
@@ -592,6 +602,7 @@ class UsageCollector:
         execution_duration: float = 0,
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
+        megapixel_buckets: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         if OFFLINE_MODE:
             return
@@ -616,6 +627,7 @@ class UsageCollector:
             execution_duration=execution_duration,
             roboflow_service_name=roboflow_service_name,
             roboflow_internal_secret=roboflow_internal_secret,
+            megapixel_buckets=megapixel_buckets,
         )
 
     async def async_record_usage(
@@ -631,6 +643,7 @@ class UsageCollector:
         execution_duration: float = 0,
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
+        megapixel_buckets: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         if self._async_lock:
             async with self._async_lock:
@@ -646,6 +659,7 @@ class UsageCollector:
                     execution_duration=execution_duration,
                     roboflow_service_name=roboflow_service_name,
                     roboflow_internal_secret=roboflow_internal_secret,
+                    megapixel_buckets=megapixel_buckets,
                 )
         else:
             self.record_usage(
@@ -660,6 +674,7 @@ class UsageCollector:
                 execution_duration=execution_duration,
                 roboflow_service_name=roboflow_service_name,
                 roboflow_internal_secret=roboflow_internal_secret,
+                megapixel_buckets=megapixel_buckets,
             )
 
     def _usage_collector(self):
@@ -776,6 +791,8 @@ class UsageCollector:
         if DEVICE_ID:
             resource_details["device_id"] = DEVICE_ID
         resource_id = ""
+        frames = 1
+        megapixel_buckets: Dict[str, Dict[str, Any]] = {}
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if category == "workflows":
             workflow_api_key = get_workflow_api_key_from_kwargs(func_kwargs)
@@ -805,6 +822,13 @@ class UsageCollector:
                 resource_details = {**resource_details, **model_resource_details}
             if not usage_api_key:
                 usage_api_key = get_model_api_key_from_kwargs(func_kwargs) or ""
+            frames, input_hw = get_model_frames_and_input_hw(func_kwargs)
+            megapixel_buckets = get_model_megapixel_buckets(
+                frames=frames,
+                input_hw=input_hw,
+                execution_duration=execution_duration,
+                inference_test_run=usage_inference_test_run,
+            )
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
@@ -875,6 +899,8 @@ class UsageCollector:
             "execution_duration": execution_duration,
             "roboflow_service_name": roboflow_service_name,
             "roboflow_internal_secret": roboflow_internal_secret,
+            "frames": frames,
+            "megapixel_buckets": megapixel_buckets,
         }
 
     @staticmethod

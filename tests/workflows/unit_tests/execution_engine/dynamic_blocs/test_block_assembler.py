@@ -32,6 +32,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     ManifestDescription,
     PythonCode,
     SelectorType,
+    TensorCompatibility,
     ValueType,
 )
 
@@ -502,3 +503,179 @@ def test_create_dynamic_block_specification() -> None:
         _ = result.manifest_class.model_validate(
             {"name": "some", "type": "MyBlock", "a": "$steps.some.a", "b": 1}
         )  # error expected - value "b" not a list
+
+
+def _tensor_knob_block_definition(tensor_compatibility: str) -> DynamicBlockDefinition:
+    return DynamicBlockDefinition(
+        type="DynamicBlockDefinition",
+        manifest=ManifestDescription(
+            type="ManifestDescription",
+            block_type="MyTensorKnobBlock",
+            inputs={
+                "a": DynamicInputDefinition(
+                    type="DynamicInputDefinition",
+                    selector_types=[SelectorType.STEP_OUTPUT],
+                ),
+            },
+            outputs={"output": DynamicOutputDefinition(type="DynamicOutputDefinition")},
+            tensor_compatibility=tensor_compatibility,
+        ),
+        code=PythonCode(
+            type="PythonCode",
+            run_function_code=PYTHON_CODE,
+        ),
+    )
+
+
+def test_manifest_description_tensor_compatibility_defaults_to_legacy() -> None:
+    # when - definition WITHOUT the field, as every pre-knob definition JSON
+    manifest = ManifestDescription.model_validate(
+        {
+            "type": "ManifestDescription",
+            "block_type": "MyBlock",
+            "inputs": {},
+        }
+    )
+
+    # then
+    assert (
+        manifest.tensor_compatibility is TensorCompatibility.LEGACY_COMPATIBILITY
+    ), "Expected additive field to default to legacy_compatibility for BC"
+
+
+def test_manifest_description_tensor_compatibility_rejects_unknown_value() -> None:
+    # when
+    with pytest.raises(ValidationError):
+        _ = ManifestDescription.model_validate(
+            {
+                "type": "ManifestDescription",
+                "block_type": "MyBlock",
+                "inputs": {},
+                "tensor_compatibility": "quantum_mode",
+            }
+        )
+
+
+@mock.patch.object(block_assembler, "ENABLE_TENSOR_DATA_REPRESENTATION", False)
+def test_create_dynamic_block_specification_when_tensor_native_declared_and_flag_off() -> (
+    None
+):
+    # given
+    definition = _tensor_knob_block_definition(tensor_compatibility="tensor_native")
+
+    # when
+    with pytest.raises(DynamicBlockError) as error:
+        _ = create_dynamic_block_specification(
+            dynamic_block_definition=definition,
+            kinds_lookup={"*": WILDCARD_KIND},
+        )
+
+    # then
+    assert "numpy data representation" in str(error.value)
+
+
+@mock.patch.object(block_assembler, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+@mock.patch.object(block_assembler, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal")
+def test_create_dynamic_block_specification_when_tensor_native_declared_and_modal_mode() -> (
+    None
+):
+    # given
+    definition = _tensor_knob_block_definition(tensor_compatibility="tensor_native")
+
+    # when
+    with pytest.raises(DynamicBlockError) as error:
+        _ = create_dynamic_block_specification(
+            dynamic_block_definition=definition,
+            kinds_lookup={"*": WILDCARD_KIND},
+        )
+
+    # then
+    assert "not yet supported for remote" in str(error.value)
+
+
+@mock.patch.object(block_assembler, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+@mock.patch.object(block_assembler, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local")
+def test_create_dynamic_block_specification_when_tensor_native_declared_flag_on_local() -> (
+    None
+):
+    # given
+    definition = _tensor_knob_block_definition(tensor_compatibility="tensor_native")
+
+    # when
+    result = create_dynamic_block_specification(
+        dynamic_block_definition=definition,
+        kinds_lookup={"*": WILDCARD_KIND},
+    )
+
+    # then - compiles, and the raw manifest description is threaded onto the block class
+    assert (
+        result.block_class._manifest_description.tensor_compatibility
+        is TensorCompatibility.TENSOR_NATIVE
+    )
+
+
+@pytest.mark.parametrize("flag_value", [True, False])
+def test_create_dynamic_block_specification_default_knob_compiles_regardless_of_flag(
+    flag_value: bool,
+) -> None:
+    # given - no tensor_compatibility declared anywhere (the pre-knob definition shape)
+    definition = DynamicBlockDefinition(
+        type="DynamicBlockDefinition",
+        manifest=ManifestDescription(
+            type="ManifestDescription",
+            block_type="MyLegacyBlock",
+            inputs={
+                "a": DynamicInputDefinition(
+                    type="DynamicInputDefinition",
+                    selector_types=[SelectorType.STEP_OUTPUT],
+                ),
+            },
+        ),
+        code=PythonCode(type="PythonCode", run_function_code=PYTHON_CODE),
+    )
+
+    # when
+    with mock.patch.object(
+        block_assembler, "ENABLE_TENSOR_DATA_REPRESENTATION", flag_value
+    ):
+        result = create_dynamic_block_specification(
+            dynamic_block_definition=definition,
+            kinds_lookup={"*": WILDCARD_KIND},
+        )
+
+    # then
+    assert (
+        result.block_class._manifest_description.tensor_compatibility
+        is TensorCompatibility.LEGACY_COMPATIBILITY
+    )
+
+
+@pytest.mark.parametrize("flag_value", [True, False])
+def test_create_dynamic_block_specification_default_knob_allowed_in_modal_mode(
+    flag_value: bool,
+) -> None:
+    # given - D5 contract lock: legacy_compatibility (the default) over modal
+    # execution stays allowed regardless of the tensor flag; only tensor_native
+    # is blocked on the modal path.
+    definition = _tensor_knob_block_definition(
+        tensor_compatibility="legacy_compatibility"
+    )
+
+    # when - skip_class_eval short-circuits dynamic-module creation BEFORE the
+    # modal remote-validation branch, so no remote call is attempted here.
+    with mock.patch.object(
+        block_assembler, "ENABLE_TENSOR_DATA_REPRESENTATION", flag_value
+    ), mock.patch.object(
+        block_assembler, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ):
+        result = create_dynamic_block_specification(
+            dynamic_block_definition=definition,
+            kinds_lookup={"*": WILDCARD_KIND},
+            skip_class_eval=True,
+        )
+
+    # then
+    assert (
+        result.block_class._manifest_description.tensor_compatibility
+        is TensorCompatibility.LEGACY_COMPATIBILITY
+    )

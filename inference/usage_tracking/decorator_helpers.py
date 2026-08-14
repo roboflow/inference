@@ -1,10 +1,19 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
+from inference.usage_tracking.megapixel_buckets import (
+    build_megapixel_buckets,
+    clear_measured_model_input,
+    consume_measured_model_input,
+    count_inference_images,
+    record_measured_model_hw,
+    resolve_model_input_hw,
+)
+from inference.usage_tracking.model_types import get_recorded_model_type
 
 
 def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
@@ -46,6 +55,22 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
+    """Resolve Roboflow ``modelType`` (architecture / size), not the resource id.
+
+    Only values already known in-process are consulted. Asking the model registry
+    would be a network call on the inference hot path, so model types are instead
+    recorded when the registry resolves them during model loading. A model whose
+    type was never recorded is reported without one.
+    """
+    model = func_kwargs.get("self")
+    if model is not None:
+        model_type = getattr(model, "model_type", None)
+        if model_type:
+            return str(model_type)
+    return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
+
+
 def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -58,7 +83,85 @@ def get_model_resource_details_from_kwargs(
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
             resource_details["task_type"] = _self.task_type
+    model_type = get_model_type_from_kwargs(func_kwargs)
+    if model_type:
+        resource_details["model_type"] = model_type
     return resource_details
+
+
+def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
+    if "image" in func_kwargs:
+        return func_kwargs["image"]
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict) and "image" in nested_kwargs:
+        return nested_kwargs["image"]
+    for request_key in ("inference_request", "request"):
+        request = func_kwargs.get(request_key)
+        image = getattr(request, "image", None)
+        if image is not None:
+            return image
+    return None
+
+
+def get_model_frames_and_input_hw(
+    func_kwargs: Dict[str, Any],
+) -> Tuple[int, Optional[Tuple[int, int]]]:
+    """Frames recorded for one model call, and the input resolution to attribute
+    them to.
+
+    The frame count comes from the request rather than from the preprocessed
+    tensor: preprocessing pads the batch dimension up to a fixed model batch size
+    when ``FIX_BATCH_SIZE`` is set, and that padding is not part of what the
+    caller asked for. The tensor batch size is only a fallback for calls whose
+    images are not introspectable.
+    """
+    model = func_kwargs.get("self")
+    measured_hw, measured_frames = consume_measured_model_input()
+
+    frames = count_inference_images(get_model_image_from_kwargs(func_kwargs))
+    if frames <= 0 and measured_frames:
+        frames = measured_frames
+    if frames <= 0:
+        frames = 1
+
+    return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
+
+
+def get_model_megapixel_buckets(
+    *,
+    frames: int,
+    input_hw: Optional[Tuple[int, int]],
+    execution_duration: float,
+    inference_test_run: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    if inference_test_run:
+        return {}
+    height, width = input_hw if input_hw else (None, None)
+    return build_megapixel_buckets(
+        height=height,
+        width=width,
+        frames=frames,
+        execution_duration=execution_duration,
+    )
+
+
+def record_fixed_model_input_for_request(model: Any, request: Any = None) -> None:
+    """Publish a model's fixed input size for usage telemetry on a request call.
+
+    Use this for entrypoints that decorate ``infer_from_request`` (rather than
+    ``BaseInference.infer``), so they never hit the preprocess hook that normally
+    records measured tensor size. The model's configured/fixed size is preferred
+    over native upload resolution.
+    """
+    clear_measured_model_input()
+    input_hw = resolve_model_input_hw(model)
+    if input_hw is None:
+        return
+    record_measured_model_hw(
+        height=input_hw[0],
+        width=input_hw[1],
+        frames=count_inference_images(getattr(request, "image", None)),
+    )
 
 
 def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:

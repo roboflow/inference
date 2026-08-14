@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import pytest
 import supervision as sv
+from supervision.config import ORIENTED_BOX_COORDINATES
 from pycocotools import mask as mask_utils
 
 from inference.core.workflows.core_steps.common.serializers import (
@@ -485,6 +486,12 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
                     [[50, 125], [100, 125], [100, 225], [50, 225]],
                 ]
             ),
+            ORIENTED_BOX_COORDINATES: np.array(
+                [
+                    [[25.0, 50.0], [75.0, 50.0], [75.0, 150.0], [25.0, 150.0]],
+                    [[50.0, 125.0], [100.0, 125.0], [100.0, 225.0], [50.0, 225.0]],
+                ]
+            ),
         },
     )
 
@@ -581,6 +588,25 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
             ]
         ),
     ), "Expected polygon metadata to be shifted into root coordinates"
+    assert np.allclose(
+        result[ORIENTED_BOX_COORDINATES],
+        np.array(
+            [
+                [
+                    [50 + 25.0, 100 + 50.0],
+                    [50 + 75.0, 100 + 50.0],
+                    [50 + 75.0, 100 + 150.0],
+                    [50 + 25.0, 100 + 150.0],
+                ],
+                [
+                    [50 + 50.0, 100 + 125.0],
+                    [50 + 100.0, 100 + 125.0],
+                    [50 + 100.0, 100 + 225.0],
+                    [50 + 50.0, 100 + 225.0],
+                ],
+            ]
+        ),
+    ), "Expected oriented-box corners to be shifted into root coordinates"
 
 
 def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> None:
