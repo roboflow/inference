@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roboflow.com/schemas/video-benchmark-decision-framework-v1.json",
+  "title": "Video benchmark decision framework",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "asOf",
+    "environment",
+    "purpose",
+    "evidence",
+    "decisions"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "asOf": {"type": "string", "format": "date"},
+    "environment": {"const": "staging"},
+    "purpose": {"type": "string", "minLength": 1},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/decision"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "strength", "source", "scope"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "status": {
+          "enum": [
+            "verified_observation",
+            "preliminary_observation",
+            "design_only",
+            "pending"
+          ]
+        },
+        "strength": {
+          "enum": [
+            "committed_summary",
+            "committed_summary_without_campaign_reports",
+            "committed_summary_without_raw_reports",
+            "reviewable_design",
+            "none"
+          ]
+        },
+        "source": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "facts": {"type": "object"}
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "scope", "doNotClaim"],
+      "properties": {
+        "action": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "doNotClaim": {"type": "string", "minLength": 1}
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "evidenceIds", "requirement"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "status": {"enum": ["satisfied", "pending"]},
+        "evidenceIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "requirement": {"type": "string", "minLength": 1}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "certificationStatus",
+        "currentRecommendation",
+        "evidenceIds",
+        "certificationRequirements",
+        "unknowns"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "certificationStatus": {
+          "enum": [
+            "certified",
+            "provisional",
+            "design_candidate",
+            "insufficient_evidence"
+          ]
+        },
+        "currentRecommendation": {"$ref": "#/$defs/recommendation"},
+        "evidenceIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "certificationRequirements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/requirement"}
+        },
+        "unknowns": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
