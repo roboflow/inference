@@ -97,6 +97,7 @@ GENERIC_MODELS = {
     "qwen3_5-0.8b": ("lmm", "qwen3_5-0.8b"),
     "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
     "qwen3_5-4b": ("lmm", "qwen3_5-4b"),
+    "qwen3_8-27b": ("lmm", "qwen3_8-27b"),
 }
 
 
