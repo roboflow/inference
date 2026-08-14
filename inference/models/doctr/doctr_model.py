@@ -19,6 +19,7 @@ from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import DEVICE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
+from inference.usage_tracking.collector import usage_collector
 
 if DEVICE is None:
     if torch.cuda.is_available():
@@ -125,6 +126,7 @@ class DocTR(RoboflowCoreModel):
                 time=perf_counter() - t1,
             )
 
+    @usage_collector("model")
     def infer(
         self, image: Any, **kwargs
     ) -> Union[
