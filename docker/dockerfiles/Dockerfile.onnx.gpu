@@ -274,7 +274,7 @@ RUN uv pip install --system \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     jupyterlab \
-    transformers==5.15.0 \
+    "transformers==5.15.0" \
     "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 

@@ -373,7 +373,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     /opt/wheels/pycuda-*.whl \
     /opt/wheels/triton-*.whl \
     "setuptools>=83.0.0" \
-    "transformers>=4.57.3,<5.16.0" \
+    "transformers==5.15.0" \
     packaging && \
     # Requirements also name torch==2.13.0. Reinstall from the wheel bundle
     # after resolution so an equally-versioned index wheel cannot replace our
@@ -468,7 +468,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/wheels/torchvision-*.whl \
         /opt/wheels/triton-*.whl \
         "setuptools>=83.0.0" \
-        "transformers>=4.57.3,<5.16.0" \
+        "transformers==5.15.0" \
         packaging && \
     rm -rf \
         /opt/python-runtime/functorch \
