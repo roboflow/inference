@@ -10,13 +10,70 @@ sys.path.insert(0, str(PROCESSOR_DIR))
 
 from security import (  # noqa: E402
     DiagnosticRing,
+    JobPlacementMismatch,
     JobSecurityRegistry,
     MissingJobAccessToken,
     extract_access_token,
     format_inference_error,
     sanitize_diagnostic,
+    validate_cell_id,
+    validate_job_placement,
     validate_job_id,
 )
+
+
+def test_cell_identity_is_optional_but_validated_as_a_bounded_dns_label():
+    assert validate_cell_id(None) is None
+    assert validate_cell_id("crusoe-use1") == "crusoe-use1"
+
+    for value in ("Crusoe-USE1", "cell.with.dots", "-cell", "cell-", "x" * 64):
+        with pytest.raises(ValueError, match="lowercase DNS label"):
+            validate_cell_id(value)
+
+
+def test_job_placement_accepts_matching_explicit_remote_and_legacy_jobs():
+    validate_job_placement({}, None)
+    validate_job_placement({}, "crusoe-use1")
+    validate_job_placement(
+        {"executionCell": "crusoe-use1", "sourceCell": "crusoe-use1"},
+        "crusoe-use1",
+    )
+    validate_job_placement(
+        {
+            "executionCell": "crusoe-ussc1",
+            "sourceCell": "crusoe-use1",
+            "remoteExecution": True,
+        },
+        "crusoe-ussc1",
+    )
+
+
+@pytest.mark.parametrize(
+    ("job", "cell", "reason"),
+    [
+        (
+            {"executionCell": "crusoe-use1", "sourceCell": "crusoe-use1"},
+            "crusoe-ussc1",
+            "execution_cell_mismatch",
+        ),
+        (
+            {"executionCell": "crusoe-use1", "sourceCell": "crusoe-ussc1"},
+            "crusoe-use1",
+            "implicit_cross_cell",
+        ),
+        (
+            {"executionCell": "crusoe-use1", "sourceCell": "crusoe-use1"},
+            None,
+            "processor_cell_missing",
+        ),
+        ({"sourceCell": "crusoe-use1"}, "crusoe-use1", "invalid_placement"),
+    ],
+)
+def test_job_placement_rejects_unsafe_assignments(job, cell, reason):
+    with pytest.raises(JobPlacementMismatch) as error:
+        validate_job_placement(job, cell)
+
+    assert error.value.reason == reason
 
 
 def test_required_registry_rejects_claim_without_access_token():

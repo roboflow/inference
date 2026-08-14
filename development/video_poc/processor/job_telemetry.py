@@ -29,7 +29,7 @@ def _safe_env(*names):
     return None
 
 
-def build_runtime_identity(processor_id=None):
+def build_runtime_identity(processor_id=None, cell=None):
     """Build non-secret process/image identity once at worker startup.
 
     Container images cannot discover their own registry reference, so deployers
@@ -40,6 +40,7 @@ def build_runtime_identity(processor_id=None):
     identity = {
         "schemaVersion": 1,
         "processorId": str(processor_id)[:256] if processor_id else None,
+        "cell": str(cell)[:63] if cell else None,
         "hostname": socket.gethostname()[:256],
         "processId": os.getpid(),
         "image": _safe_env("VIDEO_PROC_IMAGE", "VIDEO_PROCESSOR_IMAGE", "IMAGE_URI"),

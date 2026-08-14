@@ -1,0 +1,400 @@
+{
+  "schemaVersion": 2,
+  "name": "south-east-cell-routing",
+  "environment": "staging",
+  "executionMode": "render-only",
+  "maxAgents": 20,
+  "agentImage": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/relay-benchmark-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "agentCommand": [
+    "python",
+    "/opt/roboflow/relay_agent.py"
+  ],
+  "fixture": {
+    "secretKeyRef": {
+      "name": "replace-two-cell-benchmark-media",
+      "key": "fixture-url"
+    },
+    "metadata": {
+      "sha256": "replace-with-fixture-sha256",
+      "codec": "h264",
+      "width": 1920,
+      "height": 1080,
+      "fps": 15,
+      "bitrateBps": 5000000,
+      "gopFrames": 30
+    }
+  },
+  "cells": {
+    "east": {
+      "cellId": "crusoe-use1",
+      "provider": "crusoe",
+      "region": "us-east1",
+      "clusterContext": "ck8s-stg",
+      "namespace": "video-proc-bench",
+      "serviceAccountName": "video-relay-benchmark",
+      "endpoints": {
+        "ingestTemplate": {
+          "name": "replace-east-cell-endpoints",
+          "key": "ingest-template"
+        },
+        "consumeInternalTemplate": {
+          "name": "replace-east-cell-endpoints",
+          "key": "consume-internal-template"
+        },
+        "consumePublicTemplate": {
+          "name": "replace-east-cell-endpoints",
+          "key": "consume-public-template"
+        },
+        "previewBase": {
+          "name": "replace-east-cell-endpoints",
+          "key": "preview-base"
+        },
+        "processorApiBase": {
+          "name": "replace-east-cell-endpoints",
+          "key": "processor-api-base"
+        },
+        "prometheusBase": {
+          "name": "replace-east-cell-monitoring",
+          "key": "prometheus-base"
+        }
+      },
+      "versions": {
+        "mediaMtxImage": "replace-with-immutable-digest",
+        "mediaMtxConfigSha256": "replace-before-run",
+        "gatewayImage": "replace-with-immutable-digest",
+        "processorImage": "replace-with-immutable-digest",
+        "ciliumVersion": "1.17.16",
+        "loadBalancerId": "replace-before-run"
+      }
+    },
+    "south": {
+      "cellId": "crusoe-ussc1",
+      "provider": "crusoe",
+      "region": "us-southcentral1",
+      "clusterContext": "ck8s-stg-us-southcentral1",
+      "namespace": "video-proc-bench",
+      "serviceAccountName": "video-relay-benchmark",
+      "endpoints": {
+        "ingestTemplate": {
+          "name": "replace-south-cell-endpoints",
+          "key": "ingest-template"
+        },
+        "consumeInternalTemplate": {
+          "name": "replace-south-cell-endpoints",
+          "key": "consume-internal-template"
+        },
+        "consumePublicTemplate": {
+          "name": "replace-south-cell-endpoints",
+          "key": "consume-public-template"
+        },
+        "previewBase": {
+          "name": "replace-south-cell-endpoints",
+          "key": "preview-base"
+        },
+        "processorApiBase": {
+          "name": "replace-south-cell-endpoints",
+          "key": "processor-api-base"
+        },
+        "prometheusBase": {
+          "name": "replace-south-cell-monitoring",
+          "key": "prometheus-base"
+        }
+      },
+      "versions": {
+        "mediaMtxImage": "replace-with-immutable-digest",
+        "mediaMtxConfigSha256": "replace-before-run",
+        "gatewayImage": "replace-with-immutable-digest",
+        "processorImage": "replace-with-immutable-digest",
+        "ciliumVersion": "1.19.1",
+        "loadBalancerId": "replace-before-run"
+      }
+    }
+  },
+  "locations": {
+    "east-generator": {
+      "cell": "east",
+      "nodeSelector": {
+        "node.kubernetes.io/instance-type": "c1a.16x"
+      },
+      "metadata": {
+        "instanceType": "c1a.16x",
+        "documentedVpcBandwidthBps": 10000000000
+      }
+    },
+    "east-processor": {
+      "cell": "east",
+      "nodeSelector": {
+        "node.kubernetes.io/instance-type": "c1a.16x"
+      },
+      "metadata": {
+        "instanceType": "c1a.16x",
+        "documentedVpcBandwidthBps": 10000000000
+      }
+    },
+    "south-generator": {
+      "cell": "south",
+      "nodeSelector": {
+        "node.kubernetes.io/instance-type": "c1a.16x"
+      },
+      "metadata": {
+        "instanceType": "c1a.16x",
+        "documentedVpcBandwidthBps": 10000000000
+      }
+    },
+    "south-processor": {
+      "cell": "south",
+      "nodeSelector": {
+        "node.kubernetes.io/instance-type": "c1a.16x"
+      },
+      "metadata": {
+        "instanceType": "c1a.16x",
+        "documentedVpcBandwidthBps": 10000000000
+      }
+    }
+  },
+  "sources": [
+    {
+      "name": "default-source",
+      "expectedHomeCell": "east",
+      "publisherLocation": "east-generator",
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      }
+    },
+    {
+      "name": "reconnect-source",
+      "expectedHomeCell": "east",
+      "publisherLocation": "east-generator",
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      }
+    },
+    {
+      "name": "dedicated-source",
+      "expectedHomeCell": "south",
+      "publisherLocation": "south-generator",
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      }
+    }
+  ],
+  "mediaPaths": [
+    {
+      "name": "east-local",
+      "kind": "same-cell",
+      "source": "default-source",
+      "executionCell": "east",
+      "readerLocation": "east-processor",
+      "remoteExecution": false,
+      "consumeEndpoint": "consumeInternalTemplate",
+      "copyReaders": 1,
+      "decodeReaders": 1,
+      "evidenceArtifacts": {
+        "processorClaimedCell": "evidence/paths/east-local-processor-cell.json",
+        "relaySessions": "evidence/paths/east-local-relay-sessions.json",
+        "relayReaders": "evidence/paths/east-local-relay-readers.json",
+        "podPlacement": "evidence/paths/east-local-pods.json",
+        "nodePlacement": "evidence/paths/east-local-nodes.json",
+        "metricsWindow": "evidence/paths/east-local-metrics.json"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "2",
+          "memory": "1Gi"
+        }
+      }
+    },
+    {
+      "name": "south-local",
+      "kind": "same-cell",
+      "source": "dedicated-source",
+      "executionCell": "south",
+      "readerLocation": "south-processor",
+      "remoteExecution": false,
+      "consumeEndpoint": "consumeInternalTemplate",
+      "copyReaders": 1,
+      "decodeReaders": 1,
+      "evidenceArtifacts": {
+        "processorClaimedCell": "evidence/paths/south-local-processor-cell.json",
+        "relaySessions": "evidence/paths/south-local-relay-sessions.json",
+        "relayReaders": "evidence/paths/south-local-relay-readers.json",
+        "podPlacement": "evidence/paths/south-local-pods.json",
+        "nodePlacement": "evidence/paths/south-local-nodes.json",
+        "metricsWindow": "evidence/paths/south-local-metrics.json"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "2",
+          "memory": "1Gi"
+        }
+      }
+    },
+    {
+      "name": "south-origin-east-processor",
+      "kind": "explicit-cross-cell",
+      "source": "dedicated-source",
+      "executionCell": "east",
+      "readerLocation": "east-processor",
+      "remoteExecution": true,
+      "consumeEndpoint": "consumePublicTemplate",
+      "copyReaders": 1,
+      "decodeReaders": 1,
+      "evidenceArtifacts": {
+        "processorClaimedCell": "evidence/paths/south-to-east-processor-cell.json",
+        "relaySessions": "evidence/paths/south-to-east-relay-sessions.json",
+        "relayReaders": "evidence/paths/south-to-east-relay-readers.json",
+        "podPlacement": "evidence/paths/south-to-east-pods.json",
+        "nodePlacement": "evidence/paths/south-to-east-nodes.json",
+        "metricsWindow": "evidence/paths/south-to-east-metrics.json"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "2",
+          "memory": "1Gi"
+        }
+      }
+    }
+  ],
+  "controlPlaneEvidence": {
+    "endpoint": {
+      "name": "replace-two-cell-control-plane",
+      "key": "endpoint"
+    },
+    "auth": {
+      "name": "replace-two-cell-control-plane",
+      "key": "benchmark-auth"
+    },
+    "cellRegistrySnapshot": "evidence/control-plane/cell-registry.json",
+    "cases": [
+      {
+        "name": "first-activation-default",
+        "kind": "first-activation",
+        "source": "default-source",
+        "workspaceAlias": "default-workspace",
+        "expectedCell": "east",
+        "artifacts": {
+          "registeredIdle": "evidence/control-plane/default-before.json",
+          "activated": "evidence/control-plane/default-activated.json",
+          "connectorPublishEndpoint": "evidence/control-plane/default-connector-publish.json",
+          "previewProof": "evidence/control-plane/default-preview.json"
+        }
+      },
+      {
+        "name": "reconnect-retains-cell",
+        "kind": "reconnect-stickiness",
+        "source": "reconnect-source",
+        "workspaceAlias": "default-workspace",
+        "expectedCell": "east",
+        "artifacts": {
+          "beforeReconnect": "evidence/control-plane/reconnect-before.json",
+          "afterReconnect": "evidence/control-plane/reconnect-after.json",
+          "connectorPublishEndpoint": "evidence/control-plane/reconnect-connector-publish.json",
+          "previewProof": "evidence/control-plane/reconnect-preview.json"
+        }
+      },
+      {
+        "name": "dedicated-workspace-south",
+        "kind": "dedicated-workspace",
+        "source": "dedicated-source",
+        "workspaceAlias": "dedicated-workspace",
+        "expectedCell": "south",
+        "artifacts": {
+          "policySnapshot": "evidence/control-plane/dedicated-policy.json",
+          "activated": "evidence/control-plane/dedicated-activated.json",
+          "connectorPublishEndpoint": "evidence/control-plane/dedicated-connector-publish.json",
+          "previewProof": "evidence/control-plane/dedicated-preview.json"
+        }
+      },
+      {
+        "name": "south-cell-loss-recovery",
+        "kind": "cell-loss-recovery",
+        "source": "dedicated-source",
+        "workspaceAlias": "dedicated-workspace",
+        "expectedCell": "south",
+        "recoveryCell": "south",
+        "artifacts": {
+          "cellLossStarted": "evidence/control-plane/cell-loss-started.json",
+          "unavailableObserved": "evidence/control-plane/cell-loss-unavailable.json",
+          "reassignmentDecision": "evidence/control-plane/cell-loss-reassignment.json",
+          "recovered": "evidence/control-plane/cell-loss-recovered.json",
+          "connectorPublishAfterRecovery": "evidence/control-plane/cell-loss-connector-publish.json",
+          "previewAfterRecovery": "evidence/control-plane/cell-loss-preview.json"
+        }
+      }
+    ]
+  },
+  "measurementPlan": {
+    "networkProfiles": [
+      {
+        "name": "baseline",
+        "latencyMs": 0,
+        "lossPercent": 0,
+        "bandwidthBps": 1000000000,
+        "egressAccounting": true
+      },
+      {
+        "name": "wan-50ms-loss-01",
+        "latencyMs": 50,
+        "lossPercent": 0.1,
+        "bandwidthBps": 100000000,
+        "egressAccounting": true
+      }
+    ],
+    "failureExperiments": [
+      {
+        "name": "south-mediamtx-recovery",
+        "targetCell": "south",
+        "target": "mediamtx",
+        "requiresApproval": true,
+        "maxUnavailableSeconds": 120,
+        "reassignmentPolicy": "retain-home-cell",
+        "timelineArtifact": "evidence/failures/south-mediamtx-timeline.json",
+        "rollbackArtifact": "evidence/failures/south-mediamtx-rollback.json"
+      }
+    ]
+  },
+  "timing": {
+    "durationSeconds": 300,
+    "startupGraceSeconds": 60,
+    "ttlSecondsAfterFinished": 900
+  },
+  "stopThresholds": {
+    "maxStartupSeconds": 30,
+    "maxProgressStallSeconds": 15,
+    "maxReconnects": 1,
+    "minDeliveredFpsRatio": 0.95
+  }
+}

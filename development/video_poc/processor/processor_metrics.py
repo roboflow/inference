@@ -7,12 +7,20 @@ benchmark result manifest, not Prometheus labels.
 """
 
 import math
+import re
 import threading
 from collections import defaultdict
 
 VALID_MODES = ("stream", "batch", "unknown")
 VALID_OUTCOMES = ("completed", "error", "cancelled", "stopped")
 VALID_TRANSPORTS = ("whip", "rtsp")
+VALID_CLAIM_REJECTION_REASONS = (
+    "execution_cell_mismatch",
+    "implicit_cross_cell",
+    "invalid_placement",
+    "processor_cell_missing",
+)
+CELL_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 def _bounded(value, allowed, fallback):
@@ -90,6 +98,7 @@ class ProcessorMetrics:
         self._jobs_started = defaultdict(int)
         self._jobs_finished = defaultdict(int)
         self._frames_processed = defaultdict(int)
+        self._claim_rejections = defaultdict(int)
         self._job_start_duration = _Histogram((0.5, 1, 2, 5, 10, 30, 60, 120, 300))
         self._time_to_first_result = _Histogram((0.5, 1, 2, 5, 10, 30, 60, 120, 300))
         self._decode_to_result_latency = _Histogram(
@@ -120,6 +129,15 @@ class ProcessorMetrics:
             if first_result_seconds is not None:
                 self._time_to_first_result.observe(mode, first_result_seconds)
 
+    def claim_rejected(self, reason):
+        reason = _bounded(
+            reason,
+            VALID_CLAIM_REJECTION_REASONS,
+            "invalid_placement",
+        )
+        with self._lock:
+            self._claim_rejections[reason] += 1
+
     def render(
         self,
         *,
@@ -127,17 +145,22 @@ class ProcessorMetrics:
         capacity,
         tier,
         retiring,
+        cell=None,
         active_publishers=None,
     ):
         active_jobs = max(0, int(active_jobs))
         capacity = max(1, int(capacity))
         tier = _bounded(tier, ("gpu", "cpu"), "unknown")
+        cell = str(cell or "legacy")
+        if cell != "legacy" and not CELL_ID_RE.fullmatch(cell):
+            cell = "unknown"
         publishers = active_publishers or {}
 
         with self._lock:
             jobs_started = dict(self._jobs_started)
             jobs_finished = dict(self._jobs_finished)
             frames_processed = dict(self._frames_processed)
+            claim_rejections = dict(self._claim_rejections)
             job_start_duration = self._job_start_duration.render(
                 "video_processor_job_start_duration_seconds",
                 "Seconds from job receipt until the workflow pipeline is initialized",
@@ -157,7 +180,7 @@ class ProcessorMetrics:
         lines = [
             "# HELP video_processor_info Static video processor identity",
             "# TYPE video_processor_info gauge",
-            f"video_processor_info{_labels(tier=tier)} 1",
+            f"video_processor_info{_labels(cell=cell, tier=tier)} 1",
             "# HELP video_processor_busy Number of active jobs assigned to this worker",
             "# TYPE video_processor_busy gauge",
             f"video_processor_busy {active_jobs}",
@@ -206,6 +229,18 @@ class ProcessorMetrics:
             lines.append(
                 f"video_processor_frames_processed_total{_labels(mode=mode)} "
                 f"{frames_processed.get(mode, 0)}"
+            )
+
+        lines.extend(
+            [
+                "# HELP video_processor_claim_rejections_total Claims rejected before job execution by bounded reason",
+                "# TYPE video_processor_claim_rejections_total counter",
+            ]
+        )
+        for reason in VALID_CLAIM_REJECTION_REASONS:
+            lines.append(
+                "video_processor_claim_rejections_total"
+                f"{_labels(reason=reason)} {claim_rejections.get(reason, 0)}"
             )
 
         lines.extend(

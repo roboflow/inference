@@ -121,14 +121,19 @@ def test_runtime_identity_uses_only_allowlisted_bounded_environment(monkeypatch)
     monkeypatch.setenv("VIDEO_PROC_SERVICE_SECRET", "must-not-leak")
     monkeypatch.setenv("ROBOFLOW_API_KEY", "must-not-leak-either")
 
-    identity = build_runtime_identity("processor-a")
+    identity = build_runtime_identity("processor-a", "crusoe-use1")
 
     assert identity["processorId"] == "processor-a"
+    assert identity["cell"] == "crusoe-use1"
     assert identity["image"] == "registry/video-processor:benchmark"
     assert identity["revision"] == "deadbeef"
     assert identity["gpuVisibleDevices"] == "GPU-123"
     assert identity["processId"] > 0
     assert "must-not-leak" not in repr(identity)
+
+
+def test_runtime_identity_preserves_legacy_no_cell_mode():
+    assert "cell" not in build_runtime_identity("processor-a")
 
 
 def test_processor_wires_job_telemetry_without_job_labeled_prometheus():

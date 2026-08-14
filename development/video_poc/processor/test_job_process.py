@@ -71,7 +71,7 @@ def test_child_protocol_does_not_accept_payload_or_credentials():
         "type": "status",
         "state": "running",
         "stats": {"frames": 7},
-        "runtime": {"processId": 42},
+        "runtime": {"processId": 42, "cell": "crusoe-use1"},
         "imageOutputs": ["visualization"],
         "defaultImageOutput": "visualization",
         "error": None,

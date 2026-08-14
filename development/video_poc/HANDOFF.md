@@ -641,6 +641,62 @@ Decisions and direction that came out of team review — this is current intent,
 yet all implemented. The detailed scaling plan, benchmarks, rollout gates, and open
 questions live in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
 
+### Multi-cell implementation status (2026-08-13)
+
+Phase 1 is implemented in review-only draft PRs and Phase 2 is prepared behind
+staging-only gates; none of these branches has been deployed:
+
+- control-plane draft
+  [roboflow#14444](https://github.com/roboflow/roboflow/pull/14444) has an
+  explicit deployed-config cell registry,
+  per-workspace preferred/dedicated policy, transactional first activation,
+  persisted source/job placement and generations, cell-specific URLs,
+  cell-bound relay and fleet identities, cell+tier claim rechecks, explicit
+  idle reassignment/remote-experiment primitives, and a staging-only scheduled
+  orphan reaper. The first control-plane rollout registers only
+  `crusoe-use1`; missing placement remains a default-cell compatibility path;
+- stacked staging-config draft
+  [roboflow#14445](https://github.com/roboflow/roboflow/pull/14445) adds the
+  explicit South registry entry as `unavailable` and binds its cell-specific
+  secret name only after the infra prerequisite exists;
+- processor/harness draft
+  [inference#2793](https://github.com/roboflow/inference/pull/2793) reads
+  immutable `VIDEO_PROC_CELL` identity once at startup,
+  asserts it on platform calls, and rejects mismatched or implicit cross-cell
+  claims before registering a token, constructing a run, touching media, or
+  detaching a ready-pool pod. Health, runtime telemetry, and bounded Prometheus
+  identity expose the cell. Legacy unplaced jobs still run during migration;
+- connector draft
+  [rf-video-connector#2](https://github.com/roboflow/rf-video-connector/pull/2)
+  keeps selection server-side, reports cell/generation, fences stale route
+  commands, and redacts credentialed media URLs;
+- infrastructure draft
+  [roboflow-infra#2460](https://github.com/roboflow/roboflow-infra/pull/2460)
+  models `crusoe-ussc1` as a separate staging-only South Central cell stack. It
+  starts `unavailable`, with processors disabled,
+  cell-specific credentials/subscription, exact relay/gateway/processor node
+  classes, explicit `.one` endpoints, RTSPS for the opt-in WAN experiment,
+  and per-cell monitoring. Production renders are unchanged. The existing East
+  release changes only by injecting `VIDEO_PROC_CELL=crusoe-use1` when the
+  cell-aware processor rolls out;
+- the schema-v2 two-cell renderer in
+  [`benchmarks/networking/`](benchmarks/networking/) emits separate East/South
+  Job lists plus a redacted evidence/report contract. The example uses only
+  `c1a.16x` nodes, so it does not schedule onto or alter the active L40S capacity
+  campaign. It requires observed connector, preview, claim, relay, pod/node,
+  Prometheus, network, and bounded failure/recovery evidence rather than
+  accepting requested placement as proof. Stacked infra draft
+  [roboflow-infra#2461](https://github.com/roboflow/roboflow-infra/pull/2461)
+  prepares only the isolated East benchmark namespace/ServiceAccount; it does
+  not touch the live East video-processing release or active source.
+
+No second-cell resources, DNS, Kubernetes objects, functions, or test jobs had
+been applied when this status was written. The South stack, DNS, East identity
+rollout, processor activation, failure injection, and benchmark Jobs remain
+separate staging-write approval gates. The active connector source used by the
+L40S campaign must not be repointed; validation uses new short-lived test
+sources and Secret references.
+
 - **A live source gets a sticky home cell on first activation.** Registration remains
   metadata-only. The first preview or live job transactionally selects and persists a
   cell/relay shard; ordinary jobs inherit it so connector ingest, relay fan-out, and
@@ -720,14 +776,23 @@ questions live in [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md).
    claim, ready pools, orphan requeue, per-job processor tokens, multiple workflows
    per source, up to four jobs per worker, GCS batch results, and relay-published
    watched outputs.
-3. Next: complete Phase 0 of
+3. The single-L40S capacity campaign remains a separate workstream. Do not
+   replace its image, configuration, source, or placement while advancing the
+   multi-cell branches.
+4. Review and merge the Phase 1 cell-aware control-plane and processor contracts,
+   deploy them with only East registered, and prove a wrong-cell synthetic worker
+   cannot claim East work. The Firestore index must precede the functions rollout;
+   the East worker identity follows the functions compatibility rollout.
+5. After staging-write approval, create the South relay-first cell while it is
+   unavailable and processor-disabled, add its three DNS records, and prove relay
+   auth/transport/monitoring with a new test source. Only then bind its cell secret,
+   register it, enable one CPU/GPU worker, and run the two-cell report contract.
+6. Continue Phase 0 capacity work from
    [MULTI_CELL_SCALING_RFC.md](MULTI_CELL_SCALING_RFC.md): agree on SLOs; review,
    merge the already-applied staging MediaMTX observability chart from infra
    [#2443](https://github.com/roboflow/roboflow-infra/pull/2443); deploy and
    validate the aggregate processor telemetry overlay; then run the controlled
    FPS, multi-workspace, MPS/MMP, recovery, mixed-workload, and soak matrices.
    A production apply remains a separate approval step.
-4. Then introduce cell-aware source/job contracts while only East is registered;
-   prove claim isolation before deploying a second non-production cell.
-5. Remaining adjacent hardening: job-addressed live events, connector-source polish,
+7. Remaining adjacent hardening: job-addressed live events, connector-source polish,
    recording/metering, and externalizable state for seamless stateful recovery.
