@@ -85,7 +85,7 @@ from inference_sdk import InferenceHTTPClient
 # - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.6-27b``).
 
 MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
-    # Native — small models that run on Roboflow infrastructure.
+    # Native — models served on Roboflow infrastructure.
     "Qwen 2.5 VL 7B": {
         "backend": "native",
         "model_id": "qwen25-vl-7b",
@@ -101,6 +101,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
     "Qwen 3.5 VL 2B": {
         "backend": "native",
         "model_id": "qwen3_5-2b",
+    },
+    "Qwen 3.8 VL 27B": {
+        "backend": "native",
+        "model_id": "qwen3_8-27b",
     },
     # OpenRouter — large hosted models reached via OpenRouter.
     "Qwen 3.5 9B": {
@@ -187,6 +191,7 @@ NATIVE_SUPPORTED_VARIANTS = NATIVE_MODEL_IDS + ["qwen-pretrains/2"]
 # which is the qwen3.5-2b base — so include the sentinel here too.
 NATIVE_THINKING_MODEL_VERSIONS = [
     "Qwen 3.5 VL 2B",
+    "Qwen 3.8 VL 27B",
     FINE_TUNED_NATIVE_LABEL,
 ]
 

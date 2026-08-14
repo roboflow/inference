@@ -891,9 +891,14 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ModelClass
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ModelClass
             elif variant.startswith("qwen3_8"):
-                from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
-                    InferenceModelsQwen38VLAdapter as _Qwen38ModelClass,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3_8_vllm import (
+                        Qwen38VLLMProxy as _Qwen38ModelClass,
+                    )
+                else:
+                    from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
+                        InferenceModelsQwen38VLAdapter as _Qwen38ModelClass,
+                    )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen38ModelClass
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_8")] = _Qwen38ModelClass
@@ -1233,9 +1238,14 @@ if USE_INFERENCE_MODELS:
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ExplicitModelClass
 
     if QWEN_3_8_ENABLED:
-        from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
-            InferenceModelsQwen38VLAdapter as _Qwen38ExplicitModelClass,
-        )
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3_8_vllm import (
+                Qwen38VLLMProxy as _Qwen38ExplicitModelClass,
+            )
+        else:
+            from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
+                InferenceModelsQwen38VLAdapter as _Qwen38ExplicitModelClass,
+            )
 
         for variant in [
             "qwen3_8-27b",
