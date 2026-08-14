@@ -11,7 +11,7 @@ from build_processor_jobs import build_jobs, load_corpus  # noqa: E402
 MANIFEST = BENCHMARK_DIR / "workflows" / "manifest.json"
 
 
-def test_workflow_corpus_has_one_profile_per_provisional_class():
+def test_workflow_corpus_covers_provisional_classes_and_cpu_counterparts():
     profiles = load_corpus(MANIFEST)
 
     assert set(profiles) == {
@@ -19,8 +19,11 @@ def test_workflow_corpus_has_one_profile_per_provisional_class():
         "single-detection",
         "single-detection-cpu",
         "detection-tracking",
+        "detection-tracking-cpu",
         "dual-detection",
+        "dual-detection-cpu",
         "instance-segmentation",
+        "instance-segmentation-cpu",
     }
     assert {profile["provisionalClass"] for profile in profiles.values()} == {
         "light",
