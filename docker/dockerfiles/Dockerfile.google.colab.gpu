@@ -1,7 +1,7 @@
 FROM us-docker.pkg.dev/colab-images/public/runtime:latest
 
 COPY . .
-RUN pip uninstall torchaudio
+RUN pip uninstall -y torchaudio
 RUN make create_wheels
 RUN pip install dist/inference_gpu*.whl
 RUN pip install -r requirements/requirements.test.colab.txt
