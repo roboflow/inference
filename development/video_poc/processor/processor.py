@@ -107,6 +107,8 @@ from job_process import (
     remove_supervisor_credentials,
     resolve_job_execution_mode,
     restore_supervisor_credentials,
+    send_parent_command,
+    wait_for_process_exit,
 )
 from job_telemetry import JobTelemetry, build_runtime_identity
 from processor_metrics import ProcessorMetrics
@@ -192,6 +194,13 @@ DOMAIN_CONTAINMENT_TIMEOUT_S = max(
 # safely; contain the whole pod and let the platform reaper place sibling jobs.
 JOB_STOP_TIMEOUT_S = max(
     0.1, float(os.getenv("PROCESSOR_JOB_STOP_TIMEOUT_S", "30"))
+)
+
+# Pipe EOF can precede multiprocessing's finalized child exit status by a
+# short interval. Reap the child before reporting its exit or starting
+# teardown so a normal child crash cannot be mistaken for a wedged worker.
+JOB_PROCESS_EXIT_REAP_TIMEOUT_S = max(
+    0.1, float(os.getenv("PROCESSOR_JOB_EXIT_REAP_TIMEOUT_S", "2"))
 )
 
 # Used by stream-mode jobs on file sources: the file is replayed at native speed
@@ -1808,14 +1817,22 @@ class ProcessJobRun:
                     break
         except (EOFError, BrokenPipeError, OSError, ValueError) as exc:
             if not self.cancelling:
+                diagnostic = sanitize_diagnostic(exc) or type(exc).__name__
                 self.log_ring.note(
-                    f"job process IPC failed: {sanitize_diagnostic(exc)}"
+                    f"job process IPC failed: {diagnostic}"
                 )
         finally:
-            exit_code = process.exitcode if process is not None else None
+            exit_code = wait_for_process_exit(
+                process, JOB_PROCESS_EXIT_REAP_TIMEOUT_S
+            )
             if not self.cancelling and self.state in ("starting", "running"):
+                exit_diagnostic = (
+                    str(exit_code)
+                    if exit_code is not None
+                    else "unknown; IPC closed before child termination"
+                )
                 self.report_failure(
-                    f"job process exited unexpectedly (code {exit_code})"
+                    f"job process exited unexpectedly (code {exit_diagnostic})"
                 )
                 with self.lock:
                     self.state = "error"
@@ -1870,11 +1887,8 @@ class ProcessJobRun:
                 self.state = "error"
 
     def _send(self, command):
-        command = bounded_parent_command(command)
         with self._send_lock:
-            if self._connection is None:
-                return
-            self._connection.send(command)
+            return send_parent_command(self._connection, command)
 
     def handle_watch(self, watch):
         # Output publishing remains in the child and goes directly to MediaMTX;

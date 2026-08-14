@@ -218,6 +218,43 @@ def bounded_parent_command(command: Mapping[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(command)
 
 
+def send_parent_command(connection, command: Mapping[str, Any]) -> bool:
+    """Best-effort send on the parent-to-child control pipe.
+
+    A child can exit between ``is_alive()`` and ``send()``.  EOF or a broken
+    pipe is therefore an expected crash-cleanup outcome, not evidence that the
+    supervisor itself is wedged.  Callers still validate the complete command
+    before attempting the write.
+    """
+
+    command = bounded_parent_command(command)
+    if connection is None:
+        return False
+    try:
+        connection.send(command)
+    except (EOFError, BrokenPipeError, OSError, ValueError):
+        return False
+    return True
+
+
+def wait_for_process_exit(process, timeout_s: float):
+    """Boundedly reap a child and return its finalized exit status.
+
+    Pipe EOF can become visible slightly before ``multiprocessing`` updates
+    ``Process.exitcode``.  Joining here preserves the real signal/exit code in
+    the failure report and prevents cleanup from acting on a transitional
+    ``is_alive()`` result.
+    """
+
+    if process is None:
+        return None
+    try:
+        process.join(timeout=max(0.0, float(timeout_s)))
+        return process.exitcode
+    except (AssertionError, OSError, ValueError):
+        return None
+
+
 def bounded_log_tail(lines) -> list[str]:
     return [
         str(line).encode()[:MAX_LOG_LINE_BYTES].decode(errors="replace")

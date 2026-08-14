@@ -1,6 +1,7 @@
 import copy
 import multiprocessing as mp
 import os
+import signal
 
 import pytest
 from job_process import (
@@ -14,6 +15,8 @@ from job_process import (
     remove_supervisor_credentials,
     resolve_job_execution_mode,
     restore_supervisor_credentials,
+    send_parent_command,
+    wait_for_process_exit,
 )
 
 
@@ -216,5 +219,34 @@ def test_hard_child_crash_is_observable_without_killing_sibling():
         if sibling.is_alive():
             sibling.terminate()
             sibling.join(timeout=2)
+        crashed_pipe.close()
+        sibling_pipe.close()
+
+
+def test_eof_before_reap_preserves_exit_code_and_broken_pipe_is_expected():
+    context = mp.get_context("spawn")
+    crashed, crashed_pipe, _ = _spawn_probe(context)
+    sibling, sibling_pipe, _ = _spawn_probe(context)
+    stop = {"version": PROTOCOL_VERSION, "type": "stop"}
+    try:
+        os.kill(crashed.pid, signal.SIGKILL)
+        # This is the live failure ordering: IPC EOF is observed before the
+        # supervisor has joined the child and finalized Process.exitcode.
+        with pytest.raises(EOFError):
+            crashed_pipe.recv()
+        assert wait_for_process_exit(crashed, timeout_s=5) == -signal.SIGKILL
+
+        # Cleanup of an already-dead child must not escalate to a whole-worker
+        # containment restart, and the sibling must remain independently live.
+        assert send_parent_command(crashed_pipe, stop) is False
+        assert sibling.is_alive()
+        assert send_parent_command(sibling_pipe, stop) is True
+        assert bounded_child_event(sibling_pipe.recv())["state"] == "stopped"
+        assert wait_for_process_exit(sibling, timeout_s=5) == 0
+    finally:
+        for process in (crashed, sibling):
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=2)
         crashed_pipe.close()
         sibling_pipe.close()
