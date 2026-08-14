@@ -25,6 +25,11 @@ class MemoryCache(BaseCache):
         self.cache = dict()
         self.expires = dict()
         self.zexpires = dict()
+        # Guards the lookup-and-create in acquire_lock so that two callers racing
+        # on the same missing key end up with one lock object rather than two.
+        # Held only around that bookkeeping, never while waiting on the lock
+        # itself, so callers holding different keys are not serialised.
+        self._acquire_lock_guard = Lock()
 
         self._expire_thread = threading.Thread(target=self._expire)
         self._expire_thread.daemon = True
@@ -152,13 +157,19 @@ class MemoryCache(BaseCache):
         return len(keys_to_delete)
 
     def acquire_lock(self, key: str, expire=None) -> Any:
-        lock: Optional[Lock] = self.get(key)
-        if lock is None:
-            lock = Lock()
-            self.set(key, lock, expire=expire)
-        if expire is None:
-            expire = -1
-        acquired = lock.acquire(timeout=expire)
+        with self._acquire_lock_guard:
+            lock: Optional[Lock] = self.get(key)
+            if lock is None:
+                lock = Lock()
+                self.set(key, lock, expire=expire)
+        # -1 is Lock.acquire's "block forever" sentinel, and it must not reach
+        # set(): as a cache expiry it stores an entry one second in the past, so
+        # the very next get() deletes it and the following caller builds a fresh
+        # lock. With the default expire=None that left acquire_lock handing out a
+        # different lock to every caller, so the protected section was never
+        # actually serialised.
+        timeout = -1 if expire is None else expire
+        acquired = lock.acquire(timeout=timeout)
         if not acquired:
             raise TimeoutError()
         # refresh the lock

@@ -3,11 +3,18 @@
 ## Unreleased
 
 ---
+## `0.35.2`
 
-## `0.35.1`
+### Fixed
+- TROCR bug revealed after transformers bump from `0.35.1`
+
+
+## `0.35.1` - *RETRACTED*
 
 ### Changed
 - Dependencies regarding `transformers` and `diffusers` to make it possible to run Cosmos3 model by default.
+
+---
 
 ## `0.35.0`
 
