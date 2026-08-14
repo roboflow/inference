@@ -42,7 +42,9 @@ def test_spacexai_step_validation_when_input_is_valid() -> None:
     assert result.api_key == "$inputs.xai_api_key"
 
 
-def test_spacexai_step_validation_with_default_api_key() -> None:
+def test_spacexai_step_validation_requires_api_key_when_managed_key_disabled() -> None:
+    # WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED is off by default, so the block
+    # must demand a user-provided xAI key instead of defaulting to rf_key.
     specification = {
         "type": "roboflow_core/spacexai@v1",
         "name": "step_1",
@@ -50,9 +52,21 @@ def test_spacexai_step_validation_with_default_api_key() -> None:
         "task_type": "caption",
     }
 
+    with pytest.raises(ValidationError):
+        _ = BlockManifest.model_validate(specification)
+
+
+def test_spacexai_step_validation_applies_default_model_version() -> None:
+    specification = {
+        "type": "roboflow_core/spacexai@v1",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "caption",
+        "api_key": "xxx-xxx",
+    }
+
     result = BlockManifest.model_validate(specification)
 
-    assert result.api_key == "rf_key:account"
     assert result.model_version == "grok-4.6"
 
 
@@ -62,6 +76,7 @@ def test_spacexai_step_discovers_dependent_model() -> None:
         "name": "step_1",
         "images": "$inputs.image",
         "task_type": "caption",
+        "api_key": "xxx-xxx",
         "model_version": "grok-4.5",
     }
 
@@ -81,6 +96,7 @@ def test_spacexai_step_validation_when_model_version_valid(
         "name": "step_1",
         "images": "$inputs.image",
         "task_type": "caption",
+        "api_key": "xxx-xxx",
         "model_version": model_version,
     }
 
@@ -96,6 +112,7 @@ def test_spacexai_step_validation_when_model_version_invalid(value: Any) -> None
         "name": "step_1",
         "images": "$inputs.image",
         "task_type": "caption",
+        "api_key": "xxx-xxx",
         "model_version": value,
     }
 
@@ -109,6 +126,7 @@ def test_spacexai_step_validation_requires_prompt_for_unconstrained() -> None:
         "name": "step_1",
         "images": "$inputs.image",
         "task_type": "unconstrained",
+        "api_key": "xxx-xxx",
     }
 
     with pytest.raises(ValidationError):
@@ -121,6 +139,7 @@ def test_spacexai_step_validation_requires_classes_for_object_detection() -> Non
         "name": "step_1",
         "images": "$inputs.image",
         "task_type": "object-detection",
+        "api_key": "xxx-xxx",
     }
 
     with pytest.raises(ValidationError):
@@ -156,6 +175,16 @@ def test_encode_image_for_task_uses_png_for_detection() -> None:
     raw = base64.b64decode(base64_image)
     assert raw.startswith(PNG_MAGIC_BYTES)
     assert (width, height) == (200, 100)
+
+
+def test_encode_image_for_task_keeps_original_resolution_for_detection() -> None:
+    # vlm-exam sent original-resolution images to xAI; the block must not
+    # downscale large detection inputs.
+    image = np.zeros((2100, 3000, 3), dtype=np.uint8)
+
+    _, width, height = encode_image_for_task(image, task_type="object-detection")
+
+    assert (width, height) == (3000, 2100)
 
 
 def test_encode_image_for_task_uses_jpeg_for_caption() -> None:
@@ -199,6 +228,27 @@ def test_is_unsupported_reasoning_error() -> None:
     assert not _is_unsupported_reasoning_error(ValueError("rate limit exceeded"))
 
 
+def test_execute_spacexai_request_rejects_rf_key_when_managed_key_disabled() -> None:
+    # Default flag state: managed keys are off and the proxy must never be
+    # contacted; the block demands a user-provided xAI key.
+    with pytest.raises(ValueError, match="Provide your own xAI API key"):
+        execute_spacexai_request(
+            roboflow_api_key="rf_abc",
+            xai_api_key="rf_key:account",
+            instructions=None,
+            input_content=[{"role": "user", "content": []}],
+            model_version="grok-4.6",
+            reasoning_effort=None,
+            max_tokens=None,
+            temperature=None,
+        )
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
+    "WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED",
+    True,
+)
 @patch(
     "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
     "_execute_proxied_spacexai_request"
