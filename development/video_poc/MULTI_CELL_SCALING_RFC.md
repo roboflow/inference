@@ -2,7 +2,7 @@
 
 **Status:** Draft
 
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-13
 
 **Scope:** Live connector sources, MediaMTX relay capacity, processor placement,
 multi-stream GPU allocation, dedicated cells, and remote execution experiments
@@ -505,6 +505,19 @@ Sweep RTT, jitter, loss, and available bandwidth. A useful impairment matrix sta
 around 20/50/100/200 ms RTT, 0/0.1/0.5/1/2% loss, and bandwidth caps close to and
 above the encoded source rate. Compare RTSP/TCP with secure WAN transport candidates
 before approving a production remote path.
+
+The staging-only, file-rendered campaign contract is now prepared in
+[`benchmarks/networking/multi_cell/`](benchmarks/networking/multi_cell/). It
+counterbalances at least three same-cell/cross-cell repetitions and covers
+remote connector ingest, direct remote processor reads, remote read-replica
+fan-out, sticky home-cell reuse, and strict dedicated-workspace rejection. The
+renderer binds fresh cluster, relay, LB, node/NIC, placement, policy, connector,
+processor, replica, fixture, and image identities and emits one Job artifact at
+a time; the analyzer requires per-frame TTFF/stall/FPS/latency samples plus
+Prometheus and Crusoe ingress/egress/loss/VPC ranges. This is prepared harness
+capacity, not a completed multi-cell result: the second staging cell and Phase
+1 cell-aware control-plane contracts must exist before its relevant cases can
+be collected.
 
 ### Track D: Failure and recovery
 

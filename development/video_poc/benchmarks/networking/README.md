@@ -112,3 +112,10 @@ contracts needed for Phase 0/1 calibration. The executing controller still
 needs to add readiness barriers, Prometheus/Crusoe query-range collection,
 aggregate stop enforcement, automatic report collection, and short-lived
 credential issue/revoke calls before unattended capacity ramps are safe.
+
+The file-only multi-cell successor lives in [`multi_cell/`](multi_cell/). It
+adds counterbalanced same-cell/cross-cell pairs, connector/relay/processor and
+dedicated-workspace placement cases, immutable network/runtime identities, a
+pixel-clock probe, exact per-run manifests, and a fail-closed evidence analyzer.
+Its committed campaign is intentionally non-runnable until a fresh staging
+identity snapshot is captured. It performs no cluster or cloud operations.
