@@ -9,9 +9,9 @@ from inference.models.vllm_proxy.qwen3_5_vllm import (
     MAX_PIXELS,
     MIN_PIXELS,
 )
-from inference.models.vllm_proxy.qwen3_8_vllm import Qwen38VLLMProxy
-from inference_models.configuration import (
+from inference.models.vllm_proxy.qwen3_8_vllm import (
     INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS,
+    Qwen38VLLMProxy,
 )
 
 

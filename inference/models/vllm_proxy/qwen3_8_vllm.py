@@ -13,6 +13,7 @@ fine-tune adapter request is rejected pre-download with
 `NotServableOnVLLMError`.
 """
 
+import os
 from typing import Dict, Union
 
 from inference.models.vllm_proxy.adapter_manager import (
@@ -27,8 +28,12 @@ from inference.models.vllm_proxy.qwen3_5_vllm import (
     post_process_generated_text,
 )
 from inference.models.vllm_proxy.qwen_vllm_base import QwenVLLMProxyBase
-from inference_models.configuration import (
-    INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS,
+
+# Read locally rather than from inference_models.configuration: the constant
+# ships in an inference_models release the server image may not carry yet,
+# and the vllm_proxy package deliberately keeps its config self-contained.
+INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS = int(
+    os.getenv("INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS", "512")
 )
 
 __all__ = ["Qwen38VLLMProxy"]
