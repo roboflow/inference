@@ -31,8 +31,6 @@ from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
-    QWEN3_8_EXEC_MODE,
-    QWEN3_8_REMOTE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -908,18 +906,6 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             output_structure=output_structure,
             classes=classes,
         )
-        if QWEN3_8_EXEC_MODE == "remote" and model_id.startswith("qwen3_8"):
-            # The 27B cannot load on shared workflow pools - dispatch to the
-            # LMM endpoint served by the dedicated vLLM pool instead
-            # (SAM3_EXEC_MODE precedent).
-            return self._run_native_remotely(
-                images=images,
-                model_id=model_id,
-                combined_prompt=combined_prompt,
-                enable_thinking=enable_thinking,
-                max_new_tokens=max_tokens,
-                api_url_override=QWEN3_8_REMOTE_API_URL or None,
-            )
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self._run_native_locally(
                 images=images,
@@ -977,18 +963,14 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
         combined_prompt: str,
         enable_thinking: bool,
         max_new_tokens: Optional[int],
-        api_url_override: Optional[str] = None,
     ) -> List[Dict[str, str]]:
-        api_url = api_url_override or (
+        api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._roboflow_api_key)
-        if api_url_override is None and WORKFLOWS_REMOTE_API_TARGET == "hosted":
-            # The override targets a v1 /infer/lmm endpoint (e.g. the
-            # serverless producer); v0 selection only applies to the legacy
-            # hosted core-model URL.
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         outputs: List[Dict[str, str]] = []
         for image in images:
