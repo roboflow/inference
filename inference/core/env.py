@@ -275,6 +275,14 @@ QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 
 QWEN_3_8_ENABLED = str2bool(os.getenv("QWEN_3_8_ENABLED", True))
 
+# Execution mode for qwen3_8 workflow steps (SAM3_EXEC_MODE precedent): the
+# 27B cannot load on shared workflow pools, so hosted deployments set "remote"
+# to dispatch steps to the LMM endpoint served by the dedicated vLLM pool.
+QWEN3_8_EXEC_MODE = os.getenv("QWEN3_8_EXEC_MODE", "local").lower()
+# Optional endpoint override for remote qwen3_8 steps (e.g. the in-cluster
+# producer service URL); empty falls back to the block's standard remote URL.
+QWEN3_8_REMOTE_API_URL = os.getenv("QWEN3_8_REMOTE_API_URL", "")
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))

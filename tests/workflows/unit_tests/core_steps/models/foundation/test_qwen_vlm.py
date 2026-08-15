@@ -173,6 +173,67 @@ def test_qwen3_8_native_variant_is_registered():
     }
 
 
+def test_qwen3_8_remote_exec_mode_bypasses_local_execution():
+    # QWEN3_8_EXEC_MODE=remote must dispatch qwen3_8 native steps to the
+    # remote LMM endpoint even when the step execution mode is LOCAL - the
+    # 27B cannot load on shared workflow pools.
+    from inference.core.workflows.core_steps.models.foundation.qwen_vlm import (
+        v1 as qwen_vlm_v1,
+    )
+
+    block = qwen_vlm_v1.QwenVlmBlockV1(
+        model_manager=MagicMock(),
+        api_key="key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    with patch.object(qwen_vlm_v1, "QWEN3_8_EXEC_MODE", "remote"), patch.object(
+        qwen_vlm_v1, "QWEN3_8_REMOTE_API_URL", "http://producer.async:8080"
+    ), patch.object(block, "_run_native_remotely") as remote, patch.object(
+        block, "_run_native_locally"
+    ) as local:
+        block._run_native(
+            images=MagicMock(),
+            model_id="qwen3_8-27b",
+            task_type="unconstrained",
+            prompt="p",
+            output_structure=None,
+            classes=None,
+            enable_thinking=False,
+            max_tokens=None,
+        )
+    local.assert_not_called()
+    remote.assert_called_once()
+    assert (
+        remote.call_args.kwargs["api_url_override"] == "http://producer.async:8080"
+    )
+
+
+def test_qwen3_5_local_execution_unaffected_by_qwen3_8_remote_mode():
+    from inference.core.workflows.core_steps.models.foundation.qwen_vlm import (
+        v1 as qwen_vlm_v1,
+    )
+
+    block = qwen_vlm_v1.QwenVlmBlockV1(
+        model_manager=MagicMock(),
+        api_key="key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    with patch.object(qwen_vlm_v1, "QWEN3_8_EXEC_MODE", "remote"), patch.object(
+        block, "_run_native_locally"
+    ) as local:
+        block._run_native(
+            images=MagicMock(),
+            model_id="qwen3_5-2b",
+            task_type="unconstrained",
+            prompt="p",
+            output_structure=None,
+            classes=None,
+            enable_thinking=False,
+            max_tokens=None,
+        )
+    local.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # Native prompt builder
 # ---------------------------------------------------------------------------
