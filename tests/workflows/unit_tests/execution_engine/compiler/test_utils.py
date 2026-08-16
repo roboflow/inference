@@ -364,3 +364,15 @@ def test_is_selector_when_not_a_selector_given(value: Any) -> None:
 
     # then
     assert result is False
+
+
+def test_get_input_selector_base_with_sub_property():
+    # $inputs.image.name should be stripped to $inputs.image
+    from inference.core.workflows.execution_engine.v1.compiler.utils import get_input_selector_base
+    assert get_input_selector_base("$inputs.image.name") == "$inputs.image"
+
+
+def test_get_input_selector_base_without_sub_property():
+    # $inputs.image should remain unchanged
+    from inference.core.workflows.execution_engine.v1.compiler.utils import get_input_selector_base
+    assert get_input_selector_base("$inputs.image") == "$inputs.image"
