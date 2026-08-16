@@ -34,6 +34,11 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "velocity_detections"
+# Number of frames a tracker_id may be absent before its cached velocity state is
+# evicted. Set comfortably above typical tracker lost-track buffers so briefly
+# occluded objects keep their smoothing/velocity history, while preventing the
+# per-video state dictionaries from growing without bound on long-running streams.
+MAX_FRAMES_WITHOUT_DETECTION: int = 5 * 30
 SHORT_DESCRIPTION = "Calculate the velocity and speed of tracked objects with smoothing and unit conversion."
 LONG_DESCRIPTION = """
 Calculate the velocity and speed of tracked objects across video frames by measuring displacement of object centers over time, applying exponential moving average smoothing to reduce noise, and converting measurements from pixels per second to meters per second for traffic speed monitoring, movement analysis, behavior tracking, and performance measurement workflows.
@@ -183,6 +188,11 @@ class VelocityBlockV1(WorkflowBlock):
         ] = {}
         # Store smoothed velocities for each tracker_id
         self._smoothed_velocities: Dict[str, Dict[Union[int, str], np.ndarray]] = {}
+        # Track the most recent frame index each tracker_id was seen, per video,
+        # so state for tracks that disappear can be evicted (avoids unbounded
+        # growth of the per-video state dicts on long-running streams).
+        self._last_seen_frame: Dict[str, Dict[Union[int, str], int]] = {}
+        self._frame_counter: Dict[str, int] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -214,6 +224,9 @@ class VelocityBlockV1(WorkflowBlock):
         video_id = image.video_metadata.video_identifier
         previous_positions = self._previous_positions.setdefault(video_id, {})
         smoothed_velocities = self._smoothed_velocities.setdefault(video_id, {})
+        last_seen_frame = self._last_seen_frame.setdefault(video_id, {})
+        frame_index = self._frame_counter.get(video_id, 0)
+        self._frame_counter[video_id] = frame_index + 1
 
         num_detections = len(detections)
 
@@ -268,6 +281,7 @@ class VelocityBlockV1(WorkflowBlock):
             # Store current position and timestamp for the next frame
             previous_positions[tracker_id] = (current_position, ts_current)
             smoothed_velocities[tracker_id] = smoothed_velocity
+            last_seen_frame[tracker_id] = frame_index
 
             # Convert velocities and speeds to meters per second if required
             velocity_m_s = velocity / pixels_per_meter
@@ -279,6 +293,18 @@ class VelocityBlockV1(WorkflowBlock):
             speeds[i] = speed_m_s
             smoothed_velocities_arr[i] = smoothed_velocity_m_s
             smoothed_speeds[i] = smoothed_speed_m_s
+
+        # Evict state for tracker_ids absent for longer than the retention window so
+        # the per-video state dictionaries stay bounded on long-running streams.
+        stale_tracker_ids = [
+            tid
+            for tid, last_frame in last_seen_frame.items()
+            if frame_index - last_frame > MAX_FRAMES_WITHOUT_DETECTION
+        ]
+        for tid in stale_tracker_ids:
+            previous_positions.pop(tid, None)
+            smoothed_velocities.pop(tid, None)
+            del last_seen_frame[tid]
 
         detections.data[VELOCITY_KEY_IN_SV_DETECTIONS] = np.array(velocities)
         detections.data[SPEED_KEY_IN_SV_DETECTIONS] = np.array(speeds)
