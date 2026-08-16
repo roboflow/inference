@@ -392,21 +392,34 @@ def group_detections_by_line(
     reading_direction: str,
     tolerance: int,
 ) -> Dict[float, Dict[str, List]]:
-    """Group detections into lines based on primary coordinate."""
+    """Group detections into lines based on primary coordinate.
+
+    Detections are grouped by mutual distance: after sorting by the primary
+    coordinate, a new line is started only when the gap to the previous
+    detection exceeds ``tolerance``. This keeps detections that lie within
+    ``tolerance`` of each other on the same line even when they straddle an
+    absolute pixel-grid boundary.
+    """
     # After prepare_coordinates swap, we always group by y ([:, 1])
     primary_coord = xyxy[:, 1]  # This is y for horizontal, swapped x for vertical
 
-    # Round primary coordinate to group into lines
-    rounded_primary = np.round(primary_coord / tolerance) * tolerance
+    # Sort by primary coordinate so lines can be grouped by mutual gap
+    order = np.argsort(primary_coord)
 
     boxes_by_line = {}
+    line_key = None
+    prev_coord = None
     # Group bounding boxes and associated indices by line
-    for i, (bbox, line_pos) in enumerate(zip(xyxy, rounded_primary)):
-        if line_pos not in boxes_by_line:
-            boxes_by_line[line_pos] = {"xyxy": [bbox], "idx": [i]}
+    for i in order:
+        coord = primary_coord[i]
+        # Start a new line when the gap to the previous detection exceeds tolerance
+        if prev_coord is None or coord - prev_coord > tolerance:
+            line_key = float(coord)
+            boxes_by_line[line_key] = {"xyxy": [xyxy[i]], "idx": [i]}
         else:
-            boxes_by_line[line_pos]["xyxy"].append(bbox)
-            boxes_by_line[line_pos]["idx"].append(i)
+            boxes_by_line[line_key]["xyxy"].append(xyxy[i])
+            boxes_by_line[line_key]["idx"].append(i)
+        prev_coord = coord
 
     return boxes_by_line
 
