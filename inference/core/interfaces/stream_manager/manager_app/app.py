@@ -308,16 +308,16 @@ def get_response_ignoring_thrash(
 def execute_termination(
     signal_number: int,
     frame: FrameType,
-    processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]],
+    processes_table: Dict[str, ManagedInferencePipeline],
 ) -> None:
     with PROCESSES_TABLE_LOCK:
         pipeline_ids = list(processes_table.keys())
         for pipeline_id in pipeline_ids:
             logger.info(f"Terminating pipeline: {pipeline_id}")
-            processes_table[pipeline_id][0].terminate()
+            processes_table[pipeline_id].pipeline_manager.terminate()
             logger.info(f"Pipeline: {pipeline_id} terminated.")
             logger.info(f"Joining pipeline: {pipeline_id}")
-            processes_table[pipeline_id][0].join()
+            processes_table[pipeline_id].pipeline_manager.join()
             logger.info(f"Pipeline: {pipeline_id} joined.")
         logger.info(f"Termination handler completed.")
         sys.exit(0)
