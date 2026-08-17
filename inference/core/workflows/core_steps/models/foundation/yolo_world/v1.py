@@ -253,13 +253,13 @@ class YoloWorldModelBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(inference_configuration=configuration)
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         inference_images = [i.to_inference_format() for i in images]

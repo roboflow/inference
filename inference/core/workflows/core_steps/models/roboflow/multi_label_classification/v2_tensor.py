@@ -314,7 +314,6 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
@@ -326,6 +325,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=non_empty_inference_images,

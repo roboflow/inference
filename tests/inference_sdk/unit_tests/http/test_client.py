@@ -5219,3 +5219,53 @@ def test_select_api_key_transport_rejects_invalid_value() -> None:
     # when / then
     with pytest.raises(InvalidParameterError):
         http_client.select_api_key_transport("invalid")
+
+
+def test_configure_with_fresh_config_resets_api_key_transport(monkeypatch) -> None:
+    # given - configure() swaps the WHOLE configuration object by design, so a
+    # fresh config without an explicit transport resets the client back to the
+    # unset default. Callers combining select_api_key_transport() with
+    # configure() must select AFTER configuring (see the workflow blocks'
+    # run_remotely) - this test documents the footgun that PR #2810 review
+    # caught in 43 blocks.
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    http_client.select_api_key_transport("header")
+
+    # when
+    http_client.configure(InferenceConfiguration(max_batch_size=2))
+
+    # then
+    resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_guidance_warning_suppressed_by_inference_warnings_disabled() -> None:
+    # given - INFERENCE_WARNINGS_DISABLED documents itself as disabling all
+    # SDK-specific warnings; the guidance warning must honour it. The flag is
+    # read at import time, hence the subprocess.
+    import subprocess
+    import sys
+
+    # NOTE: no warnings.catch_warnings(record=True) here - it would force
+    # simplefilter("always"), overriding the very ignore-filter under test.
+    # Unsuppressed warnings land on stderr via the default showwarning.
+    code = (
+        "import inference_sdk\n"
+        "from inference_sdk.http.client import InferenceHTTPClient\n"
+        "c = InferenceHTTPClient(api_key='k', api_url='http://x')\n"
+        "c._InferenceHTTPClient__resolved_api_key_transport()\n"
+        "print('DONE')\n"
+    )
+    env = dict(os.environ)
+    env["INFERENCE_WARNINGS_DISABLED"] = "true"
+
+    # when
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+
+    # then
+    assert result.returncode == 0, result.stderr
+    assert "DONE" in result.stdout
+    assert "InferenceSDKGuidanceWarning" not in result.stderr

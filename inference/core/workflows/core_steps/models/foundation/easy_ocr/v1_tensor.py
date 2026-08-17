@@ -287,7 +287,6 @@ class EasyOCRBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(
@@ -295,6 +294,7 @@ class EasyOCRBlockV1(WorkflowBlock):
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,

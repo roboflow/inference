@@ -1,7 +1,10 @@
 import os
 import warnings
 
-from inference_sdk.config import InferenceSDKDeprecationWarning
+from inference_sdk.config import (
+    InferenceSDKDeprecationWarning,
+    InferenceSDKGuidanceWarning,
+)
 from inference_sdk.http.client import InferenceHTTPClient
 from inference_sdk.http.entities import (
     InferenceConfiguration,
@@ -18,6 +21,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceSDKDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceSDKGuidanceWarning)
 
 try:
     from inference_sdk.version import __version__

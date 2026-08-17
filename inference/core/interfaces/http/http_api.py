@@ -3933,6 +3933,7 @@ class HttpInterface(BaseInterface):
                             - time: Inference time in seconds
                     """
                     logger.debug("Reached /sam3_3d/infer")
+                    api_key = api_key_fallback(api_key)
                     model_id = inference_request.model_id or "sam3-3d-objects"
 
                     self.model_manager.add_model(
