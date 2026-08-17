@@ -1293,9 +1293,7 @@ class HttpInterface(BaseInterface):
             # request-scoped ContextVar consumed via `api_key_fallback` where
             # the effective API key is materialized onto request models. The
             # header is a last-resort channel - explicit query/body values win.
-            token = header_api_key.set(
-                extract_api_key_from_headers(request.headers)
-            )
+            token = header_api_key.set(extract_api_key_from_headers(request.headers))
             try:
                 return await call_next(request)
             finally:

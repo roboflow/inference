@@ -10,7 +10,10 @@ from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
     WORKFLOW_RUN_RETRIES_ENABLED,
 )
-from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
+from inference_sdk.http.errors import (
+    InvalidParameterError,
+    ModelTaskTypeNotSupportedError,
+)
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
@@ -172,6 +175,22 @@ class InferenceConfiguration:
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
     response_mask_format: Optional[Literal["polygon", "rle"]] = None
+    api_key_transport: Union[str, ApiKeyTransport] = ApiKeyTransport.LEGACY
+
+    def __post_init__(self) -> None:
+        # Normalise the transport to the enum so the client can rely on
+        # identity checks. NOTE: this field configures the credential CHANNEL
+        # only - it is deliberately absent from every to_*_parameters()
+        # allowlist below, so it can never leak onto the wire.
+        try:
+            object.__setattr__(
+                self, "api_key_transport", ApiKeyTransport(self.api_key_transport)
+            )
+        except ValueError:
+            raise InvalidParameterError(
+                f"Invalid api_key_transport: {self.api_key_transport}. Expected "
+                f"one of: {[transport.value for transport in ApiKeyTransport]}."
+            )
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":

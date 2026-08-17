@@ -4909,14 +4909,10 @@ async def test_depth_estimation_async_defaults_to_json_and_warns(
 # or bodies.
 
 
-def test_client_rejects_invalid_api_key_transport() -> None:
+def test_configuration_rejects_invalid_api_key_transport() -> None:
     # when
     with pytest.raises(InvalidParameterError):
-        _ = InferenceHTTPClient(
-            api_key="my-api-key",
-            api_url="http://some.com",
-            api_key_transport="invalid",
-        )
+        _ = InferenceConfiguration(api_key_transport="invalid")
 
 
 def test_list_loaded_models_in_header_mode_sends_key_only_in_header(
@@ -4928,8 +4924,8 @@ def test_list_loaded_models_in_header_mode_sends_key_only_in_header(
         f"{api_url}/model/registry",
         json={"models": []},
     )
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
     )
 
     # when
@@ -4952,8 +4948,8 @@ def test_list_loaded_models_in_both_mode_sends_key_in_query_and_header(
         f"{api_url}/model/registry?api_key=my-api-key",
         json={"models": []},
     )
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="both"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="both")
     )
 
     # when
@@ -4997,8 +4993,8 @@ def test_load_model_in_header_mode_sends_key_only_in_header(
         f"{api_url}/model/add",
         json={"models": []},
     )
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
     )
 
     # when
@@ -5021,8 +5017,8 @@ def test_run_workflow_in_header_mode_sends_key_only_in_header(
         f"{api_url}/workflows/run",
         json={"outputs": [{"some": 3}]},
     )
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
     )
 
     # when
@@ -5045,8 +5041,8 @@ def test_run_workflow_in_both_mode_sends_key_in_body_and_header(
         f"{api_url}/workflows/run",
         json={"outputs": [{"some": 3}]},
     )
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="both"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="both")
     )
 
     # when
@@ -5069,8 +5065,8 @@ def test_list_inference_pipelines_in_header_mode_sends_key_only_in_header(
         f"{api_url}/inference_pipelines/list",
         json=[],
     )
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
     )
 
     # when
@@ -5092,8 +5088,8 @@ def test_ocr_image_in_v0_header_mode_keeps_key_out_of_url(
     # given - hosted URL puts the client into v0 mode, where the key is
     # normally spliced into the URL
     api_url = "https://infer.roboflow.com"
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
     )
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     requests_mock.post(
@@ -5120,8 +5116,8 @@ def test_infer_from_api_v0_in_header_mode_keeps_key_out_of_query_params(
 ) -> None:
     # given
     api_url = "https://detect.roboflow.com"
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
     )
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     requests_mock.post(
