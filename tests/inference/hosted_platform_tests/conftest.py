@@ -2,7 +2,7 @@ import logging
 import os
 from enum import Enum
 from functools import partial
-from typing import Any, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pytest
@@ -35,6 +35,68 @@ MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES = int(
 )
 SKIP_WARMUP = str2bool(os.getenv("SKIP_WARMUP", False))
 IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
+
+# The hosted platform does not accept `Authorization: Bearer <api_key>` yet -
+# the header lane of every authenticated test stays skipped until this flag is
+# turned on for the E2E environment.
+HEADER_AUTH_E2E_ENABLED = str2bool(os.getenv("HEADER_AUTH_E2E_ENABLED", False))
+
+API_KEY_AUTH_MODES = [
+    "legacy",
+    pytest.param(
+        "header",
+        marks=pytest.mark.skipif(
+            not HEADER_AUTH_E2E_ENABLED,
+            reason="hosted platform does not accept header-based auth yet",
+        ),
+    ),
+]
+
+
+@pytest.fixture(params=API_KEY_AUTH_MODES)
+def auth_mode(request) -> str:
+    """Duplicate a test over the two API-key transports.
+
+    "legacy" - api_key travels in the query string / JSON body, byte-identical
+    to how the tests always sent it. "header" - api_key is stripped from
+    query/body and travels as `Authorization: Bearer <api_key>` instead. The
+    header lane is gated behind the HEADER_AUTH_E2E_ENABLED env flag.
+    """
+    return request.param
+
+
+def apply_auth_mode(client: InferenceHTTPClient, auth_mode: str) -> InferenceHTTPClient:
+    """Select the API-key transport under test on an InferenceHTTPClient."""
+    if auth_mode == "header":
+        return client.use_header_auth()
+    return client
+
+
+def api_key_auth_headers(auth_mode: str, api_key: Optional[str]) -> Dict[str, str]:
+    """Return headers carrying the api key - non-empty only in "header" mode."""
+    if auth_mode == "header" and api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
+
+
+def without_api_key_in_header_mode(
+    auth_mode: str, payload: Optional[dict]
+) -> Optional[dict]:
+    """Strip `api_key` from a JSON payload / query-params dict in "header" mode.
+
+    In "legacy" mode the payload is returned unchanged (same object), keeping
+    the wire bytes identical to the pre-dual-mode tests.
+    """
+    if auth_mode != "header" or payload is None:
+        return payload
+    return {key: value for key, value in payload.items() if key != "api_key"}
+
+
+def api_key_query_suffix(auth_mode: str, api_key: Optional[str]) -> str:
+    """`?api_key=...` suffix for hand-assembled URLs ("legacy" mode only)."""
+    if auth_mode == "header":
+        return ""
+    return f"?api_key={api_key}"
 
 
 class PlatformEnvironment(Enum):

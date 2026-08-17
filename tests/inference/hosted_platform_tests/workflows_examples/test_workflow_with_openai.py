@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
-from tests.inference.hosted_platform_tests.conftest import OPENAI_KEY, ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    OPENAI_KEY,
+    ROBOFLOW_API_KEY,
+    apply_auth_mode,
+)
 
 DESCRIPTION_WORKFLOW = {
     "version": "1.0",
@@ -60,11 +64,13 @@ def test_image_description_workflow(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -154,11 +160,13 @@ CLASSIFICATION_WORKFLOW = {
 def test_classification_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -232,11 +240,13 @@ STRUCTURED_PROMPTING_WORKFLOW = {
 def test_structured_prompting_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -328,6 +338,7 @@ def test_structured_prompting_workflow(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
