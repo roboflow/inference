@@ -2496,8 +2496,12 @@ def _verified_auto_cache_package_dir(
             if cache_entry.recommended_parameters is not None
             else None
         )
-        or package_config.runtime_compatibility_hash
-        != _runtime_compatibility_hash(runtime_x_ray=x_ray_runtime_environment())
+        # The manifest's runtime_compatibility_hash identifies the machine
+        # that first materialized the package, not this one, so it is not
+        # compared here. Runtime applicability of the entry is already
+        # guaranteed by its lookup key: auto_negotiation_hash embeds the
+        # current runtime-compatibility content, and the entry was only
+        # written after a successful warm load under that exact runtime.
     ):
         LOGGER.warning(
             "Ignoring invalid auto-load cache entry because its resolution "

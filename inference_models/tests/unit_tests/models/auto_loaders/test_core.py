@@ -6361,3 +6361,70 @@ def test_dump_model_config_preserves_manifest_for_other_machine_runtime_hash(
     with open(config_path, "rb") as config_file:
         assert config_file.read() == original_bytes
     assert republished_hash == original_hash
+
+
+def test_verified_auto_cache_package_dir_accepts_manifest_from_other_machine(
+    empty_local_dir: str,
+) -> None:
+    """An auto-resolution entry must stay valid when the package manifest was
+    materialized by a machine with a different runtime-compatibility hash —
+    the entry's lookup key already scopes it to the current runtime."""
+    # given
+    model_id = "workspace/canonical/7"
+    package_id = "sharedPackage"
+    artifact_content = b"shared weights"
+    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
+        package_dir = generate_model_package_cache_path(
+            model_id=model_id,
+            package_id=package_id,
+        )
+        os.makedirs(package_dir)
+        with open(os.path.join(package_dir, "weights.bin"), "wb") as artifact_file:
+            artifact_file.write(artifact_content)
+        manifest_hash = dump_model_config_for_offline_use(
+            config_path=os.path.join(package_dir, MODEL_CONFIG_FILE_NAME),
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            file_lock_acquire_timeout=10,
+            model_id=model_id,
+            canonical_model_id=model_id,
+            trusted_source=True,
+            model_dependencies=[],
+            quantization="unknown",
+            dynamic_batch_size_supported=True,
+            runtime_compatibility_hash="a" * 64,  # not this machine's hash
+            offline_compatibility_hash="b" * 64,
+            package_artifacts=[
+                {
+                    "file_handle": "weights.bin",
+                    "md5_hash": hashlib.md5(artifact_content).hexdigest(),
+                    "unhashed": False,
+                    "sha256_hash": None,
+                    "source_hash": None,
+                    "storage": "package_file",
+                }
+            ],
+            dependency_package_paths=[],
+        )
+        cache_entry = AutoResolutionCacheEntry(
+            model_id=model_id,
+            cache_model_id=model_id,
+            canonical_model_id=model_id,
+            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
+            model_package_id=package_id,
+            resolved_files=[],
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            model_dependencies=None,
+            created_at=datetime.now(),
+            trusted_source=True,
+            package_manifest_hash=manifest_hash,
+        )
+
+        # when
+        result = core._verified_auto_cache_package_dir(cache_entry=cache_entry)
+
+    # then - entry accepted despite foreign runtime hash in the manifest
+    assert result == package_dir
