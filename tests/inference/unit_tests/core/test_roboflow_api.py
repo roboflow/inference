@@ -74,6 +74,18 @@ class TestException(Exception):
     pass
 
 
+def _assert_request_query_seen(requests_mock: Mocker, expected_query: str) -> None:
+    """Assert a request with ``expected_query`` appears in mock history.
+
+    Prefer this over ``last_request.query``: background threads (for example the
+    usage-tracking sender started when other suites import ``usage_collector``)
+    can issue empty-query POSTs that overwrite ``last_request`` between the call
+    under test and the assertion.
+    """
+    queries = [request.query for request in requests_mock.request_history]
+    assert expected_query in queries, queries
+
+
 @pytest.mark.parametrize("workspace_id", ["workspace", "my-workspace", "my_workspace"])
 def test_workspace_id_validation_accepts_workspace_slugs(workspace_id: str) -> None:
     assert roboflow_api.workspace_id_is_valid(workspace_id) is True
@@ -995,7 +1007,7 @@ def test_get_roboflow_model_type_when_response_parsing_error_occurs(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 def test_get_roboflow_model_type_when_default_model_can_be_chosen(
@@ -1017,7 +1029,7 @@ def test_get_roboflow_model_type_when_default_model_can_be_chosen(
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
     assert result == "yolov5v2s"
 
 
@@ -1041,7 +1053,7 @@ def test_get_roboflow_model_type_when_default_model_cannot_be_chosen(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 def test_get_roboflow_model_type_when_response_is_valid(
@@ -1063,7 +1075,7 @@ def test_get_roboflow_model_type_when_response_is_valid(
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
     assert result == "yolov8n"
 
 
@@ -4742,8 +4754,15 @@ def test_get_workflow_specification_when_config_not_provided_and_ephemeral_cache
         )
 
     # then
+    workflow_requests = [
+        request
+        for request in requests_mock.request_history
+        if request.method == "GET"
+        and "/my_workspace/workflows/some_workflow" in request.url
+    ]
+    assert len(workflow_requests) == 1, "Expected single workflow specification request"
     assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
+        workflow_requests[0].query == "api_key=my_api_key"
     ), "API key must be given in query"
     assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
 

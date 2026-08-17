@@ -14,11 +14,14 @@ from numpy import ndarray
 
 from inference.core import logger
 from inference.core.env import (
+    DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
     DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
     DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
     DEFAULT_BUFFER_SIZE,
     DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+    DISABLE_GSTREAMER_VIDEO_SOURCES,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     RUNS_ON_JETSON,
 )
 from inference.core.interfaces.camera.entities import (
@@ -31,8 +34,11 @@ from inference.core.interfaces.camera.entities import (
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
-    SourceConnectionError,
     StreamOperationNotAllowedError,
+)
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+    sanitize_source_reference,
 )
 from inference.core.interfaces.camera.stream_error_classifier import (
     build_source_connection_error_message,
@@ -208,8 +214,71 @@ def _is_test_pattern_reference(video: Union[str, int]) -> bool:
     )
 
 
+def _build_default_producer(
+    stream_reference: Union[str, int],
+    *,
+    output_tensor: bool = False,
+) -> VideoFrameProducer:
+    """Pick the decoder for a plain (non-callable, non-test-pattern) source reference.
+
+    When ``ENABLE_TENSOR_DATA_REPRESENTATION`` is on, hardware decoders are discovered
+    and verified at runtime. ``output_tensor`` selects the representation requested by
+    the consumer. Construction failures fall back to the general cv2 decoder.
+    """
+    # Log surfaces only ever see the sanitized reference / redacted error text:
+    # camera references embed `user:password@` credentials, and GStreamer error
+    # reprs embed the full launch string carrying the same URL.
+    display_reference = sanitize_source_reference(str(stream_reference))
+    if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        logger.debug(
+            "Using legacy decoder for source " f"reference: {display_reference}"
+        )
+        return _create_video_frame_producer(stream_reference)
+    # Local import: the discoverability layer pulls optional GPU-decode deps lazily.
+    from inference.core.interfaces.camera.discoverability import (
+        available_producers,
+        build_hw_producer,
+    )
+
+    producer = None
+    try:
+        producer = build_hw_producer(
+            stream_reference,
+            output_tensor=output_tensor,
+        )
+    except (
+        Exception
+    ) as error:  # noqa: BLE001 - decoder selection must never break startup
+        logger.warning(
+            "Initialising a hardware decoder for source reference "
+            f"{display_reference} raised: "
+            f"{redact_credentials_in_text(repr(error))}. "
+            "Falling back to the cv2 CPU decoder."
+        )
+    if producer is not None:
+        logger.info(
+            "Selected hardware decoder "
+            f"'{type(producer).__name__}' for source reference: {display_reference}"
+        )
+        return producer
+    probe_reasons = {
+        name: availability.reason
+        for name, availability in available_producers(
+            video=stream_reference,
+            require_cuda_tensor=output_tensor,
+        ).items()
+    }
+    logger.warning(
+        "No hardware decoder is "
+        f"usable for source reference {display_reference} "
+        f"(probes: {redact_credentials_in_text(str(probe_reasons))}). "
+        "Falling back to the cv2 CPU decoder."
+    )
+    return CV2VideoFrameProducer(stream_reference)
+
+
 def _create_video_frame_producer(video: Union[str, int]) -> VideoFrameProducer:
-    if isinstance(video, str):
+    if isinstance(video, str) and not DISABLE_GSTREAMER_VIDEO_SOURCES:
         from inference.core.interfaces.camera.gstreamer_rtsp_producer import (
             GStreamerRtspVideoFrameProducer,
             gstreamer_rtsp_capture_available,
@@ -241,6 +310,7 @@ class VideoSource:
         video_source_properties: Optional[Dict[str, float]] = None,
         source_id: Optional[int] = None,
         desired_fps: Optional[Union[float, int]] = None,
+        allow_tensor_frames: bool = False,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -312,6 +382,20 @@ class VideoSource:
         reader pace and maximum number of consecutive frames dropped in ADAPTIVE mode are configurable by clients,
         with reasonable defaults being set.
 
+        Both adaptive conditions above are open loop - nothing verifies that the drops they cause actually
+        improve anything. In particular, the first one compares the ANNOUNCED source fps against the measured
+        grabbing pace, and an announced fps that the pipeline can never reach (any RTSP camera advertising a
+        round 30 fps while delivering a hair less, any source where `grab()` already carries the decode cost)
+        makes it true forever - which pins throughput at one accepted frame per (`maximum_adaptive_frames_dropped_in_row` + 1) grabs
+        regardless of how fast the consumer is. ADAPTIVE mode can therefore run in a demand-driven variant
+        instead (VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE - default: on whenever ENABLE_TENSOR_DATA_REPRESENTATION
+        is on): the rate rules are bypassed entirely and the buffer state becomes the only drop signal. Each
+        ADAPTIVE strategy then degrades to its plain counterpart - ADAPTIVE_DROP_OLDEST evicts oldest at a
+        full buffer so content stays fresh for staleness-budget consumers, ADAPTIVE_DROP_LATEST skips the
+        decode of frames a full buffer would discard anyway. The buffer state is a fact rather than an
+        estimate, so there is nothing to tune and no way for a mis-estimated rate to starve a healthy
+        consumer. Numpy deployments can opt in by setting VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE=True explicitly.
+
         `VideoSource` emits events regarding its activity - which can be intercepted by custom handlers. Take
         into account that they are always executed in context of thread invoking them (and should be fast to complete,
         otherwise may block the flow of stream consumption). All errors raised will be emitted as logger warnings only.
@@ -326,6 +410,7 @@ class VideoSource:
         * VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE - default: 5.0
         * VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES - default: 10
         * VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW - default: 16
+        * VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE - default: mirrors ENABLE_TENSOR_DATA_REPRESENTATION
 
         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
 
@@ -373,6 +458,7 @@ class VideoSource:
             video_consumer=video_consumer,
             video_source_properties=video_source_properties,
             source_id=source_id,
+            allow_tensor_frames=allow_tensor_frames,
         )
 
     def __init__(
@@ -384,8 +470,10 @@ class VideoSource:
         video_consumer: "VideoConsumer",
         video_source_properties: Optional[Dict[str, float]],
         source_id: Optional[int],
+        allow_tensor_frames: bool = False,
     ):
         self._stream_reference = stream_reference
+        self._observability_reference = sanitize_source_reference(str(stream_reference))
         self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
@@ -399,6 +487,7 @@ class VideoSource:
         self._state_change_lock = Lock()
         self._video_source_properties = video_source_properties or {}
         self._source_id = source_id
+        self._allow_tensor_frames = allow_tensor_frames
         self._last_frame_timestamp: int = time.time_ns()
         self._fps: Optional[float] = None
         self._is_file: Optional[bool] = None
@@ -611,12 +700,9 @@ class VideoSource:
         return video_frame
 
     def describe_source(self) -> SourceMetadata:
-        serialized_source_reference = self._stream_reference
-        if callable(serialized_source_reference):
-            serialized_source_reference = str(self._stream_reference)
         return SourceMetadata(
             source_properties=self._source_properties,
-            source_reference=serialized_source_reference,
+            source_reference=self._observability_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
             buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,
@@ -640,6 +726,7 @@ class VideoSource:
 
     def _start(self) -> None:
         self._change_state(target_state=StreamState.INITIALISING)
+        uses_default_producer = False
         try:
             if callable(self._stream_reference):
                 self._video = self._stream_reference()
@@ -650,20 +737,29 @@ class VideoSource:
 
                 self._video = TestPatternStreamProducer()
             else:
-                self._video = _create_video_frame_producer(self._stream_reference)
-            if not self._video.isOpened():
-                source_reference = self._stream_reference
-                if callable(source_reference):
-                    source_reference = str(self._stream_reference)
-                raise wrap_source_connection_error(
-                    build_source_connection_error_message(
-                        source_reference=str(source_reference),
-                        underlying_error=self._video.connection_error_message(),
-                    ),
-                    source_reference=str(source_reference),
+                uses_default_producer = True
+                self._video = _build_default_producer(
+                    self._stream_reference,
+                    output_tensor=self._allow_tensor_frames,
                 )
-            self._video.initialize_source_properties(self._video_source_properties)
-            self._source_properties = self._video.discover_source_properties()
+            try:
+                self._initialise_selected_video()
+            except Exception as hardware_error:
+                can_fall_back_to_cv2 = (
+                    uses_default_producer
+                    and type(self._video) is not CV2VideoFrameProducer
+                )
+                if not can_fall_back_to_cv2:
+                    raise
+                self._release_video()
+                logger.warning(
+                    "Hardware video source initialisation failed for "
+                    f"{self._observability_reference}: "
+                    f"{redact_credentials_in_text(repr(hardware_error))}. "
+                    "Falling back to the cv2 decoder."
+                )
+                self._video = CV2VideoFrameProducer(self._stream_reference)
+                self._initialise_selected_video()
             self._video_consumer.reset(source_properties=self._source_properties)
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
@@ -677,7 +773,45 @@ class VideoSource:
             # discovery fails) leaves the source in ERROR, not INITIALISING, so
             # recovery (which keys off ERROR) fires. Re-raise for the caller.
             self._change_state(target_state=StreamState.ERROR)
+            self._release_video()
             raise
+
+    def _initialise_selected_video(self) -> None:
+        if not self._video.isOpened():
+            underlying_error = self._video.connection_error_message()
+            raise wrap_source_connection_error(
+                build_source_connection_error_message(
+                    source_reference=self._observability_reference,
+                    underlying_error=underlying_error,
+                ),
+                source_reference=self._observability_reference,
+                classification_text=underlying_error,
+            )
+        self._video.initialize_source_properties(self._video_source_properties)
+        self._source_properties = self._video.discover_source_properties()
+
+    def _interrupt_video(self) -> None:
+        interrupt = getattr(self._video, "interrupt", None)
+        if not callable(interrupt):
+            return
+        try:
+            interrupt()
+        except Exception as error:  # noqa: BLE001
+            logger.warning(
+                "Could not interrupt video source: "
+                f"{redact_credentials_in_text(str(error))}"
+            )
+
+    def _release_video(self) -> None:
+        if self._video is None:
+            return
+        try:
+            self._video.release()
+        except Exception as error:  # noqa: BLE001
+            logger.warning(
+                "Could not release video source: "
+                f"{redact_credentials_in_text(str(error))}"
+            )
 
     def _terminate(
         self, wait_on_frames_consumption: bool, purge_frames_buffer: bool
@@ -689,6 +823,7 @@ class VideoSource:
         if purge_frames_buffer:
             _ = get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
         if self._stream_consumption_thread is not None:
+            self._interrupt_video()
             self._stream_consumption_thread.join()
         if wait_on_frames_consumption:
             self._frames_buffer.join()
@@ -750,7 +885,7 @@ class VideoSource:
                 if not success:
                     break
             self._frames_buffer.put(POISON_PILL)
-            self._video.release()
+            self._release_video()
             self._change_state(target_state=StreamState.ENDED)
             send_video_source_status_update(
                 severity=UpdateSeverity.INFO,
@@ -761,6 +896,7 @@ class VideoSource:
             logger.info(f"Video consumption finished")
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
+            self._release_video()
             # Emit a poison pill so a consumer blocked on read_frame gets
             # end-of-stream instead of timing out forever; ERROR is
             # restart-eligible, so reconnection fires.
@@ -836,6 +972,7 @@ class VideoConsumer:
         maximum_adaptive_frames_dropped_in_row: int,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         desired_fps: Optional[Union[float, int]] = None,
+        adaptive_backpressure: bool = DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
     ) -> "VideoConsumer":
         minimum_adaptive_mode_samples = max(minimum_adaptive_mode_samples, 2)
         reader_pace_monitor = sv.FPSMonitor(
@@ -858,6 +995,7 @@ class VideoConsumer:
             stream_consumption_pace_monitor=stream_consumption_pace_monitor,
             decoding_pace_monitor=decoding_pace_monitor,
             desired_fps=desired_fps,
+            adaptive_backpressure=adaptive_backpressure,
         )
 
     def __init__(
@@ -872,6 +1010,7 @@ class VideoConsumer:
         stream_consumption_pace_monitor: sv.FPSMonitor,
         decoding_pace_monitor: sv.FPSMonitor,
         desired_fps: Optional[Union[float, int]],
+        adaptive_backpressure: bool = DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
     ):
         self._buffer_filling_strategy = buffer_filling_strategy
         self._frame_counter = 0
@@ -891,6 +1030,7 @@ class VideoConsumer:
         self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
+        self._adaptive_backpressure = adaptive_backpressure
 
     @property
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
@@ -1029,7 +1169,8 @@ class VideoConsumer:
             )
             return True
         if self._frame_should_be_adaptively_dropped(
-            declared_source_fps=declared_source_fps
+            declared_source_fps=declared_source_fps,
+            buffer=buffer,
         ):
             self._adaptive_frames_dropped_in_row += 1
             send_frame_drop_update(
@@ -1074,9 +1215,28 @@ class VideoConsumer:
         return True
 
     def _frame_should_be_adaptively_dropped(
-        self, declared_source_fps: Optional[float]
+        self, declared_source_fps: Optional[float], buffer: Queue
     ) -> bool:
         if self._buffer_filling_strategy not in ADAPTIVE_STRATEGIES:
+            return False
+        if self._adaptive_backpressure:
+            # Demand-driven mode: the rate estimators are bypassed entirely and
+            # the buffer state is the only drop signal - a fact, not an
+            # estimate, so none of the estimator failure modes (nominal
+            # declared fps, circular reader pace, cross-source mis-attribution
+            # under a shared reader) can occur. Each ADAPTIVE strategy degrades
+            # to its plain counterpart: ADAPTIVE_DROP_OLDEST returns False so
+            # the full-buffer path evicts oldest and decodes the new frame -
+            # buffered content stays fresh, which consumers with a staleness
+            # budget depend on (keep-oldest-when-full ages the whole buffer
+            # past any TTL and starves them). ADAPTIVE_DROP_LATEST, whose
+            # declared semantics ARE keep-old-drop-new, skips the decode of
+            # frames that would be discarded anyway.
+            if (
+                self._buffer_filling_strategy
+                is BufferFillingStrategy.ADAPTIVE_DROP_LATEST
+            ):
+                return buffer.full()
             return False
         if (
             self._adaptive_frames_dropped_in_row
@@ -1242,7 +1402,10 @@ def send_video_source_status_update(
         try:
             handler(status_update)
         except Exception as error:
-            logger.warning(f"Could not execute handler update. Cause: {error}")
+            logger.warning(
+                "Could not execute handler update. Cause: "
+                f"{redact_credentials_in_text(str(error))}"
+            )
 
 
 def decode_video_frame_to_buffer(

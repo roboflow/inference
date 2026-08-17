@@ -94,6 +94,48 @@ def empty_directory() -> Generator[str, None, None]:
         yield tmp_dir
 
 
+def _numpy_image_as_tensor_input(image: np.ndarray):
+    """Convert a BGR HWC numpy test image into the tensor-input form producers
+    submit: CHW RGB uint8 torch.Tensor on WORKFLOWS_IMAGE_TENSOR_DEVICE.
+    Delegates to the established `tensor_input_utils.numpy_image_as_tensor`
+    helper (same conversion + correct device placement); grayscale handled
+    here since the helper only covers 3-channel fixtures."""
+    import torch
+
+    if image.ndim == 2:
+        from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+
+        return (
+            torch.from_numpy(np.ascontiguousarray(image).copy())
+            .unsqueeze(0)
+            .to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        )
+    from tests.workflows.integration_tests.execution.tensor_input_utils import (
+        numpy_image_as_tensor,
+    )
+
+    return numpy_image_as_tensor(image)
+
+
+@pytest.fixture(
+    scope="function",
+    params=["numpy-input", "tensor-input"],
+    ids=["numpy-input", "tensor-input"],
+)
+def image_as_workflow_input(request):
+    """_TENSOR_ONLY input hardening: every image runtime parameter must work
+    submitted BOTH as np.ndarray (the historical test path, lazy numpy->tensor
+    materialisation) AND as torch.Tensor (the producer path, exercising the
+    deserializer's tensor arm and tensor-origin lazy numpy materialisation).
+
+    Usage in a tensor-only test: add this fixture and wrap each image input:
+    ``runtime_parameters={"image": [image_as_workflow_input(crowd_image)]}``.
+    """
+    if request.param == "numpy-input":
+        return lambda image: image
+    return _numpy_image_as_tensor_input
+
+
 def bool_env(val):
     if isinstance(val, bool):
         return val

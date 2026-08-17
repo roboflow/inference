@@ -22,6 +22,11 @@ class ValueType(Enum):
     STRING = "string"
 
 
+class TensorCompatibility(str, Enum):
+    LEGACY_COMPATIBILITY = "legacy_compatibility"
+    TENSOR_NATIVE = "tensor_native"
+
+
 class DynamicInputDefinition(BaseModel):
     type: Literal["DynamicInputDefinition"]
     has_default_value: bool = Field(
@@ -126,6 +131,16 @@ class ManifestDescription(BaseModel):
         "run(...) method will always receive the parameters as batches, not scalars. This property is important for "
         "blocks decreasing output dimensionality which do not define neither `batch_oriented_parameters` nor "
         "`parameters_with_scalars_and_batches`.",
+    )
+    tensor_compatibility: TensorCompatibility = Field(
+        default=TensorCompatibility.LEGACY_COMPATIBILITY,
+        description="Representation contract of the run() function when the server runs the tensor "
+        "data representation (ENABLE_TENSOR_DATA_REPRESENTATION). `legacy_compatibility` (default): "
+        "the execution engine converts native tensor predictions into the documented "
+        "sv.Detections / numpy representations at the block's input boundary and converts returned "
+        "legacy objects back at the output boundary. `tensor_native`: run() receives and must "
+        "return native `inference_models` objects. The knob is a no-op when the server runs the "
+        "numpy representation (`tensor_native` then fails at compile time).",
     )
 
 

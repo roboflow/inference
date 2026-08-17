@@ -2,12 +2,21 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
+if TYPE_CHECKING:
+    import torch
+
 FrameTimestamp = datetime
 FrameID = int
+
+# A decoded frame image is either a host numpy array (CPU — the default cv2 path) or a
+# torch.Tensor (typically GPU-resident, produced by a hardware decoder such as the
+# Jetson / PyNvVideoCodec producers). Consumers must branch on the concrete type. The
+# torch reference is a forward ref (string) so this module imports without torch present.
+FrameImage = Union[np.ndarray, "torch.Tensor"]
 
 
 class UpdateSeverity(Enum):
@@ -50,7 +59,8 @@ class VideoFrame:
     """Represents a single frame of video data.
 
     Attributes:
-        image (np.ndarray): The image data of the frame as a NumPy array.
+        image (FrameImage): The image data of the frame — a host ``np.ndarray`` (CPU,
+            cv2 path) or a ``torch.Tensor`` (GPU, hardware-decoder path).
         frame_id (FrameID): A unique identifier for the frame.
         frame_timestamp (FrameTimestamp): The timestamp when the frame was captured.
         source_id (int): The index of the video_reference element which was passed to InferencePipeline for this frame
@@ -60,7 +70,7 @@ class VideoFrame:
         comes_from_video_file (Optional[bool]): flag to determine if frame comes from video file
     """
 
-    image: np.ndarray
+    image: FrameImage
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
     # TODO: in next major version of inference replace `fps` with `declared_fps`
@@ -85,7 +95,7 @@ class VideoFrameProducer:
     def grab(self) -> bool:
         raise NotImplementedError
 
-    def retrieve(self) -> Tuple[bool, np.ndarray]:
+    def retrieve(self) -> Tuple[bool, FrameImage]:
         raise NotImplementedError
 
     def release(self):
