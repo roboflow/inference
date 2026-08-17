@@ -109,6 +109,18 @@ def aggregate_sequence(
         )
 
 
+def join_sequence(value: Any, separator: str, execution_context: str, **kwargs) -> str:
+    try:
+        return separator.join(str(v) for v in value)
+    except TypeError as e:
+        raise InvalidInputTypeError(
+            public_message=f"While executing join_sequence(...) in context {execution_context}, encountered "
+            f"value of type {type(value)} which is not a sequence to be iterated",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=e,
+        )
+
+
 def get_sequence_length(value: Any, execution_context: str, **kwargs) -> int:
     try:
         return len(value)

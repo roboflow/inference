@@ -344,6 +344,9 @@ from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.string_template.v1 import (
+    StringTemplateBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
@@ -1719,6 +1722,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
+        StringTemplateBlockV1,
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
