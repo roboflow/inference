@@ -50,9 +50,10 @@ class TestExtractApiKeyFromHeaders:
         assert plain_dict_result == "my-api-key"
 
     def test_ignores_non_bearer_scheme(self) -> None:
-        # when
+        # given - only the auth scheme matters to the extractor, so the value
+        # is a plainly fake placeholder, not real base64 credentials
         result = extract_api_key_from_headers(
-            Headers({"Authorization": "Basic dXNlcjpwYXNz"})
+            Headers({"Authorization": "Basic fake-basic-credentials"})
         )
 
         # then

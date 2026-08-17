@@ -1863,7 +1863,9 @@ def test_dedicated_middleware_ignores_non_bearer_authorization_scheme(
     with TestClient(interface.app) as client:
         response = client.post(
             "/infer/lmm/florence-2-base",
-            headers={"Authorization": "Basic dXNlcjpwYXNz"},
+            # only the auth scheme matters to the middleware - the value is a
+            # plainly fake placeholder, not real base64 credentials
+            headers={"Authorization": "Basic fake-basic-credentials"},
             json=_make_inference_request(),
         )
 
