@@ -131,11 +131,22 @@ export MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
 export MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
 ```
 
-The download timeout is a hard caller-side deadline. SDK connect and socket-read
-timeouts also apply, and SDK retries are disabled. After repeated cache failures,
-the process bypasses the cache for the cooldown period. Uploads use a small
-non-blocking background queue with daemon workers; a full queue drops the cache
-write. Multipart upload thresholds and chunk sizes use boto3 defaults, while
+Values that cannot be parsed at all (a non-numeric timeout) raise
+`InvalidEnvVariable` when `inference_models` is imported, like every other
+variable on this page. Everything else is validated when the cache is built, so
+an out-of-range timeout, an unsupported addressing style, a missing bucket, or
+only one half of the credential pair disables the cache and falls back to the
+original model source rather than breaking the import.
+
+The download timeout bounds the transfer itself: the deadline is checked between
+chunks, so abandoning a slow read also stops it consuming bandwidth. SDK connect
+and socket-read timeouts also apply, and SDK retries are disabled. Because the
+check happens between chunks, a single stalled chunk can overshoot the deadline
+by up to `MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS`. After repeated cache failures,
+the process bypasses the cache for the cooldown period. Cache reads run on the
+thread that requested the model file, so their concurrency is whatever the
+caller already allows for parallel downloads. Uploads use a small non-blocking
+background queue with daemon workers; a full queue drops the cache write. Multipart upload thresholds and chunk sizes use boto3 defaults, while
 transfer-manager worker threads are disabled so uploads cannot hold up process
 shutdown.
 

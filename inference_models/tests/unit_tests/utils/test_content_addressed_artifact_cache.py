@@ -1,11 +1,8 @@
 import hashlib
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from unittest import mock
 
 from inference_models.utils import content_addressed_artifact_cache as cache_module
+from inference_models.utils.blob_storage import TransferDeadlineExceeded
 from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
     VerifiedContentAddressedArtifactCache,
@@ -19,21 +16,20 @@ class _InlineExecutor:
         return True
 
 
-def _cache(storage, restore_executor=None, upload_executor=None, **overrides):
+def _cache(storage, upload_executor=None, **overrides):
     return VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
         read_deadline_seconds=overrides.pop("read_deadline_seconds", 1),
         failure_threshold=overrides.pop("failure_threshold", 3),
         cooldown_seconds=overrides.pop("cooldown_seconds", 60),
-        restore_executor=restore_executor or _InlineExecutor(),
         upload_executor=upload_executor or _InlineExecutor(),
         **overrides,
     )
 
 
 def _write_download(content: bytes):
-    def download(_: str, target_path: str) -> bool:
+    def download(_: str, target_path: str, deadline=None) -> bool:
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -73,8 +69,9 @@ def test_verified_cache_constructs_normalized_key_and_verifies_download(
     content_hash = hashlib.md5(content).hexdigest().upper()
     storage = mock.MagicMock()
 
-    def download(blob_key: str, target_path: str) -> bool:
+    def download(blob_key: str, target_path: str, deadline=None) -> bool:
         assert blob_key == f"prefix/{content_hash.lower()}"
+        assert deadline is not None
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -128,253 +125,70 @@ def test_verified_cache_rejects_invalid_md5_without_touching_storage(tmp_path) -
     storage.upload.assert_not_called()
 
 
-def test_verified_cache_rejects_corrupt_download_and_cleans_staging(tmp_path) -> None:
+def test_verified_cache_rejects_corrupt_download_and_removes_target(tmp_path) -> None:
     storage = mock.MagicMock()
-
-    def download(_: str, target_path: str) -> bool:
-        with open(target_path, "wb") as target_file:
-            target_file.write(b"corrupt")
-        return True
-
-    storage.download.side_effect = download
-    cache = VerifiedContentAddressedArtifactCache(
-        storage=storage,
-        prefix="model-blobs",
-        read_deadline_seconds=1,
-        failure_threshold=3,
-        cooldown_seconds=60,
-    )
+    storage.download.side_effect = _write_download(b"corrupt")
+    cache = _cache(storage)
     target_path = tmp_path / "weights"
 
     restored = cache.restore(hashlib.md5(b"expected").hexdigest(), str(target_path))
+
     assert restored is False
+    # The caller downloads to this path next, so a rejected blob must not survive.
     assert not target_path.exists()
-    assert list(tmp_path.glob("weights.artifact-cache-*")) == []
 
 
-def test_promotion_and_cleanup_failures_remain_fail_open(tmp_path) -> None:
-    content = b"cached model weights"
-    content_hash = hashlib.md5(content).hexdigest()
+def test_read_deadline_is_passed_to_storage_and_discards_partial_download(
+    tmp_path,
+) -> None:
     storage = mock.MagicMock()
-    storage.download.side_effect = _write_download(content)
-    cache = _cache(storage, failure_threshold=1)
-    target_path = tmp_path / "weights.onnx"
-    promotion_error = OSError("promotion failed")
-    cleanup_error = OSError("cleanup failed")
-
-    with mock.patch.object(
-        cache_module.os, "replace", side_effect=promotion_error
-    ) as replace_mock, mock.patch.object(
-        cache_module, "remove_file_if_exists", side_effect=cleanup_error
-    ) as remove_mock, mock.patch.object(
-        cache_module.LOGGER, "warning"
-    ) as warning_mock:
-        assert cache.restore(content_hash, str(target_path)) is False
-        assert cache.restore(content_hash, str(target_path)) is False
-
-    replace_mock.assert_called_once()
-    remove_mock.assert_called_once()
-    assert storage.download.call_count == 1
-    warning_mock.assert_any_call(
-        "Could not clean up artifact cache staging file %s: %s",
-        mock.ANY,
-        cleanup_error,
-    )
-    warning_mock.assert_any_call(
-        "Could not promote artifact cache download: %s", promotion_error
-    )
-
-
-def test_verified_cache_enforces_hard_read_deadline(tmp_path) -> None:
-    release = threading.Event()
-    storage = mock.MagicMock()
-
-    def download(_: str, __: str) -> bool:
-        release.wait()
-        return False
-
-    storage.download.side_effect = download
-    cache = VerifiedContentAddressedArtifactCache(
-        storage=storage,
-        prefix="model-blobs",
-        read_deadline_seconds=0.02,
-        failure_threshold=3,
-        cooldown_seconds=60,
-        restore_executor=_BoundedDaemonExecutor(1, 0, "test-artifact-deadline"),
-    )
-    started_at = time.monotonic()
-    try:
-        restored = cache.restore(
-            hashlib.md5(b"expected").hexdigest(), str(tmp_path / "weights")
-        )
-    finally:
-        release.set()
-
-    assert restored is False
-    assert time.monotonic() - started_at < 0.2
-
-
-def test_restore_executor_caps_stuck_reads(tmp_path) -> None:
-    release = threading.Event()
-    storage = mock.MagicMock()
-
-    def download(_: str, __: str) -> bool:
-        release.wait()
-        return False
-
-    storage.download.side_effect = download
-    cache = _cache(
-        storage,
-        restore_executor=_BoundedDaemonExecutor(2, 0, "test-artifact-bounded"),
-        read_deadline_seconds=0.02,
-        failure_threshold=100,
-    )
-    content_hash = hashlib.md5(b"expected").hexdigest()
-    try:
-        for index in range(10):
-            assert cache.restore(content_hash, str(tmp_path / str(index))) is False
-    finally:
-        release.set()
-
-    assert storage.download.call_count == 2
-
-
-def test_timed_out_restore_is_cleaned_by_worker(tmp_path) -> None:
-    release = threading.Event()
-    download_started = threading.Event()
-    storage = mock.MagicMock()
-
-    def download(_: str, target_path: str) -> bool:
-        with open(target_path, "wb") as target_file:
-            target_file.write(b"partial")
-        download_started.set()
-        release.wait()
-        return True
-
-    storage.download.side_effect = download
-    cache = _cache(
-        storage,
-        restore_executor=_BoundedDaemonExecutor(1, 0, "test-artifact-cleanup"),
-        read_deadline_seconds=0.05,
-    )
     target_path = tmp_path / "weights"
-    try:
+
+    def download(_: str, path: str, deadline=None) -> bool:
+        with open(path, "wb") as target_file:
+            target_file.write(b"partial")
+        raise TransferDeadlineExceeded("too slow")
+
+    storage.download.side_effect = download
+    cache = _cache(storage, read_deadline_seconds=0.25, failure_threshold=1)
+
+    with mock.patch.object(cache_module.LOGGER, "warning") as warning_mock:
         assert (
-            cache.restore(hashlib.md5(b"partial").hexdigest(), str(target_path))
+            cache.restore(hashlib.md5(b"expected").hexdigest(), str(target_path))
             is False
         )
-        assert download_started.is_set()
-        assert list(tmp_path.glob("weights.artifact-cache-*"))
-    finally:
-        release.set()
 
-    deadline = time.monotonic() + 1
-    while (
-        list(tmp_path.glob("weights.artifact-cache-*")) and time.monotonic() < deadline
-    ):
-        time.sleep(0.01)
-    assert list(tmp_path.glob("weights.artifact-cache-*")) == []
-
-
-def test_worker_completion_claim_wins_timeout_ownership_race(tmp_path) -> None:
-    content = b"cached model weights"
-    content_hash = hashlib.md5(content).hexdigest()
-    storage = mock.MagicMock()
-    storage.download.side_effect = _write_download(content)
-    cache = _cache(
-        storage,
-        restore_executor=_BoundedDaemonExecutor(1, 0, "test-artifact-ownership"),
-        read_deadline_seconds=0.05,
+    # The abandoned transfer must leave the caller's download path clean...
+    assert not target_path.exists()
+    warning_mock.assert_any_call("Artifact cache read exceeded %.2fs", 0.25)
+    # ...and count against the read circuit so a slow endpoint gets bypassed.
+    storage.download.reset_mock()
+    assert (
+        cache.restore(hashlib.md5(b"expected").hexdigest(), str(target_path)) is False
     )
-    target_path = tmp_path / "weights"
-    completion_claimed = threading.Event()
-    timeout_claim_attempted = threading.Event()
-    release_completion = threading.Event()
-
-    class _GatedCompletionEvent(threading.Event):
-        def set(self) -> None:
-            completion_claimed.set()
-            release_completion.wait()
-            super().set()
-
-    attempt = cache_module._RestoreAttempt(staging_path="unused-for-hit")
-    attempt.completed = _GatedCompletionEvent()
-    original_cancel = attempt.cancel_if_pending
-
-    def observed_cancel() -> bool:
-        timeout_claim_attempted.set()
-        return original_cancel()
-
-    with mock.patch.object(
-        cache_module, "_RestoreAttempt", return_value=attempt
-    ), mock.patch.object(attempt, "cancel_if_pending", side_effect=observed_cancel):
-        with ThreadPoolExecutor(max_workers=1) as callers:
-            result = callers.submit(cache.restore, content_hash, str(target_path))
-            assert completion_claimed.wait(timeout=1)
-            assert timeout_claim_attempted.wait(timeout=1)
-            assert not result.done()
-            release_completion.set()
-            assert result.result(timeout=1) is True
-
-    assert target_path.read_bytes() == content
-    assert list(tmp_path.glob("weights.artifact-cache-*")) == []
+    storage.download.assert_not_called()
 
 
-def test_slow_non_hit_cleanup_has_only_worker_ownership(tmp_path) -> None:
+def test_restore_deadline_shrinks_as_the_budget_is_consumed(tmp_path) -> None:
+    storage = mock.MagicMock()
+    storage.download.side_effect = _write_download(b"weights")
+    cache = _cache(storage, read_deadline_seconds=5)
+    content_hash = hashlib.md5(b"weights").hexdigest()
+
+    before = cache_module.monotonic()
+    assert cache.restore(content_hash, str(tmp_path / "weights")) is True
+    after = cache_module.monotonic()
+
+    deadline = storage.download.call_args.kwargs["deadline"]
+    assert before + 5 <= deadline <= after + 5
+
+
+def test_cleanup_exception_does_not_suppress_fallback(tmp_path) -> None:
     storage = mock.MagicMock()
     storage.download.side_effect = _write_download(b"corrupt")
-    worker_prefix = "test-artifact-non-hit-cleanup"
-    cache = _cache(
-        storage,
-        restore_executor=_BoundedDaemonExecutor(1, 0, worker_prefix),
-        read_deadline_seconds=0.02,
-    )
-    target_path = tmp_path / "weights"
-    cleanup_started = threading.Event()
-    cleanup_finished = threading.Event()
-    release_cleanup = threading.Event()
-    cleanup_threads = []
-    original_remove = cache_module.remove_file_if_exists
-
-    def slow_remove(*, path: str) -> None:
-        cleanup_threads.append(threading.current_thread().name)
-        if threading.current_thread().name.startswith(worker_prefix):
-            cleanup_started.set()
-            release_cleanup.wait()
-            original_remove(path=path)
-            cleanup_finished.set()
-            return
-        raise AssertionError("caller attempted staging cleanup")
-
-    with mock.patch.object(
-        cache_module, "remove_file_if_exists", side_effect=slow_remove
-    ):
-        with ThreadPoolExecutor(max_workers=1) as callers:
-            result = callers.submit(
-                cache.restore,
-                hashlib.md5(b"expected").hexdigest(),
-                str(target_path),
-            )
-            assert cleanup_started.wait(timeout=1)
-            try:
-                assert result.result(timeout=0.15) is False
-            except FutureTimeoutError:
-                raise AssertionError("worker-owned cleanup blocked fallback")
-            finally:
-                release_cleanup.set()
-            assert cleanup_finished.wait(timeout=1)
-
-    assert cleanup_threads == [f"{worker_prefix}-0"]
-
-
-def test_non_hit_cleanup_exception_does_not_suppress_fallback(tmp_path) -> None:
-    storage = mock.MagicMock()
-    storage.download.side_effect = _write_download(b"corrupt")
-    cache = _cache(
-        storage,
-        restore_executor=_BoundedDaemonExecutor(1, 0, "test-artifact-cleanup-error"),
-    )
+    cache = _cache(storage)
     cleanup_error = RuntimeError("cleanup failed")
+
     with mock.patch.object(
         cache_module, "remove_file_if_exists", side_effect=cleanup_error
     ) as remove_mock, mock.patch.object(cache_module.LOGGER, "warning") as warning_mock:
@@ -387,30 +201,26 @@ def test_non_hit_cleanup_exception_does_not_suppress_fallback(tmp_path) -> None:
 
     remove_mock.assert_called_once()
     warning_mock.assert_any_call(
-        "Could not clean up artifact cache staging file %s: %s",
+        "Could not clean up partial artifact cache download %s: %s",
         mock.ANY,
         cleanup_error,
     )
 
 
-def test_verified_cache_validates_source_before_upload(tmp_path) -> None:
+def test_verified_cache_uploads_without_re_reading_the_source(tmp_path) -> None:
     source_path = tmp_path / "weights"
     source_path.write_bytes(b"actual")
+    content_hash = hashlib.md5(b"different").hexdigest()
     storage = mock.MagicMock()
-    cache = VerifiedContentAddressedArtifactCache(
-        storage=storage,
-        prefix="model-blobs",
-        read_deadline_seconds=1,
-        failure_threshold=3,
-        cooldown_seconds=60,
-        upload_executor=_InlineExecutor(),
-    )
+    cache = _cache(storage)
 
-    assert (
-        cache.schedule_store(hashlib.md5(b"different").hexdigest(), str(source_path))
-        is True
+    assert cache.schedule_store(content_hash, str(source_path)) is True
+
+    # The caller vouches for the hash it verified during the download, so the
+    # upload skips a second full-file read; `restore` re-verifies on the way back.
+    storage.upload.assert_called_once_with(
+        f"model-blobs/{content_hash}", str(source_path)
     )
-    storage.upload.assert_not_called()
 
 
 def test_read_circuit_bypasses_storage_after_repeated_failures(tmp_path) -> None:
@@ -439,7 +249,6 @@ def test_read_failures_do_not_open_write_circuit(tmp_path) -> None:
         read_deadline_seconds=1,
         failure_threshold=2,
         cooldown_seconds=60,
-        restore_executor=_InlineExecutor(),
         upload_executor=_InlineExecutor(),
     )
 
@@ -450,10 +259,12 @@ def test_read_failures_do_not_open_write_circuit(tmp_path) -> None:
 
 
 def test_write_failures_do_not_open_read_circuit(tmp_path) -> None:
-    content_hash = hashlib.md5(b"expected").hexdigest()
+    content = b"weights"
+    content_hash = hashlib.md5(content).hexdigest()
     source_path = tmp_path / "source"
-    source_path.write_bytes(b"wrong")
+    source_path.write_bytes(content)
     storage = mock.MagicMock()
+    storage.upload.side_effect = RuntimeError("write failed")
     storage.download.return_value = False
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
@@ -461,7 +272,6 @@ def test_write_failures_do_not_open_read_circuit(tmp_path) -> None:
         read_deadline_seconds=1,
         failure_threshold=2,
         cooldown_seconds=60,
-        restore_executor=_InlineExecutor(),
         upload_executor=_InlineExecutor(),
     )
 
@@ -521,14 +331,16 @@ def test_upload_worker_failure_is_fail_open(tmp_path) -> None:
     storage.upload.assert_called_once()
 
 
-def test_missing_upload_source_is_fail_open(tmp_path) -> None:
+def test_missing_upload_source_does_not_open_write_circuit(tmp_path) -> None:
     storage = mock.MagicMock()
-    cache = _cache(storage)
+    storage.upload.side_effect = FileNotFoundError("source evicted")
+    cache = _cache(storage, failure_threshold=1)
+    content_hash = hashlib.md5(b"missing").hexdigest()
+    missing_path = str(tmp_path / "missing")
 
-    assert (
-        cache.schedule_store(
-            hashlib.md5(b"missing").hexdigest(), str(tmp_path / "missing")
-        )
-        is True
-    )
-    storage.upload.assert_not_called()
+    assert cache.schedule_store(content_hash, missing_path) is True
+    assert cache.schedule_store(content_hash, missing_path) is True
+
+    # An evicted source is a local race, not a cache-health signal, so a single
+    # failure threshold still leaves the write circuit closed for the second call.
+    assert storage.upload.call_count == 2

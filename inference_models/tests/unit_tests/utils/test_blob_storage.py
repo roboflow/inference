@@ -1,14 +1,23 @@
+from time import monotonic
 from unittest import mock
 
-from inference_models.utils.blob_storage import BlobStorage, S3BlobStorage
+import pytest
+
+from inference_models.utils.blob_storage import (
+    BlobStorage,
+    S3BlobStorage,
+    TransferDeadlineExceeded,
+)
 
 
 class _StreamingBody:
     def __init__(self, chunks) -> None:
         self._chunks = iter(chunks)
         self.closed = False
+        self.reads = 0
 
     def read(self, _: int) -> bytes:
+        self.reads += 1
         chunk = next(self._chunks)
         if isinstance(chunk, Exception):
             raise chunk
@@ -68,6 +77,37 @@ def test_s3_storage_closes_response_body_when_streaming_fails(tmp_path) -> None:
         raise AssertionError("streaming failure must propagate")
 
     assert body.closed is True
+
+
+def test_s3_storage_abandons_transfer_once_the_deadline_passes(tmp_path) -> None:
+    # A body long enough that running it to completion would be obvious.
+    body = _StreamingBody([b"chunk"] * 1000)
+    client = mock.MagicMock()
+    client.get_object.return_value = {"Body": body}
+    storage = S3BlobStorage(client=client, bucket="models")
+
+    with pytest.raises(TransferDeadlineExceeded):
+        storage.download(
+            "prefix/hash", str(tmp_path / "blob"), deadline=monotonic() - 1
+        )
+
+    # Deadline is checked before the first read, so nothing is streamed at all.
+    assert body.reads == 0
+    assert body.closed is True
+
+
+def test_s3_storage_completes_transfer_within_its_deadline(tmp_path) -> None:
+    body = _StreamingBody([b"cached ", b"weights", b""])
+    client = mock.MagicMock()
+    client.get_object.return_value = {"Body": body}
+    storage = S3BlobStorage(client=client, bucket="models")
+    target_path = tmp_path / "blob"
+
+    assert (
+        storage.download("prefix/hash", str(target_path), deadline=monotonic() + 30)
+        is True
+    )
+    assert target_path.read_bytes() == b"cached weights"
 
 
 def test_s3_storage_upload_disables_transfer_threads(tmp_path) -> None:

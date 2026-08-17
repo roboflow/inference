@@ -20,6 +20,9 @@ CONFIGURATION_ENVIRONMENT_KEYS = [
     "MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
     "MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
     "MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS",
+    "MODEL_BLOB_CACHE_COOLDOWN_SECONDS",
+    "MODEL_BLOB_CACHE_FAILURE_THRESHOLD",
+    "MODEL_BLOB_CACHE_ADDRESSING_STYLE",
 ]
 
 
@@ -115,6 +118,27 @@ def test_model_blob_cache_timeout_defaults_can_be_overridden(
     assert configuration.MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS == 4.5
     assert configuration.MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS == 8.5
     assert configuration.MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS == 45.0
+
+
+def test_model_blob_cache_leaves_range_checks_to_its_config(
+    reload_configuration,
+) -> None:
+    # Parsing lives here; `ModelBlobCacheConfig` rejects out-of-range values so
+    # a misconfigured optional cache cannot break the library import.
+    configuration = reload_configuration(
+        MODEL_BLOB_CACHE_COOLDOWN_SECONDS="0",
+        MODEL_BLOB_CACHE_FAILURE_THRESHOLD="0",
+        MODEL_BLOB_CACHE_ADDRESSING_STYLE="dns",
+    )
+
+    assert configuration.MODEL_BLOB_CACHE_COOLDOWN_SECONDS == 0.0
+    assert configuration.MODEL_BLOB_CACHE_FAILURE_THRESHOLD == 0
+    assert configuration.MODEL_BLOB_CACHE_ADDRESSING_STYLE == "dns"
+
+
+def test_model_blob_cache_still_rejects_unparsable_values(reload_configuration) -> None:
+    with pytest.raises(InvalidEnvVariable):
+        reload_configuration(MODEL_BLOB_CACHE_COOLDOWN_SECONDS="not-a-number")
 
 
 @pytest.mark.parametrize(

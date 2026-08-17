@@ -1,8 +1,22 @@
-import os
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
+from inference_models.configuration import (
+    MODEL_BLOB_CACHE_ACCESS_KEY_ID,
+    MODEL_BLOB_CACHE_ADDRESSING_STYLE,
+    MODEL_BLOB_CACHE_BUCKET,
+    MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS,
+    MODEL_BLOB_CACHE_COOLDOWN_SECONDS,
+    MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS,
+    MODEL_BLOB_CACHE_ENABLED,
+    MODEL_BLOB_CACHE_ENDPOINT_URL,
+    MODEL_BLOB_CACHE_FAILURE_THRESHOLD,
+    MODEL_BLOB_CACHE_PREFIX,
+    MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS,
+    MODEL_BLOB_CACHE_REGION,
+    MODEL_BLOB_CACHE_SECRET_ACCESS_KEY,
+)
 from inference_models.logger import LOGGER
 from inference_models.utils.blob_storage import S3BlobStorage
 from inference_models.utils.content_addressed_artifact_cache import (
@@ -10,7 +24,6 @@ from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
     VerifiedContentAddressedArtifactCache,
 )
-from inference_models.utils.environment import str2bool
 
 _SUPPORTED_ADDRESSING_STYLES = {"auto", "path", "virtual"}
 
@@ -30,63 +43,56 @@ class ModelBlobCacheConfig:
     failure_threshold: int = 3
     cooldown_seconds: float = 60.0
 
+    def __post_init__(self) -> None:
+        if not self.bucket:
+            raise ValueError(
+                "MODEL_BLOB_CACHE_BUCKET must be set when the cache is enabled"
+            )
+        if self.addressing_style not in _SUPPORTED_ADDRESSING_STYLES:
+            raise ValueError(
+                "MODEL_BLOB_CACHE_ADDRESSING_STYLE must be one of: "
+                f"{', '.join(sorted(_SUPPORTED_ADDRESSING_STYLES))}"
+            )
+        if bool(self.access_key_id) != bool(self.secret_access_key):
+            raise ValueError(
+                "MODEL_BLOB_CACHE_ACCESS_KEY_ID and "
+                "MODEL_BLOB_CACHE_SECRET_ACCESS_KEY must be set together"
+            )
+        if self.failure_threshold < 1:
+            raise ValueError("MODEL_BLOB_CACHE_FAILURE_THRESHOLD must be at least 1")
+        for name, value in (
+            ("MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS", self.connect_timeout_seconds),
+            ("MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS", self.read_timeout_seconds),
+            (
+                "MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS",
+                self.download_timeout_seconds,
+            ),
+            ("MODEL_BLOB_CACHE_COOLDOWN_SECONDS", self.cooldown_seconds),
+        ):
+            if value <= 0:
+                raise ValueError(f"{name} must be greater than zero")
 
-def _boolean_from_environment(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return str2bool(value, variable_name=name)
 
+def _current_configuration() -> ModelBlobCacheConfig:
+    """Compose the cache configuration from `inference_models.configuration`.
 
-def _configuration_from_environment() -> ModelBlobCacheConfig:
-    bucket = os.getenv("MODEL_BLOB_CACHE_BUCKET")
-    if not bucket:
-        raise ValueError(
-            "MODEL_BLOB_CACHE_BUCKET must be set when the cache is enabled"
-        )
-    addressing_style = os.getenv("MODEL_BLOB_CACHE_ADDRESSING_STYLE", "auto")
-    if addressing_style not in _SUPPORTED_ADDRESSING_STYLES:
-        raise ValueError(
-            "MODEL_BLOB_CACHE_ADDRESSING_STYLE must be one of: auto, path, virtual"
-        )
-    access_key_id = os.getenv("MODEL_BLOB_CACHE_ACCESS_KEY_ID")
-    secret_access_key = os.getenv("MODEL_BLOB_CACHE_SECRET_ACCESS_KEY")
-    if bool(access_key_id) != bool(secret_access_key):
-        raise ValueError(
-            "MODEL_BLOB_CACHE_ACCESS_KEY_ID and "
-            "MODEL_BLOB_CACHE_SECRET_ACCESS_KEY must be set together"
-        )
-    config = ModelBlobCacheConfig(
-        bucket=bucket,
-        prefix=os.getenv("MODEL_BLOB_CACHE_PREFIX", "model-blobs"),
-        endpoint_url=os.getenv("MODEL_BLOB_CACHE_ENDPOINT_URL"),
-        region=os.getenv("MODEL_BLOB_CACHE_REGION"),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        addressing_style=addressing_style,
-        connect_timeout_seconds=float(
-            os.getenv("MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS", "1.0")
-        ),
-        read_timeout_seconds=float(
-            os.getenv("MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS", "2.0")
-        ),
-        download_timeout_seconds=float(
-            os.getenv("MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS", "30.0")
-        ),
-        failure_threshold=int(os.getenv("MODEL_BLOB_CACHE_FAILURE_THRESHOLD", "3")),
-        cooldown_seconds=float(os.getenv("MODEL_BLOB_CACHE_COOLDOWN_SECONDS", "60.0")),
+    Construction validates the result, so an invalid combination raises here and
+    is turned into a fail-open cache by `_initialize_model_blob_cache`.
+    """
+    return ModelBlobCacheConfig(
+        bucket=MODEL_BLOB_CACHE_BUCKET,
+        prefix=MODEL_BLOB_CACHE_PREFIX,
+        endpoint_url=MODEL_BLOB_CACHE_ENDPOINT_URL,
+        region=MODEL_BLOB_CACHE_REGION,
+        access_key_id=MODEL_BLOB_CACHE_ACCESS_KEY_ID,
+        secret_access_key=MODEL_BLOB_CACHE_SECRET_ACCESS_KEY,
+        addressing_style=MODEL_BLOB_CACHE_ADDRESSING_STYLE,
+        connect_timeout_seconds=MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS,
+        read_timeout_seconds=MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS,
+        download_timeout_seconds=MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS,
+        failure_threshold=MODEL_BLOB_CACHE_FAILURE_THRESHOLD,
+        cooldown_seconds=MODEL_BLOB_CACHE_COOLDOWN_SECONDS,
     )
-    if config.failure_threshold < 1:
-        raise ValueError("MODEL_BLOB_CACHE_FAILURE_THRESHOLD must be at least 1")
-    for name, value in (
-        ("MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS", config.connect_timeout_seconds),
-        ("MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS", config.read_timeout_seconds),
-        ("MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS", config.download_timeout_seconds),
-        ("MODEL_BLOB_CACHE_COOLDOWN_SECONDS", config.cooldown_seconds),
-    ):
-        if value <= 0:
-            raise ValueError(f"{name} must be greater than zero")
-    return config
 
 
 def _build_s3_client(config: ModelBlobCacheConfig) -> Any:
@@ -112,9 +118,9 @@ def _build_s3_client(config: ModelBlobCacheConfig) -> Any:
 
 def _initialize_model_blob_cache() -> ContentAddressedArtifactCache:
     try:
-        if not _boolean_from_environment("MODEL_BLOB_CACHE_ENABLED", False):
+        if not MODEL_BLOB_CACHE_ENABLED:
             return NullContentAddressedArtifactCache()
-        config = _configuration_from_environment()
+        config = _current_configuration()
         storage = S3BlobStorage(client=_build_s3_client(config), bucket=config.bucket)
         return VerifiedContentAddressedArtifactCache(
             storage=storage,

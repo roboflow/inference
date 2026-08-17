@@ -366,17 +366,16 @@ def safe_download_file(
                 else NullContentAddressedArtifactCache()
             )
             restored_from_blob_cache = False
-            if md5_hash:
-                try:
-                    restored_from_blob_cache = artifact_cache.restore(
-                        content_hash=md5_hash,
-                        target_path=tmp_download_file,
-                    )
-                except Exception as error:
-                    LOGGER.warning(
-                        "Model blob cache lookup failed; using original model source: %s",
-                        error,
-                    )
+            try:
+                restored_from_blob_cache = artifact_cache.restore(
+                    content_hash=md5_hash,
+                    target_path=tmp_download_file,
+                )
+            except Exception as error:
+                LOGGER.warning(
+                    "Model blob cache lookup failed; using original model source: %s",
+                    error,
+                )
             if restored_from_blob_cache:
                 if on_file_created:
                     on_file_created(tmp_download_file)
@@ -398,7 +397,7 @@ def safe_download_file(
                 on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
-            if md5_hash and verify_hash_while_download:
+            if verify_hash_while_download:
                 try:
                     artifact_cache.schedule_store(
                         content_hash=md5_hash,

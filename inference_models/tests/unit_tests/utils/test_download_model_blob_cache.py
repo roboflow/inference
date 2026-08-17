@@ -72,11 +72,12 @@ def test_safe_download_falls_back_on_cache_miss_and_schedules_upload(
     )
 
 
-def test_safe_download_uses_null_cache_without_hash_and_skips_cache_calls(
+def test_safe_download_routes_hashless_files_through_the_null_cache(
     tmp_path,
 ) -> None:
     target_path = tmp_path / "weights.onnx"
     null_cache = mock.create_autospec(NullContentAddressedArtifactCache, instance=True)
+    null_cache.restore.return_value = False
 
     def source_download(**kwargs) -> None:
         Path(kwargs["target_file_path"]).write_bytes(b"source")
@@ -93,8 +94,11 @@ def test_safe_download_uses_null_cache_without_hash_and_skips_cache_calls(
     assert target_path.read_bytes() == b"source"
     null_cache_factory.assert_called_once_with()
     cache_factory.assert_not_called()
-    null_cache.restore.assert_not_called()
-    null_cache.schedule_store.assert_not_called()
+    # The null object absorbs the hashless case, so the call sites stay unguarded.
+    null_cache.restore.assert_called_once_with(content_hash=None, target_path=mock.ANY)
+    null_cache.schedule_store.assert_called_once_with(
+        content_hash=None, source_path=str(target_path)
+    )
 
 
 def test_safe_download_falls_back_when_blob_cache_lookup_raises(tmp_path) -> None:

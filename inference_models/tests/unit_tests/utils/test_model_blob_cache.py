@@ -3,6 +3,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
+import pytest
+
 from inference_models.utils import model_blob_cache
 from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
@@ -14,18 +16,28 @@ from inference_models.utils.model_blob_cache import (
 )
 
 
+def _configure(monkeypatch, **overrides) -> None:
+    """Point the cache module at a configuration, as `configuration` would."""
+    settings = {"MODEL_BLOB_CACHE_ENABLED": True, "MODEL_BLOB_CACHE_BUCKET": "models"}
+    settings.update(overrides)
+    for name, value in settings.items():
+        monkeypatch.setattr(model_blob_cache, name, value)
+
+
 def test_disabled_factory_returns_null_cache(monkeypatch) -> None:
-    monkeypatch.setenv("MODEL_BLOB_CACHE_ENABLED", "false")
+    _configure(monkeypatch, MODEL_BLOB_CACHE_ENABLED=False)
 
     cache = model_blob_cache._initialize_model_blob_cache()
 
     assert isinstance(cache, NullContentAddressedArtifactCache)
 
 
-def test_factory_lazily_reads_current_environment(monkeypatch) -> None:
-    monkeypatch.setenv("MODEL_BLOB_CACHE_ENABLED", "true")
-    monkeypatch.setenv("MODEL_BLOB_CACHE_BUCKET", "current-bucket")
-    monkeypatch.setenv("MODEL_BLOB_CACHE_PREFIX", "/current-prefix/")
+def test_factory_reads_current_configuration(monkeypatch) -> None:
+    _configure(
+        monkeypatch,
+        MODEL_BLOB_CACHE_BUCKET="current-bucket",
+        MODEL_BLOB_CACHE_PREFIX="/current-prefix/",
+    )
     client = mock.sentinel.client
 
     with mock.patch.object(
@@ -39,24 +51,21 @@ def test_factory_lazily_reads_current_environment(monkeypatch) -> None:
     build_client.assert_called_once()
 
 
-def test_factory_passes_complete_environment_configuration(monkeypatch) -> None:
-    environment = {
-        "MODEL_BLOB_CACHE_ENABLED": "true",
-        "MODEL_BLOB_CACHE_BUCKET": "models",
-        "MODEL_BLOB_CACHE_PREFIX": "/artifacts/",
-        "MODEL_BLOB_CACHE_ENDPOINT_URL": "https://objects.example.com",
-        "MODEL_BLOB_CACHE_REGION": "region-1",
-        "MODEL_BLOB_CACHE_ACCESS_KEY_ID": "access",
-        "MODEL_BLOB_CACHE_SECRET_ACCESS_KEY": "secret",
-        "MODEL_BLOB_CACHE_ADDRESSING_STYLE": "path",
-        "MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS": "2.5",
-        "MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS": "7.5",
-        "MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS": "11.5",
-        "MODEL_BLOB_CACHE_FAILURE_THRESHOLD": "4",
-        "MODEL_BLOB_CACHE_COOLDOWN_SECONDS": "19.5",
-    }
-    for name, value in environment.items():
-        monkeypatch.setenv(name, value)
+def test_factory_passes_complete_configuration(monkeypatch) -> None:
+    _configure(
+        monkeypatch,
+        MODEL_BLOB_CACHE_PREFIX="/artifacts/",
+        MODEL_BLOB_CACHE_ENDPOINT_URL="https://objects.example.com",
+        MODEL_BLOB_CACHE_REGION="region-1",
+        MODEL_BLOB_CACHE_ACCESS_KEY_ID="access",
+        MODEL_BLOB_CACHE_SECRET_ACCESS_KEY="secret",
+        MODEL_BLOB_CACHE_ADDRESSING_STYLE="path",
+        MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=2.5,
+        MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=7.5,
+        MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS=11.5,
+        MODEL_BLOB_CACHE_FAILURE_THRESHOLD=4,
+        MODEL_BLOB_CACHE_COOLDOWN_SECONDS=19.5,
+    )
 
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", return_value=mock.sentinel.client
@@ -81,9 +90,21 @@ def test_factory_passes_complete_environment_configuration(monkeypatch) -> None:
     assert cache._read_deadline_seconds == 11.5
 
 
-def test_invalid_configuration_returns_null_cache(monkeypatch) -> None:
-    monkeypatch.setenv("MODEL_BLOB_CACHE_ENABLED", "true")
-    monkeypatch.delenv("MODEL_BLOB_CACHE_BUCKET", raising=False)
+def test_missing_bucket_returns_null_cache(monkeypatch) -> None:
+    _configure(monkeypatch, MODEL_BLOB_CACHE_BUCKET=None)
+
+    assert isinstance(
+        model_blob_cache._initialize_model_blob_cache(),
+        NullContentAddressedArtifactCache,
+    )
+
+
+def test_half_configured_credentials_return_null_cache(monkeypatch) -> None:
+    _configure(
+        monkeypatch,
+        MODEL_BLOB_CACHE_ACCESS_KEY_ID="access",
+        MODEL_BLOB_CACHE_SECRET_ACCESS_KEY=None,
+    )
 
     assert isinstance(
         model_blob_cache._initialize_model_blob_cache(),
@@ -92,8 +113,7 @@ def test_invalid_configuration_returns_null_cache(monkeypatch) -> None:
 
 
 def test_missing_boto3_returns_null_cache(monkeypatch) -> None:
-    monkeypatch.setenv("MODEL_BLOB_CACHE_ENABLED", "true")
-    monkeypatch.setenv("MODEL_BLOB_CACHE_BUCKET", "models")
+    _configure(monkeypatch)
 
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", side_effect=ImportError("no boto3")
@@ -104,8 +124,7 @@ def test_missing_boto3_returns_null_cache(monkeypatch) -> None:
 
 
 def test_client_construction_failure_returns_null_cache(monkeypatch) -> None:
-    monkeypatch.setenv("MODEL_BLOB_CACHE_ENABLED", "true")
-    monkeypatch.setenv("MODEL_BLOB_CACHE_BUCKET", "models")
+    _configure(monkeypatch)
 
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", side_effect=RuntimeError("bad client")
@@ -155,6 +174,36 @@ def test_model_blob_cache_config_preserves_timeout_defaults() -> None:
     assert config.connect_timeout_seconds == 1.0
     assert config.read_timeout_seconds == 2.0
     assert config.download_timeout_seconds == 30.0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"bucket": ""},
+        {"addressing_style": "dns"},
+        {"access_key_id": "access"},
+        {"secret_access_key": "secret"},
+        {"failure_threshold": 0},
+        {"connect_timeout_seconds": 0},
+        {"read_timeout_seconds": -1},
+        {"download_timeout_seconds": 0},
+        {"cooldown_seconds": 0},
+    ],
+)
+def test_model_blob_cache_config_rejects_invalid_values(overrides) -> None:
+    settings = {"bucket": "models", **overrides}
+
+    with pytest.raises(ValueError):
+        ModelBlobCacheConfig(**settings)
+
+
+def test_model_blob_cache_config_accepts_paired_credentials() -> None:
+    config = ModelBlobCacheConfig(
+        bucket="models", access_key_id="access", secret_access_key="secret"
+    )
+
+    assert config.access_key_id == "access"
+    assert config.secret_access_key == "secret"
 
 
 def test_s3_client_disables_retries_and_applies_provider_options() -> None:

@@ -1,13 +1,26 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from time import monotonic
+from typing import Any, Optional
 
 _STREAM_CHUNK_SIZE = 1024 * 1024
 
 
+class TransferDeadlineExceeded(Exception):
+    """Raised when a transfer is abandoned because its deadline passed."""
+
+
 class BlobStorage(ABC):
     @abstractmethod
-    def download(self, blob_key: str, target_path: str) -> bool:
-        """Download a blob, returning False only when it does not exist."""
+    def download(
+        self, blob_key: str, target_path: str, deadline: Optional[float] = None
+    ) -> bool:
+        """Download a blob, returning False only when it does not exist.
+
+        `deadline` is a `time.monotonic()` timestamp past which the transfer
+        must be abandoned with `TransferDeadlineExceeded` rather than run to
+        completion. Implementations should honour it between chunks so a slow
+        endpoint cannot keep consuming bandwidth after the caller gave up.
+        """
         pass
 
     @abstractmethod
@@ -22,7 +35,9 @@ class S3BlobStorage(BlobStorage):
         self._client = client
         self._bucket = bucket
 
-    def download(self, blob_key: str, target_path: str) -> bool:
+    def download(
+        self, blob_key: str, target_path: str, deadline: Optional[float] = None
+    ) -> bool:
         body = None
         try:
             response = self._client.get_object(
@@ -32,6 +47,10 @@ class S3BlobStorage(BlobStorage):
             body = response["Body"]
             with open(target_path, "wb") as target_file:
                 while True:
+                    if deadline is not None and monotonic() > deadline:
+                        raise TransferDeadlineExceeded(
+                            f"abandoned download of {blob_key} past its deadline"
+                        )
                     chunk = body.read(_STREAM_CHUNK_SIZE)
                     if not chunk:
                         break
