@@ -6230,3 +6230,134 @@ def test_auto_resolution_cache_entries_do_not_expire_in_offline_mode(
     assert result_offline is not None
     assert result_offline.model_id == "some/1"
     assert result_online is None
+
+
+def _current_manifest_content(runtime_compatibility_hash: str) -> dict:
+    return {
+        "offline_manifest_version": core.OFFLINE_CACHE_MANIFEST_VERSION,
+        "model_id": "workspace/project/3",
+        "canonical_model_id": "workspace/project/3",
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+        "model_features": None,
+        "trusted_source": True,
+        "model_dependencies": [],
+        "recommended_parameters": None,
+        "quantization": "unknown",
+        "dynamic_batch_size_supported": True,
+        "static_batch_size": None,
+        "runtime_compatibility_hash": runtime_compatibility_hash,
+        "offline_compatibility_hash": "b" * 64,
+        "package_artifacts": [],
+        "dependency_package_paths": [],
+    }
+
+
+def _expected_manifest_fields_from_content(content: dict) -> dict:
+    return {
+        field_name: content[field_name]
+        for field_name in (
+            "model_id",
+            "canonical_model_id",
+            "model_architecture",
+            "task_type",
+            "backend_type",
+            "model_features",
+            "trusted_source",
+            "model_dependencies",
+            "recommended_parameters",
+            "quantization",
+            "dynamic_batch_size_supported",
+            "static_batch_size",
+            "runtime_compatibility_hash",
+        )
+    }
+
+
+def test_cache_attribution_accepts_package_materialized_on_another_machine(
+    empty_local_dir: str,
+) -> None:
+    """A package cached by one machine must stay loadable on another GPU type."""
+    # given - manifest written on a machine with a different runtime hash
+    content = _current_manifest_content(runtime_compatibility_hash="a" * 64)
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    with open(config_path, "w") as file:
+        json.dump(content, file)
+    expected_manifest_fields = _expected_manifest_fields_from_content(content)
+    expected_manifest_fields["runtime_compatibility_hash"] = "c" * 64
+
+    # when - no error expected
+    core._validate_existing_cache_package_attribution(
+        package_dir=empty_local_dir,
+        cache_model_id="workspace/project/3",
+        canonical_model_id="workspace/project/3",
+        expected_manifest_fields=expected_manifest_fields,
+        package_artifact_declarations=[],
+        dependency_package_paths=[],
+    )
+
+
+def test_cache_attribution_still_rejects_package_identity_change(
+    empty_local_dir: str,
+) -> None:
+    # given - manifest differing in a genuine package-identity field
+    content = _current_manifest_content(runtime_compatibility_hash="a" * 64)
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    with open(config_path, "w") as file:
+        json.dump(content, file)
+    expected_manifest_fields = _expected_manifest_fields_from_content(content)
+    expected_manifest_fields["backend_type"] = "torch"
+
+    # when / then
+    with pytest.raises(CorruptedModelPackageError, match="Refusing to mutate"):
+        core._validate_existing_cache_package_attribution(
+            package_dir=empty_local_dir,
+            cache_model_id="workspace/project/3",
+            canonical_model_id="workspace/project/3",
+            expected_manifest_fields=expected_manifest_fields,
+            package_artifact_declarations=[],
+            dependency_package_paths=[],
+        )
+
+
+def test_dump_model_config_preserves_manifest_for_other_machine_runtime_hash(
+    empty_local_dir: str,
+) -> None:
+    """Republishing an identical package from a different machine must keep the
+    original manifest byte-stable instead of raising or rewriting it."""
+    # given
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    original_hash = dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        file_lock_acquire_timeout=10,
+        model_id="workspace/project/3",
+        canonical_model_id="workspace/project/3",
+        trusted_source=True,
+        model_dependencies=[],
+        runtime_compatibility_hash="a" * 64,
+    )
+    with open(config_path, "rb") as config_file:
+        original_bytes = config_file.read()
+
+    # when - same package republished from a machine with another runtime hash
+    republished_hash = dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        file_lock_acquire_timeout=10,
+        model_id="workspace/project/3",
+        canonical_model_id="workspace/project/3",
+        trusted_source=True,
+        model_dependencies=[],
+        runtime_compatibility_hash="c" * 64,
+    )
+
+    # then
+    with open(config_path, "rb") as config_file:
+        assert config_file.read() == original_bytes
+    assert republished_hash == original_hash
