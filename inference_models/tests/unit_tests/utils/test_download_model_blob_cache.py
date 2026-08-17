@@ -1,15 +1,22 @@
 from pathlib import Path
+from typing import Optional
 from unittest import mock
 
 from inference_models.utils import download
+from inference_models.utils.content_addressed_artifact_cache import (
+    NullContentAddressedArtifactCache,
+)
 
 
-def _download(target_path: Path) -> None:
+def _download(
+    target_path: Path,
+    md5_hash: Optional[str] = "c770e3485f6f6cd5bf2f78504bd56c50",
+) -> None:
     download.safe_download_file(
         target_file_path=str(target_path),
         download_url="https://models.example.com/weights.onnx",
         download_id="download-id",
-        md5_hash="c770e3485f6f6cd5bf2f78504bd56c50",
+        md5_hash=md5_hash,
         verify_hash_while_download=True,
         progress=mock.MagicMock(),
         response_codes_to_retry=set(),
@@ -31,7 +38,7 @@ def test_safe_download_uses_blob_cache_hit_without_source_download(
 
     blob_cache.restore.side_effect = restore
     with mock.patch.object(
-        download, "get_model_blob_cache", return_value=blob_cache
+        download, "get_content_addressed_artifact_cache", return_value=blob_cache
     ), mock.patch.object(download, "safe_execute_download") as source_download:
         _download(target_path)
 
@@ -51,7 +58,7 @@ def test_safe_download_falls_back_on_cache_miss_and_schedules_upload(
         Path(kwargs["target_file_path"]).write_bytes(b"source")
 
     with mock.patch.object(
-        download, "get_model_blob_cache", return_value=blob_cache
+        download, "get_content_addressed_artifact_cache", return_value=blob_cache
     ), mock.patch.object(
         download, "safe_execute_download", side_effect=source_download
     ) as source_download_mock:
@@ -65,6 +72,31 @@ def test_safe_download_falls_back_on_cache_miss_and_schedules_upload(
     )
 
 
+def test_safe_download_uses_null_cache_without_hash_and_skips_cache_calls(
+    tmp_path,
+) -> None:
+    target_path = tmp_path / "weights.onnx"
+    null_cache = mock.create_autospec(NullContentAddressedArtifactCache, instance=True)
+
+    def source_download(**kwargs) -> None:
+        Path(kwargs["target_file_path"]).write_bytes(b"source")
+
+    with mock.patch.object(
+        download, "NullContentAddressedArtifactCache", return_value=null_cache
+    ) as null_cache_factory, mock.patch.object(
+        download, "get_content_addressed_artifact_cache"
+    ) as cache_factory, mock.patch.object(
+        download, "safe_execute_download", side_effect=source_download
+    ):
+        _download(target_path, md5_hash=None)
+
+    assert target_path.read_bytes() == b"source"
+    null_cache_factory.assert_called_once_with()
+    cache_factory.assert_not_called()
+    null_cache.restore.assert_not_called()
+    null_cache.schedule_store.assert_not_called()
+
+
 def test_safe_download_falls_back_when_blob_cache_lookup_raises(tmp_path) -> None:
     target_path = tmp_path / "weights.onnx"
     blob_cache = mock.MagicMock()
@@ -74,7 +106,7 @@ def test_safe_download_falls_back_when_blob_cache_lookup_raises(tmp_path) -> Non
         Path(kwargs["target_file_path"]).write_bytes(b"source")
 
     with mock.patch.object(
-        download, "get_model_blob_cache", return_value=blob_cache
+        download, "get_content_addressed_artifact_cache", return_value=blob_cache
     ), mock.patch.object(
         download, "safe_execute_download", side_effect=source_download
     ):
@@ -93,7 +125,7 @@ def test_safe_download_ignores_upload_scheduling_failure(tmp_path) -> None:
         Path(kwargs["target_file_path"]).write_bytes(b"source")
 
     with mock.patch.object(
-        download, "get_model_blob_cache", return_value=blob_cache
+        download, "get_content_addressed_artifact_cache", return_value=blob_cache
     ), mock.patch.object(
         download, "safe_execute_download", side_effect=source_download
     ):

@@ -41,13 +41,18 @@ from inference_models.errors import (
     UntrustedFileError,
 )
 from inference_models.logger import LOGGER
+from inference_models.utils.content_addressed_artifact_cache import (
+    NullContentAddressedArtifactCache,
+)
 from inference_models.utils.file_system import (
     ensure_parent_dir_exists,
     pre_allocate_file,
     remove_file_if_exists,
     stream_file_bytes,
 )
-from inference_models.utils.model_blob_cache import get_model_blob_cache
+from inference_models.utils.model_blob_cache import (
+    get_content_addressed_artifact_cache,
+)
 
 FileHandle = str
 DownloadUrl = str
@@ -355,11 +360,15 @@ def safe_download_file(
                     f"skipping download."
                 )
                 return
-            model_blob_cache = get_model_blob_cache() if md5_hash else None
+            artifact_cache = (
+                get_content_addressed_artifact_cache()
+                if md5_hash
+                else NullContentAddressedArtifactCache()
+            )
             restored_from_blob_cache = False
-            if model_blob_cache:
+            if md5_hash:
                 try:
-                    restored_from_blob_cache = model_blob_cache.restore(
+                    restored_from_blob_cache = artifact_cache.restore(
                         content_hash=md5_hash,
                         target_path=tmp_download_file,
                     )
@@ -389,9 +398,9 @@ def safe_download_file(
                 on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
-            if model_blob_cache and verify_hash_while_download:
+            if md5_hash and verify_hash_while_download:
                 try:
-                    model_blob_cache.schedule_store(
+                    artifact_cache.schedule_store(
                         content_hash=md5_hash,
                         source_path=target_file_path,
                     )
