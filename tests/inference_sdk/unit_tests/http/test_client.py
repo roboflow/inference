@@ -19,6 +19,7 @@ from yarl import URL
 
 from inference_sdk.config import (
     InferenceSDKDeprecationWarning,
+    InferenceSDKGuidanceWarning,
     RemoteProcessingTimeCollector,
     remote_processing_times,
 )
@@ -34,6 +35,7 @@ from inference_sdk.http.client import (
 )
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
+    ApiKeyTransport,
     HTTPClientMode,
     InferenceConfiguration,
     ModelDescription,
@@ -5157,3 +5159,63 @@ def test_legacy_transport_sends_no_authorization_header(
 
     # then
     assert "Authorization" not in requests_mock.request_history[0].headers
+
+
+# --- api_key_transport guidance warning + fluent selection ------------------
+
+
+def test_default_transport_emits_guidance_warning_once(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", False)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.warns(InferenceSDKGuidanceWarning, match="release 1.4.2 onward"):
+        _ = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        # then - second resolution must NOT warn again
+        resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_explicitly_selected_legacy_transport_does_not_warn(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", False)
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="http://some.com"
+    ).configure(InferenceConfiguration(api_key_transport="legacy"))
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_select_api_key_transport_is_fluent_and_applies(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(f"{api_url}/model/registry", json={"models": []})
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = http_client.select_api_key_transport("header").list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_select_api_key_transport_rejects_invalid_value() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when / then
+    with pytest.raises(InvalidParameterError):
+        http_client.select_api_key_transport("invalid")

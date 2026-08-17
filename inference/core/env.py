@@ -910,6 +910,17 @@ WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
+
+# Channel used by Workflow blocks to send the API key when executing remotely:
+# "legacy" (query/body only), "both" (default - legacy channels plus an
+# `Authorization: Bearer` header; safe with every server version, including
+# hosted targets that do not read the header yet), or "header" (header only -
+# requires the remote server to run inference release 1.4.2 or newer).
+# NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
+# directly (bypassing the SDK) and are not affected by this flag.
+WORKFLOWS_REMOTE_API_KEY_TRANSPORT = os.getenv(
+    "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", "both"
+).lower()
 if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
     warnings.warn(
         "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "

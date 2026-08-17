@@ -6,6 +6,7 @@ from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -242,6 +243,7 @@ class PPOCRBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(

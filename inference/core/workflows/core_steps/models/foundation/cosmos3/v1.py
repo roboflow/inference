@@ -7,6 +7,7 @@ from inference.core.env import (
     COSMOS3_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -209,6 +210,7 @@ class Cosmos3EdgeBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

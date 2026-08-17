@@ -18,6 +18,7 @@ from typing import List, Optional, Type
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -86,6 +87,7 @@ class Qwen35VLBlockV2(Qwen35VLBlockV1):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

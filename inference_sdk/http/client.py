@@ -1,3 +1,4 @@
+import warnings
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import (
@@ -18,7 +19,11 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    InferenceSDKGuidanceWarning,
+    execution_id,
+)
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -97,6 +102,28 @@ SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
     "Content-Type": "application/json",
 }
+
+_DEFAULT_API_KEY_TRANSPORT_WARNED = False
+
+
+def _warn_about_default_api_key_transport_once() -> None:
+    global _DEFAULT_API_KEY_TRANSPORT_WARNED
+    if _DEFAULT_API_KEY_TRANSPORT_WARNED:
+        return
+    _DEFAULT_API_KEY_TRANSPORT_WARNED = True
+    warnings.warn(
+        "This client sends the Roboflow API key through the legacy channel "
+        "(query parameter / request body). Sending it as the "
+        "`Authorization: Bearer <api_key>` header is recommended and works "
+        "with inference servers from release 1.4.2 onward. Opt in with "
+        "InferenceConfiguration(api_key_transport='header') or "
+        "client.use_header_auth(); use 'both' for a transition period safe "
+        "with every server version. Set api_key_transport='legacy' "
+        "explicitly to keep the current behaviour and silence this warning.",
+        InferenceSDKGuidanceWarning,
+    )
+
+
 NEW_INFERENCE_ENDPOINTS = {
     INSTANCE_SEGMENTATION_TASK: "/infer/instance_segmentation",
     OBJECT_DETECTION_TASK: "/infer/object_detection",
@@ -297,7 +324,7 @@ class InferenceHTTPClient:
             self.__webrtc_client = WebRTCClient(
                 self.__api_url,
                 self.__api_key,
-                api_key_transport=self.__inference_configuration.api_key_transport.value,
+                api_key_transport=self.__resolved_api_key_transport().value,
             )
         return self.__webrtc_client
 
@@ -332,6 +359,24 @@ class InferenceHTTPClient:
             InferenceHTTPClient: The client instance with updated configuration.
         """
         self.__inference_configuration = inference_configuration
+        return self
+
+    def select_api_key_transport(
+        self, api_key_transport: Union[str, ApiKeyTransport]
+    ) -> "InferenceHTTPClient":
+        """Select the channel used to send the API key to the server.
+
+        See `ApiKeyTransport`: "legacy" (query/body, silently), "both"
+        (legacy channels + `Authorization: Bearer` header - safe with every
+        server version), "header" (header only - requires an inference server
+        from release 1.4.2 onward).
+
+        Returns:
+            InferenceHTTPClient: The client instance with the transport selected.
+        """
+        self.__inference_configuration = replace(
+            self.__inference_configuration, api_key_transport=api_key_transport
+        )
         return self
 
     def use_header_auth(self) -> "InferenceHTTPClient":
@@ -950,10 +995,7 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         url = f"{self.__api_url}/model/registry"
-        if (
-            self.__inference_configuration.api_key_transport
-            is not ApiKeyTransport.HEADER
-        ):
+        if self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER:
             url = f"{url}?api_key={self.__api_key}"
         response = requests.get(url, headers=self.__headers_with_auth(None))
         response.raise_for_status()
@@ -974,10 +1016,7 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         url = f"{self.__api_url}/model/registry"
-        if (
-            self.__inference_configuration.api_key_transport
-            is not ApiKeyTransport.HEADER
-        ):
+        if self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER:
             url = f"{url}?api_key={self.__api_key}"
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -3018,6 +3057,16 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
+    def __resolved_api_key_transport(self) -> ApiKeyTransport:
+        # None means the user made no choice - resolve to the legacy channel
+        # (today's default) and recommend moving to the header transport once
+        # per process. An explicit "legacy" stays silent.
+        transport = self.__inference_configuration.api_key_transport
+        if transport is None:
+            _warn_about_default_api_key_transport_once()
+            return ApiKeyTransport.LEGACY
+        return transport
+
     def __auth_headers(self) -> Dict[str, str]:
         # Non-empty only in "both" / "header" transport modes - the header is
         # the same form the SDK already uses toward the platform API
@@ -3025,7 +3074,7 @@ class InferenceHTTPClient:
         # header - never in the URL - so request exceptions (whose text embeds
         # the URL) cannot leak it.
         if (
-            self.__inference_configuration.api_key_transport is ApiKeyTransport.LEGACY
+            self.__resolved_api_key_transport() is ApiKeyTransport.LEGACY
             or self.__api_key is None
         ):
             return {}
@@ -3047,15 +3096,14 @@ class InferenceHTTPClient:
     def __legacy_api_key_payload(self) -> dict:
         # The `api_key` entry for query-params / JSON-body dicts. Suppressed
         # only in "header" mode - "both" keeps the legacy channels intact.
-        if self.__inference_configuration.api_key_transport is ApiKeyTransport.HEADER:
+        if self.__resolved_api_key_transport() is ApiKeyTransport.HEADER:
             return {}
         return {"api_key": self.__api_key}
 
     def __initialise_payload(self) -> dict:
         if (
             self.__client_mode is not HTTPClientMode.V0
-            and self.__inference_configuration.api_key_transport
-            is not ApiKeyTransport.HEADER
+            and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
         ):
             return {"api_key": self.__api_key}
         return {}
@@ -3063,8 +3111,7 @@ class InferenceHTTPClient:
     def __wrap_url_with_api_key(self, url: str) -> str:
         if (
             self.__client_mode is not HTTPClientMode.V0
-            or self.__inference_configuration.api_key_transport
-            is ApiKeyTransport.HEADER
+            or self.__resolved_api_key_transport() is ApiKeyTransport.HEADER
         ):
             return url
         return f"{url}?api_key={self.__api_key}"

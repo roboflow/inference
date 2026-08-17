@@ -7,6 +7,7 @@ from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     QWEN_3_5_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -215,6 +216,7 @@ class Qwen35VLBlockV2(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

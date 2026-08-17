@@ -175,13 +175,18 @@ class InferenceConfiguration:
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
     response_mask_format: Optional[Literal["polygon", "rle"]] = None
-    api_key_transport: Union[str, ApiKeyTransport] = ApiKeyTransport.LEGACY
+    # None means "not chosen by the user" - the client resolves it to LEGACY
+    # and emits a one-time recommendation to move to the header transport.
+    # Pass "legacy" explicitly to keep the old behaviour silently.
+    api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
 
     def __post_init__(self) -> None:
         # Normalise the transport to the enum so the client can rely on
         # identity checks. NOTE: this field configures the credential CHANNEL
         # only - it is deliberately absent from every to_*_parameters()
         # allowlist below, so it can never leak onto the wire.
+        if self.api_key_transport is None:
+            return
         try:
             object.__setattr__(
                 self, "api_key_transport", ApiKeyTransport(self.api_key_transport)

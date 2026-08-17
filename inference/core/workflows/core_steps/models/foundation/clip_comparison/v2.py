@@ -8,6 +8,7 @@ from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
@@ -240,6 +241,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         tasks = [
