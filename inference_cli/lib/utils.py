@@ -147,13 +147,18 @@ def dump_jsonl(path: str, content: Iterable[dict]) -> None:
 
 
 def initialise_client(
-    host: str, api_key: Optional[str], model_configuration: Optional[str], **kwargs
+    host: str,
+    api_key: Optional[str],
+    model_configuration: Optional[str],
+    api_key_transport: str = "legacy",
+    **kwargs,
 ) -> InferenceHTTPClient:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     client = InferenceHTTPClient(
         api_url=host,
         api_key=api_key,
+        api_key_transport=api_key_transport,
     )
     raw_configuration = {}
     if model_configuration is not None:

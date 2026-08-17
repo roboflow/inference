@@ -4899,3 +4899,265 @@ async def test_depth_estimation_async_defaults_to_json_and_warns(
         w for w in captured if issubclass(w.category, InferenceSDKDeprecationWarning)
     ]
     assert len(sdk_warnings) == 1
+
+
+# --- api_key_transport (header-based auth) ----------------------------------
+#
+# "legacy" (default) keeps today's wire behaviour byte-for-byte (covered by
+# every other test in this module). "both" adds `Authorization: Bearer` on top
+# of the legacy channels; "header" sends the header ONLY - no api_key in URLs
+# or bodies.
+
+
+def test_client_rejects_invalid_api_key_transport() -> None:
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = InferenceHTTPClient(
+            api_key="my-api-key",
+            api_url="http://some.com",
+            api_key_transport="invalid",
+        )
+
+
+def test_list_loaded_models_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    )
+
+    # when
+    result = http_client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_list_loaded_models_in_both_mode_sends_key_in_query_and_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry?api_key=my-api-key",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="both"
+    )
+
+    # when
+    result = http_client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key=my-api-key" in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_use_header_auth_switches_client_into_header_transport(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    _ = http_client.use_header_auth().list_loaded_models()
+
+    # then
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_load_model_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    )
+
+    # when
+    result = http_client.load_model(model_id="some/1")
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert requests_mock.request_history[0].json() == {"model_id": "some/1"}
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_run_workflow_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    )
+
+    # when
+    result = http_client.run_workflow(specification={"my": "specification"})
+
+    # then
+    assert result == [{"some": 3}]
+    assert "api_key" not in requests_mock.request_history[0].json()
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_run_workflow_in_both_mode_sends_key_in_body_and_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="both"
+    )
+
+    # when
+    result = http_client.run_workflow(specification={"my": "specification"})
+
+    # then
+    assert result == [{"some": 3}]
+    assert requests_mock.request_history[0].json()["api_key"] == "my-api-key"
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_list_inference_pipelines_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/list",
+        json=[],
+    )
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    )
+
+    # when
+    result = http_client.list_inference_pipelines()
+
+    # then
+    assert result == []
+    assert requests_mock.request_history[0].json() == {}
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_in_v0_header_mode_keeps_key_out_of_url(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - hosted URL puts the client into v0 mode, where the key is
+    # normally spliced into the URL
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr",
+        json={"response": "Image text 1.", "time": 0.33},
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg")
+
+    # then
+    assert result == {"response": "Image text 1.", "time": 0.33}
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert "api_key" not in requests_mock.request_history[0].json()
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_in_header_mode_keeps_key_out_of_query_params(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "https://detect.roboflow.com"
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url=api_url, api_key_transport="header"
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/some/1",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [],
+        },
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result["predictions"] == []
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_legacy_transport_sends_no_authorization_header(
+    requests_mock: Mocker,
+) -> None:
+    # given - the default transport must stay byte-identical on the wire
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry?api_key=my-api-key",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    _ = http_client.list_loaded_models()
+
+    # then
+    assert "Authorization" not in requests_mock.request_history[0].headers

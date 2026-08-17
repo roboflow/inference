@@ -83,6 +83,28 @@ class HTTPClientMode(str, Enum):
     V1 = "v1"
 
 
+class ApiKeyTransport(str, Enum):
+    """Enum for the channel used to send the Roboflow API key to the server.
+
+    Attributes:
+        LEGACY: Today's behaviour byte-for-byte - the key travels as the
+            `api_key` query parameter (API v0) or JSON-body field (API v1).
+            Works against every server version.
+        BOTH: Legacy channels untouched, plus an `Authorization: Bearer
+            <api_key>` header on top. Safe against every server version -
+            older servers ignore the header, newer servers prefer the legacy
+            channel anyway (it out-precedences the header server-side).
+        HEADER: The key travels ONLY in the `Authorization: Bearer <api_key>`
+            header - no key in URLs or request bodies. Requires an inference
+            server with header-based auth support; against an older server
+            requests are keyless.
+    """
+
+    LEGACY = "legacy"
+    BOTH = "both"
+    HEADER = "header"
+
+
 class VisualisationResponseFormat(str, Enum):
     """Enum for the visualisation response format.
 

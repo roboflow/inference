@@ -24,6 +24,7 @@ from inference_sdk.http.entities import (
     INSTANCE_SEGMENTATION_TASK,
     KEYPOINTS_DETECTION_TASK,
     OBJECT_DETECTION_TASK,
+    ApiKeyTransport,
     HTTPClientMode,
     ImagesReference,
     InferenceConfiguration,
@@ -220,31 +221,49 @@ class InferenceHTTPClient:
         cls,
         api_url: str,
         api_key: Optional[str] = None,
+        api_key_transport: Union[str, ApiKeyTransport] = ApiKeyTransport.LEGACY,
     ) -> "InferenceHTTPClient":
         """Initialize a new InferenceHTTPClient instance.
 
         Args:
             api_url (str): The base URL for the inference API.
             api_key (Optional[str], optional): API key for authentication. Defaults to None.
+            api_key_transport (Union[str, ApiKeyTransport], optional): Channel used to send
+                the API key - see `ApiKeyTransport`. Defaults to "legacy".
 
         Returns:
             InferenceHTTPClient: A new instance of the InferenceHTTPClient.
         """
-        return cls(api_url=api_url, api_key=api_key)
+        return cls(
+            api_url=api_url, api_key=api_key, api_key_transport=api_key_transport
+        )
 
     def __init__(
         self,
         api_url: str,
         api_key: Optional[str] = None,
+        api_key_transport: Union[str, ApiKeyTransport] = ApiKeyTransport.LEGACY,
     ):
         """Initialize a new InferenceHTTPClient instance.
 
         Args:
             api_url (str): The base URL for the inference API.
             api_key (Optional[str], optional): API key for authentication. Defaults to None.
+            api_key_transport (Union[str, ApiKeyTransport], optional): Channel used to send
+                the API key. "legacy" (default) sends it as a query parameter / JSON-body
+                field exactly as before; "both" additionally sends an
+                `Authorization: Bearer <api_key>` header (safe with every server version);
+                "header" sends the header ONLY (requires a server with header-based auth).
         """
         self.__api_url = api_url
         self.__api_key = api_key
+        try:
+            self.__api_key_transport = ApiKeyTransport(api_key_transport)
+        except ValueError:
+            raise InvalidParameterError(
+                f"Invalid api_key_transport: {api_key_transport}. Expected one of: "
+                f"{[transport.value for transport in ApiKeyTransport]}."
+            )
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
@@ -287,7 +306,11 @@ class InferenceHTTPClient:
         from inference_sdk.webrtc.client import WebRTCClient
 
         if self.__webrtc_client is None:
-            self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)
+            self.__webrtc_client = WebRTCClient(
+                self.__api_url,
+                self.__api_key,
+                api_key_transport=self.__api_key_transport.value,
+            )
         return self.__webrtc_client
 
     @contextmanager
@@ -321,6 +344,19 @@ class InferenceHTTPClient:
             InferenceHTTPClient: The client instance with updated configuration.
         """
         self.__inference_configuration = inference_configuration
+        return self
+
+    def use_header_auth(self) -> "InferenceHTTPClient":
+        """Send the API key ONLY in the `Authorization: Bearer <api_key>` header.
+
+        Fluent switch to `ApiKeyTransport.HEADER` - the key stops travelling in
+        URLs and request bodies. Requires an inference server with header-based
+        auth support; against an older server requests are keyless.
+
+        Returns:
+            InferenceHTTPClient: The client instance with header transport selected.
+        """
+        self.__api_key_transport = ApiKeyTransport.HEADER
         return self
 
     def select_api_v0(self) -> "InferenceHTTPClient":
@@ -579,9 +615,7 @@ class InferenceHTTPClient:
             max_height=max_height,
             max_width=max_width,
         )
-        params = {
-            "api_key": self.__api_key,
-        }
+        params = self.__legacy_api_key_payload()
         params.update(self.__inference_configuration.to_legacy_call_parameters())
 
         execution_id_value = execution_id.get()
@@ -593,7 +627,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -639,9 +673,7 @@ class InferenceHTTPClient:
             max_height=max_height,
             max_width=max_width,
         )
-        params = {
-            "api_key": self.__api_key,
-        }
+        params = self.__legacy_api_key_payload()
         params.update(self.__inference_configuration.to_legacy_call_parameters())
 
         execution_id_value = execution_id.get()
@@ -653,7 +685,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -745,7 +777,7 @@ class InferenceHTTPClient:
             max_width=max_width,
         )
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "model_id": model_id_to_be_used,
         }
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
@@ -759,7 +791,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -794,7 +826,7 @@ class InferenceHTTPClient:
             max_width=max_width,
         )
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "model_id": model_id_to_be_used,
         }
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
@@ -808,7 +840,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -927,9 +959,10 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
-        response = requests.get(
-            f"{self.__api_url}/model/registry?api_key={self.__api_key}"
-        )
+        url = f"{self.__api_url}/model/registry"
+        if self.__api_key_transport is not ApiKeyTransport.HEADER:
+            url = f"{url}?api_key={self.__api_key}"
+        response = requests.get(url, headers=self.__headers_with_auth(None))
         response.raise_for_status()
         response_payload = response.json()
         return RegisteredModels.from_dict(response_payload)
@@ -947,9 +980,12 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
+        url = f"{self.__api_url}/model/registry"
+        if self.__api_key_transport is not ApiKeyTransport.HEADER:
+            url = f"{url}?api_key={self.__api_key}"
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+                url, headers=self.__headers_with_auth(None)
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
@@ -979,9 +1015,9 @@ class InferenceHTTPClient:
             f"{self.__api_url}/model/add",
             json={
                 "model_id": de_aliased_model_id,
-                "api_key": self.__api_key,
+                **self.__legacy_api_key_payload(),
             },
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1011,13 +1047,13 @@ class InferenceHTTPClient:
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         payload = {
             "model_id": de_aliased_model_id,
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/add",
                 json=payload,
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
@@ -1047,7 +1083,7 @@ class InferenceHTTPClient:
             json={
                 "model_id": de_aliased_model_id,
             },
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1068,7 +1104,7 @@ class InferenceHTTPClient:
                 json={
                     "model_id": de_aliased_model_id,
                 },
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
@@ -1082,7 +1118,10 @@ class InferenceHTTPClient:
     @wrap_errors
     def unload_all_models(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
-        response = requests.post(f"{self.__api_url}/model/clear")
+        response = requests.post(
+            f"{self.__api_url}/model/clear",
+            headers=self.__headers_with_auth(None),
+        )
         response.raise_for_status()
         response_payload = response.json()
         self.__selected_model = None
@@ -1092,7 +1131,10 @@ class InferenceHTTPClient:
     async def unload_all_models_async(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.__api_url}/model/clear") as response:
+            async with session.post(
+                f"{self.__api_url}/model/clear",
+                headers=self.__headers_with_auth(None),
+            ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
         self.__selected_model = None
@@ -1153,7 +1195,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1222,7 +1264,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1363,7 +1405,7 @@ class InferenceHTTPClient:
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
         )
         _collect_processing_time_from_response(
             response, model_id=clip_version or "clip"
@@ -1398,7 +1440,7 @@ class InferenceHTTPClient:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
                 json=payload,
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 collect_remote_processing_metadata_from_headers(
@@ -1472,7 +1514,7 @@ class InferenceHTTPClient:
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
         )
         _collect_processing_time_from_response(
             response, model_id=clip_version or "clip"
@@ -1541,7 +1583,7 @@ class InferenceHTTPClient:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
                 json=payload,
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 collect_remote_processing_metadata_from_headers(
@@ -1588,7 +1630,7 @@ class InferenceHTTPClient:
                 f"{self.__api_url}/perception_encoder/embed_text"
             ),
             json=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
         )
         _collect_processing_time_from_response(
             response,
@@ -1998,7 +2040,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2068,7 +2110,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2472,7 +2514,7 @@ class InferenceHTTPClient:
         if parameters is None:
             parameters = {}
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "use_cache": use_cache,
             "enable_profiling": enable_profiling,
         }
@@ -2509,7 +2551,7 @@ class InferenceHTTPClient:
         response = send_post_request(
             url=url,
             payload=payload,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
         return response
@@ -2555,7 +2597,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2609,7 +2651,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2690,7 +2732,7 @@ class InferenceHTTPClient:
                 "`workflow_specification`, but at least one must be set."
             )
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "video_configuration": {
                 "type": "VideoConfiguration",
                 "video_reference": video_reference,
@@ -2719,6 +2761,7 @@ class InferenceHTTPClient:
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/initialise",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         response.raise_for_status()
         return response.json()
@@ -2741,10 +2784,11 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/list",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2768,10 +2812,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2798,10 +2843,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/pause",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2828,10 +2874,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/resume",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2858,10 +2905,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/terminate",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2893,10 +2941,14 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         if excluded_fields is None:
             excluded_fields = []
-        payload = {"api_key": self.__api_key, "excluded_fields": excluded_fields}
+        payload = {
+            **self.__legacy_api_key_payload(),
+            "excluded_fields": excluded_fields,
+        }
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2924,7 +2976,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -2957,7 +3009,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -2970,13 +3022,49 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
+    def __auth_headers(self) -> Dict[str, str]:
+        # Non-empty only in "both" / "header" transport modes - the header is
+        # the same form the SDK already uses toward the platform API
+        # (inference_sdk/webrtc/model_workflows.py). The key travels in a
+        # header - never in the URL - so request exceptions (whose text embeds
+        # the URL) cannot leak it.
+        if self.__api_key_transport is ApiKeyTransport.LEGACY or self.__api_key is None:
+            return {}
+        return {"Authorization": f"Bearer {self.__api_key}"}
+
+    def __headers_with_auth(
+        self, headers: Optional[Dict[str, str]]
+    ) -> Optional[Dict[str, str]]:
+        # Returns the input untouched in legacy mode so shared dicts
+        # (DEFAULT_HEADERS) are never mutated and wire behaviour stays
+        # byte-identical for the default transport.
+        auth_headers = self.__auth_headers()
+        if not auth_headers:
+            return headers
+        if headers is None:
+            return auth_headers
+        return {**headers, **auth_headers}
+
+    def __legacy_api_key_payload(self) -> dict:
+        # The `api_key` entry for query-params / JSON-body dicts. Suppressed
+        # only in "header" mode - "both" keeps the legacy channels intact.
+        if self.__api_key_transport is ApiKeyTransport.HEADER:
+            return {}
+        return {"api_key": self.__api_key}
+
     def __initialise_payload(self) -> dict:
-        if self.__client_mode is not HTTPClientMode.V0:
+        if (
+            self.__client_mode is not HTTPClientMode.V0
+            and self.__api_key_transport is not ApiKeyTransport.HEADER
+        ):
             return {"api_key": self.__api_key}
         return {}
 
     def __wrap_url_with_api_key(self, url: str) -> str:
-        if self.__client_mode is not HTTPClientMode.V0:
+        if (
+            self.__client_mode is not HTTPClientMode.V0
+            or self.__api_key_transport is ApiKeyTransport.HEADER
+        ):
             return url
         return f"{url}?api_key={self.__api_key}"
 
