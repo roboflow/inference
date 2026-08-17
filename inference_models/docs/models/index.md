@@ -107,6 +107,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [Qwen2.5-VL](qwen25vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Qwen3-VL](qwen3vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Qwen3.5](qwen35.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
+| [Qwen3.8](qwen38.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
 | [Gemma 4](gemma4.md) | `hugging-face` | Gemma License | N/A                           | ✅ | ❌  |
