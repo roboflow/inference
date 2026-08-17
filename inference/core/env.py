@@ -123,6 +123,12 @@ API_DEBUG = os.getenv("API_DEBUG", False)
 API_KEY_ENV_NAMES = ["ROBOFLOW_API_KEY", "API_KEY"]
 API_KEY = os.getenv(API_KEY_ENV_NAMES[0], None) or os.getenv(API_KEY_ENV_NAMES[1], None)
 
+# Allow reading the API key from the `Authorization: Bearer <api_key>` request
+# header. The header is a last-resort channel: an explicit `api_key` query
+# parameter or JSON-body field always takes precedence, so disabling this flag
+# only removes the header fallback. Default is True.
+ALLOW_API_KEY_FROM_HEADERS = str2bool(os.getenv("ALLOW_API_KEY_FROM_HEADERS", True))
+
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 

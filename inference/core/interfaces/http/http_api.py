@@ -225,6 +225,11 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.api_key_resolution import (
+    api_key_fallback,
+    extract_api_key_from_headers,
+    header_api_key,
+)
 from inference.core.interfaces.http.dependencies import (
     parse_body_content_for_legacy_request_handler,
 )
@@ -884,6 +889,8 @@ class HttpInterface(BaseInterface):
                             except Exception:
                                 pass
                         api_key = json_params.get("api_key", api_key)
+                        if api_key is None:
+                            api_key = extract_api_key_from_headers(request.headers)
 
                         if api_key is None:
                             if auth_span is not None:
@@ -1232,6 +1239,8 @@ class HttpInterface(BaseInterface):
                     except Exception:
                         pass
                 api_key = json_params.get("api_key", api_key)
+                if api_key is None:
+                    api_key = extract_api_key_from_headers(request.headers)
 
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
@@ -1277,6 +1286,20 @@ class HttpInterface(BaseInterface):
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
+
+        @app.middleware("http")
+        async def extract_header_api_key(request: Request, call_next):
+            # Captures the `Authorization: Bearer <api_key>` value into a
+            # request-scoped ContextVar consumed via `api_key_fallback` where
+            # the effective API key is materialized onto request models. The
+            # header is a last-resort channel - explicit query/body values win.
+            token = header_api_key.set(
+                extract_api_key_from_headers(request.headers)
+            )
+            try:
+                return await call_next(request)
+            finally:
+                header_api_key.reset(token)
 
         @app.middleware("http")
         async def add_inference_engine_headers(request: Request, call_next):
@@ -1439,6 +1462,7 @@ class HttpInterface(BaseInterface):
             """
             if api_key is not None:
                 inference_request.api_key = api_key
+            inference_request.api_key = api_key_fallback(inference_request.api_key)
             ensure_wire_safe_mask_format(inference_request)
             requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
@@ -1474,6 +1498,7 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+            workflow_request.api_key = api_key_fallback(workflow_request.api_key)
             if workflow_request.workflow_id:
                 request_workflow_id.set(workflow_request.workflow_id)
 
@@ -1579,6 +1604,7 @@ class HttpInterface(BaseInterface):
             """
             if api_key:
                 inference_request.api_key = api_key
+            inference_request.api_key = api_key_fallback(inference_request.api_key)
             version_id_field = f"{core_model}_version_id"
             core_model_id = (
                 f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
@@ -1808,6 +1834,7 @@ class HttpInterface(BaseInterface):
                     ModelsDescriptions: The object containing models descriptions
                 """
                 logger.debug(f"Reached /model/add")
+                request.api_key = api_key_fallback(request.api_key)
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
@@ -2155,6 +2182,13 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
+                workflow_request.api_key = api_key_fallback(workflow_request.api_key)
+                if workflow_request.api_key is None:
+                    raise MissingApiKeyError(
+                        "Required Roboflow API key is missing. Pass it as the "
+                        "`api_key` field of the request payload or as the "
+                        "`Authorization: Bearer <api_key>` header."
+                    )
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
@@ -2176,6 +2210,16 @@ class HttpInterface(BaseInterface):
             def describe_workflow_interface(
                 workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
+                # The handler does not consume the key, but the field was
+                # required before it became Optional (header-based auth), so
+                # the "key required" contract is preserved explicitly.
+                workflow_request.api_key = api_key_fallback(workflow_request.api_key)
+                if workflow_request.api_key is None:
+                    raise MissingApiKeyError(
+                        "Required Roboflow API key is missing. Pass it as the "
+                        "`api_key` field of the request payload or as the "
+                        "`Authorization: Bearer <api_key>` header."
+                    )
                 return handle_describe_workflows_interface(
                     definition=workflow_request.specification,
                 )
@@ -2202,6 +2246,7 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                workflow_request.api_key = api_key_fallback(workflow_request.api_key)
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
                         max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -2331,6 +2376,7 @@ class HttpInterface(BaseInterface):
                     api_key = request_payload.api_key or request.query_params.get(
                         "api_key", None
                     )
+                api_key = api_key_fallback(api_key)
                 result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
@@ -2396,6 +2442,7 @@ class HttpInterface(BaseInterface):
                 ),
             ) -> WorkflowValidationStatus:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                api_key = api_key_fallback(api_key)
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
@@ -2424,6 +2471,7 @@ class HttpInterface(BaseInterface):
                 request: WebRTCWorkerRequest,
                 r: Request,
             ) -> InitializeWebRTCResponse:
+                request.api_key = api_key_fallback(request.api_key)
                 if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
                     if re.search(
                         r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
@@ -2509,6 +2557,12 @@ class HttpInterface(BaseInterface):
 
                 Requires api_key for authentication.
                 """
+                request.api_key = api_key_fallback(request.api_key)
+                if request.api_key is None:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
                 try:
                     workspace_id = await get_roboflow_workspace_async(
                         api_key=request.api_key
@@ -2550,6 +2604,12 @@ class HttpInterface(BaseInterface):
 
                 Requires api_key for authentication.
                 """
+                request.api_key = api_key_fallback(request.api_key)
+                if request.api_key is None:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
                 try:
                     workspace_id = await get_roboflow_workspace_async(
                         api_key=request.api_key
@@ -2606,6 +2666,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions_async
             async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
+                request.api_key = api_key_fallback(request.api_key)
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
                 )
@@ -2620,6 +2681,7 @@ class HttpInterface(BaseInterface):
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
+                request.api_key = api_key_fallback(request.api_key)
                 logger.debug("Received initialise webrtc inference pipeline request")
                 resp = await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
@@ -3532,6 +3594,9 @@ class HttpInterface(BaseInterface):
                     inference_request.model_id = "sam3/sam3_interactive"
                     if api_key:
                         inference_request.api_key = api_key
+                    inference_request.api_key = api_key_fallback(
+                        inference_request.api_key
+                    )
 
                     if SAM3_EXEC_MODE == "remote":
                         raise HTTPException(
@@ -3593,6 +3658,9 @@ class HttpInterface(BaseInterface):
                         inference_request.source_info = request_source_info
                     if api_key:
                         inference_request.api_key = api_key
+                    inference_request.api_key = api_key_fallback(
+                        inference_request.api_key
+                    )
 
                     if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
@@ -3672,7 +3740,9 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                wrap_url(f"{endpoint}?api_key={api_key}"),
+                                wrap_url(
+                                    f"{endpoint}?api_key={inference_request.api_key}"
+                                ),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
@@ -3760,6 +3830,9 @@ class HttpInterface(BaseInterface):
                     inference_request.model_id = "sam3/sam3_interactive"
                     if api_key:
                         inference_request.api_key = api_key
+                    inference_request.api_key = api_key_fallback(
+                        inference_request.api_key
+                    )
 
                     if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
@@ -3799,7 +3872,9 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                wrap_url(f"{endpoint}?api_key={api_key}"),
+                                wrap_url(
+                                    f"{endpoint}?api_key={inference_request.api_key}"
+                                ),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
@@ -4004,6 +4079,9 @@ class HttpInterface(BaseInterface):
                         inference_request.model_id = model_id
                     if api_key is not None:
                         inference_request.api_key = api_key
+                    inference_request.api_key = api_key_fallback(
+                        inference_request.api_key
+                    )
                     depth_model_id = inference_request.model_id
                     self.model_manager.add_model(
                         depth_model_id,
@@ -4439,6 +4517,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
+                api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
                 if isinstance(confidence, (int, float)):
                     if confidence >= 1:
@@ -4614,6 +4693,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(
                     f"Reached /start/{dataset_id}/{version_id} with {dataset_id}/{version_id}"
                 )
+                api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
                 self.model_manager.add_model(
                     model_id,
