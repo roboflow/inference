@@ -28,7 +28,7 @@ Qwen3.8 is a multimodal model capable of:
 |----------|-------------|
 | `qwen3_8-27b` | 27B parameter dense vision-language model |
 
-You can also use fine-tuned models from Roboflow by specifying `project/version` as the model ID (requires API key).
+Qwen3.8 is served as a base model only — the family has no Roboflow fine-tuning support.
 
 ## Supported Backends
 
