@@ -5,10 +5,12 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    get_model_id_from_kwargs,
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
 )
 from inference.usage_tracking.model_types import (
+    bind_usage_model_identity,
     clear_recorded_model_types,
     get_recorded_model_type,
     record_model_type,
@@ -226,6 +228,74 @@ def test_extract_usage_params_for_sam_uses_encoder_image_size(
             "execution_duration": 0.5,
         }
     }
+
+
+def test_bind_usage_model_identity_copies_recorded_variant():
+    model = SimpleNamespace()
+    record_model_type("paligemma-3b-mix-224", "paligemma-3b-mix-224")
+    try:
+        bind_usage_model_identity(model, "paligemma-3b-mix-224")
+
+        assert model.model_id == "paligemma-3b-mix-224"
+        assert model.model_type == "paligemma-3b-mix-224"
+    finally:
+        clear_recorded_model_types()
+
+
+def test_get_model_type_from_kwargs_uses_instance_after_map_cleared():
+    model = SimpleNamespace(
+        model_id="paligemma-3b-mix-224",
+        model_type="paligemma-3b-mix-224",
+    )
+    clear_recorded_model_types()
+
+    assert get_model_type_from_kwargs({"self": model}) == "paligemma-3b-mix-224"
+
+
+def test_get_model_id_skips_null_kwargs_and_uses_instance():
+    model = SimpleNamespace(model_id="qwen25-vl-7b")
+
+    assert (
+        get_model_id_from_kwargs({"self": model, "model_id": None}) == "qwen25-vl-7b"
+    )
+
+
+def test_get_model_binds_recorded_variant_on_instance():
+    from inference.core.models.base import Model
+    from inference.models import utils as model_utils
+
+    class DummyAdapter(Model):
+        def __init__(self, model_id, api_key=None, **kwargs):
+            super().__init__()
+            self.task_type = "lmm"
+
+        def preprocess(self, image, **kwargs):
+            return image, None
+
+        def predict(self, img_in, **kwargs):
+            return (img_in,)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    record_model_type("paligemma-3b-mix-224", "paligemma-3b-mix-224")
+    previous = model_utils.ROBOFLOW_MODEL_TYPES.get(("lmm", "paligemma"))
+    try:
+        with mock.patch.object(
+            model_utils, "get_model_type", return_value=("lmm", "paligemma")
+        ):
+            model_utils.ROBOFLOW_MODEL_TYPES[("lmm", "paligemma")] = DummyAdapter
+            model = model_utils.get_model("paligemma-3b-mix-224")
+
+        assert model.model_id == "paligemma-3b-mix-224"
+        assert model.model_type == "paligemma-3b-mix-224"
+        assert get_model_type_from_kwargs({"self": model}) == "paligemma-3b-mix-224"
+    finally:
+        if previous is None:
+            model_utils.ROBOFLOW_MODEL_TYPES.pop(("lmm", "paligemma"), None)
+        else:
+            model_utils.ROBOFLOW_MODEL_TYPES[("lmm", "paligemma")] = previous
+        clear_recorded_model_types()
 
 
 def test_get_model_type_reads_recorded_map_without_calling_registry():
