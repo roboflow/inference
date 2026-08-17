@@ -1415,7 +1415,7 @@ def _send_secured_request(client, method, path, *, api_key=None, location="query
     GET. `api_key`, when provided, is placed in the channel selected by
     `location`: "query" (default - where the middleware looks first),
     "body" (JSON field, POST only), or "bearer"
-    (`Authorization: Bearer <api_key>` header - the last-resort channel).
+    (`Authorization: Bearer <api_key>` header - checked after query, before body).
     """
     kwargs = {}
     payload = _make_inference_request()
@@ -1752,10 +1752,10 @@ def test_depth_estimation_png8_format_returns_decodable_payload(monkeypatch) -> 
 
 # --- Header-based auth (Authorization: Bearer <api_key>) --------------------
 #
-# The header is the LAST-RESORT channel: query param > body field > header.
-# The middleware tests below cover the auth gates; the route-level tests cover
-# the chokepoint fallbacks that materialise the header key onto request models
-# (which is also what usage/billing attribution reads).
+# Precedence: query param > Authorization header > body field. The middleware
+# tests below cover the auth gates; the route-level tests cover the chokepoint
+# resolution that materialises the effective key onto request models (which is
+# also what usage/billing attribution reads).
 
 
 def _build_plain_interface(monkeypatch):
@@ -1826,7 +1826,7 @@ def test_dedicated_middleware_query_key_wins_over_bearer_header(
     workspace_lookup_mock.assert_awaited_once_with(api_key="query-key")
 
 
-def test_dedicated_middleware_body_key_wins_over_bearer_header(
+def test_dedicated_middleware_bearer_header_wins_over_body_key(
     monkeypatch,
 ) -> None:
     interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
@@ -1846,7 +1846,7 @@ def test_dedicated_middleware_body_key_wins_over_bearer_header(
         )
 
     assert response.status_code == 200
-    workspace_lookup_mock.assert_awaited_once_with(api_key="body-key")
+    workspace_lookup_mock.assert_awaited_once_with(api_key="header-key")
 
 
 def test_dedicated_middleware_ignores_non_bearer_authorization_scheme(
@@ -1997,7 +1997,7 @@ def test_route_level_query_key_wins_over_bearer_header(monkeypatch) -> None:
     assert model_manager.add_model.call_args.args[1] == "query-key"
 
 
-def test_route_level_body_key_wins_over_bearer_header(monkeypatch) -> None:
+def test_route_level_bearer_header_wins_over_body_key(monkeypatch) -> None:
     interface, model_manager = _build_plain_interface(monkeypatch)
     payload = _make_inference_request()
     payload["api_key"] = "body-key"
@@ -2010,7 +2010,32 @@ def test_route_level_body_key_wins_over_bearer_header(monkeypatch) -> None:
         )
 
     assert response.status_code == 200
-    assert model_manager.add_model.call_args.args[1] == "body-key"
+    assert model_manager.add_model.call_args.args[1] == "header-key"
+
+
+def test_serverless_middleware_bearer_header_wins_over_body_key(
+    monkeypatch,
+) -> None:
+    interface, _, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    payload = _make_inference_request()
+    payload["api_key"] = "body-key"
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            headers={"Authorization": "Bearer header-key"},
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    usage_check_mock.assert_awaited_once_with(api_key="header-key")
 
 
 def test_workflows_run_receives_bearer_header_key(monkeypatch) -> None:

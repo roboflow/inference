@@ -95,8 +95,8 @@ class ApiKeyTransport(str, Enum):
             Works against every server version.
         BOTH: Legacy channels untouched, plus an `Authorization: Bearer
             <api_key>` header on top. Safe against every server version -
-            older servers ignore the header, newer servers prefer the legacy
-            channel anyway (it out-precedences the header server-side).
+            older servers ignore the header, newer servers read the header
+            first (it carries the same key as the legacy channels).
         HEADER: The key travels ONLY in the `Authorization: Bearer <api_key>`
             header - no key in URLs or request bodies. Requires an inference
             server with header-based auth support; against an older server

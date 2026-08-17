@@ -3,6 +3,7 @@ from starlette.datastructures import Headers
 from inference.core.interfaces.http import api_key_resolution
 from inference.core.interfaces.http.api_key_resolution import (
     api_key_fallback,
+    api_key_override,
     extract_api_key_from_headers,
     header_api_key,
 )
@@ -82,9 +83,7 @@ class TestExtractApiKeyFromHeaders:
 
     def test_disabled_by_flag(self, monkeypatch) -> None:
         # given
-        monkeypatch.setattr(
-            api_key_resolution, "ALLOW_API_KEY_FROM_HEADERS", False
-        )
+        monkeypatch.setattr(api_key_resolution, "ALLOW_API_KEY_FROM_HEADERS", False)
 
         # when
         result = extract_api_key_from_headers(
@@ -136,6 +135,35 @@ class TestApiKeyFallback:
 
         # when
         result = api_key_fallback(None)
+
+        # then
+        assert result is None
+
+
+class TestApiKeyOverride:
+    def test_header_value_wins_over_body_value(self) -> None:
+        # given
+        token = header_api_key.set("header-key")
+
+        try:
+            # when
+            result = api_key_override("body-key")
+        finally:
+            header_api_key.reset(token)
+
+        # then
+        assert result == "header-key"
+
+    def test_body_value_used_when_no_header(self) -> None:
+        # when
+        result = api_key_override("body-key")
+
+        # then
+        assert result == "body-key"
+
+    def test_none_when_no_channel_carries_a_key(self) -> None:
+        # when
+        result = api_key_override(None)
 
         # then
         assert result is None

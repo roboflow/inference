@@ -37,9 +37,23 @@ def extract_api_key_from_headers(headers: Mapping[str, str]) -> Optional[str]:
 def api_key_fallback(current_value: Optional[str]) -> Optional[str]:
     """Return `current_value`, or the header-carried API key when it is None.
 
-    Applied AFTER the existing query-over-body merges, which keeps the
-    precedence order: query parameter > body field > header > env API_KEY.
+    Applied to QUERY-PARAMETER values BEFORE the existing query-over-body
+    merges, which keeps the precedence order:
+    query parameter > Authorization header > body field > env API_KEY.
     """
     if current_value is not None:
         return current_value
     return header_api_key.get()
+
+
+def api_key_override(body_value: Optional[str]) -> Optional[str]:
+    """Return the header-carried API key when present, else `body_value`.
+
+    Used at routes where the JSON body is the only explicit channel - under
+    the query > Authorization header > body precedence the header out-ranks
+    the body field.
+    """
+    header_value = header_api_key.get()
+    if header_value is not None:
+        return header_value
+    return body_value
