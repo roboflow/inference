@@ -1,9 +1,10 @@
-"""Process-local map of model id to Roboflow ``modelType``.
+"""Process-local map of model id to Roboflow model type.
 
 Populated while a model type is being resolved for model loading, so that usage
-tracking can label a row with the model architecture without ever calling the
-model registry itself. Registry lookups may issue an authenticated HTTP request,
-and the usage decorator runs on the inference hot path.
+tracking can label a row with the platform variant (size / task suffix) when
+known, otherwise the architecture, without ever calling the model registry
+itself. Registry lookups may issue an authenticated HTTP request, and the usage
+decorator runs on the inference hot path.
 
 The map is a bounded FIFO: when the cap is hit, the oldest entry is evicted so a
 pathological stream of distinct ids cannot grow the process forever, and newer

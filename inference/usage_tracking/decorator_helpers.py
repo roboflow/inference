@@ -56,7 +56,7 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
 
 
 def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow ``modelType`` (architecture / size), not the resource id.
+    """Resolve Roboflow model type (variant when known, else architecture).
 
     Only values already known in-process are consulted. Asking the model registry
     would be a network call on the inference hot path, so model types are instead

@@ -265,6 +265,42 @@ def test_registry_records_model_type_for_usage_tracking():
         clear_recorded_model_types()
 
 
+def test_registry_records_model_variant_for_usage_tracking_not_architecture():
+    from inference.core.registries import roboflow
+    from inference.core.registries.roboflow import get_model_type
+
+    try:
+        with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+            roboflow,
+            "get_model_metadata_from_inference_models_registry",
+            return_value={
+                "modelType": "paligemma",
+                "taskType": "lmm",
+                "modelVariant": "paligemma-3b-mix-224",
+            },
+        ), mock.patch.object(
+            roboflow,
+            "get_model_metadata_from_cache",
+            return_value=None,
+        ), mock.patch.object(
+            roboflow,
+            "_get_cached_model_metadata",
+            return_value=None,
+        ), mock.patch.object(
+            roboflow,
+            "save_model_metadata_in_cache",
+        ):
+            task_type, model_type = get_model_type(model_id="paligemma-3b-mix-224")
+
+        assert task_type == "lmm"
+        assert model_type == "paligemma"
+        assert get_recorded_model_type("paligemma-3b-mix-224") == (
+            "paligemma-3b-mix-224"
+        )
+    finally:
+        clear_recorded_model_types()
+
+
 def test_recorded_model_types_evict_oldest_when_full(monkeypatch):
     import inference.usage_tracking.model_types as model_types
 
