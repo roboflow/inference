@@ -1704,6 +1704,109 @@ def test_source_info_from_request_object_persisted_into_resource_details(
     assert row.get("roboflow_service_name") != "smartpolySegmentImage"
 
 
+def test_request_query_usage_metadata_propagates_to_nested_model_row(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeInferenceRequest:
+        api_key = "test_key"
+        model_id = "sam3/sam3_interactive"
+        usage_billable = True
+        source = None
+        source_info = None
+
+    class FakeHttpRequest:
+        query_params = {
+            "source": "app",
+            "source_info": "smartpolySegmentImage",
+        }
+
+    @usage_collector(category="model")
+    def infer_from_request(request):
+        return "ok"
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        request,
+        countinference=None,
+        service_secret=None,
+    ):
+        return infer_from_request(inference_request)
+
+    handler(
+        FakeInferenceRequest(),
+        FakeHttpRequest(),
+        countinference=False,
+        service_secret="internal-secret",
+    )
+
+    model_row = usage_collector._usage["test_key"][
+        usage_key("model", "sam3/sam3_interactive", billable=False)
+    ]
+    model_resource_details = json.loads(model_row["resource_details"])
+    assert model_resource_details["billable"] is False
+    assert model_resource_details["source"] == "app"
+    assert model_resource_details["source_info"] == "smartpolySegmentImage"
+
+    request_row = usage_collector._usage["test_key"][
+        usage_key("request", "sam3/sam3_interactive", billable=False)
+    ]
+    request_resource_details = json.loads(request_row["resource_details"])
+    assert request_resource_details["billable"] is False
+    assert request_resource_details["source"] == "app"
+    assert request_resource_details["source_info"] == "smartpolySegmentImage"
+
+
+def test_request_query_usage_metadata_propagates_through_generic_model_infer(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeInferenceRequest:
+        api_key = "test_key"
+        model_id = "clip/ViT-B-32"
+        usage_billable = True
+        source = None
+        source_info = None
+        image = "image"
+
+        def dict(self):
+            return {
+                "api_key": self.api_key,
+                "model_id": self.model_id,
+                "usage_billable": self.usage_billable,
+                "source": self.source,
+                "source_info": self.source_info,
+                "image": self.image,
+            }
+
+    class FakeHttpRequest:
+        query_params = {
+            "source": "app",
+            "source_info": "clipEmbedText",
+        }
+
+    @usage_collector(category="model")
+    def infer(image, **kwargs):
+        return "ok"
+
+    @usage_collector(category="request")
+    def handler(inference_request, request, countinference=None):
+        return infer(**inference_request.dict())
+
+    handler(FakeInferenceRequest(), FakeHttpRequest(), countinference=False)
+
+    model_row = usage_collector._usage["test_key"][
+        usage_key("model", "clip/ViT-B-32", billable=False)
+    ]
+    model_resource_details = json.loads(model_row["resource_details"])
+    assert model_resource_details["billable"] is False
+    assert model_resource_details["source"] == "app"
+    assert model_resource_details["source_info"] == "clipEmbedText"
+
+
 def test_env_service_name_preserved_alongside_source_info(
     usage_collector_with_mocked_threads,
 ):
