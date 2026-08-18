@@ -106,9 +106,7 @@ def masks_to_instance_detections(
         ys, xs = np.where(mask)
         if xs.size == 0:
             continue
-        class_id = (
-            int(metadata.class_id) if metadata is not None else fallback_class_id
-        )
+        class_id = int(metadata.class_id) if metadata is not None else fallback_class_id
         class_name = (
             metadata.class_name if metadata is not None else fallback_class_name
         )

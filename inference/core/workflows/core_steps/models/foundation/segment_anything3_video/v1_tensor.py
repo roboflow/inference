@@ -54,14 +54,14 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
     decide_prompt_vs_track,
     normalise_class_names,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor import (
+    extract_box_prompts_tensor,
+    masks_to_instance_detections,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
     SYNTHETIC_POINT_PROMPT_CLASS_ID,
     SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor import (
-    extract_box_prompts_tensor,
-    masks_to_instance_detections,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,

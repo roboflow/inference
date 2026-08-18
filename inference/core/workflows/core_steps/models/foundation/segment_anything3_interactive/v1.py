@@ -33,13 +33,13 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    convert_sam2_segmentation_response_to_inference_instances_seg_response,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
     SYNTHETIC_POINT_PROMPT_CLASS_ID,
     SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
-    convert_sam2_segmentation_response_to_inference_instances_seg_response,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
