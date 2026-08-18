@@ -293,6 +293,10 @@ def _triton_jit_fallback_with_fake_errors(
 
 
 def test_triton_jit_exception_types_import_independently() -> None:
+    import inference_models.models.optimization.triton_jit as original_fallback_mod
+
+    original_exception_types = original_fallback_mod._TRITON_JIT_EXCEPTION_TYPES
+
     class FakeOutOfResources(Exception):
         pass
 
@@ -313,6 +317,7 @@ def test_triton_jit_exception_types_import_independently() -> None:
 
     assert FakeOutOfResources not in fallback_mod._TRITON_JIT_EXCEPTION_TYPES
     assert FakePTXASError not in fallback_mod._TRITON_JIT_EXCEPTION_TYPES
+    assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == original_exception_types
 
 
 def test_warn_triton_jit_fallback_logs_once(caplog: pytest.LogCaptureFixture) -> None:
