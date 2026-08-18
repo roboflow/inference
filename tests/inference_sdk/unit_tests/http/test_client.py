@@ -5149,7 +5149,7 @@ def test_default_transport_emits_guidance_warning_once(monkeypatch) -> None:
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
 
     # when
-    with pytest.warns(InferenceSDKGuidanceWarning, match="release 1.4.2 onward"):
+    with pytest.warns(InferenceSDKGuidanceWarning, match="release 1.5.0 onward"):
         _ = http_client._InferenceHTTPClient__resolved_api_key_transport()
     with warnings.catch_warnings():
         warnings.simplefilter("error", InferenceSDKGuidanceWarning)
@@ -5240,3 +5240,57 @@ def test_guidance_warning_suppressed_by_inference_warnings_disabled() -> None:
     assert result.returncode == 0, result.stderr
     assert "DONE" in result.stdout
     assert "InferenceSDKGuidanceWarning" not in result.stderr
+
+
+# --- WebRTC transport stickiness --------------------------------------------
+#
+# client.webrtc captures the api-key transport ONCE at first access and keeps
+# it (a streaming session must not change auth mid-flight). Configuration
+# changes made afterwards warn instead of silently not applying.
+
+
+def test_transport_change_after_webrtc_access_warns_about_stickiness(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    _ = http_client.webrtc  # captures the (default legacy) transport
+
+    # when / then
+    with pytest.warns(
+        InferenceSDKGuidanceWarning, match="WebRTC namespace was already initialised"
+    ):
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+    # and - the warning fires only once per client
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="both"))
+
+
+def test_transport_change_without_webrtc_access_does_not_warn(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+
+def test_matching_transport_after_webrtc_access_does_not_warn(monkeypatch) -> None:
+    # given - webrtc created AFTER the transport was configured: no divergence
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="http://some.com"
+    ).configure(InferenceConfiguration(api_key_transport="header"))
+    _ = http_client.webrtc
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))

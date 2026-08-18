@@ -114,7 +114,7 @@ def _warn_about_default_api_key_transport_once() -> None:
         "This client sends the Roboflow API key through the legacy channel "
         "(query parameter / request body). Sending it as the "
         "`Authorization: Bearer <api_key>` header is recommended and works "
-        "with inference servers from release 1.4.2 onward. Opt in with "
+        "with inference servers from release 1.5.0 onward. Opt in with "
         "InferenceConfiguration(api_key_transport='header'); use 'both' for "
         "a transition period safe with every server version. Set "
         "api_key_transport='legacy' "
@@ -282,6 +282,8 @@ class InferenceHTTPClient:
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
         self.__webrtc_client: Optional["WebRTCClient"] = None
+        self.__webrtc_client_transport: Optional[ApiKeyTransport] = None
+        self.__webrtc_transport_stickiness_warned = False
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -320,10 +322,13 @@ class InferenceHTTPClient:
         from inference_sdk.webrtc.client import WebRTCClient
 
         if self.__webrtc_client is None:
+            # The transport is captured ONCE here - later configuration
+            # changes do not re-sync it (see __warn_if_webrtc_transport_is_stale).
+            self.__webrtc_client_transport = self.__resolved_api_key_transport()
             self.__webrtc_client = WebRTCClient(
                 self.__api_url,
                 self.__api_key,
-                api_key_transport=self.__resolved_api_key_transport().value,
+                api_key_transport=self.__webrtc_client_transport.value,
             )
         return self.__webrtc_client
 
@@ -341,10 +346,12 @@ class InferenceHTTPClient:
         """
         previous_configuration = self.__inference_configuration
         self.__inference_configuration = inference_configuration
+        self.__warn_if_webrtc_transport_is_stale()
         try:
             yield self
         finally:
             self.__inference_configuration = previous_configuration
+            self.__warn_if_webrtc_transport_is_stale()
 
     def configure(
         self, inference_configuration: InferenceConfiguration
@@ -358,6 +365,7 @@ class InferenceHTTPClient:
             InferenceHTTPClient: The client instance with updated configuration.
         """
         self.__inference_configuration = inference_configuration
+        self.__warn_if_webrtc_transport_is_stale()
         return self
 
     def select_api_v0(self) -> "InferenceHTTPClient":
@@ -3022,6 +3030,30 @@ class InferenceHTTPClient:
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         return unwrap_single_element_list(sequence=responses)
+
+    def __warn_if_webrtc_transport_is_stale(self) -> None:
+        # The webrtc namespace captures the api-key transport once, at first
+        # `client.webrtc` access, and deliberately keeps it (a streaming
+        # session should not change auth mid-flight). This warns - once per
+        # client - when a configuration change diverges from that captured
+        # value, so the change is not silently ignored for streaming.
+        if self.__webrtc_client is None or self.__webrtc_transport_stickiness_warned:
+            return
+        configured = (
+            self.__inference_configuration.api_key_transport or ApiKeyTransport.LEGACY
+        )
+        if configured is self.__webrtc_client_transport:
+            return
+        self.__webrtc_transport_stickiness_warned = True
+        warnings.warn(
+            f"api_key_transport changed to '{configured.value}', but this "
+            f"client's WebRTC namespace was already initialised with "
+            f"'{self.__webrtc_client_transport.value}' and keeps it - the "
+            "transport is captured once at first `client.webrtc` access. "
+            "Build a new InferenceHTTPClient to stream with a different "
+            "transport.",
+            InferenceSDKGuidanceWarning,
+        )
 
     def __resolved_api_key_transport(self) -> ApiKeyTransport:
         # None means the user made no choice - resolve to the legacy channel

@@ -915,7 +915,7 @@ WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 # "legacy" (query/body only), "both" (default - legacy channels plus an
 # `Authorization: Bearer` header; safe with every server version, including
 # hosted targets that do not read the header yet), or "header" (header only -
-# requires the remote server to run inference release 1.4.2 or newer).
+# requires the remote server to run inference release 1.5.0 or newer).
 # NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
 # directly (bypassing the SDK) and are not affected by this flag.
 WORKFLOWS_REMOTE_API_KEY_TRANSPORT = os.getenv(
