@@ -8,7 +8,6 @@ from inference_models.configuration import (
     MODEL_BLOB_CACHE_BUCKET,
     MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS,
     MODEL_BLOB_CACHE_COOLDOWN_SECONDS,
-    MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS,
     MODEL_BLOB_CACHE_ENABLED,
     MODEL_BLOB_CACHE_ENDPOINT_URL,
     MODEL_BLOB_CACHE_FAILURE_THRESHOLD,
@@ -39,7 +38,6 @@ class ModelBlobCacheConfig:
     addressing_style: str = "auto"
     connect_timeout_seconds: float = 1.0
     read_timeout_seconds: float = 2.0
-    download_timeout_seconds: float = 30.0
     failure_threshold: int = 3
     cooldown_seconds: float = 60.0
 
@@ -75,10 +73,6 @@ class ModelBlobCacheConfig:
                 self.read_timeout_seconds,
             ),
             (
-                "INFERENCE_MODELS_MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS",
-                self.download_timeout_seconds,
-            ),
-            (
                 "INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS",
                 self.cooldown_seconds,
             ),
@@ -103,7 +97,6 @@ def _current_configuration() -> ModelBlobCacheConfig:
         addressing_style=MODEL_BLOB_CACHE_ADDRESSING_STYLE,
         connect_timeout_seconds=MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS,
         read_timeout_seconds=MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS,
-        download_timeout_seconds=MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS,
         failure_threshold=MODEL_BLOB_CACHE_FAILURE_THRESHOLD,
         cooldown_seconds=MODEL_BLOB_CACHE_COOLDOWN_SECONDS,
     )
@@ -139,7 +132,6 @@ def _initialize_model_blob_cache() -> ContentAddressedArtifactCache:
         return VerifiedContentAddressedArtifactCache(
             storage=storage,
             prefix=config.prefix,
-            read_deadline_seconds=config.download_timeout_seconds,
             failure_threshold=config.failure_threshold,
             cooldown_seconds=config.cooldown_seconds,
         )

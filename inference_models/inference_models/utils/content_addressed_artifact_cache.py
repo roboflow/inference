@@ -8,7 +8,7 @@ from time import monotonic
 from typing import Any, Callable, Optional
 
 from inference_models.logger import LOGGER
-from inference_models.utils.blob_storage import BlobStorage, TransferDeadlineExceeded
+from inference_models.utils.blob_storage import BlobStorage
 from inference_models.utils.file_system import remove_file_if_exists
 
 _UPLOAD_WORKERS = 2
@@ -121,14 +121,12 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
         self,
         storage: BlobStorage,
         prefix: str,
-        read_deadline_seconds: float,
         failure_threshold: int,
         cooldown_seconds: float,
         upload_executor: Optional[_BoundedDaemonExecutor] = None,
     ) -> None:
         self._storage = storage
         self._prefix = prefix
-        self._read_deadline_seconds = read_deadline_seconds
         self._upload_executor = upload_executor or _BoundedDaemonExecutor(
             _UPLOAD_WORKERS, _UPLOAD_QUEUE_SIZE, "artifact-cache-upload"
         )
@@ -138,11 +136,10 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
     def restore(self, content_hash: Optional[str], target_path: str) -> bool:
         """Download and verify `content_hash` into `target_path`, or report a miss.
 
-        The transfer runs on the calling thread and carries a no-progress
-        budget the storage re-arms between chunks, so abandoning a stalled
-        read also stops it consuming bandwidth. `target_path` is left absent
-        unless it holds verified content, which lets the caller fall back to
-        the origin freely.
+        The transfer runs on the calling thread; a stalled or hung read is
+        bounded by the storage client's own connect/read timeouts, not by
+        this method. `target_path` is left absent unless it holds verified
+        content, which lets the caller fall back to the origin freely.
         """
         if not content_hash or not _MD5_PATTERN.fullmatch(content_hash):
             LOGGER.warning("Artifact cache request has an invalid MD5 hash")
@@ -151,18 +148,7 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
             return False
         try:
             os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
-            found = self._storage.download(
-                self._blob_key(content_hash),
-                target_path,
-                timeout_seconds=self._read_deadline_seconds,
-            )
-        except TransferDeadlineExceeded:
-            _discard_partial_download(target_path)
-            self._read_circuit.record_failure()
-            LOGGER.warning(
-                "Artifact cache read exceeded %.2fs", self._read_deadline_seconds
-            )
-            return False
+            found = self._storage.download(self._blob_key(content_hash), target_path)
         except Exception as error:
             _discard_partial_download(target_path)
             self._read_circuit.record_failure()

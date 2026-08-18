@@ -2,7 +2,6 @@ import hashlib
 from unittest import mock
 
 from inference_models.utils import content_addressed_artifact_cache as cache_module
-from inference_models.utils.blob_storage import TransferDeadlineExceeded
 from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
     VerifiedContentAddressedArtifactCache,
@@ -20,7 +19,6 @@ def _cache(storage, upload_executor=None, **overrides):
     return VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
-        read_deadline_seconds=overrides.pop("read_deadline_seconds", 1),
         failure_threshold=overrides.pop("failure_threshold", 3),
         cooldown_seconds=overrides.pop("cooldown_seconds", 60),
         upload_executor=upload_executor or _InlineExecutor(),
@@ -29,7 +27,7 @@ def _cache(storage, upload_executor=None, **overrides):
 
 
 def _write_download(content: bytes):
-    def download(_: str, target_path: str, timeout_seconds=None) -> bool:
+    def download(_: str, target_path: str) -> bool:
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -69,9 +67,8 @@ def test_verified_cache_constructs_normalized_key_and_verifies_download(
     content_hash = hashlib.md5(content).hexdigest().upper()
     storage = mock.MagicMock()
 
-    def download(blob_key: str, target_path: str, timeout_seconds=None) -> bool:
+    def download(blob_key: str, target_path: str) -> bool:
         assert blob_key == f"prefix/{content_hash.lower()}"
-        assert timeout_seconds is not None
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -80,7 +77,6 @@ def test_verified_cache_constructs_normalized_key_and_verifies_download(
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="/prefix/",
-        read_deadline_seconds=1,
         failure_threshold=3,
         cooldown_seconds=60,
     )
@@ -114,7 +110,6 @@ def test_verified_cache_rejects_invalid_md5_without_touching_storage(tmp_path) -
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
-        read_deadline_seconds=1,
         failure_threshold=3,
         cooldown_seconds=60,
     )
@@ -138,19 +133,17 @@ def test_verified_cache_rejects_corrupt_download_and_removes_target(tmp_path) ->
     assert not target_path.exists()
 
 
-def test_read_deadline_is_passed_to_storage_and_discards_partial_download(
-    tmp_path,
-) -> None:
+def test_download_failure_discards_partial_download(tmp_path) -> None:
     storage = mock.MagicMock()
     target_path = tmp_path / "weights"
 
-    def download(_: str, path: str, timeout_seconds=None) -> bool:
+    def download(_: str, path: str) -> bool:
         with open(path, "wb") as target_file:
             target_file.write(b"partial")
-        raise TransferDeadlineExceeded("too slow")
+        raise RuntimeError("connection reset")
 
     storage.download.side_effect = download
-    cache = _cache(storage, read_deadline_seconds=0.25, failure_threshold=1)
+    cache = _cache(storage, failure_threshold=1)
 
     with mock.patch.object(cache_module.LOGGER, "warning") as warning_mock:
         assert (
@@ -160,26 +153,13 @@ def test_read_deadline_is_passed_to_storage_and_discards_partial_download(
 
     # The abandoned transfer must leave the caller's download path clean...
     assert not target_path.exists()
-    warning_mock.assert_any_call("Artifact cache read exceeded %.2fs", 0.25)
-    # ...and count against the read circuit so a slow endpoint gets bypassed.
+    warning_mock.assert_any_call("Artifact cache read failed: %s", mock.ANY)
+    # ...and count against the read circuit so a failing endpoint gets bypassed.
     storage.download.reset_mock()
     assert (
         cache.restore(hashlib.md5(b"expected").hexdigest(), str(target_path)) is False
     )
     storage.download.assert_not_called()
-
-
-def test_restore_passes_read_deadline_seconds_as_the_storage_timeout(tmp_path) -> None:
-    storage = mock.MagicMock()
-    storage.download.side_effect = _write_download(b"weights")
-    cache = _cache(storage, read_deadline_seconds=5)
-    content_hash = hashlib.md5(b"weights").hexdigest()
-
-    assert cache.restore(content_hash, str(tmp_path / "weights")) is True
-
-    # `read_deadline_seconds` is a re-armed no-progress budget the storage
-    # owns, not a deadline the caller computes - passed through as-is.
-    assert storage.download.call_args.kwargs["timeout_seconds"] == 5
 
 
 def test_cleanup_exception_does_not_suppress_fallback(tmp_path) -> None:
@@ -245,7 +225,6 @@ def test_read_failures_do_not_open_write_circuit(tmp_path) -> None:
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
-        read_deadline_seconds=1,
         failure_threshold=2,
         cooldown_seconds=60,
         upload_executor=_InlineExecutor(),
@@ -268,7 +247,6 @@ def test_write_failures_do_not_open_read_circuit(tmp_path) -> None:
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
-        read_deadline_seconds=1,
         failure_threshold=2,
         cooldown_seconds=60,
         upload_executor=_InlineExecutor(),

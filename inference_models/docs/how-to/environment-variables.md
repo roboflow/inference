@@ -121,12 +121,13 @@ By default, the client uses the standard AWS credential chain. To provide
 cache-specific static credentials, set both
 `INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID` and `INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY`.
 
-Timeout and circuit-breaker settings have these defaults:
+Timeout and circuit-breaker settings have these defaults. `CONNECT_TIMEOUT_SECONDS`
+and `READ_TIMEOUT_SECONDS` bound the S3 client itself, so a stalled or hung
+connection is cut off there rather than by a separate whole-transfer timer:
 
 ```bash
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=1
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=2
-export INFERENCE_MODELS_MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS=30
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
 ```

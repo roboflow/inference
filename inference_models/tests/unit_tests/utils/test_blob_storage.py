@@ -1,13 +1,6 @@
-from itertools import count
 from unittest import mock
 
-import pytest
-
-from inference_models.utils.blob_storage import (
-    BlobStorage,
-    S3BlobStorage,
-    TransferDeadlineExceeded,
-)
+from inference_models.utils.blob_storage import BlobStorage, S3BlobStorage
 
 
 class _StreamingBody:
@@ -77,66 +70,6 @@ def test_s3_storage_closes_response_body_when_streaming_fails(tmp_path) -> None:
         raise AssertionError("streaming failure must propagate")
 
     assert body.closed is True
-
-
-def test_s3_storage_abandons_transfer_once_the_timeout_passes(tmp_path) -> None:
-    # A body long enough that running it to completion would be obvious.
-    body = _StreamingBody([b"chunk"] * 1000)
-    client = mock.MagicMock()
-    client.get_object.return_value = {"Body": body}
-    storage = S3BlobStorage(client=client, bucket="models")
-
-    with pytest.raises(TransferDeadlineExceeded):
-        storage.download("prefix/hash", str(tmp_path / "blob"), timeout_seconds=-1)
-
-    # Deadline is checked before the first read, so nothing is streamed at all.
-    assert body.reads == 0
-    assert body.closed is True
-
-
-def test_s3_storage_completes_transfer_within_its_timeout(tmp_path) -> None:
-    body = _StreamingBody([b"cached ", b"weights", b""])
-    client = mock.MagicMock()
-    client.get_object.return_value = {"Body": body}
-    storage = S3BlobStorage(client=client, bucket="models")
-    target_path = tmp_path / "blob"
-
-    assert (
-        storage.download("prefix/hash", str(target_path), timeout_seconds=30) is True
-    )
-    assert target_path.read_bytes() == b"cached weights"
-
-
-def test_s3_storage_survives_a_slow_but_steady_transfer_past_the_original_budget(
-    tmp_path,
-) -> None:
-    """The deadline bounds stalls, not total transfer size: a large object
-    that keeps arriving in steady chunks must not be killed just because its
-    cumulative transfer time exceeds the original budget.
-
-    Each simulated second (one per `monotonic()` call) pushes the mocked
-    clock well past a 5s budget by the last of 50 chunks - this would fail
-    under a fixed, never-reset deadline (and did, before the budget was
-    re-armed on every chunk).
-    """
-    chunk_count = 50
-    body = _StreamingBody([b"x" * 10] * chunk_count + [b""])
-    client = mock.MagicMock()
-    client.get_object.return_value = {"Body": body}
-    storage = S3BlobStorage(client=client, bucket="models")
-    target_path = tmp_path / "blob"
-
-    clock = mock.MagicMock(side_effect=count(start=0.0, step=1.0))
-    with mock.patch("inference_models.utils.blob_storage.monotonic", clock):
-        result = storage.download(
-            "prefix/hash", str(target_path), timeout_seconds=5.0
-        )
-
-    assert result is True
-    assert target_path.read_bytes() == b"x" * 10 * chunk_count
-    # Every call saw a fresh, recently re-armed deadline - proof the budget
-    # tracks time-since-last-chunk, not time-since-the-first-chunk.
-    assert clock.call_count > chunk_count
 
 
 def test_s3_storage_upload_disables_transfer_threads(tmp_path) -> None:

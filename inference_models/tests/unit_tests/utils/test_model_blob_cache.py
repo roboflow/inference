@@ -62,7 +62,6 @@ def test_factory_passes_complete_configuration(monkeypatch) -> None:
         MODEL_BLOB_CACHE_ADDRESSING_STYLE="path",
         MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=2.5,
         MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=7.5,
-        MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS=11.5,
         MODEL_BLOB_CACHE_FAILURE_THRESHOLD=4,
         MODEL_BLOB_CACHE_COOLDOWN_SECONDS=19.5,
     )
@@ -83,11 +82,9 @@ def test_factory_passes_complete_configuration(monkeypatch) -> None:
         addressing_style="path",
         connect_timeout_seconds=2.5,
         read_timeout_seconds=7.5,
-        download_timeout_seconds=11.5,
         failure_threshold=4,
         cooldown_seconds=19.5,
     )
-    assert cache._read_deadline_seconds == 11.5
 
 
 def test_missing_bucket_returns_null_cache(monkeypatch) -> None:
@@ -173,7 +170,6 @@ def test_model_blob_cache_config_preserves_timeout_defaults() -> None:
 
     assert config.connect_timeout_seconds == 1.0
     assert config.read_timeout_seconds == 2.0
-    assert config.download_timeout_seconds == 30.0
 
 
 @pytest.mark.parametrize(
@@ -186,7 +182,6 @@ def test_model_blob_cache_config_preserves_timeout_defaults() -> None:
         {"failure_threshold": 0},
         {"connect_timeout_seconds": 0},
         {"read_timeout_seconds": -1},
-        {"download_timeout_seconds": 0},
         {"cooldown_seconds": 0},
     ],
 )
