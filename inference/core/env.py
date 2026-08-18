@@ -921,6 +921,19 @@ WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 WORKFLOWS_REMOTE_API_KEY_TRANSPORT = os.getenv(
     "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", "both"
 ).lower()
+# Allowed values duplicated on purpose - inference.core.env must not import
+# inference_sdk. KEEP IN SYNC with the ApiKeyTransport enum in
+# inference_sdk/http/entities.py.
+_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS = ("legacy", "both", "header")
+if (
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT
+    not in _ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS
+):
+    raise ValueError(
+        f"Invalid WORKFLOWS_REMOTE_API_KEY_TRANSPORT: "
+        f"{WORKFLOWS_REMOTE_API_KEY_TRANSPORT!r}. Expected one of: "
+        f"{list(_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS)}."
+    )
 if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
     warnings.warn(
         "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "
