@@ -2,7 +2,9 @@ import importlib
 import logging
 import subprocess
 import sys
+from contextlib import contextmanager
 from types import ModuleType
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -256,9 +258,8 @@ def test_is_triton_jit_failure_detects_out_of_resources_type() -> None:
     assert is_triton_jit_failure(exc)
 
 
-def _reload_triton_jit_fallback_with_fake_errors(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
+@contextmanager
+def _triton_jit_fallback_with_fake_errors(
     error_classes: dict[str, type[BaseException]],
 ):
     fake_errors = ModuleType("triton.runtime.errors")
@@ -274,53 +275,44 @@ def _reload_triton_jit_fallback_with_fake_errors(
     fake_triton.runtime = fake_runtime
     fake_triton.compiler = fake_compiler
 
-    monkeypatch.setitem(sys.modules, "triton", fake_triton)
-    monkeypatch.setitem(sys.modules, "triton.runtime", fake_runtime)
-    monkeypatch.setitem(sys.modules, "triton.runtime.errors", fake_errors)
-    monkeypatch.setitem(sys.modules, "triton.compiler", fake_compiler)
-    monkeypatch.setitem(sys.modules, "triton.compiler.errors", fake_compiler_errors)
-
     import inference_models.models.optimization.triton_jit as fallback_mod
 
-    reloaded_fallback_mod = importlib.reload(fallback_mod)
+    fake_modules = {
+        "triton": fake_triton,
+        "triton.runtime": fake_runtime,
+        "triton.runtime.errors": fake_errors,
+        "triton.compiler": fake_compiler,
+        "triton.compiler.errors": fake_compiler_errors,
+    }
+    try:
+        with patch.dict(sys.modules, fake_modules):
+            yield importlib.reload(fallback_mod)
+    finally:
+        # Reload only after patch.dict restores the real import environment.
+        importlib.reload(fallback_mod)
 
-    return reloaded_fallback_mod
 
-
-@pytest.fixture
-def triton_jit_fallback_module():
-    import inference_models.models.optimization.triton_jit as fallback_mod
-
-    yield fallback_mod
-
-    importlib.reload(fallback_mod)
-
-
-def test_triton_jit_exception_types_import_independently(
-    monkeypatch: pytest.MonkeyPatch,
-    triton_jit_fallback_module,
-) -> None:
+def test_triton_jit_exception_types_import_independently() -> None:
     class FakeOutOfResources(Exception):
         pass
 
     class FakePTXASError(Exception):
         pass
 
-    fallback_mod = _reload_triton_jit_fallback_with_fake_errors(
-        monkeypatch=monkeypatch,
-        error_classes={"OutOfResources": FakeOutOfResources},
-    )
+    with _triton_jit_fallback_with_fake_errors(
+        {"OutOfResources": FakeOutOfResources}
+    ) as fallback_mod:
+        assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == (FakeOutOfResources,)
+        assert fallback_mod.is_triton_jit_failure(FakeOutOfResources())
 
-    assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == (FakeOutOfResources,)
-    assert fallback_mod.is_triton_jit_failure(FakeOutOfResources())
+    with _triton_jit_fallback_with_fake_errors(
+        {"PTXASError": FakePTXASError}
+    ) as fallback_mod:
+        assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == (FakePTXASError,)
+        assert fallback_mod.is_triton_jit_failure(FakePTXASError())
 
-    fallback_mod = _reload_triton_jit_fallback_with_fake_errors(
-        monkeypatch=monkeypatch,
-        error_classes={"PTXASError": FakePTXASError},
-    )
-
-    assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == (FakePTXASError,)
-    assert fallback_mod.is_triton_jit_failure(FakePTXASError())
+    assert FakeOutOfResources not in fallback_mod._TRITON_JIT_EXCEPTION_TYPES
+    assert FakePTXASError not in fallback_mod._TRITON_JIT_EXCEPTION_TYPES
 
 
 def test_warn_triton_jit_fallback_logs_once(caplog: pytest.LogCaptureFixture) -> None:
