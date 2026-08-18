@@ -33,9 +33,7 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 from inference_models.models.optimization.contracts import CompatibilityResult
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
-from inference_models.models.rfdetr.triton_jit_fallback import (
-    is_triton_jit_failure,
-)
+from inference_models.models.optimization.triton_jit import is_triton_jit_failure
 from inference_models.models.rfdetr.triton_preprocess import (
     TRITON_AVAILABLE,
     ResampleTables,

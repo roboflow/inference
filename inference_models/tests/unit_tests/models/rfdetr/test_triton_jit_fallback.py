@@ -18,13 +18,13 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCropOffset,
     TrainingInputSize,
 )
-from inference_models.models.rfdetr import common as rfdetr_common
-from inference_models.models.rfdetr import triton_preprocess_runtime
-from inference_models.models.rfdetr.class_remapping import ClassesReMapping
-from inference_models.models.rfdetr.triton_jit_fallback import (
+from inference_models.models.optimization.triton_jit import (
     is_triton_jit_failure,
     warn_triton_jit_fallback,
 )
+from inference_models.models.rfdetr import common as rfdetr_common
+from inference_models.models.rfdetr import triton_preprocess_runtime
+from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -244,7 +244,7 @@ def _reload_triton_jit_fallback_with_fake_errors(
     monkeypatch.setitem(sys.modules, "triton.compiler", fake_compiler)
     monkeypatch.setitem(sys.modules, "triton.compiler.errors", fake_compiler_errors)
 
-    import inference_models.models.rfdetr.triton_jit_fallback as fallback_mod
+    import inference_models.models.optimization.triton_jit as fallback_mod
 
     reloaded_fallback_mod = importlib.reload(fallback_mod)
 
@@ -253,7 +253,7 @@ def _reload_triton_jit_fallback_with_fake_errors(
 
 @pytest.fixture
 def triton_jit_fallback_module():
-    import inference_models.models.rfdetr.triton_jit_fallback as fallback_mod
+    import inference_models.models.optimization.triton_jit as fallback_mod
 
     yield fallback_mod
 

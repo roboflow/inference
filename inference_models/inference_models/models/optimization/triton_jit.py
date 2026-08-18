@@ -1,4 +1,4 @@
-"""Detect Triton JIT failures and fall back to reference RF-DETR paths."""
+"""Detect Triton JIT failures and fall back to reference inference paths."""
 
 from __future__ import annotations
 
