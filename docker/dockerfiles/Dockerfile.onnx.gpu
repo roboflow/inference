@@ -361,6 +361,15 @@ ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
     GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
+# PYTHONPATH above is what verify_opencv relies on below, but it is not
+# guaranteed to survive every path a container actually gets launched
+# through in production (an orchestrator/entrypoint can exec a process
+# without it - this is exactly what happened deploying this image: cv2
+# imported fine here at build time, then ModuleNotFoundError'd at runtime).
+# Add a .pth file so `import cv2` resolves via the interpreter's default
+# sys.path too, independent of PYTHONPATH ever reaching the process.
+RUN echo /opt/opencv/python > /usr/local/lib/python3.10/dist-packages/opencv.pth
+
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # GStreamer's CUDA converters (cudaconvert / cudascale / cudaconvertscale) build
