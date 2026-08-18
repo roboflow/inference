@@ -236,8 +236,28 @@ def test_bind_usage_model_identity_copies_recorded_variant():
     try:
         bind_usage_model_identity(model, "paligemma-3b-mix-224")
 
-        assert model.model_id == "paligemma-3b-mix-224"
+        assert getattr(model, "model_id", None) is None
         assert model.model_type == "paligemma-3b-mix-224"
+    finally:
+        clear_recorded_model_types()
+
+
+def test_bind_does_not_change_alias_resource_id():
+    # HTTP add_model(de_aliased, ..., model_id_alias=alias) used to write the
+    # de-aliased id onto adapter instances. resource_id must stay the alias.
+    model = SimpleNamespace()
+    record_model_type("coco/25", "yolov11-n")
+    record_model_type("yolov11n-640", "yolov11-n")
+    try:
+        bind_usage_model_identity(model, "coco/25", "yolov11n-640", "yolov11n-640")
+
+        assert getattr(model, "model_id", None) is None
+        assert model.model_type == "yolov11-n"
+        assert (
+            get_model_id_from_kwargs({"self": model, "model_id": "yolov11n-640"})
+            == "yolov11n-640"
+        )
+        assert get_model_type_from_kwargs({"self": model}) == "yolov11-n"
     finally:
         clear_recorded_model_types()
 
@@ -255,9 +275,7 @@ def test_get_model_type_from_kwargs_uses_instance_after_map_cleared():
 def test_get_model_id_skips_null_kwargs_and_uses_instance():
     model = SimpleNamespace(model_id="qwen25-vl-7b")
 
-    assert (
-        get_model_id_from_kwargs({"self": model, "model_id": None}) == "qwen25-vl-7b"
-    )
+    assert get_model_id_from_kwargs({"self": model, "model_id": None}) == "qwen25-vl-7b"
 
 
 def test_get_model_binds_recorded_variant_on_instance():
@@ -287,7 +305,7 @@ def test_get_model_binds_recorded_variant_on_instance():
             model_utils.ROBOFLOW_MODEL_TYPES[("lmm", "paligemma")] = DummyAdapter
             model = model_utils.get_model("paligemma-3b-mix-224")
 
-        assert model.model_id == "paligemma-3b-mix-224"
+        assert getattr(model, "model_id", None) is None
         assert model.model_type == "paligemma-3b-mix-224"
         assert get_model_type_from_kwargs({"self": model}) == "paligemma-3b-mix-224"
     finally:
@@ -340,7 +358,9 @@ def test_registry_records_model_variant_for_usage_tracking_not_architecture():
     from inference.core.registries.roboflow import get_model_type
 
     try:
-        with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        with mock.patch.object(
+            roboflow, "USE_INFERENCE_MODELS", True
+        ), mock.patch.object(
             roboflow,
             "get_model_metadata_from_inference_models_registry",
             return_value={

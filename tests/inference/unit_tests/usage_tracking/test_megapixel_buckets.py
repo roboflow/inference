@@ -147,9 +147,10 @@ def test_get_tensor_spatial_hw_reads_hf_pixel_values():
     pixel_values = np.zeros((1, 3, 224, 224), dtype=np.float32)
 
     assert get_tensor_spatial_hw({"pixel_values": pixel_values}) == (224, 224)
-    assert get_tensor_spatial_hw(
-        SimpleNamespace(pixel_values=pixel_values)
-    ) == (224, 224)
+    assert get_tensor_spatial_hw(SimpleNamespace(pixel_values=pixel_values)) == (
+        224,
+        224,
+    )
 
 
 def test_get_tensor_spatial_hw_ignores_non_spatial_pixel_values():
@@ -231,6 +232,63 @@ def test_get_fixed_model_input_hw_from_image_size_and_nested_backend():
     assert get_fixed_model_input_hw(
         SimpleNamespace(_model=SimpleNamespace(_model=SimpleNamespace(image_size=1024)))
     ) == (1024, 1024)
+
+
+def test_fixed_input_hw_reads_hf_processor_size():
+    model = SimpleNamespace(
+        processor=SimpleNamespace(
+            image_processor=SimpleNamespace(size={"height": 224, "width": 224})
+        )
+    )
+
+    assert get_fixed_model_input_hw(model) == (224, 224)
+    assert resolve_model_input_hw(model, measured_hw=(1080, 1920)) == (224, 224)
+
+
+def test_fixed_input_hw_reads_hf_processor_size_object():
+    model = SimpleNamespace(
+        processor=SimpleNamespace(
+            image_processor=SimpleNamespace(size=SimpleNamespace(height=448, width=448))
+        )
+    )
+
+    assert get_fixed_model_input_hw(model) == (448, 448)
+
+
+def test_fixed_input_hw_reads_hf_vision_config_image_size():
+    model = SimpleNamespace(
+        model=SimpleNamespace(
+            config=SimpleNamespace(vision_config=SimpleNamespace(image_size=224))
+        )
+    )
+
+    assert get_fixed_model_input_hw(model) == (224, 224)
+
+
+def test_legacy_hf_vlm_uses_processor_size_not_native_image_dims():
+    from inference.core.models.base import BaseInference
+
+    class LegacyHFVLM(BaseInference):
+        def __init__(self):
+            self.processor = SimpleNamespace(
+                image_processor=SimpleNamespace(size={"height": 224, "width": 224})
+            )
+
+        def preprocess(self, image, **kwargs):
+            return object(), {"image_dims": (1920, 1080)}
+
+        def predict(self, img_in, **kwargs):
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    model = LegacyHFVLM()
+    BaseInference.infer.__wrapped__(model, object())
+    measured_hw, _ = consume_measured_model_input()
+
+    assert measured_hw == (1080, 1920)
+    assert resolve_model_input_hw(model, measured_hw=measured_hw) == (224, 224)
 
 
 def test_record_fixed_model_input_for_request_publishes_encoder_size():

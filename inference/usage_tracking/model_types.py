@@ -46,26 +46,23 @@ def bind_usage_model_identity(model: Any, *model_ids: Optional[str]) -> None:
 
     The map is filled during registry resolve with the platform variant when
     known, otherwise the architecture. Storing it on the instance means later
-    ``infer()`` calls do not need the caller to pass ``model_id``, and the
-    label survives map eviction.
+    ``infer()`` calls do not need the caller to pass ``model_id`` for the type
+    label, and the label survives map eviction.
+
+    Does not set ``model.model_id``. That field is the usage ``resource_id``
+    and must stay whatever the caller / request already used.
     """
     if model is None:
         return
 
     recorded = None
-    first_id = None
     for model_id in model_ids:
         if not model_id:
             continue
-        model_id = str(model_id)
-        if first_id is None:
-            first_id = model_id
-        recorded = get_recorded_model_type(model_id)
+        recorded = get_recorded_model_type(str(model_id))
         if recorded:
             break
 
-    if first_id and not getattr(model, "model_id", None):
-        model.model_id = first_id
     if recorded:
         model.model_type = recorded
 

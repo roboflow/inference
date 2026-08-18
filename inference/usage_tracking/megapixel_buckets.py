@@ -1,11 +1,12 @@
 """Megapixel bucketing for model usage telemetry.
 
-Buckets prefer a configured fixed input, then the observed preprocess tensor
-(including HuggingFace ``pixel_values``), then native ``image_dims``. That last
-fallback is a cost proxy for models whose tensor is not spatial (Qwen-style
-patch tokens): larger uploads produce more patches and take longer. ``unknown``
-is only used when none of those sources are available. Bucket maps are
-merge-friendly sums; averages are derived downstream.
+Buckets prefer a configured fixed input (including HuggingFace processor /
+vision-config size), then the observed preprocess tensor (including
+``pixel_values``), then native ``image_dims``. That last fallback is a cost
+proxy for models whose tensor is not spatial (Qwen-style patch tokens):
+larger uploads produce more patches and take longer. ``unknown`` is only used
+when none of those sources are available. Bucket maps are merge-friendly
+sums; averages are derived downstream.
 
 The measured input size is published through a :class:`~contextvars.ContextVar`
 rather than an attribute on the model. Model instances are shared across the
@@ -169,6 +170,56 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
             if height is not None and width is not None:
                 return height, width
 
+    return _get_hf_fixed_input_hw(model)
+
+
+def _hf_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
+    """Normalize a HuggingFace ``image_processor.size`` value to (height, width)."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, dict):
+        height = _as_positive_int(value.get("height"))
+        width = _as_positive_int(value.get("width"))
+        if height is not None and width is not None:
+            return height, width
+        edge = _as_positive_int(value.get("shortest_edge"))
+        if edge is not None:
+            return edge, edge
+        return None
+    height = _as_positive_int(getattr(value, "height", None))
+    width = _as_positive_int(getattr(value, "width", None))
+    if height is not None and width is not None:
+        return height, width
+    return _image_size_to_hw(value)
+
+
+def _get_hf_fixed_input_hw(model: Any) -> Optional[Tuple[int, int]]:
+    """Read a fixed canvas from an HF processor or ``vision_config.image_size``."""
+    processor = getattr(model, "processor", None)
+    image_processor = getattr(processor, "image_processor", None)
+    size = _hf_size_to_hw(getattr(image_processor, "size", None))
+    if size is not None:
+        return size
+
+    for candidate in (getattr(model, "model", None), model):
+        if candidate is None:
+            continue
+        config = getattr(candidate, "config", None)
+        if config is None:
+            continue
+        if isinstance(config, dict):
+            vision_config = config.get("vision_config")
+        else:
+            vision_config = getattr(config, "vision_config", None)
+        if vision_config is None:
+            continue
+        if isinstance(vision_config, dict):
+            image_size = vision_config.get("image_size")
+        else:
+            image_size = getattr(vision_config, "image_size", None)
+        size = _image_size_to_hw(image_size)
+        if size is not None:
+            return size
     return None
 
 
