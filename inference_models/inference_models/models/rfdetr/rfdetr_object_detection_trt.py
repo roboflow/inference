@@ -48,6 +48,9 @@ from inference_models.models.optimization.fallback_warnings import (
     FallbackWarningTracker,
 )
 from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -754,6 +757,7 @@ class RFDetrForObjectDetectionTRT(
             compute_capability=torch.cuda.get_device_capability(
                 self._device.index or 0
             ),
+            runtime_components=get_runtime_components(),
         )
 
         return context

@@ -48,12 +48,6 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
-from inference_models.models.rfdetr.optimization.postprocessors import (
-    triton_fused as triton_postprocessor_module,
-)
-from inference_models.models.rfdetr.optimization.preprocessors import (
-    triton_universal as triton_preprocessor_module,
-)
 from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
@@ -272,9 +266,7 @@ def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
     )
 
 
-def test_rfdetr_auto_preferences_skip_unavailable_triton(monkeypatch) -> None:
-    monkeypatch.setattr(triton_preprocessor_module, "TRITON_AVAILABLE", False)
-    monkeypatch.setattr(triton_postprocessor_module, "TRITON_AVAILABLE", False)
+def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cuda:0"),
         preprocessor_max_workers=2,
@@ -282,6 +274,7 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton(monkeypatch) -> None:
     context = ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
+        runtime_components={"triton": False},
     )
 
     preprocessor = registry.resolve(

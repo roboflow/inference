@@ -4,6 +4,9 @@ import pytest
 import torch
 
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.optimization import (
+    runtime_components as runtime_components_module,
+)
 from inference_models.models.optimization.contracts import (
     CompatibilityResult,
     DeviceCompatibility,
@@ -15,6 +18,9 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
 from inference_models.models.optimization.torch_readiness import TensorReadinessTracker
 
 
@@ -78,6 +84,33 @@ def test_compatibility_result_preserves_actionable_reasons() -> None:
     assert not result.supported
     assert result.reasons == ("static crop", "grayscale")
     assert result.reason == "static crop, grayscale"
+
+
+def test_runtime_component_discovery_centralizes_package_import_checks(
+    monkeypatch,
+) -> None:
+    def import_module(module_name: str):
+        if module_name == "triton":
+            raise ImportError("triton is unavailable")
+
+        return object()
+
+    get_runtime_components.cache_clear()
+    monkeypatch.setattr(
+        runtime_components_module.importlib, "import_module", import_module
+    )
+    try:
+        components = get_runtime_components()
+    finally:
+        get_runtime_components.cache_clear()
+
+    assert components == {
+        "Pillow": True,
+        "TensorRT": True,
+        "torch": True,
+        "torchvision": True,
+        "triton": False,
+    }
 
 
 def test_validation_record_is_serialized_as_informational_metadata() -> None:

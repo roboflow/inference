@@ -34,6 +34,10 @@ except ImportError:  # pragma: no cover - optional at import time
 
 _TRITON_JIT_EXCEPTION_TYPES = tuple(_triton_jit_exception_types)
 
+# Do not replace runtime classification with a compiler preflight. Triton may use
+# CC, cc, GCC, Clang, bundled tooling, or version-specific compilation paths.
+# Finding an executable still does not prove that headers, linker libraries,
+# architecture support, or the actual specialized kernel compilation will work.
 _RUNTIME_ERROR_MARKERS = (
     "c compiler",
     "cannot find -l",
