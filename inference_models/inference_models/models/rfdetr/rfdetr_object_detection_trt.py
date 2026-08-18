@@ -110,6 +110,20 @@ except ImportError as import_error:
     ) from import_error
 
 
+_MODEL_RUNTIME_ERROR_HELP_URL = (
+    "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror"
+)
+
+
+def _as_model_runtime_error(
+    error: RecoverableStageExecutionError,
+) -> ModelRuntimeError:
+    return ModelRuntimeError(
+        message=str(error),
+        help_url=_MODEL_RUNTIME_ERROR_HELP_URL,
+    )
+
+
 class RFDetrForObjectDetectionTRT(
     (
         ObjectDetectionModel[
@@ -542,13 +556,6 @@ class RFDetrForObjectDetectionTRT(
             allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
 
-        def _as_model_runtime_error(
-            error: RecoverableStageExecutionError,
-        ) -> ModelRuntimeError:
-            message = str(error.args[0]) if error.args else str(error)
-
-            return ModelRuntimeError(message=message, help_url=error.help_url)
-
         allow_runtime_failure_fallback = (
             self._rfdetr_execution_plan.allow_compatibility_fallback
             and self._rfdetr_execution_plan.allow_runtime_failure_fallback
@@ -716,13 +723,6 @@ class RFDetrForObjectDetectionTRT(
                     self._rfdetr_execution_plan.allow_compatibility_fallback
                 ),
             )
-
-            def _as_model_runtime_error(
-                error: RecoverableStageExecutionError,
-            ) -> ModelRuntimeError:
-                message = str(error.args[0]) if error.args else str(error)
-
-                return ModelRuntimeError(message=message, help_url=error.help_url)
 
             allow_runtime_failure_fallback = (
                 self._rfdetr_execution_plan.allow_compatibility_fallback

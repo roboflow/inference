@@ -307,10 +307,6 @@ class FusedObjectDetectionPostprocessor:
                         "triton-fused-v1 failed to compile or launch its "
                         f"postprocessing kernel: {reason}"
                     ),
-                    help_url=(
-                        "https://inference-models.roboflow.com/errors/"
-                        "models-runtime/#modelruntimeerror"
-                    ),
                 ) from error
 
             # Variable-length Python results require one bounded count handoff.

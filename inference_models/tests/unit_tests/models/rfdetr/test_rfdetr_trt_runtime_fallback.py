@@ -191,10 +191,6 @@ class _RuntimeStage:
             self._runtime_supported = False
         raise RecoverableStageExecutionError(
             message=f"{self.metadata.implementation_id} recoverable failure",
-            help_url=(
-                "https://inference-models.roboflow.com/errors/models-runtime/"
-                "#modelruntimeerror"
-            ),
         )
 
 
@@ -393,6 +389,10 @@ def test_preprocess_disabled_fallback_exposes_model_runtime_error(
         model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
 
     assert type(error.value) is ModelRuntimeError
+    assert error.value.help_url == (
+        "https://inference-models.roboflow.com/errors/models-runtime/"
+        "#modelruntimeerror"
+    )
     assert candidate.calls == 1
     assert base.calls == 0
 

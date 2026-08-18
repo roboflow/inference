@@ -314,10 +314,6 @@ class UniversalFastPreprocessRuntime:
                         "triton-universal-v1 failed to compile or launch its "
                         f"preprocessing kernel: {reason}"
                     ),
-                    help_url=(
-                        "https://inference-models.roboflow.com/errors/"
-                        "models-runtime/#modelruntimeerror"
-                    ),
                 ) from error
 
             with torch.cuda.stream(stream):

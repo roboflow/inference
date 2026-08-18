@@ -66,15 +66,11 @@ def _context() -> ExecutionContext:
 
 
 def test_recoverable_stage_error_is_not_a_public_model_runtime_error() -> None:
-    error = RecoverableStageExecutionError(
-        message="internal recoverable failure",
-        help_url="https://example.com/runtime-help",
-    )
+    error = RecoverableStageExecutionError(message="internal recoverable failure")
 
     assert isinstance(error, Exception)
     assert not isinstance(error, ModelRuntimeError)
     assert error.args == ("internal recoverable failure",)
-    assert error.help_url == "https://example.com/runtime-help"
 
 
 def test_inference_execution_plan_defaults_and_serializes() -> None:

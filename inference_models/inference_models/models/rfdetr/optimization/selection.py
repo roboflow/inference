@@ -182,10 +182,6 @@ def resolve_preprocessor_runtime_fallback(
                 f"recoverable runtime failure: {runtime_compatibility.reason}. "
                 "Runtime failure fallback is disabled by the execution plan."
             ),
-            help_url=(
-                "https://inference-models.roboflow.com/errors/models-runtime/"
-                "#modelruntimeerror"
-            ),
         )
 
     def check(candidate: Preprocessor) -> CompatibilityResult:
@@ -307,10 +303,6 @@ def resolve_postprocessor_runtime_fallback(
                 "RF-DETR postprocess implementation cannot execute after a "
                 f"recoverable runtime failure: {runtime_compatibility.reason}. "
                 "Runtime failure fallback is disabled by the execution plan."
-            ),
-            help_url=(
-                "https://inference-models.roboflow.com/errors/models-runtime/"
-                "#modelruntimeerror"
             ),
         )
 
