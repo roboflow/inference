@@ -537,35 +537,48 @@ class RFDetrForObjectDetectionTRT(
             context=context,
             allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
-        selection = resolve_preprocessor_runtime_fallback(
-            registry=self._implementation_registry,
-            selection=selection,
-            request=request,
-            context=context,
-            allow_fallback=self._rfdetr_execution_plan.allow_runtime_failure_fallback,
-        )
+
+        def _as_model_runtime_error(
+            error: RecoverableStageExecutionError,
+        ) -> ModelRuntimeError:
+            message = str(error.args[0]) if error.args else str(error)
+
+            return ModelRuntimeError(message=message, help_url=error.help_url)
+
         try:
-            result = selection.implementation.preprocess(
-                request=request,
-                context=context,
-            )
-        except RecoverableStageExecutionError:
-            if not self._rfdetr_execution_plan.allow_runtime_failure_fallback:
-                raise
-            fallback_selection = resolve_preprocessor_runtime_fallback(
+            selection = resolve_preprocessor_runtime_fallback(
                 registry=self._implementation_registry,
                 selection=selection,
                 request=request,
                 context=context,
-                allow_fallback=True,
+                allow_fallback=(
+                    self._rfdetr_execution_plan.allow_runtime_failure_fallback
+                ),
             )
-            if fallback_selection.implementation is selection.implementation:
-                raise
-            selection = fallback_selection
-            result = selection.implementation.preprocess(
-                request=request,
-                context=context,
-            )
+            try:
+                result = selection.implementation.preprocess(
+                    request=request,
+                    context=context,
+                )
+            except RecoverableStageExecutionError:
+                if not self._rfdetr_execution_plan.allow_runtime_failure_fallback:
+                    raise
+                fallback_selection = resolve_preprocessor_runtime_fallback(
+                    registry=self._implementation_registry,
+                    selection=selection,
+                    request=request,
+                    context=context,
+                    allow_fallback=True,
+                )
+                if fallback_selection.implementation is selection.implementation:
+                    raise
+                selection = fallback_selection
+                result = selection.implementation.preprocess(
+                    request=request,
+                    context=context,
+                )
+        except RecoverableStageExecutionError as error:
+            raise _as_model_runtime_error(error) from error
         self._record_last_execution(
             stage="preprocessor",
             selection=selection.to_dict(),
