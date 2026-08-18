@@ -10,9 +10,8 @@ import torchvision.io
 from filelock import FileLock
 from PIL import Image
 
-ASSETS_DIR = os.environ.get(
-    "INFERENCE_MODELS_TEST_ASSETS_DIR",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "models", "assets")),
+ASSETS_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "models", "assets")
 )
 DOG_IMAGE_PATH = os.path.join(ASSETS_DIR, "dog.jpeg")
 DOG_IMAGE_URL = (
