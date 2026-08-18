@@ -354,6 +354,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             class_agnostic_nms=class_agnostic_nms,
@@ -369,7 +370,6 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=inference_images,

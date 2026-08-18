@@ -46,7 +46,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.
@@ -241,7 +241,9 @@ class ClipComparisonBlockV2(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         tasks = [

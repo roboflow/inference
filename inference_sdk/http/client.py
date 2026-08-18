@@ -1,6 +1,5 @@
 import warnings
 from contextlib import contextmanager
-from dataclasses import replace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -116,9 +115,9 @@ def _warn_about_default_api_key_transport_once() -> None:
         "(query parameter / request body). Sending it as the "
         "`Authorization: Bearer <api_key>` header is recommended and works "
         "with inference servers from release 1.4.2 onward. Opt in with "
-        "InferenceConfiguration(api_key_transport='header') or "
-        "client.use_header_auth(); use 'both' for a transition period safe "
-        "with every server version. Set api_key_transport='legacy' "
+        "InferenceConfiguration(api_key_transport='header'); use 'both' for "
+        "a transition period safe with every server version. Set "
+        "api_key_transport='legacy' "
         "explicitly to keep the current behaviour and silence this warning.",
         InferenceSDKGuidanceWarning,
     )
@@ -271,7 +270,7 @@ class InferenceHTTPClient:
         The channel used to send the API key (query/body vs
         `Authorization: Bearer` header) is controlled by the
         `api_key_transport` field of `InferenceConfiguration` - see
-        `configure()` / `use_configuration()` / `use_header_auth()`.
+        `configure()` / `use_configuration()`.
 
         Args:
             api_url (str): The base URL for the inference API.
@@ -359,39 +358,6 @@ class InferenceHTTPClient:
             InferenceHTTPClient: The client instance with updated configuration.
         """
         self.__inference_configuration = inference_configuration
-        return self
-
-    def select_api_key_transport(
-        self, api_key_transport: Union[str, ApiKeyTransport]
-    ) -> "InferenceHTTPClient":
-        """Select the channel used to send the API key to the server.
-
-        See `ApiKeyTransport`: "legacy" (query/body, silently), "both"
-        (legacy channels + `Authorization: Bearer` header - safe with every
-        server version), "header" (header only - requires an inference server
-        from release 1.4.2 onward).
-
-        Returns:
-            InferenceHTTPClient: The client instance with the transport selected.
-        """
-        self.__inference_configuration = replace(
-            self.__inference_configuration, api_key_transport=api_key_transport
-        )
-        return self
-
-    def use_header_auth(self) -> "InferenceHTTPClient":
-        """Send the API key ONLY in the `Authorization: Bearer <api_key>` header.
-
-        Fluent switch to `ApiKeyTransport.HEADER` - the key stops travelling in
-        URLs and request bodies. Requires an inference server with header-based
-        auth support; against an older server requests are keyless.
-
-        Returns:
-            InferenceHTTPClient: The client instance with header transport selected.
-        """
-        self.__inference_configuration = replace(
-            self.__inference_configuration, api_key_transport=ApiKeyTransport.HEADER
-        )
         return self
 
     def select_api_v0(self) -> "InferenceHTTPClient":

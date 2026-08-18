@@ -105,7 +105,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Run Segment Anything 3 (zero-shot, text-prompted) with per-class confidence
@@ -456,7 +456,9 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         http_prompts = _build_http_prompts(class_names, per_class_confidence)

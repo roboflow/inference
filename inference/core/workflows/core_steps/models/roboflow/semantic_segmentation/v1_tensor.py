@@ -315,12 +315,12 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=inference_images,

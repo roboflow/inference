@@ -60,7 +60,7 @@ from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     torch_mask_to_coco_rle,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # SAM2 mask-binarisation threshold in logit space, mirroring the numpy adapter's
 # MASK_THRESHOLD (inference/models/sam2/segment_anything2_inference_models.py): a pixel
@@ -328,7 +328,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

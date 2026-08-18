@@ -4965,27 +4965,6 @@ def test_list_loaded_models_in_both_mode_sends_key_in_query_and_header(
     )
 
 
-def test_use_header_auth_switches_client_into_header_transport(
-    requests_mock: Mocker,
-) -> None:
-    # given
-    api_url = "http://some.com"
-    requests_mock.get(
-        f"{api_url}/model/registry",
-        json={"models": []},
-    )
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-
-    # when
-    _ = http_client.use_header_auth().list_loaded_models()
-
-    # then
-    assert "api_key" not in requests_mock.request_history[0].url
-    assert (
-        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
-    )
-
-
 def test_load_model_in_header_mode_sends_key_only_in_header(
     requests_mock: Mocker,
 ) -> None:
@@ -5193,7 +5172,7 @@ def test_explicitly_selected_legacy_transport_does_not_warn(monkeypatch) -> None
     assert resolved is ApiKeyTransport.LEGACY
 
 
-def test_select_api_key_transport_is_fluent_and_applies(
+def test_transport_configured_via_configure_applies_on_the_wire(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -5202,7 +5181,9 @@ def test_select_api_key_transport_is_fluent_and_applies(
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = http_client.select_api_key_transport("header").list_loaded_models()
+    result = http_client.configure(
+        InferenceConfiguration(api_key_transport="header")
+    ).list_loaded_models()
 
     # then
     assert result == RegisteredModels(models=[])
@@ -5212,25 +5193,15 @@ def test_select_api_key_transport_is_fluent_and_applies(
     )
 
 
-def test_select_api_key_transport_rejects_invalid_value() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-
-    # when / then
-    with pytest.raises(InvalidParameterError):
-        http_client.select_api_key_transport("invalid")
-
-
 def test_configure_with_fresh_config_resets_api_key_transport(monkeypatch) -> None:
     # given - configure() swaps the WHOLE configuration object by design, so a
     # fresh config without an explicit transport resets the client back to the
-    # unset default. Callers combining select_api_key_transport() with
-    # configure() must select AFTER configuring (see the workflow blocks'
-    # run_remotely) - this test documents the footgun that PR #2810 review
-    # caught in 43 blocks.
+    # unset default. Callers must carry api_key_transport in every
+    # InferenceConfiguration they build (see the workflow blocks'
+    # run_remotely) - this test documents that semantics.
     monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_key_transport("header")
+    http_client.configure(InferenceConfiguration(api_key_transport="header"))
 
     # when
     http_client.configure(InferenceConfiguration(max_batch_size=2))

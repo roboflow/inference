@@ -89,7 +89,7 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # TODO(sam3-public-adapter): these per-class-threshold + cross-prompt-NMS helpers
 # are LOCAL COPIES of the private `inference.models.sam3.
@@ -406,7 +406,9 @@ class SegmentAnything3BlockV2(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         http_prompts = _build_http_prompts(class_names, per_class_confidence)

@@ -69,7 +69,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
 )
 from inference_models.models.base.object_detection import Detections
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
 
 # Fixed, non-empty `class_id -> name` fallback map. PP-OCR emits `class_id == 0` for
@@ -276,11 +276,11 @@ class PPOCRBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         non_empty_inference_images = [i.base64_image for i in images]
         responses = client.ocr_image(
             inference_input=non_empty_inference_images,

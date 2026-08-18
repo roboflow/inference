@@ -66,7 +66,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
@@ -216,7 +216,9 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
-        client.select_api_key_transport(WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

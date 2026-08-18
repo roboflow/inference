@@ -9,6 +9,7 @@ from inference_sdk.http.client import InferenceHTTPClient
 from inference_sdk.http.entities import (
     InferenceConfiguration,
     VisualisationResponseFormat,
+    ApiKeyTransport,
 )
 from inference_sdk.utils.environment import str2bool
 

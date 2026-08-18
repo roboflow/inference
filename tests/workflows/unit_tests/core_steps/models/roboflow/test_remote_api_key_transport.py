@@ -1,9 +1,9 @@
 """Regression tests for WORKFLOWS_REMOTE_API_KEY_TRANSPORT in remote execution.
 
-Guards against the transport selection being discarded by a later
-`client.configure(...)` call inside `run_remotely` (PR #2810 review finding):
-the client is real and the assertion is on the actual outgoing request, so a
-reordering that wipes the transport fails here.
+Guards against the transport being dropped from the InferenceConfiguration
+built inside `run_remotely` (PR #2810 review finding): the client is real and
+the assertion is on the actual outgoing request, so a refactor that loses
+`api_key_transport` from the block's config fails here.
 """
 
 from unittest.mock import MagicMock
@@ -38,8 +38,7 @@ def test_remote_object_detection_sends_bearer_header_under_default_transport(
     # given - default WORKFLOWS_REMOTE_API_KEY_TRANSPORT is "both": the legacy
     # v0 query param must stay AND the Authorization header must be attached.
     # The header assertion is the regression guard: it fails whenever the
-    # transport selection is applied before (and therefore wiped by) the
-    # client.configure(...) call inside run_remotely.
+    # block's InferenceConfiguration stops carrying api_key_transport.
     requests_mock.post(
         f"{HOSTED_DETECT_URL}/some/1",
         json={
