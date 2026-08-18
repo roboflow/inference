@@ -276,6 +276,93 @@ def resolve_postprocessor_for_request(
     return selection
 
 
+def resolve_postprocessor_runtime_fallback(
+    *,
+    registry: ImplementationRegistry,
+    selection: ImplementationSelection[Postprocessor],
+    request: PostprocessRequest,
+    context: ExecutionContext,
+    allow_fallback: bool,
+) -> ImplementationSelection[Postprocessor]:
+    """Resolve whether postprocessing must follow a runtime failure fallback.
+
+    Args:
+        registry: RF-DETR implementation registry.
+        selection: Request-compatible postprocessing selection.
+        request: Typed postprocessing request.
+        context: Runtime target and request context.
+        allow_fallback: Whether a recorded runtime failure may use the declared
+            fallback.
+
+    Returns:
+        Original selection when its runtime remains available, otherwise its
+        declared compatible fallback.
+
+    Raises:
+        RecoverableStageExecutionError: If execution failed and fallback is
+            unavailable or disabled.
+    """
+    implementation = selection.implementation
+    runtime_compatibility = _check_postprocessor_runtime_compatibility(implementation)
+    if runtime_compatibility.supported:
+        return selection
+    if not allow_fallback:
+        raise RecoverableStageExecutionError(
+            message=(
+                "RF-DETR postprocess implementation cannot execute after a "
+                f"recoverable runtime failure: {runtime_compatibility.reason}. "
+                "Runtime failure fallback is disabled by the execution plan."
+            ),
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
+
+    def check(candidate: Postprocessor) -> CompatibilityResult:
+        request_compatibility = candidate.check_request_compatibility(
+            request=request,
+            context=context,
+        )
+        candidate_runtime_compatibility = _check_postprocessor_runtime_compatibility(
+            candidate
+        )
+        if (
+            request_compatibility.supported
+            and candidate_runtime_compatibility.supported
+        ):
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            *request_compatibility.reasons,
+            *candidate_runtime_compatibility.reasons,
+        )
+
+    fallback_selection = _apply_declared_fallback(
+        registry=registry,
+        stage=OptimizationStage.POSTPROCESS,
+        implementation=implementation,
+        requested_id=selection.requested_id,
+        context=context,
+        check_compatibility=check,
+        allow_fallback=True,
+    )
+
+    return fallback_selection
+
+
+def _check_postprocessor_runtime_compatibility(
+    implementation: Postprocessor,
+) -> CompatibilityResult:
+    checker = getattr(implementation, "check_runtime_compatibility", None)
+    if checker is None:
+        return CompatibilityResult.compatible()
+
+    result = checker()
+
+    return result
+
+
 def _apply_declared_fallback(
     *,
     registry: ImplementationRegistry,

@@ -104,6 +104,16 @@ class TritonFusedPostprocessor:
 
         return result
 
+    def check_runtime_compatibility(self) -> CompatibilityResult:
+        """Check whether this implementation remains available after execution.
+
+        Returns:
+            Compatibility result carrying any recorded runtime failure reason.
+        """
+        result = self._runtime.check_runtime_compatibility()
+
+        return result
+
     def postprocess(
         self,
         request: PostprocessRequest,
