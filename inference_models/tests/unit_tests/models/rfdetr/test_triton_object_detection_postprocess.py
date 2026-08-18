@@ -140,6 +140,7 @@ def test_fused_postprocessor_direct_call_remains_strict_for_incompatibility() ->
 
 
 @pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(
     not torch.cuda.is_available() or not TRITON_AVAILABLE,
     reason="CUDA and Triton are required",

@@ -304,6 +304,7 @@ def test_float_request_reports_missing_triton(monkeypatch) -> None:
 
 
 @pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
 def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) -> None:
     runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
