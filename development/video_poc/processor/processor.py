@@ -135,6 +135,7 @@ from video_ingest import (
     build_cuda_producer,
     process_runtime_identity,
     producer_runtime_identity,
+    resolve_stream_buffer_settings,
     resolve_video_ingest_mode,
     verify_cuda_frame,
 )
@@ -1106,15 +1107,23 @@ class JobRun:
             and video_reference.startswith("rtsp")
             and INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE
         ):
+            stream_buffer_size, stream_buffer_consumption = (
+                resolve_stream_buffer_settings()
+            )
             # Hold buffering semantics constant across the decoder A/B. This
             # also opts PyAV into v1.4's demand-driven latest-frame behavior
             # instead of the legacy open-loop adaptive estimator.
             pipeline_kwargs.update(
                 {
                     "video_processing_mode": "freshest",
-                    "decoding_buffer_size": 1,
+                    "decoding_buffer_size": stream_buffer_size,
                     "source_buffer_filling_strategy": (
                         BufferFillingStrategy.DROP_OLDEST
+                    ),
+                    "source_buffer_consumption_strategy": (
+                        BufferConsumptionStrategy.LAZY
+                        if stream_buffer_consumption == "lazy"
+                        else BufferConsumptionStrategy.EAGER
                     ),
                 }
             )

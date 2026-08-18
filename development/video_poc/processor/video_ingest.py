@@ -13,6 +13,7 @@ import re
 PYAV_INGEST = "pyav"
 GSTREAMER_CUDA_INGEST = "gstreamer_cuda"
 SUPPORTED_INGEST_MODES = (PYAV_INGEST, GSTREAMER_CUDA_INGEST)
+SUPPORTED_STREAM_BUFFER_CONSUMPTION = ("eager", "lazy")
 _SAFE_STAT_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}\Z")
 
 
@@ -59,6 +60,29 @@ def resolve_video_ingest_mode(value=None, tensor_runtime_available=None):
     return mode
 
 
+def resolve_stream_buffer_settings(size=None, consumption=None):
+    raw_size = size or os.getenv("PROCESSOR_STREAM_DECODING_BUFFER_SIZE", "1")
+    try:
+        buffer_size = int(raw_size)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "PROCESSOR_STREAM_DECODING_BUFFER_SIZE must be an integer"
+        ) from error
+    if not 1 <= buffer_size <= 16:
+        raise ValueError(
+            "PROCESSOR_STREAM_DECODING_BUFFER_SIZE must be between 1 and 16"
+        )
+    strategy = (
+        consumption
+        or os.getenv("PROCESSOR_STREAM_BUFFER_CONSUMPTION", "eager")
+    ).strip().lower()
+    if strategy not in SUPPORTED_STREAM_BUFFER_CONSUMPTION:
+        raise ValueError(
+            "PROCESSOR_STREAM_BUFFER_CONSUMPTION must be eager or lazy"
+        )
+    return buffer_size, strategy
+
+
 def process_runtime_identity(mode, tensor_runtime_available=None):
     """Return bounded, non-secret ingest configuration for job telemetry."""
     tensor_enabled = _env_flag("ENABLE_TENSOR_DATA_REPRESENTATION")
@@ -71,6 +95,9 @@ def process_runtime_identity(mode, tensor_runtime_available=None):
             "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING"
         ),
     }
+    buffer_size, buffer_consumption = resolve_stream_buffer_settings()
+    runtime["streamDecodingBufferSize"] = buffer_size
+    runtime["streamBufferConsumption"] = buffer_consumption
     latency = os.getenv("ROBOFLOW_RTSP_LATENCY_MS")
     if latency:
         try:

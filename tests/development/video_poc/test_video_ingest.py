@@ -17,6 +17,7 @@ from video_ingest import (  # noqa: E402
     configure_source_fps_limiter_default,
     process_runtime_identity,
     producer_runtime_identity,
+    resolve_stream_buffer_settings,
     resolve_video_ingest_mode,
     verify_cuda_frame,
 )
@@ -85,6 +86,8 @@ def test_runtime_identity_is_bounded_and_contains_no_credentials(monkeypatch):
         "videoIngestMode": GSTREAMER_CUDA_INGEST,
         "tensorRepresentationEnabled": True,
         "sourceFpsLimiterAtProducer": True,
+        "streamDecodingBufferSize": 1,
+        "streamBufferConsumption": "eager",
         "rtspLatencyMs": 80,
     }
     assert "must-not-leak" not in str(runtime)
@@ -98,6 +101,29 @@ def test_legacy_runtime_identity_does_not_claim_tensor_support(monkeypatch):
 
     assert runtime["tensorRepresentationEnabled"] is False
     assert runtime["sourceFpsLimiterAtProducer"] is False
+
+
+def test_stream_buffer_settings_default_to_one_latest_frame(monkeypatch):
+    monkeypatch.delenv("PROCESSOR_STREAM_DECODING_BUFFER_SIZE", raising=False)
+    monkeypatch.delenv("PROCESSOR_STREAM_BUFFER_CONSUMPTION", raising=False)
+
+    assert resolve_stream_buffer_settings() == (1, "eager")
+
+
+def test_stream_buffer_settings_allow_bounded_fifo_burst_absorption(monkeypatch):
+    monkeypatch.setenv("PROCESSOR_STREAM_DECODING_BUFFER_SIZE", "2")
+    monkeypatch.setenv("PROCESSOR_STREAM_BUFFER_CONSUMPTION", "lazy")
+
+    assert resolve_stream_buffer_settings() == (2, "lazy")
+
+
+@pytest.mark.parametrize(
+    ("size", "consumption"),
+    (("0", "eager"), ("17", "eager"), ("two", "eager"), ("2", "fifo")),
+)
+def test_stream_buffer_settings_reject_invalid_values(size, consumption):
+    with pytest.raises(ValueError):
+        resolve_stream_buffer_settings(size=size, consumption=consumption)
 
 
 def test_cuda_factory_constructs_tensor_producer_and_reports_it(monkeypatch):
@@ -182,8 +208,9 @@ def test_processor_uses_fail_loud_cuda_and_freshest_frame_mode():
 
     assert "build_cuda_producer(" in source
     assert '"video_processing_mode": "freshest"' in source
-    assert '"decoding_buffer_size": 1' in source
+    assert '"decoding_buffer_size": stream_buffer_size' in source
     assert "BufferFillingStrategy.DROP_OLDEST" in source
+    assert "BufferConsumptionStrategy.LAZY" in source
     assert "discover_hardware_video_frame_producer" not in source
 
 
