@@ -13,29 +13,21 @@ from inference_models.configuration import (
 )
 from inference_models.errors import InvalidEnvVariable
 
-CONFIGURATION_ENVIRONMENT_KEYS = [
+REGION_ENVIRONMENT_KEYS = [
     "ROBOFLOW_REGION",
     "ROBOFLOW_ENVIRONMENT",
     "ROBOFLOW_API_HOST",
-    "MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
-    "MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
-    "MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS",
-    "MODEL_BLOB_CACHE_COOLDOWN_SECONDS",
-    "MODEL_BLOB_CACHE_FAILURE_THRESHOLD",
-    "MODEL_BLOB_CACHE_ADDRESSING_STYLE",
 ]
 
 
 @pytest.fixture
 def reload_configuration() -> Callable[..., object]:
     saved_environment = {
-        key: os.environ.pop(key)
-        for key in CONFIGURATION_ENVIRONMENT_KEYS
-        if key in os.environ
+        key: os.environ.pop(key) for key in REGION_ENVIRONMENT_KEYS if key in os.environ
     }
 
     def _reload(**environment: str) -> object:
-        for key in CONFIGURATION_ENVIRONMENT_KEYS:
+        for key in REGION_ENVIRONMENT_KEYS:
             os.environ.pop(key, None)
         os.environ.update(environment)
         return importlib.reload(inference_models.configuration)
@@ -43,7 +35,7 @@ def reload_configuration() -> Callable[..., object]:
     try:
         yield _reload
     finally:
-        for key in CONFIGURATION_ENVIRONMENT_KEYS:
+        for key in REGION_ENVIRONMENT_KEYS:
             os.environ.pop(key, None)
         os.environ.update(saved_environment)
         importlib.reload(inference_models.configuration)
@@ -94,51 +86,6 @@ def test_roboflow_api_host_defaults_to_us_production(reload_configuration) -> No
     configuration = reload_configuration()
     assert configuration.ROBOFLOW_REGION == "us"
     assert configuration.ROBOFLOW_API_HOST == "https://api.roboflow.com"
-
-
-def test_model_blob_cache_uses_fail_fast_default_timeouts(
-    reload_configuration,
-) -> None:
-    configuration = reload_configuration()
-
-    assert configuration.MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS == 1.0
-    assert configuration.MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS == 2.0
-    assert configuration.MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS == 30.0
-
-
-def test_model_blob_cache_timeout_defaults_can_be_overridden(
-    reload_configuration,
-) -> None:
-    configuration = reload_configuration(
-        MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS="4.5",
-        MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS="8.5",
-        MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS="45",
-    )
-
-    assert configuration.MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS == 4.5
-    assert configuration.MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS == 8.5
-    assert configuration.MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS == 45.0
-
-
-def test_model_blob_cache_leaves_range_checks_to_its_config(
-    reload_configuration,
-) -> None:
-    # Parsing lives here; `ModelBlobCacheConfig` rejects out-of-range values so
-    # a misconfigured optional cache cannot break the library import.
-    configuration = reload_configuration(
-        MODEL_BLOB_CACHE_COOLDOWN_SECONDS="0",
-        MODEL_BLOB_CACHE_FAILURE_THRESHOLD="0",
-        MODEL_BLOB_CACHE_ADDRESSING_STYLE="dns",
-    )
-
-    assert configuration.MODEL_BLOB_CACHE_COOLDOWN_SECONDS == 0.0
-    assert configuration.MODEL_BLOB_CACHE_FAILURE_THRESHOLD == 0
-    assert configuration.MODEL_BLOB_CACHE_ADDRESSING_STYLE == "dns"
-
-
-def test_model_blob_cache_still_rejects_unparsable_values(reload_configuration) -> None:
-    with pytest.raises(InvalidEnvVariable):
-        reload_configuration(MODEL_BLOB_CACHE_COOLDOWN_SECONDS="not-a-number")
 
 
 @pytest.mark.parametrize(

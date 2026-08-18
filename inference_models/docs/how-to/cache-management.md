@@ -137,7 +137,7 @@ Files without content hashes are stored directly in the model package directory.
 An optional S3-compatible shared cache can back these content-addressed blobs.
 See [Environment Variables](environment-variables.md#shared-s3-compatible-blob-cache)
 for installation, configuration, and fail-open behavior. Objects use the key
-`<MODEL_BLOB_CACHE_PREFIX>/<md5>`.
+`<INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX>/<md5>`.
 
 ### Cache Expiration
 

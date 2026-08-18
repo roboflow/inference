@@ -46,28 +46,42 @@ class ModelBlobCacheConfig:
     def __post_init__(self) -> None:
         if not self.bucket:
             raise ValueError(
-                "MODEL_BLOB_CACHE_BUCKET must be set when the cache is enabled"
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET must be set when the "
+                "cache is enabled"
             )
         if self.addressing_style not in _SUPPORTED_ADDRESSING_STYLES:
             raise ValueError(
-                "MODEL_BLOB_CACHE_ADDRESSING_STYLE must be one of: "
-                f"{', '.join(sorted(_SUPPORTED_ADDRESSING_STYLES))}"
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE must be one "
+                f"of: {', '.join(sorted(_SUPPORTED_ADDRESSING_STYLES))}"
             )
         if bool(self.access_key_id) != bool(self.secret_access_key):
             raise ValueError(
-                "MODEL_BLOB_CACHE_ACCESS_KEY_ID and "
-                "MODEL_BLOB_CACHE_SECRET_ACCESS_KEY must be set together"
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID and "
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY must be set "
+                "together"
             )
         if self.failure_threshold < 1:
-            raise ValueError("MODEL_BLOB_CACHE_FAILURE_THRESHOLD must be at least 1")
+            raise ValueError(
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD must be at "
+                "least 1"
+            )
         for name, value in (
-            ("MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS", self.connect_timeout_seconds),
-            ("MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS", self.read_timeout_seconds),
             (
-                "MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS",
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
+                self.connect_timeout_seconds,
+            ),
+            (
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
+                self.read_timeout_seconds,
+            ),
+            (
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS",
                 self.download_timeout_seconds,
             ),
-            ("MODEL_BLOB_CACHE_COOLDOWN_SECONDS", self.cooldown_seconds),
+            (
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS",
+                self.cooldown_seconds,
+            ),
         ):
             if value <= 0:
                 raise ValueError(f"{name} must be greater than zero")

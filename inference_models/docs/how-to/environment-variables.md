@@ -109,26 +109,26 @@ pip install 'inference-models[model-blob-cache]'
 Roboflow Inference server installations already include the required S3 SDK.
 
 ```bash
-export MODEL_BLOB_CACHE_ENABLED=true
-export MODEL_BLOB_CACHE_BUCKET="model-cache"
-export MODEL_BLOB_CACHE_PREFIX="model-blobs"             # default
-export MODEL_BLOB_CACHE_ENDPOINT_URL="https://objects.example.com"
-export MODEL_BLOB_CACHE_REGION="region-1"
-export MODEL_BLOB_CACHE_ADDRESSING_STYLE="path"           # auto|path|virtual
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_ENABLED=true
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET="model-cache"
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX="model-blobs"             # default
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL="https://objects.example.com"
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION="region-1"
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE="path"           # auto|path|virtual
 ```
 
 By default, the client uses the standard AWS credential chain. To provide
 cache-specific static credentials, set both
-`MODEL_BLOB_CACHE_ACCESS_KEY_ID` and `MODEL_BLOB_CACHE_SECRET_ACCESS_KEY`.
+`INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID` and `INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY`.
 
 Timeout and circuit-breaker settings have these defaults:
 
 ```bash
-export MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=1
-export MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=2
-export MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS=30
-export MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
-export MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=1
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=2
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_DOWNLOAD_TIMEOUT_SECONDS=30
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
 ```
 
 Values that cannot be parsed at all (a non-numeric timeout) raise
@@ -137,8 +137,8 @@ Everything else — an out-of-range timeout, an unsupported addressing style, a
 missing bucket, or only one half of the credential pair — disables the cache at
 build time instead, falling back to the original model source.
 
-After `MODEL_BLOB_CACHE_FAILURE_THRESHOLD` consecutive failures, the cache is
-skipped for `MODEL_BLOB_CACHE_COOLDOWN_SECONDS` before being retried.
+After `INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD` consecutive failures, the cache is
+skipped for `INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS` before being retried.
 
 ### Device Selection
 
