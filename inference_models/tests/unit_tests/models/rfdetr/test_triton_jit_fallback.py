@@ -150,12 +150,20 @@ def _reload_triton_jit_fallback_with_fake_errors(
 
     fake_runtime = ModuleType("triton.runtime")
     fake_runtime.errors = fake_errors
+    fake_compiler_errors = ModuleType("triton.compiler.errors")
+    fake_compiler = ModuleType("triton.compiler")
+    fake_compiler.errors = fake_compiler_errors
     fake_triton = ModuleType("triton")
     fake_triton.runtime = fake_runtime
+    fake_triton.compiler = fake_compiler
 
     monkeypatch.setitem(sys.modules, "triton", fake_triton)
     monkeypatch.setitem(sys.modules, "triton.runtime", fake_runtime)
     monkeypatch.setitem(sys.modules, "triton.runtime.errors", fake_errors)
+    monkeypatch.setitem(sys.modules, "triton.compiler", fake_compiler)
+    monkeypatch.setitem(
+        sys.modules, "triton.compiler.errors", fake_compiler_errors
+    )
 
     import inference_models.models.rfdetr.triton_jit_fallback as fallback_mod
 
