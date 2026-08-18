@@ -28,7 +28,7 @@ def _cache(storage, upload_executor=None, **overrides):
 
 
 def _write_download(content: bytes):
-    def download(_: str, target_path: str) -> bool:
+    def download(_: str, target_path: str, max_bytes=None) -> bool:
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -68,7 +68,7 @@ def test_verified_cache_constructs_normalized_key_and_verifies_download(
     content_hash = hashlib.md5(content).hexdigest().upper()
     storage = mock.MagicMock()
 
-    def download(blob_key: str, target_path: str) -> bool:
+    def download(blob_key: str, target_path: str, max_bytes=None) -> bool:
         assert blob_key == f"prefix/{content_hash.lower()}"
         with open(target_path, "wb") as target_file:
             target_file.write(content)
@@ -134,11 +134,22 @@ def test_verified_cache_rejects_corrupt_download_and_removes_target(tmp_path) ->
     assert not target_path.exists()
 
 
+def test_restore_passes_max_object_bytes_through_to_storage(tmp_path) -> None:
+    storage = mock.MagicMock()
+    storage.download.side_effect = _write_download(b"weights")
+    cache = _cache(storage, max_object_bytes=123)
+    content_hash = hashlib.md5(b"weights").hexdigest()
+
+    assert cache.restore(content_hash, str(tmp_path / "weights")) is True
+
+    assert storage.download.call_args.kwargs["max_bytes"] == 123
+
+
 def test_download_failure_discards_partial_download(tmp_path) -> None:
     storage = mock.MagicMock()
     target_path = tmp_path / "weights"
 
-    def download(_: str, path: str) -> bool:
+    def download(_: str, path: str, max_bytes=None) -> bool:
         with open(path, "wb") as target_file:
             target_file.write(b"partial")
         raise RuntimeError("connection reset")

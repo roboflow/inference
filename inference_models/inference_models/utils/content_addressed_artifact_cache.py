@@ -151,10 +151,12 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
         prefix: str,
         failure_threshold: int,
         cooldown_seconds: float,
+        max_object_bytes: Optional[int] = None,
         upload_executor: Optional[_BoundedDaemonExecutor] = None,
     ) -> None:
         self._storage = storage
         self._prefix = prefix
+        self._max_object_bytes = max_object_bytes
         self._upload_executor = upload_executor or _BoundedDaemonExecutor(
             _UPLOAD_WORKERS, _UPLOAD_QUEUE_SIZE, "artifact-cache-upload"
         )
@@ -166,7 +168,9 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
 
         The transfer runs on the calling thread; a stalled or hung read is
         bounded by the storage client's own connect/read timeouts, not by
-        this method. `target_path` is left absent unless it holds verified
+        this method, and a transfer past `max_object_bytes` is abandoned as a
+        plain failure rather than being trusted just because it kept
+        arriving. `target_path` is left absent unless it holds verified
         content, which lets the caller fall back to the origin freely.
         """
         if not content_hash or not _MD5_PATTERN.fullmatch(content_hash):
@@ -177,7 +181,11 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
             return False
         try:
             os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
-            found = self._storage.download(self._blob_key(content_hash), target_path)
+            found = self._storage.download(
+                self._blob_key(content_hash),
+                target_path,
+                max_bytes=self._max_object_bytes,
+            )
         except Exception as error:
             _discard_partial_download(target_path)
             self._read_circuit.record_failure(epoch)

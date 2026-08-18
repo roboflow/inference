@@ -176,6 +176,10 @@ MODEL_BLOB_CACHE_FAILURE_THRESHOLD = get_integer_from_env(
 MODEL_BLOB_CACHE_COOLDOWN_SECONDS = get_float_from_env(
     variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS", default=60.0
 )
+MODEL_BLOB_CACHE_MAX_OBJECT_BYTES = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES",
+    default=20 * 1024**3,  # 20 GiB
+)
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
     variable_name="ALLOW_NON_HTTPS_URL_INPUT", default=False

@@ -11,6 +11,7 @@ from inference_models.configuration import (
     MODEL_BLOB_CACHE_ENABLED,
     MODEL_BLOB_CACHE_ENDPOINT_URL,
     MODEL_BLOB_CACHE_FAILURE_THRESHOLD,
+    MODEL_BLOB_CACHE_MAX_OBJECT_BYTES,
     MODEL_BLOB_CACHE_PREFIX,
     MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS,
     MODEL_BLOB_CACHE_REGION,
@@ -40,6 +41,7 @@ class ModelBlobCacheConfig:
     read_timeout_seconds: float = 2.0
     failure_threshold: int = 3
     cooldown_seconds: float = 60.0
+    max_object_bytes: int = 20 * 1024**3  # 20 GiB
 
     def __post_init__(self) -> None:
         if not self.bucket:
@@ -61,6 +63,11 @@ class ModelBlobCacheConfig:
         if self.failure_threshold < 1:
             raise ValueError(
                 "INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD must be at "
+                "least 1"
+            )
+        if self.max_object_bytes < 1:
+            raise ValueError(
+                "INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES must be at "
                 "least 1"
             )
         for name, value in (
@@ -99,6 +106,7 @@ def _current_configuration() -> ModelBlobCacheConfig:
         read_timeout_seconds=MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS,
         failure_threshold=MODEL_BLOB_CACHE_FAILURE_THRESHOLD,
         cooldown_seconds=MODEL_BLOB_CACHE_COOLDOWN_SECONDS,
+        max_object_bytes=MODEL_BLOB_CACHE_MAX_OBJECT_BYTES,
     )
 
 
@@ -142,6 +150,7 @@ def _initialize_model_blob_cache() -> ContentAddressedArtifactCache:
             prefix=config.prefix,
             failure_threshold=config.failure_threshold,
             cooldown_seconds=config.cooldown_seconds,
+            max_object_bytes=config.max_object_bytes,
         )
     except Exception as error:
         LOGGER.warning(

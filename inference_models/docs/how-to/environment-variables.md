@@ -121,13 +121,18 @@ By default, the client uses the standard AWS credential chain. To provide
 cache-specific static credentials, set both
 `INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID` and `INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY`.
 
-Timeout and circuit-breaker settings have these defaults. `CONNECT_TIMEOUT_SECONDS`
-and `READ_TIMEOUT_SECONDS` bound the S3 client itself, so a stalled or hung
-connection is cut off there rather than by a separate whole-transfer timer:
+Timeout, size-cap, and circuit-breaker settings have these defaults.
+`CONNECT_TIMEOUT_SECONDS` and `READ_TIMEOUT_SECONDS` bound the S3 client
+itself, so a stalled or hung connection is cut off there rather than by a
+separate whole-transfer timer. `MAX_OBJECT_BYTES` is a sanity cap on a
+network-backed cache accepting arbitrary bytes under a caller-supplied key,
+independent of the per-file MD5 verification the cache performs once a
+download completes:
 
 ```bash
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=1
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=2
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES=21474836480  # 20 GiB, default
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
 ```
@@ -138,8 +143,23 @@ Everything else — an out-of-range timeout, an unsupported addressing style, a
 missing bucket, or only one half of the credential pair — disables the cache at
 build time instead, falling back to the original model source.
 
-After `INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD` consecutive failures, the cache is
-skipped for `INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS` before being retried.
+The failure count backing `INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD`
+leaks by one per success rather than resetting to zero, so it tracks overall
+failure pressure across concurrent calls rather than requiring an unbroken
+streak. Once it reaches the threshold, the cache is skipped for
+`INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS` before being retried.
+
+Give the bucket an `AbortIncompleteMultipartUpload` lifecycle rule. Cache
+writes are best-effort background work with no retry, so a network blip or a
+process restart mid-upload can leave parts of a multipart upload (objects
+above ~8 MiB) orphaned in the bucket - never completed, invisible to normal
+listings, but still billed:
+
+```bash
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket model-cache \
+  --lifecycle-configuration '{"Rules":[{"ID":"abort-orphaned-model-blob-uploads","Status":"Enabled","Filter":{"Prefix":"model-blobs/"},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
+```
 
 ### Device Selection
 

@@ -64,6 +64,7 @@ def test_factory_passes_complete_configuration(monkeypatch) -> None:
         MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=7.5,
         MODEL_BLOB_CACHE_FAILURE_THRESHOLD=4,
         MODEL_BLOB_CACHE_COOLDOWN_SECONDS=19.5,
+        MODEL_BLOB_CACHE_MAX_OBJECT_BYTES=123_456,
     )
 
     with mock.patch.object(
@@ -84,7 +85,9 @@ def test_factory_passes_complete_configuration(monkeypatch) -> None:
         read_timeout_seconds=7.5,
         failure_threshold=4,
         cooldown_seconds=19.5,
+        max_object_bytes=123_456,
     )
+    assert cache._max_object_bytes == 123_456
 
 
 def test_missing_bucket_returns_null_cache(monkeypatch) -> None:
@@ -170,6 +173,7 @@ def test_model_blob_cache_config_preserves_timeout_defaults() -> None:
 
     assert config.connect_timeout_seconds == 1.0
     assert config.read_timeout_seconds == 2.0
+    assert config.max_object_bytes == 20 * 1024**3
 
 
 @pytest.mark.parametrize(
@@ -183,6 +187,7 @@ def test_model_blob_cache_config_preserves_timeout_defaults() -> None:
         {"connect_timeout_seconds": 0},
         {"read_timeout_seconds": -1},
         {"cooldown_seconds": 0},
+        {"max_object_bytes": 0},
     ],
 )
 def test_model_blob_cache_config_rejects_invalid_values(overrides) -> None:
