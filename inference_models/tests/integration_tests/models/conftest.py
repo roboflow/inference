@@ -5,7 +5,10 @@ import pytest
 import requests
 from filelock import FileLock
 
-ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
+ASSETS_DIR = os.environ.get(
+    "INFERENCE_MODELS_TEST_ASSETS_DIR",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "assets")),
+)
 MODELS_DIR = os.path.join(ASSETS_DIR, "models")
 CLIP_RN50_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/torch/model.pt"
 CLIP_RN50_ONNX_VISUAL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/onnx/visual.onnx"
