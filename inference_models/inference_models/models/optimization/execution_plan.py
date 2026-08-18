@@ -8,7 +8,11 @@ from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
 
 @dataclass(frozen=True)
 class InferenceExecutionPlan:
-    """Independent implementation selections for an inference path."""
+    """Independent implementation selections and fallback policy.
+
+    Compatibility fallback is the global strictness gate. Runtime-failure fallback
+    applies only when both fallback fields are enabled.
+    """
 
     preprocessor_id: str = BASE_IMPLEMENTATION_ID
     buffer_strategy_id: str = BASE_IMPLEMENTATION_ID

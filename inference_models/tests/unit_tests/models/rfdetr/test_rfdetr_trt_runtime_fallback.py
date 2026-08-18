@@ -237,6 +237,7 @@ def _build_model(
     selected_stage: _RuntimeStage,
     base_stage: _RuntimeStage,
     allow_runtime_failure_fallback: bool,
+    allow_compatibility_fallback: bool,
 ):
     registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register(base_stage)
@@ -244,7 +245,7 @@ def _build_model(
     model = model_class.__new__(model_class)
     model._implementation_registry = registry
     model._rfdetr_execution_plan = SimpleNamespace(
-        allow_compatibility_fallback=True,
+        allow_compatibility_fallback=allow_compatibility_fallback,
         allow_runtime_failure_fallback=allow_runtime_failure_fallback,
     )
     model._scheduler = _Scheduler()
@@ -268,12 +269,14 @@ def _build_preprocess_model(
     candidate: _RuntimeStage,
     base: _RuntimeStage,
     allow_runtime_failure_fallback: bool = True,
+    allow_compatibility_fallback: bool = True,
 ):
     model = _build_model(
         model_class,
         selected_stage=candidate,
         base_stage=base,
         allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+        allow_compatibility_fallback=allow_compatibility_fallback,
     )
     model._preprocessor = candidate
     model._buffer_strategy = _BufferStrategy()
@@ -291,12 +294,14 @@ def _build_postprocess_model(
     candidate: _RuntimeStage,
     base: _RuntimeStage,
     allow_runtime_failure_fallback: bool = True,
+    allow_compatibility_fallback: bool = True,
 ):
     model = _build_model(
         model_class,
         selected_stage=candidate,
         base_stage=base,
         allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+        allow_compatibility_fallback=allow_compatibility_fallback,
     )
     model._postprocessor = candidate
     model._classes_re_mapping = None
@@ -366,15 +371,22 @@ def test_preprocess_retries_base_then_short_circuits_recorded_failure(
     assert first_selection["fallback_reason"] is not None
 
 
-def test_preprocess_strict_plan_exposes_model_runtime_error(
+@pytest.mark.parametrize(
+    ("allow_compatibility_fallback", "allow_runtime_failure_fallback"),
+    [(False, True), (True, False)],
+)
+def test_preprocess_disabled_fallback_exposes_model_runtime_error(
     rfdetr_trt_model_class,
+    allow_compatibility_fallback: bool,
+    allow_runtime_failure_fallback: bool,
 ) -> None:
     candidate, base = _preprocess_stages()
     model = _build_preprocess_model(
         rfdetr_trt_model_class,
         candidate=candidate,
         base=base,
-        allow_runtime_failure_fallback=False,
+        allow_compatibility_fallback=allow_compatibility_fallback,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
     )
 
     with pytest.raises(ModelRuntimeError) as error:
@@ -437,15 +449,22 @@ def test_postprocess_retries_base_then_short_circuits_recorded_failure(
     assert first_selection["fallback_reason"] is not None
 
 
-def test_postprocess_strict_plan_exposes_model_runtime_error(
+@pytest.mark.parametrize(
+    ("allow_compatibility_fallback", "allow_runtime_failure_fallback"),
+    [(False, True), (True, False)],
+)
+def test_postprocess_disabled_fallback_exposes_model_runtime_error(
     rfdetr_trt_model_class,
+    allow_compatibility_fallback: bool,
+    allow_runtime_failure_fallback: bool,
 ) -> None:
     candidate, base = _postprocess_stages()
     model = _build_postprocess_model(
         rfdetr_trt_model_class,
         candidate=candidate,
         base=base,
-        allow_runtime_failure_fallback=False,
+        allow_compatibility_fallback=allow_compatibility_fallback,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
     )
 
     with pytest.raises(ModelRuntimeError) as error:

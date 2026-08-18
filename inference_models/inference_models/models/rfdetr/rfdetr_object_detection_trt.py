@@ -549,15 +549,17 @@ class RFDetrForObjectDetectionTRT(
 
             return ModelRuntimeError(message=message, help_url=error.help_url)
 
+        allow_runtime_failure_fallback = (
+            self._rfdetr_execution_plan.allow_compatibility_fallback
+            and self._rfdetr_execution_plan.allow_runtime_failure_fallback
+        )
         try:
             selection = resolve_preprocessor_runtime_fallback(
                 registry=self._implementation_registry,
                 selection=selection,
                 request=request,
                 context=context,
-                allow_fallback=(
-                    self._rfdetr_execution_plan.allow_runtime_failure_fallback
-                ),
+                allow_fallback=allow_runtime_failure_fallback,
             )
             try:
                 result = selection.implementation.preprocess(
@@ -565,14 +567,14 @@ class RFDetrForObjectDetectionTRT(
                     context=context,
                 )
             except RecoverableStageExecutionError:
-                if not self._rfdetr_execution_plan.allow_runtime_failure_fallback:
+                if not allow_runtime_failure_fallback:
                     raise
                 fallback_selection = resolve_preprocessor_runtime_fallback(
                     registry=self._implementation_registry,
                     selection=selection,
                     request=request,
                     context=context,
-                    allow_fallback=True,
+                    allow_fallback=allow_runtime_failure_fallback,
                 )
                 if fallback_selection.implementation is selection.implementation:
                     raise
@@ -722,15 +724,17 @@ class RFDetrForObjectDetectionTRT(
 
                 return ModelRuntimeError(message=message, help_url=error.help_url)
 
+            allow_runtime_failure_fallback = (
+                self._rfdetr_execution_plan.allow_compatibility_fallback
+                and self._rfdetr_execution_plan.allow_runtime_failure_fallback
+            )
             try:
                 selection = resolve_postprocessor_runtime_fallback(
                     registry=self._implementation_registry,
                     selection=selection,
                     request=request,
                     context=context,
-                    allow_fallback=(
-                        self._rfdetr_execution_plan.allow_runtime_failure_fallback
-                    ),
+                    allow_fallback=allow_runtime_failure_fallback,
                 )
                 try:
                     results = selection.implementation.postprocess(
@@ -738,14 +742,14 @@ class RFDetrForObjectDetectionTRT(
                         context=context,
                     )
                 except RecoverableStageExecutionError:
-                    if not self._rfdetr_execution_plan.allow_runtime_failure_fallback:
+                    if not allow_runtime_failure_fallback:
                         raise
                     fallback_selection = resolve_postprocessor_runtime_fallback(
                         registry=self._implementation_registry,
                         selection=selection,
                         request=request,
                         context=context,
-                        allow_fallback=True,
+                        allow_fallback=allow_runtime_failure_fallback,
                     )
                     if fallback_selection.implementation is selection.implementation:
                         raise

@@ -215,7 +215,7 @@ def resolve_preprocessor_runtime_fallback(
         requested_id=selection.requested_id,
         context=context,
         check_compatibility=check,
-        allow_fallback=True,
+        allow_fallback=allow_fallback,
     )
 
     return fallback_selection
@@ -341,7 +341,7 @@ def resolve_postprocessor_runtime_fallback(
         requested_id=selection.requested_id,
         context=context,
         check_compatibility=check,
-        allow_fallback=True,
+        allow_fallback=allow_fallback,
     )
 
     return fallback_selection
