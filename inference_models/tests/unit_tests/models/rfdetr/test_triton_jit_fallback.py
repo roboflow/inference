@@ -108,6 +108,35 @@ def test_is_triton_jit_failure_detects_failed_compiler_subprocess() -> None:
     assert is_triton_jit_failure(exc)
 
 
+def test_is_triton_jit_failure_detects_failed_shell_compiler_subprocess() -> None:
+    exc = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=["/bin/sh", "-c", "/usr/bin/gcc-12 launcher.c"],
+    )
+
+    assert is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_detects_compiler_marker_in_subprocess_stderr() -> None:
+    exc = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=["python", "build_helper.py"],
+        stderr=b"ld: cannot find -lcuda",
+    )
+
+    assert is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_rejects_unrelated_subprocess_failure() -> None:
+    exc = subprocess.CalledProcessError(
+        returncode=22,
+        cmd=["curl", "--fail", "https://example.com"],
+        stderr=b"HTTP 404",
+    )
+
+    assert not is_triton_jit_failure(exc)
+
+
 def test_is_triton_jit_failure_detects_ptxas_message() -> None:
     exc = RuntimeError(
         "PTXAS error: Internal Triton PTX codegen error\n"
@@ -161,9 +190,7 @@ def _reload_triton_jit_fallback_with_fake_errors(
     monkeypatch.setitem(sys.modules, "triton.runtime", fake_runtime)
     monkeypatch.setitem(sys.modules, "triton.runtime.errors", fake_errors)
     monkeypatch.setitem(sys.modules, "triton.compiler", fake_compiler)
-    monkeypatch.setitem(
-        sys.modules, "triton.compiler.errors", fake_compiler_errors
-    )
+    monkeypatch.setitem(sys.modules, "triton.compiler.errors", fake_compiler_errors)
 
     import inference_models.models.rfdetr.triton_jit_fallback as fallback_mod
 

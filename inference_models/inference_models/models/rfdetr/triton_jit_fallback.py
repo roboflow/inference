@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
+import shlex
 import subprocess
 import warnings
-from typing import Optional, Set
+from typing import List, Optional, Sequence, Set
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,67 @@ _RUNTIME_ERROR_MARKERS = (
     "undefined reference",
     "out of resource",
 )
+_COMPILER_AND_LINKER_EXECUTABLES = frozenset(
+    {
+        "cc",
+        "gcc",
+        "g++",
+        "clang",
+        "clang++",
+        "nvcc",
+        "ptxas",
+        "ld",
+        "ld.lld",
+        "lld",
+    }
+)
+_VERSIONED_EXECUTABLE_PREFIXES = ("gcc-", "g++-", "clang-", "clang++-", "nvcc-")
+_SHELL_EXECUTABLES = frozenset({"bash", "dash", "sh", "zsh"})
+
+
+def _decode_subprocess_value(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return str(value)
+
+
+def _split_command(command: object) -> List[str]:
+    if isinstance(command, (str, bytes)):
+        try:
+            return shlex.split(_decode_subprocess_value(command))
+        except ValueError:
+            return [_decode_subprocess_value(command)]
+    if isinstance(command, Sequence):
+        return [_decode_subprocess_value(part) for part in command]
+    return [_decode_subprocess_value(command)]
+
+
+def _is_compiler_or_linker_executable(executable: str) -> bool:
+    name = os.path.basename(executable).lower()
+    return name in _COMPILER_AND_LINKER_EXECUTABLES or name.startswith(
+        _VERSIONED_EXECUTABLE_PREFIXES
+    )
+
+
+def _called_process_is_jit_related(error: subprocess.CalledProcessError) -> bool:
+    command = _split_command(error.cmd)
+    if command and _is_compiler_or_linker_executable(command[0]):
+        return True
+    if (
+        len(command) >= 3
+        and os.path.basename(command[0]).lower() in _SHELL_EXECUTABLES
+        and command[1] == "-c"
+    ):
+        nested_command = _split_command(command[2])
+        if nested_command and _is_compiler_or_linker_executable(nested_command[0]):
+            return True
+
+    process_details = " ".join(
+        _decode_subprocess_value(value)
+        for value in (error, error.output, error.stderr)
+        if value is not None
+    ).lower()
+    return any(marker in process_details for marker in _RUNTIME_ERROR_MARKERS)
 
 
 def is_triton_jit_failure(exc: BaseException) -> bool:
@@ -62,7 +125,9 @@ def is_triton_jit_failure(exc: BaseException) -> bool:
             current, _TRITON_JIT_EXCEPTION_TYPES
         ):
             return True
-        if isinstance(current, subprocess.CalledProcessError):
+        if isinstance(
+            current, subprocess.CalledProcessError
+        ) and _called_process_is_jit_related(current):
             return True
         message = str(current).lower()
         if any(marker in message for marker in _RUNTIME_ERROR_MARKERS):
