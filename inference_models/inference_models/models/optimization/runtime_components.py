@@ -15,6 +15,15 @@ _RUNTIME_COMPONENT_MODULES = {
 }
 
 
+def _runtime_component_is_available(module_name: str) -> bool:
+    try:
+        importlib.import_module(module_name)
+    except Exception:
+        return False
+
+    return True
+
+
 @lru_cache(maxsize=1)
 def get_runtime_components() -> Mapping[str, bool]:
     """Report whether known optional optimization packages can be imported.
@@ -27,12 +36,7 @@ def get_runtime_components() -> Mapping[str, bool]:
     """
     availability: Dict[str, bool] = {}
     for component, module_name in _RUNTIME_COMPONENT_MODULES.items():
-        try:
-            importlib.import_module(module_name)
-        except Exception:
-            availability[component] = False
-        else:
-            availability[component] = True
+        availability[component] = _runtime_component_is_available(module_name)
 
     components = immutable_mapping(availability)
 

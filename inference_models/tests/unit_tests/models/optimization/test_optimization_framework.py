@@ -16,6 +16,7 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
     ValidationRecord,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.optimization.runtime_components import (
@@ -64,6 +65,18 @@ def _context() -> ExecutionContext:
     )
 
 
+def test_recoverable_stage_error_is_not_a_public_model_runtime_error() -> None:
+    error = RecoverableStageExecutionError(
+        message="internal recoverable failure",
+        help_url="https://example.com/runtime-help",
+    )
+
+    assert isinstance(error, Exception)
+    assert not isinstance(error, ModelRuntimeError)
+    assert error.args == ("internal recoverable failure",)
+    assert error.help_url == "https://example.com/runtime-help"
+
+
 def test_inference_execution_plan_defaults_and_serializes() -> None:
     plan = InferenceExecutionPlan()
 
@@ -89,15 +102,14 @@ def test_compatibility_result_preserves_actionable_reasons() -> None:
 def test_runtime_component_discovery_centralizes_package_import_checks(
     monkeypatch,
 ) -> None:
-    def import_module(module_name: str):
-        if module_name == "triton":
-            raise ImportError("triton is unavailable")
-
-        return object()
+    def runtime_component_is_available(module_name: str) -> bool:
+        return module_name != "triton"
 
     get_runtime_components.cache_clear()
     monkeypatch.setattr(
-        runtime_components_module.importlib, "import_module", import_module
+        runtime_components_module,
+        "_runtime_component_is_available",
+        runtime_component_is_available,
     )
     try:
         components = get_runtime_components()

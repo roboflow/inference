@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 import pytest
 import torch
@@ -331,12 +333,30 @@ def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) 
             stream=stream,
         )
 
-    compatibility = runtime.check_runtime_compatibility()
+    compatibility = runtime.check_runtime_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8)
+    )
 
     assert not compatibility.supported
     assert "Failed to find C compiler" in compatibility.reason
     assert "Category: missing_compiler" in compatibility.reason
     assert "Suggested action:" in compatibility.reason
+
+
+def test_recorded_uint8_jit_failure_preserves_float_runtime_path() -> None:
+    runtime = UniversalFastPreprocessRuntime.__new__(UniversalFastPreprocessRuntime)
+    runtime._uint8_jit_failure_reason = "compiler unavailable"
+    runtime._uint8_jit_failure_lock = threading.Lock()
+
+    uint8_compatibility = runtime.check_runtime_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8)
+    )
+    float_compatibility = runtime.check_runtime_compatibility(
+        images=torch.zeros((1, 3, 8, 9), dtype=torch.float32)
+    )
+
+    assert not uint8_compatibility.supported
+    assert float_compatibility.supported
 
 
 def test_preprocessor_worker_limit_can_be_selected_from_environment(

@@ -168,8 +168,8 @@ class UniversalFastPreprocessRuntime:
         self._device = device
         self._uint8_state: Optional[_Uint8State] = None
         self._state_lock = threading.Lock()
-        self._jit_failure_reason: Optional[str] = None
-        self._jit_failure_lock = threading.Lock()
+        self._uint8_jit_failure_reason: Optional[str] = None
+        self._uint8_jit_failure_lock = threading.Lock()
 
     def preprocess(
         self,
@@ -306,9 +306,9 @@ class UniversalFastPreprocessRuntime:
                     f"Category: {diagnostic.category}. "
                     f"Suggested action: {diagnostic.guidance}"
                 )
-                with self._jit_failure_lock:
-                    if self._jit_failure_reason is None:
-                        self._jit_failure_reason = reason
+                with self._uint8_jit_failure_lock:
+                    if self._uint8_jit_failure_reason is None:
+                        self._uint8_jit_failure_reason = reason
                 raise RecoverableStageExecutionError(
                     message=(
                         "triton-universal-v1 failed to compile or launch its "
@@ -526,15 +526,21 @@ class UniversalFastPreprocessRuntime:
 
         return result
 
-    def check_runtime_compatibility(self) -> CompatibilityResult:
-        """Check whether a previous execution failure disabled this runtime.
+    def check_runtime_compatibility(self, *, images) -> CompatibilityResult:
+        """Check whether a previous uint8 JIT failure affects this request.
+
+        Args:
+            images: Single image or batch supplied to preprocessing.
 
         Returns:
-            Compatible until a recoverable execution failure occurs, then
-            incompatible with the original failure reason.
+            Floating requests remain compatible because they use torchvision.
+            Uint8 requests become incompatible after a recoverable JIT failure.
         """
-        with self._jit_failure_lock:
-            reason = self._jit_failure_reason
+        if not _request_uses_uint8_path(images):
+            return CompatibilityResult.compatible()
+
+        with self._uint8_jit_failure_lock:
+            reason = self._uint8_jit_failure_reason
 
         if reason is None:
             result = CompatibilityResult.compatible()
@@ -560,6 +566,15 @@ class UniversalFastPreprocessRuntime:
                 "#modelruntimeerror"
             ),
         )
+
+
+def _request_uses_uint8_path(images) -> bool:
+    for item in _raw_batch_items(images):
+        item_contract = _inspect_item_contract(item)
+        if not isinstance(item_contract, str) and item_contract[0] == "uint8":
+            return True
+
+    return False
 
 
 def _canonicalize_batch(images) -> _CanonicalBatch:

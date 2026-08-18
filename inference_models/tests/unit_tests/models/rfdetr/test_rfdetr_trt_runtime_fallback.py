@@ -145,7 +145,13 @@ class _RuntimeStage:
         del request, context
         return CompatibilityResult.compatible()
 
-    def check_runtime_compatibility(self) -> CompatibilityResult:
+    def check_runtime_compatibility(
+        self,
+        *,
+        request,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        del request, context
         if self._runtime_supported:
             return CompatibilityResult.compatible()
         return CompatibilityResult.incompatible(

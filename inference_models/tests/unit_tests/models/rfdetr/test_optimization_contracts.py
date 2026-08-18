@@ -117,7 +117,13 @@ class _Stage:
 
         return CompatibilityResult.incompatible("heterogeneous source dimensions")
 
-    def check_runtime_compatibility(self) -> CompatibilityResult:
+    def check_runtime_compatibility(
+        self,
+        *,
+        request,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        del request, context
         if self._runtime_supported:
             return CompatibilityResult.compatible()
 

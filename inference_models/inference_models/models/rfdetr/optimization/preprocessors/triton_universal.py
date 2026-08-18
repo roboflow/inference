@@ -131,13 +131,23 @@ class TritonUniversalPreprocessor:
 
         return result
 
-    def check_runtime_compatibility(self) -> CompatibilityResult:
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
         """Check whether this implementation remains available after execution.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
 
         Returns:
             Compatibility result carrying any recorded runtime failure reason.
         """
-        result = self._runtime.check_runtime_compatibility()
+        del context
+        result = self._runtime.check_runtime_compatibility(images=request.images)
 
         return result
 

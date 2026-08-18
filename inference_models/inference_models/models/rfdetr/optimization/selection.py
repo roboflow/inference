@@ -165,11 +165,14 @@ def resolve_preprocessor_runtime_fallback(
         declared compatible fallback.
 
     Raises:
-        ModelRuntimeError: If execution failed and fallback is unavailable or
-            disabled.
+        RecoverableStageExecutionError: If execution failed and fallback is
+            unavailable or disabled.
     """
     implementation = selection.implementation
-    runtime_compatibility = _check_preprocessor_runtime_compatibility(implementation)
+    runtime_compatibility = implementation.check_runtime_compatibility(
+        request=request,
+        context=context,
+    )
     if runtime_compatibility.supported:
         return selection
     if not allow_fallback:
@@ -190,8 +193,9 @@ def resolve_preprocessor_runtime_fallback(
             request=request,
             context=context,
         )
-        candidate_runtime_compatibility = _check_preprocessor_runtime_compatibility(
-            candidate
+        candidate_runtime_compatibility = candidate.check_runtime_compatibility(
+            request=request,
+            context=context,
         )
         if (
             request_compatibility.supported
@@ -215,18 +219,6 @@ def resolve_preprocessor_runtime_fallback(
     )
 
     return fallback_selection
-
-
-def _check_preprocessor_runtime_compatibility(
-    implementation: Preprocessor,
-) -> CompatibilityResult:
-    checker = getattr(implementation, "check_runtime_compatibility", None)
-    if checker is None:
-        return CompatibilityResult.compatible()
-
-    result = checker()
-
-    return result
 
 
 def resolve_postprocessor_for_request(
@@ -303,7 +295,10 @@ def resolve_postprocessor_runtime_fallback(
             unavailable or disabled.
     """
     implementation = selection.implementation
-    runtime_compatibility = _check_postprocessor_runtime_compatibility(implementation)
+    runtime_compatibility = implementation.check_runtime_compatibility(
+        request=request,
+        context=context,
+    )
     if runtime_compatibility.supported:
         return selection
     if not allow_fallback:
@@ -324,8 +319,9 @@ def resolve_postprocessor_runtime_fallback(
             request=request,
             context=context,
         )
-        candidate_runtime_compatibility = _check_postprocessor_runtime_compatibility(
-            candidate
+        candidate_runtime_compatibility = candidate.check_runtime_compatibility(
+            request=request,
+            context=context,
         )
         if (
             request_compatibility.supported
@@ -349,18 +345,6 @@ def resolve_postprocessor_runtime_fallback(
     )
 
     return fallback_selection
-
-
-def _check_postprocessor_runtime_compatibility(
-    implementation: Postprocessor,
-) -> CompatibilityResult:
-    checker = getattr(implementation, "check_runtime_compatibility", None)
-    if checker is None:
-        return CompatibilityResult.compatible()
-
-    result = checker()
-
-    return result
 
 
 def _apply_declared_fallback(
