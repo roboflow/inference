@@ -10,6 +10,15 @@
 ### Changed
 
 - The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+- Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
+  now use `class_id=-1` and `class_name="foreground"`. SAM3 Interactive previously
+  used `class_id=0`. If a downstream step filters for `class_id == 0`, update the
+  filter.
+
+### Fixed
+
+- NumPy and tensor visualization blocks now wrap negative class IDs during
+  palette lookup instead of failing.
 
 ---
 ## `0.35.2`
