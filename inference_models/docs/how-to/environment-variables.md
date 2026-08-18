@@ -137,17 +137,15 @@ export INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
 ```
 
-Values that cannot be parsed at all (a non-numeric timeout) raise
-`InvalidEnvVariable` on import, like every other variable on this page.
-Everything else — an out-of-range timeout, an unsupported addressing style, a
-missing bucket, or only one half of the credential pair — disables the cache at
-build time instead, falling back to the original model source.
+A typo'd number (letters where a timeout should be, for example) stops the
+library from starting. Anything else wrong — an out-of-range timeout, an
+unsupported addressing style, a missing bucket, or only one of the two
+credential values set — just leaves the cache disabled, and models keep
+downloading the normal way.
 
-The failure count backing `INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD`
-leaks by one per success rather than resetting to zero, so it tracks overall
-failure pressure across concurrent calls rather than requiring an unbroken
-streak. Once it reaches the threshold, the cache is skipped for
-`INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS` before being retried.
+After `INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD` failures, the cache
+stops trying the endpoint for `INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS`
+before trying it again.
 
 Give the bucket an `AbortIncompleteMultipartUpload` lifecycle rule. Cache
 writes are best-effort background work with no retry, so a network blip or a
