@@ -35,6 +35,7 @@ from inference_models.models.rfdetr.optimization.catalog import (
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     PreprocessRequest,
+    PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
@@ -50,10 +51,12 @@ from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
 from inference_models.models.rfdetr.optimization.selection import (
+    execute_preprocessor_for_request,
     resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
 )
+from inference_models.models.rfdetr.triton_jit_fallback import TritonJITFailure
 
 
 class _Stage:
@@ -81,6 +84,7 @@ class _Stage:
         self._compatible = compatible
         self._model_supported = model_supported
         self._request_supported = request_supported
+        self.preprocess_calls = 0
 
     def is_compatible(self, context: ExecutionContext) -> bool:
         return self._compatible
@@ -108,6 +112,20 @@ class _Stage:
             return CompatibilityResult.compatible()
 
         return CompatibilityResult.incompatible("heterogeneous source dimensions")
+
+    def preprocess(
+        self,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> PreprocessResult:
+        del request, context
+        self.preprocess_calls += 1
+
+        return PreprocessResult(
+            tensor=torch.zeros((1, 3, 8, 9)),
+            metadata=[],
+            implementation_id=self.metadata.implementation_id,
+        )
 
 
 def _context() -> ExecutionContext:
@@ -353,6 +371,57 @@ def test_request_incompatibility_resolves_declared_base_fallback() -> None:
     assert selection.implementation is base
     assert selection.effective_id == "base"
     assert selection.fallback_reason == "heterogeneous source dimensions"
+
+
+def test_runtime_jit_failure_re_resolves_declared_base_fallback(monkeypatch) -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base")
+    candidate = _Stage("candidate")
+    registry.register(base)
+    registry.register(candidate)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format=ColorMode.RGB,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+    candidate_calls = 0
+
+    def fail_jit_once(
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> PreprocessResult:
+        nonlocal candidate_calls
+        del request, context
+        candidate_calls += 1
+        candidate._request_supported = False
+        raise TritonJITFailure("Failed to find C compiler")
+
+    monkeypatch.setattr(candidate, "preprocess", fail_jit_once)
+
+    first_selection, first_result = execute_preprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+    second_selection, second_result = execute_preprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    assert first_selection.effective_id == "base"
+    assert second_selection.effective_id == "base"
+    assert first_selection.fallback_reason == "heterogeneous source dimensions"
+    assert first_result.implementation_id == "base"
+    assert second_result.implementation_id == "base"
+    assert candidate_calls == 1
+    assert base.preprocess_calls == 2
 
 
 def test_fallback_is_rejected_when_base_is_also_incompatible() -> None:

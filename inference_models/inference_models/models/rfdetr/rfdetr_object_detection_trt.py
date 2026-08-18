@@ -67,9 +67,9 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
 from inference_models.models.rfdetr.optimization.selection import (
+    execute_preprocessor_for_request,
     resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
-    resolve_preprocessor_for_request,
 )
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
@@ -526,7 +526,7 @@ class RFDetrForObjectDetectionTRT(
             pre_processing_overrides=pre_processing_overrides,
         )
         context = self._execution_stage_context(current_stream=stream)
-        selection = resolve_preprocessor_for_request(
+        selection, result = execute_preprocessor_for_request(
             registry=self._implementation_registry,
             implementation=self._preprocessor,
             request=request,
@@ -550,10 +550,6 @@ class RFDetrForObjectDetectionTRT(
                 selection.effective_id,
                 selection.fallback_reason,
             )
-        result = selection.implementation.preprocess(
-            request=request,
-            context=context,
-        )
         if selection.fallback_reason is not None:
             result = replace(result, fallback_reason=selection.fallback_reason)
         engine_input_buffer = self._buffer_strategy.prepare_engine_input(

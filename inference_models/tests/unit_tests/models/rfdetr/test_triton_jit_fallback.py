@@ -1,5 +1,6 @@
 import importlib
 import logging
+import subprocess
 import sys
 from types import ModuleType
 
@@ -89,6 +90,20 @@ def test_is_triton_jit_failure_detects_missing_c_compiler() -> None:
     exc = RuntimeError(
         "Failed to find C compiler. Please specify via CC environment variable."
     )
+
+    assert is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_detects_missing_shared_library() -> None:
+    exc = RuntimeError(
+        "libcuda.so: cannot open shared object file: No such file or directory"
+    )
+
+    assert is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_detects_failed_compiler_subprocess() -> None:
+    exc = subprocess.CalledProcessError(returncode=1, cmd=["cc", "launcher.c"])
 
     assert is_triton_jit_failure(exc)
 

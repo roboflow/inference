@@ -128,6 +128,12 @@ class TritonUniversalPreprocessor:
             images=request.images,
             pre_processing_overrides=request.pre_processing_overrides,
         )
+        jit_compatibility = self._runtime.check_jit_compatibility()
+        if not jit_compatibility.supported:
+            result = CompatibilityResult.incompatible(
+                *result.reasons,
+                *jit_compatibility.reasons,
+            )
 
         return result
 

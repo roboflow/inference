@@ -1,6 +1,6 @@
 """RF-DETR stage selection with declared compatibility fallback."""
 
-from typing import Callable, Optional, TypeVar, cast
+from typing import Callable, Optional, Tuple, TypeVar, cast
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -22,7 +22,9 @@ from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     Preprocessor,
     PreprocessRequest,
+    PreprocessResult,
 )
+from inference_models.models.rfdetr.triton_jit_fallback import TritonJITFailure
 
 StageT = TypeVar("StageT", bound=InferenceStage)
 
@@ -139,6 +141,65 @@ def resolve_preprocessor_for_request(
     )
 
     return selection
+
+
+def execute_preprocessor_for_request(
+    *,
+    registry: ImplementationRegistry,
+    implementation: Preprocessor,
+    request: PreprocessRequest,
+    context: ExecutionContext,
+    allow_fallback: bool,
+) -> Tuple[ImplementationSelection[Preprocessor], PreprocessResult]:
+    """Resolve and execute preprocessing with one runtime JIT fallback attempt.
+
+    A Triton implementation records its JIT failure before raising
+    ``TritonJITFailure``. Resolving the same request again therefore follows the
+    implementation's declared fallback without embedding fallback execution in
+    the Triton implementation itself.
+
+    Args:
+        registry: RF-DETR implementation registry.
+        implementation: Model-level selected preprocessor.
+        request: Typed preprocessing request.
+        context: Runtime target and request context.
+        allow_fallback: Whether declared compatibility fallback may be used.
+
+    Returns:
+        Effective implementation selection and its preprocessing result.
+
+    Raises:
+        ModelRuntimeError: If execution fails or fallback is unavailable or disabled.
+    """
+    selection = resolve_preprocessor_for_request(
+        registry=registry,
+        implementation=implementation,
+        request=request,
+        context=context,
+        allow_fallback=allow_fallback,
+    )
+    try:
+        result = selection.implementation.preprocess(
+            request=request,
+            context=context,
+        )
+    except TritonJITFailure:
+        fallback_selection = resolve_preprocessor_for_request(
+            registry=registry,
+            implementation=implementation,
+            request=request,
+            context=context,
+            allow_fallback=allow_fallback,
+        )
+        if fallback_selection.implementation is selection.implementation:
+            raise
+        selection = fallback_selection
+        result = selection.implementation.preprocess(
+            request=request,
+            context=context,
+        )
+
+    return selection, result
 
 
 def resolve_postprocessor_for_request(

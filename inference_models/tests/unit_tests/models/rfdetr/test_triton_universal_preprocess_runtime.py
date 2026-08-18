@@ -15,6 +15,7 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCrop,
     TrainingInputSize,
 )
+from inference_models.models.rfdetr import triton_universal_preprocess_runtime
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
 )
@@ -24,6 +25,7 @@ from inference_models.models.rfdetr.optimization.ids import (
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
+from inference_models.models.rfdetr.triton_jit_fallback import TritonJITFailure
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     UniversalFastPreprocessRuntime,
     _build_metadata_batch,
@@ -297,6 +299,38 @@ def test_float_request_reports_missing_triton(monkeypatch) -> None:
 
     assert not compatibility.supported
     assert "Triton is not installed" in compatibility.reasons
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) -> None:
+    runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
+    stream = torch.cuda.Stream(device=torch.device("cuda"))
+
+    def failing_kernel(*args, **kwargs):
+        raise RuntimeError(
+            "Failed to find C compiler. Please specify via CC environment variable."
+        )
+
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "triton_preprocess_rfdetr_stretch_two_pass_preallocated",
+        failing_kernel,
+    )
+
+    with pytest.raises(TritonJITFailure, match="Failed to find C compiler"):
+        runtime.preprocess(
+            images=np.zeros((8, 9, 3), dtype=np.uint8),
+            input_color_format=ColorMode.BGR,
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_network_input(),
+            pre_processing_overrides=None,
+            stream=stream,
+        )
+
+    compatibility = runtime.check_jit_compatibility()
+
+    assert not compatibility.supported
+    assert "Failed to find C compiler" in compatibility.reason
 
 
 def test_preprocessor_worker_limit_can_be_selected_from_environment(

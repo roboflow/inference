@@ -32,7 +32,10 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCropOffset,
 )
 from inference_models.models.optimization.contracts import CompatibilityResult
-from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
+from inference_models.models.rfdetr.triton_jit_fallback import (
+    TritonJITFailure,
+    is_triton_jit_failure,
+)
 from inference_models.models.rfdetr.triton_preprocess import (
     TRITON_AVAILABLE,
     ResampleTables,
@@ -167,6 +170,8 @@ class UniversalFastPreprocessRuntime:
         self._device = device
         self._uint8_state: Optional[_Uint8State] = None
         self._state_lock = threading.Lock()
+        self._jit_failure_reason: Optional[str] = None
+        self._jit_failure_lock = threading.Lock()
 
     def preprocess(
         self,
@@ -297,10 +302,14 @@ class UniversalFastPreprocessRuntime:
             except Exception as error:
                 if not is_triton_jit_failure(error):
                     raise
-                raise ModelRuntimeError(
+                reason = f"{type(error).__name__}: {error}"
+                with self._jit_failure_lock:
+                    if self._jit_failure_reason is None:
+                        self._jit_failure_reason = reason
+                raise TritonJITFailure(
                     message=(
                         "triton-universal-v1 failed to compile or launch its "
-                        f"preprocessing kernel: {type(error).__name__}: {error}"
+                        f"preprocessing kernel: {reason}"
                     ),
                     help_url=(
                         "https://inference-models.roboflow.com/errors/"
@@ -511,6 +520,25 @@ class UniversalFastPreprocessRuntime:
             result = CompatibilityResult.incompatible(*unsupported)
         else:
             result = CompatibilityResult.compatible()
+
+        return result
+
+    def check_jit_compatibility(self) -> CompatibilityResult:
+        """Check whether a previous Triton JIT attempt disabled this runtime.
+
+        Returns:
+            Compatible until a recognized JIT failure occurs, then incompatible
+            with the original failure reason.
+        """
+        with self._jit_failure_lock:
+            reason = self._jit_failure_reason
+
+        if reason is None:
+            result = CompatibilityResult.compatible()
+        else:
+            result = CompatibilityResult.incompatible(
+                f"Triton JIT failed during an earlier request: {reason}"
+            )
 
         return result
 

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import warnings
-from typing import Set
+from typing import Optional, Set
+
+from inference_models.errors import ModelRuntimeError
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +27,50 @@ try:
 except ImportError:  # pragma: no cover - optional at import time
     pass
 
+try:
+    from triton.compiler.errors import CompilationError as _CompilationError
+
+    _triton_jit_exception_types.append(_CompilationError)
+except ImportError:  # pragma: no cover - optional at import time
+    pass
+
 _TRITON_JIT_EXCEPTION_TYPES = tuple(_triton_jit_exception_types)
 
 _RUNTIME_ERROR_MARKERS = (
     "c compiler",
+    "cannot find -l",
+    "cannot open shared object file",
+    "libcuda.so",
+    "linker command failed",
     "ptxas",
     "ptx codegen",
     "triton ptx",
+    "undefined reference",
     "out of resource",
 )
 
 
+class TritonJITFailure(ModelRuntimeError):
+    """Report a recognized failure while compiling a Triton kernel."""
+
+
 def is_triton_jit_failure(exc: BaseException) -> bool:
     """Return whether ``exc`` looks like a Triton compile-time failure."""
-    if _TRITON_JIT_EXCEPTION_TYPES and isinstance(exc, _TRITON_JIT_EXCEPTION_TYPES):
-        return True
-    if isinstance(exc, RuntimeError):
-        message = str(exc).lower()
-        return any(marker in message for marker in _RUNTIME_ERROR_MARKERS)
+    current: Optional[BaseException] = exc
+    visited = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if _TRITON_JIT_EXCEPTION_TYPES and isinstance(
+            current, _TRITON_JIT_EXCEPTION_TYPES
+        ):
+            return True
+        if isinstance(current, subprocess.CalledProcessError):
+            return True
+        message = str(current).lower()
+        if any(marker in message for marker in _RUNTIME_ERROR_MARKERS):
+            return True
+        current = current.__cause__ or current.__context__
+
     return False
 
 
