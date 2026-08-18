@@ -96,10 +96,52 @@ def test_is_triton_jit_failure_detects_missing_c_compiler() -> None:
 
 def test_is_triton_jit_failure_detects_missing_shared_library() -> None:
     exc = RuntimeError(
-        "libcuda.so: cannot open shared object file: No such file or directory"
+        "Triton JIT failed because libcuda.so cannot open shared object file"
     )
 
     assert is_triton_jit_failure(exc)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        OSError(
+            "libnvrtc.so.12: cannot open shared object file: "
+            "No such file or directory"
+        ),
+        RuntimeError(
+            "libcuda.so: cannot open shared object file: No such file or directory"
+        ),
+    ],
+)
+def test_is_triton_jit_failure_rejects_unscoped_loader_error(
+    exc: BaseException,
+) -> None:
+    assert not is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_ignores_implicit_exception_context() -> None:
+    try:
+        try:
+            raise OSError(
+                "libcuda.so: cannot open shared object file: No such file or directory"
+            )
+        except OSError:
+            raise ValueError("invalid kernel configuration")
+    except ValueError as exc:
+        assert not is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_follows_explicit_exception_cause() -> None:
+    try:
+        try:
+            raise RuntimeError(
+                "Failed to find C compiler. Please specify via CC environment variable."
+            )
+        except RuntimeError as cause:
+            raise RuntimeError("Triton launch wrapper failed") from cause
+    except RuntimeError as exc:
+        assert is_triton_jit_failure(exc)
 
 
 def test_is_triton_jit_failure_detects_failed_compiler_subprocess() -> None:
@@ -121,10 +163,20 @@ def test_is_triton_jit_failure_detects_compiler_marker_in_subprocess_stderr() ->
     exc = subprocess.CalledProcessError(
         returncode=1,
         cmd=["python", "build_helper.py"],
-        stderr=b"ld: cannot find -lcuda",
+        stderr=b"Triton JIT linker failed: ld cannot find -lcuda",
     )
 
     assert is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_rejects_unscoped_loader_subprocess_error() -> None:
+    exc = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=["python", "load_plugin.py"],
+        stderr=b"libcuda.so: cannot open shared object file",
+    )
+
+    assert not is_triton_jit_failure(exc)
 
 
 def test_is_triton_jit_failure_rejects_unrelated_subprocess_failure() -> None:
@@ -364,3 +416,38 @@ def test_postproc_falls_back_on_triton_jit_failure(
 
     assert len(second_results) == 1
     assert calls["count"] == 1
+
+
+def test_legacy_postproc_propagates_unscoped_loader_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", True)
+    monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_JIT_DISABLED", False)
+
+    def failing_triton(**kwargs):
+        del kwargs
+        raise OSError(
+            "libnvrtc.so.12: cannot open shared object file: "
+            "No such file or directory"
+        )
+
+    monkeypatch.setattr(
+        rfdetr_common,
+        "post_process_single_instance_segmentation_result_to_rle_masks_triton",
+        failing_triton,
+    )
+    device = torch.device("cpu")
+    bboxes, logits, masks = _single_detection_inputs(device)
+
+    with pytest.raises(OSError, match="libnvrtc"):
+        rfdetr_common.post_process_instance_segmentation_results_to_rle_masks(
+            bboxes=bboxes.unsqueeze(0),
+            logits=logits.unsqueeze(0),
+            masks=masks.unsqueeze(0),
+            pre_processing_meta=[_metadata()],
+            threshold=0.4,
+            num_classes=2,
+            classes_re_mapping=_class_mapping(device),
+        )
+
+    assert rfdetr_common._TRITON_POSTPROC_JIT_DISABLED is False

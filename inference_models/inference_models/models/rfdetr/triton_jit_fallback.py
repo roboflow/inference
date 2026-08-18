@@ -40,18 +40,21 @@ _TRITON_JIT_EXCEPTION_TYPES = tuple(_triton_jit_exception_types)
 # CC, cc, GCC, Clang, bundled tooling, or version-specific compilation paths.
 # Finding an executable still does not prove that headers, linker libraries,
 # architecture support, or the actual specialized kernel compilation will work.
-_RUNTIME_ERROR_MARKERS = (
+_TRITON_RUNTIME_ERROR_MARKERS = (
     "c compiler",
+    "ptxas",
+    "ptx codegen",
+    "triton ptx",
+    "out of resource",
+)
+_GENERIC_TOOLCHAIN_ERROR_MARKERS = (
     "cannot find -l",
     "cannot open shared object file",
     "libcuda.so",
     "linker command failed",
-    "ptxas",
-    "ptx codegen",
-    "triton ptx",
     "undefined reference",
-    "out of resource",
 )
+_JIT_CONTEXT_MARKERS = ("triton", "jit", "compiler", "ptxas", "ptx codegen")
 _COMPILER_AND_LINKER_EXECUTABLES = frozenset(
     {
         "cc",
@@ -112,7 +115,18 @@ def _called_process_is_jit_related(error: subprocess.CalledProcessError) -> bool
         for value in (error, error.output, error.stderr)
         if value is not None
     ).lower()
-    return any(marker in process_details for marker in _RUNTIME_ERROR_MARKERS)
+    return _message_is_jit_related(process_details)
+
+
+def _message_is_jit_related(message: str) -> bool:
+    if any(marker in message for marker in _TRITON_RUNTIME_ERROR_MARKERS):
+        return True
+    has_generic_toolchain_error = any(
+        marker in message for marker in _GENERIC_TOOLCHAIN_ERROR_MARKERS
+    )
+    has_jit_context = any(marker in message for marker in _JIT_CONTEXT_MARKERS)
+
+    return has_generic_toolchain_error and has_jit_context
 
 
 def is_triton_jit_failure(exc: BaseException) -> bool:
@@ -130,9 +144,11 @@ def is_triton_jit_failure(exc: BaseException) -> bool:
         ) and _called_process_is_jit_related(current):
             return True
         message = str(current).lower()
-        if any(marker in message for marker in _RUNTIME_ERROR_MARKERS):
+        if isinstance(current, RuntimeError) and _message_is_jit_related(message):
             return True
-        current = current.__cause__ or current.__context__
+        # Explicit causes preserve intentional compiler-error wrapping. Implicit
+        # context may be an unrelated error that happened to be under handling.
+        current = current.__cause__
 
     return False
 
