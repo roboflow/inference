@@ -102,6 +102,9 @@ def producer_runtime_identity(producer):
     if producer is None:
         return {}
     runtime = {"videoProducer": type(producer).__name__[:128]}
+    appsink_sync = getattr(producer, "appsink_sync_enabled", None)
+    if isinstance(appsink_sync, bool):
+        runtime["gstreamerAppSinkSync"] = appsink_sync
     try:
         raw_stream = producer.source_stream_metadata
     except Exception:

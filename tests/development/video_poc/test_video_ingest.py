@@ -108,6 +108,7 @@ def test_cuda_factory_constructs_tensor_producer_and_reports_it(monkeypatch):
             self.video_reference = video_reference
             self.output_tensor = output_tensor
             self.tensor_bridge_stats = {"zeroCopyFrames": 7}
+            self.appsink_sync_enabled = True
 
     module_name = "inference.core.interfaces.camera.gstreamer_cuda_producer"
     monkeypatch.setitem(
@@ -123,6 +124,7 @@ def test_cuda_factory_constructs_tensor_producer_and_reports_it(monkeypatch):
     assert created == [producer]
     assert producer_runtime_identity(producer) == {
         "videoProducer": "FakeCudaProducer",
+        "gstreamerAppSinkSync": True,
         "tensorBridge": {"zeroCopyFrames": 7},
     }
 
