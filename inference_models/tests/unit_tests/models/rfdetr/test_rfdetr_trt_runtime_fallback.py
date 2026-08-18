@@ -115,6 +115,7 @@ class _RuntimeStage:
         *,
         stage: OptimizationStage,
         fail_recoverably: bool = False,
+        fail_nonrecoverably: bool = False,
         disable_after_failure: bool = True,
     ) -> None:
         fallback_id = (
@@ -136,6 +137,7 @@ class _RuntimeStage:
         )
         self._runtime_supported = True
         self._fail_recoverably = fail_recoverably
+        self._fail_nonrecoverably = fail_nonrecoverably
         self._disable_after_failure = disable_after_failure
         self.calls = 0
 
@@ -192,6 +194,10 @@ class _RuntimeStage:
         return [self.metadata.implementation_id]
 
     def _raise_if_configured(self) -> None:
+        if self._fail_nonrecoverably:
+            raise ValueError(
+                f"{self.metadata.implementation_id} non-recoverable failure"
+            )
         if not self._fail_recoverably:
             return
         if self._disable_after_failure:
@@ -422,6 +428,35 @@ def test_preprocess_same_implementation_guard_does_not_retry(
     assert base.calls == 0
 
 
+def test_preprocess_nonrecoverable_failure_records_attempted_selection(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate = _RuntimeStage(
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        stage=OptimizationStage.PREPROCESS,
+        fail_nonrecoverably=True,
+    )
+    base = _RuntimeStage(
+        RFDETR_PREPROCESSOR_BASE,
+        stage=OptimizationStage.PREPROCESS,
+    )
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    with pytest.raises(ValueError, match="non-recoverable failure"):
+        model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+
+    selection = model._thread_local_storage.last_preprocessor_selection
+    assert selection["requested_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert selection["effective_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert selection["fallback_reason"] is None
+    assert candidate.calls == 1
+    assert base.calls == 0
+
+
 def test_postprocess_retries_base_then_short_circuits_recorded_failure(
     rfdetr_trt_model_class,
 ) -> None:
@@ -485,5 +520,41 @@ def test_postprocess_disabled_fallback_exposes_model_runtime_error(
         )
 
     assert type(error.value) is ModelRuntimeError
+    assert candidate.calls == 1
+    assert base.calls == 0
+
+
+def test_postprocess_nonrecoverable_failure_records_attempted_selection(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate = _RuntimeStage(
+        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+        stage=OptimizationStage.POSTPROCESS,
+        fail_nonrecoverably=True,
+    )
+    base = _RuntimeStage(
+        RFDETR_POSTPROCESSOR_BASE,
+        stage=OptimizationStage.POSTPROCESS,
+    )
+    model = _build_postprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    with pytest.raises(ValueError, match="non-recoverable failure"):
+        model.post_process(
+            model_results=(
+                torch.zeros((1, 2, 4)),
+                torch.zeros((1, 2, 2)),
+            ),
+            pre_processing_meta=[],
+            confidence=0.5,
+        )
+
+    selection = model._thread_local_storage.last_postprocessor_selection
+    assert selection["requested_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    assert selection["effective_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    assert selection["fallback_reason"] is None
     assert candidate.calls == 1
     assert base.calls == 0

@@ -568,6 +568,10 @@ class RFDetrForObjectDetectionTRT(
                 context=context,
                 allow_fallback=allow_runtime_failure_fallback,
             )
+            self._record_last_execution(
+                stage="preprocessor",
+                selection=selection.to_dict(),
+            )
             try:
                 result = selection.implementation.preprocess(
                     request=request,
@@ -586,16 +590,16 @@ class RFDetrForObjectDetectionTRT(
                 if fallback_selection.implementation is selection.implementation:
                     raise
                 selection = fallback_selection
+                self._record_last_execution(
+                    stage="preprocessor",
+                    selection=selection.to_dict(),
+                )
                 result = selection.implementation.preprocess(
                     request=request,
                     context=context,
                 )
         except RecoverableStageExecutionError as error:
             raise _as_model_runtime_error(error) from error
-        self._record_last_execution(
-            stage="preprocessor",
-            selection=selection.to_dict(),
-        )
         if selection.used_fallback and self._request_fallback_warnings.claim(
             stage=OptimizationStage.PREPROCESS,
             requested_id=selection.requested_id,
@@ -736,6 +740,10 @@ class RFDetrForObjectDetectionTRT(
                     context=context,
                     allow_fallback=allow_runtime_failure_fallback,
                 )
+                self._record_last_execution(
+                    stage="postprocessor",
+                    selection=selection.to_dict(),
+                )
                 try:
                     results = selection.implementation.postprocess(
                         request=request,
@@ -754,16 +762,16 @@ class RFDetrForObjectDetectionTRT(
                     if fallback_selection.implementation is selection.implementation:
                         raise
                     selection = fallback_selection
+                    self._record_last_execution(
+                        stage="postprocessor",
+                        selection=selection.to_dict(),
+                    )
                     results = selection.implementation.postprocess(
                         request=request,
                         context=context,
                     )
             except RecoverableStageExecutionError as error:
                 raise _as_model_runtime_error(error) from error
-            self._record_last_execution(
-                stage="postprocessor",
-                selection=selection.to_dict(),
-            )
             if selection.used_fallback and self._request_fallback_warnings.claim(
                 stage=OptimizationStage.POSTPROCESS,
                 requested_id=selection.requested_id,
