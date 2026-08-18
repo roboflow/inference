@@ -90,6 +90,22 @@ def test_child_protocol_does_not_accept_payload_or_credentials():
         )
 
 
+def test_child_protocol_accepts_bounded_stream_runtime_configuration():
+    event = {
+        "version": PROTOCOL_VERSION,
+        "type": "started",
+        "state": "running",
+        "stats": {"frames": 0},
+        "runtime": {
+            "sourceFpsLimiterAtProducer": True,
+            "streamDecodingBufferSize": 2,
+            "streamBufferConsumption": "lazy",
+        },
+    }
+
+    assert bounded_child_event(event) == event
+
+
 def test_child_protocol_rejects_unbounded_event():
     with pytest.raises(ValueError, match="error is invalid"):
         bounded_child_event(
