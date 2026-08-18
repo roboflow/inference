@@ -324,6 +324,10 @@ from inference.core.utils.depth_encoding import (
     encode_normalized_depth_to_png16,
 )
 from inference.core.utils.notebooks import start_notebook
+from inference.core.utils.requests import (
+    api_key_safe_raise_for_status,
+    deduct_api_key_from_string,
+)
 from inference.core.utils.url_utils import wrap_url
 from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -3742,17 +3746,23 @@ class HttpInterface(BaseInterface):
                                 headers=headers,
                                 timeout=60,
                             )
-                            response.raise_for_status()
+                            api_key_safe_raise_for_status(response=response)
                             resp_json = response.json()
 
                             # The remote API returns the same structure as Sam3SegmentationResponse
                             return Sam3SegmentationResponse(**resp_json)
 
                         except Exception as e:
-                            logger.error(f"SAM3 remote request failed: {e}")
+                            # exception texts embed the request URL (and with it
+                            # the resolved api_key) - redact before logging and
+                            # keep the client-facing detail generic
+                            logger.error(
+                                "SAM3 remote request failed: %s",
+                                deduct_api_key_from_string(value=str(e)),
+                            )
                             raise HTTPException(
                                 status_code=500,
-                                detail=f"SAM3 remote request failed: {str(e)}",
+                                detail="SAM3 remote request failed.",
                             )
 
                     if inference_request.model_id.startswith("sam3/"):
@@ -3872,18 +3882,22 @@ class HttpInterface(BaseInterface):
                                 headers=headers,
                                 timeout=60,
                             )
-                            response.raise_for_status()
+                            api_key_safe_raise_for_status(response=response)
                             resp_json = response.json()
 
                             return Sam2SegmentationResponse(**resp_json)
 
                         except Exception as e:
+                            # exception texts embed the request URL (and with it
+                            # the resolved api_key) - redact before logging and
+                            # keep the client-facing detail generic
                             logger.error(
-                                f"SAM3 visual_segment remote request failed: {e}"
+                                "SAM3 visual_segment remote request failed: %s",
+                                deduct_api_key_from_string(value=str(e)),
                             )
                             raise HTTPException(
                                 status_code=500,
-                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
+                                detail="SAM3 visual_segment remote request failed.",
                             )
 
                     self.model_manager.add_model(
