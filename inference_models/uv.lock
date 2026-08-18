@@ -961,7 +961,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.35.2"
+version = "0.35.3"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
