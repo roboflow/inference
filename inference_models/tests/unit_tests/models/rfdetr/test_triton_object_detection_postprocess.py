@@ -184,6 +184,8 @@ def test_fused_postprocessor_records_recognized_runtime_failure(monkeypatch) -> 
 
     assert not compatibility.supported
     assert "Failed to find C compiler" in compatibility.reason
+    assert "Category: missing_compiler" in compatibility.reason
+    assert "Suggested action:" in compatibility.reason
 
 
 def test_metadata_values_match_reference_transform_parameters() -> None:

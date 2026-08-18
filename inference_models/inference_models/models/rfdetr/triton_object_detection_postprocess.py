@@ -25,7 +25,7 @@ from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.optimization.contracts import CompatibilityResult
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
-from inference_models.models.optimization.triton_jit import is_triton_jit_failure
+from inference_models.models.optimization.triton_jit import classify_triton_jit_failure
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 
 try:
@@ -291,9 +291,14 @@ class FusedObjectDetectionPostprocessor:
                     num_warps=8,
                 )
             except Exception as error:
-                if not is_triton_jit_failure(error):
+                diagnostic = classify_triton_jit_failure(error)
+                if diagnostic is None:
                     raise
-                reason = f"{type(error).__name__}: {error}"
+                reason = (
+                    f"{type(error).__name__}: {error}. "
+                    f"Category: {diagnostic.category}. "
+                    f"Suggested action: {diagnostic.guidance}"
+                )
                 with self._runtime_failure_lock:
                     if self._runtime_failure_reason is None:
                         self._runtime_failure_reason = reason

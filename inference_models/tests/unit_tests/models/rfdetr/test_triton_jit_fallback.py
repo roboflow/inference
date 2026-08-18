@@ -19,6 +19,7 @@ from inference_models.models.common.roboflow.model_packages import (
     TrainingInputSize,
 )
 from inference_models.models.optimization.triton_jit import (
+    classify_triton_jit_failure,
     is_triton_jit_failure,
     warn_triton_jit_fallback,
 )
@@ -100,6 +101,41 @@ def test_is_triton_jit_failure_detects_missing_shared_library() -> None:
     )
 
     assert is_triton_jit_failure(exc)
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_category"),
+    [
+        ("Failed to find C compiler", "missing_compiler"),
+        (
+            "Triton JIT failed because libcuda.so cannot open shared object file",
+            "missing_driver_library",
+        ),
+        (
+            "Triton JIT failed because libnvrtc.so cannot open shared object file",
+            "missing_runtime_library",
+        ),
+        (
+            "Triton JIT compiler failed with undefined reference to cuModuleLoadData",
+            "linker_failure",
+        ),
+        ("PTXAS fatal: target architecture is unsupported", "ptx_toolchain_mismatch"),
+        (
+            "out of resource: shared memory exceeds the hardware limit",
+            "kernel_resource_limit",
+        ),
+    ],
+)
+def test_classify_triton_jit_failure_provides_conservative_guidance(
+    message: str,
+    expected_category: str,
+) -> None:
+    diagnostic = classify_triton_jit_failure(RuntimeError(message))
+
+    assert diagnostic is not None
+    assert diagnostic.category == expected_category
+    assert diagnostic.guidance
+    assert "apt " not in diagnostic.guidance
 
 
 @pytest.mark.parametrize(
@@ -309,6 +345,8 @@ def test_warn_triton_jit_fallback_logs_once(caplog: pytest.LogCaptureFixture) ->
         if "RF-DETR Triton preprocess JIT compilation failed" in record.message
     ]
     assert len(matching_records) == 1
+    assert "Category: missing_compiler" in matching_records[0].message
+    assert "Suggested action:" in matching_records[0].message
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")

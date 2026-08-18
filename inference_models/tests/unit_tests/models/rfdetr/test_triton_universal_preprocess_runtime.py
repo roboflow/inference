@@ -335,6 +335,8 @@ def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) 
 
     assert not compatibility.supported
     assert "Failed to find C compiler" in compatibility.reason
+    assert "Category: missing_compiler" in compatibility.reason
+    assert "Suggested action:" in compatibility.reason
 
 
 def test_preprocessor_worker_limit_can_be_selected_from_environment(
