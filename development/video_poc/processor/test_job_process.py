@@ -100,6 +100,7 @@ def test_child_protocol_accepts_bounded_stream_runtime_configuration():
             "sourceFpsLimiterAtProducer": True,
             "streamDecodingBufferSize": 2,
             "streamBufferConsumption": "lazy",
+            "gstreamerAppSinkSync": False,
         },
     }
 

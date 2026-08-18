@@ -56,6 +56,7 @@ RUNTIME_KEYS = frozenset(
         "sourceFpsLimiterAtProducer",
         "streamDecodingBufferSize",
         "streamBufferConsumption",
+        "gstreamerAppSinkSync",
         "rtspLatencyMs",
         "videoProducer",
         "sourceStream",
