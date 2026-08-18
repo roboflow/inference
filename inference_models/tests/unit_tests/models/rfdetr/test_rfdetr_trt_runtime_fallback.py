@@ -43,7 +43,14 @@ _MISSING = object()
 
 @pytest.fixture
 def rfdetr_trt_model_class(monkeypatch):
-    """Import the TRT model with inert annotation-only dependency doubles."""
+    """Import the TRT model with inert annotation-only dependency doubles.
+
+    The model eagerly imports TensorRT and PyCUDA, while these orchestration tests
+    must run in the CPU-only unit-test job. Real dependency coverage lives in the
+    ``trt_extras`` integration suite. This fixture isolates only the import boundary
+    and restores both ``sys.modules`` entries and parent-package attributes so no
+    fake dependency or model module can leak into another test.
+    """
 
     class ILogger:
         class Severity:
