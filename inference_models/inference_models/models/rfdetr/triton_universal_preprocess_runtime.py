@@ -565,12 +565,22 @@ class UniversalFastPreprocessRuntime:
 
 
 def _request_uses_uint8_path(images) -> bool:
-    for item in _raw_batch_items(images):
-        item_contract = _inspect_item_contract(item)
-        if not isinstance(item_contract, str) and item_contract[0] == "uint8":
-            return True
+    # Request compatibility has already established homogeneous input semantics,
+    # so inspecting the first item is sufficient and avoids another O(batch) walk.
+    if isinstance(images, list):
+        if not images:
+            return False
+        item = images[0]
+    elif isinstance(images, (np.ndarray, torch.Tensor)) and images.ndim == 4:
+        if images.shape[0] == 0:
+            return False
+        item = images[0]
+    else:
+        item = images
 
-    return False
+    item_contract = _inspect_item_contract(item)
+
+    return not isinstance(item_contract, str) and item_contract[0] == "uint8"
 
 
 def _canonicalize_batch(images) -> _CanonicalBatch:

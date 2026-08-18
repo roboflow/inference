@@ -360,6 +360,34 @@ def test_recorded_uint8_jit_failure_preserves_float_runtime_path() -> None:
     assert float_compatibility.supported
 
 
+def test_runtime_compatibility_inspects_only_first_validated_batch_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = UniversalFastPreprocessRuntime.__new__(UniversalFastPreprocessRuntime)
+    runtime._uint8_jit_failure_reason = "compiler unavailable"
+    runtime._uint8_jit_failure_lock = threading.Lock()
+    inspect_calls = 0
+    original_inspect = triton_universal_preprocess_runtime._inspect_item_contract
+
+    def inspect_item_contract(item):
+        nonlocal inspect_calls
+        inspect_calls += 1
+        return original_inspect(item)
+
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "_inspect_item_contract",
+        inspect_item_contract,
+    )
+
+    compatibility = runtime.check_runtime_compatibility(
+        images=[np.zeros((8, 9, 3), dtype=np.uint8) for _ in range(8)]
+    )
+
+    assert not compatibility.supported
+    assert inspect_calls == 1
+
+
 def test_preprocessor_worker_limit_can_be_selected_from_environment(
     monkeypatch,
 ) -> None:
