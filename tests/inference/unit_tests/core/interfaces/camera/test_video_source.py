@@ -1,4 +1,5 @@
 import importlib
+import os
 import time
 from datetime import datetime
 from functools import partial
@@ -25,6 +26,10 @@ from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.rtsp_opencv_tls import (
+    OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR,
+)
+from inference.core.interfaces.camera.rtsp_tls import RTSP_TLS_VALIDATION_FLAGS_ENV_VAR
 from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
@@ -1917,3 +1922,26 @@ def test_consume_video_emits_poison_pill_on_consume_error() -> None:
     assert source._state is StreamState.ERROR
     with pytest.raises(EndOfStreamError):
         source.read_frame(timeout=0.0)
+
+
+def test_cv2_producer_sets_ffmpeg_tls_options_only_for_rtsps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+    seen = {}
+
+    def fake_video_capture(video, *args, **kwargs):
+        seen[video] = os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR)
+        return MagicMock()
+
+    # when
+    with patch.object(video_source.cv2, "VideoCapture", fake_video_capture):
+        CV2VideoFrameProducer("rtsps://camera.example/stream")
+        CV2VideoFrameProducer("rtsp://camera.example/stream")
+
+    # then - OpenCV reads the env var at capture-open time, so it must be set
+    # while VideoCapture runs for RTSPS, and left alone for plain RTSP
+    assert "tls_verify;1" in seen["rtsps://camera.example/stream"]
+    assert seen["rtsp://camera.example/stream"] is None
