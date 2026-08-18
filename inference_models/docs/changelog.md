@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- RF-DETR TensorRT execution plans now fall back from Triton preprocessing and
+  postprocessing to their reference implementations when recoverable JIT
+  compilation or launch failures occur. Runtime diagnostics include a categorized,
+  conservative suggested action, and strict execution plans continue to surface a
+  `ModelRuntimeError` instead of applying fallback.
+
 ---
 ## `0.35.2`
 
