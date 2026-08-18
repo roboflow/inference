@@ -26,11 +26,14 @@ def _non_empty_model_id(value: Any) -> Optional[str]:
 
 
 def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
+    """Resolve the usage ``resource_id``.
+
+    Caller-supplied ids (request / kwargs) beat ``self.model_id``. Some classes
+    store a de-aliased or rewritten id on the instance (vLLM Qwen, TrOCR);
+    promoting that field would split usage history at upgrade.
+    """
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
-        model_id = _non_empty_model_id(getattr(_self, "model_id", None))
-        if model_id:
-            return model_id
         dataset_id = getattr(_self, "dataset_id", None)
         if dataset_id:
             model_id = str(dataset_id)
@@ -51,6 +54,8 @@ def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
         model_id = _non_empty_model_id(getattr(request, "model_id", None))
         if model_id:
             return model_id
+    if "self" in func_kwargs:
+        return _non_empty_model_id(getattr(func_kwargs["self"], "model_id", None))
     return None
 
 

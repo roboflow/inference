@@ -278,6 +278,23 @@ def test_get_model_id_skips_null_kwargs_and_uses_instance():
     assert get_model_id_from_kwargs({"self": model, "model_id": None}) == "qwen25-vl-7b"
 
 
+def test_caller_model_id_beats_normalized_instance_id():
+    # vLLM Qwen stores the de-aliased id; TrOCR rewrites trocr/ → microsoft/.
+    qwen = SimpleNamespace(model_id="qwen-pretrains/2")
+    trocr = SimpleNamespace(model_id="microsoft/trocr-base-printed")
+
+    assert (
+        get_model_id_from_kwargs({"self": qwen, "model_id": "qwen3vl-2b-instruct"})
+        == "qwen3vl-2b-instruct"
+    )
+    assert (
+        get_model_id_from_kwargs(
+            {"self": trocr, "model_id": "trocr/trocr-base-printed"}
+        )
+        == "trocr/trocr-base-printed"
+    )
+
+
 def test_get_model_binds_recorded_variant_on_instance():
     from inference.core.models.base import Model
     from inference.models import utils as model_utils
