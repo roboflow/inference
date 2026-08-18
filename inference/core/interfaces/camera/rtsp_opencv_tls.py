@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import threading
 from contextlib import contextmanager
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, Optional, Union
 
 from inference.core.interfaces.camera.rtsp_tls import (
     GST_SSL_CA_CERTIFICATE_ENV_VAR,
@@ -67,7 +67,7 @@ def merge_opencv_ffmpeg_capture_options(
     return _format_opencv_ffmpeg_capture_options(merged)
 
 
-def build_opencv_ffmpeg_capture_options(video: str) -> Optional[str]:
+def build_opencv_ffmpeg_capture_options(video: Union[str, int]) -> Optional[str]:
     """Build OPENCV_FFMPEG_CAPTURE_OPTIONS for RTSPS sources."""
     if not is_rtsps_url(video):
         return None
@@ -80,12 +80,13 @@ def build_opencv_ffmpeg_capture_options(video: str) -> Optional[str]:
 
 
 @contextmanager
-def opencv_rtsps_tls_env(video: str) -> Iterator[None]:
+def opencv_rtsps_tls_env(video: Union[str, int]) -> Iterator[None]:
     """Hold OPENCV_FFMPEG_CAPTURE_OPTIONS for one VideoCapture open.
 
     OpenCV reads this env var at capture-open time. The lock spans set →
     VideoCapture open → restore so concurrent RTSPS sources cannot clobber each
-    other's TLS options.
+    other's TLS options. Isolation is RTSPS-vs-RTSPS only; concurrent non-RTSPS
+    opens do not take the lock and may briefly inherit these options.
     """
     options = build_opencv_ffmpeg_capture_options(video)
     if options is None:
