@@ -441,6 +441,19 @@ COPY examples/notebooks .
 
 WORKDIR /app
 COPY inference inference
+
+# TEMPORARY (INF-80): requirements.gpu.txt pins the PUBLISHED inference-models
+# release (currently 0.35.x), which predates the model blob cache feature -
+# `pip show inference_models` in this image still resolves to that PyPI
+# build, not this repo's inference_models/ source. Overwrite it in-place with
+# the local source so this image can actually exercise the cache in staging.
+# --no-deps: the full dependency tree (torch-cu124, onnxruntime-gpu, trt10,
+# etc.) is already installed via inference_models/uv.lock above; reinstalling
+# deps here would fight that pin. Drop this block once inference-models ships
+# the feature and requirements.gpu.txt is bumped to that release.
+COPY inference_models inference_models
+RUN python3 -m pip install --no-cache-dir --no-deps --force-reinstall ./inference_models
+
 COPY build_scripts build_scripts
 RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
