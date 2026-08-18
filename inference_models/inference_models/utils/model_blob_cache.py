@@ -103,6 +103,14 @@ def _current_configuration() -> ModelBlobCacheConfig:
 
 
 def _build_s3_client(config: ModelBlobCacheConfig) -> Any:
+    # connect_timeout/read_timeout are the only thing standing between a
+    # stalled or hung connection and the read/write circuit breakers in
+    # content_addressed_artifact_cache.py: blob_storage.py's download() has
+    # no timeout of its own and cannot interrupt a call already blocked
+    # inside body.read(), so a slow endpoint only ever fails - and only ever
+    # trips the circuit - by these socket-level timeouts firing. Widening
+    # them (or a client that ignores them) lets a hung transfer block model
+    # loading indefinitely instead of failing open.
     import boto3
     from botocore.config import Config
 
