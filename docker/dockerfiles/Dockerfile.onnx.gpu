@@ -297,6 +297,19 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
         dist/inference_sdk*.whl \
         "setuptools~=83.0.0"
 
+# TEMPORARY (INF-80): requirements.gpu.txt pins the PUBLISHED inference-models
+# release (currently 0.35.x), which predates the model blob cache feature -
+# the image otherwise resolves inference_models.utils.model_blob_cache to
+# nothing. Overwrite the PyPI copy in-place with this repo's inference_models/
+# source (already present here via the `COPY . .` above) so this image can
+# actually exercise the cache in staging. Must run here, before the pip
+# uninstall below strips pip from the image entirely - the runtime stage only
+# gets whatever's already installed under /usr/local/lib/python3.10 by then.
+# --no-deps: the full dependency tree (torch-cu124, onnxruntime-gpu, trt10,
+# etc.) is already installed via inference_models/uv.lock above; reinstalling
+# deps here would fight that pin. Drop this block once inference-models ships
+# the feature and requirements.gpu.txt is bumped to that release.
+RUN python3 -m pip install --no-cache-dir --no-deps --force-reinstall ./inference_models
 
 RUN find /usr/local/lib/python3.10 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
