@@ -23,6 +23,10 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detec
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.openai_detection_parsing import (
     convert_openai_detection_to_pixel_xyxy,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_detection_parsing import (
+    convert_spacexai_detection_to_pixel_xyxy,
+    extract_spacexai_detection_entries,
+)
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -158,7 +162,7 @@ This version (v2) includes the following enhancements over v1:
 
 ## Requirements
 
-This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports four model types: "openai", "google-gemini", "anthropic-claude", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, and Claude models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
+This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports five model types: "openai", "google-gemini", "anthropic-claude", "spacexai", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, Claude, and SpaceXAI models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
 """
 
 SHORT_DESCRIPTION = "Parses raw string into object-detection prediction."
@@ -226,22 +230,28 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "model_type": {
-                    "values": ["openai", "google-gemini", "anthropic-claude"],
+                    "values": [
+                        "openai",
+                        "google-gemini",
+                        "anthropic-claude",
+                        "spacexai",
+                    ],
                     "required": True,
                 },
             }
         },
     )
-    model_type: Literal["openai", "google-gemini", "anthropic-claude", "florence-2"] = (
-        Field(
-            description="Type of the VLM/LLM model that generated the prediction. Determines which parser is used to extract detection data from the JSON output. Supported models: 'openai' (GPT-4V), 'google-gemini' (Gemini Vision), 'anthropic-claude' (Claude Vision), 'florence-2' (Microsoft Florence-2). Each model type has different JSON output formats, so the correct model type must be specified for proper parsing.",
-            examples=[
-                ["openai"],
-                ["google-gemini"],
-                ["anthropic-claude"],
-                ["florence-2"],
-            ],
-        )
+    model_type: Literal[
+        "openai", "google-gemini", "anthropic-claude", "spacexai", "florence-2"
+    ] = Field(
+        description="Type of the VLM/LLM model that generated the prediction. Determines which parser is used to extract detection data from the JSON output. Supported models: 'openai' (GPT-4V), 'google-gemini' (Gemini Vision), 'anthropic-claude' (Claude Vision), 'spacexai' (Grok), 'florence-2' (Microsoft Florence-2). Each model type has different JSON output formats, so the correct model type must be specified for proper parsing.",
+        examples=[
+            ["openai"],
+            ["google-gemini"],
+            ["anthropic-claude"],
+            ["spacexai"],
+            ["florence-2"],
+        ],
     )
     task_type: Literal[tuple(SUPPORTED_TASKS)] = Field(
         description="Task type performed by the VLM/LLM model. Determines which parser and format handler is used. Supported task types: 'object-detection' (standard object detection), 'open-vocabulary-object-detection' (detect objects with custom classes), 'object-detection-and-caption' (detection with captions), 'phrase-grounded-object-detection' (ground phrases to detections), 'region-proposal' (propose regions of interest), 'ocr-with-text-detection' (OCR with text region detection). The task type must match what the VLM/LLM was asked to perform.",
@@ -699,6 +709,59 @@ def parse_openai_object_detection_response(
     )
 
 
+def parse_spacexai_object_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> Detections:
+    """Parse SpaceXAI Grok object-detection output into native detections.
+
+    Coordinates are percentages of image width/height (floats 0-100) in
+    ``[x_min, y_min, x_max, y_max]`` order. Tensor-native sibling of the
+    numpy ``spacexai_detection_parsing.parse_spacexai_object_detection_response``.
+    """
+    class_name2id = create_classes_index(classes=classes)
+    image_height, image_width = image._read_shape_without_materialization()
+    detections = extract_spacexai_detection_entries(parsed_data=parsed_data)
+    if len(detections) == 0:
+        return empty_native_detections(
+            image=image,
+            image_height=image_height,
+            image_width=image_width,
+            inference_id=inference_id,
+            class_names={idx: class_name for class_name, idx in class_name2id.items()},
+        )
+
+    xyxy, class_id, class_name, confidence = [], [], [], []
+    for detection in detections:
+        xyxy.append(
+            convert_spacexai_detection_to_pixel_xyxy(
+                detection=detection,
+                image_height=image_height,
+                image_width=image_width,
+            )
+        )
+        label = get_gemini_detection_class_name(detection=detection)
+        class_id.append(class_name2id.get(label, -1))
+        class_name.append(label)
+        confidence.append(scale_confidence(detection.get("confidence", 1.0)))
+
+    xyxy = np.array(xyxy).round(0) if len(xyxy) > 0 else np.empty((0, 4))
+    confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
+    class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
+    return native_detections_from_parsed(
+        image=image,
+        image_height=image_height,
+        image_width=image_width,
+        inference_id=inference_id,
+        xyxy=xyxy,
+        class_id=class_id,
+        class_name=class_name,
+        confidence=confidence,
+    )
+
+
 def parse_openai_detection_response(
     image: WorkflowImageData,
     parsed_data: Union[dict, list],
@@ -748,6 +811,7 @@ REGISTERED_PARSERS = {
     ("openai", "object-detection"): parse_openai_detection_response,
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
+    ("spacexai", "object-detection"): parse_spacexai_object_detection_response,
     # Florence 2
     ("florence-2", "object-detection"): partial(
         parse_florence2_object_detection_response, florence_task_type="<OD>"

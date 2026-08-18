@@ -77,6 +77,15 @@ class VideoSourceStub:
         self._current_round += 1
         self._emissions_in_current_round = 0
 
+    def pause(self) -> None:
+        self._calls.append("pause")
+
+    def mute(self) -> None:
+        self._calls.append("mute")
+
+    def resume(self) -> None:
+        self._calls.append("resume")
+
     @lock_state_transition
     def terminate(
         self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
@@ -224,6 +233,65 @@ def test_inference_pipeline_close_calls_handler_close_hook() -> None:
     pipeline._close_inference_handler()
 
     assert handler.close_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("method_name", "expected_call"),
+    [
+        ("pause_stream", "pause"),
+        ("mute_stream", "mute"),
+        ("resume_stream", "resume"),
+    ],
+)
+def test_stream_control_applies_to_all_sources(
+    method_name: str, expected_call: str
+) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)()
+
+    assert first_source._calls == [expected_call]
+    assert second_source._calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "expected_call"),
+    [
+        ("pause_stream", "pause"),
+        ("mute_stream", "mute"),
+        ("resume_stream", "resume"),
+    ],
+)
+def test_stream_control_applies_to_matching_source(
+    method_name: str, expected_call: str
+) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)(source_id=1)
+
+    assert first_source._calls == []
+    assert second_source._calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    "method_name", ["pause_stream", "mute_stream", "resume_stream"]
+)
+def test_stream_control_ignores_unknown_source(method_name: str) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)(source_id=2)
+
+    assert first_source._calls == []
+    assert second_source._calls == []
 
 
 @pytest.mark.timeout(90)

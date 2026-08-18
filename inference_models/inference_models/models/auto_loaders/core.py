@@ -2496,8 +2496,12 @@ def _verified_auto_cache_package_dir(
             if cache_entry.recommended_parameters is not None
             else None
         )
-        or package_config.runtime_compatibility_hash
-        != _runtime_compatibility_hash(runtime_x_ray=x_ray_runtime_environment())
+        # The manifest's runtime_compatibility_hash identifies the machine
+        # that first materialized the package, not this one, so it is not
+        # compared here. Runtime applicability of the entry is already
+        # guaranteed by its lookup key: auto_negotiation_hash embeds the
+        # current runtime-compatibility content, and the entry was only
+        # written after a successful warm load under that exact runtime.
     ):
         LOGGER.warning(
             "Ignoring invalid auto-load cache entry because its resolution "
@@ -3506,6 +3510,13 @@ def attempt_loading_matching_model_packages(
     )
 
 
+# Manifest fields describing the runtime environment rather than the package
+# identity. A package materialized on one machine must remain loadable on
+# another (e.g. model caches shared between different GPU types), so these
+# fields must not participate in the cache-mutation guard below.
+MUTATION_GUARD_ENVIRONMENT_DEPENDENT_FIELDS = {"runtime_compatibility_hash"}
+
+
 def _validate_existing_cache_package_attribution(
     package_dir: str,
     cache_model_id: str,
@@ -3596,6 +3607,7 @@ def _validate_existing_cache_package_attribution(
         or any(
             content.get(field_name) != expected_value
             for field_name, expected_value in expected_manifest_fields.items()
+            if field_name not in MUTATION_GUARD_ENVIRONMENT_DEPENDENT_FIELDS
         )
         or _artifact_declarations_from_identities(
             identities=existing_artifact_identities
@@ -4271,6 +4283,7 @@ def dump_model_config_for_offline_use(
                 content.get(field_name) != field_value
                 for field_name, field_value in published_fields.items()
                 if field_name != "offline_compatibility_hash"
+                and field_name not in MUTATION_GUARD_ENVIRONMENT_DEPENDENT_FIELDS
             ):
                 raise CorruptedModelPackageError(
                     message=(
@@ -4287,6 +4300,13 @@ def dump_model_config_for_offline_use(
             # auto-resolution entry.
             published_fields["offline_compatibility_hash"] = (
                 existing_offline_compatibility_hash
+            )
+            # Likewise, the runtime compatibility hash describes the machine
+            # that first materialized the package, not the package itself.
+            # Keep the original manifest stable when another machine (e.g. a
+            # different GPU type sharing the model cache) republishes it.
+            published_fields["runtime_compatibility_hash"] = content.get(
+                "runtime_compatibility_hash"
             )
             # Every other current-manifest field was just proven identical.
             # Do not replace the file merely to publish another request alias:
