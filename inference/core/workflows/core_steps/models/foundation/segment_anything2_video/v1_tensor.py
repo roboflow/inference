@@ -19,8 +19,9 @@ WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION env variable — NOT a manifest field,
 so the manifest stays identical to the numpy sibling; GCP_SERVERLESS forces
 "rle"). The layout-agnostic session/state helpers
 (VideoSessionBookkeeping, decide_prompt_vs_track, build_obj_id_metadata_from_boxes,
-BoxPromptMetadata) are reused verbatim. The tensor-native prompt extraction and
-prediction assembly helpers are shared with the SAM3 video block.
+BoxPromptMetadata) are shared with the NumPy sibling. Tensor-native prompt
+extraction and prediction assembly live in
+``segment_anything_common.streaming_video_tensor``.
 """
 
 from typing import Dict, List, Literal, Optional, Type, Union
@@ -32,12 +33,12 @@ from inference.core.env import GCP_SERVERLESS, WORKFLOWS_SAM_VIDEO_MASK_REPRESEN
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     decide_prompt_vs_track,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common_tensor import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor import (
     extract_box_prompts_tensor,
     masks_to_instance_detections,
 )

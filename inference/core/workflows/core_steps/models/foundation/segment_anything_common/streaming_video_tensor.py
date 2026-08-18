@@ -1,4 +1,4 @@
-"""Tensor-native helpers shared by streaming video tracker blocks."""
+"""Tensor-native adapters shared by SAM2/SAM3 streaming video blocks."""
 
 import uuid
 from typing import Dict, List, Tuple
@@ -11,11 +11,12 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
     split_key_point_prediction,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     BoxPromptMetadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
     TRACKER_ID_KEY,
 )
@@ -27,16 +28,20 @@ from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 PREDICTION_TYPE = "instance-segmentation"
 
 
+def _resolve_prompt_class_name(detections, index: int, bbox_metadata: dict) -> str:
+    """Resolve a per-box class name before the image-level class-name map."""
+    override = bbox_metadata.get(CLASS_NAME_KEY)
+    if override is not None:
+        return str(override)
+    class_names = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+    class_id = int(detections.class_id[index])
+    return str(class_names.get(class_id, "foreground"))
+
+
 def extract_box_prompts_tensor(
     boxes_for_image,
 ) -> Tuple[List[Tuple[float, float, float, float]], List[BoxPromptMetadata]]:
-    """Flatten tensor-native predictions into boxes and prompt metadata.
-
-    ``boxes_for_image`` can contain object detections, instance-segmentation
-    detections, or a keypoint prediction with bounding boxes. A keypoint
-    prediction without bounding boxes raises an error. Missing or empty input
-    returns two empty lists.
-    """
+    """Convert tensor-native detections into prompts and metadata."""
     if boxes_for_image is None:
         return [], []
     _key_points, detections = split_key_point_prediction(boxes_for_image)
@@ -58,7 +63,11 @@ def extract_box_prompts_tensor(
         metadata.append(
             BoxPromptMetadata(
                 class_id=int(detections.class_id[index]),
-                class_name=str(bbox_metadata.get(CLASS_NAME_KEY, "foreground")),
+                class_name=_resolve_prompt_class_name(
+                    detections=detections,
+                    index=index,
+                    bbox_metadata=bbox_metadata,
+                ),
                 confidence=(
                     float(detections.confidence[index])
                     if detections.confidence is not None
@@ -77,13 +86,10 @@ def masks_to_instance_detections(
     obj_id_metadata: Dict[int, BoxPromptMetadata],
     threshold: float,
     mask_representation: str,
+    fallback_class_id: int = 0,
+    fallback_class_name: str = "foreground",
 ) -> InstanceDetections:
-    """Build tensor-native instance-segmentation predictions for one frame.
-
-    The output keeps one detection per SAM object and stores its tracker ID in
-    ``bboxes_metadata``. The function drops empty masks and prompts below the
-    confidence threshold.
-    """
+    """Convert tracked masks into tensor-native instance detections."""
     height, width = image._read_shape_without_materialization()
     xyxy: List[List[float]] = []
     confidences: List[float] = []
@@ -100,8 +106,12 @@ def masks_to_instance_detections(
         ys, xs = np.where(mask)
         if xs.size == 0:
             continue
-        class_id = int(metadata.class_id) if metadata is not None else 0
-        class_name = metadata.class_name if metadata is not None else "foreground"
+        class_id = (
+            int(metadata.class_id) if metadata is not None else fallback_class_id
+        )
+        class_name = (
+            metadata.class_name if metadata is not None else fallback_class_name
+        )
         xyxy.append(
             [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
         )

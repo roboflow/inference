@@ -23,10 +23,8 @@ sibling. Only image and prediction representations differ:
   prompt's index in ``class_names``, exactly like the NumPy sibling), which
   replaces ``attach_prediction_type_info_to_sv_detections_batch`` and
   ``attach_parents_coordinates_to_batch_of_sv_detections``.
-- Objects whose id maps to no registered prompt keep the numpy fallback:
-  ``class_id=0`` with per-box class name ``"foreground"`` (the per-box name
-  wins at serialization, so output parity holds even on collision with
-  ``class_names[0]``).
+- In visual mode, objects whose ID maps to no registered prompt use the point-
+  prompt fallback: ``class_id=-1`` and class name ``"foreground"``.
 """
 
 import uuid
@@ -48,16 +46,20 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     SAM3_CONCEPT_VIDEO_MODEL_ID,
     SAM3_VISUAL_VIDEO_MODEL_ID,
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_visual_prompts,
     decide_prompt_vs_track,
     normalise_class_names,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common_tensor import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor import (
     extract_box_prompts_tensor,
     masks_to_instance_detections,
 )
@@ -271,7 +273,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[SAM3_CONCEPT_VIDEO_MODEL_ID],
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["concept"]}}},
     )
-    pvs_model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
+    visual_model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default=SAM3_VISUAL_VIDEO_MODEL_ID,
         title="Model Id",
         description="Streaming SAM3 model ID for visual tracking.",
@@ -415,7 +417,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         model_id: str,
         threshold: float,
         tracking_mode: TrackingMode = "concept",
-        pvs_model_id: str = SAM3_VISUAL_VIDEO_MODEL_ID,
+        visual_model_id: str = SAM3_VISUAL_VIDEO_MODEL_ID,
         points: Optional[List[Any]] = None,
         boxes: Optional[Batch] = None,
         prompt_mode: PromptMode = "first_frame",
@@ -423,7 +425,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
-        selected_model_id = model_id if tracking_mode == "concept" else pvs_model_id
+        selected_model_id = model_id if tracking_mode == "concept" else visual_model_id
         model = self._get_model(model_id=selected_model_id)
         if tracking_mode == "visual":
             return self._run_visual(
@@ -576,6 +578,8 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                         obj_id_metadata=session.obj_id_metadata,
                         threshold=threshold,
                         mask_representation=mask_representation,
+                        fallback_class_id=SYNTHETIC_POINT_PROMPT_CLASS_ID,
+                        fallback_class_name=SYNTHETIC_POINT_PROMPT_CLASS_NAME,
                     )
                 }
             )

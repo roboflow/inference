@@ -5,9 +5,9 @@ model across many videos by keying ``state_dict``s on
 ``video_identifier`` and reset a session whenever the source stream
 restarts. Visual trackers re-prompt on the frames requested by
 ``prompt_mode``. The SAM3 concept tracker prompts once per session because
-it detects new objects continuously. Everything independent of the model
-lives here so each block remains a thin wrapper around
-``inference_models.AutoModel``.
+it detects new objects continuously. Representation-independent session
+policy and NumPy/Supervision adapters live here. Tensor-native adapters live
+in ``segment_anything_common.streaming_video_tensor``.
 """
 
 from dataclasses import dataclass, field
@@ -17,6 +17,10 @@ from uuid import uuid4
 import numpy as np
 import supervision as sv
 
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -57,37 +61,6 @@ class BoxPromptMetadata:
     class_name: str
     confidence: float
     parent_id: Optional[str]
-
-
-def normalise_labeled_points(
-    points: Optional[List[Any]],
-) -> List[Tuple[float, float, bool]]:
-    """Convert workflow point values to ``(x, y, positive)`` tuples."""
-    if not points:
-        return []
-    result: List[Tuple[float, float, bool]] = []
-    for raw_point in points:
-        if isinstance(raw_point, dict):
-            if "x" not in raw_point or "y" not in raw_point:
-                raise ValueError(
-                    "Each point prompt must define `x` and `y` coordinates."
-                )
-            x, y = raw_point["x"], raw_point["y"]
-            positive = raw_point.get("positive", True)
-        elif isinstance(raw_point, (list, tuple)) and len(raw_point) in {2, 3}:
-            x, y = raw_point[:2]
-            positive = raw_point[2] if len(raw_point) == 3 else True
-        else:
-            raise ValueError(
-                "Each point prompt must be an object or a sequence with two or "
-                "three values."
-            )
-        if isinstance(x, bool) or isinstance(y, bool):
-            raise ValueError("Point coordinates must be numbers.")
-        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-            raise ValueError("Point coordinates must be numbers.")
-        result.append((float(x), float(y), bool(positive)))
-    return result
 
 
 def extract_box_prompts(
@@ -155,11 +128,13 @@ def masks_to_sv_detections(
     image: WorkflowImageData,
     obj_id_metadata: Dict[int, BoxPromptMetadata],
     threshold: float,
+    fallback_class_id: int = 0,
+    fallback_class_name: str = "foreground",
 ) -> sv.Detections:
     """Assemble one ``sv.Detections`` of instance-seg predictions.
 
     Emits one detection per SAM-assigned object (preserving the
-    one-to-one mapping with ``tracker_id``).  Masks without any positive
+    one-to-one mapping with ``tracker_id``). Masks without any positive
     pixels are dropped.
     """
     h, w = image.numpy_image.shape[:2]
@@ -192,8 +167,8 @@ def masks_to_sv_detections(
             ]
         )
         confidences.append(float(confidence))
-        class_ids.append(meta.class_id if meta is not None else 0)
-        class_names.append(meta.class_name if meta is not None else "foreground")
+        class_ids.append(meta.class_id if meta is not None else fallback_class_id)
+        class_names.append(meta.class_name if meta is not None else fallback_class_name)
         tracker_ids.append(int(obj_id))
         parent = meta.parent_id if meta is not None else None
         parent_ids.append(str(parent) if parent is not None else "")
@@ -244,18 +219,18 @@ def build_obj_id_metadata_from_visual_prompts(
     box_metas: List[BoxPromptMetadata],
     has_point_prompt: bool,
 ) -> Dict[int, BoxPromptMetadata]:
-    """Attach box metadata and a foreground label to visual prompt objects."""
-    prompt_metas = list(box_metas)
+    """Associate IDs with box metadata and the synthetic point-prompt class."""
+    prompt_metadata = list(box_metas)
     if has_point_prompt:
-        prompt_metas.append(
+        prompt_metadata.append(
             BoxPromptMetadata(
-                class_id=0,
-                class_name="foreground",
+                class_id=SYNTHETIC_POINT_PROMPT_CLASS_ID,
+                class_name=SYNTHETIC_POINT_PROMPT_CLASS_NAME,
                 confidence=1.0,
                 parent_id=None,
             )
         )
-    return build_obj_id_metadata_from_boxes(obj_ids=obj_ids, box_metas=prompt_metas)
+    return build_obj_id_metadata_from_boxes(obj_ids, prompt_metadata)
 
 
 def build_obj_id_metadata_from_text(

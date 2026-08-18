@@ -13,8 +13,8 @@ session only when the stream restarts or ``class_names`` changes.
 
 In visual mode, labeled points define one object and each box defines a
 separate object. The ``prompt_mode`` policy controls when the block re-seeds
-the visual tracker. Each re-prompt starts a new session and restarts tracker
-IDs; temporal memory is preserved between prompts.
+the visual tracker. Between re-prompts, the tracker keeps temporal memory.
+Each re-prompt starts a new session and restarts tracker IDs.
 """
 
 from dataclasses import dataclass, field
@@ -31,7 +31,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     SAM3_CONCEPT_VIDEO_MODEL_ID,
     SAM3_VISUAL_VIDEO_MODEL_ID,
     VideoSessionBookkeeping,
@@ -41,6 +41,10 @@ from inference.core.workflows.core_steps.models.foundation._streaming_video_comm
     extract_box_prompts,
     masks_to_sv_detections,
     normalise_class_names,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -226,7 +230,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[SAM3_CONCEPT_VIDEO_MODEL_ID],
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["concept"]}}},
     )
-    pvs_model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
+    visual_model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default=SAM3_VISUAL_VIDEO_MODEL_ID,
         title="Model Id",
         description="Streaming SAM3 model ID for visual tracking.",
@@ -374,7 +378,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         model_id: str,
         threshold: float,
         tracking_mode: TrackingMode = "concept",
-        pvs_model_id: str = SAM3_VISUAL_VIDEO_MODEL_ID,
+        visual_model_id: str = SAM3_VISUAL_VIDEO_MODEL_ID,
         points: Optional[List[Any]] = None,
         boxes: Optional[Batch[sv.Detections]] = None,
         prompt_mode: PromptMode = "first_frame",
@@ -382,7 +386,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
-        selected_model_id = model_id if tracking_mode == "concept" else pvs_model_id
+        selected_model_id = model_id if tracking_mode == "concept" else visual_model_id
         model = self._get_model(model_id=selected_model_id)
         if tracking_mode == "visual":
             return self._run_visual(
@@ -546,6 +550,8 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                     image=single_image,
                     obj_id_metadata=session.obj_id_metadata,
                     threshold=threshold,
+                    fallback_class_id=SYNTHETIC_POINT_PROMPT_CLASS_ID,
+                    fallback_class_name=SYNTHETIC_POINT_PROMPT_CLASS_NAME,
                 )
             )
 

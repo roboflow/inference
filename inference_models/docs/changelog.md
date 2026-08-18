@@ -7,6 +7,10 @@
 - SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
   They can also combine point and box prompts in one conditioning frame.
 
+### Changed
+
+- The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+
 ---
 
 ## `0.35.0`

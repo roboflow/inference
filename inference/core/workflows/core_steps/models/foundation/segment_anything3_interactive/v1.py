@@ -33,6 +33,11 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+    normalise_labeled_points,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
 )
@@ -97,25 +102,7 @@ def _as_sam2_points(points: List[Any]) -> List[Point]:
         if isinstance(raw_point, Point):
             result.append(raw_point)
             continue
-        if isinstance(raw_point, dict):
-            if "x" not in raw_point or "y" not in raw_point:
-                raise ValueError(
-                    f"Each point prompt must define `x` and `y` coordinates - got: {raw_point}"
-                )
-            x, y = raw_point["x"], raw_point["y"]
-            positive = raw_point.get("positive", True)
-        elif isinstance(raw_point, (list, tuple)) and len(raw_point) in {2, 3}:
-            x, y = raw_point[0], raw_point[1]
-            positive = raw_point[2] if len(raw_point) == 3 else True
-        else:
-            raise ValueError(
-                f"Invalid point prompt: {raw_point}. Expected dict with `x`, `y` and optional "
-                f"`positive` keys, or a sequence of (x, y) or (x, y, positive)."
-            )
-        if isinstance(x, bool) or isinstance(y, bool):
-            raise ValueError(f"Point coordinates must be numbers - got: {raw_point}")
-        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-            raise ValueError(f"Point coordinates must be numbers - got: {raw_point}")
+        x, y, positive = normalise_labeled_points([raw_point])[0]
         result.append(Point(x=float(x), y=float(y), positive=bool(positive)))
     return result
 
@@ -565,8 +552,8 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             groups.append(
                 _PromptGroup(
                     prompts=[Sam2Prompt(points=_as_sam2_points(points))],
-                    class_ids=[0],
-                    class_names=["foreground"],
+                    class_ids=[SYNTHETIC_POINT_PROMPT_CLASS_ID],
+                    class_names=[SYNTHETIC_POINT_PROMPT_CLASS_NAME],
                     detection_ids=[None],
                 )
             )
