@@ -1,6 +1,6 @@
 """RF-DETR stage selection with declared compatibility fallback."""
 
-from typing import Callable, Optional, Tuple, TypeVar, cast
+from typing import Callable, Optional, TypeVar, cast
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -13,6 +13,7 @@ from inference_models.models.optimization.contracts import (
     InferenceStage,
     OptimizationStage,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.registry import (
     ImplementationRegistry,
     ImplementationSelection,
@@ -22,9 +23,7 @@ from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     Preprocessor,
     PreprocessRequest,
-    PreprocessResult,
 )
-from inference_models.models.rfdetr.triton_jit_fallback import TritonJITFailure
 
 StageT = TypeVar("StageT", bound=InferenceStage)
 
@@ -143,63 +142,91 @@ def resolve_preprocessor_for_request(
     return selection
 
 
-def execute_preprocessor_for_request(
+def resolve_preprocessor_runtime_fallback(
     *,
     registry: ImplementationRegistry,
-    implementation: Preprocessor,
+    selection: ImplementationSelection[Preprocessor],
     request: PreprocessRequest,
     context: ExecutionContext,
     allow_fallback: bool,
-) -> Tuple[ImplementationSelection[Preprocessor], PreprocessResult]:
-    """Resolve and execute preprocessing with one runtime JIT fallback attempt.
-
-    A Triton implementation records its JIT failure before raising
-    ``TritonJITFailure``. Resolving the same request again therefore follows the
-    implementation's declared fallback without embedding fallback execution in
-    the Triton implementation itself.
+) -> ImplementationSelection[Preprocessor]:
+    """Resolve whether preprocessing must follow a runtime failure fallback.
 
     Args:
         registry: RF-DETR implementation registry.
-        implementation: Model-level selected preprocessor.
+        selection: Request-compatible preprocessing selection.
         request: Typed preprocessing request.
         context: Runtime target and request context.
-        allow_fallback: Whether declared compatibility fallback may be used.
+        allow_fallback: Whether a recorded runtime failure may use the declared
+            fallback.
 
     Returns:
-        Effective implementation selection and its preprocessing result.
+        Original selection when its runtime remains available, otherwise its
+        declared compatible fallback.
 
     Raises:
-        ModelRuntimeError: If execution fails or fallback is unavailable or disabled.
+        ModelRuntimeError: If execution failed and fallback is unavailable or
+            disabled.
     """
-    selection = resolve_preprocessor_for_request(
-        registry=registry,
-        implementation=implementation,
-        request=request,
-        context=context,
-        allow_fallback=allow_fallback,
-    )
-    try:
-        result = selection.implementation.preprocess(
-            request=request,
-            context=context,
-        )
-    except TritonJITFailure:
-        fallback_selection = resolve_preprocessor_for_request(
-            registry=registry,
-            implementation=implementation,
-            request=request,
-            context=context,
-            allow_fallback=allow_fallback,
-        )
-        if fallback_selection.implementation is selection.implementation:
-            raise
-        selection = fallback_selection
-        result = selection.implementation.preprocess(
-            request=request,
-            context=context,
+    implementation = selection.implementation
+    runtime_compatibility = _check_preprocessor_runtime_compatibility(implementation)
+    if runtime_compatibility.supported:
+        return selection
+    if not allow_fallback:
+        raise RecoverableStageExecutionError(
+            message=(
+                "RF-DETR preprocess implementation cannot execute after a "
+                f"recoverable runtime failure: {runtime_compatibility.reason}. "
+                "Runtime failure fallback is disabled by the execution plan."
+            ),
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
         )
 
-    return selection, result
+    def check(candidate: Preprocessor) -> CompatibilityResult:
+        request_compatibility = candidate.check_request_compatibility(
+            request=request,
+            context=context,
+        )
+        candidate_runtime_compatibility = _check_preprocessor_runtime_compatibility(
+            candidate
+        )
+        if (
+            request_compatibility.supported
+            and candidate_runtime_compatibility.supported
+        ):
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            *request_compatibility.reasons,
+            *candidate_runtime_compatibility.reasons,
+        )
+
+    fallback_selection = _apply_declared_fallback(
+        registry=registry,
+        stage=OptimizationStage.PREPROCESS,
+        implementation=implementation,
+        requested_id=selection.requested_id,
+        context=context,
+        check_compatibility=check,
+        allow_fallback=True,
+    )
+
+    return fallback_selection
+
+
+def _check_preprocessor_runtime_compatibility(
+    implementation: Preprocessor,
+) -> CompatibilityResult:
+    checker = getattr(implementation, "check_runtime_compatibility", None)
+    if checker is None:
+        return CompatibilityResult.compatible()
+
+    result = checker()
+
+    return result
 
 
 def resolve_postprocessor_for_request(

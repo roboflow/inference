@@ -25,6 +25,7 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
+    TRITON_AVAILABLE,
     UniversalFastPreprocessRuntime,
 )
 
@@ -84,7 +85,7 @@ class TritonUniversalPreprocessor:
         Returns:
             Whether the target is compatible.
         """
-        return metadata_supports_context(self.metadata, context)
+        return TRITON_AVAILABLE and metadata_supports_context(self.metadata, context)
 
     def check_model_compatibility(
         self,
@@ -128,12 +129,16 @@ class TritonUniversalPreprocessor:
             images=request.images,
             pre_processing_overrides=request.pre_processing_overrides,
         )
-        jit_compatibility = self._runtime.check_jit_compatibility()
-        if not jit_compatibility.supported:
-            result = CompatibilityResult.incompatible(
-                *result.reasons,
-                *jit_compatibility.reasons,
-            )
+
+        return result
+
+    def check_runtime_compatibility(self) -> CompatibilityResult:
+        """Check whether this implementation remains available after execution.
+
+        Returns:
+            Compatibility result carrying any recorded runtime failure reason.
+        """
+        result = self._runtime.check_runtime_compatibility()
 
         return result
 

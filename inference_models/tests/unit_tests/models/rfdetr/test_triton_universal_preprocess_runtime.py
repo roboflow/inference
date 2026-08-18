@@ -15,6 +15,7 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCrop,
     TrainingInputSize,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.rfdetr import triton_universal_preprocess_runtime
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
@@ -25,7 +26,6 @@ from inference_models.models.rfdetr.optimization.ids import (
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
-from inference_models.models.rfdetr.triton_jit_fallback import TritonJITFailure
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     UniversalFastPreprocessRuntime,
     _build_metadata_batch,
@@ -317,7 +317,10 @@ def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) 
         failing_kernel,
     )
 
-    with pytest.raises(TritonJITFailure, match="Failed to find C compiler"):
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Failed to find C compiler",
+    ):
         runtime.preprocess(
             images=np.zeros((8, 9, 3), dtype=np.uint8),
             input_color_format=ColorMode.BGR,
@@ -327,7 +330,7 @@ def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) 
             stream=stream,
         )
 
-    compatibility = runtime.check_jit_compatibility()
+    compatibility = runtime.check_runtime_compatibility()
 
     assert not compatibility.supported
     assert "Failed to find C compiler" in compatibility.reason

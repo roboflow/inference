@@ -43,6 +43,7 @@ from inference_models.models.optimization.contracts import (
     OptimizationMetadata,
     OptimizationStage,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.fallback_warnings import (
     FallbackWarningTracker,
 )
@@ -67,14 +68,14 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
 from inference_models.models.rfdetr.optimization.selection import (
-    execute_preprocessor_for_request,
     resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
+    resolve_preprocessor_for_request,
+    resolve_preprocessor_runtime_fallback,
 )
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
-from inference_models.models.rfdetr.triton_preprocess import TRITON_AVAILABLE
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -339,6 +340,9 @@ class RFDetrForObjectDetectionTRT(
             postprocessor_id=self._postprocessor.metadata.implementation_id,
             engine_plugin_id=self._engine_plugin.metadata.implementation_id,
             allow_compatibility_fallback=(requested_plan.allow_compatibility_fallback),
+            allow_runtime_failure_fallback=(
+                requested_plan.allow_runtime_failure_fallback
+            ),
         )
         model_selections = {
             "preprocessor": preprocessor_selection,
@@ -526,13 +530,42 @@ class RFDetrForObjectDetectionTRT(
             pre_processing_overrides=pre_processing_overrides,
         )
         context = self._execution_stage_context(current_stream=stream)
-        selection, result = execute_preprocessor_for_request(
+        selection = resolve_preprocessor_for_request(
             registry=self._implementation_registry,
             implementation=self._preprocessor,
             request=request,
             context=context,
             allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
+        selection = resolve_preprocessor_runtime_fallback(
+            registry=self._implementation_registry,
+            selection=selection,
+            request=request,
+            context=context,
+            allow_fallback=self._rfdetr_execution_plan.allow_runtime_failure_fallback,
+        )
+        try:
+            result = selection.implementation.preprocess(
+                request=request,
+                context=context,
+            )
+        except RecoverableStageExecutionError:
+            if not self._rfdetr_execution_plan.allow_runtime_failure_fallback:
+                raise
+            fallback_selection = resolve_preprocessor_runtime_fallback(
+                registry=self._implementation_registry,
+                selection=selection,
+                request=request,
+                context=context,
+                allow_fallback=True,
+            )
+            if fallback_selection.implementation is selection.implementation:
+                raise
+            selection = fallback_selection
+            result = selection.implementation.preprocess(
+                request=request,
+                context=context,
+            )
         self._record_last_execution(
             stage="preprocessor",
             selection=selection.to_dict(),
@@ -708,7 +741,6 @@ class RFDetrForObjectDetectionTRT(
             compute_capability=torch.cuda.get_device_capability(
                 self._device.index or 0
             ),
-            runtime_components={"triton": TRITON_AVAILABLE},
         )
 
         return context

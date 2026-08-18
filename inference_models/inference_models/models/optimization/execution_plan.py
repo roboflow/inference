@@ -16,6 +16,7 @@ class InferenceExecutionPlan:
     postprocessor_id: str = BASE_IMPLEMENTATION_ID
     engine_plugin_id: str = BASE_IMPLEMENTATION_ID
     allow_compatibility_fallback: bool = True
+    allow_runtime_failure_fallback: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the composed execution plan.
@@ -30,6 +31,7 @@ class InferenceExecutionPlan:
             "postprocessor": self.postprocessor_id,
             "engine_plugin": self.engine_plugin_id,
             "allow_compatibility_fallback": self.allow_compatibility_fallback,
+            "allow_runtime_failure_fallback": self.allow_runtime_failure_fallback,
         }
 
         return serialized

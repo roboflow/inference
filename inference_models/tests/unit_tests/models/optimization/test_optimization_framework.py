@@ -68,6 +68,7 @@ def test_inference_execution_plan_defaults_and_serializes() -> None:
         "postprocessor": "base",
         "engine_plugin": "base",
         "allow_compatibility_fallback": True,
+        "allow_runtime_failure_fallback": True,
     }
 
 

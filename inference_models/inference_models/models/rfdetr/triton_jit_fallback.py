@@ -7,8 +7,6 @@ import subprocess
 import warnings
 from typing import Optional, Set
 
-from inference_models.errors import ModelRuntimeError
-
 logger = logging.getLogger(__name__)
 
 _triton_jit_exception_types: list[type[BaseException]] = []
@@ -48,10 +46,6 @@ _RUNTIME_ERROR_MARKERS = (
     "undefined reference",
     "out of resource",
 )
-
-
-class TritonJITFailure(ModelRuntimeError):
-    """Report a recognized failure while compiling a Triton kernel."""
 
 
 def is_triton_jit_failure(exc: BaseException) -> bool:

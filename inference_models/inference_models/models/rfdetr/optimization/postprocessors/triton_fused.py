@@ -22,6 +22,7 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
 )
 from inference_models.models.rfdetr.triton_object_detection_postprocess import (
+    TRITON_AVAILABLE,
     FusedObjectDetectionPostprocessor,
 )
 
@@ -75,7 +76,7 @@ class TritonFusedPostprocessor:
         Returns:
             Whether the target is compatible.
         """
-        return metadata_supports_context(self.metadata, context)
+        return TRITON_AVAILABLE and metadata_supports_context(self.metadata, context)
 
     def check_request_compatibility(
         self,

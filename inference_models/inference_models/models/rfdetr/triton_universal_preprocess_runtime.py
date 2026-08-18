@@ -32,8 +32,8 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCropOffset,
 )
 from inference_models.models.optimization.contracts import CompatibilityResult
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.rfdetr.triton_jit_fallback import (
-    TritonJITFailure,
     is_triton_jit_failure,
 )
 from inference_models.models.rfdetr.triton_preprocess import (
@@ -306,7 +306,7 @@ class UniversalFastPreprocessRuntime:
                 with self._jit_failure_lock:
                     if self._jit_failure_reason is None:
                         self._jit_failure_reason = reason
-                raise TritonJITFailure(
+                raise RecoverableStageExecutionError(
                     message=(
                         "triton-universal-v1 failed to compile or launch its "
                         f"preprocessing kernel: {reason}"
@@ -523,12 +523,12 @@ class UniversalFastPreprocessRuntime:
 
         return result
 
-    def check_jit_compatibility(self) -> CompatibilityResult:
-        """Check whether a previous Triton JIT attempt disabled this runtime.
+    def check_runtime_compatibility(self) -> CompatibilityResult:
+        """Check whether a previous execution failure disabled this runtime.
 
         Returns:
-            Compatible until a recognized JIT failure occurs, then incompatible
-            with the original failure reason.
+            Compatible until a recoverable execution failure occurs, then
+            incompatible with the original failure reason.
         """
         with self._jit_failure_lock:
             reason = self._jit_failure_reason

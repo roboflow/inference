@@ -22,6 +22,7 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
     immutable_mapping,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
@@ -47,16 +48,21 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
+from inference_models.models.rfdetr.optimization.postprocessors import (
+    triton_fused as triton_postprocessor_module,
+)
+from inference_models.models.rfdetr.optimization.preprocessors import (
+    triton_universal as triton_preprocessor_module,
+)
 from inference_models.models.rfdetr.optimization.readiness import (
     PreprocessReadinessTracker,
 )
 from inference_models.models.rfdetr.optimization.selection import (
-    execute_preprocessor_for_request,
     resolve_postprocessor_for_request,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
+    resolve_preprocessor_runtime_fallback,
 )
-from inference_models.models.rfdetr.triton_jit_fallback import TritonJITFailure
 
 
 class _Stage:
@@ -67,6 +73,7 @@ class _Stage:
         compatible: bool = True,
         model_supported: bool = True,
         request_supported: bool = True,
+        runtime_supported: bool = True,
         stage: OptimizationStage = OptimizationStage.PREPROCESS,
     ) -> None:
         self.metadata = OptimizationMetadata(
@@ -84,6 +91,7 @@ class _Stage:
         self._compatible = compatible
         self._model_supported = model_supported
         self._request_supported = request_supported
+        self._runtime_supported = runtime_supported
         self.preprocess_calls = 0
 
     def is_compatible(self, context: ExecutionContext) -> bool:
@@ -112,6 +120,14 @@ class _Stage:
             return CompatibilityResult.compatible()
 
         return CompatibilityResult.incompatible("heterogeneous source dimensions")
+
+    def check_runtime_compatibility(self) -> CompatibilityResult:
+        if self._runtime_supported:
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            "implementation runtime failed during an earlier request"
+        )
 
     def preprocess(
         self,
@@ -196,6 +212,8 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
         buffer_strategy_id="future-buffer",
         scheduler_id="future-scheduler",
         engine_plugin_id="future-plugin",
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=True,
     )
 
     resolved = RFDetrExecutionPlan.resolve(execution_plan=plan)
@@ -204,6 +222,8 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
     assert resolved.buffer_strategy_id == "future-buffer"
     assert resolved.scheduler_id == "future-scheduler"
     assert resolved.engine_plugin_id == "future-plugin"
+    assert not resolved.allow_compatibility_fallback
+    assert resolved.allow_runtime_failure_fallback
 
 
 def test_registry_resolves_explicit_and_auto_base() -> None:
@@ -252,7 +272,9 @@ def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
     )
 
 
-def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
+def test_rfdetr_auto_preferences_skip_unavailable_triton(monkeypatch) -> None:
+    monkeypatch.setattr(triton_preprocessor_module, "TRITON_AVAILABLE", False)
+    monkeypatch.setattr(triton_postprocessor_module, "TRITON_AVAILABLE", False)
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cuda:0"),
         preprocessor_max_workers=2,
@@ -260,7 +282,6 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
     context = ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
-        runtime_components={"triton": False},
     )
 
     preprocessor = registry.resolve(
@@ -373,10 +394,10 @@ def test_request_incompatibility_resolves_declared_base_fallback() -> None:
     assert selection.fallback_reason == "heterogeneous source dimensions"
 
 
-def test_runtime_jit_failure_re_resolves_declared_base_fallback(monkeypatch) -> None:
+def test_recorded_runtime_failure_resolves_declared_base_fallback() -> None:
     registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")
-    candidate = _Stage("candidate")
+    candidate = _Stage("candidate", runtime_supported=False)
     registry.register(base)
     registry.register(candidate)
     request = PreprocessRequest(
@@ -386,30 +407,23 @@ def test_runtime_jit_failure_re_resolves_declared_base_fallback(monkeypatch) -> 
         network_input=_network_input(),
         pre_processing_overrides=None,
     )
-    candidate_calls = 0
-
-    def fail_jit_once(
-        request: PreprocessRequest,
-        context: ExecutionContext,
-    ) -> PreprocessResult:
-        nonlocal candidate_calls
-        del request, context
-        candidate_calls += 1
-        candidate._request_supported = False
-        raise TritonJITFailure("Failed to find C compiler")
-
-    monkeypatch.setattr(candidate, "preprocess", fail_jit_once)
-
-    first_selection, first_result = execute_preprocessor_for_request(
+    request_selection = resolve_preprocessor_for_request(
         registry=registry,
         implementation=candidate,
         request=request,
         context=_context(),
+        allow_fallback=False,
+    )
+    first_selection = resolve_preprocessor_runtime_fallback(
+        registry=registry,
+        selection=request_selection,
+        request=request,
+        context=_context(),
         allow_fallback=True,
     )
-    second_selection, second_result = execute_preprocessor_for_request(
+    second_selection = resolve_preprocessor_runtime_fallback(
         registry=registry,
-        implementation=candidate,
+        selection=request_selection,
         request=request,
         context=_context(),
         allow_fallback=True,
@@ -417,11 +431,47 @@ def test_runtime_jit_failure_re_resolves_declared_base_fallback(monkeypatch) -> 
 
     assert first_selection.effective_id == "base"
     assert second_selection.effective_id == "base"
-    assert first_selection.fallback_reason == "heterogeneous source dimensions"
-    assert first_result.implementation_id == "base"
-    assert second_result.implementation_id == "base"
-    assert candidate_calls == 1
-    assert base.preprocess_calls == 2
+    assert (
+        first_selection.fallback_reason
+        == "implementation runtime failed during an earlier request"
+    )
+
+
+def test_recorded_runtime_failure_is_raised_when_fallback_is_disabled() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base")
+    candidate = _Stage("candidate", runtime_supported=False)
+    registry.register(base)
+    registry.register(candidate)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format=ColorMode.RGB,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+
+    request_selection = resolve_preprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Runtime failure fallback is disabled",
+    ):
+        resolve_preprocessor_runtime_fallback(
+            registry=registry,
+            selection=request_selection,
+            request=request,
+            context=_context(),
+            allow_fallback=False,
+        )
+
+    assert base.preprocess_calls == 0
 
 
 def test_fallback_is_rejected_when_base_is_also_incompatible() -> None:
