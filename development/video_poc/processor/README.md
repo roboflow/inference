@@ -40,10 +40,16 @@ runtime telemetry.
 | `USE_INFERENCE_MODELS` | boolean | Inference runtime default | Select the Inference 1.4 model implementations used by tensor-native workflows. |
 | `WORKFLOWS_IMAGE_TENSOR_DEVICE` | device name | Inference runtime default | Select the workflow tensor device; hosted GPU workers use `cuda`. |
 | `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` | boolean | Inference runtime default | Use demand-driven live-source backpressure. |
+| `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING` | boolean | `true` | Apply `maxFps` at the source before buffering. Set `false` only to reproduce or roll back to the burst-sensitive legacy post-collection limiter. |
 
 `gstreamer_cuda` requires `ENABLE_TENSOR_DATA_REPRESENTATION=true`; startup
 fails rather than silently falling back to CPU decode. This makes PyAV/tensor
 and NVDEC/tensor deployments differ only by the ingest switch.
+
+The processor defaults FPS limiting to the source side for both ingest modes.
+This setting is independent of tensor representation: when `maxFps` is unset,
+no sampling is applied; when it is set, frames are selected before they enter
+the inference pipeline rather than discarded after consumption.
 
 ## Images
 

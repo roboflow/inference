@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,11 +14,30 @@ from video_ingest import (  # noqa: E402
     GSTREAMER_CUDA_INGEST,
     PYAV_INGEST,
     build_cuda_producer,
+    configure_source_fps_limiter_default,
     process_runtime_identity,
     producer_runtime_identity,
     resolve_video_ingest_mode,
     verify_cuda_frame,
 )
+
+
+def test_video_processor_defaults_to_source_side_fps_limiting(monkeypatch):
+    monkeypatch.delenv(
+        "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", raising=False
+    )
+
+    configure_source_fps_limiter_default()
+
+    assert os.environ["ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING"] == "true"
+
+
+def test_explicit_legacy_fps_limiter_rollback_is_preserved(monkeypatch):
+    monkeypatch.setenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "false")
+
+    configure_source_fps_limiter_default()
+
+    assert os.environ["ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING"] == "false"
 
 
 def test_pyav_is_the_unchanged_default(monkeypatch):
@@ -55,6 +75,7 @@ def test_unknown_ingest_mode_fails_before_the_worker_claims_jobs(monkeypatch):
 
 def test_runtime_identity_is_bounded_and_contains_no_credentials(monkeypatch):
     monkeypatch.setenv("ENABLE_TENSOR_DATA_REPRESENTATION", "yes")
+    monkeypatch.setenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "true")
     monkeypatch.setenv("ROBOFLOW_RTSP_LATENCY_MS", "80")
     monkeypatch.setenv("ROBOFLOW_API_KEY", "must-not-leak")
 
@@ -63,6 +84,7 @@ def test_runtime_identity_is_bounded_and_contains_no_credentials(monkeypatch):
     assert runtime == {
         "videoIngestMode": GSTREAMER_CUDA_INGEST,
         "tensorRepresentationEnabled": True,
+        "sourceFpsLimiterAtProducer": True,
         "rtspLatencyMs": 80,
     }
     assert "must-not-leak" not in str(runtime)
@@ -70,10 +92,12 @@ def test_runtime_identity_is_bounded_and_contains_no_credentials(monkeypatch):
 
 def test_legacy_runtime_identity_does_not_claim_tensor_support(monkeypatch):
     monkeypatch.setenv("ENABLE_TENSOR_DATA_REPRESENTATION", "true")
+    monkeypatch.setenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "false")
 
     runtime = process_runtime_identity(PYAV_INGEST, tensor_runtime_available=False)
 
     assert runtime["tensorRepresentationEnabled"] is False
+    assert runtime["sourceFpsLimiterAtProducer"] is False
 
 
 def test_cuda_factory_constructs_tensor_producer_and_reports_it(monkeypatch):

@@ -116,11 +116,31 @@ The target staging GPU configuration is explicit:
 | `WORKFLOWS_IMAGE_TENSOR_DEVICE` | `cuda` | Keep compatible image values on the GPU. |
 | `PROCESSOR_VIDEO_INGEST_MODE` | `gstreamer_cuda` | Target live-stream path; use `pyav` for controlled rollback/comparison. |
 | `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` | `true` | Demand-driven live source handling. |
+| `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING` | `true` | Enforce per-job `maxFps` at the source; `false` is a rollback to the legacy post-collection wall-clock limiter. |
 | `MAX_CONCURRENT_JOBS` | evidence-based | Hard ceiling; not a certified capacity statement. |
 
 `PROCESSOR_VIDEO_INGEST_MODE=pyav` remains a supported rollback and diagnostic
 configuration. `gstreamer_cuda` must fail loudly if the CUDA producer or tensor
 runtime is unavailable.
+
+### Source-side FPS limiter validation
+
+The source-side limiter is a correctness setting, not a capacity tuning knob.
+On 2026-08-18, twelve process-isolated YOLOv8 Nano jobs consumed the same
+1280x720@30 Logitech BRIO stream on one staging L40S. With tensor-native NVDEC,
+`maxFps=30` at the source delivered 321.88 aggregate FPS over 177.95 seconds;
+leaving `maxFps` unset delivered 322.16 FPS. Both runs inferred essentially
+every consumed frame. The legacy post-collection limiter had previously fallen
+as low as 212.18 FPS because bursty arrivals were consumed and then silently
+discarded by its wall-clock gate.
+
+The matched PyAV/tensor control delivered 350.46 FPS while averaging 7.06 CPU
+cores. Source-limited NVDEC averaged 5.97 CPU cores and 80.4% GPU utilization
+(PyAV: 81.5%), so its remaining throughput gap is a separate pre-consumption
+GStreamer freshness-drop issue, not evidence that model execution, CUDA tensor
+mapping, or average GPU saturation regressed. Reducing the RTSP jitter buffer
+from 200ms to 50ms did not help (318.21 FPS and worse p95 latency), so 200ms
+remains the measured default.
 
 Infrastructure must inject credential-free provenance such as
 `VIDEO_PROC_IMAGE`, `VIDEO_PROC_GIT_SHA`, and

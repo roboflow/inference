@@ -16,6 +16,23 @@ SUPPORTED_INGEST_MODES = (PYAV_INGEST, GSTREAMER_CUDA_INGEST)
 _SAFE_STAT_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}\Z")
 
 
+def configure_source_fps_limiter_default():
+    """Prefer source-side sampling for hosted video jobs.
+
+    Inference's legacy post-collection limiter uses wall-clock spacing between
+    accepted frames. Bursty live producers can therefore lose throughput even
+    when their average cadence is at or below ``maxFps``. The source-side path
+    samples before buffering and avoids that cadence aliasing. ``setdefault``
+    deliberately preserves an explicit deployment rollback to ``false``.
+
+    This must run before importing ``inference.core.env``.
+    """
+    os.environ.setdefault(
+        "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING",
+        "true",
+    )
+
+
 def _env_flag(name, default=False):
     value = os.getenv(name)
     if value is None:
@@ -50,6 +67,9 @@ def process_runtime_identity(mode, tensor_runtime_available=None):
     runtime = {
         "videoIngestMode": mode,
         "tensorRepresentationEnabled": tensor_enabled,
+        "sourceFpsLimiterAtProducer": _env_flag(
+            "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING"
+        ),
     }
     latency = os.getenv("ROBOFLOW_RTSP_LATENCY_MS")
     if latency:

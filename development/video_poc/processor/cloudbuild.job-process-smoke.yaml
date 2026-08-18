@@ -65,6 +65,17 @@ steps:
             processor.INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE
             is runtime_supports_freshest
         )
+        assert (
+            os.environ["ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING"]
+            == "true"
+        )
+        if hasattr(
+            inference_env, "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING"
+        ):
+            assert (
+                inference_env.ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING
+                is True
+            )
         if not hasattr(
             inference_env, "ENABLE_TENSOR_DATA_REPRESENTATION"
         ):

@@ -51,6 +51,12 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+# Configure this before importing Inference: core.env snapshots the flag at
+# module import time. Deployments may explicitly set it to false for rollback.
+from video_ingest import configure_source_fps_limiter_default
+
+configure_source_fps_limiter_default()
+
 import cv2
 import requests
 
