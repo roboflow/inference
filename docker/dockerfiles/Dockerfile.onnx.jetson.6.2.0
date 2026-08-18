@@ -639,9 +639,16 @@ WORKDIR /app
 # libgl1 (glvnd desktop-GL loader) provides libGL.so.1, linked by the Qt5 libs
 # bundled inside the opencv-python wheel (manylinux forbids vendoring libGL).
 # kmod (lsmod/modprobe) is shelled out to by the host-injected NV BSP
-# v4l2/GStreamer libs to check the codec kernel modules; without it every
-# nvv4l2decoder plugin load spams "sh: 1: lsmod: not found" and the module
-# check degrades. The media.jetson.7.2.0 image installs it for the same reason
+# v4l2/GStreamer libs to check the codec kernel modules. This is load-bearing,
+# not cosmetic: libnvtvmr.so runs `lsmod | grep nvgpu` while creating an
+# NVENC/NVDEC context, and with no lsmod on PATH that creation fails -- REQBUFS
+# returns 0 buffers and libtegrav4l2 reports "Error in initializing nvenc
+# context", leaving the image with no hardware encode or decode. VIC (nvvidconv)
+# and NVJPG (nvjpegenc) are unaffected, so it presents as engine-specific rather
+# than as a missing package; the only hint is "sh: 1: lsmod: not found" among the
+# GStreamer warnings. Measured on r36.5.0: with lsmod present, 1080p encodes and
+# NVENC moves suspended -> active; without it, neither encode nor decode runs.
+# The media.jetson.7.2.0 image installs it for the same reason
 # (verify_media_runtime.sh requires lsmod whenever BSP plugins are baked).
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \

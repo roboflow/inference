@@ -268,6 +268,13 @@ WORKDIR /app
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Install runtime dependencies
+# kmod (lsmod) is required, not cosmetic: the host-injected NV BSP libnvtvmr.so
+# shells out to `lsmod | grep nvgpu` while creating an NVENC/NVDEC context, and
+# without lsmod on PATH that context creation fails outright -- REQBUFS returns
+# 0 buffers and libtegrav4l2 reports "Error in initializing nvenc context", so
+# the image has no hardware encode or decode at all (VIC/NVJPG keep working,
+# which makes it look engine-specific). Verified on r36.5.0; jetson.6.2.0 and
+# media.jetson.7.2.0 install it for the same reason (#2357).
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
     file \
@@ -290,6 +297,7 @@ RUN apt-get update -y && \
     libexpat1 \
     ca-certificates \
     curl \
+    kmod \
     libv4l-0 \
     libavcodec58 \
     libavformat58 \
