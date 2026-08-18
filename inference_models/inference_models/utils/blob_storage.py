@@ -12,14 +12,15 @@ class TransferDeadlineExceeded(Exception):
 class BlobStorage(ABC):
     @abstractmethod
     def download(
-        self, blob_key: str, target_path: str, deadline: Optional[float] = None
+        self, blob_key: str, target_path: str, timeout_seconds: Optional[float] = None
     ) -> bool:
         """Download a blob, returning False only when it does not exist.
 
-        `deadline` is a `time.monotonic()` timestamp past which the transfer
-        must be abandoned with `TransferDeadlineExceeded` rather than run to
-        completion. Implementations should honour it between chunks so a slow
-        endpoint cannot keep consuming bandwidth after the caller gave up.
+        `timeout_seconds` is a no-progress budget, not a whole-transfer cap:
+        implementations should re-arm it for the same duration each time a
+        chunk arrives, so a slow-but-steady multi-gigabyte transfer isn't
+        penalised for its size while a stalled or hung endpoint still raises
+        `TransferDeadlineExceeded` instead of running to completion.
         """
         pass
 
@@ -36,9 +37,15 @@ class S3BlobStorage(BlobStorage):
         self._bucket = bucket
 
     def download(
-        self, blob_key: str, target_path: str, deadline: Optional[float] = None
+        self, blob_key: str, target_path: str, timeout_seconds: Optional[float] = None
     ) -> bool:
         body = None
+        # A single fixed deadline would cap total transfer time rather than
+        # bound stalls - re-arm it to `timeout_seconds` from now every time a
+        # chunk arrives, so only a genuine no-progress gap raises.
+        deadline = (
+            monotonic() + timeout_seconds if timeout_seconds is not None else None
+        )
         try:
             response = self._client.get_object(
                 Bucket=self._bucket,
@@ -49,12 +56,15 @@ class S3BlobStorage(BlobStorage):
                 while True:
                     if deadline is not None and monotonic() > deadline:
                         raise TransferDeadlineExceeded(
-                            f"abandoned download of {blob_key} past its deadline"
+                            f"abandoned download of {blob_key}: no progress "
+                            f"within {timeout_seconds:.2f}s"
                         )
                     chunk = body.read(_STREAM_CHUNK_SIZE)
                     if not chunk:
                         break
                     target_file.write(chunk)
+                    if timeout_seconds is not None:
+                        deadline = monotonic() + timeout_seconds
             return True
         except Exception as error:
             if _is_missing_object_error(error):

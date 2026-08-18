@@ -29,7 +29,7 @@ def _cache(storage, upload_executor=None, **overrides):
 
 
 def _write_download(content: bytes):
-    def download(_: str, target_path: str, deadline=None) -> bool:
+    def download(_: str, target_path: str, timeout_seconds=None) -> bool:
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -69,9 +69,9 @@ def test_verified_cache_constructs_normalized_key_and_verifies_download(
     content_hash = hashlib.md5(content).hexdigest().upper()
     storage = mock.MagicMock()
 
-    def download(blob_key: str, target_path: str, deadline=None) -> bool:
+    def download(blob_key: str, target_path: str, timeout_seconds=None) -> bool:
         assert blob_key == f"prefix/{content_hash.lower()}"
-        assert deadline is not None
+        assert timeout_seconds is not None
         with open(target_path, "wb") as target_file:
             target_file.write(content)
         return True
@@ -144,7 +144,7 @@ def test_read_deadline_is_passed_to_storage_and_discards_partial_download(
     storage = mock.MagicMock()
     target_path = tmp_path / "weights"
 
-    def download(_: str, path: str, deadline=None) -> bool:
+    def download(_: str, path: str, timeout_seconds=None) -> bool:
         with open(path, "wb") as target_file:
             target_file.write(b"partial")
         raise TransferDeadlineExceeded("too slow")
@@ -169,18 +169,17 @@ def test_read_deadline_is_passed_to_storage_and_discards_partial_download(
     storage.download.assert_not_called()
 
 
-def test_restore_deadline_shrinks_as_the_budget_is_consumed(tmp_path) -> None:
+def test_restore_passes_read_deadline_seconds_as_the_storage_timeout(tmp_path) -> None:
     storage = mock.MagicMock()
     storage.download.side_effect = _write_download(b"weights")
     cache = _cache(storage, read_deadline_seconds=5)
     content_hash = hashlib.md5(b"weights").hexdigest()
 
-    before = cache_module.monotonic()
     assert cache.restore(content_hash, str(tmp_path / "weights")) is True
-    after = cache_module.monotonic()
 
-    deadline = storage.download.call_args.kwargs["deadline"]
-    assert before + 5 <= deadline <= after + 5
+    # `read_deadline_seconds` is a re-armed no-progress budget the storage
+    # owns, not a deadline the caller computes - passed through as-is.
+    assert storage.download.call_args.kwargs["timeout_seconds"] == 5
 
 
 def test_cleanup_exception_does_not_suppress_fallback(tmp_path) -> None:
