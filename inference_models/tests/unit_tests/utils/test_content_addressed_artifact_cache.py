@@ -6,6 +6,7 @@ from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
     VerifiedContentAddressedArtifactCache,
     _BoundedDaemonExecutor,
+    _CircuitBreaker,
 )
 
 
@@ -321,3 +322,76 @@ def test_missing_upload_source_does_not_open_write_circuit(tmp_path) -> None:
     # An evicted source is a local race, not a cache-health signal, so a single
     # failure threshold still leaves the write circuit closed for the second call.
     assert storage.upload.call_count == 2
+
+
+def test_circuit_breaker_leaky_counter_needs_more_than_one_success_to_erase_failures() -> (
+    None
+):
+    breaker = _CircuitBreaker(failure_threshold=3, cooldown_seconds=60)
+
+    # fail, fail, success, fail -> count goes 1, 2, 1, 2: the interleaved
+    # success only cancels one failure, not the whole streak, so the circuit
+    # is still closed here even though 3 failures have happened overall.
+    for _ in range(2):
+        breaker.record_failure(breaker.admit())
+    breaker.record_success(breaker.admit())
+    breaker.record_failure(breaker.admit())
+    assert breaker.admit() is not None
+
+    # A 4th failure (count -> 3) is what actually trips it.
+    breaker.record_failure(breaker.admit())
+    assert breaker.admit() is None
+
+
+def test_circuit_breaker_single_success_does_not_reset_a_healthy_run() -> None:
+    # The old "reset to 0 on any success" behaviour is gone: a lone success
+    # among failures must not fully erase accumulated failure pressure.
+    breaker = _CircuitBreaker(failure_threshold=2, cooldown_seconds=60)
+
+    breaker.record_failure(breaker.admit())
+    breaker.record_success(breaker.admit())  # leaks by 1 (count -> 0), not a reset
+    breaker.record_failure(breaker.admit())
+    breaker.record_failure(breaker.admit())
+    assert breaker.admit() is None
+
+
+def test_circuit_breaker_ignores_a_stale_success_admitted_before_the_trip() -> None:
+    breaker = _CircuitBreaker(failure_threshold=1, cooldown_seconds=60)
+
+    # A slow call is admitted while the circuit is still closed...
+    stale_epoch = breaker.admit()
+    assert stale_epoch is not None
+
+    # ...then an unrelated, faster call fails and trips the circuit.
+    breaker.record_failure(breaker.admit())
+    assert breaker.admit() is None
+
+    # The slow call finally finishes as a success, reporting against the
+    # epoch it was admitted under - which the trip has since superseded.
+    breaker.record_success(stale_epoch)
+
+    # The stale success must not have re-closed the circuit.
+    assert breaker.admit() is None
+
+
+def test_circuit_breaker_ignores_a_stale_failure_from_before_the_trip() -> None:
+    breaker = _CircuitBreaker(failure_threshold=2, cooldown_seconds=60)
+
+    stale_epoch = breaker.admit()
+
+    # Two unrelated failures trip the circuit and start a new epoch.
+    breaker.record_failure(breaker.admit())
+    breaker.record_failure(breaker.admit())
+    assert breaker.admit() is None
+
+    # The stale call also fails, but it belongs to the epoch before the trip
+    # and must not double-count against - or otherwise disturb - the new one.
+    breaker.record_failure(stale_epoch)
+
+    # Let the cooldown lapse and confirm a single new failure alone hasn't
+    # already re-tripped a freshly reset window (threshold is 2).
+    breaker._open_until = 0.0
+    epoch = breaker.admit()
+    assert epoch is not None
+    breaker.record_failure(epoch)
+    assert breaker.admit() is not None

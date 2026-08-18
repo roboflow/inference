@@ -78,31 +78,59 @@ class _BoundedDaemonExecutor:
 
 
 class _CircuitBreaker:
+    """Fail-fast gate with a leaky failure count and epoch-tagged outcomes.
+
+    `admit()` hands back the current epoch alongside its go/no-go decision;
+    callers report their outcome against that token via `record_success`/
+    `record_failure`. A call admitted before a trip can finish long after -
+    concurrent calls have wildly different durations - so without the token,
+    its outcome would land against whatever state the breaker is in *now*,
+    not the state that was true when it started. Tagging every outcome with
+    the epoch it was admitted under means a stale completion from before a
+    trip can only ever match a stale epoch, so it can neither re-close a
+    circuit another call already opened nor pollute the failure count of the
+    window that opened it.
+
+    The failure count leaks by one on success rather than resetting to zero.
+    With many concurrent, variable-duration calls, completions interleave in
+    an order unrelated to when they started, so a strict "N consecutive
+    failures" counter can be reset by a single unrelated success arbitrarily
+    often and never reach threshold even under a genuinely high failure
+    rate. Leaking means an occasional success can no longer erase an entire
+    run of failures - the count still tracks overall failure pressure.
+    """
+
     def __init__(self, failure_threshold: int, cooldown_seconds: float) -> None:
         self._failure_threshold = failure_threshold
         self._cooldown_seconds = cooldown_seconds
         self._lock = threading.Lock()
-        self._consecutive_failures = 0
+        self._failure_count = 0
         self._open_until = 0.0
+        self._epoch = 0
 
-    def is_open(self) -> bool:
+    def admit(self) -> Optional[int]:
+        """Returns the epoch to report the outcome under, or None if open."""
         with self._lock:
-            if monotonic() >= self._open_until:
-                self._open_until = 0.0
-                return False
-            return True
-
-    def record_success(self) -> None:
-        with self._lock:
-            self._consecutive_failures = 0
+            if monotonic() < self._open_until:
+                return None
             self._open_until = 0.0
+            return self._epoch
 
-    def record_failure(self) -> None:
+    def record_success(self, epoch: int) -> None:
         with self._lock:
-            self._consecutive_failures += 1
-            if self._consecutive_failures >= self._failure_threshold:
+            if epoch != self._epoch:
+                return  # Outcome of a call admitted before the last trip.
+            self._failure_count = max(0, self._failure_count - 1)
+
+    def record_failure(self, epoch: int) -> None:
+        with self._lock:
+            if epoch != self._epoch:
+                return  # Outcome of a call admitted before the last trip.
+            self._failure_count += 1
+            if self._failure_count >= self._failure_threshold:
                 self._open_until = monotonic() + self._cooldown_seconds
-                self._consecutive_failures = 0
+                self._failure_count = 0
+                self._epoch += 1
 
 
 def _discard_partial_download(path: str) -> None:
@@ -144,54 +172,58 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
         if not content_hash or not _MD5_PATTERN.fullmatch(content_hash):
             LOGGER.warning("Artifact cache request has an invalid MD5 hash")
             return False
-        if self._read_circuit.is_open():
+        epoch = self._read_circuit.admit()
+        if epoch is None:
             return False
         try:
             os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
             found = self._storage.download(self._blob_key(content_hash), target_path)
         except Exception as error:
             _discard_partial_download(target_path)
-            self._read_circuit.record_failure()
+            self._read_circuit.record_failure(epoch)
             LOGGER.warning("Artifact cache read failed: %s", error)
             return False
         if not found:
             _discard_partial_download(target_path)
-            self._read_circuit.record_success()
+            self._read_circuit.record_success(epoch)
             return False
         try:
             verified = self._md5(target_path) == content_hash.lower()
         except Exception as error:
             _discard_partial_download(target_path)
-            self._read_circuit.record_failure()
+            self._read_circuit.record_failure(epoch)
             LOGGER.warning("Could not verify artifact cache download: %s", error)
             return False
         if not verified:
             _discard_partial_download(target_path)
-            self._read_circuit.record_failure()
+            self._read_circuit.record_failure(epoch)
             LOGGER.warning("Artifact cache returned content with an invalid MD5 hash")
             return False
-        self._read_circuit.record_success()
+        self._read_circuit.record_success(epoch)
         return True
 
     def schedule_store(self, content_hash: Optional[str], source_path: str) -> bool:
         if not content_hash or not _MD5_PATTERN.fullmatch(content_hash):
             LOGGER.warning("Artifact cache store has an invalid MD5 hash")
             return False
-        if self._write_circuit.is_open():
+        epoch = self._write_circuit.admit()
+        if epoch is None:
             return False
         try:
             submitted = self._upload_executor.submit(
-                self._store_best_effort, content_hash, source_path
+                self._store_best_effort, content_hash, source_path, epoch
             )
         except Exception as error:
-            self._write_circuit.record_failure()
+            self._write_circuit.record_failure(epoch)
             LOGGER.warning("Could not schedule artifact cache upload: %s", error)
             return False
         if not submitted:
             LOGGER.warning("Artifact cache upload queue is full; dropping upload")
         return submitted
 
-    def _store_best_effort(self, content_hash: str, source_path: str) -> None:
+    def _store_best_effort(
+        self, content_hash: str, source_path: str, epoch: int
+    ) -> None:
         # Uploads are only scheduled for content whose MD5 was verified during
         # the download, and `restore` re-verifies everything it reads back, so
         # re-hashing the whole file here would cost a full read and buy nothing.
@@ -202,10 +234,10 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
             # local race, not a signal about cache health, so the circuit stays shut.
             LOGGER.warning("Artifact cache upload source disappeared: %s", error)
         except Exception as error:
-            self._write_circuit.record_failure()
+            self._write_circuit.record_failure(epoch)
             LOGGER.warning("Artifact cache upload failed: %s", error)
         else:
-            self._write_circuit.record_success()
+            self._write_circuit.record_success(epoch)
 
     def _blob_key(self, content_hash: str) -> str:
         prefix = self._prefix.strip("/")
