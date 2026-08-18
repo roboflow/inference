@@ -31,7 +31,10 @@ def test_runtime_negotiated_rfdetr_trt_inference(tmp_path: Path) -> None:
     from inference_models.weights_providers.entities import FileDownloadSpecs
 
     device = torch.device("cuda:0")
-    model_metadata = get_model_from_provider(model_id=MODEL_ID)
+    model_metadata = get_model_from_provider(
+        model_id=MODEL_ID,
+        provider="roboflow",
+    )
     selected_packages = [
         package
         for package in model_metadata.model_packages
