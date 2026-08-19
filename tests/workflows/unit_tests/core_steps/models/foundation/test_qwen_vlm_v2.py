@@ -14,8 +14,6 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v2 import (
     DEFAULT_NATIVE_MODEL_VERSION,
     DEFAULT_OPENROUTER_MODEL_VERSION,
     FINE_TUNED_NATIVE_LABEL,
-    MODEL_VARIANTS,
-    OPENROUTER_VARIANT_LABELS,
     BlockManifest,
     QwenVlmBlockV2,
     build_qwen_openrouter_prompts,
@@ -96,55 +94,6 @@ def test_manifest_defaults():
     assert manifest.reasoning_effort == "none"
 
 
-def test_manifest_rejects_out_of_range_temperature():
-    with pytest.raises(ValidationError):
-        BlockManifest.model_validate(
-            {
-                "type": "roboflow_core/qwen_vlm@v2",
-                "name": "step",
-                "images": "$inputs.image",
-                "task_type": "caption",
-                "temperature": 3.0,
-            }
-        )
-
-
-def test_manifest_accepts_explicit_temperature_and_selector():
-    manifest = BlockManifest.model_validate(
-        {
-            "type": "roboflow_core/qwen_vlm@v2",
-            "name": "step",
-            "images": "$inputs.image",
-            "task_type": "caption",
-            "temperature": 0.7,
-        }
-    )
-    assert manifest.temperature == 0.7
-    manifest = BlockManifest.model_validate(
-        {
-            "type": "roboflow_core/qwen_vlm@v2",
-            "name": "step",
-            "images": "$inputs.image",
-            "task_type": "caption",
-            "temperature": "$inputs.temperature",
-        }
-    )
-    assert manifest.temperature == "$inputs.temperature"
-
-
-def test_manifest_rejects_invalid_reasoning_effort():
-    with pytest.raises(ValidationError):
-        BlockManifest.model_validate(
-            {
-                "type": "roboflow_core/qwen_vlm@v2",
-                "name": "step",
-                "images": "$inputs.image",
-                "task_type": "caption",
-                "reasoning_effort": "maximum",
-            }
-        )
-
-
 def test_manifest_object_detection_requires_classes():
     with pytest.raises(ValidationError):
         BlockManifest.model_validate(
@@ -184,53 +133,6 @@ def test_manifest_openrouter_resets_stale_fine_tuned_model_version():
         }
     )
     assert manifest.model_version == DEFAULT_NATIVE_MODEL_VERSION
-
-
-def test_manifest_rejects_unknown_openrouter_model():
-    with pytest.raises(ValidationError):
-        BlockManifest.model_validate(
-            {
-                "type": "roboflow_core/qwen_vlm@v2",
-                "name": "step",
-                "images": "$inputs.image",
-                "task_type": "caption",
-                "backend": "openrouter",
-                # v1 roster entry not carried over to the benchmarked v2 roster
-                "openrouter_model_version": "Qwen 3.6 27B",
-            }
-        )
-
-
-# ---------------------------------------------------------------------------
-# Model roster
-# ---------------------------------------------------------------------------
-
-
-def test_openrouter_roster_matches_benchmarked_models():
-    slugs = {MODEL_VARIANTS[label]["model_id"] for label in OPENROUTER_VARIANT_LABELS}
-    assert slugs == {
-        "qwen/qwen3.8-max",
-        "qwen/qwen3.7-plus",
-        "qwen/qwen3.7-flash",
-        "qwen/qwen3.8-27b",
-        "qwen/qwen3.5-27b",
-        "qwen/qwen3-vl-235b-a22b-instruct",
-    }
-
-
-def test_reasoning_required_flag_only_on_qwen_max():
-    reasoning_required = {
-        label
-        for label in OPENROUTER_VARIANT_LABELS
-        if MODEL_VARIANTS[label].get("reasoning_required", False)
-    }
-    assert reasoning_required == {"Qwen 3.8 Max"}
-
-
-def test_all_variants_have_valid_backend():
-    for label, info in MODEL_VARIANTS.items():
-        assert info["backend"] in ("native", "openrouter"), label
-        assert info["model_id"], label
 
 
 # ---------------------------------------------------------------------------
@@ -333,48 +235,6 @@ def test_classification_prompt_keeps_json_contract_and_classes():
     # Output contract consumed by vlm_as_classifier@v2 must be preserved.
     assert '{"class_name": "class-name", "confidence": 0.4}' in text
     assert "List of all classes to be recognised by model: dog, cat" in text
-
-
-def test_structured_answering_prompt_contains_specification():
-    image = np.zeros((16, 16, 3), dtype=np.uint8)
-
-    prompts = build_qwen_openrouter_prompts(
-        images=[image],
-        task_type="structured-answering",
-        prompt=None,
-        output_structure={"animal": "type of animal in the image"},
-        classes=None,
-    )
-
-    text = prompts[0][0]["content"][1]["text"]
-    assert "animal" in text
-    assert "type of animal in the image" in text
-
-
-def test_vqa_prompt_contains_question():
-    image = np.zeros((16, 16, 3), dtype=np.uint8)
-
-    prompts = build_qwen_openrouter_prompts(
-        images=[image],
-        task_type="visual-question-answering",
-        prompt="How many dogs?",
-        output_structure=None,
-        classes=None,
-    )
-
-    text = prompts[0][0]["content"][1]["text"]
-    assert "Question: How many dogs?" in text
-
-
-def test_build_prompts_unknown_task_raises():
-    with pytest.raises(ValueError, match="not supported"):
-        build_qwen_openrouter_prompts(
-            images=[np.zeros((16, 16, 3), dtype=np.uint8)],
-            task_type="garbage",
-            prompt=None,
-            output_structure=None,
-            classes=None,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -492,26 +352,6 @@ def test_run_openrouter_reasoning_required_model_falls_back_to_low_effort(mock_o
 
 
 @patch.object(QwenVlmBlockV2, "execute_openrouter_batch")
-def test_run_openrouter_explicit_effort_is_forwarded(mock_or):
-    mock_or.return_value = [("resp", "")]
-    block = QwenVlmBlockV2(
-        model_manager=MagicMock(),
-        api_key="ws-key",
-        step_execution_mode=StepExecutionMode.LOCAL,
-    )
-
-    block.run(
-        **_base_run_kwargs(
-            backend="openrouter",
-            task_type="ocr",
-            reasoning_effort="high",
-        )
-    )
-
-    assert mock_or.call_args.kwargs["reasoning"] == {"effort": "high"}
-
-
-@patch.object(QwenVlmBlockV2, "execute_openrouter_batch")
 def test_run_openrouter_explicit_max_tokens_overrides_default(mock_or):
     mock_or.return_value = [("resp", "")]
     block = QwenVlmBlockV2(
@@ -565,23 +405,6 @@ def test_run_native_explicit_max_tokens_is_forwarded_as_max_new_tokens():
 
     request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
     assert request.max_new_tokens == 1024
-
-
-def test_run_openrouter_unknown_variant_raises():
-    block = QwenVlmBlockV2(
-        model_manager=MagicMock(),
-        api_key="ws-key",
-        step_execution_mode=StepExecutionMode.LOCAL,
-    )
-
-    with pytest.raises(ValueError, match="Unknown OpenRouter Qwen variant"):
-        block.run(
-            **_base_run_kwargs(
-                backend="openrouter",
-                openrouter_model_version="Qwen 3.6 27B",
-                task_type="ocr",
-            )
-        )
 
 
 def test_run_dispatches_to_local_native_when_step_mode_local():

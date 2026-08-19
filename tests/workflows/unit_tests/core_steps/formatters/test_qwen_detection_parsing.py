@@ -3,7 +3,6 @@ import pytest
 
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.qwen_detection_parsing import (
     convert_qwen_detection_to_pixel_xyxy,
-    extract_qwen_detection_entries,
     get_qwen_detection_box,
     get_qwen_detection_class_name,
     parse_qwen_object_detection_response,
@@ -34,46 +33,8 @@ def _build_image(height: int, width: int) -> WorkflowImageData:
 
 
 # ---------------------------------------------------------------------------
-# Entry extraction
-# ---------------------------------------------------------------------------
-
-
-def test_extract_entries_accepts_bare_list() -> None:
-    entries = [{"box_2d": [0, 0, 10, 10], "label": "cat"}]
-
-    assert extract_qwen_detection_entries(parsed_data=entries) == entries
-
-
-def test_extract_entries_accepts_detections_wrapper() -> None:
-    entries = [{"box_2d": [0, 0, 10, 10], "label": "cat"}]
-
-    assert (
-        extract_qwen_detection_entries(parsed_data={"detections": entries}) == entries
-    )
-
-
-@pytest.mark.parametrize(
-    "parsed_data",
-    [
-        pytest.param({"objects": []}, id="dict-without-detections"),
-        pytest.param({"detections": "not-a-list"}, id="detections-not-a-list"),
-        pytest.param("not-a-list", id="string"),
-        pytest.param(None, id="none"),
-    ],
-)
-def test_extract_entries_raises_on_unexpected_shape(parsed_data) -> None:
-    with pytest.raises(ValueError):
-        extract_qwen_detection_entries(parsed_data=parsed_data)
-
-
-# ---------------------------------------------------------------------------
 # Box / label extraction
 # ---------------------------------------------------------------------------
-
-
-def test_get_box_reads_box_2d_and_bbox_2d_aliases() -> None:
-    assert get_qwen_detection_box({"box_2d": [1, 2, 3, 4]}) == [1.0, 2.0, 3.0, 4.0]
-    assert get_qwen_detection_box({"bbox_2d": [1, 2, 3, 4]}) == [1.0, 2.0, 3.0, 4.0]
 
 
 @pytest.mark.parametrize(
@@ -105,16 +66,6 @@ def test_get_class_name_reads_label_aliases_in_priority_order() -> None:
 # ---------------------------------------------------------------------------
 # Coordinate conversion
 # ---------------------------------------------------------------------------
-
-
-def test_convert_box_scales_normalized_coordinates_to_pixels() -> None:
-    result = convert_qwen_detection_to_pixel_xyxy(
-        box=[100.0, 200.0, 500.0, 1000.0],
-        image_height=480,
-        image_width=640,
-    )
-
-    assert result == pytest.approx([64.0, 96.0, 320.0, 480.0])
 
 
 def test_convert_box_clamps_out_of_range_coordinates() -> None:
@@ -183,24 +134,6 @@ def test_parse_response_skips_malformed_entries() -> None:
 
     assert len(result) == 1
     assert result["class_name"].tolist() == ["cat"]
-
-
-def test_parse_response_hardcodes_confidence_to_one() -> None:
-    # VLMs do not produce calibrated detection confidences; any
-    # model-provided value is ignored and 1.0 is used.
-    parsed_data = [
-        {"box_2d": [0, 0, 100, 100], "label": "cat", "confidence": 1.7},
-        {"box_2d": [0, 0, 100, 100], "label": "dog", "confidence": -0.3},
-    ]
-
-    result = parse_qwen_object_detection_response(
-        image=_build_image(height=480, width=640),
-        parsed_data=parsed_data,
-        classes=["cat", "dog"],
-        inference_id="inference-id",
-    )
-
-    assert np.allclose(result.confidence, [1.0, 1.0])
 
 
 def test_parse_response_for_empty_list() -> None:

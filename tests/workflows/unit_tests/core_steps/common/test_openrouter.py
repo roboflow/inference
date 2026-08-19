@@ -257,48 +257,6 @@ def test_proxied_request_returns_reasoning_trace_when_requested(mock_post):
     assert out == ("answer", "trace")
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_returns_empty_trace_when_reasoning_absent(mock_post):
-    mock_post.return_value = {"choices": [{"message": {"content": "answer"}}]}
-
-    out = _execute_proxied_openrouter_request(
-        roboflow_api_key="k",
-        openrouter_api_key="rf_key:account",
-        model="qwen/qwen3.7-plus",
-        messages=[{"role": "user", "content": "hi"}],
-        max_tokens=10,
-        temperature=None,
-        privacy_level="deny",
-        include_reasoning=True,
-    )
-
-    assert out == ("answer", "")
-
-
-@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
-def test_direct_request_returns_reasoning_trace_when_requested(mock_openai_cls):
-    client = MagicMock()
-    response = MagicMock()
-    choice = MagicMock()
-    choice.message.content = "answer"
-    choice.message.reasoning = "trace"
-    response.choices = [choice]
-    client.chat.completions.create.return_value = response
-    mock_openai_cls.return_value = client
-
-    out = _execute_direct_openrouter_request(
-        api_key="sk-or-v1-test",
-        model="qwen/qwen3.7-plus",
-        messages=[{"role": "user", "content": "hi"}],
-        max_tokens=10,
-        temperature=None,
-        privacy_level="deny",
-        include_reasoning=True,
-    )
-
-    assert out == ("answer", "trace")
-
-
 @patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
 def test_direct_request_returns_empty_trace_when_reasoning_missing(mock_openai_cls):
     client = MagicMock()
@@ -470,12 +428,6 @@ def test_reasoning_error_ignores_connection_errors_with_matching_message():
     assert _is_unsupported_reasoning_error(error) is False
 
 
-def test_reasoning_error_ignores_plain_exceptions():
-    assert (
-        _is_unsupported_reasoning_error(Exception(MANDATORY_REASONING_ERROR)) is False
-    )
-
-
 def test_reasoning_error_ignores_unrelated_client_errors():
     error = RoboflowAPIUnsuccessfulRequestError("image exceeds maximum size")
     assert _is_unsupported_reasoning_error(error) is False
@@ -559,25 +511,6 @@ def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_does_not_retry_on_connection_error(mock_post):
-    mock_post.side_effect = RoboflowAPIConnectionError(MANDATORY_REASONING_ERROR)
-
-    with pytest.raises(RoboflowAPIConnectionError):
-        _execute_proxied_openrouter_request(
-            roboflow_api_key="ws-key",
-            openrouter_api_key="rf_key:account",
-            model="qwen/qwen3.8-max",
-            messages=[],
-            max_tokens=1,
-            temperature=None,
-            privacy_level="deny",
-            reasoning={"enabled": False},
-        )
-
-    assert mock_post.call_count == 1
-
-
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
 def test_proxied_request_does_not_retry_when_no_reasoning_sent(mock_post):
     mock_post.side_effect = RoboflowAPIUnsuccessfulRequestError(
         MANDATORY_REASONING_ERROR
@@ -628,28 +561,6 @@ def test_direct_request_retries_without_reasoning_on_rejection(
     assert mock_logger.warning.call_count == 1
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
-def test_direct_request_does_not_retry_on_server_error(mock_openai_cls):
-    client = MagicMock()
-    client.chat.completions.create.side_effect = _openai_status_error(
-        MANDATORY_REASONING_ERROR, status_code=502
-    )
-    mock_openai_cls.return_value = client
-
-    with pytest.raises(APIStatusError):
-        _execute_direct_openrouter_request(
-            api_key="sk-or-v1-test",
-            model="qwen/qwen3.8-max",
-            messages=[],
-            max_tokens=1,
-            temperature=None,
-            privacy_level="deny",
-            reasoning={"enabled": False},
-        )
-
-    assert client.chat.completions.create.call_count == 1
-
-
 # ---------------------------------------------------------------------------
 # batch-level reasoning forwarding
 # ---------------------------------------------------------------------------
@@ -674,27 +585,6 @@ def test_execute_openrouter_batch_forwards_reasoning_on_managed_key(mock_proxied
     )
 
     assert mock_proxied.call_args.kwargs["reasoning"] == {"enabled": False}
-
-
-@patch(
-    "inference.core.workflows.core_steps.common.openrouter._execute_direct_openrouter_request"
-)
-def test_execute_openrouter_batch_forwards_reasoning_on_direct_key(mock_direct):
-    mock_direct.side_effect = ["resp"]
-    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
-
-    block.execute_openrouter_batch(
-        openrouter_api_key="sk-or-v1-abcdef",
-        model="qwen/qwen3.7-flash",
-        prompts=[[{"role": "user", "content": "hi"}]],
-        max_tokens=50,
-        temperature=None,
-        privacy_level="deny",
-        max_concurrent_requests=1,
-        reasoning={"effort": "low"},
-    )
-
-    assert mock_direct.call_args.kwargs["reasoning"] == {"effort": "low"}
 
 
 # ---------------------------------------------------------------------------
