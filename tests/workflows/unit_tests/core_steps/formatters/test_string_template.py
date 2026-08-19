@@ -105,6 +105,69 @@ def test_block_run_when_format_spec_used() -> None:
     assert result == {"output": "Confidence: 0.99"}
 
 
+def test_block_run_when_nested_format_spec_variable_is_declared() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    result = step.run(
+        template="Confidence: {confidence:{width}}",
+        data={"confidence": 0.98765, "width": ".2f"},
+        data_operations={},
+    )
+
+    # then
+    assert result == {"output": "Confidence: 0.99"}
+
+
+def test_block_run_when_nested_format_spec_variable_is_undeclared() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(
+            template="Confidence: {confidence:{width}}",
+            data={"confidence": 0.98765},
+            data_operations={},
+        )
+
+    # then
+    assert "width" in str(error.value)
+
+
+def test_block_run_when_nested_format_spec_uses_attribute_access() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(
+            template="{x:{y.__class__}}",
+            data={"x": 1, "y": "world"},
+            data_operations={},
+        )
+
+    # then
+    assert "attribute or index access" in str(error.value)
+
+
+def test_block_run_when_nested_format_spec_uses_positional_placeholder() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(
+            template="{x:{0}}",
+            data={"x": 1},
+            data_operations={},
+        )
+
+    # then
+    assert "positional" in str(error.value)
+
+
 def test_block_run_when_template_references_undeclared_variable() -> None:
     # given
     step = StringTemplateBlockV1()

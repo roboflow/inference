@@ -199,7 +199,7 @@ def extract_placeholders(template: str) -> set:
             f"String Template block could not parse template: {error}. "
             f"Use double braces to produce literal braces in the output."
         ) from error
-    for _, field_name, _, _ in parsed_template:
+    for _, field_name, format_spec, _ in parsed_template:
         if field_name is None:
             continue
         if field_name == "" or field_name.isdigit():
@@ -214,4 +214,8 @@ def extract_placeholders(template: str) -> set:
                 f"nested values before templating."
             )
         placeholders.add(field_name)
+        # format specs may contain nested replacement fields (e.g. `{value:{width}}`)
+        # which str.format resolves recursively - they need the same validation
+        if format_spec and "{" in format_spec:
+            placeholders.update(extract_placeholders(template=format_spec))
     return placeholders
