@@ -39,6 +39,13 @@ def _openai_status_error(message: str, status_code: int) -> APIStatusError:
     return APIStatusError(message, response=response, body=None)
 
 
+def _proxy_error(message: str, status_code: int) -> RoboflowAPIUnsuccessfulRequestError:
+    """Mirror _build_proxy_error_handler: Roboflow exception with status attached."""
+    error = RoboflowAPIUnsuccessfulRequestError(message)
+    error.status_code = status_code
+    return error
+
+
 # ---------------------------------------------------------------------------
 # build_provider_routing
 # ---------------------------------------------------------------------------
@@ -407,8 +414,21 @@ def test_direct_request_raises_when_message_content_is_none(mock_openai_cls):
 
 
 def test_reasoning_error_matches_mandatory_reasoning_rejection_from_proxy():
-    error = RoboflowAPIUnsuccessfulRequestError(MANDATORY_REASONING_ERROR)
+    error = _proxy_error(MANDATORY_REASONING_ERROR, status_code=400)
     assert _is_unsupported_reasoning_error(error) is True
+
+
+def test_reasoning_error_ignores_proxied_5xx_even_with_matching_message():
+    # A transient upstream 502 relayed by the proxy carries the provider's
+    # message verbatim; it must never trigger a duplicate billed request.
+    error = _proxy_error(MANDATORY_REASONING_ERROR, status_code=502)
+    assert _is_unsupported_reasoning_error(error) is False
+
+
+def test_reasoning_error_ignores_proxy_exception_without_status():
+    # Raised outside _PROXY_ERROR_HANDLERS (no status attached): not retryable.
+    error = RoboflowAPIUnsuccessfulRequestError(MANDATORY_REASONING_ERROR)
+    assert _is_unsupported_reasoning_error(error) is False
 
 
 def test_reasoning_error_matches_invalid_option_rejection_from_direct_400():
@@ -429,7 +449,7 @@ def test_reasoning_error_ignores_connection_errors_with_matching_message():
 
 
 def test_reasoning_error_ignores_unrelated_client_errors():
-    error = RoboflowAPIUnsuccessfulRequestError("image exceeds maximum size")
+    error = _proxy_error("image exceeds maximum size", status_code=400)
     assert _is_unsupported_reasoning_error(error) is False
 
 
@@ -488,7 +508,7 @@ def test_direct_request_includes_reasoning_and_omits_none_temperature(mock_opena
 @patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
 def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_logger):
     mock_post.side_effect = [
-        RoboflowAPIUnsuccessfulRequestError(MANDATORY_REASONING_ERROR),
+        _proxy_error(MANDATORY_REASONING_ERROR, status_code=400),
         {"choices": [{"message": {"content": "ok"}}]},
     ]
 
@@ -511,10 +531,29 @@ def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_does_not_retry_on_relayed_502(mock_post):
+    # Regression: the proxy relays upstream 5xx with the provider message
+    # preserved; a reasoning-flavored 502 must not fire a duplicate request.
+    mock_post.side_effect = _proxy_error(MANDATORY_REASONING_ERROR, status_code=502)
+
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _execute_proxied_openrouter_request(
+            roboflow_api_key="ws-key",
+            openrouter_api_key="rf_key:account",
+            model="qwen/qwen3.8-max",
+            messages=[],
+            max_tokens=1,
+            temperature=None,
+            privacy_level="deny",
+            reasoning={"enabled": False},
+        )
+
+    assert mock_post.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
 def test_proxied_request_does_not_retry_when_no_reasoning_sent(mock_post):
-    mock_post.side_effect = RoboflowAPIUnsuccessfulRequestError(
-        MANDATORY_REASONING_ERROR
-    )
+    mock_post.side_effect = _proxy_error(MANDATORY_REASONING_ERROR, status_code=400)
 
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _execute_proxied_openrouter_request(

@@ -267,8 +267,14 @@ def _build_proxy_error_handler(
         except Exception:
             api_msg = str(http_error)
         if status_code == 403:
-            raise RoboflowAPIForbiddenError(api_msg) from http_error
-        raise RoboflowAPIUnsuccessfulRequestError(api_msg) from http_error
+            error = RoboflowAPIForbiddenError(api_msg)
+        else:
+            error = RoboflowAPIUnsuccessfulRequestError(api_msg)
+        # The exception types carry no HTTP status; attach it so callers (the
+        # retry-without-reasoning heuristic) can tell a client rejection from
+        # a relayed upstream 5xx.
+        error.status_code = status_code
+        raise error from http_error
 
     return _handler
 
@@ -304,20 +310,23 @@ _REASONING_REJECTION_MARKERS = (
 def _is_unsupported_reasoning_error(error: Exception) -> bool:
     """Whether the error is a client-error rejection of the reasoning config.
 
-    Only client (HTTP 4xx-style) errors qualify — connection/timeout failures
-    must never trigger the retry-without-reasoning fallback, as that would
-    issue a duplicate billed request for a transient problem. On the direct
-    path the OpenAI SDK raises ``APIStatusError`` with a status code; on the
-    proxied path HTTP errors surface as ``RoboflowAPIUnsuccessfulRequestError``
-    / ``RoboflowAPIForbiddenError`` (network failures come through as distinct
-    connection/timeout exception types).
+    Only client (HTTP 4xx) errors qualify — connection/timeout failures and
+    relayed upstream 5xx must never trigger the retry-without-reasoning
+    fallback, as that would issue a duplicate billed request for a transient
+    problem. On the direct path the OpenAI SDK raises ``APIStatusError`` with
+    a status code; on the proxied path ``_PROXY_ERROR_HANDLERS`` attaches
+    ``status_code`` to the raised Roboflow exception. An exception without a
+    status (raised outside those handlers) is treated as not retryable.
     """
     if isinstance(error, APIStatusError):
-        if not 400 <= error.status_code < 500:
-            return False
-    elif not isinstance(
+        status = error.status_code
+    elif isinstance(
         error, (RoboflowAPIUnsuccessfulRequestError, RoboflowAPIForbiddenError)
     ):
+        status = getattr(error, "status_code", None)
+    else:
+        return False
+    if status is None or not 400 <= status < 500:
         return False
     message = str(error).lower()
     return "reasoning" in message and any(

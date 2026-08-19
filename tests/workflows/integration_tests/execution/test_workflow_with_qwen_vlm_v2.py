@@ -60,6 +60,24 @@ OBJECT_DETECTION_WORKFLOW = {
 }
 
 
+def test_object_detection_workflow_compiles(model_manager: ModelManager) -> None:
+    """Ungated compile-only check: the live tests below are API-key-gated and
+    never run in CI, so without this nothing in CI would compile the
+    qwen_vlm@v2 -> vlm_as_detector@v2 block pair."""
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    assert execution_engine is not None
+
+
 @pytest.mark.skipif(
     condition=OPEN_ROUTER_API_KEY is None, reason="OpenRouter API key not provided"
 )

@@ -22,9 +22,9 @@ that performed best for Qwen models in the vlm-exam benchmarks:
   payload stays under Alibaba DashScope's data-URI limit.
 * ``max_tokens`` is unset by default; the OpenRouter path substitutes
   16384 (benchmark parity — detection output on busy images easily
-  exceeds the old 500-token default) while the native path defers to
-  the inference server default (512, matching v1). ``temperature`` is
-  not sent unless the user sets it.
+  exceeds the old 500-token default) while the native path sends
+  nothing, so the inference server default (512) applies.
+  ``temperature`` is not sent unless the user sets it.
 
 The OpenRouter model roster is restricted to the vlm-exam-benchmarked
 models. The native backend is carried over from v1 except for the
@@ -228,8 +228,9 @@ REASONING_REQUIRED_FALLBACK_EFFORT = "low"
 # unset. Benchmark parity: detection output on busy images easily exceeds
 # the older 500-token default, and reasoning models need headroom to think
 # and still emit a visible answer. The native path deliberately has no
-# block-side default — the inference server's own default (512) applies,
-# matching qwen_vlm@v1 behavior.
+# block-side default: nothing is sent, so the inference server's own
+# default (512) applies. (v1 sends the mixin default of 500 instead;
+# effectively the same budget, but not the identical mechanism.)
 QWEN_OPENROUTER_DEFAULT_MAX_TOKENS = 16384
 
 

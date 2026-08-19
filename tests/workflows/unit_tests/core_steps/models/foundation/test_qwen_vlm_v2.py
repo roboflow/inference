@@ -405,7 +405,7 @@ def test_run_native_default_max_tokens_defers_to_server_default():
 
     request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
     # No block-side default: the request leaves max_new_tokens unset so the
-    # inference server default (512) applies, matching v1 behavior.
+    # inference server default (512) applies.
     assert request.max_new_tokens is None
 
 
