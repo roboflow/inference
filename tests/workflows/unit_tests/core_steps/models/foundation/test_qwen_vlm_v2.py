@@ -220,6 +220,25 @@ def test_prompts_are_single_user_message_with_image_first(task_type, kwargs):
     assert len(content[1]["text"]) > 0
 
 
+def test_native_detection_prompt_uses_same_benchmarked_template():
+    # Both backends must emit one detection contract so the recommended
+    # parser (vlm_as_detector@v2, model_type="qwen") works regardless of
+    # backend. Regression guard for the v1-era x_min/0.0-1.0 prompt.
+    prompt = v2._build_native_prompt(
+        task_type="object-detection",
+        prompt=None,
+        output_structure=None,
+        classes=["dog", "cat"],
+    )
+
+    user_text, system_text = prompt.split("<system_prompt>")
+    assert user_text == EXPECTED_DETECTION_PROMPT_TEMPLATE.format(class_list="dog, cat")
+    # Empty system half: the model server substitutes its default system
+    # prompt, the closest native equivalent of the benchmark's
+    # single-user-message structure.
+    assert system_text == ""
+
+
 def test_classification_prompt_keeps_json_contract_and_classes():
     image = np.zeros((16, 16, 3), dtype=np.uint8)
 

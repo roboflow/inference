@@ -9,7 +9,9 @@ that performed best for Qwen models in the vlm-exam benchmarks:
 * **object-detection** asks for a bare JSON list of ``box_2d``/``label``
   entries with ``[x_min, y_min, x_max, y_max]`` integer coordinates
   normalized to 0-1000 — Qwen's native grounding convention — parsed by
-  ``vlm_as_detector@v2`` with ``model_type="qwen"``.
+  ``vlm_as_detector@v2`` with ``model_type="qwen"``. Both backends emit
+  this same contract: the native path replaces v1's ad-hoc
+  ``x_min``/0.0-1.0 detection prompt with the benchmarked template.
 * every task sends a single user message with the **image before the
   text** and no system role, matching how the benchmarks prompt Qwen.
 * requests carry an explicit OpenRouter ``reasoning`` config: disabled by
@@ -25,7 +27,8 @@ that performed best for Qwen models in the vlm-exam benchmarks:
   not sent unless the user sets it.
 
 The OpenRouter model roster is restricted to the vlm-exam-benchmarked
-models. The native backend is carried over from v1 unchanged.
+models. The native backend is carried over from v1 except for the
+object-detection prompt, which is unified on the benchmarked template.
 """
 
 import base64
@@ -527,25 +530,13 @@ def build_qwen_openrouter_prompts(
 
 
 # ---------------------------------------------------------------------------
-# Native prompt building (carried over from v1 unchanged)
+# Native prompt building (carried over from v1, except object-detection)
 # ---------------------------------------------------------------------------
 # The native Qwen API takes a single ``prompt`` string and the image
 # separately (via LMMInferenceRequest). It uses the ``<system_prompt>``
-# separator convention from the legacy native qwen blocks.
-
-_SYSTEM_DETECTION = (
-    "You act as object-detection model. You must provide reasonable "
-    "predictions. You are only allowed to produce JSON document in "
-    'Markdown ```json``` markers. Expected structure of json: {"detections": '
-    '[{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, '
-    '"class_name": "my-class-X", "confidence": 0.7}]}. `my-class-X` must be '
-    "one of the class names defined by user. All coordinates must be in "
-    "range 0.0-1.0, representing percentage of image dimensions. "
-    "`confidence` is a value in range 0.0-1.0 representing your confidence "
-    "in prediction. You should detect all instances of classes provided by "
-    "user. You cannot discuss the result, you are only allowed to return "
-    "JSON document."
-)
+# separator convention from the legacy native qwen blocks. Object detection
+# uses the same benchmarked box_2d/0-1000 template as the OpenRouter path so
+# both backends share one output contract.
 
 _DEFAULT_UNCONSTRAINED_SYSTEM_PROMPT = (
     "You are a Qwen vision-language model that can answer questions " "about any image."
@@ -624,9 +615,14 @@ def _build_native_prompt(
         user_text = f"List of all classes to be recognised by model: {cls_str}"
         system_text = _TASK_MULTI_LABEL
     elif task_type == "object-detection":
+        # Same benchmarked box_2d/0-1000 contract as the OpenRouter path, so
+        # both backends parse with vlm_as_detector@v2 model_type="qwen". Sent
+        # as user text with an empty system half — the model server falls
+        # back to its default system prompt, which is the closest native
+        # equivalent of the benchmark's single-user-message structure.
         cls_str = ", ".join(classes or [])
-        user_text = f"List of all classes to be recognised by model: {cls_str}"
-        system_text = _SYSTEM_DETECTION
+        user_text = QWEN_OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list=cls_str)
+        system_text = ""
     elif task_type == "structured-answering":
         spec = json.dumps(output_structure or {}, indent=4)
         user_text = f"Specification of requirements regarding output fields: \n{spec}"
@@ -654,12 +650,12 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🆕 What's new in v2
 
-The OpenRouter path now uses Qwen-tuned inference plumbing validated by benchmarks:
+The block uses Qwen-tuned inference plumbing validated by benchmarks:
 
-* **Object detection** prompts for Qwen's native grounding format: a JSON list of
-  `box_2d`/`label` entries with `[x_min, y_min, x_max, y_max]` integer coordinates
-  normalized to 0-1000. Parse the output with `VLM as Detector` (`vlm_as_detector@v2`)
-  using `model_type="qwen"`.
+* **Object detection** prompts for Qwen's native grounding format on **both backends**:
+  a JSON list of `box_2d`/`label` entries with `[x_min, y_min, x_max, y_max]` integer
+  coordinates normalized to 0-1000. Parse the output with `VLM as Detector`
+  (`vlm_as_detector@v2`) using `model_type="qwen"`.
 * Every request sends the image **before** the instruction text in a single user
   message, matching how Qwen models are trained.
 * **Reasoning control**: Qwen models default to extended reasoning on OpenRouter,
