@@ -333,6 +333,7 @@ def test_structured_prompting_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
     yolov8n_640_model_id: str,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
