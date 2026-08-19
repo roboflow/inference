@@ -25,7 +25,7 @@ import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 from pydantic import ConfigDict, Field
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
@@ -33,6 +33,7 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPIUnsuccessfulRequestError,
 )
+from inference.core.logger import logger
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
@@ -184,17 +185,41 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         model: str,
         prompts: List[List[dict]],
         max_tokens: int,
-        temperature: float,
+        temperature: Optional[float],
         privacy_level: str,
         max_concurrent_requests: Optional[int],
+        reasoning: Optional[dict] = None,
     ) -> List[str]:
         """Run a batch of OpenRouter chat-completion calls in parallel.
 
         Routes through the Roboflow proxy when ``openrouter_api_key`` starts
         with ``rf_key:`` (managed/user-stored), otherwise calls the OpenRouter
         API directly using the OpenAI SDK with the provided key.
+
+        ``temperature`` set to ``None`` omits the parameter so the provider
+        default applies. ``reasoning`` is an optional OpenRouter reasoning
+        config object (e.g. ``{"effort": "low"}`` or ``{"enabled": False}``)
+        forwarded verbatim; when the target model rejects the config, the
+        request is retried once without it.
+
+        Known limitation: the Roboflow proxy does not currently forward the
+        ``reasoning`` key upstream (verified empirically - disabling reasoning
+        through the proxy still produced reasoning tokens), so on managed
+        ``rf_key:`` keys the config is silently ignored by the platform and
+        the model applies its provider-default reasoning behavior. The key is
+        still sent so behavior self-corrects once the proxy adds support.
         """
         is_managed = openrouter_api_key.startswith(("rf_key:account", "rf_key:user:"))
+        if is_managed and reasoning is not None:
+            logger.warning(
+                "A reasoning config %s was requested for model %s on a "
+                "Roboflow-managed OpenRouter key, but the Roboflow proxy does "
+                "not currently forward reasoning settings - the model will "
+                "use its provider-default reasoning behavior. Provide your "
+                "own OpenRouter API key (sk-or-...) to control reasoning.",
+                reasoning,
+                model,
+            )
         if is_managed:
             single = partial(
                 _execute_proxied_openrouter_request,
@@ -202,6 +227,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 openrouter_api_key=openrouter_api_key,
                 model=model,
                 privacy_level=privacy_level,
+                reasoning=reasoning,
             )
         else:
             single = partial(
@@ -209,6 +235,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 api_key=openrouter_api_key,
                 model=model,
                 privacy_level=privacy_level,
+                reasoning=reasoning,
             )
         tasks = [
             partial(
@@ -263,29 +290,90 @@ _PROXY_ERROR_HANDLERS: Dict[int, Callable[[Exception], None]] = {
 }
 
 
+# Substrings observed in real OpenRouter rejections of a `reasoning` config.
+# Captured live against qwen/qwen3.8-max and qwen/qwen3.7-flash:
+#   "Reasoning is mandatory for this endpoint and cannot be disabled." (400)
+#   'reasoning.effort: Invalid option: expected one of "max"|"xhigh"|...' (400)
+_REASONING_REJECTION_MARKERS = (
+    "unsupported",
+    "not supported",
+    "unknown",
+    "invalid",
+    "mandatory",
+    "cannot be disabled",
+)
+
+
+def _is_unsupported_reasoning_error(error: Exception) -> bool:
+    """Whether the error is a client-error rejection of the reasoning config.
+
+    Only client (HTTP 4xx-style) errors qualify — connection/timeout failures
+    must never trigger the retry-without-reasoning fallback, as that would
+    issue a duplicate billed request for a transient problem. On the direct
+    path the OpenAI SDK raises ``APIStatusError`` with a status code; on the
+    proxied path HTTP errors surface as ``RoboflowAPIUnsuccessfulRequestError``
+    / ``RoboflowAPIForbiddenError`` (network failures come through as distinct
+    connection/timeout exception types).
+    """
+    if isinstance(error, APIStatusError):
+        if not 400 <= error.status_code < 500:
+            return False
+    elif not isinstance(
+        error, (RoboflowAPIUnsuccessfulRequestError, RoboflowAPIForbiddenError)
+    ):
+        return False
+    message = str(error).lower()
+    return "reasoning" in message and any(
+        marker in message for marker in _REASONING_REJECTION_MARKERS
+    )
+
+
 def _execute_proxied_openrouter_request(
     roboflow_api_key: Optional[str],
     openrouter_api_key: str,
     model: str,
     messages: List[dict],
     max_tokens: int,
-    temperature: float,
+    temperature: Optional[float],
     privacy_level: str,
+    reasoning: Optional[dict] = None,
 ) -> str:
     payload = {
         "openrouter_api_key": openrouter_api_key,
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
-        "temperature": temperature,
         "privacy_level": privacy_level,
     }
-    response_data = post_to_roboflow_api(
-        endpoint="apiproxy/openrouter",
-        api_key=roboflow_api_key,
-        payload=payload,
-        http_errors_handlers=_PROXY_ERROR_HANDLERS,
-    )
+    if temperature is not None:
+        payload["temperature"] = temperature
+    if reasoning is not None:
+        payload["reasoning"] = reasoning
+    try:
+        response_data = post_to_roboflow_api(
+            endpoint="apiproxy/openrouter",
+            api_key=roboflow_api_key,
+            payload=payload,
+            http_errors_handlers=_PROXY_ERROR_HANDLERS,
+        )
+    except Exception as error:
+        if reasoning is None or not _is_unsupported_reasoning_error(error):
+            raise
+        logger.warning(
+            "OpenRouter rejected the reasoning config %s for model %s "
+            "(details: %s). Retrying without it - the model will use its "
+            "provider-default reasoning behavior.",
+            reasoning,
+            model,
+            error,
+        )
+        retry_payload = {k: v for k, v in payload.items() if k != "reasoning"}
+        response_data = post_to_roboflow_api(
+            endpoint="apiproxy/openrouter",
+            api_key=roboflow_api_key,
+            payload=retry_payload,
+            http_errors_handlers=_PROXY_ERROR_HANDLERS,
+        )
     choices = response_data.get("choices") or []
     if not choices:
         err_msg = (
@@ -323,21 +411,45 @@ def _execute_direct_openrouter_request(
     model: str,
     messages: List[dict],
     max_tokens: int,
-    temperature: float,
+    temperature: Optional[float],
     privacy_level: str,
+    reasoning: Optional[dict] = None,
 ) -> str:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     extra_body: Dict[str, Any] = {}
     provider = build_provider_routing(privacy_level)
     if provider is not None:
         extra_body["provider"] = provider
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        extra_body=extra_body,
-    )
+    if reasoning is not None:
+        extra_body["reasoning"] = reasoning
+    request_kwargs: Dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    if temperature is not None:
+        request_kwargs["temperature"] = temperature
+    try:
+        response = client.chat.completions.create(
+            **request_kwargs,
+            extra_body=extra_body,
+        )
+    except Exception as error:
+        if reasoning is None or not _is_unsupported_reasoning_error(error):
+            raise
+        logger.warning(
+            "OpenRouter rejected the reasoning config %s for model %s "
+            "(details: %s). Retrying without it - the model will use its "
+            "provider-default reasoning behavior.",
+            reasoning,
+            model,
+            error,
+        )
+        retry_extra_body = {k: v for k, v in extra_body.items() if k != "reasoning"}
+        response = client.chat.completions.create(
+            **request_kwargs,
+            extra_body=retry_extra_body,
+        )
     if not response.choices:
         error_detail = getattr(response, "error", {}) or {}
         if isinstance(error_detail, dict):

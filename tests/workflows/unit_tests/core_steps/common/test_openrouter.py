@@ -3,16 +3,41 @@
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
+from openai import APIStatusError
 
+from inference.core.exceptions import (
+    RoboflowAPIConnectionError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
 from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     _execute_direct_openrouter_request,
     _execute_proxied_openrouter_request,
+    _is_unsupported_reasoning_error,
     build_prompts_from_images,
     build_provider_routing,
     validate_task_type_required_fields,
 )
+
+# Real error strings captured live from OpenRouter (2026-08-19):
+# qwen/qwen3.8-max rejecting `reasoning: {"enabled": false}`:
+MANDATORY_REASONING_ERROR = (
+    "Reasoning is mandatory for this endpoint and cannot be disabled."
+)
+# qwen/qwen3.7-flash rejecting `reasoning: {"effort": "bogus"}`:
+INVALID_REASONING_OPTION_ERROR = (
+    "reasoning.effort: Invalid option: expected one of "
+    '"max"|"xhigh"|"high"|"medium"|"low"|"minimal"|"none"'
+)
+
+
+def _openai_status_error(message: str, status_code: int) -> APIStatusError:
+    request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+    response = httpx.Response(status_code, request=request)
+    return APIStatusError(message, response=response, body=None)
+
 
 # ---------------------------------------------------------------------------
 # build_provider_routing
@@ -325,6 +350,293 @@ def test_direct_request_raises_when_message_content_is_none(mock_openai_cls):
             temperature=0.0,
             privacy_level="deny",
         )
+
+
+# ---------------------------------------------------------------------------
+# _is_unsupported_reasoning_error
+# ---------------------------------------------------------------------------
+
+
+def test_reasoning_error_matches_mandatory_reasoning_rejection_from_proxy():
+    error = RoboflowAPIUnsuccessfulRequestError(MANDATORY_REASONING_ERROR)
+    assert _is_unsupported_reasoning_error(error) is True
+
+
+def test_reasoning_error_matches_invalid_option_rejection_from_direct_400():
+    error = _openai_status_error(INVALID_REASONING_OPTION_ERROR, status_code=400)
+    assert _is_unsupported_reasoning_error(error) is True
+
+
+def test_reasoning_error_ignores_5xx_even_with_matching_message():
+    error = _openai_status_error(MANDATORY_REASONING_ERROR, status_code=502)
+    assert _is_unsupported_reasoning_error(error) is False
+
+
+def test_reasoning_error_ignores_connection_errors_with_matching_message():
+    # A transient failure whose text happens to mention reasoning must NOT
+    # trigger a duplicate billed request.
+    error = RoboflowAPIConnectionError(MANDATORY_REASONING_ERROR)
+    assert _is_unsupported_reasoning_error(error) is False
+
+
+def test_reasoning_error_ignores_plain_exceptions():
+    assert (
+        _is_unsupported_reasoning_error(Exception(MANDATORY_REASONING_ERROR)) is False
+    )
+
+
+def test_reasoning_error_ignores_unrelated_client_errors():
+    error = RoboflowAPIUnsuccessfulRequestError("image exceeds maximum size")
+    assert _is_unsupported_reasoning_error(error) is False
+
+
+# ---------------------------------------------------------------------------
+# reasoning / temperature payload shape
+# ---------------------------------------------------------------------------
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_includes_reasoning_and_omits_none_temperature(mock_post):
+    mock_post.return_value = {"choices": [{"message": {"content": "ok"}}]}
+
+    _execute_proxied_openrouter_request(
+        roboflow_api_key="ws-key",
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=100,
+        temperature=None,
+        privacy_level="deny",
+        reasoning={"enabled": False},
+    )
+
+    payload = mock_post.call_args.kwargs["payload"]
+    assert payload["reasoning"] == {"enabled": False}
+    assert "temperature" not in payload
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_includes_reasoning_and_omits_none_temperature(mock_openai_cls):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_openai_response("ok")
+    mock_openai_cls.return_value = client
+
+    _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="qwen/qwen3.7-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=100,
+        temperature=None,
+        privacy_level="deny",
+        reasoning={"effort": "low"},
+    )
+
+    create_kwargs = client.chat.completions.create.call_args.kwargs
+    assert create_kwargs["extra_body"]["reasoning"] == {"effort": "low"}
+    assert "temperature" not in create_kwargs
+
+
+# ---------------------------------------------------------------------------
+# retry-without-reasoning fallback
+# ---------------------------------------------------------------------------
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.logger")
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_logger):
+    mock_post.side_effect = [
+        RoboflowAPIUnsuccessfulRequestError(MANDATORY_REASONING_ERROR),
+        {"choices": [{"message": {"content": "ok"}}]},
+    ]
+
+    out = _execute_proxied_openrouter_request(
+        roboflow_api_key="ws-key",
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.8-max",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=100,
+        temperature=None,
+        privacy_level="deny",
+        reasoning={"enabled": False},
+    )
+
+    assert out == "ok"
+    assert mock_post.call_count == 2
+    assert "reasoning" in mock_post.call_args_list[0].kwargs["payload"]
+    assert "reasoning" not in mock_post.call_args_list[1].kwargs["payload"]
+    assert mock_logger.warning.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_does_not_retry_on_connection_error(mock_post):
+    mock_post.side_effect = RoboflowAPIConnectionError(MANDATORY_REASONING_ERROR)
+
+    with pytest.raises(RoboflowAPIConnectionError):
+        _execute_proxied_openrouter_request(
+            roboflow_api_key="ws-key",
+            openrouter_api_key="rf_key:account",
+            model="qwen/qwen3.8-max",
+            messages=[],
+            max_tokens=1,
+            temperature=None,
+            privacy_level="deny",
+            reasoning={"enabled": False},
+        )
+
+    assert mock_post.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_does_not_retry_when_no_reasoning_sent(mock_post):
+    mock_post.side_effect = RoboflowAPIUnsuccessfulRequestError(
+        MANDATORY_REASONING_ERROR
+    )
+
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _execute_proxied_openrouter_request(
+            roboflow_api_key="ws-key",
+            openrouter_api_key="rf_key:account",
+            model="qwen/qwen3.8-max",
+            messages=[],
+            max_tokens=1,
+            temperature=None,
+            privacy_level="deny",
+        )
+
+    assert mock_post.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.logger")
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_retries_without_reasoning_on_rejection(
+    mock_openai_cls, mock_logger
+):
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [
+        _openai_status_error(INVALID_REASONING_OPTION_ERROR, status_code=400),
+        _stub_openai_response("ok"),
+    ]
+    mock_openai_cls.return_value = client
+
+    out = _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="qwen/qwen3.7-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=100,
+        temperature=None,
+        privacy_level="deny",
+        reasoning={"effort": "low"},
+    )
+
+    assert out == "ok"
+    assert client.chat.completions.create.call_count == 2
+    first_extra = client.chat.completions.create.call_args_list[0].kwargs["extra_body"]
+    second_extra = client.chat.completions.create.call_args_list[1].kwargs["extra_body"]
+    assert "reasoning" in first_extra
+    assert "reasoning" not in second_extra
+    assert mock_logger.warning.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_does_not_retry_on_server_error(mock_openai_cls):
+    client = MagicMock()
+    client.chat.completions.create.side_effect = _openai_status_error(
+        MANDATORY_REASONING_ERROR, status_code=502
+    )
+    mock_openai_cls.return_value = client
+
+    with pytest.raises(APIStatusError):
+        _execute_direct_openrouter_request(
+            api_key="sk-or-v1-test",
+            model="qwen/qwen3.8-max",
+            messages=[],
+            max_tokens=1,
+            temperature=None,
+            privacy_level="deny",
+            reasoning={"enabled": False},
+        )
+
+    assert client.chat.completions.create.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# managed-key reasoning warning (proxy does not forward `reasoning`)
+# ---------------------------------------------------------------------------
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.logger")
+@patch(
+    "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
+)
+def test_execute_openrouter_batch_warns_when_reasoning_sent_on_managed_key(
+    mock_proxied, mock_logger
+):
+    mock_proxied.side_effect = ["resp"]
+    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
+
+    block.execute_openrouter_batch(
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-flash",
+        prompts=[[{"role": "user", "content": "hi"}]],
+        max_tokens=50,
+        temperature=None,
+        privacy_level="deny",
+        max_concurrent_requests=1,
+        reasoning={"enabled": False},
+    )
+
+    assert mock_logger.warning.call_count == 1
+    # Reasoning is still forwarded so behavior self-corrects once the proxy
+    # adds support.
+    assert mock_proxied.call_args.kwargs["reasoning"] == {"enabled": False}
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.logger")
+@patch(
+    "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
+)
+def test_execute_openrouter_batch_does_not_warn_without_reasoning(
+    mock_proxied, mock_logger
+):
+    mock_proxied.side_effect = ["resp"]
+    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
+
+    block.execute_openrouter_batch(
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-flash",
+        prompts=[[{"role": "user", "content": "hi"}]],
+        max_tokens=50,
+        temperature=0.2,
+        privacy_level="deny",
+        max_concurrent_requests=1,
+    )
+
+    assert mock_logger.warning.call_count == 0
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.logger")
+@patch(
+    "inference.core.workflows.core_steps.common.openrouter._execute_direct_openrouter_request"
+)
+def test_execute_openrouter_batch_does_not_warn_on_direct_key_with_reasoning(
+    mock_direct, mock_logger
+):
+    mock_direct.side_effect = ["resp"]
+    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
+
+    block.execute_openrouter_batch(
+        openrouter_api_key="sk-or-v1-abcdef",
+        model="qwen/qwen3.7-flash",
+        prompts=[[{"role": "user", "content": "hi"}]],
+        max_tokens=50,
+        temperature=None,
+        privacy_level="deny",
+        max_concurrent_requests=1,
+        reasoning={"effort": "low"},
+    )
+
+    assert mock_logger.warning.call_count == 0
+    assert mock_direct.call_args.kwargs["reasoning"] == {"effort": "low"}
 
 
 # ---------------------------------------------------------------------------
