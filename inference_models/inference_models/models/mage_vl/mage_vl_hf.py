@@ -14,18 +14,29 @@ from inference_models.configuration import (
     INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS,
     INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS,
     INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS,
+    MAGE_VL_CODEC_ENGINES,
 )
 from inference_models.entities import ColorFormat
-from inference_models.errors import ModelInputError, ModelRuntimeError
+from inference_models.errors import (
+    MissingDependencyError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 
 VideoInput = Union[str, "os.PathLike[str]"]
 ImageInput = Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
 
-CODEC_ENGINES = {"hevc", "dcvc-rt"}
+CODEC_ENGINES = MAGE_VL_CODEC_ENGINES
 # Mandated by the checkpoint's image processor (patch_size=16, merge_size=2). The
 # `patch=14` seen in cv-preinfer's own config is an unrelated internal knob.
 CODEC_PATCH_SIZE = 16
+MAGE_VL_VIDEO_DEPS_HINT = (
+    "Video prompting needs the `codec-video-prep` package (install it with "
+    "`pip install --no-deps -r requirements/requirements.magevl.txt`, see that "
+    "file for why), the `cv-preinfer` console script it ships on PATH (or "
+    "CV_PREINFER_BIN pointing at it), and `ffmpeg`/`ffprobe` on PATH."
+)
 
 
 def _get_mage_vl_attn_implementation(device: torch.device) -> str:
@@ -282,7 +293,16 @@ class MageVLHF:
                 return_tensors="pt",
                 padding=True,
             )
-        except RuntimeError as error:
+        except (ImportError, FileNotFoundError) as error:
+            # The common misconfigurations: `codec-video-prep` not installed
+            # (ImportError), or the `cv-preinfer` / `ffmpeg` / `ffprobe` binaries
+            # not on PATH (FileNotFoundError from the subprocess layer).
+            raise MissingDependencyError(
+                message=f"Codec pre-processing of the video failed for engine "
+                f"'{codec_engine}': {error}. {MAGE_VL_VIDEO_DEPS_HINT}",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#missingdependencyerror",
+            ) from error
+        except Exception as error:
             raise ModelRuntimeError(
                 message=f"Codec pre-processing of the video failed for engine "
                 f"'{codec_engine}': {error}",
@@ -349,16 +369,24 @@ def _to_rgb(
 ) -> ImageInput:
     """Flip BGR inputs to the RGB the processor expects.
 
-    Only numpy inputs carry a channel order worth guessing at; tensors are handed
-    to the processor untouched, as the other VLMs in this package do.
+    An explicit "bgr" flips every input, tensors included, like the sibling VLMs.
+    When no format is declared, numpy inputs are assumed BGR (the cv2 default)
+    and flipped; tensors are passed through unchanged.
     """
     if input_color_format == "rgb":
         return images
-    if isinstance(images, np.ndarray):
-        return images[..., ::-1].copy()
+    flip_tensors = input_color_format == "bgr"
     if isinstance(images, Sequence) and not isinstance(images, (str, bytes)):
-        return [
-            image[..., ::-1].copy() if isinstance(image, np.ndarray) else image
-            for image in images
-        ]
-    return images
+        return [_flip_to_rgb(image, flip_tensors=flip_tensors) for image in images]
+    return _flip_to_rgb(images, flip_tensors=flip_tensors)
+
+
+def _flip_to_rgb(image, flip_tensors: bool):
+    if isinstance(image, np.ndarray):
+        return image[..., ::-1].copy()
+    if flip_tensors and isinstance(image, torch.Tensor) and image.ndim == 3:
+        if image.shape[0] == 3:  # CHW
+            return image[[2, 1, 0], :, :]
+        if image.shape[-1] == 3:  # HWC
+            return image[..., [2, 1, 0]]
+    return image

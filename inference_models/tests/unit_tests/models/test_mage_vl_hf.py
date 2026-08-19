@@ -8,8 +8,12 @@ import torch
 from inference_models.configuration import (
     INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS,
 )
-from inference_models.errors import ModelInputError
-from inference_models.models.mage_vl.mage_vl_hf import CODEC_PATCH_SIZE, MageVLHF
+from inference_models.errors import MissingDependencyError, ModelInputError
+from inference_models.models.mage_vl.mage_vl_hf import (
+    CODEC_PATCH_SIZE,
+    MageVLHF,
+    _get_mage_vl_attn_implementation,
+)
 
 
 def _mage_vl(processor: MagicMock = None, model: MagicMock = None) -> MageVLHF:
@@ -156,6 +160,109 @@ def test_generate_returns_only_newly_generated_tokens() -> None:
     assert model.generate.call_args.kwargs["max_new_tokens"] == (
         INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS
     )
+
+
+def test_pre_process_generation_flips_bgr_chw_tensors() -> None:
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "prompt"
+    processor.return_value = {"input_ids": torch.tensor([[1]], dtype=torch.int64)}
+    mage_vl = _mage_vl(processor=processor)
+    image = torch.zeros((3, 4, 4), dtype=torch.uint8)
+    image[0] = 255  # blue channel of a BGR CHW tensor
+
+    mage_vl.pre_process_generation(
+        images=image, prompt="what is this?", input_color_format="bgr"
+    )
+
+    passed_image = processor.call_args.kwargs["images"]
+    assert passed_image[2].max() == 255, "blue must end up in the last channel"
+    assert passed_image[0].max() == 0
+
+
+def test_pre_process_generation_flips_bgr_hwc_tensors() -> None:
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "prompt"
+    processor.return_value = {"input_ids": torch.tensor([[1]], dtype=torch.int64)}
+    mage_vl = _mage_vl(processor=processor)
+    image = torch.zeros((4, 4, 3), dtype=torch.uint8)
+    image[..., 0] = 255
+
+    mage_vl.pre_process_generation(
+        images=image, prompt="what is this?", input_color_format="bgr"
+    )
+
+    passed_image = processor.call_args.kwargs["images"]
+    assert passed_image[..., 2].max() == 255
+    assert passed_image[..., 0].max() == 0
+
+
+def test_pre_process_generation_leaves_undeclared_tensors_alone() -> None:
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "prompt"
+    processor.return_value = {"input_ids": torch.tensor([[1]], dtype=torch.int64)}
+    mage_vl = _mage_vl(processor=processor)
+    image = torch.zeros((3, 4, 4), dtype=torch.uint8)
+    image[0] = 255
+
+    mage_vl.pre_process_generation(images=image, prompt="what is this?")
+
+    passed_image = processor.call_args.kwargs["images"]
+    assert passed_image[0].max() == 255, "tensors without a declared format pass through"
+
+
+def test_video_pre_processing_wraps_missing_dependency_errors(tmp_path) -> None:
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"")
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "prompt"
+    processor.side_effect = ModuleNotFoundError("No module named 'codec_video_prep'")
+    mage_vl = _mage_vl(processor=processor)
+
+    with pytest.raises(MissingDependencyError) as error:
+        mage_vl.pre_process_generation(video=str(video))
+
+    assert "codec-video-prep" in str(error.value)
+
+
+def test_video_pre_processing_wraps_missing_binary_errors(tmp_path) -> None:
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"")
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "prompt"
+    processor.side_effect = FileNotFoundError("No such file or directory: 'ffprobe'")
+    mage_vl = _mage_vl(processor=processor)
+
+    with pytest.raises(MissingDependencyError):
+        mage_vl.pre_process_generation(video=str(video))
+
+
+def test_video_pre_processing_wraps_unexpected_errors(tmp_path) -> None:
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"")
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "prompt"
+    processor.side_effect = ValueError("bad canvas")
+    mage_vl = _mage_vl(processor=processor)
+
+    from inference_models.errors import ModelRuntimeError
+
+    with pytest.raises(ModelRuntimeError):
+        mage_vl.pre_process_generation(video=str(video))
+
+
+def test_attn_implementation_is_sdpa_on_cpu() -> None:
+    assert _get_mage_vl_attn_implementation(torch.device("cpu")) == "sdpa"
+
+
+def test_attn_implementation_is_sdpa_without_flash_attn() -> None:
+    device = torch.device("cuda", 0)
+    from unittest.mock import patch
+
+    with patch(
+        "inference_models.models.mage_vl.mage_vl_hf.is_flash_attn_2_available",
+        return_value=False,
+    ):
+        assert _get_mage_vl_attn_implementation(device) == "sdpa"
 
 
 def test_post_process_generation_strips_decoded_text() -> None:

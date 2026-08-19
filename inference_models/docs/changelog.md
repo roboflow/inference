@@ -2,10 +2,6 @@
 
 ## Unreleased
 
----
-
-## `0.35.4`
-
 ### Added
 
 - Mage-VL (`mage-vl`, VLM task, HF backend). Microsoft's codec-native streaming VLM
@@ -21,14 +17,14 @@
 
 ### Fixed
 
-- Raise the `bitsandbytes` ceiling to `<0.51.0` and move the lock to `0.50.0`.
+- Raise the `bitsandbytes` ceiling to `<0.51.0` and move the lock to `0.50.1`.
   Versions below `0.48` ship no `libbitsandbytes_cuda130.so`, so every 4-bit load
   fails with `Configured CUDA binary not found` against a CUDA 13 torch build.
   That is what both the plain PyPI wheel and the `torch-cu130` extra resolve to
   (that extra has no `[tool.uv.sources]` index mapping, so it does not pin a
   CUDA-specific torch). Five models quantize to 4-bit by default on CUDA, so this
   took out Qwen2.5-VL, SmolVLM, PaliGemma, Gemma 4 and Florence-2 alike. The GPU
-  image was unaffected. It syncs `--extra torch-cu124`. `0.50.0` adds cuda130/132
+  image was unaffected. It syncs `--extra torch-cu124`. `0.50.1` adds cuda130/132
   and retains every CUDA version this repo targets.
 
 ---

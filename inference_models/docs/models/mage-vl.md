@@ -3,6 +3,12 @@
 Mage-VL is Microsoft's codec-native, proactive-streaming multimodal model: a Mage-ViT visual
 encoder trained from scratch, paired with a Qwen3-4B-Instruct language backbone.
 
+!!! warning "Not available yet - weights registration pending"
+    The `mage-vl` model id is not registered on the Roboflow platform yet, so
+    `AutoModel.from_pretrained("mage-vl")` does not resolve. This page goes live with
+    the registration. Until then the examples below will fail with a model-not-found
+    error.
+
 ## Overview
 
 What distinguishes Mage-VL from the other video-capable VLMs here is how it reads a video. Instead
