@@ -183,10 +183,10 @@ def render_template(template: str, variables: Dict[str, Any]) -> str:
         )
     try:
         return template.format(**variables)
-    except ValueError as error:
+    except (ValueError, TypeError) as error:
         raise ValueError(
             f"String Template block could not render template: {error}. "
-            f"Use double braces to produce literal braces in the output."
+            f"Check that format specs match the types of the substituted values."
         ) from error
 
 
