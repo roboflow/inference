@@ -103,6 +103,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [Florence-2](florence2.md) | `torch` | MIT | N/A                           | ✅ | ✅ |
+| [Mage-VL](mage-vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
 | [PaliGemma](paligemma.md) | `torch` | Gemma License | N/A                           | ✅ | ✅ |
 | [Qwen2.5-VL](qwen25vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Qwen3-VL](qwen3vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |

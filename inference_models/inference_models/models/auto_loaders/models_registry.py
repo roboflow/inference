@@ -315,6 +315,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.cosmos3.cosmos3_world",
         class_name="Cosmos3EdgeWorldModel",
     ),
+    ("mage-vl", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.mage_vl.mage_vl_hf",
+        class_name="MageVLHF",
+    ),
     ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",

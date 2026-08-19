@@ -297,6 +297,28 @@ INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+# "hevc" runs the cv-preinfer binary on CPU; "dcvc-rt" runs the bundled neural
+# codec and is an order of magnitude slower without its compiled CUDA kernels.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE = os.getenv(
+    "INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE", "hevc"
+)
+# Number of codec canvases packed out of the video and handed to the model.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS",
+    default=16,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS",
+    default=153664,
+)
 INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS",
     default=8192,
