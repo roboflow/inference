@@ -189,7 +189,8 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         privacy_level: str,
         max_concurrent_requests: Optional[int],
         reasoning: Optional[dict] = None,
-    ) -> List[str]:
+        include_reasoning: bool = False,
+    ) -> Union[List[str], List[Tuple[str, str]]]:
         """Run a batch of OpenRouter chat-completion calls in parallel.
 
         Routes through the Roboflow proxy when ``openrouter_api_key`` starts
@@ -202,24 +203,18 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         forwarded verbatim; when the target model rejects the config, the
         request is retried once without it.
 
-        Known limitation: the Roboflow proxy does not currently forward the
-        ``reasoning`` key upstream (verified empirically - disabling reasoning
-        through the proxy still produced reasoning tokens), so on managed
-        ``rf_key:`` keys the config is silently ignored by the platform and
-        the model applies its provider-default reasoning behavior. The key is
-        still sent so behavior self-corrects once the proxy adds support.
+        With ``include_reasoning=True`` each result is a
+        ``(content, reasoning_trace)`` tuple, where the trace is the
+        ``message.reasoning`` string OpenRouter returns for reasoning models
+        (empty string when absent). Default returns bare content strings for
+        backward compatibility.
+
+        Note: honoring ``reasoning`` on managed ``rf_key:`` keys requires a
+        Roboflow platform proxy version that forwards the key upstream
+        (older proxy versions strip it and the model applies its
+        provider-default reasoning behavior).
         """
         is_managed = openrouter_api_key.startswith(("rf_key:account", "rf_key:user:"))
-        if is_managed and reasoning is not None:
-            logger.warning(
-                "A reasoning config %s was requested for model %s on a "
-                "Roboflow-managed OpenRouter key, but the Roboflow proxy does "
-                "not currently forward reasoning settings - the model will "
-                "use its provider-default reasoning behavior. Provide your "
-                "own OpenRouter API key (sk-or-...) to control reasoning.",
-                reasoning,
-                model,
-            )
         if is_managed:
             single = partial(
                 _execute_proxied_openrouter_request,
@@ -228,6 +223,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 model=model,
                 privacy_level=privacy_level,
                 reasoning=reasoning,
+                include_reasoning=include_reasoning,
             )
         else:
             single = partial(
@@ -236,6 +232,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 model=model,
                 privacy_level=privacy_level,
                 reasoning=reasoning,
+                include_reasoning=include_reasoning,
             )
         tasks = [
             partial(
@@ -337,7 +334,8 @@ def _execute_proxied_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
-) -> str:
+    include_reasoning: bool = False,
+) -> Union[str, Tuple[str, str]]:
     payload = {
         "openrouter_api_key": openrouter_api_key,
         "model": model,
@@ -403,6 +401,9 @@ def _execute_proxied_openrouter_request(
         raise RuntimeError(
             "OpenRouter response missing message.content via Roboflow proxy." + hint
         )
+    if include_reasoning:
+        reasoning_trace = message.get("reasoning")
+        return content, reasoning_trace if isinstance(reasoning_trace, str) else ""
     return content
 
 
@@ -414,7 +415,8 @@ def _execute_direct_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
-) -> str:
+    include_reasoning: bool = False,
+) -> Union[str, Tuple[str, str]]:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     extra_body: Dict[str, Any] = {}
     provider = build_provider_routing(privacy_level)
@@ -474,6 +476,12 @@ def _execute_direct_openrouter_request(
             "or reasoning tokens. Try a different prompt or model."
         )
         raise RuntimeError("OpenRouter response missing message.content." + hint)
+    if include_reasoning:
+        # OpenRouter returns the reasoning trace as an extra `reasoning`
+        # field on the message; the OpenAI SDK surfaces unknown fields as
+        # attributes on its pydantic models.
+        reasoning_trace = getattr(response.choices[0].message, "reasoning", None)
+        return content, reasoning_trace if isinstance(reasoning_trace, str) else ""
     return content
 
 

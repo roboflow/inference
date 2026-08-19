@@ -1,30 +1,39 @@
-"""Unified Qwen-VL workflow block.
+"""Unified Qwen-VL workflow block, v2 — Qwen-specific OpenRouter plumbing.
 
-Subsumes the older per-version Qwen blocks (`qwen25vl@v1`, `qwen3vl@v1`,
-`qwen3_5vl@v1`, `qwen3_5_openrouter@v1`, `qwen3_6_openrouter@v1`) into a
-single block where the user picks:
+Same surface as ``qwen_vlm@v1`` (``backend`` = "Native (Roboflow)" or
+"OpenRouter", combined ``model_version`` pickers, the shared VLM
+``task_type`` set) but the OpenRouter path no longer relies on the generic
+prompt builders from ``common.openrouter``. Instead it uses the contract
+that performed best for Qwen models in the vlm-exam benchmarks:
 
-* a ``backend`` — "Native (Roboflow)" or "OpenRouter"
-* a ``model_version`` (combined version+size selector); each variant is bound
-  to one backend
-* the standard VLM ``task_type`` surface (unconstrained, OCR, classification,
-  detection, etc.) shared with the Gemma/Llama/Kimi blocks
+* **object-detection** asks for a bare JSON list of ``box_2d``/``label``
+  entries with ``[x_min, y_min, x_max, y_max]`` integer coordinates
+  normalized to 0-1000 — Qwen's native grounding convention — parsed by
+  ``vlm_as_detector@v2`` with ``model_type="qwen"``.
+* every task sends a single user message with the **image before the
+  text** and no system role, matching how the benchmarks prompt Qwen.
+* requests carry an explicit OpenRouter ``reasoning`` config: disabled by
+  default (Qwen models default to extended reasoning, which bloats latency
+  and can truncate answers), always-on for models that require it
+  (Qwen 3.8 Max rejects ``enabled: false``).
+* uploads are JPEG-encoded with iterative downscaling so the base64
+  payload stays under Alibaba DashScope's data-URI limit.
+* ``max_tokens`` is unset by default; the OpenRouter path substitutes
+  16384 (benchmark parity — detection output on busy images easily
+  exceeds the old 500-token default) while the native path defers to
+  the inference server default (512, matching v1). ``temperature`` is
+  not sent unless the user sets it.
 
-For the OpenRouter backend, all the API Key Passthrough plumbing
-(``rf_key:account`` vs custom ``sk-or-...``, the ``privacy_level`` filter,
-the proxy/billing flow) is inherited from
-``common.openrouter.OpenRouterWorkflowBlockBase``.
-
-For the Native backend, the block dispatches via
-``StepExecutionMode.LOCAL``/``REMOTE`` to either ``model_manager`` (local
-process) or ``InferenceHTTPClient`` (Roboflow-hosted inference), exactly
-like the v1 native qwen blocks did.
+The OpenRouter model roster is restricted to the vlm-exam-benchmarked
+models. The native backend is carried over from v1 unchanged.
 """
 
 import base64
 import json
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
+import cv2
+import numpy as np
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
@@ -34,7 +43,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
@@ -44,8 +53,10 @@ from inference.core.workflows.core_steps.common.openrouter import (
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
     OpenRouterWorkflowBlockBase,
-    build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.core_steps.common.utils import (
+    scale_dimensions_to_max_edge,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -79,12 +90,15 @@ from inference_sdk import InferenceHTTPClient
 # Model variants
 # ---------------------------------------------------------------------------
 # Each entry is ``"<friendly label>": {"backend": "native" | "openrouter",
-# "model_id": <id used by the chosen backend>}``.
+# "model_id": <id used by the chosen backend>, ...}``.
 #
-# model_ids are Roboflow inference model IDs (e.g. ``qwen3_5-2b``).
-# - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.6-27b``).
+# - Native model_ids are Roboflow inference model IDs (e.g. ``qwen3_5-2b``).
+# - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.7-plus``).
+#   The OpenRouter roster is restricted to the models benchmarked in
+#   vlm-exam; ``reasoning_required`` marks models that reject
+#   ``reasoning: {"enabled": false}`` and must always receive an effort.
 
-MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
+MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     # Native — small models that run on Roboflow infrastructure.
     "Qwen 2.5 VL 7B": {
         "backend": "native",
@@ -102,55 +116,32 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
         "backend": "native",
         "model_id": "qwen3_5-2b",
     },
-    # OpenRouter — large hosted models reached via OpenRouter.
-    "Qwen 3.5 9B": {
+    # OpenRouter — vlm-exam-benchmarked hosted Qwen models.
+    "Qwen 3.8 Max": {
         "backend": "openrouter",
-        "model_id": "qwen/qwen3.5-9b",
+        "model_id": "qwen/qwen3.8-max",
+        "reasoning_required": True,
+    },
+    "Qwen 3.7 Plus": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.7-plus",
+    },
+    "Qwen 3.7 Flash": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.7-flash",
+    },
+    "Qwen 3.8 27B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.8-27b",
     },
     "Qwen 3.5 27B": {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.5-27b",
     },
-    "Qwen 3.5 122B A10B": {
+    "Qwen 3 VL 235B A22B": {
         "backend": "openrouter",
-        "model_id": "qwen/qwen3.5-122b-a10b",
+        "model_id": "qwen/qwen3-vl-235b-a22b-instruct",
     },
-    "Qwen 3.5 397B A17B": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.5-397b-a17b",
-    },
-    "Qwen 3.5 Flash 02-23": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.5-flash-02-23",
-    },
-    "Qwen 3.5 Plus": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.5-plus-20260420",
-    },
-    "Qwen 3.6 27B": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.6-27b",
-    },
-    "Qwen 3.6 35B A3B": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.6-35b-a3b",
-    },
-    "Qwen 3.6 Flash": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.6-flash",
-    },
-    "Qwen 3.6 Plus": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.6-plus",
-    },
-    "Qwen 3.8 Max": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.8-max",
-    },
-    # Note: Qwen 3.6 Max Preview is intentionally excluded — it's a text-only
-    # model on OpenRouter (no image-input endpoints), so it can't satisfy a
-    # VLM block. The Qwen 3.8 Max entry above is the vision-capable Max
-    # variant OpenRouter now ships (text + image + video input).
 }
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
@@ -161,6 +152,7 @@ Backend = Literal["native", "openrouter"]
 # so the user can opt into picking a fine-tuned workspace model.
 FINE_TUNED_NATIVE_LABEL = "Fine-tuned model"
 DEFAULT_NATIVE_MODEL_VERSION = "Qwen 3.5 VL 2B"
+DEFAULT_OPENROUTER_MODEL_VERSION = "Qwen 3.7 Plus"
 
 # Per-backend variant lists, derived from MODEL_VARIANTS so the two stay in sync.
 NATIVE_VARIANT_LABELS = [
@@ -190,20 +182,154 @@ NATIVE_THINKING_MODEL_VERSIONS = [
     FINE_TUNED_NATIVE_LABEL,
 ]
 
+# ---------------------------------------------------------------------------
+# OpenRouter reasoning control
+# ---------------------------------------------------------------------------
+
+REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"]
+ReasoningEffort = Literal[tuple(REASONING_EFFORT_OPTIONS)]
+
+REASONING_EFFORT_METADATA = {
+    "none": {
+        "name": "Disabled (recommended)",
+        "description": (
+            "Turns extended reasoning off. Qwen models default to extended "
+            "reasoning on OpenRouter, which bloats latency and can consume "
+            "the whole token budget before a visible answer is produced. "
+            "Models that require reasoning (Qwen 3.8 Max) fall back to low "
+            "effort instead."
+        ),
+    },
+    "low": {
+        "name": "Low",
+        "description": "Small reasoning budget before answering.",
+    },
+    "medium": {
+        "name": "Medium",
+        "description": "Moderate reasoning budget before answering.",
+    },
+    "high": {
+        "name": "High",
+        "description": (
+            "Large reasoning budget. Slowest and most expensive; consider "
+            "raising `max_tokens` so reasoning does not crowd out the answer."
+        ),
+    },
+}
+
+# Fallback effort applied when reasoning is disabled by the user but the
+# selected model rejects `reasoning: {"enabled": false}`.
+REASONING_REQUIRED_FALLBACK_EFFORT = "low"
+
+# Default OpenRouter completion budget when the user leaves `max_tokens`
+# unset. Benchmark parity: detection output on busy images easily exceeds
+# the older 500-token default, and reasoning models need headroom to think
+# and still emit a visible answer. The native path deliberately has no
+# block-side default — the inference server's own default (512) applies,
+# matching qwen_vlm@v1 behavior.
+QWEN_OPENROUTER_DEFAULT_MAX_TOKENS = 16384
+
+
+def build_reasoning_config(
+    reasoning_effort: str,
+    *,
+    reasoning_required: bool,
+) -> dict:
+    """Translate the block's reasoning effort into OpenRouter's config object.
+
+    Mirrors the vlm-exam benchmark behavior: reasoning is explicitly
+    disabled unless an effort is requested, except for models that require
+    reasoning and reject ``enabled: false`` — those always receive an
+    effort (falling back to low when the user disabled reasoning).
+
+    Args:
+        reasoning_effort: One of ``REASONING_EFFORT_OPTIONS``.
+        reasoning_required: True when the target model rejects
+            ``reasoning: {"enabled": false}``.
+
+    Returns:
+        OpenRouter ``reasoning`` payload object.
+    """
+    if reasoning_required:
+        if reasoning_effort == "none":
+            return {"effort": REASONING_REQUIRED_FALLBACK_EFFORT}
+        return {"effort": reasoning_effort}
+    if reasoning_effort == "none":
+        return {"enabled": False}
+    return {"effort": reasoning_effort}
+
 
 # ---------------------------------------------------------------------------
-# Native prompt building
+# OpenRouter image encoding
 # ---------------------------------------------------------------------------
-# The native Qwen API takes a single ``prompt`` string and the image
-# separately (via LMMInferenceRequest). It uses the ``<system_prompt>``
-# separator convention from the legacy native qwen blocks.
-#
-# We map each task type to a (system, user-text-template) pair; the
-# combined prompt is ``user_text + "<system_prompt>" + system``. This
-# mirrors the system prompts used in the OpenRouter messages-array
-# builders in ``common.openrouter`` so behavior stays consistent.
 
-_SYSTEM_CLASSIFICATION = (
+# Safety cap below Alibaba DashScope's 10,485,760-byte data-URI limit —
+# DashScope backs the Qwen API-tier models on OpenRouter and rejects larger
+# payloads outright.
+OPENROUTER_MAX_BASE64_BYTES = 9_500_000
+OPENROUTER_JPEG_QUALITY = 90
+
+
+def encode_image_for_qwen_openrouter(numpy_image: np.ndarray) -> str:
+    """Encode a BGR image as base64 JPEG under the OpenRouter payload cap.
+
+    Encodes at fixed JPEG quality and, when the base64 payload exceeds
+    ``OPENROUTER_MAX_BASE64_BYTES``, iteratively downscales the longest
+    edge by 10% until it fits. Detection coordinates are normalized to
+    0-1000, so downscaling does not affect parsing.
+
+    Args:
+        numpy_image: Image in BGR channel order.
+
+    Returns:
+        Base64-encoded JPEG payload.
+    """
+    working = numpy_image
+    while True:
+        jpeg_bytes = encode_image_to_jpeg_bytes(
+            working, jpeg_quality=OPENROUTER_JPEG_QUALITY
+        )
+        base64_image = base64.b64encode(jpeg_bytes).decode("ascii")
+        if len(base64_image) <= OPENROUTER_MAX_BASE64_BYTES:
+            return base64_image
+
+        height, width = working.shape[:2]
+        if max(height, width) <= 1:
+            return base64_image
+
+        target_max_edge = max(int(max(height, width) * 0.9), 1)
+        target_width, target_height = scale_dimensions_to_max_edge(
+            width, height, target_max_edge
+        )
+        working = cv2.resize(
+            working, (target_width, target_height), interpolation=cv2.INTER_AREA
+        )
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter prompt building (Qwen-specific)
+# ---------------------------------------------------------------------------
+# Every task sends a single user message with the image part FIRST and the
+# instruction text second, with no system role — the structure used for
+# Qwen models in the vlm-exam benchmarks. Output-format contracts for
+# non-detection tasks stay identical to the generic builders so downstream
+# parsers (`vlm_as_classifier@v2`, `json_parser@v1`) keep working.
+
+# Ported verbatim from vlm-exam's detection prompt for the
+# xyxy_normalized_0_to_1000 coordinate format — the format pinned for every
+# Qwen model in the benchmark configs.
+QWEN_OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners as integers between 0 and 1000, "
+    "normalized to the image width (x) and height (y). "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
+)
+
+_TASK_CLASSIFICATION = (
     "You act as single-class classification model. You must provide reasonable "
     "predictions. You are only allowed to produce JSON document in Markdown "
     "```json [...]``` markers. Expected structure of json: "
@@ -214,7 +340,7 @@ _SYSTEM_CLASSIFICATION = (
     "allowed to return JSON document."
 )
 
-_SYSTEM_MULTI_LABEL = (
+_TASK_MULTI_LABEL = (
     "You act as multi-label classification model. You must provide reasonable "
     "predictions. You are only allowed to produce JSON document in Markdown "
     '```json``` markers. Expected structure of json: {"predicted_classes": '
@@ -226,26 +352,186 @@ _SYSTEM_MULTI_LABEL = (
     "are only allowed to return JSON document."
 )
 
-_SYSTEM_VQA = (
+_TASK_VQA = (
     "You act as Visual Question Answering model. Your task is to provide "
     "answer to question submitted by user. If this is open-question - answer "
     "with few sentences, for ABCD question, return only the indicator of "
     "the answer."
 )
 
-_SYSTEM_OCR = (
+_TASK_OCR = (
     "You act as OCR model. Your task is to read text from the image and "
     "return it in paragraphs representing the structure of texts in the "
     "image. You should only return recognised text, nothing else."
 )
 
-_SYSTEM_STRUCTURED = (
+_TASK_STRUCTURED = (
     "You are supposed to produce responses in JSON wrapped in Markdown "
     "markers: ```json\nyour-response\n```. User is to provide you "
     "dictionary with keys and values. Each key must be present in your "
     "response. Values in user dictionary represent descriptions for JSON "
     "fields to be generated. Provide only JSON Markdown in response."
 )
+
+
+def _prepare_qwen_user_message(base64_image: str, text: str) -> List[dict]:
+    return [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                    },
+                },
+                {"type": "text", "text": text},
+            ],
+        }
+    ]
+
+
+def _prepare_unconstrained_prompt(base64_image: str, prompt: str, **_) -> List[dict]:
+    return _prepare_qwen_user_message(base64_image=base64_image, text=prompt)
+
+
+def _prepare_ocr_prompt(base64_image: str, **_) -> List[dict]:
+    return _prepare_qwen_user_message(base64_image=base64_image, text=_TASK_OCR)
+
+
+def _prepare_vqa_prompt(base64_image: str, prompt: str, **_) -> List[dict]:
+    text = f"{_TASK_VQA}\n\nQuestion: {prompt}"
+
+    return _prepare_qwen_user_message(base64_image=base64_image, text=text)
+
+
+def _prepare_caption_prompt(
+    base64_image: str, short_description: bool, **_
+) -> List[dict]:
+    caption_detail_level = (
+        "Caption should be short."
+        if short_description
+        else "Caption should be extensive."
+    )
+    text = (
+        "You act as image caption model. Your task is to provide "
+        f"description of the image. {caption_detail_level}"
+    )
+
+    return _prepare_qwen_user_message(base64_image=base64_image, text=text)
+
+
+def _prepare_classification_prompt(
+    base64_image: str, classes: List[str], **_
+) -> List[dict]:
+    serialised_classes = ", ".join(classes)
+    text = (
+        f"{_TASK_CLASSIFICATION}\n\n"
+        f"List of all classes to be recognised by model: {serialised_classes}"
+    )
+
+    return _prepare_qwen_user_message(base64_image=base64_image, text=text)
+
+
+def _prepare_multi_label_classification_prompt(
+    base64_image: str, classes: List[str], **_
+) -> List[dict]:
+    serialised_classes = ", ".join(classes)
+    text = (
+        f"{_TASK_MULTI_LABEL}\n\n"
+        f"List of all classes to be recognised by model: {serialised_classes}"
+    )
+
+    return _prepare_qwen_user_message(base64_image=base64_image, text=text)
+
+
+def _prepare_structured_answering_prompt(
+    base64_image: str, output_structure: Dict[str, str], **_
+) -> List[dict]:
+    output_structure_serialised = json.dumps(output_structure, indent=4)
+    text = (
+        f"{_TASK_STRUCTURED}\n\n"
+        "Specification of requirements regarding output fields: \n"
+        f"{output_structure_serialised}"
+    )
+
+    return _prepare_qwen_user_message(base64_image=base64_image, text=text)
+
+
+def _prepare_object_detection_prompt(
+    base64_image: str, classes: List[str], **_
+) -> List[dict]:
+    text = QWEN_OBJECT_DETECTION_PROMPT_TEMPLATE.format(
+        class_list=", ".join(classes),
+    )
+
+    return _prepare_qwen_user_message(base64_image=base64_image, text=text)
+
+
+QWEN_PROMPT_BUILDERS = {
+    "unconstrained": _prepare_unconstrained_prompt,
+    "ocr": _prepare_ocr_prompt,
+    "visual-question-answering": _prepare_vqa_prompt,
+    "caption": lambda **kwargs: _prepare_caption_prompt(
+        short_description=True, **kwargs
+    ),
+    "detailed-caption": lambda **kwargs: _prepare_caption_prompt(
+        short_description=False, **kwargs
+    ),
+    "classification": _prepare_classification_prompt,
+    "multi-label-classification": _prepare_multi_label_classification_prompt,
+    "structured-answering": _prepare_structured_answering_prompt,
+    "object-detection": _prepare_object_detection_prompt,
+}
+
+
+def build_qwen_openrouter_prompts(
+    images: List[np.ndarray],
+    task_type: str,
+    prompt: Optional[str],
+    output_structure: Optional[Dict[str, str]],
+    classes: Optional[List[str]],
+) -> List[List[dict]]:
+    """Build one OpenRouter ``messages`` array per input image, Qwen-style.
+
+    Args:
+        images: BGR numpy images.
+        task_type: One of the supported VLM task types.
+        prompt: User prompt for unconstrained / VQA tasks.
+        output_structure: Output spec for structured-answering.
+        classes: Class list for classification / detection tasks.
+
+    Returns:
+        List of ``messages`` arrays, one per image.
+
+    Raises:
+        ValueError: If the task type is not supported.
+    """
+    if task_type not in QWEN_PROMPT_BUILDERS:
+        raise ValueError(f"Task type: {task_type} not supported.")
+
+    builder = QWEN_PROMPT_BUILDERS[task_type]
+    built: List[List[dict]] = []
+    for image in images:
+        base64_image = encode_image_for_qwen_openrouter(numpy_image=image)
+        built.append(
+            builder(
+                base64_image=base64_image,
+                prompt=prompt,
+                output_structure=output_structure,
+                classes=classes,
+            )
+        )
+
+    return built
+
+
+# ---------------------------------------------------------------------------
+# Native prompt building (carried over from v1 unchanged)
+# ---------------------------------------------------------------------------
+# The native Qwen API takes a single ``prompt`` string and the image
+# separately (via LMMInferenceRequest). It uses the ``<system_prompt>``
+# separator convention from the legacy native qwen blocks.
 
 _SYSTEM_DETECTION = (
     "You act as object-detection model. You must provide reasonable "
@@ -313,10 +599,10 @@ def _build_native_prompt(
         system_text = _DEFAULT_UNCONSTRAINED_SYSTEM_PROMPT
     elif task_type == "ocr":
         user_text = "Extract the text from this image."
-        system_text = _SYSTEM_OCR
+        system_text = _TASK_OCR
     elif task_type == "visual-question-answering":
         user_text = f"Question: {prompt}" if prompt else "Describe this image."
-        system_text = _SYSTEM_VQA
+        system_text = _TASK_VQA
     elif task_type == "caption":
         user_text = "Caption this image."
         system_text = (
@@ -332,11 +618,11 @@ def _build_native_prompt(
     elif task_type == "classification":
         cls_str = ", ".join(classes or [])
         user_text = f"List of all classes to be recognised by model: {cls_str}"
-        system_text = _SYSTEM_CLASSIFICATION
+        system_text = _TASK_CLASSIFICATION
     elif task_type == "multi-label-classification":
         cls_str = ", ".join(classes or [])
         user_text = f"List of all classes to be recognised by model: {cls_str}"
-        system_text = _SYSTEM_MULTI_LABEL
+        system_text = _TASK_MULTI_LABEL
     elif task_type == "object-detection":
         cls_str = ", ".join(classes or [])
         user_text = f"List of all classes to be recognised by model: {cls_str}"
@@ -344,7 +630,7 @@ def _build_native_prompt(
     elif task_type == "structured-answering":
         spec = json.dumps(output_structure or {}, indent=4)
         user_text = f"Specification of requirements regarding output fields: \n{spec}"
-        system_text = _SYSTEM_STRUCTURED
+        system_text = _TASK_STRUCTURED
     else:
         raise ValueError(f"Task type: {task_type} not supported.")
     return user_text + "<system_prompt>" + system_text
@@ -366,17 +652,36 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
+#### 🆕 What's new in v2
+
+The OpenRouter path now uses Qwen-tuned inference plumbing validated by benchmarks:
+
+* **Object detection** prompts for Qwen's native grounding format: a JSON list of
+  `box_2d`/`label` entries with `[x_min, y_min, x_max, y_max]` integer coordinates
+  normalized to 0-1000. Parse the output with `VLM as Detector` (`vlm_as_detector@v2`)
+  using `model_type="qwen"`.
+* Every request sends the image **before** the instruction text in a single user
+  message, matching how Qwen models are trained.
+* **Reasoning control**: Qwen models default to extended reasoning on OpenRouter,
+  which bloats latency and can consume the whole token budget. v2 disables it by
+  default and exposes a `reasoning_effort` knob. Qwen 3.8 Max requires reasoning
+  and falls back to low effort when disabled.
+* Uploads are downscaled automatically when they would exceed the Qwen provider
+  payload limit, and OpenRouter requests default to `max_tokens=16384` so
+  detection output is not truncated (the native backend keeps the server
+  default unless you set `max_tokens` explicitly).
+
 #### 🛠️ Backend selection
 
 * **Native (Roboflow)** — small Qwen-VL models (0.8B–7B) run on the same infrastructure as
   your other Roboflow models. Lower latency. Recommended for tasks
   like OCR, captioning, and visual question answering.
 
-* **OpenRouter** — large hosted Qwen models (9B–397B) reached via [OpenRouter](https://openrouter.ai/).
-  Defaults to a Roboflow-managed API key and bills your Roboflow credits. Paste your own
-  `sk-or-...` key in the `api_key` field to bypass Roboflow billing. Recommended for
-  structured tasks that benefit from larger models (classification, object-detection,
-  structured-answering).
+* **OpenRouter** — benchmark-validated hosted Qwen models reached via
+  [OpenRouter](https://openrouter.ai/). Defaults to a Roboflow-managed API key and
+  bills your Roboflow credits. Paste your own `sk-or-...` key in the `api_key`
+  field to bypass Roboflow billing. Recommended for structured tasks that benefit
+  from larger models (classification, object-detection, structured-answering).
 
 The `model_version` dropdown lists every supported variant; each is bound to one backend.
 A validator catches mismatches between your selected backend and model.
@@ -393,7 +698,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Qwen",
-            "version": "v1",
+            "version": "v2",
             "short_description": "Run any Qwen vision model — natively or via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -402,7 +707,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 "Qwen",
                 "qwen-vl",
                 "qwen3.5",
-                "qwen3.6",
+                "qwen3.7",
                 "qwen3.8",
                 "VLM",
                 "Alibaba",
@@ -418,7 +723,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/qwen_vlm@v1"]
+    type: Literal["roboflow_core/qwen_vlm@v2"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
@@ -495,13 +800,17 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
 
-    # OpenRouter model picker: friendly-name dropdown bound to OpenRouter slugs.
+    # OpenRouter model picker: friendly-name dropdown bound to OpenRouter
+    # slugs, restricted to the vlm-exam-benchmarked models.
     openrouter_model_version: Union[
         Selector(kind=[STRING_KIND]), OpenRouterModelVersion
     ] = Field(
-        default="Qwen 3.6 27B",
-        description="OpenRouter-hosted Qwen variant.",
-        examples=["Qwen 3.6 27B", "Qwen 3.5 27B"],
+        default=DEFAULT_OPENROUTER_MODEL_VERSION,
+        description=(
+            "OpenRouter-hosted Qwen variant. The roster is restricted to "
+            "benchmark-validated models."
+        ),
+        examples=[DEFAULT_OPENROUTER_MODEL_VERSION, "Qwen 3.8 Max"],
         json_schema_extra={
             "relevant_for": {
                 "backend": {"values": ["openrouter"], "required": True},
@@ -549,6 +858,21 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                     "required": False,
                 },
             },
+        },
+    )
+    reasoning_effort: ReasoningEffort = Field(
+        default="none",
+        description=(
+            "Extended-reasoning budget for OpenRouter-hosted Qwen models. "
+            "Disabled by default: Qwen models default to extended reasoning, "
+            "which bloats latency and can consume the whole token budget "
+            "before a visible answer is produced. Models that require "
+            "reasoning (Qwen 3.8 Max) fall back to low effort when disabled. "
+            "Only used when backend=openrouter."
+        ),
+        json_schema_extra={
+            "values_metadata": REASONING_EFFORT_METADATA,
+            "relevant_for": {"backend": {"values": ["openrouter"], "required": False}},
         },
     )
     output_structure: Optional[Dict[str, str]] = Field(
@@ -607,11 +931,24 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "relevant_for": {"backend": {"values": ["openrouter"], "required": False}},
         },
     )
-    temperature: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.1,
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description=(
+            "Maximum number of tokens the model can generate in its response. "
+            "When unset, each backend applies its own default: OpenRouter "
+            f"requests use {QWEN_OPENROUTER_DEFAULT_MAX_TOKENS} (headroom for "
+            "detection output and reasoning models; billing is based on "
+            "tokens actually generated, not on this limit), while the native "
+            "backend defers to the inference server default (512)."
+        ),
+        gt=1,
+    )
+    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
+        default=None,
         description=(
             "Sampling temperature (only used when backend=openrouter). "
-            "The native Qwen-VL runtime doesn't accept a temperature knob. "
+            "Left unset by default so the provider's per-model default "
+            "applies — this matches how the models were benchmarked. "
             'Range 0.0-2.0 — higher = more random / "creative" generations.'
         ),
         json_schema_extra={
@@ -667,8 +1004,10 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 
     @field_validator("temperature")
     @classmethod
-    def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
-        if isinstance(value, str):
+    def validate_temperature(
+        cls, value: Optional[Union[str, float]]
+    ) -> Optional[Union[str, float]]:
+        if value is None or isinstance(value, str):
             return value
         if value < 0.0 or value > 2.0:
             raise ValueError(
@@ -695,8 +1034,11 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 name="thinking",
                 kind=[STRING_KIND],
                 description=(
-                    "Reasoning trace from Qwen3.5-VL when `enable_thinking` "
-                    "is on. Empty string otherwise."
+                    "Reasoning trace emitted by the model: populated on the "
+                    "native backend when `enable_thinking` is on, and on the "
+                    "OpenRouter backend when the model performs extended "
+                    "reasoning (see `reasoning_effort`). Empty string "
+                    "otherwise."
                 ),
             ),
         ]
@@ -767,9 +1109,10 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 # ---------------------------------------------------------------------------
 
 
-class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
-    """Unified Qwen-VL block. Inherits OpenRouter routing/execution from base
-    and adds the native local/remote dispatch on top.
+class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
+    """Unified Qwen-VL block v2. Inherits OpenRouter routing/execution from
+    base, uses Qwen-specific prompt building on the OpenRouter path, and
+    keeps the native local/remote dispatch from v1.
     """
 
     def __init__(
@@ -803,12 +1146,13 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
         task_type: str,
         prompt: Optional[str],
         enable_thinking: bool,
+        reasoning_effort: str,
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
         api_key: str,
         privacy_level: str,
-        max_tokens: int,
-        temperature: float,
+        max_tokens: Optional[int],
+        temperature: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         if backend == "native":
@@ -841,25 +1185,35 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             raise ValueError(f"Unknown backend: {backend}")
 
         if backend == "openrouter":
-            inference_images = [i.to_inference_format() for i in images]
-            prompts = build_prompts_from_images(
-                images=inference_images,
+            prompts = build_qwen_openrouter_prompts(
+                images=[i.numpy_image for i in images],
                 task_type=task_type,
                 prompt=prompt,
                 output_structure=output_structure,
                 classes=classes,
             )
+            reasoning = build_reasoning_config(
+                reasoning_effort,
+                reasoning_required=variant.get("reasoning_required", False),
+            )
             raw_outputs = self.execute_openrouter_batch(
                 openrouter_api_key=api_key,
                 model=model_id,
                 prompts=prompts,
-                max_tokens=max_tokens,
+                max_tokens=(
+                    max_tokens
+                    if max_tokens is not None
+                    else QWEN_OPENROUTER_DEFAULT_MAX_TOKENS
+                ),
                 temperature=temperature,
                 privacy_level=privacy_level,
                 max_concurrent_requests=max_concurrent_requests,
+                reasoning=reasoning,
+                include_reasoning=True,
             )
             return [
-                {"output": o, "classes": classes, "thinking": ""} for o in raw_outputs
+                {"output": content, "classes": classes, "thinking": reasoning_trace}
+                for content, reasoning_trace in raw_outputs
             ]
 
         # `enable_thinking` is only meaningful on Qwen3.5-VL native variants

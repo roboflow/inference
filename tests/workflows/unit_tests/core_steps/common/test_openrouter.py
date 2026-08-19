@@ -233,6 +233,97 @@ def test_proxied_request_raises_when_choices_empty(mock_post):
 
 
 # ---------------------------------------------------------------------------
+# include_reasoning: reasoning-trace extraction
+# ---------------------------------------------------------------------------
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_returns_reasoning_trace_when_requested(mock_post):
+    mock_post.return_value = {
+        "choices": [{"message": {"content": "answer", "reasoning": "trace"}}]
+    }
+
+    out = _execute_proxied_openrouter_request(
+        roboflow_api_key="k",
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_reasoning=True,
+    )
+
+    assert out == ("answer", "trace")
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_returns_empty_trace_when_reasoning_absent(mock_post):
+    mock_post.return_value = {"choices": [{"message": {"content": "answer"}}]}
+
+    out = _execute_proxied_openrouter_request(
+        roboflow_api_key="k",
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_reasoning=True,
+    )
+
+    assert out == ("answer", "")
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_returns_reasoning_trace_when_requested(mock_openai_cls):
+    client = MagicMock()
+    response = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "answer"
+    choice.message.reasoning = "trace"
+    response.choices = [choice]
+    client.chat.completions.create.return_value = response
+    mock_openai_cls.return_value = client
+
+    out = _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_reasoning=True,
+    )
+
+    assert out == ("answer", "trace")
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_returns_empty_trace_when_reasoning_missing(mock_openai_cls):
+    client = MagicMock()
+    response = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "answer"
+    # MagicMock auto-creates attributes; a non-str `reasoning` must map to "".
+    response.choices = [choice]
+    client.chat.completions.create.return_value = response
+    mock_openai_cls.return_value = client
+
+    out = _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_reasoning=True,
+    )
+
+    assert out == ("answer", "")
+
+
+# ---------------------------------------------------------------------------
 # _execute_direct_openrouter_request: provider injection
 # ---------------------------------------------------------------------------
 
@@ -560,17 +651,14 @@ def test_direct_request_does_not_retry_on_server_error(mock_openai_cls):
 
 
 # ---------------------------------------------------------------------------
-# managed-key reasoning warning (proxy does not forward `reasoning`)
+# batch-level reasoning forwarding
 # ---------------------------------------------------------------------------
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.logger")
 @patch(
     "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
 )
-def test_execute_openrouter_batch_warns_when_reasoning_sent_on_managed_key(
-    mock_proxied, mock_logger
-):
+def test_execute_openrouter_batch_forwards_reasoning_on_managed_key(mock_proxied):
     mock_proxied.side_effect = ["resp"]
     block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
 
@@ -585,42 +673,13 @@ def test_execute_openrouter_batch_warns_when_reasoning_sent_on_managed_key(
         reasoning={"enabled": False},
     )
 
-    assert mock_logger.warning.call_count == 1
-    # Reasoning is still forwarded so behavior self-corrects once the proxy
-    # adds support.
     assert mock_proxied.call_args.kwargs["reasoning"] == {"enabled": False}
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.logger")
-@patch(
-    "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
-)
-def test_execute_openrouter_batch_does_not_warn_without_reasoning(
-    mock_proxied, mock_logger
-):
-    mock_proxied.side_effect = ["resp"]
-    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
-
-    block.execute_openrouter_batch(
-        openrouter_api_key="rf_key:account",
-        model="qwen/qwen3.7-flash",
-        prompts=[[{"role": "user", "content": "hi"}]],
-        max_tokens=50,
-        temperature=0.2,
-        privacy_level="deny",
-        max_concurrent_requests=1,
-    )
-
-    assert mock_logger.warning.call_count == 0
-
-
-@patch("inference.core.workflows.core_steps.common.openrouter.logger")
 @patch(
     "inference.core.workflows.core_steps.common.openrouter._execute_direct_openrouter_request"
 )
-def test_execute_openrouter_batch_does_not_warn_on_direct_key_with_reasoning(
-    mock_direct, mock_logger
-):
+def test_execute_openrouter_batch_forwards_reasoning_on_direct_key(mock_direct):
     mock_direct.side_effect = ["resp"]
     block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
 
@@ -635,7 +694,6 @@ def test_execute_openrouter_batch_does_not_warn_on_direct_key_with_reasoning(
         reasoning={"effort": "low"},
     )
 
-    assert mock_logger.warning.call_count == 0
     assert mock_direct.call_args.kwargs["reasoning"] == {"effort": "low"}
 
 
