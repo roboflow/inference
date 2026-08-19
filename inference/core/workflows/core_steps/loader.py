@@ -624,6 +624,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v5 import (
 from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.orcarouter.v1 import (
+    OrcaRouterBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
@@ -1899,6 +1902,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
         OpenRouterBlockV1,
+        OrcaRouterBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
