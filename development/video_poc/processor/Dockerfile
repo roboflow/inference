@@ -34,6 +34,7 @@ COPY run_lifecycle.py /app/run_lifecycle.py
 COPY worker_lifecycle.py /app/worker_lifecycle.py
 COPY execution_domains.py /app/execution_domains.py
 COPY security.py /app/security.py
+COPY claim_proof.py /app/claim_proof.py
 COPY video_ingest.py /app/video_ingest.py
 COPY file_replay.py /app/file_replay.py
 # low-latency RTSP ingest (PyAV, codec-level low_delay); without it the

@@ -6,11 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
-
 PROJECT = "roboflow-staging"
-REGISTRY_PREFIX = (
-    "us-central1-docker.pkg.dev/roboflow-staging/video-proc/"
-)
+REGISTRY_PREFIX = "us-central1-docker.pkg.dev/roboflow-staging/video-proc/"
 GPU_BASE_REPOSITORY = f"{REGISTRY_PREFIX}video-processor"
 CPU_BASE_REPOSITORY = f"{REGISTRY_PREFIX}video-processor-cpu"
 GPU_OUTPUT_REPOSITORY = f"{REGISTRY_PREFIX}video-processor-telemetry"
@@ -24,6 +21,9 @@ OVERLAY_FILES = (
     "development/video_poc/processor/processor_metrics.py",
     "development/video_poc/processor/job_telemetry.py",
     "development/video_poc/processor/job_process.py",
+    "development/video_poc/processor/claim_proof.py",
+    "development/video_poc/processor/inference_runtime_compat.py",
+    "development/video_poc/processor/run_lifecycle.py",
     "development/video_poc/processor/worker_lifecycle.py",
     "development/video_poc/processor/execution_domains.py",
     "development/video_poc/processor/security.py",

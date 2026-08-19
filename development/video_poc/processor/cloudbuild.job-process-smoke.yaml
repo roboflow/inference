@@ -54,6 +54,7 @@ steps:
         assert job_process.resolve_job_execution_mode("process") == "process"
         assert os.path.isfile("/app/processor.py")
         assert os.path.isfile("/app/job_process.py")
+        assert os.path.isfile("/app/claim_proof.py")
         assert os.path.isfile("/app/inference_runtime_compat.py")
         runtime_supports_freshest = (
             "video_processing_mode"

@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-
 MODULE_PATH = (
     Path(__file__).parents[3]
     / "development"
@@ -35,11 +34,15 @@ def test_build_plan_is_staging_only_and_commit_derived():
     assert "development/video_poc/processor/processor.py" in plan["sourceFiles"]
     assert "development/video_poc/processor/video_ingest.py" in plan["sourceFiles"]
     assert "development/video_poc/processor/file_replay.py" in plan["sourceFiles"]
+    assert "development/video_poc/processor/claim_proof.py" in plan["sourceFiles"]
+    assert "development/video_poc/processor/run_lifecycle.py" in plan["sourceFiles"]
     assert "development/video_poc/processor/Dockerfile.overlay" in plan["sourceFiles"]
     command = plan["submitCommand"]
     assert command[:3] == ["gcloud", "builds", "submit"]
     assert "--project=roboflow-staging" in command
-    substitutions = next(value for value in command if value.startswith("--substitutions="))
+    substitutions = next(
+        value for value in command if value.startswith("--substitutions=")
+    )
     assert GPU_BASE in substitutions
     assert CPU_BASE in substitutions
     assert f"_GIT_SHA={GIT_SHA}" in substitutions
@@ -58,9 +61,7 @@ def test_build_plan_is_staging_only_and_commit_derived():
         (f"{MODULE.GPU_BASE_REPOSITORY}@sha256:short", MODULE.GPU_BASE_REPOSITORY),
     ),
 )
-def test_validate_digest_ref_rejects_mutable_or_non_staging_input(
-    value, repository
-):
+def test_validate_digest_ref_rejects_mutable_or_non_staging_input(value, repository):
     with pytest.raises(ValueError):
         MODULE.validate_digest_ref(value, repository)
 
@@ -78,9 +79,7 @@ def test_resolve_digest_returns_immutable_ref(monkeypatch):
     monkeypatch.setattr(MODULE.subprocess, "run", lambda *args, **kwargs: Result())
 
     image = f"{MODULE.GPU_OUTPUT_REPOSITORY}:{GIT_SHA}"
-    assert MODULE.resolve_digest(image) == (
-        f"{MODULE.GPU_OUTPUT_REPOSITORY}@{DIGEST}"
-    )
+    assert MODULE.resolve_digest(image) == (f"{MODULE.GPU_OUTPUT_REPOSITORY}@{DIGEST}")
 
 
 def test_resolve_digest_rejects_unexpected_registry_output(monkeypatch):

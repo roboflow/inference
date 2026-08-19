@@ -24,9 +24,7 @@ from video_ingest import (  # noqa: E402
 
 
 def test_video_processor_defaults_to_source_side_fps_limiting(monkeypatch):
-    monkeypatch.delenv(
-        "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", raising=False
-    )
+    monkeypatch.delenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", raising=False)
 
     configure_source_fps_limiter_default()
 
@@ -231,6 +229,7 @@ def test_processor_images_include_ingest_selector(dockerfile):
     assert "COPY file_replay.py /app/file_replay.py" in source
     assert "COPY inference_runtime_compat.py /app/inference_runtime_compat.py" in source
     assert "COPY run_lifecycle.py /app/run_lifecycle.py" in source
+    assert "COPY claim_proof.py /app/claim_proof.py" in source
 
 
 def test_full_processor_restores_pip_removed_from_v14_runtime():

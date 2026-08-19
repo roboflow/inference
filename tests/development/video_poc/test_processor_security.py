@@ -111,6 +111,21 @@ def test_failure_diagnostics_redact_credentials_and_signed_queries():
     assert "Bearer [redacted]" in sanitized
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        '{"processorAccessToken":"claim-secret"}',
+        "{'processorAccessToken': 'claim-secret'}",
+        "processorAccessToken=claim-secret",
+    ],
+)
+def test_failure_diagnostics_redact_processor_claim_proofs(line):
+    sanitized = sanitize_diagnostic(line)
+
+    assert "claim-secret" not in sanitized
+    assert "[redacted]" in sanitized
+
+
 def test_diagnostic_ring_is_bounded_and_sanitizes_each_job_independently():
     first = DiagnosticRing(capacity=2)
     second = DiagnosticRing(capacity=2)

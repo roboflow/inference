@@ -190,17 +190,20 @@ both must reference compatible code before automation is considered restored.
 ## Deployment ownership and order
 
 1. **Inference #2800:** merge the processor source and build definitions.
-2. **Image build:** build and smoke the exact merged or approved revision;
-   capture its digest.
-3. **Roboflow #14376:** deploy the dedicated video function and API Hosting;
-   verify workspace, connector, relay-auth, and processor-fleet behavior before
-   removing the legacy device-function routes.
-4. **Roboflow-infra #2454 or successor:** pin the image digest and explicit
+2. **Image build:** build and smoke both GPU and CPU workers from the exact
+   merged or approved revision; capture both digests.
+3. **Roboflow-infra #2454 or successor:** pin both image digests and explicit
    runtime switches in the environment values.
-5. Review the staging Spacelift plan. Production plans are not staging approval.
-6. Apply staging only and capture the old Deployment revision, image digest,
+4. Review the staging Spacelift plan. Production plans are not staging approval.
+5. Apply staging only and capture the old Deployment revision, image digest,
    rendered environment, and template hash as the rollback anchor.
-7. Run the gates below before any capacity or soak campaign.
+6. **Worker compatibility gate:** verify both proof-aware workers against the
+   pre-enforcement platform: claim, heartbeat, failure/completion status,
+   result upload, cancellation, and cleanup.
+7. **Roboflow #14376:** only then deploy the dedicated video function and API
+   Hosting with claim-proof enforcement; verify workspace, connector,
+   relay-auth, and processor-fleet behavior before removing legacy routes.
+8. Run the remaining gates below before any capacity or soak campaign.
 
 The order prevents Hosting from targeting a missing function and prevents infra
 from deploying an image whose exact runtime has not passed its image gate.

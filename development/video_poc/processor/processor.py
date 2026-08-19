@@ -97,6 +97,7 @@ try:
 except Exception:  # PyAV missing: fall back to cv2 URL ingest
     LowLatencyRtspProducer = None
 
+from claim_proof import ClaimProofStore, PlatformJobMutations, retain_claim_proof
 from execution_domains import build_execution_domains, wait_for_threads
 from file_replay import DEFAULT_BITRATE_KBPS, build_file_replay_command
 from inference_runtime_compat import (
@@ -141,7 +142,6 @@ from video_ingest import (
 )
 from worker_lifecycle import schedule_retirement
 
-
 (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     serialize_wildcard_kind,
@@ -168,9 +168,7 @@ def _parse_capture_options(options):
 POLL_INTERVAL_S = 2.0
 EVENT_BUFFER_SIZE = 50
 MJPEG_MAX_FPS = 12
-JOB_PROCESS_STOP_GRACE_S = float(
-    os.getenv("PROCESSOR_JOB_PROCESS_STOP_GRACE_S", "10")
-)
+JOB_PROCESS_STOP_GRACE_S = float(os.getenv("PROCESSOR_JOB_PROCESS_STOP_GRACE_S", "10"))
 
 # Bin-packing bias: pool workers that have never claimed wait this long before
 # each claim attempt, so a partially-filled worker (free slot, claims eagerly)
@@ -200,9 +198,7 @@ DOMAIN_CONTAINMENT_TIMEOUT_S = max(
 # run in ``runs`` forever, so status stayed activeJobs=1 and a detached
 # pool=working pod never retired. A threaded pipeline cannot be abandoned
 # safely; contain the whole pod and let the platform reaper place sibling jobs.
-JOB_STOP_TIMEOUT_S = max(
-    0.1, float(os.getenv("PROCESSOR_JOB_STOP_TIMEOUT_S", "30"))
-)
+JOB_STOP_TIMEOUT_S = max(0.1, float(os.getenv("PROCESSOR_JOB_STOP_TIMEOUT_S", "30")))
 
 # Pipe EOF can precede multiprocessing's finalized child exit status by a
 # short interval. Reap the child before reporting its exit or starting
@@ -228,7 +224,8 @@ FILE_REPLAY_BITRATE_KBPS = int(
 # scrub them after the job completes. Survives until the OS clears temp storage;
 # the production shape is object storage.
 RESULTS_ROOT = os.getenv(
-    "VIDEO_PROC_RESULTS_DIR", os.path.join(tempfile.gettempdir(), "rf-video-poc-results")
+    "VIDEO_PROC_RESULTS_DIR",
+    os.path.join(tempfile.gettempdir(), "rf-video-poc-results"),
 )
 RESULT_FILES = {
     "video.mp4": "video/mp4",
@@ -390,10 +387,22 @@ class JobRecorder:
                 try:
                     self.ffmpeg = subprocess.Popen(
                         [
-                            FFMPEG_BIN, "-y", "-f", "image2pipe",
-                            "-framerate", str(self.fps), "-i", "-",
-                            "-c:v", "libx264", "-preset", "veryfast",
-                            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                            FFMPEG_BIN,
+                            "-y",
+                            "-f",
+                            "image2pipe",
+                            "-framerate",
+                            str(self.fps),
+                            "-i",
+                            "-",
+                            "-c:v",
+                            "libx264",
+                            "-preset",
+                            "veryfast",
+                            "-pix_fmt",
+                            "yuv420p",
+                            "-movflags",
+                            "+faststart",
                             self.paths["video.mp4"],
                         ],
                         stdin=subprocess.PIPE,
@@ -497,18 +506,36 @@ class OutputPublisher:
                     # PTS from arrival time: frames are written as the pipeline
                     # produces them, so wallclock IS the correct timestamp and
                     # the stream carries no resampling delay
-                    "-use_wallclock_as_timestamps", "1",
-                    "-f", "image2pipe", "-i", "-",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-                    "-profile:v", "baseline", "-pix_fmt", "yuv420p",
+                    "-use_wallclock_as_timestamps",
+                    "1",
+                    "-f",
+                    "image2pipe",
+                    "-i",
+                    "-",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-tune",
+                    "zerolatency",
+                    "-profile:v",
+                    "baseline",
+                    "-pix_fmt",
+                    "yuv420p",
                     # VFR passthrough (deprecated alias of -fps_mode vfr; kept
                     # for the ffmpeg 4.4 in the ubuntu-based processor image)
-                    "-vsync", "vfr",
+                    "-vsync",
+                    "vfr",
                     # keyframe every second of stream time regardless of fps:
                     # WHEP viewers can't render until an IDR arrives, so this
                     # bounds join latency at ~1s (was up to 2s)
-                    "-force_key_frames", "expr:gte(t,n_forced)",
-                    "-f", "rtsp", "-rtsp_transport", "tcp", self.publish_url,
+                    "-force_key_frames",
+                    "expr:gte(t,n_forced)",
+                    "-f",
+                    "rtsp",
+                    "-rtsp_transport",
+                    "tcp",
+                    self.publish_url,
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
@@ -525,7 +552,9 @@ class OutputPublisher:
         if not self._consuming:
             self.frames.add_consumer()
             self._consuming = True
-        self._thread = threading.Thread(target=self._pump, args=(proc, output), daemon=True)
+        self._thread = threading.Thread(
+            target=self._pump, args=(proc, output), daemon=True
+        )
         self._thread.start()
         print(f"[processor] viewer attached — publishing '{output}' to the relay")
 
@@ -726,13 +755,18 @@ class AiortcWhipPublisher:
             if post_attempt < 2:
                 await asyncio.sleep(1.0)
         resp.raise_for_status()
-        await pc.setRemoteDescription(RTCSessionDescription(sdp=resp.text, type="answer"))
+        await pc.setRemoteDescription(
+            RTCSessionDescription(sdp=resp.text, type="answer")
+        )
         print(
             f"[processor] viewer attached — publishing '{self.output}' via WHIP (in-process)"
         )
 
         try:
-            while not stopped.is_set() and pc.connectionState not in ("failed", "closed"):
+            while not stopped.is_set() and pc.connectionState not in (
+                "failed",
+                "closed",
+            ):
                 await asyncio.sleep(0.5)
         finally:
             await pc.close()
@@ -770,9 +804,7 @@ class PodSelf:
         with open(os.path.join(K8S_SA_DIR, "namespace")) as f:
             namespace = f.read().strip()
         self._ca = os.path.join(K8S_SA_DIR, "ca.crt")
-        self._pod_url = (
-            f"https://kubernetes.default.svc/api/v1/namespaces/{namespace}/pods/{self.pod_name}"
-        )
+        self._pod_url = f"https://kubernetes.default.svc/api/v1/namespaces/{namespace}/pods/{self.pod_name}"
 
     def _auth(self):
         # bound service-account tokens rotate on disk and expire (~1h): a worker
@@ -800,7 +832,9 @@ class PodSelf:
                 timeout=10,
             )
             resp.raise_for_status()
-            print(f"[processor] detached from ready pool (job {job_id}); pool will refill")
+            print(
+                f"[processor] detached from ready pool (job {job_id}); pool will refill"
+            )
         except Exception as exc:
             print(
                 f"[processor] pool detach failed (continuing): "
@@ -815,7 +849,9 @@ class PodSelf:
         if not self.enabled:
             return False
         try:
-            resp = requests.get(self._pod_url, headers=self._auth(), verify=self._ca, timeout=10)
+            resp = requests.get(
+                self._pod_url, headers=self._auth(), verify=self._ca, timeout=10
+            )
             resp.raise_for_status()
             labels = resp.json().get("metadata", {}).get("labels", {})
             return labels.get("pool") == "working"
@@ -850,10 +886,13 @@ class JobRun:
     `capacity` of these concurrently, so per-job state that used to live on the
     worker itself lives here and streams never clobber each other's."""
 
-    def __init__(self, worker, job):
+    def __init__(self, worker, job, claim_proof_id=None):
         self.worker = worker
         self.job = job
         self.job_id = validate_job_id(job.get("id", "local"))
+        # Opaque supervisor bookkeeping only. The plaintext proof remains in
+        # Worker.claim_proofs and never enters the job descriptor or child IPC.
+        self.claim_proof_id = claim_proof_id
         source_url = str(job.get("sourceUrl") or "")
         self.mode = job.get("mode") or (
             "batch" if source_url.startswith("http") else "stream"
@@ -954,9 +993,16 @@ class JobRun:
                 except Exception:
                     pass
                 outputs[key] = {"type": "image_ref", "output": key}
-            elif isinstance(value, list) and value and all(isinstance(v, WorkflowImageData) for v in value):
+            elif (
+                isinstance(value, list)
+                and value
+                and all(isinstance(v, WorkflowImageData) for v in value)
+            ):
                 rendered = True
-                outputs[key] = [{"type": "image_ref", "output": key, "index": i} for i in range(len(value))]
+                outputs[key] = [
+                    {"type": "image_ref", "output": key, "index": i}
+                    for i in range(len(value))
+                ]
             else:
                 try:
                     outputs[key] = serialize_wildcard_kind(value=value)
@@ -969,7 +1015,8 @@ class JobRun:
         event = {
             "frameId": video_frame.frame_id,
             "timestamp": utcnow_iso(),
-            "latencyMs": self.stats.last_latency_ms and round(self.stats.last_latency_ms, 1),
+            "latencyMs": self.stats.last_latency_ms
+            and round(self.stats.last_latency_ms, 1),
             "outputs": outputs,
         }
         if recorder is not None:
@@ -999,9 +1046,9 @@ class JobRun:
                 return
             self._start_locked()
         # Startup failures return without passing through Worker.finish_run;
-        # release their lifecycle domain here so an empty probe cannot linger.
+        # remove the run and its claim proof here so neither can linger.
         if not self.active:
-            self.worker.execution_domains.release_job(self.job_id)
+            self.worker.release_run(self)
 
     def _start_locked(self):
         job = self.job
@@ -1022,7 +1069,9 @@ class JobRun:
         # producer, which never queues more than one decoded frame
         buffersize = job.get("captureBufferSize", 1 if mode == "stream" else None)
         if buffersize:
-            pipeline_kwargs["video_source_properties"] = {"buffersize": float(buffersize)}
+            pipeline_kwargs["video_source_properties"] = {
+                "buffersize": float(buffersize)
+            }
         if mode == "batch":
             # Record results so the UI can scrub them after the job completes.
             self.recorder = JobRecorder(self.job_id, self.worker.security)
@@ -1047,7 +1096,6 @@ class JobRun:
                     # transient or not, same recovery as the sibling failure
                     # paths: free the slot, let the reaper requeue (attempts-
                     # capped); other runs on this worker keep going
-                    self.worker.maybe_retire()
                     return
             # Explicit strategies as a belt-and-braces: every frame, in order.
             pipeline_kwargs = {
@@ -1066,7 +1114,9 @@ class JobRun:
             # encoded stream. This mirrors rf-connector's file-source path.
             # The platform hands us a credentialed publish URL; the env base is
             # the local-dev fallback.
-            video_reference = job.get("simPublishUrl") or f"{RTSP_SIM_BASE}/sim-{self.job_id}"
+            video_reference = (
+                job.get("simPublishUrl") or f"{RTSP_SIM_BASE}/sim-{self.job_id}"
+            )
             try:
                 replay_path = self._download_source(source_url)
                 self.sim_process = subprocess.Popen(
@@ -1098,7 +1148,6 @@ class JobRun:
                 # transient (relay stream not up yet) — freeing the slot lets
                 # the reaper requeue the job, and the attempts cap handles
                 # poison jobs
-                self.worker.maybe_retire()
                 return
 
         if (
@@ -1195,7 +1244,9 @@ class JobRun:
                 workflow_id=job.get("workflowId"),
                 # the job carries its workspace's key so model access and usage
                 # follow the job, not this worker's identity key
-                api_key=job.get("apiKey") or self.worker.args.api_key or os.getenv("ROBOFLOW_API_KEY"),
+                api_key=job.get("apiKey")
+                or self.worker.args.api_key
+                or os.getenv("ROBOFLOW_API_KEY"),
                 on_prediction=self.on_prediction,
                 status_update_handlers=[self.on_pipeline_status_update],
                 # we serialize ourselves in on_prediction (images stay raw for
@@ -1239,7 +1290,6 @@ class JobRun:
                 self.job = {**job, "error": safe_error}
             # see the replay-failure comment above: free the slot → reaper
             # requeues; a bad workflow must not kill its neighbor runs
-            self.worker.maybe_retire()
             return
         finally:
             if env_lock:
@@ -1272,10 +1322,13 @@ class JobRun:
                 if self.state == "running":
                     self.state = "completed"
                     self._record_outcome("completed")
-                    print(f"[processor] job {self.job_id} completed; results are scrubbable")
+                    print(
+                        f"[processor] job {self.job_id} completed; results are scrubbable"
+                    )
                     release_local_domain = bool(self.worker.args.job_file)
             if release_local_domain:
                 self.worker.execution_domains.release_job(self.job_id)
+                self.worker.release_claim_proof(self)
         else:
             # a live pipeline ending on its own means the stream died (camera
             # offline, sim replay crashed). Free the slot; the platform reaper
@@ -1296,7 +1349,12 @@ class JobRun:
         if traceback_text:
             self.log_ring.note(traceback_text)
         self.log_ring.note(f"[processor] {message}")
-        self.worker.report_job_failure(self.job, message, self.log_ring.tail())
+        self.worker.report_job_failure(
+            self.job,
+            message,
+            self.log_ring.tail(),
+            claim_proof_id=self.claim_proof_id,
+        )
 
     def _record_outcome(self, outcome):
         """Record exactly one terminal aggregate outcome for this run."""
@@ -1332,10 +1390,10 @@ class JobRun:
         if not files:
             return
         try:
-            resp = self.worker.api(
-                "POST",
-                f"/video-jobs/{self.job_id}/results/upload-urls",
-                json={"processorId": self.worker.processor_id},
+            resp = self.worker.job_mutations.results_upload_urls(
+                self.job_id,
+                self.claim_proof_id,
+                {"processorId": self.worker.processor_id},
             )
             uploads = resp.get("uploads", {})
             uploaded = []
@@ -1350,12 +1408,14 @@ class JobRun:
                     r.raise_for_status()
                 uploaded.append(name)
             if uploaded:
-                self.worker.api(
-                    "POST",
-                    f"/video-jobs/{self.job_id}/results/complete",
-                    json={"files": uploaded, "processorId": self.worker.processor_id},
+                self.worker.job_mutations.results_complete(
+                    self.job_id,
+                    self.claim_proof_id,
+                    {"files": uploaded, "processorId": self.worker.processor_id},
                 )
-                print(f"[processor] uploaded results for {self.job_id}: {', '.join(uploaded)}")
+                print(
+                    f"[processor] uploaded results for {self.job_id}: {', '.join(uploaded)}"
+                )
         except Exception as exc:
             print(
                 f"[processor] results upload failed (kept locally): "
@@ -1393,7 +1453,9 @@ class JobRun:
                 for chunk in resp.iter_content(chunk_size=1 << 20):
                     out.write(chunk)
         size_mb = os.path.getsize(path) / 1e6
-        print(f"[processor] downloaded source ({size_mb:.1f} MB in {time.time() - started:.1f}s) -> {path}")
+        print(
+            f"[processor] downloaded source ({size_mb:.1f} MB in {time.time() - started:.1f}s) -> {path}"
+        )
         self._downloaded_path = path
         return path
 
@@ -1483,7 +1545,9 @@ class JobRun:
 
     def _make_publisher(self, transport):
         if transport == "whip":
-            whip_url = self.job.get("outWhipUrl") or f"{WHIP_SIM_BASE}/out-{self.job_id}/whip"
+            whip_url = (
+                self.job.get("outWhipUrl") or f"{WHIP_SIM_BASE}/out-{self.job_id}/whip"
+            )
             # raw frames: the whip transport encodes straight from ndarrays
             return AiortcWhipPublisher(
                 self.raw_frames,
@@ -1491,7 +1555,9 @@ class JobRun:
                 on_published=self.stats.on_published,
                 on_materialized=self.stats.on_image_output_materialized,
             )
-        publish_url = self.job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{self.job_id}"
+        publish_url = (
+            self.job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{self.job_id}"
+        )
         return OutputPublisher(
             self.frames, publish_url, on_published=self.stats.on_published
         )
@@ -1515,7 +1581,9 @@ class JobRun:
             if self.publisher is None:
                 # baseline BEFORE encoding starts: the watchdog compares
                 # against unwatched inference latency
-                self._publish_baseline_ms = self.stats.snapshot().get("decodeToResultLatencyMs")
+                self._publish_baseline_ms = self.stats.snapshot().get(
+                    "decodeToResultLatencyMs"
+                )
                 self._latency_strikes = 0
                 self.publisher = self._make_publisher(transport)
             self.publisher.ensure(output)
@@ -1657,7 +1725,8 @@ class _ChildWorker:
             except (EOFError, BrokenPipeError, OSError):
                 return
 
-    def report_job_failure(self, _job, message, log_tail=None):
+    def report_job_failure(self, _job, message, log_tail=None, claim_proof_id=None):
+        del claim_proof_id
         safe_error = sanitize_diagnostic(message)[:2000]
         self._failure = safe_error
         self.send(
@@ -1677,6 +1746,14 @@ class _ChildWorker:
                 run.state = "error" if self._failure else "stopped"
                 if self._failure:
                     run.job = {**run.job, "error": self._failure}
+
+    def release_claim_proof(self, _run):
+        return False
+
+    def release_run(self, run, *, retire=True):
+        del retire
+        self.execution_domains.release_job(run.job_id)
+        return True
 
     def maybe_retire(self):
         pass
@@ -1762,10 +1839,11 @@ def _isolated_job_child_main(job, config, connection):
 class ProcessJobRun:
     """Parent-side proxy for one spawned, child-owned stream pipeline."""
 
-    def __init__(self, worker, job):
+    def __init__(self, worker, job, claim_proof_id=None):
         self.worker = worker
         self.job = job
         self.job_id = validate_job_id(job.get("id", "local"))
+        self.claim_proof_id = claim_proof_id
         source_url = str(job.get("sourceUrl") or "")
         self.mode = job.get("mode") or (
             "batch" if source_url.startswith("http") else "stream"
@@ -1812,7 +1890,7 @@ class ProcessJobRun:
                 )
                 with self.lock:
                     self.state = "error"
-                self.worker.execution_domains.release_job(self.job_id)
+                self.worker.release_run(self)
                 return
             parent, child = self.worker.job_process_context.Pipe(duplex=True)
             child_job = dict(self.job)
@@ -1854,8 +1932,7 @@ class ProcessJobRun:
                 self.report_failure(f"job process failed to spawn: {safe_error}")
                 with self.lock:
                     self.state = "error"
-                self.worker.execution_domains.release_job(self.job_id)
-                self.worker.maybe_retire()
+                self.worker.release_run(self)
                 return
             child.close()
             self._monitor_thread = threading.Thread(
@@ -1879,13 +1956,9 @@ class ProcessJobRun:
         except (EOFError, BrokenPipeError, OSError, ValueError) as exc:
             if not self.cancelling:
                 diagnostic = sanitize_diagnostic(exc) or type(exc).__name__
-                self.log_ring.note(
-                    f"job process IPC failed: {diagnostic}"
-                )
+                self.log_ring.note(f"job process IPC failed: {diagnostic}")
         finally:
-            exit_code = wait_for_process_exit(
-                process, JOB_PROCESS_EXIT_REAP_TIMEOUT_S
-            )
+            exit_code = wait_for_process_exit(process, JOB_PROCESS_EXIT_REAP_TIMEOUT_S)
             if not self.cancelling and self.state in ("starting", "running"):
                 exit_diagnostic = (
                     str(exit_code)
@@ -1962,9 +2035,7 @@ class ProcessJobRun:
                 "version": JOB_PROCESS_PROTOCOL_VERSION,
                 "type": "watch",
                 "watch": {
-                    key: watch[key]
-                    for key in ("output", "requested")
-                    if key in watch
+                    key: watch[key] for key in ("output", "requested") if key in watch
                 },
             }
         )
@@ -1977,7 +2048,12 @@ class ProcessJobRun:
             self.log_ring.note(line)
         if not self._failure_reported:
             self._failure_reported = True
-            self.worker.report_job_failure(self.job, safe_error, self.log_ring.tail())
+            self.worker.report_job_failure(
+                self.job,
+                safe_error,
+                self.log_ring.tail(),
+                claim_proof_id=self.claim_proof_id,
+            )
         with self.lock:
             self.job = {**self.job, "error": safe_error}
 
@@ -2042,7 +2118,9 @@ class ProcessJobRun:
 class Worker:
     def __init__(self, args):
         self.args = args
-        self.processor_id = args.processor_id or f"proc-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+        self.processor_id = (
+            args.processor_id or f"proc-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+        )
         self.pod = PodSelf()
         self.retiring = False
         # gpu/cpu: this worker only claims jobs created for its tier, so light
@@ -2061,7 +2139,9 @@ class Worker:
         if args.public_url:
             self.public_url = args.public_url
         elif gateway_base and pod_ip:
-            self.public_url = f"{gateway_base.rstrip('/')}/ip-{pod_ip.replace('.', '-')}"
+            self.public_url = (
+                f"{gateway_base.rstrip('/')}/ip-{pod_ip.replace('.', '-')}"
+            )
         else:
             # "localhost", NOT 127.0.0.1: browsers on an https app page allow
             # insecure subresources from hostname loopbacks but refuse to load
@@ -2090,6 +2170,12 @@ class Worker:
         self.security = JobSecurityRegistry(
             require_tokens=env_flag("REQUIRE_JOB_ACCESS_TOKEN", managed_pool)
         )
+        # Browser-to-processor authorization intentionally keeps only a hash in
+        # ``security``. Platform mutations must echo the plaintext token for
+        # the current claim epoch, so retain it in a separate supervisor-only
+        # store. This object is never passed into a ProcessJobRun child.
+        self.claim_proofs = ClaimProofStore(require_tokens=managed_pool)
+        self.job_mutations = PlatformJobMutations(self.api, self.claim_proofs)
         self.metrics = ProcessorMetrics()
         self.video_ingest_mode = resolve_video_ingest_mode(
             tensor_runtime_available=ENABLE_TENSOR_DATA_REPRESENTATION
@@ -2153,6 +2239,17 @@ class Worker:
         pick = active or runs
         return pick[-1] if pick else None
 
+    def prepare_claim(self, claimed_job):
+        """Strip and retain one claim token before any job object is stored."""
+
+        return retain_claim_proof(
+            claimed_job,
+            self.claim_proofs,
+            # This registry hashes immediately and is used only for browser-to-
+            # processor job endpoint authorization.
+            self.security.register_job,
+        )
+
     def finish_run(self, run, outcome=None):
         """A run is over (completed and reported, cancelled, or its stream
         died): tear it down, free the slot, and retire the pod if this was the
@@ -2164,6 +2261,26 @@ class Worker:
             stop_timeout_s=JOB_STOP_TIMEOUT_S,
             on_stop_failure=self._contain_wedged_run,
         )
+
+    def release_claim_proof(self, run) -> bool:
+        """Forget only this run's claim epoch, never a newer same-ID claim."""
+
+        return self.claim_proofs.remove(
+            run.job_id, getattr(run, "claim_proof_id", None)
+        )
+
+    def release_run(self, run, *, retire=True) -> bool:
+        """Remove an exact run owner and all supervisor-only claim state."""
+
+        with self.runs_lock:
+            if self.runs.get(run.job_id) is not run:
+                return False
+            del self.runs[run.job_id]
+        self.execution_domains.release_job(run.job_id)
+        self.release_claim_proof(run)
+        if retire:
+            self.maybe_retire()
+        return True
 
     def _contain_wedged_run(self, run, reason):
         # Never remove a run while its old in-process pipeline might still use
@@ -2213,7 +2330,14 @@ class Worker:
 
     # ---------- job failure reporting ----------
 
-    def report_job_failure(self, job, message, log_tail=None):
+    def report_job_failure(
+        self,
+        job,
+        message,
+        log_tail=None,
+        *,
+        claim_proof_id=None,
+    ):
         """Best-effort: persist why this attempt died (message + recent log
         tail) on the job doc BEFORE the run is torn down. state="failing"
         records the error without terminally failing the job — the platform's
@@ -2227,10 +2351,10 @@ class Worker:
         else:
             diagnostics.note(f"[processor] {message}")
         try:
-            self.api(
-                "POST",
-                f"/video-jobs/{job['id']}/status",
-                json={
+            self.job_mutations.status(
+                job["id"],
+                claim_proof_id,
+                {
                     "state": "failing",
                     "error": sanitize_diagnostic(message)[:2000],
                     "logTail": diagnostics.tail(),
@@ -2255,7 +2379,12 @@ class Worker:
             "jobExecutionMode": self.job_execution_mode,
             "activeJobs": sum(1 for r in runs if r.active),
             "jobs": [
-                {"id": r.job_id, "state": r.state, "mode": r.job.get("mode"), "error": r.job.get("error")}
+                {
+                    "id": r.job_id,
+                    "state": r.state,
+                    "mode": r.job.get("mode"),
+                    "error": r.job.get("error"),
+                }
                 for r in runs
             ],
             "executionDomains": self.execution_domains.snapshot(),
@@ -2309,9 +2438,7 @@ class Worker:
                 ]
                 for thread in stop_threads:
                     thread.start()
-                if not wait_for_threads(
-                    stop_threads, DOMAIN_CONTAINMENT_TIMEOUT_S
-                ):
+                if not wait_for_threads(stop_threads, DOMAIN_CONTAINMENT_TIMEOUT_S):
                     print(
                         "[processor] fatal: workspace-domain containment "
                         "deadline exceeded; retiring worker so held jobs can "
@@ -2325,16 +2452,15 @@ class Worker:
                     self._fatal_exit(70)
                     return
                 for run in runs:
-                    with self.runs_lock:
-                        if self.runs.get(run.job_id) is run:
-                            del self.runs[run.job_id]
-                    self.execution_domains.release_job(run.job_id)
+                    self.report_job_failure(
+                        run.job,
+                        failure.diagnostic,
+                        run.log_ring.tail(),
+                        claim_proof_id=run.claim_proof_id,
+                    )
+                    self.release_run(run, retire=False)
                 if runs:
                     self.maybe_retire()
-                for run in runs:
-                    self.report_job_failure(
-                        run.job, failure.diagnostic, run.log_ring.tail()
-                    )
             time.sleep(0.25)
 
     # ---------- platform polling ----------
@@ -2352,7 +2478,9 @@ class Worker:
             headers["x-video-proc-service-access-token"] = fleet_secret
         else:
             params["api_key"] = self.args.api_key
-        resp = requests.request(method, url, params=params, headers=headers, timeout=10, **kwargs)
+        resp = requests.request(
+            method, url, params=params, headers=headers, timeout=10, **kwargs
+        )
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
@@ -2380,56 +2508,73 @@ class Worker:
                     "tier": self.tier,
                 },
             )
-            job = resp.get("job")
-            if not job:
+            claimed_job = resp.get("job")
+            if not claimed_job:
                 return None
-            # The access token is transport authorization, not workflow input.
-            # Remove it before the job dict is retained or surfaced by status.
-            job = dict(job)
-            access_token = job.pop("processorAccessToken", None)
+            try:
+                job, claim_proof_id = self.prepare_claim(claimed_job)
+            except (MissingJobAccessToken, ValueError) as exc:
+                # A missing managed claim proof cannot authenticate even a
+                # failure mutation. Fail closed and let the platform lease
+                # reaper place the job elsewhere.
+                print(
+                    f"[processor] rejected claimed job: {sanitize_diagnostic(exc)}",
+                    file=sys.stderr,
+                )
+                return {
+                    key: value
+                    for key, value in dict(claimed_job).items()
+                    if key != "processorAccessToken"
+                }
             # Shutdown may have started while the blocking claim request was in
             # flight. Do not create a run after stop_all() took its snapshot;
             # leave a bounded failing diagnostic so the platform reaper can
             # safely place this already-claimed job elsewhere.
             if self._stop_requested:
-                self.report_job_failure(job, "processor shutting down before job start")
+                self.report_job_failure(
+                    job,
+                    "processor shutting down before job start",
+                    claim_proof_id=claim_proof_id,
+                )
+                self.claim_proofs.remove(job.get("id"), claim_proof_id)
                 return False
-            try:
-                self.security.register_job(job.get("id"), access_token)
-            except (MissingJobAccessToken, ValueError) as exc:
-                self.report_job_failure(job, str(exc))
-                return job
             run_type = (
                 ProcessJobRun
                 if self.job_execution_mode == JOB_EXECUTION_PROCESS
                 else JobRun
             )
-            run = run_type(self, job)
+            run = run_type(self, job, claim_proof_id)
             with self.runs_lock:
                 # Register ownership before the execution domain becomes
                 # monitor-visible. An immediately dying child can therefore
                 # always resolve and contain its run.
-                for jid in [j for j, r in self.runs.items() if not r.active]:
+                stale_runs = [run for run in self.runs.values() if not run.active]
+                for jid in [run.job_id for run in stale_runs]:
                     del self.runs[jid]
                 self.runs[run.job_id] = run
+            for stale_run in stale_runs:
+                self.execution_domains.release_job(stale_run.job_id)
+                self.release_claim_proof(stale_run)
             try:
                 self.execution_domains.start_job(
                     job.get("id"), job.get("workspace") or job.get("workspaceName")
                 )
             except (RuntimeError, ValueError) as exc:
-                with self.runs_lock:
-                    if self.runs.get(run.job_id) is run:
-                        del self.runs[run.job_id]
-                self.execution_domains.release_job(run.job_id)
                 run._record_outcome("error")
-                self.report_job_failure(job, sanitize_diagnostic(exc))
+                self.report_job_failure(
+                    job,
+                    sanitize_diagnostic(exc),
+                    claim_proof_id=claim_proof_id,
+                )
+                self.release_run(run, retire=False)
                 return job
             if self._stop_requested:
-                with self.runs_lock:
-                    if self.runs.get(run.job_id) is run:
-                        del self.runs[run.job_id]
-                self.execution_domains.release_job(run.job_id)
-                self.report_job_failure(job, "processor shutting down before job start")
+                self.report_job_failure(
+                    job,
+                    "processor shutting down before job start",
+                    claim_proof_id=claim_proof_id,
+                )
+                self.release_run(run, retire=False)
                 return False
             # The domain monitor may have consumed an immediate child failure
             # and removed this run while start_job() returned.
@@ -2504,10 +2649,10 @@ class Worker:
                     if run.state not in ("starting", "running", "completed"):
                         continue
                     try:
-                        resp = self.api(
-                            "POST",
-                            f"/video-jobs/{run.job_id}/status",
-                            json={
+                        resp = self.job_mutations.status(
+                            run.job_id,
+                            run.claim_proof_id,
+                            {
                                 "state": run.state,
                                 "stats": run.stats.snapshot(
                                     runtime=run.runtime_identity()
@@ -2548,7 +2693,10 @@ class Worker:
 
     def stop_all(self):
         for run in self.snapshot_runs():
-            run.stop()
+            try:
+                run.stop()
+            finally:
+                self.release_run(run, retire=False)
         self.execution_domains.shutdown()
 
     def run(self):
@@ -2562,9 +2710,7 @@ class Worker:
                 "[processor] staging experiment enabled: workspace execution "
                 "probe (pipelines remain in-process)"
             )
-            threading.Thread(
-                target=self._execution_domain_monitor, daemon=True
-            ).start()
+            threading.Thread(target=self._execution_domain_monitor, daemon=True).start()
         if self.args.job_file:
             if len(self.args.job_file) > self.capacity:
                 raise ValueError(
@@ -2577,15 +2723,13 @@ class Worker:
                 with open(job_file) as f:
                     job = json.load(f)
                 job.setdefault("id", f"local-job-{index + 1}")
-                job = dict(job)
-                access_token = job.pop("processorAccessToken", None)
-                self.security.register_job(job["id"], access_token)
+                job, claim_proof_id = self.prepare_claim(job)
                 run_type = (
                     ProcessJobRun
                     if self.job_execution_mode == JOB_EXECUTION_PROCESS
                     else JobRun
                 )
-                run = run_type(self, job)
+                run = run_type(self, job, claim_proof_id)
                 with self.runs_lock:
                     if run.job_id in self.runs:
                         raise ValueError(f"duplicate local job id: {run.job_id}")
@@ -2596,18 +2740,12 @@ class Worker:
                         job.get("workspace") or job.get("workspaceName"),
                     )
                 except Exception:
-                    with self.runs_lock:
-                        if self.runs.get(run.job_id) is run:
-                            del self.runs[run.job_id]
-                    self.execution_domains.release_job(run.job_id)
                     run._record_outcome("error")
+                    self.release_run(run, retire=False)
                     raise
                 if self._stop_requested:
-                    with self.runs_lock:
-                        if self.runs.get(run.job_id) is run:
-                            del self.runs[run.job_id]
-                    self.execution_domains.release_job(run.job_id)
                     run._record_outcome("stopped")
+                    self.release_run(run, retire=False)
                     break
                 threading.Thread(target=run.start, daemon=True).start()
         else:
@@ -2616,7 +2754,10 @@ class Worker:
                 # must not claim work — its old jobs are being requeued by the
                 # reaper, and a hidden worker outside the pool breaks the
                 # single-generation invariant. Retire the pod instead.
-                print("[processor] restarted inside a detached pod — retiring", file=sys.stderr)
+                print(
+                    "[processor] restarted inside a detached pod — retiring",
+                    file=sys.stderr,
+                )
                 self.retiring = True
                 self.pod.self_delete()
                 return
@@ -2753,7 +2894,9 @@ def make_handler(worker: Worker):
                     return
                 self.send_response(200)
                 self._cors()
-                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.send_header(
+                    "Content-Type", "multipart/x-mixed-replace; boundary=frame"
+                )
                 # same unframed-stream rule as /events: must end with the conn
                 self.send_header("Connection", "close")
                 self.end_headers()
@@ -2779,7 +2922,9 @@ def make_handler(worker: Worker):
                                 time.sleep(wait)
                             last_sent = time.time()
                             self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n")
-                            self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
+                            self.wfile.write(
+                                f"Content-Length: {len(jpeg)}\r\n\r\n".encode()
+                            )
                             self.wfile.write(jpeg)
                             self.wfile.write(b"\r\n")
                             self.wfile.flush()

@@ -289,14 +289,20 @@ keys, processor URLs, or processor access tokens.
 | Connector | Workspace API key | Its workspace's connector/source roster and command acknowledgements |
 | UI | Firebase session | Workspace source/job operations and authorized result access |
 | Automation | Workspace API key or OAuth | `light-v2-video` list/create/get/cancel/watch routes with video-job scopes |
-| Fleet supervisor | `VIDEO_PROC_SERVICE_SECRET` | Cross-workspace claim/status/result operations; never user-facing |
-| Job child | Workspace API key from its claim plus job-specific stream credentials | The admitted job's model/workflow and source/output paths; the workspace key is not itself job-scoped |
+| Fleet supervisor | `VIDEO_PROC_SERVICE_SECRET` plus the current claim's `processorAccessToken` | Cross-workspace claim/status/result operations; the plaintext claim proof is supervisor-memory-only and never user-facing |
+| Job child | Workspace API key from its claim plus job-specific stream credentials | The admitted job's model/workflow and source/output paths; the workspace key is not itself job-scoped, and the child never receives the processor claim proof |
 | MediaMTX | External auth callback | Per-source/per-job publish/read authorization |
 | Browser media element | Short-lived WHEP/session URL | Selected source or job output only |
 
 General job serializers redact `streamKey`, `processorAccessToken`, workflow
 lock identities, and tenant credentials. Managed worker `/status` without a
 job token is aggregate-only; per-job HTTP routes require the job access token.
+The supervisor stores a separate plaintext claim proof for the current claim
+epoch and echoes it only on platform status and result mutations. Its opaque
+local handle prevents a late callback from an older same-ID attempt from using
+or deleting a replacement claim's token. The proof is removed with the exact
+run owner and is never placed in status, metrics, logs, the child environment,
+or child IPC.
 
 ## Current limits and future seams
 

@@ -15,7 +15,10 @@ from urllib.parse import parse_qs, urlsplit, urlunsplit
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _BEARER_VALUE_RE = re.compile(r"(?i)\bBearer\s+[^\s,;]+")
 _SECRET_PARAM_RE = re.compile(
-    r"(?i)(\b(?:api[_-]?key|token|access_token|signature|sig)=)[^\s&#]+"
+    r"(?i)(\b(?:api[_-]?key|token|access_token|processorAccessToken|signature|sig)=)[^\s&#]+"
+)
+_PROCESSOR_TOKEN_FIELD_RE = re.compile(
+    r"(?i)([\"']?processorAccessToken[\"']?\s*:\s*)([\"'])(.*?)(\2)"
 )
 _URL_RE = re.compile(r"(?P<url>(?:https?|rtsp)://[^\s\"'<>]+)", re.IGNORECASE)
 
@@ -68,6 +71,7 @@ def sanitize_diagnostic(value) -> str:
     text = str(value)
     text = _BEARER_VALUE_RE.sub("Bearer [redacted]", text)
     text = _SECRET_PARAM_RE.sub(r"\1[redacted]", text)
+    text = _PROCESSOR_TOKEN_FIELD_RE.sub(r"\1\2[redacted]\2", text)
     return _URL_RE.sub(_redact_url, text)
 
 

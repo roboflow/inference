@@ -48,10 +48,21 @@ class FakeWorker:
         self.execution_domains = FakeDomains()
         self.retire_calls = 0
         self.retire_lock = threading.Lock()
+        self.claim_proofs_released = []
 
     def maybe_retire(self):
         with self.retire_lock:
             self.retire_calls += 1
+
+    def release_run(self, run):
+        with self.runs_lock:
+            if self.runs.get(run.job_id) is not run:
+                return False
+            del self.runs[run.job_id]
+        self.execution_domains.release_job(run.job_id)
+        self.claim_proofs_released.append(run.job_id)
+        self.maybe_retire()
+        return True
 
 
 def finish(worker, run, failures, outcome="cancelled", timeout=1.0):
@@ -95,6 +106,7 @@ def test_concurrent_cancels_release_each_job_without_stale_accounting():
 
     assert worker.runs == {}
     assert sorted(worker.execution_domains.released) == ["job-a", "job-b"]
+    assert sorted(worker.claim_proofs_released) == ["job-a", "job-b"]
     assert worker.retire_calls == 2
     assert failures == []
 
@@ -129,6 +141,7 @@ def test_duplicate_cancel_has_one_stop_release_and_retirement():
     assert results.count(False) == 3
     assert len(stop_calls) == 1
     assert worker.execution_domains.released == ["job-a"]
+    assert worker.claim_proofs_released == ["job-a"]
     assert worker.retire_calls == 1
     assert run.outcomes == ["cancelled"]
 
@@ -157,6 +170,7 @@ def test_cancel_teardown_does_not_block_sibling_heartbeat_loop():
     release.set()
     wait_until(lambda: set(worker.runs) == {"job-b"})
     assert worker.execution_domains.released == ["job-a"]
+    assert worker.claim_proofs_released == ["job-a"]
 
 
 def test_stop_timeout_contains_worker_without_dropping_live_run():
@@ -171,6 +185,7 @@ def test_stop_timeout_contains_worker_without_dropping_live_run():
     assert failures == [("job-a", "timeout")]
     assert worker.runs == {"job-a": run}
     assert worker.execution_domains.released == []
+    assert worker.claim_proofs_released == []
     assert worker.retire_calls == 0
     release.set()
 
@@ -189,6 +204,7 @@ def test_stop_exception_contains_worker_without_dropping_live_run():
     assert failures == [("job-a", "exception: RuntimeError")]
     assert worker.runs == {"job-a": run}
     assert worker.execution_domains.released == []
+    assert worker.claim_proofs_released == []
     assert worker.retire_calls == 0
 
 
@@ -203,5 +219,6 @@ def test_old_run_completion_cannot_remove_new_same_id_owner():
 
     assert worker.runs == {"job-a": new}
     assert worker.execution_domains.released == []
+    assert worker.claim_proofs_released == []
     assert worker.retire_calls == 0
     assert failures == []

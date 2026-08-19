@@ -57,17 +57,10 @@ def finish_run_once(
             on_stop_failure(run, f"exception: {type(stop_error[0]).__name__}")
             return
 
-        released_owner = False
-        with worker.runs_lock:
-            if worker.runs.get(run.job_id) is run:
-                del worker.runs[run.job_id]
-                released_owner = True
         # A delayed terminal callback from an older attempt must not release the
-        # execution domain or retirement decision belonging to a newer same-ID
-        # claim already installed in the map.
-        if released_owner:
-            worker.execution_domains.release_job(run.job_id)
-            worker.maybe_retire()
+        # execution domain, plaintext claim proof, or retirement decision
+        # belonging to a newer same-ID claim already installed in the map.
+        worker.release_run(run)
 
     threading.Thread(
         target=finalize_run,

@@ -27,6 +27,12 @@ Image-redacted JSON workflow results return through a bounded latest-value
 queue so `/events` and `/events/poll` preserve their browser contract without
 letting a slow reader backpressure inference.
 
+Managed claims also carry a rotating `processorAccessToken`. The supervisor
+removes it from the job descriptor, retains it in a separate claim-proof store,
+and echoes it on every platform status/result mutation. Job processes receive
+neither that token nor the store; cleanup is bound to the exact claim epoch so
+a reclaimed same-ID job cannot reuse the previous proof.
+
 ## Runtime switches
 
 All switches are process-start settings and are reported in credential-free
