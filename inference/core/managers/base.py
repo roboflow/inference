@@ -1,5 +1,6 @@
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -51,6 +52,12 @@ from inference.core.telemetry import (
 )
 
 
+@dataclass
+class _ModelLockEntry:
+    lock: Lock
+    users: int = 0
+
+
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
@@ -61,7 +68,7 @@ class ModelManager:
         self._model_request_paths: Dict[str, set] = {}
         self.pingback = None
         self._state_lock = Lock()
-        self._models_state_locks: Dict[str, Lock] = {}
+        self._model_lock_entries: Dict[str, _ModelLockEntry] = {}
         # torch.jit.load/script mutate a process-global, non-thread-safe TorchScript
         # registry; loaders acquire this so concurrent loads cannot corrupt it.
         self.torchscript_state_global_lock = Lock()
@@ -114,10 +121,8 @@ class ModelManager:
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(resolved_identifier)
-        model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
-        with acquire_with_timeout(lock=model_lock) as acquired:
+        with self._acquire_model_lock(model_id=resolved_identifier) as acquired:
             if not acquired:
-                # if failed to acquire - then in use, no need to purge lock
                 raise ModelManagerLockAcquisitionError(
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
@@ -194,7 +199,6 @@ class ModelManager:
                         )
             except Exception as error:
                 record_error(error)
-                self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
 
     def record_request_metadata(
@@ -574,8 +578,7 @@ class ModelManager:
         """
         try:
             logger.debug(f"Removing model {model_id} from base model manager")
-            model_lock = self._get_lock_for_a_model(model_id=model_id)
-            with acquire_with_timeout(lock=model_lock) as acquired:
+            with self._acquire_model_lock(model_id=model_id) as acquired:
                 if not acquired:
                     raise ModelManagerLockAcquisitionError(
                         f"Could not acquire lock for model with id={model_id}."
@@ -597,7 +600,6 @@ class ModelManager:
                 record_model_unloaded(model_id)
                 self._model_request_aliases.pop(model_id, None)
                 self._model_request_paths.pop(model_id, None)
-                self._dispose_model_lock(model_id=model_id)
                 try_releasing_cuda_memory()
         except InferenceModelNotFound:
             logger.warning(
@@ -681,25 +683,47 @@ class ModelManager:
             for model_id, model in self._models.items()
         ]
 
-    def _get_lock_for_a_model(self, model_id: str) -> Lock:
+    @contextmanager
+    def _acquire_model_lock(self, model_id: str) -> Generator[bool, None, None]:
+        """Reserve the current lock generation before waiting for it.
+
+        The reservation remains active for holders, waiters, and timed-out
+        callers until their context exits.
+        """
         with acquire_with_timeout(lock=self._state_lock) as acquired:
             if not acquired:
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to retrieve model lock."
                 )
-            if model_id not in self._models_state_locks:
-                self._models_state_locks[model_id] = Lock()
-            return self._models_state_locks[model_id]
+            model_lock_entry = self._model_lock_entries.get(model_id)
+            if model_lock_entry is None:
+                model_lock_entry = _ModelLockEntry(lock=Lock())
+                self._model_lock_entries[model_id] = model_lock_entry
+            model_lock_entry.users += 1
+        try:
+            with acquire_with_timeout(lock=model_lock_entry.lock) as acquired:
+                yield acquired
+        finally:
+            self._release_model_lock(
+                model_id=model_id, model_lock_entry=model_lock_entry
+            )
 
-    def _dispose_model_lock(self, model_id: str) -> None:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to dispose model lock."
+    def _release_model_lock(
+        self, model_id: str, model_lock_entry: _ModelLockEntry
+    ) -> None:
+        """Retire an unused generation only after its model is absent."""
+        with self._state_lock:
+            if self._model_lock_entries.get(model_id) is not model_lock_entry:
+                raise RuntimeError(
+                    f"Model lock generation changed while still in use: {model_id}"
                 )
-            if model_id not in self._models_state_locks:
-                return None
-            del self._models_state_locks[model_id]
+            if model_lock_entry.users <= 0:
+                raise RuntimeError(
+                    f"Model lock generation has no active users: {model_id}"
+                )
+            model_lock_entry.users -= 1
+            if model_lock_entry.users == 0 and model_id not in self._models:
+                del self._model_lock_entries[model_id]
 
 
 @contextmanager
