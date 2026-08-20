@@ -3127,14 +3127,15 @@ def initialize_model(
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        _validate_existing_cache_package_attribution(
-            package_dir=model_package_cache_dir,
-            cache_model_id=cache_model_id,
-            canonical_model_id=model_id,
-            expected_manifest_fields=expected_manifest_fields,
-            package_artifact_declarations=package_artifact_declarations,
-            dependency_package_paths=dependency_package_paths,
-        )
+        if not OFFLINE_MODE:
+            _validate_existing_cache_package_attribution(
+                package_dir=model_package_cache_dir,
+                cache_model_id=cache_model_id,
+                canonical_model_id=model_id,
+                expected_manifest_fields=expected_manifest_fields,
+                package_artifact_declarations=package_artifact_declarations,
+                dependency_package_paths=dependency_package_paths,
+            )
         shared_files_mapping = _resolve_local_cache_package_files(
             model_package_cache_dir=model_package_cache_dir,
             package_artefacts=model_package.package_artefacts,
@@ -3197,10 +3198,12 @@ def initialize_model(
             on_symlink_created=on_symlink_created,
             on_symlink_deleted=on_symlink_deleted,
         )
-    package_artifact_identities = _materialize_package_artifact_identities(
-        package_dir=model_package_cache_dir,
-        declarations=package_artifact_declarations,
-    )
+    package_artifact_identities: List[dict] = []
+    if not OFFLINE_MODE:
+        package_artifact_identities = _materialize_package_artifact_identities(
+            package_dir=model_package_cache_dir,
+            declarations=package_artifact_declarations,
+        )
     config_path = os.path.join(model_package_cache_dir, MODEL_CONFIG_FILE_NAME)
     resolved_files = set(shared_files_mapping.values())
     resolved_files.update(model_specific_files_mapping.values())
@@ -3240,15 +3243,18 @@ def initialize_model(
             message="Model dependency package links failed identity validation.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    _validate_existing_cache_package_attribution(
-        package_dir=model_package_cache_dir,
-        cache_model_id=cache_model_id,
-        canonical_model_id=model_id,
-        expected_manifest_fields=expected_manifest_fields,
-        package_artifact_declarations=package_artifact_declarations,
-        dependency_package_paths=dependency_package_paths,
-        materialized_package_artifacts=package_artifact_identities,
-    )
+    if not OFFLINE_MODE:
+        # Guards the manifest republication that follows a successful online
+        # init; the OFFLINE leg never writes the manifest.
+        _validate_existing_cache_package_attribution(
+            package_dir=model_package_cache_dir,
+            cache_model_id=cache_model_id,
+            canonical_model_id=model_id,
+            expected_manifest_fields=expected_manifest_fields,
+            package_artifact_declarations=package_artifact_declarations,
+            dependency_package_paths=dependency_package_paths,
+            materialized_package_artifacts=package_artifact_identities,
+        )
     model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
     if resolved_recommended_parameters is not None:
         model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
@@ -3260,15 +3266,8 @@ def initialize_model(
         ),
     )
     if OFFLINE_MODE:
-        _validate_existing_cache_package_attribution(
-            package_dir=model_package_cache_dir,
-            cache_model_id=cache_model_id,
-            canonical_model_id=model_id,
-            expected_manifest_fields=expected_manifest_fields,
-            package_artifact_declarations=package_artifact_declarations,
-            dependency_package_paths=dependency_package_paths,
-            materialized_package_artifacts=package_artifact_identities,
-        )
+        # Read-only leg: nothing was downloaded and the manifest is not
+        # rewritten, so there is no mutation to guard.
         return model, model_package_cache_dir
     # The versioned manifest is the marker that a package is eligible for raw
     # offline discovery.  Do not publish it until the package has initialized
