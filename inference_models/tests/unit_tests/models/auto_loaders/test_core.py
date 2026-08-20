@@ -2138,6 +2138,9 @@ def test_initialize_model_rejects_regular_dependency_path_before_constructor(
     model_class.from_pretrained.assert_not_called()
     auto_resolution_cache.register.assert_not_called()
     assert not os.path.exists(os.path.join(package_dir, "model_config.json"))
+
+
+@pytest.mark.parametrize("use_symlink", [False, True])
 def test_initialize_local_cache_revalidates_regular_artifact_md5_before_constructor(
     empty_local_dir: str,
     use_symlink: bool,

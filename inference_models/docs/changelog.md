@@ -31,6 +31,14 @@
 - Rollback caveat: package directories used by this release may accumulate TensorRT
   engine files that `<= 0.35` validators reject; delete `*.engine` files before
   downgrading.
+- **Model cache paths are deduced, not discovered.** `model_cache_paths` is reduced to
+  the collision-resistant `v2-…` slug plus simple path joins;
+  `resolve_existing_model_package_cache_path` now only checks that the deduced
+  directory exists. The legacy 32-bit-digest (`pre-0.32.0`) cache directories are no
+  longer read anywhere — including the air-gapped builder scan — and need one online
+  run (or `OFFLINE_MODE_WARM_UP`) to re-materialize under current paths. Attribution
+  and content validation belong to the layers that read directory contents, not to
+  path resolution.
 
 ### Added
 
