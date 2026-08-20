@@ -8,7 +8,11 @@ from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
 
 @dataclass(frozen=True)
 class InferenceExecutionPlan:
-    """Independent implementation selections for an inference path."""
+    """Independent implementation selections and fallback policy.
+
+    Compatibility fallback is the global strictness gate. Runtime-failure fallback
+    applies only when both fallback fields are enabled.
+    """
 
     preprocessor_id: str = BASE_IMPLEMENTATION_ID
     buffer_strategy_id: str = BASE_IMPLEMENTATION_ID
@@ -16,6 +20,7 @@ class InferenceExecutionPlan:
     postprocessor_id: str = BASE_IMPLEMENTATION_ID
     engine_plugin_id: str = BASE_IMPLEMENTATION_ID
     allow_compatibility_fallback: bool = True
+    allow_runtime_failure_fallback: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the composed execution plan.
@@ -30,6 +35,7 @@ class InferenceExecutionPlan:
             "postprocessor": self.postprocessor_id,
             "engine_plugin": self.engine_plugin_id,
             "allow_compatibility_fallback": self.allow_compatibility_fallback,
+            "allow_runtime_failure_fallback": self.allow_runtime_failure_fallback,
         }
 
         return serialized

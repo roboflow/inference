@@ -28,7 +28,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     StaticCropOffset,
 )
-from inference_models.models.rfdetr.triton_jit_fallback import (
+from inference_models.models.optimization.triton_jit import (
     is_triton_jit_failure,
     warn_triton_jit_fallback,
 )
