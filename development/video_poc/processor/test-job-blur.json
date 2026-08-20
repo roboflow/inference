@@ -1,0 +1,26 @@
+{
+  "id": "local-test-blur",
+  "sourceUrl": "rtsp://127.0.0.1:8554/test",
+  "imageOutput": "blurred",
+  "workflowSpecification": {
+    "version": "1.0",
+    "inputs": [{ "type": "InferenceImage", "name": "image" }],
+    "steps": [
+      {
+        "type": "roboflow_core/image_blur@v1",
+        "name": "blur",
+        "image": "$inputs.image",
+        "blur_type": "gaussian",
+        "kernel_size": 21
+      }
+    ],
+    "outputs": [
+      {
+        "type": "JsonField",
+        "name": "blurred",
+        "coordinates_system": "own",
+        "selector": "$steps.blur.image"
+      }
+    ]
+  }
+}

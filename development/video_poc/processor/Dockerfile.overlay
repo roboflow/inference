@@ -1,0 +1,32 @@
+# check=skip=InvalidDefaultArgInFrom
+# Thin experiment image layered on an already-proven processor image.
+#
+# This deliberately avoids rebuilding from the mutable inference-server
+# `latest` tags when the experiment only changes POC worker files. Pass the
+# exact deployed processor tag or digest as BASE_PROCESSOR_IMAGE and publish
+# the result under an immutable commit-derived tag.
+ARG BASE_PROCESSOR_IMAGE
+FROM ${BASE_PROCESSOR_IMAGE}
+
+ARG VIDEO_PROC_GIT_SHA
+ARG VIDEO_PROC_RUNTIME_VARIANT=telemetry-overlay
+
+WORKDIR /app
+COPY processor.py /app/processor.py
+COPY processor_metrics.py /app/processor_metrics.py
+COPY job_telemetry.py /app/job_telemetry.py
+COPY job_process.py /app/job_process.py
+COPY inference_runtime_compat.py /app/inference_runtime_compat.py
+COPY run_lifecycle.py /app/run_lifecycle.py
+COPY worker_lifecycle.py /app/worker_lifecycle.py
+COPY execution_domains.py /app/execution_domains.py
+COPY security.py /app/security.py
+COPY claim_proof.py /app/claim_proof.py
+COPY video_ingest.py /app/video_ingest.py
+COPY file_replay.py /app/file_replay.py
+COPY low_latency_producer.py /app/low_latency_producer.py
+
+ENV VIDEO_PROC_GIT_SHA=${VIDEO_PROC_GIT_SHA}
+ENV VIDEO_PROC_RUNTIME_VARIANT=${VIDEO_PROC_RUNTIME_VARIANT}
+
+ENTRYPOINT ["python", "/app/processor.py"]

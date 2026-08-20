@@ -54,3 +54,13 @@ jobs:
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling
+      - name: 🧪 Video Processor Runtime Tests
+        timeout-minutes: 5
+        run: |
+          python -m pytest tests/development/video_poc
+          PYTHONPATH=development/video_poc/processor python -m pytest \
+            development/video_poc/processor/test_job_process.py \
+            development/video_poc/processor/test_process_result_events.py \
+            development/video_poc/processor/test_execution_domains.py
+          PYTHONPATH=development/video_poc/processor python -m pytest \
+            development/video_poc/processor/test_low_latency_producer.py
