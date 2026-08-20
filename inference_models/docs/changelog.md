@@ -3,6 +3,53 @@
 ## Unreleased
 
 ---
+## `0.36.0`
+
+### Changed — offline mode rebuilt
+
+- **Model package directories are no longer allow-listed.** The layout-inventory and
+  artifact-identity validation introduced in `0.32.0` is removed. Undeclared files in a
+  package directory (TensorRT engine caches, bytecode, tooling droppings) no longer
+  invalidate the package. This fixes the defect where the first inference under the
+  ONNX Runtime TensorRT execution provider permanently poisoned the model package.
+- **TensorRT engine caching is unconditional again**, including `OFFLINE_MODE` — warm
+  restarts on air-gapped devices reuse the cached engine instead of recompiling.
+- **`OFFLINE_MODE` now serves the offline-weights registry.** The `roboflow` provider is
+  transparently swapped for the new `roboflow-offline-weights` provider, which replays
+  the provider metadata recorded during warm-up; package auto-negotiation (backend /
+  quantization / batch / TensorRT-CUDA environment filtering) runs offline exactly as it
+  does online. Artefact verification offline is presence-only.
+- **The v1 offline fallback tiers are removed** (compatible-entry scan, raw cache scan,
+  `RetryError` cache fallback). An unreachable API in online mode is an error; raise
+  `AUTO_LOADER_CACHE_EXPIRATION_MINUTES` for outage tolerance.
+- `model_provider_requires_network` is removed. `OFFLINE_MODE` with a custom weights
+  provider is the operator's responsibility. The `ROBOFLOW_API_KEY` env fallback now
+  applies only to the `roboflow` / `roboflow-offline-weights` providers.
+- Caches warmed by `<= 0.35` contain no registry records: run once with
+  `OFFLINE_MODE_WARM_UP=True` before flipping to `OFFLINE_MODE`. Existing v4
+  `model_config.json` manifests remain on disk and are tolerated.
+- Rollback caveat: package directories used by this release may accumulate TensorRT
+  engine files that `<= 0.35` validators reject; delete `*.engine` files before
+  downgrading.
+
+### Added
+
+- `OFFLINE_MODE_WARM_UP` env flag: online behavior plus offline-cache building. Every
+  requested model gets a metadata pre-fetch (cache hits included); packages that
+  negotiation selected and that initialized successfully are recorded in
+  `$INFERENCE_HOME/offline-weights-registry/` (one JSON per canonical model, atomic
+  file-locked writes, versioned tolerant format). Mutually exclusive with
+  `OFFLINE_MODE` — enabling both fails at model load.
+- `AutoModel.list_offline_models()`, `AutoModel.verify_offline_models(model_id=None,
+  check_hashes=False)` and `AutoModel.purge_offline_model(model_id)` maintenance
+  classmethods over the registry.
+- Locally compiled TensorRT packages (`inference-compiler`) are installed as regular
+  files (previously symlinks that post-`0.32.0` discovery silently rejected) and are
+  appended to the offline-weights registry, so they load in `OFFLINE_MODE` without a
+  prior online load. Loading them still requires
+  `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True`.
+
+---
 ## `0.35.2`
 
 ### Fixed
