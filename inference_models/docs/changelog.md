@@ -8,7 +8,18 @@
   misses, errors, corrupt objects, and timeouts fail open to the original model
   source.
 
+### Fixed
+
+- RF-DETR TensorRT execution plans now fall back from Triton preprocessing and
+  postprocessing to their reference implementations when recoverable JIT
+  compilation or launch failures occur. Runtime diagnostics include a categorized,
+  conservative suggested action. Runtime recovery requires both
+  `allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`;
+  disabling either flag surfaces a `ModelRuntimeError` instead of applying runtime
+  fallback.
+
 ---
+
 ## `0.35.2`
 
 ### Fixed
