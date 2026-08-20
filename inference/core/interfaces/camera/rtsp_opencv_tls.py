@@ -1,4 +1,15 @@
-"""OpenCV/FFmpeg RTSPS TLS option builder (ENT-1544 B3)."""
+"""OpenCV/FFmpeg RTSPS TLS option builder (ENT-1544 B3).
+
+Environment variables (also set by rfdm on Roboflow Edge devices):
+
+* ``ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS`` — ``127`` strict (default when unset),
+  ``126`` or ``0`` to disable certificate verification (self-signed / custom CA).
+* ``GST_SSL_CA_CERTIFICATE`` or ``SSL_CERT_FILE`` — PEM bundle for ``cafile``.
+
+Self-hosted / OSS deployments without rfdm must set these explicitly on the
+inference container. Unmanaged ``rtsps://`` sources with self-signed certs need
+``ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS=126`` or the open will fail after this wiring.
+"""
 
 from __future__ import annotations
 

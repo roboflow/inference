@@ -1908,3 +1908,52 @@ def test_cv2_producer_sets_ffmpeg_tls_options_only_for_rtsps(
     # while VideoCapture runs for RTSPS, and left alone for plain RTSP
     assert "tls_verify;1" in seen["rtsps://camera.example/stream"]
     assert seen["rtsp://camera.example/stream"] is None
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_restores_ffmpeg_tls_env_after_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+
+    with patch.object(video_source.cv2, "VideoCapture", MagicMock()):
+        CV2VideoFrameProducer("rtsps://camera.example/stream")
+
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_restores_ffmpeg_tls_env_when_capture_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+
+    def failing_video_capture(*args, **kwargs):
+        raise RuntimeError("simulated open failure")
+
+    with patch.object(
+        video_source.cv2, "VideoCapture", failing_video_capture
+    ), pytest.raises(RuntimeError):
+        CV2VideoFrameProducer("rtsps://camera.example/stream")
+
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_leaves_ffmpeg_tls_env_unset_for_device_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    seen = {}
+
+    def fake_video_capture(video, *args, **kwargs):
+        seen["video"] = video
+        seen["env"] = os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR)
+        return MagicMock()
+
+    with patch.object(video_source.cv2, "VideoCapture", fake_video_capture):
+        CV2VideoFrameProducer(0)
+
+    assert seen["video"] == 0
+    assert seen["env"] is None
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
