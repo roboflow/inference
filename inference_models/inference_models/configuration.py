@@ -4,7 +4,7 @@ from typing import Optional
 
 import torch
 
-from inference_models._offline import OFFLINE_MODE, OFFLINE_MODE_CONTRACT_VERSION
+from inference_models._offline import OFFLINE_MODE
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
