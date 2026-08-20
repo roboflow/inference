@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from threading import Lock
 from typing import List, Optional, Sequence, Union
 
@@ -37,6 +38,34 @@ MAGE_VL_VIDEO_DEPS_HINT = (
     "file for why), the `cv-preinfer` console script it ships on PATH (or "
     "CV_PREINFER_BIN pointing at it), and `ffmpeg`/`ffprobe` on PATH."
 )
+
+
+def _codec_cache_root(video: str) -> "Path":
+    """Cache root scoped by a fingerprint of the video file's content.
+
+    Cheap to compute for any file size: size + mtime_ns + sha1 over the first and
+    last MiB. Overwriting a file in place changes the fingerprint, so the codec
+    cache misses instead of returning canvases for the previous content.
+    """
+    import hashlib
+
+    stat = os.stat(video)
+    digest = hashlib.sha1()
+    digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
+    with open(video, "rb") as handle:
+        digest.update(handle.read(1024 * 1024))
+        if stat.st_size > 2 * 1024 * 1024:
+            handle.seek(-1024 * 1024, os.SEEK_END)
+            digest.update(handle.read())
+    base = os.getenv(
+        "ONLINE_CODEC_CACHE_DIR",
+        os.path.join(
+            os.getenv("HF_HOME", os.path.expanduser("~/.cache/huggingface")),
+            "online_codec",
+        ),
+    )
+    # CodecConfig treats cache_root as a pathlib.Path (`cfg.cache_root / name`).
+    return Path(base) / digest.hexdigest()[:16]
 
 
 def _get_mage_vl_attn_implementation(device: torch.device) -> str:
@@ -104,6 +133,7 @@ class MageVLHF:
         device: torch.device = DEFAULT_DEVICE,
         local_files_only: bool = True,
         quantization_config: Optional["BitsAndBytesConfig"] = None,  # noqa: F821
+        trust_remote_code: bool = True,
         **kwargs,
     ) -> "MageVLHF":
         """Load Mage-VL from a model package directory.
@@ -117,6 +147,15 @@ class MageVLHF:
         the same code either way, executed from the same local package directory —
         `local_files_only` keeps the loader off the hub.
         """
+        if not trust_remote_code:
+            # This checkpoint IS package-local code; there is no code-free load
+            # path. Refuse loudly instead of silently ignoring the caller's flag.
+            raise ModelRuntimeError(
+                message="Mage-VL ships its architecture as package-local Python "
+                "modules, so loading it requires trust_remote_code=True. There is "
+                "no way to load this model without executing the package's code.",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
         # Assert the package-local code is present before handing the directory to
         # transformers, so a truncated package fails here rather than mid-load.
         get_model_package_contents(
@@ -222,7 +261,7 @@ class MageVLHF:
         if (images is None) == (video is None):
             raise ModelInputError(
                 message="Mage-VL requires exactly one of `images` or `video` to be provided.",
-                help_url="https://inference-models.roboflow.com/errors/models-input/#modelinputerror",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         prompt = prompt or "Describe what you see."
         if images is not None:
@@ -265,18 +304,23 @@ class MageVLHF:
             raise ModelInputError(
                 message=f"Unknown Mage-VL codec engine '{codec_engine}'. "
                 f"Supported engines: {sorted(CODEC_ENGINES)}.",
-                help_url="https://inference-models.roboflow.com/errors/models-input/#modelinputerror",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         video = os.fspath(video)
         if not os.path.isfile(video):
             raise ModelInputError(
                 message=f"Video file does not exist: {video}",
-                help_url="https://inference-models.roboflow.com/errors/models-input/#modelinputerror",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         codec_config = {
             "engine": codec_engine,
             "target_canvas": target_canvas,
             "patch": CODEC_PATCH_SIZE,
+            # The checkpoint's codec cache keys on the video PATH plus settings,
+            # so a caller that reuses a path (rotating recorder, fixed temp name)
+            # would get canvases from the previous file. Scoping the cache root by
+            # a content fingerprint turns that stale hit into a clean miss.
+            "cache_root": _codec_cache_root(video),
         }
         if codec_engine == "dcvc-rt":
             codec_config["dcvc"] = {
@@ -300,7 +344,7 @@ class MageVLHF:
             raise MissingDependencyError(
                 message=f"Codec pre-processing of the video failed for engine "
                 f"'{codec_engine}': {error}. {MAGE_VL_VIDEO_DEPS_HINT}",
-                help_url="https://inference-models.roboflow.com/errors/models-runtime/#missingdependencyerror",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
             ) from error
         except Exception as error:
             raise ModelRuntimeError(
@@ -369,9 +413,10 @@ def _to_rgb(
 ) -> ImageInput:
     """Flip BGR inputs to the RGB the processor expects.
 
-    An explicit "bgr" flips every input, tensors included, like the sibling VLMs.
-    When no format is declared, numpy inputs are assumed BGR (the cv2 default)
-    and flipped; tensors are passed through unchanged.
+    An explicit "bgr" flips every input, tensors included (rank 3 and batched
+    rank 4, CHW/BCHW and HWC/BHWC), like the sibling VLMs. When no format is
+    declared, numpy inputs are assumed BGR (the cv2 default) and flipped;
+    tensors are passed through unchanged.
     """
     if input_color_format == "rgb":
         return images
@@ -384,9 +429,12 @@ def _to_rgb(
 def _flip_to_rgb(image, flip_tensors: bool):
     if isinstance(image, np.ndarray):
         return image[..., ::-1].copy()
-    if flip_tensors and isinstance(image, torch.Tensor) and image.ndim == 3:
-        if image.shape[0] == 3:  # CHW
-            return image[[2, 1, 0], :, :]
-        if image.shape[-1] == 3:  # HWC
+    if flip_tensors and isinstance(image, torch.Tensor) and image.ndim in (3, 4):
+        channel_dim = image.ndim - 3  # 0 for CHW, 1 for BCHW
+        if image.shape[channel_dim] == 3:  # CHW / BCHW
+            return image.index_select(
+                channel_dim, torch.tensor([2, 1, 0], device=image.device)
+            )
+        if image.shape[-1] == 3:  # HWC / BHWC
             return image[..., [2, 1, 0]]
     return image

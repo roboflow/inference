@@ -63,8 +63,8 @@ of the DCVC source bundled in the model package), which is not installed by defa
 it yourself if you opt in.
 
 Codec results are cached on disk under `$HF_HOME/online_codec`, or under `ONLINE_CODEC_CACHE_DIR`
-if set. The cache key covers the video path and the codec settings, **not the video's content**,
-so overwriting a file in place and re-prompting returns the previous canvases.
+if set. The cache is scoped by a fingerprint of the video file's content (size, mtime, and a hash
+of the first and last MiB), so overwriting a file in place is a cache miss, not a stale hit.
 
 ## Usage Examples
 
