@@ -811,136 +811,6 @@ def _materialize_package_artifact_identities(
     return identities
 
 
-def _validate_package_directory_layout(
-    package_dir: str,
-    artifact_declarations: List[dict],
-    dependency_package_paths: List[dict],
-) -> None:
-    """Reject package entries that are not derived from this exact package.
-
-    A failed initialization deliberately leaves no manifest. Without this
-    inventory check, a later provider revision reusing the same package ID
-    could silently consume a stale optional file that it no longer declares.
-    """
-
-    if not os.path.lexists(package_dir):
-        return
-    if os.path.islink(package_dir) or not os.path.isdir(package_dir):
-        raise CorruptedModelPackageError(
-            message="Cached model package path is not a regular directory.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        )
-
-    _remove_generated_bytecode_caches(package_dir=package_dir)
-
-    expected_directories: Set[str] = set()
-    expected_regular_files = {
-        MODEL_CONFIG_FILE_NAME,
-        f".{MODEL_CONFIG_FILE_NAME}.lock",
-    }
-    expected_symlinks: Set[str] = set()
-    for declaration in artifact_declarations:
-        file_handle = declaration["file_handle"]
-        segments = file_handle.split("/")
-        for prefix_length in range(1, len(segments)):
-            expected_directories.add("/".join(segments[:prefix_length]))
-        parent = "/".join(segments[:-1])
-        lock_name = f".{segments[-1]}.lock"
-        expected_regular_files.add(f"{parent}/{lock_name}" if parent else lock_name)
-        if declaration["storage"] == "shared_blob":
-            expected_symlinks.add(file_handle)
-        else:
-            expected_regular_files.add(file_handle)
-
-    if dependency_package_paths:
-        expected_directories.add(MODEL_DEPENDENCIES_SUB_DIR)
-    for dependency_identity in dependency_package_paths:
-        dependency_name = dependency_identity["name"]
-        expected_symlinks.add(f"{MODEL_DEPENDENCIES_SUB_DIR}/{dependency_name}")
-        expected_regular_files.add(
-            f"{MODEL_DEPENDENCIES_SUB_DIR}/.{dependency_name}.lock"
-        )
-
-    def inspect_directory(directory: str, relative_parent: str = "") -> None:
-        try:
-            entries = list(os.scandir(directory))
-        except OSError as error:
-            raise CorruptedModelPackageError(
-                message=f"Cannot inspect cached model package directory `{directory}`.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            ) from error
-        for entry in entries:
-            relative_path = (
-                f"{relative_parent}/{entry.name}" if relative_parent else entry.name
-            )
-            try:
-                if entry.is_symlink():
-                    valid_entry = relative_path in expected_symlinks
-                elif entry.is_dir(follow_symlinks=False):
-                    valid_entry = relative_path in expected_directories
-                    if valid_entry:
-                        inspect_directory(
-                            directory=entry.path,
-                            relative_parent=relative_path,
-                        )
-                elif entry.is_file(follow_symlinks=False):
-                    valid_entry = relative_path in expected_regular_files
-                else:
-                    valid_entry = False
-            except OSError as error:
-                raise CorruptedModelPackageError(
-                    message=(
-                        f"Cannot inspect cached model package entry "
-                        f"`{relative_path}`."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                ) from error
-            if not valid_entry:
-                raise CorruptedModelPackageError(
-                    message=(
-                        "Cached model package contains undeclared or unsafe "
-                        f"entry `{relative_path}`."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                )
-
-    inspect_directory(directory=package_dir)
-
-
-def _remove_generated_bytecode_caches(package_dir: str) -> None:
-    """Remove bytecode caches created by package-local imports in older releases.
-
-    Only real ``__pycache__`` directories containing regular ``.pyc`` files are
-    removed. Any symlink, nested directory, or unexpected file is preserved so
-    the subsequent package-layout validation rejects it.
-    """
-
-    for directory, directory_names, _ in os.walk(
-        package_dir, topdown=False, followlinks=False
-    ):
-        for directory_name in directory_names:
-            if directory_name != "__pycache__":
-                continue
-            bytecode_cache_dir = os.path.join(directory, directory_name)
-            if os.path.islink(bytecode_cache_dir):
-                continue
-            try:
-                entries = list(os.scandir(bytecode_cache_dir))
-                contains_only_bytecode = all(
-                    entry.is_file(follow_symlinks=False) and entry.name.endswith(".pyc")
-                    for entry in entries
-                )
-                if not contains_only_bytecode:
-                    continue
-                for entry in entries:
-                    os.unlink(entry.path)
-                os.rmdir(bytecode_cache_dir)
-            except OSError:
-                # Leave entries that cannot be inspected or removed for the
-                # strict package-layout validation below to reject.
-                continue
-
-
 def _package_has_current_offline_manifest(package_dir: str) -> bool:
     config_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
     if not os.path.isfile(config_path) or os.path.islink(config_path):
@@ -987,57 +857,6 @@ def _remove_unattributed_unhashed_artifacts(
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
-
-
-def _validate_cached_package_artifacts(
-    package_dir: str,
-    identities: Optional[List[dict]],
-) -> bool:
-    try:
-        parsed_identities = _parse_package_artifact_identities(identities)
-        current_identities = _materialize_package_artifact_identities(
-            package_dir=package_dir,
-            declarations=_artifact_declarations_from_identities(
-                identities=parsed_identities
-            ),
-        )
-    except (OSError, CorruptedModelPackageError) as error:
-        LOGGER.warning(
-            "Ignoring cached package %s because artefact identity validation "
-            "failed: %s",
-            package_dir,
-            error,
-        )
-        return False
-    return current_identities == parsed_identities
-
-
-def _validate_cached_package_layout(
-    package_dir: str,
-    artifact_identities: Optional[List[dict]],
-    dependency_identities: Optional[List[dict]],
-) -> bool:
-    try:
-        parsed_artifacts = _parse_package_artifact_identities(artifact_identities)
-        parsed_dependencies = _parse_dependency_package_path_identities(
-            dependency_identities
-        )
-        _validate_package_directory_layout(
-            package_dir=package_dir,
-            artifact_declarations=_artifact_declarations_from_identities(
-                identities=parsed_artifacts
-            ),
-            dependency_package_paths=parsed_dependencies,
-        )
-    except (OSError, CorruptedModelPackageError) as error:
-        LOGGER.warning(
-            "Ignoring cached package %s because its directory layout is not "
-            "fully declared by the package manifest: %s",
-            package_dir,
-            error,
-        )
-        return False
-    return True
 
 
 def _dependency_package_path_identities(
@@ -1117,17 +936,8 @@ def _dependency_package_identity_for_path(
         or not dependency_config.manifest_content_hash
         or re.fullmatch(r"[0-9a-f]{64}", dependency_config.manifest_content_hash)
         is None
-        or not _validate_cached_package_artifacts(
-            package_dir=canonical_path,
-            identities=dependency_config.package_artifacts,
-        )
         or dependency_config.model_dependencies not in (None, [])
         or dependency_config.dependency_package_paths != []
-        or not _validate_cached_package_layout(
-            package_dir=canonical_path,
-            artifact_identities=dependency_config.package_artifacts,
-            dependency_identities=dependency_config.dependency_package_paths,
-        )
     ):
         raise CorruptedModelPackageError(
             message=(
@@ -2509,20 +2319,9 @@ def _verified_auto_cache_package_dir(
             "successful warm."
         )
         return None
-    if (
-        not _validate_cached_package_artifacts(
-            package_dir=package_dir,
-            identities=package_config.package_artifacts,
-        )
-        or not _validate_cached_dependency_package_paths(
-            package_dir=package_dir,
-            identities=package_config.dependency_package_paths,
-        )
-        or not _validate_cached_package_layout(
-            package_dir=package_dir,
-            artifact_identities=package_config.package_artifacts,
-            dependency_identities=package_config.dependency_package_paths,
-        )
+    if not _validate_cached_dependency_package_paths(
+        package_dir=package_dir,
+        identities=package_config.dependency_package_paths,
     ):
         return None
     return package_dir
@@ -2748,19 +2547,6 @@ def attempt_loading_model_with_auto_load_cache(
                 model_init_kwargs=model_init_kwargs,
             ),
         )
-        post_initialization_package_dir = _verified_auto_cache_package_dir(
-            cache_entry=cache_entry
-        )
-        if post_initialization_package_dir is None or os.path.realpath(
-            post_initialization_package_dir
-        ) != os.path.realpath(model_package_cache_dir):
-            raise CorruptedModelPackageError(
-                message=(
-                    "Cached model package attribution, artefacts, dependencies, "
-                    "or layout changed while the model was being initialized."
-                ),
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
         _record_model_package_path(
             model=model,
             package_dir=model_package_cache_dir,
@@ -2797,20 +2583,9 @@ def _find_direct_cached_model_package_dir(model_id: str) -> Optional[str]:
             or model_config.canonical_model_id != model_id
         ):
             continue
-        if (
-            not _validate_cached_package_artifacts(
-                package_dir=package_dir,
-                identities=model_config.package_artifacts,
-            )
-            or not _validate_cached_dependency_package_paths(
-                package_dir=package_dir,
-                identities=model_config.dependency_package_paths,
-            )
-            or not _validate_cached_package_layout(
-                package_dir=package_dir,
-                artifact_identities=model_config.package_artifacts,
-                dependency_identities=model_config.dependency_package_paths,
-            )
+        if not _validate_cached_dependency_package_paths(
+            package_dir=package_dir,
+            identities=model_config.dependency_package_paths,
         ):
             continue
         if model_config.task_type is None:
@@ -3084,20 +2859,9 @@ def attempt_loading_model_from_offline_cache(
                 package_dir,
             )
             continue
-        if (
-            not _validate_cached_package_artifacts(
-                package_dir=package_dir,
-                identities=package_config.package_artifacts,
-            )
-            or not _validate_cached_dependency_package_paths(
-                package_dir=package_dir,
-                identities=package_config.dependency_package_paths,
-            )
-            or not _validate_cached_package_layout(
-                package_dir=package_dir,
-                artifact_identities=package_config.package_artifacts,
-                dependency_identities=package_config.dependency_package_paths,
-            )
+        if not _validate_cached_dependency_package_paths(
+            package_dir=package_dir,
+            identities=package_config.dependency_package_paths,
         ):
             continue
         if (
@@ -3852,11 +3616,6 @@ def initialize_model(
             package_artifact_declarations=package_artifact_declarations,
             dependency_package_paths=dependency_package_paths,
         )
-        _validate_package_directory_layout(
-            package_dir=model_package_cache_dir,
-            artifact_declarations=package_artifact_declarations,
-            dependency_package_paths=dependency_package_paths,
-        )
         shared_files_mapping = _resolve_local_cache_package_files(
             model_package_cache_dir=model_package_cache_dir,
             package_artefacts=model_package.package_artefacts,
@@ -3877,11 +3636,6 @@ def initialize_model(
             canonical_model_id=model_id,
             expected_manifest_fields=expected_manifest_fields,
             package_artifact_declarations=package_artifact_declarations,
-            dependency_package_paths=dependency_package_paths,
-        )
-        _validate_package_directory_layout(
-            package_dir=model_package_cache_dir,
-            artifact_declarations=package_artifact_declarations,
             dependency_package_paths=dependency_package_paths,
         )
         _remove_unattributed_unhashed_artifacts(
@@ -3966,11 +3720,6 @@ def initialize_model(
             message="Model dependency package links failed identity validation.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    _validate_package_directory_layout(
-        package_dir=model_package_cache_dir,
-        artifact_declarations=package_artifact_declarations,
-        dependency_package_paths=dependency_package_paths,
-    )
     _validate_existing_cache_package_attribution(
         package_dir=model_package_cache_dir,
         cache_model_id=cache_model_id,
@@ -3990,31 +3739,6 @@ def initialize_model(
             model_init_kwargs=model_init_kwargs,
         ),
     )
-    post_initialization_artifact_identities = _materialize_package_artifact_identities(
-        package_dir=model_package_cache_dir,
-        declarations=package_artifact_declarations,
-    )
-    if post_initialization_artifact_identities != package_artifact_identities:
-        raise CorruptedModelPackageError(
-            message=(
-                "Model package artefacts changed while the model was being "
-                "initialized."
-            ),
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        )
-    if not _validate_cached_dependency_package_paths(
-        package_dir=model_package_cache_dir,
-        identities=dependency_package_paths,
-    ):
-        raise CorruptedModelPackageError(
-            message="Model dependencies changed while the model was being initialized.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        )
-    _validate_package_directory_layout(
-        package_dir=model_package_cache_dir,
-        artifact_declarations=package_artifact_declarations,
-        dependency_package_paths=dependency_package_paths,
-    )
     if OFFLINE_MODE:
         _validate_existing_cache_package_attribution(
             package_dir=model_package_cache_dir,
@@ -4023,7 +3747,7 @@ def initialize_model(
             expected_manifest_fields=expected_manifest_fields,
             package_artifact_declarations=package_artifact_declarations,
             dependency_package_paths=dependency_package_paths,
-            materialized_package_artifacts=post_initialization_artifact_identities,
+            materialized_package_artifacts=package_artifact_identities,
         )
         _record_model_package_path(
             model=model,
