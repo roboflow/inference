@@ -20,7 +20,7 @@ from inference_models.models.auto_loaders.model_cache_paths import (
     generate_shared_blobs_path,
     resolve_existing_model_package_cache_path,
 )
-from inference_models.weights_providers import local_trt_packages
+from inference_models.weights_providers import local_trt_packages, offline_registry
 from inference_models.weights_providers.entities import (
     LocalFileArtefactSpecs,
     PackageSourceType,
@@ -461,3 +461,166 @@ def test_get_roboflow_model_survives_corrupt_local_cache(
     metadata = get_roboflow_model(model_id=model_id, api_key="k")
 
     assert metadata.model_id == model_id
+
+
+def _install_package_with_cli_installer(model_id: str, compilation_directory: str):
+    """Build a package by calling the real CLI installer (installer-faithful layout)."""
+    pytest.importorskip(
+        "inference_cli",
+        reason="the CLI local TRT installer is required for installer-faithful tests",
+    )
+    from inference_cli.lib.enterprise.inference_compiler.core.entities import (
+        TRTConfig,
+        TRTModelPackageV1,
+    )
+    from inference_cli.lib.enterprise.inference_compiler.core.local_trt_install import (
+        install_compiled_trt_package,
+    )
+
+    os.makedirs(compilation_directory, exist_ok=True)
+    engine_path = os.path.join(compilation_directory, "compiled.plan")
+    with open(engine_path, "wb") as file:
+        file.write(b"engine-bytes")
+    inference_config_path = os.path.join(
+        compilation_directory, "raw_inference_config.json"
+    )
+    with open(inference_config_path, "w", encoding="utf-8") as file:
+        json.dump({"network_input": {}}, file)
+    class_names_path = os.path.join(compilation_directory, "class_names_source.txt")
+    with open(class_names_path, "w", encoding="utf-8") as file:
+        file.write("class-a\n")
+    package_manifest = TRTModelPackageV1.model_validate(
+        {
+            "type": "trt-model-package-v1",
+            "backendType": "trt",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 1,
+            "quantization": "fp16",
+            "cudaDeviceType": "Orin",
+            "cudaDeviceCC": "8.7",
+            "cudaVersion": "12.2",
+            "trtVersion": "8.6.2",
+            "sameCCCompatible": True,
+            "trtForwardCompatible": False,
+            "trtLeanRuntimeExcluded": False,
+            "machineType": "jetson",
+            "machineSpecs": {
+                "type": "jetson-machine-specs-v1",
+                "l4tVersion": "36.3",
+                "deviceName": "jetson-orin-nano",
+                "driverVersion": "540.3",
+            },
+        }
+    )
+    return install_compiled_trt_package(
+        model_id=model_id,
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        package_manifest=package_manifest,
+        trt_config=TRTConfig(static_batch_size=1),
+        engine_path=engine_path,
+        inference_config_path=inference_config_path,
+        class_names_path=class_names_path,
+        compilation_directory=compilation_directory,
+    )
+
+
+@pytest.fixture
+def cli_installed_package(tmp_path, monkeypatch):
+    monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
+    monkeypatch.setattr(offline_registry, "INFERENCE_HOME", str(tmp_path))
+    model_id = "workspace/rfdetr-nano"
+    package_id, install_dir = _install_package_with_cli_installer(
+        model_id=model_id,
+        compilation_directory=str(tmp_path / "compilation"),
+    )
+    return {
+        "model_id": model_id,
+        "package_id": package_id,
+        "install_dir": install_dir,
+    }
+
+
+def test_cli_installed_package_is_discovered(cli_installed_package):
+    # Regression test for the symlink defect: the installer used to materialize
+    # artefacts as symlinks to shared blobs, which discovery rejects — every
+    # CLI-installed package was silently invisible to the loader.
+    discovered = discover_local_trt_packages(
+        model_id=cli_installed_package["model_id"]
+    )
+
+    assert [package.package_id for package in discovered] == [
+        cli_installed_package["package_id"]
+    ]
+    package = discovered[0]
+    assert package.backend == BackendType.TRT
+    assert package.package_source == PackageSourceType.LOCAL_CACHE
+    assert package.trusted_source is False
+    assert package.cache_model_id == cli_installed_package["model_id"]
+    assert {artefact.file_handle for artefact in package.package_artefacts} == {
+        "engine.plan",
+        "inference_config.json",
+        "class_names.txt",
+        "trt_config.json",
+        LOCAL_TRT_MANIFEST_FILE,
+    }
+
+
+def test_cli_installed_package_contains_only_regular_files(cli_installed_package):
+    install_dir = cli_installed_package["install_dir"]
+    entries = sorted(os.listdir(install_dir))
+    assert {
+        "engine.plan",
+        "inference_config.json",
+        "class_names.txt",
+        "trt_config.json",
+        LOCAL_TRT_MANIFEST_FILE,
+    }.issubset(set(entries))
+    for entry in entries:
+        entry_path = os.path.join(install_dir, entry)
+        assert not os.path.islink(entry_path), f"{entry} must not be a symlink"
+        assert os.path.isfile(entry_path)
+
+
+def test_cli_installed_package_is_recorded_in_offline_registry(cli_installed_package):
+    record = offline_registry.load_record_raw(
+        model_id=cli_installed_package["model_id"]
+    )
+
+    assert record is not None
+    assert record["source"] == offline_registry.RECORD_SOURCE_CLI_INSTALL
+    assert record["source"] == "cli-install"
+    assert cli_installed_package["package_id"] in record["proven"]
+    recorded_metadata = offline_registry.load_model_metadata(
+        model_id=cli_installed_package["model_id"]
+    )
+    assert recorded_metadata is not None
+    assert recorded_metadata.model_architecture == "rfdetr"
+    assert recorded_metadata.task_type == "object-detection"
+    recorded_package = next(
+        package
+        for package in recorded_metadata.model_packages
+        if package.package_id == cli_installed_package["package_id"]
+    )
+    discovered_package = discover_local_trt_packages(
+        model_id=cli_installed_package["model_id"]
+    )[0]
+    recorded_artefacts = {
+        (artefact.file_handle, artefact.md5_hash)
+        for artefact in recorded_package.package_artefacts
+    }
+    discovered_artefacts = {
+        (artefact.file_handle, artefact.md5_hash)
+        for artefact in discovered_package.package_artefacts
+    }
+    assert recorded_artefacts == discovered_artefacts
+    assert recorded_package.backend == discovered_package.backend
+    assert recorded_package.trusted_source is False
+    assert recorded_package.cache_model_id == cli_installed_package["model_id"]
+    assert (
+        recorded_package.trt_package_details == discovered_package.trt_package_details
+    )
+    assert (
+        recorded_package.environment_requirements
+        == discovered_package.environment_requirements
+    )
