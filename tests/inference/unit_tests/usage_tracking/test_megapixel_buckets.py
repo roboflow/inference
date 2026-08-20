@@ -15,6 +15,7 @@ from inference.usage_tracking.megapixel_buckets import (
     get_fixed_model_input_hw,
     get_tensor_spatial_hw,
     megapixel_bucket_for_hw,
+    parse_image_dims_hw,
     record_measured_model_input,
     resolve_model_input_hw,
 )
@@ -142,6 +143,30 @@ def test_get_tensor_spatial_hw_nchw_and_nhwc():
     assert get_tensor_spatial_hw(np.zeros((2, 640, 480, 3))) == (640, 480)
 
 
+def test_get_tensor_spatial_hw_reads_hf_pixel_values():
+    pixel_values = np.zeros((1, 3, 224, 224), dtype=np.float32)
+
+    assert get_tensor_spatial_hw({"pixel_values": pixel_values}) == (224, 224)
+    assert get_tensor_spatial_hw(SimpleNamespace(pixel_values=pixel_values)) == (
+        224,
+        224,
+    )
+
+
+def test_get_tensor_spatial_hw_ignores_non_spatial_pixel_values():
+    # Qwen-style patch tokens: no channel axis, must not be treated as H×W.
+    assert (
+        get_tensor_spatial_hw({"pixel_values": np.zeros((256, 1176), dtype=np.float32)})
+        is None
+    )
+
+
+def test_parse_image_dims_hw_converts_width_height():
+    assert parse_image_dims_hw({"image_dims": (1920, 1080)}) == (1080, 1920)
+    assert parse_image_dims_hw(None) is None
+    assert parse_image_dims_hw({"image_dims": (0, 1080)}) is None
+
+
 def test_input_hw_prefers_fixed_size_over_measured():
     model = SimpleNamespace(img_size_h=420, img_size_w=420)
     record_measured_model_input(np.zeros((1, 3, 800, 800)))
@@ -209,6 +234,63 @@ def test_get_fixed_model_input_hw_from_image_size_and_nested_backend():
     ) == (1024, 1024)
 
 
+def test_fixed_input_hw_reads_hf_processor_size():
+    model = SimpleNamespace(
+        processor=SimpleNamespace(
+            image_processor=SimpleNamespace(size={"height": 224, "width": 224})
+        )
+    )
+
+    assert get_fixed_model_input_hw(model) == (224, 224)
+    assert resolve_model_input_hw(model, measured_hw=(1080, 1920)) == (224, 224)
+
+
+def test_fixed_input_hw_reads_hf_processor_size_object():
+    model = SimpleNamespace(
+        processor=SimpleNamespace(
+            image_processor=SimpleNamespace(size=SimpleNamespace(height=448, width=448))
+        )
+    )
+
+    assert get_fixed_model_input_hw(model) == (448, 448)
+
+
+def test_fixed_input_hw_reads_hf_vision_config_image_size():
+    model = SimpleNamespace(
+        model=SimpleNamespace(
+            config=SimpleNamespace(vision_config=SimpleNamespace(image_size=224))
+        )
+    )
+
+    assert get_fixed_model_input_hw(model) == (224, 224)
+
+
+def test_legacy_hf_vlm_uses_processor_size_not_native_image_dims():
+    from inference.core.models.base import BaseInference
+
+    class LegacyHFVLM(BaseInference):
+        def __init__(self):
+            self.processor = SimpleNamespace(
+                image_processor=SimpleNamespace(size={"height": 224, "width": 224})
+            )
+
+        def preprocess(self, image, **kwargs):
+            return object(), {"image_dims": (1920, 1080)}
+
+        def predict(self, img_in, **kwargs):
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    model = LegacyHFVLM()
+    BaseInference.infer.__wrapped__(model, object())
+    measured_hw, _ = consume_measured_model_input()
+
+    assert measured_hw == (1080, 1920)
+    assert resolve_model_input_hw(model, measured_hw=measured_hw) == (224, 224)
+
+
 def test_record_fixed_model_input_for_request_publishes_encoder_size():
     record_fixed_model_input_for_request(
         SimpleNamespace(image_size=1024),
@@ -246,3 +328,87 @@ def test_base_inference_publishes_preprocessed_input_size():
     BaseInference.infer.__wrapped__(DynamicInputModel(), [object(), object()])
 
     assert consume_measured_model_input() == ((512, 768), 2)
+
+
+def test_record_measured_model_input_reads_hf_pixel_values():
+    record_measured_model_input(
+        {"pixel_values": np.zeros((1, 3, 224, 224), dtype=np.float32)},
+        fallback_hw=(1080, 1920),
+    )
+
+    assert consume_measured_model_input() == ((224, 224), 1)
+
+
+def test_record_measured_model_input_falls_back_to_image_dims_for_unreadable_pixel_values():
+    record_measured_model_input(
+        {"pixel_values": np.zeros((256, 1176), dtype=np.float32)},
+        fallback_hw=(1080, 1920),
+    )
+
+    assert consume_measured_model_input() == ((1080, 1920), None)
+
+
+def test_record_measured_model_input_uses_image_dims_when_no_model_tensor():
+    record_measured_model_input(object(), fallback_hw=(1080, 1920))
+
+    assert consume_measured_model_input() == ((1080, 1920), None)
+
+
+def test_base_inference_publishes_hf_pixel_values_not_native_image_dims():
+    from inference.core.models.base import BaseInference
+
+    class PaligemmaLikeModel(BaseInference):
+        def preprocess(self, image, **kwargs):
+            return (
+                {"pixel_values": np.zeros((1, 3, 224, 224), dtype=np.float32)},
+                {"image_dims": (1920, 1080)},
+            )
+
+        def predict(self, img_in, **kwargs):
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    BaseInference.infer.__wrapped__(PaligemmaLikeModel(), object())
+
+    assert consume_measured_model_input() == ((224, 224), 1)
+
+
+def test_base_inference_publishes_image_dims_when_preprocess_has_no_tensor():
+    from inference.core.models.base import BaseInference
+
+    class NativeSizeModel(BaseInference):
+        def preprocess(self, image, **kwargs):
+            return object(), {"image_dims": (1920, 1080)}
+
+        def predict(self, img_in, **kwargs):
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    BaseInference.infer.__wrapped__(NativeSizeModel(), object())
+
+    assert consume_measured_model_input() == ((1080, 1920), None)
+
+
+def test_base_inference_falls_back_to_image_dims_when_pixel_values_are_unreadable():
+    from inference.core.models.base import BaseInference
+
+    class PatchTokenModel(BaseInference):
+        def preprocess(self, image, **kwargs):
+            return (
+                {"pixel_values": np.zeros((256, 1176), dtype=np.float32)},
+                {"image_dims": (1920, 1080)},
+            )
+
+        def predict(self, img_in, **kwargs):
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    BaseInference.infer.__wrapped__(PatchTokenModel(), object())
+
+    assert consume_measured_model_input() == ((1080, 1920), None)
