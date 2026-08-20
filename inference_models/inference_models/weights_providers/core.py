@@ -4,6 +4,10 @@ from inference_models.configuration import OFFLINE_MODE
 from inference_models.errors import ModelRetrievalError
 from inference_models.weights_providers.entities import ModelMetadata
 from inference_models.weights_providers.roboflow import get_roboflow_model
+from inference_models.weights_providers.roboflow_offline import (
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
+    get_roboflow_offline_weights,
+)
 
 ModelId = str
 ApiKey = Optional[str]
@@ -15,6 +19,7 @@ _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ign
 WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = (
     _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS.copy()
 )
+WEIGHTS_PROVIDERS[ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER] = get_roboflow_offline_weights
 
 
 def model_provider_requires_network(provider: str) -> bool:

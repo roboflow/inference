@@ -120,6 +120,9 @@ from inference_models.weights_providers.entities import (
     RecommendedParameters,
 )
 from inference_models.weights_providers.roboflow import LOCAL_API_KEY
+from inference_models.weights_providers.roboflow_offline import (
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
+)
 
 MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-base",
@@ -1682,6 +1685,12 @@ class AutoModel:
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
             )
+        if OFFLINE_MODE and weights_provider == "roboflow":
+            # OFFLINE serves the offline-weights registry through the standard
+            # provider interface. The auto-resolution entry cache is an online
+            # concern and is bypassed entirely while offline.
+            weights_provider = ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER
+            use_auto_resolution_cache = False
         if isinstance(model_id_or_path, os.PathLike):
             model_id_or_path = os.fspath(model_id_or_path)
         if not isinstance(model_id_or_path, str):
@@ -3630,6 +3639,7 @@ def initialize_model(
         shared_files_mapping = _resolve_local_cache_package_files(
             model_package_cache_dir=model_package_cache_dir,
             package_artefacts=model_package.package_artefacts,
+            presence_only=OFFLINE_MODE,
         )
         model_specific_files_mapping: Dict[str, str] = {}
         symlinks_mapping = {
@@ -4240,6 +4250,7 @@ def dump_auto_resolution_cache(
 def _resolve_local_cache_package_files(
     model_package_cache_dir: str,
     package_artefacts: List[LocalFileArtefactSpecs],
+    presence_only: bool = False,
 ) -> Dict[str, str]:
     shared_files_mapping: Dict[str, str] = {}
     for artefact in package_artefacts:
@@ -4264,6 +4275,21 @@ def _resolve_local_cache_package_files(
             kind="local cache artefact file handle",
         )
         package_file_path = os.path.join(model_package_cache_dir, artefact.file_handle)
+        if presence_only:
+            # OFFLINE loads verify presence only. Artefacts of packages warmed
+            # online are symlinks into the shared-blobs dir, so the check must
+            # follow links; hashing is available on demand through
+            # AutoModel.verify_offline_models(check_hashes=True).
+            if not os.path.isfile(package_file_path):
+                raise CorruptedModelPackageError(
+                    message=(
+                        f"Local cache model package is missing artefact "
+                        f"`{artefact.file_handle}` at `{package_file_path}`."
+                    ),
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                )
+            shared_files_mapping[artefact.file_handle] = package_file_path
+            continue
         if os.path.islink(package_file_path) or not os.path.isfile(package_file_path):
             raise CorruptedModelPackageError(
                 message=(
