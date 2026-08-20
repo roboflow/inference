@@ -23,6 +23,7 @@ from inference_models.configuration import (
     FILE_LOCK_ACQUIRE_TIMEOUT,
     INFERENCE_HOME,
     OFFLINE_MODE,
+    OFFLINE_MODE_WARM_UP,
     ROBOFLOW_API_KEY,
 )
 from inference_models.errors import (
@@ -1671,6 +1672,16 @@ class AutoModel:
             - `AutoModel.describe_compute_environment()`: Check available backends
             - `AutoModel.list_available_models()`: List all registered models
         """
+        if OFFLINE_MODE and OFFLINE_MODE_WARM_UP:
+            raise ModelRetrievalError(
+                message=(
+                    "OFFLINE_MODE and OFFLINE_MODE_WARM_UP are mutually "
+                    "exclusive. Run with OFFLINE_MODE_WARM_UP=True (online) to "
+                    "build the offline cache, then restart with "
+                    "OFFLINE_MODE=True to serve from it."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+            )
         if isinstance(model_id_or_path, os.PathLike):
             model_id_or_path = os.fspath(model_id_or_path)
         if not isinstance(model_id_or_path, str):

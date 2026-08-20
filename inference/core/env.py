@@ -396,6 +396,7 @@ if OFFLINE_MODE:
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["YOLO_OFFLINE"] = "True"
+OFFLINE_MODE_WARM_UP = str2bool(os.getenv("OFFLINE_MODE_WARM_UP", False))
 try:
     _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
 except Exception:
