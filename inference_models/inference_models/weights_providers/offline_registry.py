@@ -308,68 +308,6 @@ def _md5_of_file(path: str) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
-
-def _package_with_backfilled_md5(
-    model_metadata: ModelMetadata,
-    package: ModelPackageMetadata,
-) -> Optional[ModelPackageMetadata]:
-    """Return the package with every artefact carrying an MD5 identity.
-
-    Provider responses may declare artefacts without hashes. The offline
-    registry requires an identity for every file, so missing hashes are
-    computed once from the files materialized during the warm load.
-    """
-
-    if all(artefact.md5_hash is not None for artefact in package.package_artefacts):
-        return package
-    package_dir = _resolve_package_dir(
-        cache_model_id=package.cache_model_id or model_metadata.model_id,
-        package_id=package.package_id,
-    )
-    if package_dir is None:
-        return None
-    backfilled_artefacts = []
-    for artefact in package.package_artefacts:
-        if artefact.md5_hash is not None:
-            backfilled_artefacts.append(
-                LocalFileArtefactSpecs(
-                    file_handle=artefact.file_handle,
-                    md5_hash=artefact.md5_hash,
-                )
-            )
-            continue
-        artefact_path = os.path.join(package_dir, artefact.file_handle)
-        if not os.path.isfile(artefact_path):
-            return None
-        try:
-            md5_hash = _md5_of_file(path=artefact_path)
-        except OSError:
-            return None
-        backfilled_artefacts.append(
-            LocalFileArtefactSpecs(
-                file_handle=artefact.file_handle,
-                md5_hash=md5_hash,
-            )
-        )
-    return ModelPackageMetadata(
-        package_id=package.package_id,
-        backend=package.backend,
-        package_artefacts=backfilled_artefacts,
-        package_source=package.package_source,
-        quantization=package.quantization,
-        dynamic_batch_size_supported=package.dynamic_batch_size_supported,
-        static_batch_size=package.static_batch_size,
-        trt_package_details=package.trt_package_details,
-        onnx_package_details=package.onnx_package_details,
-        torch_script_package_details=package.torch_script_package_details,
-        trusted_source=package.trusted_source,
-        environment_requirements=package.environment_requirements,
-        model_features=package.model_features,
-        recommended_parameters=package.recommended_parameters,
-        cache_model_id=package.cache_model_id,
-    )
-
-
 def _read_record_file(record_path: str) -> Optional[dict]:
     if not os.path.isfile(record_path) or os.path.islink(record_path):
         return None
@@ -441,30 +379,49 @@ def record_successful_load(
 ) -> bool:
     """Merge a proven model load into the offline-weights registry.
 
-    Returns True when the record was written, False when it was skipped
-    (e.g. an artefact required an MD5 backfill but was not materialized).
+    Every recorded artefact identity comes from the weights provider — the
+    registry never computes identities from local files, so it cannot bless a
+    corrupted or tampered artefact as ground truth. The roboflow provider
+    attests an MD5 for every artefact on the default load path
+    (``download_files_without_hash=False``); a package with an unhashed
+    artefact is an explicit trust opt-out and is not registered.
+
+    Returns True when the record was written, False when it was refused
+    (the proven package carries an artefact without a provider MD5).
     """
 
     canonical_model_id = model_metadata.model_id
     serialized_packages: Dict[str, dict] = {}
     for package in model_metadata.model_packages:
-        complete_package = _package_with_backfilled_md5(
-            model_metadata=model_metadata,
-            package=package,
-        )
-        if complete_package is None:
+        unhashed_handles = [
+            artefact.file_handle
+            for artefact in package.package_artefacts
+            if artefact.md5_hash is None
+        ]
+        if unhashed_handles:
             if package.package_id == proven_package_id:
                 LOGGER.warning(
                     "Not registering offline record for %s: proven package %s "
-                    "has artefacts without a computable MD5 identity.",
+                    "has artefacts without a provider MD5 identity (%s). The "
+                    "registry only records provider-attested identities; "
+                    "packages loaded with download_files_without_hash=True "
+                    "cannot be registered for offline use.",
                     canonical_model_id,
                     proven_package_id,
+                    ", ".join(unhashed_handles),
                 )
                 return False
+            LOGGER.warning(
+                "Skipping package %s of %s in the offline record: artefacts "
+                "without a provider MD5 identity (%s).",
+                package.package_id,
+                canonical_model_id,
+                ", ".join(unhashed_handles),
+            )
             continue
-        serialized = _serialize_package(package=complete_package)
+        serialized = _serialize_package(package=package)
         if serialized is not None:
-            serialized_packages[complete_package.package_id] = serialized
+            serialized_packages[package.package_id] = serialized
     if proven_package_id not in serialized_packages:
         LOGGER.warning(
             "Not registering offline record for %s: proven package %s missing "

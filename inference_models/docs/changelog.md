@@ -38,8 +38,10 @@
   requested model gets a metadata pre-fetch (cache hits included); packages that
   negotiation selected and that initialized successfully are recorded in
   `$INFERENCE_HOME/offline-weights-registry/` (one JSON per canonical model, atomic
-  file-locked writes, versioned tolerant format). Mutually exclusive with
-  `OFFLINE_MODE` — enabling both fails at model load.
+  file-locked writes, versioned tolerant format). Recorded artefact identities are
+  provider-attested only — the registry never computes identities from local files;
+  packages loaded with `download_files_without_hash=True` are not registered.
+  Mutually exclusive with `OFFLINE_MODE` — enabling both fails at model load.
 - `AutoModel.list_offline_models()`, `AutoModel.verify_offline_models(model_id=None,
   check_hashes=False)` and `AutoModel.purge_offline_model(model_id)` maintenance
   classmethods over the registry.

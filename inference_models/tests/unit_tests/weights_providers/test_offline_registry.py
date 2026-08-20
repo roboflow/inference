@@ -204,8 +204,10 @@ def test_unknown_fields_are_tolerated_and_newer_format_skipped(registry_home) ->
     assert skipped is None
 
 
-def test_record_refused_when_proven_package_has_no_identity(registry_home) -> None:
-    # given: the proven package has an unhashed artefact that is not materialized
+def test_record_refused_when_proven_package_lacks_provider_md5(registry_home) -> None:
+    # given: the proven package has an artefact without a provider-attested MD5
+    # (download_files_without_hash=True opt-out) — the registry must never
+    # compute identities from local files itself
     metadata = ModelMetadata(
         model_id="workspace/model/2",
         model_architecture="rfdetr",
@@ -235,6 +237,43 @@ def test_record_refused_when_proven_package_has_no_identity(registry_home) -> No
     # then
     assert registered is False
     assert offline_registry.load_record_raw(model_id="workspace/model/2") is None
+
+
+def test_unhashed_sibling_package_is_skipped_but_proven_package_records(
+    registry_home,
+) -> None:
+    # given: the proven package is fully hashed; a sibling package carries an
+    # artefact without a provider MD5
+    metadata = _example_metadata()
+    unhashed_sibling = ModelPackageMetadata(
+        package_id="pkgunhashed",
+        backend=BackendType.ONNX,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://signed.example/file.bin",
+                file_handle="file.bin",
+                md5_hash=None,
+            ),
+        ],
+    )
+    metadata = ModelMetadata(
+        model_id=metadata.model_id,
+        model_architecture=metadata.model_architecture,
+        task_type=metadata.task_type,
+        model_packages=list(metadata.model_packages) + [unhashed_sibling],
+    )
+
+    # when
+    registered = offline_registry.record_successful_load(
+        model_metadata=metadata,
+        requested_model_id=metadata.model_id,
+        proven_package_id="pkgonnx",
+    )
+    record = offline_registry.load_record_raw(model_id=metadata.model_id)
+
+    # then
+    assert registered is True
+    assert {p["package_id"] for p in record["packages"]} == {"pkgonnx", "pkgtrt"}
 
 
 def test_purge_record(registry_home) -> None:
