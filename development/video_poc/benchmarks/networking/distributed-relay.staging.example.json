@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "name": "internal-calibration",
+  "environment": "staging",
+  "clusterContext": "ck8s-stg",
+  "namespace": "video-proc-bench",
+  "serviceAccountName": "video-relay-benchmark",
+  "maxAgents": 100,
+  "agentImage": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/relay-benchmark-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "agentCommand": [
+    "python",
+    "/opt/roboflow/relay_agent.py"
+  ],
+  "environmentMetadata": {
+    "cell": "crusoe-use1-benchmark",
+    "provider": "crusoe",
+    "region": "us-east1",
+    "loadBalancerId": "replace-before-run",
+    "mediaMtxConfigSha256": "replace-before-run",
+    "ciliumMode": "vxlan",
+    "ciliumVersion": "replace-before-run"
+  },
+  "fixture": {
+    "secretKeyRef": {
+      "name": "video-relay-benchmark-media-urls",
+      "key": "fixture-url"
+    },
+    "metadata": {
+      "sha256": "replace-with-fixture-sha256",
+      "codec": "h264",
+      "width": 1920,
+      "height": 1080,
+      "fps": 15,
+      "bitrateBps": 5000000,
+      "gopFrames": 30
+    }
+  },
+  "mediaUrlSecret": {
+    "publishTemplate": {
+      "name": "video-relay-benchmark-media-urls",
+      "key": "publish-url-template"
+    },
+    "readTemplate": {
+      "name": "video-relay-benchmark-media-urls",
+      "key": "read-url-template"
+    }
+  },
+  "timing": {
+    "durationSeconds": 60,
+    "startupGraceSeconds": 60,
+    "ttlSecondsAfterFinished": 600
+  },
+  "stopThresholds": {
+    "maxStartupSeconds": 30,
+    "maxProgressStallSeconds": 15,
+    "maxReconnects": 0,
+    "minDeliveredFpsRatio": 0.95,
+    "maxFailedAgents": 0,
+    "maxRelayCpuRatio": 0.8,
+    "maxRelayMemoryRatio": 0.8,
+    "maxRelayVpcBandwidthRatio": 0.7,
+    "maxConntrackPressureRatio": 0.5
+  },
+  "locations": {
+    "generator-a": {
+      "metadata": {
+        "instanceType": "replace-before-run",
+        "documentedVpcBandwidthBps": 10000000000
+      },
+      "nodeSelector": {
+        "benchmark.roboflow.com/pool": "video-generator-a"
+      },
+      "tolerations": [
+        {
+          "key": "benchmark.roboflow.com/video",
+          "operator": "Equal",
+          "value": "generator",
+          "effect": "NoSchedule"
+        }
+      ]
+    },
+    "processor-node": {
+      "metadata": {
+        "instanceType": "replace-before-run",
+        "documentedVpcBandwidthBps": 175000000000
+      },
+      "nodeSelector": {
+        "benchmark.roboflow.com/pool": "video-processor"
+      }
+    }
+  },
+  "publishers": [
+    {
+      "name": "internal-publishers",
+      "location": "generator-a",
+      "count": 1,
+      "streamStart": 1,
+      "startAfterSeconds": 0,
+      "resources": {
+        "requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "1",
+          "memory": "512Mi"
+        }
+      }
+    }
+  ],
+  "readers": [
+    {
+      "name": "copy-readers",
+      "role": "read-copy",
+      "location": "processor-node",
+      "publisherGroups": [
+        "internal-publishers"
+      ],
+      "copiesPerStream": 1,
+      "startAfterSeconds": 5,
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "500m",
+          "memory": "256Mi"
+        }
+      }
+    },
+    {
+      "name": "decode-sample",
+      "role": "read-decode",
+      "location": "processor-node",
+      "publisherGroups": [
+        "internal-publishers"
+      ],
+      "copiesPerStream": 1,
+      "startAfterSeconds": 5,
+      "resources": {
+        "requests": {
+          "cpu": "1",
+          "memory": "256Mi"
+        },
+        "limits": {
+          "cpu": "2",
+          "memory": "1Gi"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://api.roboflow.one",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "thomas-workspace",
+    "sourceId": "9g7UzPcDyVBFBJ0dLei6",
+    "durationSeconds": 180,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "recoveryTimeoutSeconds": 0,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 0,
+    "maxPlannedJobs": 24
+  },
+  "scenarios": [
+    {
+      "name": "connector-native-c01",
+      "workloads": ["single-detection=1"],
+      "repetitions": 1,
+      "notes": "Mandatory actual-connector sanity and per-variant throughput baseline. Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    },
+    {
+      "name": "connector-native-c02",
+      "workloads": ["single-detection=2"],
+      "repetitions": 1,
+      "notes": "Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    },
+    {
+      "name": "connector-native-c04",
+      "workloads": ["single-detection=4"],
+      "repetitions": 1,
+      "notes": "Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    },
+    {
+      "name": "connector-native-c08",
+      "workloads": ["single-detection=8"],
+      "repetitions": 1,
+      "notes": "Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    },
+    {
+      "name": "connector-native-c12",
+      "workloads": ["single-detection=12"],
+      "repetitions": 1,
+      "notes": "Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    },
+    {
+      "name": "connector-native-c16",
+      "workloads": ["single-detection=16"],
+      "repetitions": 1,
+      "notes": "Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    },
+    {
+      "name": "connector-native-c24",
+      "workloads": ["single-detection=24"],
+      "repetitions": 1,
+      "notes": "Execute twice with distinct suite IDs and repeat the one-ready/no-working preflight between runs."
+    }
+  ]
+}

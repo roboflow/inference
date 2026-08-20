@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "name": "processor-startup-loss",
+  "clusterContext": "ck8s-stg",
+  "namespace": "video-proc",
+  "benchmark": {
+    "runId": "replace-startup-run-id",
+    "checkpoint": "../results/api-corpus-replace-startup-run-id.json",
+    "apiHost": "us-central1-roboflow-staging.cloudfunctions.net"
+  },
+  "fault": {
+    "name": "delete-claimed-processor",
+    "type": "processor-pod-loss",
+    "phase": "startup",
+    "jobOrdinal": 1,
+    "gracePeriodSeconds": 0
+  },
+  "deadlines": {
+    "triggerSeconds": 180,
+    "recoverySeconds": 300,
+    "pollSeconds": 2
+  }
+}

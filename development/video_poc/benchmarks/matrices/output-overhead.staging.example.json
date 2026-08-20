@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://api.roboflow.one",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "thomas-workspace",
+    "sourceId": "9g7UzPcDyVBFBJ0dLei6",
+    "durationSeconds": 300,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 30,
+    "maxPlannedJobs": 8
+  },
+  "scenarios": [
+    {"name": "gpu-detect-c04-output-off", "workloads": ["single-detection=4"], "maxFps": 10, "publishOutput": false, "repetitions": 3},
+    {"name": "gpu-detect-c04-output-on", "workloads": ["single-detection=4"], "maxFps": 10, "publishOutput": true, "repetitions": 3},
+    {"name": "gpu-detect-c08-output-off", "workloads": ["single-detection=8"], "maxFps": 10, "publishOutput": false, "repetitions": 3},
+    {"name": "gpu-detect-c08-output-on", "workloads": ["single-detection=8"], "maxFps": 10, "publishOutput": true, "repetitions": 3},
+    {"name": "gpu-tracking-c02-output-off", "workloads": ["detection-tracking=2"], "maxFps": 10, "publishOutput": false, "repetitions": 3},
+    {"name": "gpu-tracking-c02-output-on", "workloads": ["detection-tracking=2"], "maxFps": 10, "publishOutput": true, "repetitions": 3},
+    {"name": "cpu-detect-c02-output-off", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "publishOutput": false, "repetitions": 3},
+    {"name": "cpu-detect-c02-output-on", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "publishOutput": true, "repetitions": 3}
+  ]
+}

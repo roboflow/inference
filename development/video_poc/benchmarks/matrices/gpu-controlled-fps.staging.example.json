@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://api.roboflow.one",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "thomas-workspace",
+    "sourceId": "9g7UzPcDyVBFBJ0dLei6",
+    "durationSeconds": 180,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 20,
+    "maxPlannedJobs": 24
+  },
+  "scenarios": [
+    {"name": "gpu-fps05-c01", "workloads": ["single-detection=1"], "maxFps": 5, "repetitions": 2},
+    {"name": "gpu-fps05-c04", "workloads": ["single-detection=4"], "maxFps": 5, "repetitions": 2},
+    {"name": "gpu-fps05-c08", "workloads": ["single-detection=8"], "maxFps": 5, "repetitions": 2},
+    {"name": "gpu-fps05-c12", "workloads": ["single-detection=12"], "maxFps": 5, "repetitions": 2},
+    {"name": "gpu-fps05-c18", "workloads": ["single-detection=18"], "maxFps": 5, "repetitions": 2},
+    {"name": "gpu-fps05-c24", "workloads": ["single-detection=24"], "maxFps": 5, "repetitions": 2},
+    {"name": "gpu-fps10-c01", "workloads": ["single-detection=1"], "maxFps": 10, "repetitions": 2},
+    {"name": "gpu-fps10-c04", "workloads": ["single-detection=4"], "maxFps": 10, "repetitions": 2},
+    {"name": "gpu-fps10-c08", "workloads": ["single-detection=8"], "maxFps": 10, "repetitions": 2},
+    {"name": "gpu-fps10-c12", "workloads": ["single-detection=12"], "maxFps": 10, "repetitions": 2},
+    {"name": "gpu-fps10-c18", "workloads": ["single-detection=18"], "maxFps": 10, "repetitions": 2},
+    {"name": "gpu-fps10-c24", "workloads": ["single-detection=24"], "maxFps": 10, "repetitions": 2},
+    {"name": "gpu-fps15-c01", "workloads": ["single-detection=1"], "maxFps": 15, "repetitions": 2},
+    {"name": "gpu-fps15-c04", "workloads": ["single-detection=4"], "maxFps": 15, "repetitions": 2},
+    {"name": "gpu-fps15-c08", "workloads": ["single-detection=8"], "maxFps": 15, "repetitions": 2},
+    {"name": "gpu-fps15-c12", "workloads": ["single-detection=12"], "maxFps": 15, "repetitions": 2},
+    {"name": "gpu-fps15-c18", "workloads": ["single-detection=18"], "maxFps": 15, "repetitions": 2},
+    {"name": "gpu-fps15-c24", "workloads": ["single-detection=24"], "maxFps": 15, "repetitions": 2}
+  ]
+}
