@@ -166,12 +166,20 @@ For either shape:
 Do not infer deployability from a local unit test or from an image tag that can
 move.
 
-The current production-runtime candidate was built from exact revision
-`7fc1d0de2ebacbbed0d734e446610ee5616b6613` by staging Cloud Build
-`c4e0b84b-7d15-4fe7-83e0-605f0ca6af00` and published as
-`video-processor-runtime@sha256:2fb362f24dd23e6a8c928480c97fddec8e92087bd424de9283a460ad43df0e49`.
-Credential-free image smoke `5dade8e2-9959-4cfa-84b0-f2dae5b01eaa` passed on
-that exact digest. Cluster lifecycle and workload gates remain separate.
+The current proof-aware production-runtime candidates were built from exact
+revision `bbf0b89e15d4560a2792ed723b05b87a12e410ea` by staging Cloud Build
+`4795afc7-337b-4061-a739-7a0b70f37148` and published as:
+
+- GPU `video-processor-runtime@sha256:85f4395ce395789720eaacc72732cc2d08a07174ffc0a6681218d734009b91a2`;
+- CPU `video-processor-cpu-telemetry@sha256:93517c11390ba1267d77f7e8fb8f6a0f5a584d2f4d850527aa81c88843086530`.
+
+Credential-free exact-image smokes `dd2013a2-085c-4fc2-b735-b18a152671f1`
+(GPU) and `1c41387c-33d0-4f27-b04c-29e8890f15a3` (CPU) passed. Staging then
+rolled the GPU pool to Deployment revision 79 and the CPU pool to revision 9;
+both reported ready with zero active jobs and zero container restarts. The GPU
+pool runs process-per-job mode and the CPU pool remains threaded. The live
+claim/result lifecycle gate remains separate and must use the stable Hosting
+API after the matching `light-v2-video` function and rewrites are deployed.
 
 ## Control-plane functions and routing
 
