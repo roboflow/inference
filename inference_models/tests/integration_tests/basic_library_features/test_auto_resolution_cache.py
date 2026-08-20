@@ -460,8 +460,6 @@ def test_expired_retrieve_cannot_delete_concurrently_registered_fresh_entry(
     with mock.patch.object(
         auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
     ), mock.patch.object(
-        auto_resolution_cache, "OFFLINE_MODE", False
-    ), mock.patch.object(
         auto_resolution_cache,
         "read_json",
         side_effect=controlled_read_json,
@@ -587,68 +585,3 @@ def test_auto_resolution_cache_does_not_follow_symlinked_lock_file(
     assert os.path.islink(lock_path)
     with open(outside_file) as file:
         assert file.read() == "sentinel"
-
-
-def test_offline_auto_resolution_cache_read_is_lock_free(
-    empty_local_dir: str,
-) -> None:
-    cache_dir = os.path.join(empty_local_dir, "auto-resolution-cache")
-    os.makedirs(cache_dir)
-    cache_hash = "a" * 64
-    cache_path = os.path.join(cache_dir, f"{cache_hash}.json")
-    entry = AutoResolutionCacheEntry(
-        model_id="some/1",
-        model_package_id="pkg001",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime(2020, 1, 1),
-    )
-    with open(cache_path, "w", encoding="utf-8") as cache_file:
-        json.dump(entry.model_dump(mode="json"), cache_file)
-    cache = BaseAutoLoadMetadataCache(file_lock_acquire_timeout=1)
-
-    with mock.patch.object(
-        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        auto_resolution_cache, "OFFLINE_MODE", True
-    ), mock.patch.object(
-        auto_resolution_cache,
-        "FileLock",
-        side_effect=AssertionError("offline read attempted to create a lock"),
-    ):
-        retrieved = cache.retrieve(auto_negotiation_hash=cache_hash)
-
-    assert retrieved == entry
-    assert not os.path.lexists(os.path.join(cache_dir, f".{cache_hash}.json.lock"))
-
-
-def test_offline_auto_resolution_cache_preserves_invalid_metadata(
-    empty_local_dir: str,
-) -> None:
-    cache_dir = os.path.join(empty_local_dir, "auto-resolution-cache")
-    os.makedirs(cache_dir)
-    cache_hash = "b" * 64
-    cache_path = os.path.join(cache_dir, f"{cache_hash}.json")
-    with open(cache_path, "w", encoding="utf-8") as cache_file:
-        cache_file.write("{invalid")
-    on_file_deleted = MagicMock()
-    cache = BaseAutoLoadMetadataCache(
-        file_lock_acquire_timeout=1,
-        on_file_deleted=on_file_deleted,
-    )
-
-    with mock.patch.object(
-        auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        auto_resolution_cache, "OFFLINE_MODE", True
-    ), mock.patch.object(
-        auto_resolution_cache,
-        "FileLock",
-        side_effect=AssertionError("offline read attempted to create a lock"),
-    ):
-        assert cache.retrieve(auto_negotiation_hash=cache_hash) is None
-
-    assert os.path.isfile(cache_path)
-    on_file_deleted.assert_not_called()

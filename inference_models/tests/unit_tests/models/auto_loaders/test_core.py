@@ -36,7 +36,6 @@ from inference_models.models.auto_loaders.auto_resolution_cache import (
 from inference_models.models.auto_loaders.core import (
     attempt_loading_matching_model_packages,
     attempt_loading_model_from_local_storage,
-    attempt_loading_model_from_offline_cache,
     attempt_loading_model_with_auto_load_cache,
     create_symlinks_to_shared_blobs,
     dump_auto_resolution_cache,
@@ -1230,7 +1229,7 @@ def test_initialize_model_rejects_artifact_path_prefix_and_segment_collisions(
     generate_path.assert_not_called()
 
 
-def test_initialize_and_raw_offline_load_support_nested_artifact_handles(
+def test_initialize_model_supports_nested_artifact_handles(
     empty_local_dir: str,
 ) -> None:
     model_id = "workspace/vit/1"
@@ -1253,7 +1252,7 @@ def test_initialize_and_raw_offline_load_support_nested_artifact_handles(
         trusted_source=True,
     )
     model_class = MagicMock()
-    model_class.from_pretrained.side_effect = [MagicMock(), MagicMock()]
+    model_class.from_pretrained.side_effect = [MagicMock()]
 
     def download_files(**kwargs):
         if kwargs.get("name_after") != "md5_hash":
@@ -1289,14 +1288,9 @@ def test_initialize_and_raw_offline_load_support_nested_artifact_handles(
             model_dependencies_directories={},
         )
         cached_dir = find_cached_model_package_dir(model_id=model_id)
-        offline_result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
 
     assert cached_dir == package_dir
-    assert offline_result is not None
-    assert model_class.from_pretrained.call_count == 2
+    assert model_class.from_pretrained.call_count == 1
     assert os.path.islink(os.path.join(package_dir, "vit/config.json"))
     assert os.path.islink(os.path.join(package_dir, "vit/model.safetensors"))
 
@@ -1894,7 +1888,6 @@ def test_initialize_model_rewarm_registers_new_request_without_rewriting_manifes
             api_key=None,
             allow_loading_dependency_models=True,
             forwarded_kwargs_values={},
-            expected_offline_compatibility_hash=second_compatibility_hash,
         )
 
     assert first_model is model_class.from_pretrained.return_value
@@ -2513,7 +2506,6 @@ def test_auto_load_exact_keyed_cache_accepts_matching_canonical_manifest(
                 api_key="original-key",
                 allow_loading_dependency_models=True,
                 forwarded_kwargs_values={},
-                expected_offline_compatibility_hash="b" * 64,
             )
 
     assert result is expected_model
@@ -2524,48 +2516,7 @@ def test_auto_load_exact_keyed_cache_accepts_matching_canonical_manifest(
     )
 
 
-def test_auto_load_exact_cache_rejects_resolution_constraints_mismatch() -> None:
-    cache_entry = AutoResolutionCacheEntry(
-        model_id="shared-alias/1",
-        cache_model_id="workspace/canonical/1",
-        canonical_model_id="workspace/canonical/1",
-        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-        model_package_id="package",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime.now(),
-        offline_compatibility_hash="a" * 64,
-        trusted_source=True,
-        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
-    )
-    auto_resolution_cache = MagicMock()
-    auto_resolution_cache.retrieve.return_value = cache_entry
-    model_access_manager = MagicMock()
-
-    result = attempt_loading_model_with_auto_load_cache(
-        use_auto_resolution_cache=True,
-        auto_resolution_cache=auto_resolution_cache,
-        auto_negotiation_hash="c" * 64,
-        model_access_manager=model_access_manager,
-        model_name_or_path="shared-alias/1",
-        model_init_kwargs={},
-        api_key="original-key",
-        allow_loading_dependency_models=True,
-        forwarded_kwargs_values={},
-        expected_offline_compatibility_hash="b" * 64,
-    )
-
-    assert result is None
-    auto_resolution_cache.invalidate.assert_not_called()
-    model_access_manager.is_model_package_access_granted.assert_not_called()
-
-
-@pytest.mark.parametrize("offline_mode", [False, True])
-def test_auto_load_cache_handles_manifest_error_according_to_mode(
-    offline_mode: bool,
-) -> None:
+def test_auto_load_cache_invalidates_entry_on_manifest_error() -> None:
     cache_entry = AutoResolutionCacheEntry(
         model_id="workspace/model/1",
         cache_model_id="workspace/model/1",
@@ -2583,7 +2534,7 @@ def test_auto_load_cache_handles_manifest_error_according_to_mode(
     auto_resolution_cache = MagicMock()
     auto_resolution_cache.retrieve.return_value = cache_entry
 
-    with mock.patch.object(core, "OFFLINE_MODE", offline_mode), mock.patch.object(
+    with mock.patch.object(
         core,
         "resolve_existing_model_package_cache_path",
         side_effect=OSError("temporary mount failure"),
@@ -2601,18 +2552,12 @@ def test_auto_load_cache_handles_manifest_error_according_to_mode(
         )
 
     assert result is None
-    if offline_mode:
-        auto_resolution_cache.invalidate.assert_not_called()
-    else:
-        auto_resolution_cache.invalidate.assert_called_once_with(
-            auto_negotiation_hash="a" * 64
-        )
+    auto_resolution_cache.invalidate.assert_called_once_with(
+        auto_negotiation_hash="a" * 64
+    )
 
 
-@pytest.mark.parametrize("offline_mode", [False, True])
-def test_auto_load_cache_handles_constructor_error_according_to_mode(
-    offline_mode: bool,
-) -> None:
+def test_auto_load_cache_invalidates_entry_on_constructor_error() -> None:
     cache_entry = AutoResolutionCacheEntry(
         model_id="workspace/model/1",
         cache_model_id="workspace/model/1",
@@ -2642,7 +2587,7 @@ def test_auto_load_cache_handles_constructor_error_according_to_mode(
     model_class = MagicMock()
     model_class.from_pretrained.side_effect = RuntimeError("temporary GPU failure")
 
-    with mock.patch.object(core, "OFFLINE_MODE", offline_mode), mock.patch.object(
+    with mock.patch.object(
         core, "_verified_auto_cache_package_dir", return_value="/cached/model"
     ), mock.patch.object(
         core, "parse_model_config", return_value=package_config
@@ -2662,12 +2607,9 @@ def test_auto_load_cache_handles_constructor_error_according_to_mode(
         )
 
     assert result is None
-    if offline_mode:
-        auto_resolution_cache.invalidate.assert_not_called()
-    else:
-        auto_resolution_cache.invalidate.assert_called_once_with(
-            auto_negotiation_hash="a" * 64
-        )
+    auto_resolution_cache.invalidate.assert_called_once_with(
+        auto_negotiation_hash="a" * 64
+    )
     model_access_manager.is_model_package_access_granted.assert_called_once_with(
         model_id="workspace/model/1",
         package_id="package",
@@ -3072,7 +3014,7 @@ def _read_file(path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Offline cache discovery and OFFLINE_MODE behaviour
+# Cached-package discovery and OFFLINE_MODE behaviour
 # ---------------------------------------------------------------------------
 
 
@@ -3091,32 +3033,6 @@ def _write_offline_package(
         _create_file(os.path.join(package_dir, "model_config.json"), json.dumps(config))
     # scanning helpers yield realpath-resolved paths
     return os.path.realpath(package_dir)
-
-
-def _offline_compatibility_hash_for_default_request(model_id: str) -> str:
-    return core.hash_dict_content(
-        content={
-            "provider": "roboflow",
-            "model_id": model_id,
-            "requested_model_package_id": None,
-            "requested_backends": None,
-            "requested_batch_size": None,
-            "requested_quantization": None,
-            "device": str(core.DEFAULT_DEVICE),
-            "onnx_execution_providers": None,
-            "default_onnx_trt_options": True,
-            "allow_untrusted_packages": False,
-            "trt_engine_host_code_allowed": True,
-            "allow_local_code_packages": True,
-            "allow_loading_dependency_models": True,
-            "nms_fusion_preferences": None,
-            "dependency_models_params": {},
-            "forwarded_dependency_kwargs": {},
-            "runtime_compatibility": core._runtime_compatibility_content(
-                runtime_x_ray=core.x_ray_runtime_environment()
-            ),
-        }
-    )
 
 
 _OFFLINE_PACKAGE_CONFIG = {
@@ -3233,51 +3149,9 @@ def test_parent_cache_rejects_dependency_rewarm_at_same_package_path(
             allow_loading_dependency_models=True,
             forwarded_kwargs_values={},
         )
-        raw_result = attempt_loading_model_from_offline_cache(
-            model_id=parent_model_id,
-            model_init_kwargs={},
-        )
 
     assert exact_result is None
-    assert raw_result is None
     model_access_manager.is_model_package_access_granted.assert_not_called()
-    local_load.assert_not_called()
-
-
-def test_raw_cache_rejects_tampered_unsafe_artifact_handle(
-    empty_local_dir: str,
-) -> None:
-    config = {
-        **_OFFLINE_PACKAGE_CONFIG,
-        "package_artifacts": [
-            {
-                "file_handle": "../weights.onnx",
-                "md5_hash": "a" * 32,
-                "unhashed": False,
-                "sha256_hash": None,
-                "source_hash": None,
-                "storage": "shared_blob",
-            }
-        ],
-    }
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id="workspace/project/1",
-        package_id="package",
-        config=config,
-    )
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as local_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id="workspace/project/1",
-            model_init_kwargs={},
-        )
-
-    assert result is None
     local_load.assert_not_called()
 
 
@@ -3572,764 +3446,20 @@ def test_find_cached_model_package_dir_when_package_has_no_config(
     assert result is None
 
 
-def test_attempt_loading_model_from_offline_cache_when_no_cache_dir(
-    empty_local_dir: str,
-) -> None:
-    # when
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        result = attempt_loading_model_from_offline_cache(
-            model_id="yolov8n-640",
-            model_init_kwargs={},
-        )
-
-    # then
-    assert result is None
-
-
 @pytest.mark.parametrize("model_id", [None, 123, "", "   ", "bad\0id"])
 def test_cache_discovery_entrypoints_reject_invalid_remote_model_identity(
     model_id: object,
 ) -> None:
     with mock.patch.object(
         core, "_iterate_cached_model_package_dirs"
-    ) as iterate_packages, mock.patch.object(
-        core, "model_provider_requires_network"
-    ) as provider_requires_network:
+    ) as iterate_packages:
         with pytest.raises(
             InvalidParameterError,
             match="Remote model identity must be a non-empty string",
         ):
             find_cached_model_package_dir(model_id=model_id)
-        with pytest.raises(
-            InvalidParameterError,
-            match="Remote model identity must be a non-empty string",
-        ):
-            attempt_loading_model_from_offline_cache(
-                model_id=model_id,
-                model_init_kwargs={},
-            )
 
     iterate_packages.assert_not_called()
-    provider_requires_network.assert_not_called()
-
-
-@pytest.mark.parametrize("api_key", [None, "local"])
-def test_raw_offline_cache_rejects_implicit_env_api_key(
-    api_key: Optional[str],
-) -> None:
-    with mock.patch.object(
-        core, "ROBOFLOW_API_KEY", "configured-env-key"
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "_iterate_cached_model_package_dirs"
-    ) as iterate_packages:
-        result = attempt_loading_model_from_offline_cache(
-            model_id="workspace/model/1",
-            model_init_kwargs={},
-            api_key=api_key,
-        )
-
-    assert result is None
-    iterate_packages.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_when_valid_package_found(
-    empty_local_dir: str,
-) -> None:
-    # given
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id="yolov8n-640",
-        package_id="pkg001",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    mock_model = MagicMock()
-
-    # when
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id="yolov8n-640",
-            model_init_kwargs={"device": core.torch.device("cpu")},
-            allow_loading_dependency_models=False,
-        )
-
-    # then
-    assert result is not None
-    model, cache_dir = result
-    assert model is mock_model
-    assert cache_dir == package_dir
-    mock_load.assert_called_once_with(
-        model_dir_or_weights_path=package_dir,
-        allow_local_code_packages=True,
-        model_init_kwargs={
-            "device": core.torch.device("cpu"),
-            core.MODEL_DEPENDENCIES_KEY: {},
-        },
-    )
-
-
-def test_attempt_loading_model_from_offline_cache_skips_hidden_dirs(
-    empty_local_dir: str,
-) -> None:
-    # given - only hidden directory, no visible package dirs
-    model_id = "yolov8n-640"
-    slug = model_cache_paths.slugify_model_id_to_os_safe_format(model_id=model_id)
-    hidden_dir = os.path.join(empty_local_dir, "models-cache", slug, ".locks")
-    os.makedirs(hidden_dir, exist_ok=True)
-    _create_file(
-        os.path.join(hidden_dir, "model_config.json"),
-        json.dumps(_OFFLINE_PACKAGE_CONFIG),
-    )
-
-    # when
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-
-    # then
-    assert result is None
-
-
-def test_attempt_loading_model_from_offline_cache_rejects_case_alias_packages(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        cache_root = model_cache_paths.generate_model_cache_root_for_model_id(
-            model_id=model_id
-        )
-        uppercase_dir = os.path.join(cache_root, "Package")
-        lowercase_dir = os.path.join(cache_root, "package")
-        os.makedirs(uppercase_dir)
-        os.makedirs(lowercase_dir, exist_ok=True)
-        if os.path.samefile(uppercase_dir, lowercase_dir):
-            pytest.skip("filesystem is case-insensitive")
-        for package_dir in (uppercase_dir, lowercase_dir):
-            _create_file(
-                os.path.join(package_dir, "model_config.json"),
-                json.dumps(
-                    {
-                        **_OFFLINE_PACKAGE_CONFIG,
-                        "model_id": model_id,
-                        "canonical_model_id": model_id,
-                    }
-                ),
-            )
-        with mock.patch.object(
-            core, "attempt_loading_model_from_local_storage"
-        ) as model_load:
-            result = attempt_loading_model_from_offline_cache(
-                model_id=model_id,
-                model_init_kwargs={},
-            )
-
-    assert result is None
-    model_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_tries_next_package_on_failure(
-    empty_local_dir: str,
-) -> None:
-    # given - first package fails to load, second succeeds
-    model_id = "yolov8n-640"
-    for package_id in ["pkg001", "pkg002"]:
-        _write_offline_package(
-            inference_home=empty_local_dir,
-            model_id=model_id,
-            package_id=package_id,
-            config={
-                **_OFFLINE_PACKAGE_CONFIG,
-                "backend_type": ("torch-script" if package_id == "pkg002" else "onnx"),
-            },
-        )
-    mock_model = MagicMock()
-
-    def load_side_effect(model_dir_or_weights_path, **kwargs):
-        if model_dir_or_weights_path.endswith("pkg001"):
-            raise RuntimeError("corrupted package")
-        return mock_model
-
-    # when
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", side_effect=load_side_effect
-    ):
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-
-    # then
-    assert result is not None
-    model, cache_dir = result
-    assert model is mock_model
-    assert cache_dir.endswith("pkg002")
-
-
-def test_attempt_loading_model_from_offline_cache_honors_requested_package(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    for package_id in ["pkg001", "pkg002"]:
-        _write_offline_package(
-            inference_home=empty_local_dir,
-            model_id=model_id,
-            package_id=package_id,
-            config={
-                **_OFFLINE_PACKAGE_CONFIG,
-                "backend_type": ("torch-script" if package_id == "pkg002" else "onnx"),
-            },
-        )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            requested_model_package_id="pkg002",
-            requested_backends=BackendType.ONNX,
-        )
-
-    assert result is not None
-    assert result[1].endswith("pkg002")
-    assert mock_load.call_args[1]["model_dir_or_weights_path"].endswith("pkg002")
-
-
-def test_attempt_loading_model_from_offline_cache_honors_requested_backend(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "onnx"},
-    )
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg002",
-        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "torch-script"},
-    )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            requested_backends=BackendType.TORCH_SCRIPT,
-        )
-
-    assert result is not None
-    assert result[1].endswith("pkg002")
-    assert mock_load.call_args[1]["model_dir_or_weights_path"].endswith("pkg002")
-
-
-def test_offline_cache_ranks_allowed_backends_deterministically(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "onnx"},
-    )
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg002",
-        config={**_OFFLINE_PACKAGE_CONFIG, "backend_type": "torch-script"},
-    )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            requested_backends=[BackendType.TORCH_SCRIPT, BackendType.ONNX],
-        )
-
-    assert result is not None
-    assert result[1].endswith("pkg001")
-    assert mock_load.call_args[1]["model_dir_or_weights_path"].endswith("pkg001")
-
-
-def test_attempt_loading_model_from_offline_cache_rejects_unverifiable_constraints(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(core, "attempt_loading_model_from_local_storage") as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            requested_quantization="fp16",
-        )
-
-    assert result is None
-    mock_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_respects_access_manager(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    access_manager = MagicMock()
-    access_manager.is_model_package_access_granted.return_value = False
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(core, "attempt_loading_model_from_local_storage") as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            model_access_manager=access_manager,
-            api_key=None,
-        )
-
-    assert result is None
-    access_manager.is_model_package_access_granted.assert_called_once_with(
-        model_id=model_id,
-        package_id="pkg001",
-        api_key=None,
-    )
-    mock_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_skips_malformed_manifest(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={**_OFFLINE_PACKAGE_CONFIG, "task_type": ["not", "a", "string"]},
-    )
-    valid_package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg002",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-
-    assert result == (mock_model, valid_package_dir)
-    mock_load.assert_called_once()
-
-
-def test_attempt_loading_model_from_offline_cache_enforces_trust_provenance(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={**_OFFLINE_PACKAGE_CONFIG, "trusted_source": False},
-    )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        rejected = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-        accepted = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            allow_untrusted_packages=True,
-        )
-
-    assert rejected is None
-    assert accepted == (mock_model, package_dir)
-    mock_load.assert_called_once()
-
-
-def test_attempt_loading_model_from_offline_cache_rejects_legacy_manifest_even_with_opt_in(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            "model_architecture": "yolov8",
-            "task_type": "object-detection",
-            "backend_type": "onnx",
-        },
-    )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        rejected = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-        accepted = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            allow_untrusted_packages=True,
-        )
-
-    assert rejected is None
-    assert accepted is None
-    mock_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_rejects_dependencies_when_disabled(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "model_dependencies": [
-                {
-                    "name": "encoder",
-                    "model_id": "dependency/1",
-                    "model_package_id": "dependencyPackage",
-                }
-            ],
-        },
-    )
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core.AutoModel, "from_pretrained"
-    ) as dependency_load, mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as model_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            allow_loading_dependency_models=False,
-        )
-
-    assert result is None
-    dependency_load.assert_not_called()
-    model_load.assert_not_called()
-
-
-def test_offline_cache_rejects_unknown_dependencies_when_disabled(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={**_OFFLINE_PACKAGE_CONFIG, "model_dependencies": None},
-    )
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core.AutoModel, "from_pretrained"
-    ) as dependency_load, mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as model_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            allow_loading_dependency_models=False,
-        )
-
-    assert result is None
-    dependency_load.assert_not_called()
-    model_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_reconstructs_dependencies(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    dependency_package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id="dependency/1",
-        package_id="dependencyPackage",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    dependency_manifest_hash = parse_model_config(
-        os.path.join(dependency_package_dir, "model_config.json")
-    ).manifest_content_hash
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "model_dependencies": [
-                {
-                    "name": "encoder",
-                    "model_id": "dependency/1",
-                    "model_package_id": "dependencyPackage",
-                }
-            ],
-            "dependency_package_paths": [
-                {
-                    "name": "encoder",
-                    "target_path": dependency_package_dir,
-                    "cache_model_id": "dependency/1",
-                    "canonical_model_id": "dependency/1",
-                    "model_package_id": "dependencyPackage",
-                    "package_manifest_hash": dependency_manifest_hash,
-                }
-            ],
-        },
-    )
-    dependency_links_dir = os.path.join(package_dir, core.MODEL_DEPENDENCIES_SUB_DIR)
-    os.makedirs(dependency_links_dir)
-    os.symlink(
-        dependency_package_dir,
-        os.path.join(dependency_links_dir, "encoder"),
-    )
-    dependency_model = MagicMock()
-    parent_model = MagicMock()
-
-    def load_dependency(**kwargs):
-        kwargs["point_model_directory"](dependency_package_dir)
-        return dependency_model
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core.AutoModel, "from_pretrained", side_effect=load_dependency
-    ) as dependency_load, mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=parent_model
-    ) as model_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={"device": core.torch.device("cpu")},
-        )
-
-    assert result == (parent_model, package_dir)
-    dependency_load.assert_called_once()
-    assert dependency_load.call_args.kwargs["model_id_or_path"] == "dependency/1"
-    assert dependency_load.call_args.kwargs["model_package_id"] == "dependencyPackage"
-    assert model_load.call_args.kwargs["model_init_kwargs"][
-        core.MODEL_DEPENDENCIES_KEY
-    ] == {"encoder": dependency_model}
-
-
-def test_raw_cache_rejects_dependency_resolved_to_unbound_package(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    bound_dependency_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id="dependency/1",
-        package_id="dependencyPackageA",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    wrong_dependency_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id="dependency/1",
-        package_id="dependencyPackageB",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    bound_manifest_hash = parse_model_config(
-        os.path.join(bound_dependency_dir, "model_config.json")
-    ).manifest_content_hash
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "model_dependencies": [
-                {
-                    "name": "encoder",
-                    "model_id": "dependency/1",
-                    "model_package_id": "dependencyPackage",
-                }
-            ],
-            "dependency_package_paths": [
-                {
-                    "name": "encoder",
-                    "target_path": bound_dependency_dir,
-                    "cache_model_id": "dependency/1",
-                    "canonical_model_id": "dependency/1",
-                    "model_package_id": "dependencyPackageA",
-                    "package_manifest_hash": bound_manifest_hash,
-                }
-            ],
-        },
-    )
-    dependency_links_dir = os.path.join(package_dir, core.MODEL_DEPENDENCIES_SUB_DIR)
-    os.makedirs(dependency_links_dir)
-    os.symlink(
-        bound_dependency_dir,
-        os.path.join(dependency_links_dir, "encoder"),
-    )
-
-    def load_wrong_dependency(**kwargs):
-        kwargs["point_model_directory"](wrong_dependency_dir)
-        return MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core.AutoModel,
-        "from_pretrained",
-        side_effect=load_wrong_dependency,
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as parent_model_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-
-    assert result is None
-    parent_model_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_applies_cpu_default_quantization(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={**_OFFLINE_PACKAGE_CONFIG, "quantization": "fp16"},
-    )
-    fp32_package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg002",
-        config={**_OFFLINE_PACKAGE_CONFIG, "quantization": "fp32"},
-    )
-    mock_model = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={"device": core.torch.device("cpu")},
-        )
-
-    assert result == (mock_model, fp32_package_dir)
-    mock_load.assert_called_once()
-
-
-def test_attempt_loading_model_from_offline_cache_requires_matching_constraints_hash(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "offline_compatibility_hash": "a" * 64,
-        },
-    )
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(core, "attempt_loading_model_from_local_storage") as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-            offline_compatibility_hash="b" * 64,
-        )
-
-    assert result is None
-    mock_load.assert_not_called()
-
-
-def test_attempt_loading_model_from_offline_cache_requires_matching_runtime(
-    empty_local_dir: str,
-) -> None:
-    model_id = "yolov8n-640"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "runtime_compatibility_hash": "a" * 64,
-        },
-    )
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "_runtime_compatibility_hash", return_value="b" * 64
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as mock_load:
-        result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-
-    assert result is None
-    mock_load.assert_not_called()
 
 
 def test_online_retry_error_does_not_use_cache_fallback() -> None:
@@ -4344,9 +3474,7 @@ def test_online_retry_error_does_not_use_cache_fallback() -> None:
         side_effect=RetryError(message="network down", help_url="https://help"),
     ), mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_offline_cache"
-    ) as raw_cache_load:
+    ):
         with pytest.raises(RetryError):
             core.AutoModel.from_pretrained(
                 model_id,
@@ -4355,586 +3483,6 @@ def test_online_retry_error_does_not_use_cache_fallback() -> None:
             )
 
     auto_resolution_cache.find_compatible_candidates.assert_not_called()
-    raw_cache_load.assert_not_called()
-
-
-def test_custom_cache_compatible_lookup_supports_no_key_offline_restart() -> None:
-    model_id = "workspace/model/1"
-    cached_model = MagicMock()
-    compatible_cache_entry = AutoResolutionCacheEntry(
-        model_id=model_id,
-        cache_model_id="workspace/canonical-model/1",
-        canonical_model_id="workspace/canonical-model/1",
-        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-        credential_hash=core._credential_hash(api_key="warmed-key"),
-        model_package_id="package",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime.now(),
-        offline_compatibility_hash="c" * 64,
-        trusted_source=True,
-    )
-
-    class ExistingCustomCache(AutoResolutionCache):
-        def __init__(self) -> None:
-            self.find_compatible_calls = 0
-
-        def register(
-            self,
-            auto_negotiation_hash: str,
-            cache_entry: AutoResolutionCacheEntry,
-        ) -> None:
-            pass
-
-        def retrieve(
-            self, auto_negotiation_hash: str
-        ) -> Optional[AutoResolutionCacheEntry]:
-            return None
-
-        def invalidate(self, auto_negotiation_hash: str) -> None:
-            pass
-
-        def find_compatible(
-            self, offline_compatibility_hash: str
-        ) -> Optional[tuple[str, AutoResolutionCacheEntry]]:
-            self.find_compatible_calls += 1
-            return "old-api-key-hash", compatible_cache_entry
-
-    auto_resolution_cache = ExistingCustomCache()
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core,
-        "attempt_loading_model_with_auto_load_cache",
-        side_effect=[None, cached_model],
-    ) as cached_load, mock.patch.object(
-        core, "get_model_from_provider"
-    ) as provider:
-        result = core.AutoModel.from_pretrained(
-            model_id,
-            api_key=None,
-            auto_resolution_cache=auto_resolution_cache,
-        )
-
-    assert result is cached_model
-    assert cached_load.call_count == 2
-    assert cached_load.call_args_list[1].kwargs["auto_negotiation_hash"] == (
-        "old-api-key-hash"
-    )
-    assert auto_resolution_cache.find_compatible_calls == 1
-    provider.assert_not_called()
-
-
-def test_no_key_offline_restart_loads_one_canonically_attributed_candidate(
-    empty_local_dir: str,
-) -> None:
-    requested_model_id = "shared-alias/1"
-    canonical_model_id = "tenant-a/canonical/1"
-    package_id = "package"
-    expected_model = MagicMock()
-    request_compatibility_hash = _offline_compatibility_hash_for_default_request(
-        requested_model_id
-    )
-
-    class CachedModel:
-        @classmethod
-        def from_pretrained(cls, model_dir_or_weights_path, **kwargs):
-            assert model_dir_or_weights_path == package_dir
-            return expected_model
-
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        package_dir = generate_model_package_cache_path(
-            model_id=canonical_model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        manifest_path = os.path.join(package_dir, "model_config.json")
-        manifest_hash = dump_model_config_for_offline_use(
-            config_path=manifest_path,
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            file_lock_acquire_timeout=1,
-            model_id=canonical_model_id,
-            canonical_model_id=canonical_model_id,
-            trusted_source=True,
-            model_dependencies=[],
-            runtime_compatibility_hash=core._runtime_compatibility_hash(
-                runtime_x_ray=core.x_ray_runtime_environment()
-            ),
-            offline_compatibility_hash="a" * 64,
-        )
-        cache_entry = AutoResolutionCacheEntry(
-            model_id=requested_model_id,
-            cache_model_id=canonical_model_id,
-            canonical_model_id=canonical_model_id,
-            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-            credential_hash=core._credential_hash(api_key="warmed-key"),
-            model_package_id=package_id,
-            resolved_files=[manifest_path],
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            created_at=datetime.now(),
-            offline_compatibility_hash=request_compatibility_hash,
-            trusted_source=True,
-            package_manifest_hash=manifest_hash,
-        )
-
-        class WarmedCache(AutoResolutionCache):
-            def register(
-                self,
-                auto_negotiation_hash: str,
-                cache_entry: AutoResolutionCacheEntry,
-            ) -> None:
-                pass
-
-            def retrieve(
-                self, auto_negotiation_hash: str
-            ) -> Optional[AutoResolutionCacheEntry]:
-                if auto_negotiation_hash == "warmed-keyed-hash":
-                    return cache_entry
-                return None
-
-            def invalidate(self, auto_negotiation_hash: str) -> None:
-                pass
-
-            def find_compatible_candidates(
-                self,
-                offline_compatibility_hash: str,
-            ) -> list[tuple[str, AutoResolutionCacheEntry]]:
-                return [("warmed-keyed-hash", cache_entry)]
-
-        with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-            core, "ROBOFLOW_API_KEY", None
-        ), mock.patch.object(
-            core, "model_provider_requires_network", return_value=True
-        ), mock.patch.object(
-            core, "resolve_model_class", return_value=CachedModel
-        ), mock.patch.object(
-            core, "get_model_from_provider"
-        ) as provider:
-            result = core.AutoModel.from_pretrained(
-                requested_model_id,
-                api_key=None,
-                auto_resolution_cache=WarmedCache(),
-            )
-
-    assert result is expected_model
-    provider.assert_not_called()
-
-
-def test_from_pretrained_tries_older_compatible_entry_after_newest_fails() -> None:
-    model_id = "workspace/model/1"
-    cached_model = MagicMock()
-    newest_entry = AutoResolutionCacheEntry(
-        model_id=model_id,
-        cache_model_id="workspace/canonical-model/1",
-        canonical_model_id="workspace/canonical-model/1",
-        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-        credential_hash=core._credential_hash(api_key="warmed-key"),
-        model_package_id="newest-package",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime.now(),
-        offline_compatibility_hash="c" * 64,
-        trusted_source=True,
-    )
-    older_entry = newest_entry.model_copy(update={"model_package_id": "older-package"})
-    auto_resolution_cache = MagicMock()
-    attempted_hashes = []
-
-    def cache_load_side_effect(**kwargs):
-        cache_hash = kwargs["auto_negotiation_hash"]
-        attempted_hashes.append(cache_hash)
-        if cache_hash == "older-api-key-hash":
-            return cached_model
-        return None
-
-    def find_candidates(**kwargs):
-        exact_hash = attempted_hashes[0]
-        return [
-            (exact_hash, newest_entry),
-            ("newest-api-key-hash", newest_entry),
-            ("older-api-key-hash", older_entry),
-        ]
-
-    auto_resolution_cache.find_compatible_candidates.side_effect = find_candidates
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core,
-        "attempt_loading_model_with_auto_load_cache",
-        side_effect=cache_load_side_effect,
-    ), mock.patch.object(
-        core, "get_model_from_provider"
-    ) as provider:
-        result = core.AutoModel.from_pretrained(
-            model_id,
-            api_key=None,
-            auto_resolution_cache=auto_resolution_cache,
-        )
-
-    assert result is cached_model
-    exact_hash = attempted_hashes[0]
-    assert attempted_hashes == [
-        exact_hash,
-        "newest-api-key-hash",
-        "older-api-key-hash",
-    ]
-    auto_resolution_cache.find_compatible_candidates.assert_called_once()
-    provider.assert_not_called()
-
-
-def test_from_pretrained_no_key_rejects_multiple_canonical_identities() -> None:
-    requested_model_id = "shared-alias/1"
-
-    def entry(canonical_model_id: str) -> AutoResolutionCacheEntry:
-        return AutoResolutionCacheEntry(
-            model_id=requested_model_id,
-            cache_model_id=canonical_model_id,
-            canonical_model_id=canonical_model_id,
-            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-            model_package_id="package",
-            resolved_files=[],
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            created_at=datetime.now(),
-            offline_compatibility_hash="c" * 64,
-            trusted_source=True,
-        )
-
-    auto_resolution_cache = MagicMock()
-    auto_resolution_cache.find_compatible_candidates.return_value = [
-        ("a" * 64, entry("tenant-a/canonical/1")),
-        ("b" * 64, entry("tenant-b/canonical/1")),
-    ]
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=(MagicMock(), "/direct-package"),
-    ) as raw_cache_load:
-        with pytest.raises(ModelRetrievalError):
-            core.AutoModel.from_pretrained(
-                requested_model_id,
-                api_key=None,
-                auto_resolution_cache=auto_resolution_cache,
-            )
-
-    assert cache_load.call_count == 1
-    raw_cache_load.assert_not_called()
-
-
-def test_from_pretrained_no_key_rejects_direct_package_conflicting_with_alias(
-    empty_local_dir: str,
-) -> None:
-    requested_model_id = "shared-alias/1"
-    _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=requested_model_id,
-        package_id="directpkg",
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    alias_entry = AutoResolutionCacheEntry(
-        model_id=requested_model_id,
-        cache_model_id="tenant-b/canonical/1",
-        canonical_model_id="tenant-b/canonical/1",
-        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-        credential_hash=core._credential_hash(api_key="tenant-b-key"),
-        model_package_id="aliaspkg",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime.now(),
-        offline_compatibility_hash="c" * 64,
-        trusted_source=True,
-    )
-    auto_resolution_cache = MagicMock()
-    auto_resolution_cache.find_compatible_candidates.return_value = [
-        ("a" * 64, alias_entry)
-    ]
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=(MagicMock(), "/direct-package"),
-    ) as raw_cache_load:
-        with pytest.raises(ModelRetrievalError):
-            core.AutoModel.from_pretrained(
-                requested_model_id,
-                api_key=None,
-                auto_resolution_cache=auto_resolution_cache,
-            )
-
-    assert cache_load.call_count == 1
-    raw_cache_load.assert_not_called()
-
-
-def test_from_pretrained_no_key_rejects_unattributed_compatible_entry() -> None:
-    requested_model_id = "shared-alias/1"
-    legacy_entry = AutoResolutionCacheEntry(
-        model_id=requested_model_id,
-        model_package_id="package",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime.now(),
-        offline_compatibility_hash="c" * 64,
-        trusted_source=True,
-    )
-    auto_resolution_cache = MagicMock()
-    auto_resolution_cache.find_compatible_candidates.return_value = [
-        ("a" * 64, legacy_entry)
-    ]
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as cache_load, mock.patch.object(
-        core, "attempt_loading_model_from_offline_cache", return_value=None
-    ):
-        with pytest.raises(ModelRetrievalError):
-            core.AutoModel.from_pretrained(
-                requested_model_id,
-                api_key=None,
-                auto_resolution_cache=auto_resolution_cache,
-            )
-
-    assert cache_load.call_count == 1
-
-
-def test_from_pretrained_rotated_api_keys_do_not_use_credential_free_fallback() -> None:
-    model_id = "workspace/model/1"
-    auto_resolution_cache = MagicMock()
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as exact_cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=None,
-    ) as raw_cache_load:
-        with pytest.raises(ModelRetrievalError):
-            core.AutoModel.from_pretrained(
-                model_id,
-                api_key="first-api-key",
-                auto_resolution_cache=auto_resolution_cache,
-            )
-        with pytest.raises(ModelRetrievalError):
-            core.AutoModel.from_pretrained(
-                model_id,
-                api_key="second-api-key",
-                auto_resolution_cache=auto_resolution_cache,
-            )
-
-    exact_hashes = [
-        cache_call.kwargs["auto_negotiation_hash"]
-        for cache_call in exact_cache_load.call_args_list
-    ]
-    assert exact_hashes[0] != exact_hashes[1]
-    auto_resolution_cache.find_compatible_candidates.assert_not_called()
-    raw_cache_load.assert_not_called()
-
-
-@pytest.mark.parametrize("api_key", [None, "local"])
-def test_from_pretrained_env_api_key_does_not_use_credential_free_fallback(
-    api_key: Optional[str],
-) -> None:
-    model_id = "workspace/model/1"
-    auto_resolution_cache = MagicMock()
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as exact_cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=None,
-    ) as raw_cache_load:
-        for configured_api_key in ("first-env-key", "second-env-key"):
-            with mock.patch.object(core, "ROBOFLOW_API_KEY", configured_api_key):
-                with pytest.raises(ModelRetrievalError):
-                    core.AutoModel.from_pretrained(
-                        model_id,
-                        api_key=api_key,
-                        auto_resolution_cache=auto_resolution_cache,
-                    )
-
-    exact_hashes = [
-        cache_call.kwargs["auto_negotiation_hash"]
-        for cache_call in exact_cache_load.call_args_list
-    ]
-    assert len(exact_hashes) == 2
-    assert exact_hashes[0] != exact_hashes[1]
-    auto_resolution_cache.find_compatible_candidates.assert_not_called()
-    raw_cache_load.assert_not_called()
-
-
-def test_max_package_loading_attempts_only_affects_exact_cache_identity() -> None:
-    auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
-    auto_resolution_cache.find_compatible_candidates.return_value = []
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as exact_cache_load, mock.patch.object(
-        core, "attempt_loading_model_from_offline_cache", return_value=None
-    ):
-        for max_attempts in (1, 2):
-            with pytest.raises(ModelRetrievalError):
-                core.AutoModel.from_pretrained(
-                    "workspace/model/1",
-                    max_package_loading_attempts=max_attempts,
-                    auto_resolution_cache=auto_resolution_cache,
-                )
-
-    exact_hashes = [
-        call.kwargs["auto_negotiation_hash"] for call in exact_cache_load.call_args_list
-    ]
-    compatibility_hashes = [
-        call.kwargs["offline_compatibility_hash"]
-        for call in auto_resolution_cache.find_compatible_candidates.call_args_list
-    ]
-    assert len(set(exact_hashes)) == 2
-    assert len(set(compatibility_hashes)) == 1
-
-
-def test_provider_version_header_only_affects_exact_cache_identity() -> None:
-    auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
-    auto_resolution_cache.find_compatible_candidates.return_value = []
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as exact_cache_load, mock.patch.object(
-        core, "attempt_loading_model_from_offline_cache", return_value=None
-    ) as raw_cache_load:
-        for version in ("1.3.6", "1.3.7"):
-            with pytest.raises(ModelRetrievalError):
-                core.AutoModel.from_pretrained(
-                    "workspace/model/1",
-                    weights_provider_extra_headers={
-                        "X-Roboflow-Inference-Version": version,
-                    },
-                    auto_resolution_cache=auto_resolution_cache,
-                )
-
-    exact_hashes = [
-        call.kwargs["auto_negotiation_hash"] for call in exact_cache_load.call_args_list
-    ]
-    compatibility_hashes = [
-        call.kwargs["offline_compatibility_hash"]
-        for call in raw_cache_load.call_args_list
-    ]
-    assert len(set(exact_hashes)) == 2
-    assert len(set(compatibility_hashes)) == 1
-
-
-@pytest.mark.parametrize(
-    ("first_acquisition_options", "second_acquisition_options"),
-    [
-        (
-            {"verify_hash_while_download": True},
-            {"verify_hash_while_download": False},
-        ),
-        (
-            {"download_files_without_hash": False},
-            {"download_files_without_hash": True},
-        ),
-        (
-            {
-                "weights_provider_extra_query_params": [
-                    ("service", "inference"),
-                    ("version", "1"),
-                ]
-            },
-            {
-                "weights_provider_extra_query_params": [
-                    ("version", "1"),
-                    ("service", "inference"),
-                ]
-            },
-        ),
-    ],
-    ids=[
-        "download-hash-verification",
-        "unhashed-download-policy",
-        "provider-query-order",
-    ],
-)
-def test_acquisition_options_do_not_affect_offline_compatibility(
-    first_acquisition_options: dict,
-    second_acquisition_options: dict,
-) -> None:
-    auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
-    auto_resolution_cache.find_compatible_candidates.return_value = []
-
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ) as exact_cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=None,
-    ) as raw_cache_load:
-        for acquisition_options in (
-            first_acquisition_options,
-            second_acquisition_options,
-        ):
-            with pytest.raises(ModelRetrievalError):
-                core.AutoModel.from_pretrained(
-                    "workspace/model/1",
-                    auto_resolution_cache=auto_resolution_cache,
-                    **acquisition_options,
-                )
-
-    exact_hashes = [
-        call.kwargs["auto_negotiation_hash"] for call in exact_cache_load.call_args_list
-    ]
-    compatibility_hashes = [
-        call.kwargs["offline_compatibility_hash"]
-        for call in raw_cache_load.call_args_list
-    ]
-    assert len(set(exact_hashes)) == 2
-    assert len(set(compatibility_hashes)) == 1
 
 
 def test_from_pretrained_uses_effective_env_key_for_strict_exact_cache_hit() -> None:
@@ -4962,8 +3510,6 @@ def test_from_pretrained_uses_effective_env_key_for_strict_exact_cache_hit() -> 
     auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
     with mock.patch.object(
         core, "ROBOFLOW_API_KEY", effective_api_key
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
     ), mock.patch.object(
         core,
         "attempt_loading_model_with_auto_load_cache",
@@ -5024,9 +3570,7 @@ def test_from_pretrained_returns_preloaded_model_with_verified_storage_pointer(
             return preloaded_model
 
     point_model_directory = MagicMock()
-    with mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(core, "get_model_from_provider") as provider:
+    with mock.patch.object(core, "get_model_from_provider") as provider:
         result = core.AutoModel.from_pretrained(
             "owlv2/owlv2-base-patch16",
             api_key="api-key",
@@ -5052,8 +3596,6 @@ def test_from_pretrained_effective_env_key_is_enforced_by_strict_deny_manager(
 
     with mock.patch.object(
         core, "ROBOFLOW_API_KEY", effective_api_key
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
     ), mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache"
     ) as exact_cache_load, mock.patch.object(
@@ -5117,8 +3659,6 @@ def test_from_pretrained_propagates_effective_env_key_to_provider_and_callbacks(
 
     with mock.patch.object(
         core, "ROBOFLOW_API_KEY", effective_api_key
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
     ), mock.patch.object(
         core,
         "BaseAutoLoadMetadataCache",
@@ -5208,8 +3748,6 @@ def test_from_pretrained_preserves_original_key_for_custom_provider() -> None:
     with mock.patch.object(
         core, "ROBOFLOW_API_KEY", "unrelated-roboflow-key"
     ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=False
-    ), mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache", return_value=None
     ), mock.patch.object(
         core, "get_model_from_provider", return_value=metadata
@@ -5250,8 +3788,6 @@ def test_from_pretrained_rejects_invalid_remote_model_identity_before_cache_work
     model_access_manager = MagicMock(spec=LiberalModelAccessManager)
 
     with mock.patch.object(
-        core, "model_provider_requires_network"
-    ) as provider_requires_network, mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache"
     ) as cache_load, mock.patch.object(
         core, "get_model_from_provider"
@@ -5265,7 +3801,6 @@ def test_from_pretrained_rejects_invalid_remote_model_identity_before_cache_work
                 model_access_manager=model_access_manager,
             )
 
-    provider_requires_network.assert_not_called()
     model_access_manager.is_model_access_forbidden.assert_not_called()
     cache_load.assert_not_called()
     provider.assert_not_called()
@@ -5285,8 +3820,6 @@ def test_from_pretrained_preserves_original_key_for_existing_local_path(
     with mock.patch.object(
         core, "ROBOFLOW_API_KEY", "unrelated-roboflow-key"
     ), mock.patch.object(
-        core, "model_provider_requires_network"
-    ) as provider_requires_network, mock.patch.object(
         core,
         "attempt_loading_model_from_local_storage",
         return_value=expected_model,
@@ -5298,7 +3831,6 @@ def test_from_pretrained_preserves_original_key_for_existing_local_path(
         )
 
     assert result is expected_model
-    provider_requires_network.assert_not_called()
     model_access_manager.is_model_access_forbidden.assert_called_once_with(
         model_id=local_path,
         api_key=None,
@@ -5329,19 +3861,12 @@ def test_from_pretrained_hash_normalizes_semantically_equivalent_choice_sets() -
     model_id = "workspace/model/1"
     cached_model = MagicMock()
     auto_resolution_cache = MagicMock()
-    auto_resolution_cache.find_compatible_candidates.return_value = []
 
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    with mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=cached_model
     ) as exact_cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=(cached_model, "/cached/model"),
-    ) as raw_cache_load:
+        core, "get_model_from_provider"
+    ) as provider:
         first = core.AutoModel.from_pretrained(
             model_id,
             backend="ONNX",
@@ -5362,30 +3887,19 @@ def test_from_pretrained_hash_normalizes_semantically_equivalent_choice_sets() -
         for cache_call in exact_cache_load.call_args_list
     ]
     assert exact_hashes[0] == exact_hashes[1]
-    offline_hashes = [
-        cache_call.kwargs["offline_compatibility_hash"]
-        for cache_call in raw_cache_load.call_args_list
-    ]
-    assert offline_hashes[0] == offline_hashes[1]
+    provider.assert_not_called()
 
 
 def test_from_pretrained_hash_binds_dependency_overrides_and_forwarded_kwargs() -> None:
     model_id = "workspace/model/1"
     cached_model = MagicMock()
     auto_resolution_cache = MagicMock()
-    auto_resolution_cache.find_compatible_candidates.return_value = []
 
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
-        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    with mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=cached_model
     ) as exact_cache_load, mock.patch.object(
-        core,
-        "attempt_loading_model_from_offline_cache",
-        return_value=(cached_model, "/cached/model"),
-    ) as raw_cache_load:
+        core, "get_model_from_provider"
+    ) as provider:
         core.AutoModel.from_pretrained(
             model_id,
             dependency_models_params={"encoder": {"backend": "onnx"}},
@@ -5407,12 +3921,8 @@ def test_from_pretrained_hash_binds_dependency_overrides_and_forwarded_kwargs() 
         cache_call.kwargs["auto_negotiation_hash"]
         for cache_call in exact_cache_load.call_args_list
     ]
-    offline_hashes = [
-        cache_call.kwargs["offline_compatibility_hash"]
-        for cache_call in raw_cache_load.call_args_list
-    ]
     assert len(set(exact_hashes)) == 3
-    assert len(set(offline_hashes)) == 3
+    provider.assert_not_called()
 
 
 def test_online_dependency_load_does_not_mutate_input_params() -> None:
@@ -5494,8 +4004,6 @@ def test_online_env_api_key_propagates_to_dependency_load() -> None:
     with mock.patch.object(
         core, "ROBOFLOW_API_KEY", effective_api_key
     ), mock.patch.object(
-        core, "model_provider_requires_network", return_value=True
-    ), mock.patch.object(
         core, "get_model_from_provider", return_value=model_metadata
     ) as provider, mock.patch.object(
         core, "negotiate_model_packages", return_value=[]
@@ -5576,7 +4084,7 @@ def test_online_resolution_rejects_invalid_provider_canonical_model_id(
     negotiate.assert_not_called()
 
 
-def test_from_pretrained_reraises_retry_error_when_no_offline_cache(
+def test_from_pretrained_reraises_retry_error(
     empty_local_dir: str,
 ) -> None:
     # when / then
@@ -5593,47 +4101,6 @@ def test_from_pretrained_reraises_retry_error_when_no_offline_cache(
                 api_key="test-key",
                 use_auto_resolution_cache=False,
             )
-
-
-def test_from_pretrained_in_offline_mode_loads_from_cache_without_provider_call(
-    empty_local_dir: str,
-) -> None:
-    # given
-    model_id = "test/1"
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id="pkg001",
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "offline_compatibility_hash": (
-                _offline_compatibility_hash_for_default_request(model_id)
-            ),
-        },
-    )
-    mock_model = MagicMock()
-    mock_provider = MagicMock()
-
-    # when
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        core, "ROBOFLOW_API_KEY", None
-    ), mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "get_model_from_provider", mock_provider
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage", return_value=mock_model
-    ):
-        result = core.AutoModel.from_pretrained(
-            model_id,
-            api_key=None,
-            local_files_only=False,
-            use_auto_resolution_cache=False,
-        )
-
-    # then
-    assert result is mock_model
-    mock_provider.assert_not_called()
 
 
 def test_offline_library_load_cannot_override_local_files_only() -> None:
@@ -5701,9 +4168,7 @@ def test_from_pretrained_uses_custom_local_provider_in_offline_mode() -> None:
     expected_model = MagicMock()
 
     # when
-    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
-        weights_providers_core, "OFFLINE_MODE", True
-    ), mock.patch.dict(
+    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.dict(
         weights_providers_core.WEIGHTS_PROVIDERS, {}, clear=True
     ), mock.patch.object(
         core, "negotiate_model_packages", return_value=[]
@@ -5749,36 +4214,6 @@ def test_dump_model_config_for_offline_use_persists_model_id(
         content = json.load(f)
     assert content["model_id"] == "my-workspace/my-project/3"
     assert content["task_type"] == "object-detection"
-
-
-def test_auto_resolution_cache_entries_do_not_expire_in_offline_mode(
-    empty_local_dir: str,
-) -> None:
-    # given
-    from inference_models.models.auto_loaders import auto_resolution_cache
-
-    cache = auto_resolution_cache.BaseAutoLoadMetadataCache(file_lock_acquire_timeout=1)
-    entry = AutoResolutionCacheEntry(
-        model_id="some/1",
-        model_package_id="pkg001",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime(2020, 1, 1),
-    )
-
-    # when
-    with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
-        cache.register(auto_negotiation_hash="some-hash", cache_entry=entry)
-        with mock.patch.object(auto_resolution_cache, "OFFLINE_MODE", True):
-            result_offline = cache.retrieve(auto_negotiation_hash="some-hash")
-        result_online = cache.retrieve(auto_negotiation_hash="some-hash")
-
-    # then - expired entry survives in OFFLINE_MODE, expires otherwise
-    assert result_offline is not None
-    assert result_offline.model_id == "some/1"
-    assert result_online is None
 
 
 def _current_manifest_content(runtime_compatibility_hash: str) -> dict:
