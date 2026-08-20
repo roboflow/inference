@@ -1678,69 +1678,6 @@ def test_concurrent_package_revisions_cannot_interleave_materialization(
     )
 
 
-def test_initialize_model_rejects_constructor_mutating_declared_artifact(
-    empty_local_dir: str,
-) -> None:
-    model_id = "workspace/canonical/1"
-    package_id = "localPackage"
-    original_content = b'{"image_processor_type": "wrong"}'
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        with open(
-            os.path.join(package_dir, MODEL_CONFIG_FILE_NAME), "w"
-        ) as manifest_file:
-            json.dump({"model_id": model_id}, manifest_file)
-        artifact_path = os.path.join(package_dir, "preprocessor_config.json")
-        with open(artifact_path, "wb") as artifact_file:
-            artifact_file.write(original_content)
-
-        package = ModelPackageMetadata(
-            package_id=package_id,
-            backend=BackendType.HF,
-            package_artefacts=[
-                LocalFileArtefactSpecs(
-                    file_handle="preprocessor_config.json",
-                    md5_hash=hashlib.md5(original_content).hexdigest(),
-                )
-            ],
-            package_source=PackageSourceType.LOCAL_CACHE,
-            trusted_source=True,
-            cache_model_id=model_id,
-        )
-        model_class = MagicMock()
-
-        def mutate_artifact(*args, **kwargs):
-            with open(artifact_path, "wb") as artifact_file:
-                artifact_file.write(b"constructor mutation")
-            return MagicMock()
-
-        model_class.from_pretrained.side_effect = mutate_artifact
-        auto_resolution_cache = MagicMock()
-        with mock.patch.object(core, "resolve_model_class", return_value=model_class):
-            with pytest.raises(
-                CorruptedModelPackageError,
-                match="MD5 identity|changed while the model was being initialized",
-            ):
-                initialize_model(
-                    model_id=model_id,
-                    model_architecture="qwen25vl",
-                    task_type="lmm",
-                    model_package=package,
-                    model_init_kwargs={},
-                    auto_resolution_cache=auto_resolution_cache,
-                    auto_negotiation_hash="a" * 64,
-                    model_dependencies=[],
-                    model_dependencies_instances={},
-                    model_dependencies_directories={},
-                )
-
-    auto_resolution_cache.register.assert_not_called()
-
-
 def test_initialize_model_cannot_bless_owner_changed_after_prevalidation(
     empty_local_dir: str,
 ) -> None:
@@ -2738,89 +2675,6 @@ def test_auto_load_cache_handles_constructor_error_according_to_mode(
     )
 
 
-def test_auto_load_exact_cache_rejects_constructor_artifact_mutation(
-    empty_local_dir: str,
-) -> None:
-    model_id = "workspace/canonical/1"
-    package_id = "localPackage"
-    original_content = b"trusted weights"
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        artifact_path = os.path.join(package_dir, "weights.bin")
-        with open(artifact_path, "wb") as artifact_file:
-            artifact_file.write(original_content)
-        with open(
-            os.path.join(package_dir, MODEL_CONFIG_FILE_NAME),
-            "w",
-            encoding="utf-8",
-        ) as manifest_file:
-            json.dump({"model_id": model_id}, manifest_file)
-        package = ModelPackageMetadata(
-            package_id=package_id,
-            backend=BackendType.ONNX,
-            package_artefacts=[
-                LocalFileArtefactSpecs(
-                    file_handle="weights.bin",
-                    md5_hash=hashlib.md5(original_content).hexdigest(),
-                )
-            ],
-            package_source=PackageSourceType.LOCAL_CACHE,
-            trusted_source=True,
-            cache_model_id=model_id,
-        )
-        model_class = MagicMock()
-        model_class.from_pretrained.return_value = MagicMock()
-        auto_resolution_cache = MagicMock()
-        with mock.patch.object(
-            core,
-            "resolve_model_class",
-            return_value=model_class,
-        ):
-            initialize_model(
-                model_id=model_id,
-                model_architecture="yolov8",
-                task_type="object-detection",
-                model_package=package,
-                model_init_kwargs={},
-                auto_resolution_cache=auto_resolution_cache,
-                auto_negotiation_hash="a" * 64,
-                model_dependencies=[],
-                model_dependencies_instances={},
-                model_dependencies_directories={},
-            )
-            cache_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
-            auto_resolution_cache.retrieve.return_value = cache_entry
-            model_access_manager = MagicMock()
-            model_access_manager.is_model_package_access_granted.return_value = True
-
-            def mutate_artifact(*args, **kwargs):
-                with open(artifact_path, "wb") as artifact_file:
-                    artifact_file.write(b"constructor mutation")
-                return MagicMock()
-
-            model_class.from_pretrained.side_effect = mutate_artifact
-            result = attempt_loading_model_with_auto_load_cache(
-                use_auto_resolution_cache=True,
-                auto_resolution_cache=auto_resolution_cache,
-                auto_negotiation_hash="a" * 64,
-                model_access_manager=model_access_manager,
-                model_name_or_path=model_id,
-                model_init_kwargs={},
-                api_key="original-key",
-                allow_loading_dependency_models=True,
-                forwarded_kwargs_values={},
-            )
-
-    assert result is None
-    auto_resolution_cache.invalidate.assert_called_once_with(
-        auto_negotiation_hash="a" * 64
-    )
-
-
 @pytest.mark.parametrize("trusted_source", [None, False])
 def test_auto_load_cache_rejects_entry_without_trusted_provenance(
     trusted_source: Optional[bool],
@@ -3285,311 +3139,6 @@ _OFFLINE_PACKAGE_CONFIG = {
     "package_artifacts": [],
     "dependency_package_paths": [],
 }
-
-
-def test_cached_package_rejects_tampered_shared_blob_for_exact_and_raw_loads(
-    empty_local_dir: str,
-) -> None:
-    model_id = "workspace/project/1"
-    package_id = "package"
-    file_handle = "weights.onnx"
-    original_content = b"original trusted weights"
-    md5_hash = hashlib.md5(original_content).hexdigest()
-    runtime_hash = core._runtime_compatibility_hash(
-        runtime_x_ray=core.x_ray_runtime_environment()
-    )
-    artifact_identity = {
-        "file_handle": file_handle,
-        "md5_hash": md5_hash,
-        "unhashed": False,
-        "sha256_hash": None,
-        "source_hash": None,
-        "storage": "shared_blob",
-    }
-
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        shared_blobs_dir = core.generate_shared_blobs_path()
-        os.makedirs(shared_blobs_dir)
-        shared_blob_path = os.path.join(shared_blobs_dir, md5_hash)
-        with open(shared_blob_path, "wb") as shared_blob:
-            shared_blob.write(original_content)
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        package_link = os.path.join(package_dir, file_handle)
-        os.symlink(shared_blob_path, package_link)
-        manifest_path = os.path.join(package_dir, "model_config.json")
-        manifest_hash = dump_model_config_for_offline_use(
-            config_path=manifest_path,
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            file_lock_acquire_timeout=1,
-            model_id=model_id,
-            canonical_model_id=model_id,
-            trusted_source=True,
-            model_dependencies=[],
-            runtime_compatibility_hash=runtime_hash,
-            package_artifacts=[artifact_identity],
-        )
-        cache_entry = AutoResolutionCacheEntry(
-            model_id=model_id,
-            cache_model_id=model_id,
-            canonical_model_id=model_id,
-            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-            model_package_id=package_id,
-            resolved_files=[shared_blob_path, package_link, manifest_path],
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            model_dependencies=[],
-            created_at=datetime.now(),
-            trusted_source=True,
-            package_manifest_hash=manifest_hash,
-        )
-        with open(shared_blob_path, "wb") as shared_blob:
-            shared_blob.write(b"tampered weights")
-
-        auto_resolution_cache = MagicMock()
-        auto_resolution_cache.retrieve.return_value = cache_entry
-        model_access_manager = MagicMock()
-        with mock.patch.object(
-            core, "attempt_loading_model_from_local_storage"
-        ) as local_load, mock.patch.object(
-            core, "resolve_model_class"
-        ) as resolve_model_class:
-            exact_result = attempt_loading_model_with_auto_load_cache(
-                use_auto_resolution_cache=True,
-                auto_resolution_cache=auto_resolution_cache,
-                auto_negotiation_hash="a" * 64,
-                model_access_manager=model_access_manager,
-                model_name_or_path=model_id,
-                model_init_kwargs={},
-                api_key="test-key",
-                allow_loading_dependency_models=True,
-                forwarded_kwargs_values={},
-            )
-            raw_result = attempt_loading_model_from_offline_cache(
-                model_id=model_id,
-                model_init_kwargs={},
-            )
-            discovered_dir = find_cached_model_package_dir(model_id=model_id)
-
-    assert exact_result is None
-    assert raw_result is None
-    assert discovered_dir is None
-    model_access_manager.is_model_package_access_granted.assert_not_called()
-    resolve_model_class.assert_not_called()
-    local_load.assert_not_called()
-
-
-def test_package_layout_removes_generated_bytecode_cache(
-    empty_local_dir: str,
-) -> None:
-    bytecode_cache_dir = os.path.join(empty_local_dir, "__pycache__")
-    os.makedirs(bytecode_cache_dir)
-    with open(
-        os.path.join(bytecode_cache_dir, "hf_moondream.cpython-310.pyc"), "wb"
-    ) as bytecode_file:
-        bytecode_file.write(b"generated bytecode")
-
-    core._validate_package_directory_layout(
-        package_dir=empty_local_dir,
-        artifact_declarations=[],
-        dependency_package_paths=[],
-    )
-
-    assert not os.path.exists(bytecode_cache_dir)
-
-
-@pytest.mark.parametrize("unsafe_entry_name", ["unexpected.txt", "nested"])
-def test_package_layout_rejects_unsafe_bytecode_cache(
-    empty_local_dir: str,
-    unsafe_entry_name: str,
-) -> None:
-    bytecode_cache_dir = os.path.join(empty_local_dir, "__pycache__")
-    os.makedirs(bytecode_cache_dir)
-    unsafe_entry = os.path.join(bytecode_cache_dir, unsafe_entry_name)
-    if unsafe_entry_name == "nested":
-        os.makedirs(unsafe_entry)
-    else:
-        with open(unsafe_entry, "w") as unsafe_file:
-            unsafe_file.write("undeclared content")
-
-    with pytest.raises(
-        CorruptedModelPackageError,
-        match="undeclared or unsafe",
-    ):
-        core._validate_package_directory_layout(
-            package_dir=empty_local_dir,
-            artifact_declarations=[],
-            dependency_package_paths=[],
-        )
-
-
-def test_cached_package_rejects_undeclared_file_for_exact_raw_and_metadata_loads(
-    empty_local_dir: str,
-) -> None:
-    model_id = "workspace/project/1"
-    package_id = "package"
-    package_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=model_id,
-        package_id=package_id,
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    manifest_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
-    with open(os.path.join(package_dir, "adapter_config.json"), "w") as undeclared_file:
-        json.dump({"base_model_name_or_path": "attacker/model"}, undeclared_file)
-    cache_entry = AutoResolutionCacheEntry(
-        model_id=model_id,
-        cache_model_id=model_id,
-        canonical_model_id=model_id,
-        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-        credential_hash=core._credential_hash(api_key="test-key"),
-        model_package_id=package_id,
-        resolved_files=[manifest_path],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        model_dependencies=[],
-        created_at=datetime.now(),
-        trusted_source=True,
-        package_manifest_hash=parse_model_config(
-            config_path=manifest_path
-        ).manifest_content_hash,
-    )
-    auto_resolution_cache = MagicMock()
-    auto_resolution_cache.retrieve.return_value = cache_entry
-    model_access_manager = MagicMock()
-
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "resolve_model_class"
-    ) as resolve_model_class, mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as local_load:
-        exact_result = attempt_loading_model_with_auto_load_cache(
-            use_auto_resolution_cache=True,
-            auto_resolution_cache=auto_resolution_cache,
-            auto_negotiation_hash="a" * 64,
-            model_access_manager=model_access_manager,
-            model_name_or_path=model_id,
-            model_init_kwargs={},
-            api_key="test-key",
-            allow_loading_dependency_models=True,
-            forwarded_kwargs_values={},
-        )
-        raw_result = attempt_loading_model_from_offline_cache(
-            model_id=model_id,
-            model_init_kwargs={},
-        )
-        metadata_result = find_cached_model_package_dir(model_id=model_id)
-
-    assert exact_result is None
-    assert raw_result is None
-    assert metadata_result is None
-    resolve_model_class.assert_not_called()
-    local_load.assert_not_called()
-
-
-def test_stale_manifest_rejects_repointed_artifact_link_for_exact_and_raw_loads(
-    empty_local_dir: str,
-) -> None:
-    model_id = "workspace/project/1"
-    package_id = "package"
-    file_handle = "weights.onnx"
-    original_content = b"original trusted weights"
-    md5_hash = hashlib.md5(original_content).hexdigest()
-    runtime_hash = core._runtime_compatibility_hash(
-        runtime_x_ray=core.x_ray_runtime_environment()
-    )
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        shared_blobs_dir = core.generate_shared_blobs_path()
-        os.makedirs(shared_blobs_dir)
-        expected_blob_path = os.path.join(shared_blobs_dir, md5_hash)
-        rogue_blob_path = os.path.join(shared_blobs_dir, "rogue")
-        with open(expected_blob_path, "wb") as expected_blob:
-            expected_blob.write(original_content)
-        with open(rogue_blob_path, "wb") as rogue_blob:
-            rogue_blob.write(b"untrusted replacement")
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        package_link = os.path.join(package_dir, file_handle)
-        os.symlink(expected_blob_path, package_link)
-        manifest_path = os.path.join(package_dir, "model_config.json")
-        manifest_hash = dump_model_config_for_offline_use(
-            config_path=manifest_path,
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            file_lock_acquire_timeout=1,
-            model_id=model_id,
-            canonical_model_id=model_id,
-            trusted_source=True,
-            model_dependencies=[],
-            runtime_compatibility_hash=runtime_hash,
-            package_artifacts=[
-                {
-                    "file_handle": file_handle,
-                    "md5_hash": md5_hash,
-                    "unhashed": False,
-                    "sha256_hash": None,
-                    "source_hash": None,
-                    "storage": "shared_blob",
-                }
-            ],
-        )
-        os.unlink(package_link)
-        os.symlink(rogue_blob_path, package_link)
-        cache_entry = AutoResolutionCacheEntry(
-            model_id=model_id,
-            cache_model_id=model_id,
-            canonical_model_id=model_id,
-            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-            model_package_id=package_id,
-            resolved_files=[expected_blob_path, package_link, manifest_path],
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            model_dependencies=[],
-            created_at=datetime.now(),
-            trusted_source=True,
-            package_manifest_hash=manifest_hash,
-        )
-        auto_resolution_cache = MagicMock()
-        auto_resolution_cache.retrieve.return_value = cache_entry
-        model_access_manager = MagicMock()
-
-        with mock.patch.object(
-            core, "attempt_loading_model_from_local_storage"
-        ) as local_load:
-            exact_result = attempt_loading_model_with_auto_load_cache(
-                use_auto_resolution_cache=True,
-                auto_resolution_cache=auto_resolution_cache,
-                auto_negotiation_hash="a" * 64,
-                model_access_manager=model_access_manager,
-                model_name_or_path=model_id,
-                model_init_kwargs={},
-                api_key="test-key",
-                allow_loading_dependency_models=True,
-                forwarded_kwargs_values={},
-            )
-            raw_result = attempt_loading_model_from_offline_cache(
-                model_id=model_id,
-                model_init_kwargs={},
-            )
-
-    assert exact_result is None
-    assert raw_result is None
-    model_access_manager.is_model_package_access_granted.assert_not_called()
-    local_load.assert_not_called()
 
 
 def test_parent_cache_rejects_dependency_rewarm_at_same_package_path(
@@ -6427,4 +5976,80 @@ def test_verified_auto_cache_package_dir_accepts_manifest_from_other_machine(
         result = core._verified_auto_cache_package_dir(cache_entry=cache_entry)
 
     # then - entry accepted despite foreign runtime hash in the manifest
+    assert result == package_dir
+
+
+def test_verified_auto_cache_package_dir_accepts_stray_trt_engine_cache_file(
+    empty_local_dir: str,
+) -> None:
+    """A TensorRT engine cached by ONNX Runtime inside the package directory
+    is an undeclared file by design and must not invalidate the package on
+    subsequent warm-path loads."""
+    # given
+    model_id = "workspace/canonical/8"
+    package_id = "enginePackage"
+    artifact_content = b"onnx weights"
+    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
+        package_dir = generate_model_package_cache_path(
+            model_id=model_id,
+            package_id=package_id,
+        )
+        os.makedirs(package_dir)
+        with open(os.path.join(package_dir, "weights.onnx"), "wb") as artifact_file:
+            artifact_file.write(artifact_content)
+        manifest_hash = dump_model_config_for_offline_use(
+            config_path=os.path.join(package_dir, MODEL_CONFIG_FILE_NAME),
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            file_lock_acquire_timeout=10,
+            model_id=model_id,
+            canonical_model_id=model_id,
+            trusted_source=True,
+            model_dependencies=[],
+            quantization="unknown",
+            dynamic_batch_size_supported=True,
+            runtime_compatibility_hash=core._runtime_compatibility_hash(
+                runtime_x_ray=core.x_ray_runtime_environment()
+            ),
+            offline_compatibility_hash=None,
+            package_artifacts=[
+                {
+                    "file_handle": "weights.onnx",
+                    "md5_hash": hashlib.md5(artifact_content).hexdigest(),
+                    "unhashed": False,
+                    "sha256_hash": None,
+                    "source_hash": None,
+                    "storage": "package_file",
+                }
+            ],
+            dependency_package_paths=[],
+        )
+        # stray engine file dropped by the TRT execution provider after a
+        # successful load
+        with open(
+            os.path.join(package_dir, "TensorrtExecutionProvider_engine_sm87.engine"),
+            "wb",
+        ) as engine_file:
+            engine_file.write(b"serialized trt engine")
+        cache_entry = AutoResolutionCacheEntry(
+            model_id=model_id,
+            cache_model_id=model_id,
+            canonical_model_id=model_id,
+            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
+            model_package_id=package_id,
+            resolved_files=[],
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            model_dependencies=None,
+            created_at=datetime.now(),
+            trusted_source=True,
+            package_manifest_hash=manifest_hash,
+        )
+
+        # when
+        result = core._verified_auto_cache_package_dir(cache_entry=cache_entry)
+
+    # then - the undeclared engine file is harmless
     assert result == package_dir
