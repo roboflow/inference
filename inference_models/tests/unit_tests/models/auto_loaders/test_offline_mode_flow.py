@@ -156,6 +156,30 @@ def test_warm_up_prefetch_failure_serves_model_without_registration(
     assert offline_registry.load_record_raw(model_id=MODEL_ID) is None
 
 
+def test_maintenance_classmethods_round_trip(registry_home) -> None:
+    # given: one recorded model whose artefacts were never materialized
+    metadata = _provider_metadata()
+    offline_registry.record_successful_load(
+        model_metadata=metadata,
+        requested_model_id="my-alias",
+        proven_package_id="pkgonnx",
+    )
+
+    # when
+    listed = core.AutoModel.list_offline_models()
+    verified = core.AutoModel.verify_offline_models(model_id=MODEL_ID)
+    purged = core.AutoModel.purge_offline_model(model_id="my-alias")
+
+    # then
+    assert len(listed) == 1
+    assert listed[0]["canonical_model_id"] == MODEL_ID
+    assert listed[0]["requested_aliases"] == ["my-alias"]
+    assert listed[0]["packages"][0]["presence"] == "missing"
+    assert {result["status"] for result in verified} == {"missing"}
+    assert purged is True
+    assert core.AutoModel.list_offline_models() == []
+
+
 def test_without_warm_up_no_prefetch_happens_on_cache_hit(registry_home) -> None:
     # given
     sentinel_model = object()
