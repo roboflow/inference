@@ -16,6 +16,9 @@ WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
     "roboflow": get_roboflow_model,
     ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER: get_roboflow_offline_weights,
 }
+_RESERVED_WEIGHTS_PROVIDER_NAMES = frozenset(
+    {"roboflow", ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER}
+)
 
 
 def get_model_from_provider(
@@ -188,8 +191,8 @@ def register_model_provider(
         or not provider_name.strip()
         or provider_name.casefold()
         in {
-            built_in_name.casefold()
-            for built_in_name in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
+            reserved_name.casefold()
+            for reserved_name in _RESERVED_WEIGHTS_PROVIDER_NAMES
         }
     ):
         raise ValueError(
