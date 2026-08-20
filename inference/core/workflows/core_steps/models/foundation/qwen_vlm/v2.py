@@ -16,21 +16,13 @@ that performed best for Qwen models in the vlm-exam benchmarks:
   text** and no system role, matching how the benchmarks prompt Qwen.
 * requests carry an explicit OpenRouter ``reasoning`` config: disabled by
   default (Qwen models default to extended reasoning, which bloats latency
-  and can truncate answers), always-on for models that require it
-  (Qwen 3.8 Max and the Qwen 3 VL Thinking variants reject
-  ``enabled: false``).
+  and can truncate answers), always-on for models that require it.
 * uploads are JPEG-encoded with iterative downscaling so the base64
   payload stays under Alibaba DashScope's data-URI limit.
-* ``max_tokens`` defaults to 2048 on both backends so the UI always
-  sends a valid integer (an unset field fails Workflows validation).
-  Raise it explicitly (e.g. 8192) when a task needs a longer answer.
-  ``temperature`` is not sent unless the user sets it.
+* ``temperature`` is not sent unless the user sets it.
 
-The OpenRouter roster is every current image-capable Qwen chat model
-except Qwen 2.5 VL (that family does not follow the shared
-``box_2d`` / 0-1000 detection contract). The native backend is
-carried over from v1 except for the object-detection prompt, which
-is unified on the benchmarked template.
+The native backend is carried over from v1 except for the
+object-detection prompt, which is unified on the benchmarked template.
 """
 
 import base64
@@ -99,8 +91,7 @@ from inference_sdk import InferenceHTTPClient
 #
 # - Native model_ids are Roboflow inference model IDs (e.g. ``qwen3_5-2b``).
 # - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.7-plus``).
-#   The OpenRouter roster is every current image-capable Qwen chat model
-#   except Qwen 2.5 VL. ``reasoning_required`` marks models that reject
+#   ``reasoning_required`` marks models that reject
 #   ``reasoning: {"enabled": false}`` and must always receive an effort.
 
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
@@ -297,9 +288,7 @@ REASONING_EFFORT_METADATA = {
 # selected model rejects `reasoning: {"enabled": false}`.
 REASONING_REQUIRED_FALLBACK_EFFORT = "low"
 
-# Default completion budget when the user leaves `max_tokens` unset.
-# 2048 is a valid integer in the Workflows UI range [1, 8192]; raise it
-# explicitly when a task needs a longer answer.
+# Default completion budget when max_tokens is unset.
 QWEN_OPENROUTER_DEFAULT_MAX_TOKENS = 2048
 
 
@@ -733,9 +722,8 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
   default and exposes a `reasoning_effort` knob. Qwen 3.8 Max and the Qwen 3 VL
   Thinking variants require reasoning and fall back to low effort when disabled.
 * Uploads are downscaled automatically when they would exceed the Qwen provider
-  payload limit. `max_tokens` defaults to 2048 on both backends so the UI
-  always has a valid integer; raise it explicitly (e.g. 8192) when you need
-  a longer answer.
+  payload limit. `max_tokens` defaults to 2048 on both backends; raise it
+  explicitly (e.g. 8192) when you need a longer answer.
 
 #### 🛠️ Backend selection
 
@@ -866,7 +854,6 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
 
-    # OpenRouter model picker: friendly-name dropdown bound to OpenRouter slugs.
     openrouter_model_version: Union[
         Selector(kind=[STRING_KIND]), OpenRouterModelVersion
     ] = Field(
@@ -1000,10 +987,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         default=QWEN_OPENROUTER_DEFAULT_MAX_TOKENS,
         description=(
             "Maximum number of tokens the model can generate in its response. "
-            f"Defaults to {QWEN_OPENROUTER_DEFAULT_MAX_TOKENS} on both backends "
-            "so the UI always sends a valid integer. Raise it explicitly "
-            "(e.g. 8192) when a task needs a longer answer. Billing is based "
-            "on tokens actually generated, not on this limit."
+            f"Defaults to {QWEN_OPENROUTER_DEFAULT_MAX_TOKENS} on both backends. "
+            "Raise it explicitly (e.g. 8192) when a task needs a longer answer. "
+            "Billing is based on tokens actually generated, not on this limit."
         ),
         gt=1,
     )

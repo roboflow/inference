@@ -87,7 +87,6 @@ def test_manifest_defaults():
     assert manifest.backend == "native"
     assert manifest.model_version == DEFAULT_NATIVE_MODEL_VERSION
     assert manifest.openrouter_model_version == DEFAULT_OPENROUTER_MODEL_VERSION
-    # UI requires an integer in [1, 8192]; 2048 is the block default.
     assert manifest.max_tokens == 2048
     assert manifest.temperature is None
     assert manifest.reasoning_effort == "none"
