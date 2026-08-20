@@ -108,10 +108,10 @@ from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
 from inference_models.weights_providers.core import (
     get_model_from_provider,
-    model_provider_requires_network,
 )
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
+    ModelMetadata,
     LocalFileArtefactSpecs,
     ModelDependency,
     ModelPackageMetadata,
@@ -119,6 +119,7 @@ from inference_models.weights_providers.entities import (
     Quantization,
     RecommendedParameters,
 )
+from inference_models.weights_providers import offline_registry
 from inference_models.weights_providers.roboflow import LOCAL_API_KEY
 from inference_models.weights_providers.roboflow_offline import (
     ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
@@ -200,13 +201,39 @@ DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS = [
 ]
 
 
+_ROBOFLOW_WEIGHTS_PROVIDERS = {"roboflow", ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER}
+
+
 def _resolve_effective_api_key(
     api_key: Optional[str],
-    provider_requires_network: bool,
+    provider: str,
 ) -> Optional[str]:
-    if provider_requires_network and (api_key is None or api_key == LOCAL_API_KEY):
+    """Fall back to the ROBOFLOW_API_KEY env only for roboflow providers."""
+    if provider in _ROBOFLOW_WEIGHTS_PROVIDERS and (
+        api_key is None or api_key == LOCAL_API_KEY
+    ):
         return ROBOFLOW_API_KEY
     return api_key
+
+
+def _maybe_record_warm_up_load(
+    warm_up_metadata: ModelMetadata,
+    requested_model_id: str,
+    proven_package_id: str,
+) -> None:
+    """Register a proven load in the offline-weights registry, never failing."""
+    try:
+        offline_registry.record_successful_load(
+            model_metadata=warm_up_metadata,
+            requested_model_id=requested_model_id,
+            proven_package_id=proven_package_id,
+        )
+    except Exception as error:
+        LOGGER.warning(
+            "Failed to register offline-weights record for %s: %s",
+            requested_model_id,
+            error,
+        )
 
 
 def _credential_hash(api_key: Optional[str]) -> str:
@@ -1698,15 +1725,11 @@ class AutoModel:
         model_path_exists = os.path.exists(model_id_or_path)
         if not model_path_exists:
             _validate_remote_model_id(model_id=model_id_or_path)
-        provider_requires_network = False
         if not model_path_exists:
-            provider_requires_network = model_provider_requires_network(
-                provider=weights_provider
+            api_key = _resolve_effective_api_key(
+                api_key=api_key,
+                provider=weights_provider,
             )
-        api_key = _resolve_effective_api_key(
-            api_key=api_key,
-            provider_requires_network=provider_requires_network,
-        )
         if model_access_manager is None:
             model_access_manager = LiberalModelAccessManager()
         if model_access_manager.is_model_access_forbidden(
@@ -1765,7 +1788,6 @@ class AutoModel:
             # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
-            credential_bound_cache_request = bool(api_key)
             dependency_models_params = dependency_models_params or {}
             if forwarded_kwargs is None:
                 forwarded_kwargs = (
@@ -1869,7 +1891,6 @@ class AutoModel:
                     dependency_models_params=dependency_models_params,
                     weights_provider_extra_query_params=weights_provider_extra_query_params,
                     weights_provider_extra_headers=weights_provider_extra_headers,
-                    expected_offline_compatibility_hash=offline_compatibility_hash,
                 )
 
             def verified_cached_model_directory(
@@ -1882,123 +1903,24 @@ class AutoModel:
                     return None
                 return _verified_auto_cache_package_dir(cache_entry=cache_entry)
 
-            raw_cache_fallback_blocked = False
-
-            def attempt_compatible_cached_load() -> Optional[AnyModel]:
-                nonlocal raw_cache_fallback_blocked
-                if not use_auto_resolution_cache or credential_bound_cache_request:
-                    return None
-                compatible_candidates = (
-                    auto_resolution_cache.find_compatible_candidates(
-                        offline_compatibility_hash=offline_compatibility_hash
+            warm_up_metadata: Optional[ModelMetadata] = None
+            if OFFLINE_MODE_WARM_UP and weights_provider == "roboflow":
+                try:
+                    warm_up_metadata = get_model_from_provider(
+                        provider=weights_provider,
+                        model_id=model_id_or_path,
+                        api_key=api_key,
+                        weights_provider_extra_query_params=weights_provider_extra_query_params,
+                        weights_provider_extra_headers=weights_provider_extra_headers,
                     )
-                )
-                if not compatible_candidates:
-                    return None
-                # Once current alias metadata exists, a raw package attributed
-                # directly to the requested string is safe only if it proves
-                # the same model identity. Otherwise an alias/canonical name
-                # collision could turn an ambiguity into a direct-cache hit.
-                raw_cache_fallback_blocked = True
-                candidate_identities = set()
-                for _, cache_entry in compatible_candidates:
-                    if (
-                        cache_entry.model_id != model_id_or_path
-                        or cache_entry.cache_attribution_version
-                        != CACHE_ATTRIBUTION_VERSION
-                        or not cache_entry.canonical_model_id
-                        or not cache_entry.canonical_model_id.strip()
-                        or not cache_entry.cache_model_id
-                        or not cache_entry.cache_model_id.strip()
-                        or not isinstance(cache_entry.credential_hash, str)
-                        or re.fullmatch(r"[0-9a-f]{64}", cache_entry.credential_hash)
-                        is None
-                    ):
-                        LOGGER.warning(
-                            "Ignoring credential-free cache fallback for %s because "
-                            "at least one compatible entry has no current canonical "
-                            "attribution.",
-                            model_id_or_path,
-                        )
-                        return None
-                    candidate_identities.add(
-                        (
-                            cache_entry.canonical_model_id,
-                            cache_entry.task_type,
-                            cache_entry.model_architecture,
-                        )
-                    )
-                if len(candidate_identities) != 1:
+                except Exception as error:
                     LOGGER.warning(
-                        "Ignoring credential-free cache fallback for %s because "
-                        "compatible entries resolve to conflicting canonical "
-                        "model metadata.",
+                        "Warm-up metadata pre-fetch failed for %s (%s); the "
+                        "model will be served normally but NOT registered in "
+                        "the offline-weights registry.",
                         model_id_or_path,
+                        error,
                     )
-                    return None
-                candidate_identity = next(iter(candidate_identities))
-                direct_package = _find_direct_cached_model_package_dir(
-                    model_id=model_id_or_path
-                )
-                if direct_package is not None:
-                    direct_identity = _cached_package_model_identity(
-                        package_dir=direct_package
-                    )
-                    if direct_identity != candidate_identity:
-                        LOGGER.warning(
-                            "Ignoring credential-free cache fallback for %s because "
-                            "its direct package conflicts with current alias metadata.",
-                            model_id_or_path,
-                        )
-                        return None
-                    raw_cache_fallback_blocked = False
-                for compatible_hash, cache_entry in compatible_candidates:
-                    if compatible_hash == auto_negotiation_hash:
-                        continue
-                    model = attempt_cached_load(compatible_hash)
-                    if model is None:
-                        continue
-                    if point_model_directory:
-                        cache_dir = verified_cached_model_directory(
-                            cache_hash=compatible_hash
-                        )
-                        if cache_dir is None:
-                            continue
-                        point_model_directory(cache_dir)
-                    return model
-                return None
-
-            def attempt_raw_cached_load() -> Optional[Tuple[AnyModel, str]]:
-                return attempt_loading_model_from_offline_cache(
-                    model_id=model_id_or_path,
-                    model_init_kwargs=dict(model_init_kwargs),
-                    requested_model_package_id=model_package_id,
-                    requested_backends=backend,
-                    requested_batch_size=batch_size,
-                    requested_quantization=quantization,
-                    model_access_manager=model_access_manager,
-                    api_key=api_key,
-                    allow_local_code_packages=allow_local_code_packages,
-                    allow_untrusted_packages=allow_untrusted_packages,
-                    allow_loading_dependency_models=allow_loading_dependency_models,
-                    dependency_models_params=dependency_models_params,
-                    forwarded_kwargs_values=forwarded_kwargs_values,
-                    weights_provider=weights_provider,
-                    auto_resolution_cache=auto_resolution_cache,
-                    use_auto_resolution_cache=use_auto_resolution_cache,
-                    max_package_loading_attempts=max_package_loading_attempts,
-                    model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-                    trt_engine_host_code_allowed=trt_engine_host_code_allowed,
-                    verify_hash_while_download=verify_hash_while_download,
-                    download_files_without_hash=download_files_without_hash,
-                    allow_direct_local_storage_loading=allow_direct_local_storage_loading,
-                    nms_fusion_preferences=nms_fusion_preferences,
-                    weights_provider_extra_query_params=weights_provider_extra_query_params,
-                    weights_provider_extra_headers=weights_provider_extra_headers,
-                    verbose=verbose,
-                    offline_compatibility_hash=offline_compatibility_hash,
-                )
-
             model_from_cache = attempt_cached_load(auto_negotiation_hash)
             if model_from_cache:
                 if point_model_directory:
@@ -2010,35 +1932,28 @@ class AutoModel:
                     else:
                         point_model_directory(cache_dir)
             if model_from_cache:
+                if warm_up_metadata is not None:
+                    cached_entry = auto_resolution_cache.retrieve(
+                        auto_negotiation_hash=auto_negotiation_hash
+                    )
+                    if cached_entry is not None:
+                        _maybe_record_warm_up_load(
+                            warm_up_metadata=warm_up_metadata,
+                            requested_model_id=model_id_or_path,
+                            proven_package_id=cached_entry.model_package_id,
+                        )
                 return model_from_cache
-            if OFFLINE_MODE and provider_requires_network:
-                if not credential_bound_cache_request:
-                    model_from_cache = attempt_compatible_cached_load()
-                    if model_from_cache is not None:
-                        return model_from_cache
-                    if not raw_cache_fallback_blocked:
-                        offline_result = attempt_raw_cached_load()
-                        if offline_result is not None:
-                            model, offline_cache_dir = offline_result
-                            if point_model_directory:
-                                point_model_directory(offline_cache_dir)
-                            return model
-                raise ModelRetrievalError(
-                    message=f"Cannot load model {model_id_or_path} in OFFLINE_MODE - "
-                    f"no compatible cached model package found in "
-                    f"{INFERENCE_HOME}/models-cache/. "
-                    f"Pre-populate the cache by running once with network access, "
-                    f"or disable OFFLINE_MODE.",
-                    help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
-                )
             try:
-                model_metadata = get_model_from_provider(
-                    provider=weights_provider,
-                    model_id=model_id_or_path,
-                    api_key=api_key,
-                    weights_provider_extra_query_params=weights_provider_extra_query_params,
-                    weights_provider_extra_headers=weights_provider_extra_headers,
-                )
+                if warm_up_metadata is not None:
+                    model_metadata = warm_up_metadata
+                else:
+                    model_metadata = get_model_from_provider(
+                        provider=weights_provider,
+                        model_id=model_id_or_path,
+                        api_key=api_key,
+                        weights_provider_extra_query_params=weights_provider_extra_query_params,
+                        weights_provider_extra_headers=weights_provider_extra_headers,
+                    )
                 if (
                     not isinstance(model_metadata.model_id, str)
                     or not model_metadata.model_id.strip()
@@ -2091,42 +2006,14 @@ class AutoModel:
                 )
                 raise error
             except RetryError:
-                if not OFFLINE_MODE:
-                    verbose_info(
-                        message=(
-                            f"API unreachable for model {model_id_or_path}; "
-                            "cache fallback is disabled while running online."
-                        ),
-                        verbose_requested=verbose,
-                    )
-                    raise
-                if credential_bound_cache_request:
-                    verbose_info(
-                        message=(
-                            f"API unreachable for model {model_id_or_path}; "
-                            "credential-independent cache fallback is disabled "
-                            "for keyed requests."
-                        ),
-                        verbose_requested=verbose,
-                    )
-                    raise
                 verbose_info(
-                    message=f"API unreachable for model {model_id_or_path}, "
-                    f"attempting offline cache fallback.",
+                    message=(
+                        f"API unreachable for model {model_id_or_path}; "
+                        "the cache is not a fallback for provider outages."
+                    ),
                     verbose_requested=verbose,
                 )
-                model_from_cache = attempt_compatible_cached_load()
-                if model_from_cache is not None:
-                    return model_from_cache
-                offline_result = (
-                    None if raw_cache_fallback_blocked else attempt_raw_cached_load()
-                )
-                if offline_result is None:
-                    raise
-                model, offline_cache_dir = offline_result
-                if point_model_directory:
-                    point_model_directory(offline_cache_dir)
-                return model
+                raise
             # here we verify if de-aliasing or access confirmation from auth master changed something
             model_from_access_manager = model_access_manager.retrieve_model_instance(
                 model_id=model_id_or_path,
@@ -2226,7 +2113,14 @@ class AutoModel:
                     dependency_instance
                 )
 
-            return attempt_loading_matching_model_packages(
+            selected_package_dirs: List[str] = []
+
+            def _warm_up_point_model_directory(model_dir: str) -> None:
+                selected_package_dirs.append(model_dir)
+                if point_model_directory:
+                    point_model_directory(model_dir)
+
+            model = attempt_loading_matching_model_packages(
                 model_id=model_metadata.model_id,
                 requested_model_id=model_id_or_path,
                 model_architecture=model_metadata.model_architecture,
@@ -2247,9 +2141,18 @@ class AutoModel:
                 download_files_without_hash=download_files_without_hash,
                 auto_resolution_cache=auto_resolution_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
-                point_model_directory=point_model_directory,
+                point_model_directory=_warm_up_point_model_directory,
                 verbose=verbose,
             )
+            if warm_up_metadata is not None and selected_package_dirs:
+                _maybe_record_warm_up_load(
+                    warm_up_metadata=warm_up_metadata,
+                    requested_model_id=model_id_or_path,
+                    proven_package_id=os.path.basename(
+                        os.path.normpath(selected_package_dirs[-1])
+                    ),
+                )
+            return model
         if not allow_direct_local_storage_loading:
             raise DirectLocalStorageAccessError(
                 message="Attempted to load model directly pointing local path, rather than model ID. This "
@@ -2370,7 +2273,6 @@ def attempt_loading_model_with_auto_load_cache(
     dependency_models_params: Optional[dict] = None,
     weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
-    expected_offline_compatibility_hash: Optional[str] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -2393,14 +2295,6 @@ def attempt_loading_model_with_auto_load_cache(
         nonlocal cache_entry_invalidated
         if cache_entry_invalidated:
             return
-        if OFFLINE_MODE:
-            LOGGER.warning(
-                "Preserving unusable auto-load cache entry for model %s in "
-                "OFFLINE_MODE: %s",
-                model_name_or_path,
-                reason,
-            )
-            return
         LOGGER.warning(
             "Invalidating unusable auto-load cache entry for model %s: %s",
             model_name_or_path,
@@ -2416,17 +2310,6 @@ def attempt_loading_model_with_auto_load_cache(
             model_name_or_path,
         )
         invalidate_cache_entry("cached requested-model identity does not match")
-        return None
-    if (
-        expected_offline_compatibility_hash is not None
-        and cache_entry.offline_compatibility_hash
-        != expected_offline_compatibility_hash
-    ):
-        LOGGER.warning(
-            "Ignoring auto-load cache entry for model %s because it was "
-            "registered for different model-loading constraints.",
-            model_name_or_path,
-        )
         return None
     if not allow_untrusted_packages and cache_entry.trusted_source is not True:
         verbose_info(
@@ -2655,7 +2538,7 @@ def find_cached_model_package_dir(
     _validate_remote_model_id(model_id=model_id)
     effective_api_key = _resolve_effective_api_key(
         api_key=api_key,
-        provider_requires_network=True,
+        provider="roboflow",
     )
     direct_package = _find_direct_cached_model_package_dir(model_id=model_id)
     direct_identity = (
@@ -2779,367 +2662,6 @@ def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, No
             continue
         seen_package_dirs.add(package_dir)
         yield package_dir
-
-
-def attempt_loading_model_from_offline_cache(
-    model_id: str,
-    model_init_kwargs: dict,
-    requested_model_package_id: Optional[str] = None,
-    requested_backends: Optional[
-        Union[str, BackendType, List[Union[str, BackendType]]]
-    ] = None,
-    requested_batch_size: Optional[Union[int, Tuple[int, int]]] = None,
-    requested_quantization: Optional[
-        Union[str, Quantization, List[Union[str, Quantization]]]
-    ] = None,
-    model_access_manager: Optional[ModelAccessManager] = None,
-    api_key: Optional[str] = None,
-    allow_local_code_packages: bool = True,
-    allow_untrusted_packages: bool = False,
-    allow_loading_dependency_models: bool = True,
-    dependency_models_params: Optional[dict] = None,
-    forwarded_kwargs_values: Optional[Dict[str, Any]] = None,
-    weights_provider: str = "roboflow",
-    auto_resolution_cache: Optional[AutoResolutionCache] = None,
-    use_auto_resolution_cache: bool = True,
-    max_package_loading_attempts: Optional[int] = None,
-    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
-    trt_engine_host_code_allowed: bool = True,
-    verify_hash_while_download: bool = True,
-    download_files_without_hash: bool = False,
-    allow_direct_local_storage_loading: bool = True,
-    nms_fusion_preferences: Optional[Union[bool, dict]] = None,
-    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
-    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
-    verbose: bool = False,
-    offline_compatibility_hash: Optional[str] = None,
-) -> Optional[Tuple[AnyModel, str]]:
-    """Try to load a model from local cache when the API is unreachable.
-
-    Scans the model's cache root for package directories containing
-    ``model_config.json`` and attempts to load each until one succeeds.
-    Returns ``(model, package_dir)`` on success, ``None`` if no cached
-    package could be loaded.
-    """
-    _validate_remote_model_id(model_id=model_id)
-    provider_requires_network = model_provider_requires_network(
-        provider=weights_provider
-    )
-    effective_cache_api_key = _resolve_effective_api_key(
-        api_key=api_key,
-        provider_requires_network=provider_requires_network,
-    )
-    if effective_cache_api_key:
-        return None
-    found_any_package = False
-    current_runtime_compatibility_hash = _runtime_compatibility_hash(
-        runtime_x_ray=x_ray_runtime_environment()
-    )
-    candidates: Dict[str, Tuple[str, InferenceModelConfig, ModelPackageMetadata]] = {}
-    for package_dir in _iterate_cached_model_package_dirs(model_id=model_id):
-        package_id = os.path.basename(package_dir)
-        if (
-            requested_model_package_id is not None
-            and package_id != requested_model_package_id
-        ):
-            continue
-        if (
-            model_access_manager is not None
-            and not model_access_manager.is_model_package_access_granted(
-                model_id=model_id,
-                package_id=package_id,
-                api_key=api_key,
-            )
-        ):
-            continue
-        try:
-            package_config = parse_model_config(
-                config_path=os.path.join(
-                    package_dir,
-                    MODEL_CONFIG_FILE_NAME,
-                )
-            )
-        except Exception as error:
-            LOGGER.warning(
-                f"Failed to inspect cached model package from {package_dir}: {error}"
-            )
-            continue
-        is_versioned_manifest = (
-            package_config.offline_manifest_version == OFFLINE_CACHE_MANIFEST_VERSION
-        )
-        has_canonical_attribution = (
-            is_versioned_manifest
-            and package_config.model_id == model_id
-            and package_config.canonical_model_id == model_id
-        )
-        if not has_canonical_attribution:
-            LOGGER.warning(
-                "Ignoring cached package %s because it has no current canonical "
-                "model attribution. Re-warm it with this inference-models version.",
-                package_dir,
-            )
-            continue
-        if not _validate_cached_dependency_package_paths(
-            package_dir=package_dir,
-            identities=package_config.dependency_package_paths,
-        ):
-            continue
-        if (
-            is_versioned_manifest
-            and package_config.runtime_compatibility_hash
-            != current_runtime_compatibility_hash
-        ):
-            LOGGER.warning(
-                "Ignoring cached package %s because it was warmed in a different "
-                "runtime environment.",
-                package_dir,
-            )
-            continue
-        if (
-            offline_compatibility_hash is not None
-            and package_config.offline_compatibility_hash != offline_compatibility_hash
-        ):
-            LOGGER.warning(
-                "Ignoring cached package %s because it was not warmed for the "
-                "current model-loading constraints.",
-                package_dir,
-            )
-            continue
-        if not allow_untrusted_packages and package_config.trusted_source is not True:
-            continue
-        if package_config.backend_type is None:
-            continue
-        if not model_implementation_exists(
-            model_architecture=package_config.model_architecture,
-            task_type=package_config.task_type,
-            backend=package_config.backend_type,
-            model_features=(
-                set(package_config.model_features)
-                if package_config.model_features
-                else None
-            ),
-        ):
-            continue
-        try:
-            package_quantization = (
-                Quantization(package_config.quantization)
-                if package_config.quantization is not None
-                else Quantization.UNKNOWN
-            )
-        except ValueError:
-            continue
-        package_metadata = ModelPackageMetadata(
-            package_id=package_id,
-            backend=package_config.backend_type,
-            package_artefacts=[],
-            package_source=PackageSourceType.LOCAL_CACHE,
-            quantization=package_quantization,
-            dynamic_batch_size_supported=package_config.dynamic_batch_size_supported,
-            static_batch_size=package_config.static_batch_size,
-            trusted_source=package_config.trusted_source is True,
-            model_features=package_config.model_features,
-        )
-        candidates[package_id] = (
-            package_dir,
-            package_config,
-            package_metadata,
-        )
-
-    matching_packages = [candidate[2] for candidate in candidates.values()]
-    if requested_model_package_id is None:
-        feature_compatible_packages = []
-        for package_metadata in matching_packages:
-            package_config = candidates[package_metadata.package_id][1]
-            try:
-                compatible = [package_metadata]
-                if requested_backends is not None:
-                    compatible, _ = filter_model_packages_by_requested_backend(
-                        model_packages=compatible,
-                        requested_backends=requested_backends,
-                        verbose=verbose,
-                    )
-                if requested_batch_size is not None:
-                    compatible, _ = filter_model_packages_by_requested_batch_size(
-                        model_packages=compatible,
-                        requested_batch_size=requested_batch_size,
-                        verbose=verbose,
-                    )
-                effective_quantization = requested_quantization
-                default_quantization_used = False
-                if effective_quantization is None:
-                    default_quantization_used = True
-                    effective_quantization = determine_default_allowed_quantization(
-                        device=model_init_kwargs.get("device")
-                    )
-                if effective_quantization:
-                    compatible, _ = filter_model_packages_by_requested_quantization(
-                        model_packages=compatible,
-                        requested_quantization=effective_quantization,
-                        default_quantization_used=default_quantization_used,
-                        verbose=verbose,
-                    )
-                compatible, _ = filter_model_packages_based_on_model_features(
-                    model_packages=compatible,
-                    nms_fusion_preferences=nms_fusion_preferences,
-                    model_architecture=package_config.model_architecture,
-                    task_type=package_config.task_type,
-                )
-                feature_compatible_packages.extend(compatible)
-            except Exception as error:
-                LOGGER.warning(
-                    "Ignoring malformed offline package metadata in %s: %s",
-                    candidates[package_metadata.package_id][0],
-                    error,
-                )
-        matching_packages = rank_model_packages(
-            model_packages=feature_compatible_packages,
-            selected_device=model_init_kwargs.get("device"),
-            nms_fusion_preferences=nms_fusion_preferences,
-        )
-    if max_package_loading_attempts is not None:
-        matching_packages = matching_packages[:max_package_loading_attempts]
-
-    dependency_models_params = dependency_models_params or {}
-    forwarded_kwargs_values = forwarded_kwargs_values or {}
-    for package_metadata in matching_packages:
-        package_id = package_metadata.package_id
-        package_dir, package_config, _ = candidates[package_id]
-        found_any_package = True
-        try:
-            raw_dependencies = package_config.model_dependencies
-            if raw_dependencies is None and not allow_loading_dependency_models:
-                raise CorruptedModelPackageError(
-                    message=(
-                        f"Cannot verify whether cached package {package_id} "
-                        "has dependencies while dependency loading is disabled."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                )
-            model_dependencies = [
-                ModelDependency.model_validate(dependency)
-                for dependency in (raw_dependencies or [])
-            ]
-            expected_dependency_paths = _expected_dependency_package_paths(
-                model_dependencies=model_dependencies,
-                identities=package_config.dependency_package_paths,
-            )
-            if model_dependencies and not allow_loading_dependency_models:
-                raise CorruptedModelPackageError(
-                    message=(
-                        f"Cannot load cached package {package_id} because it "
-                        "requires dependency models and dependency loading is disabled."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                )
-            dependency_instances = {}
-            for dependency in model_dependencies:
-                dependency_params = dict(
-                    dependency_models_params.get(dependency.name, {})
-                )
-                dependency_params["model_id_or_path"] = dependency.model_id
-                dependency_params["model_package_id"] = dependency.model_package_id
-                resolved_parameters = prepare_dependency_model_parameters(
-                    model_parameters=dependency_params
-                )
-                for name, value in forwarded_kwargs_values.items():
-                    if name not in resolved_parameters.model_extra:
-                        resolved_parameters.model_extra[name] = value
-                resolved_dependency_directories: List[str] = []
-
-                def dependency_directory_pointer(model_dir: str) -> None:
-                    resolved_dependency_directories.append(os.path.realpath(model_dir))
-
-                dependency_instances[dependency.name] = AutoModel.from_pretrained(
-                    model_id_or_path=resolved_parameters.model_id_or_path,
-                    weights_provider=weights_provider,
-                    api_key=api_key,
-                    model_package_id=resolved_parameters.model_package_id,
-                    backend=resolved_parameters.backend,
-                    batch_size=resolved_parameters.batch_size,
-                    quantization=resolved_parameters.quantization,
-                    onnx_execution_providers=resolved_parameters.onnx_execution_providers,
-                    device=resolved_parameters.device,
-                    default_onnx_trt_options=resolved_parameters.default_onnx_trt_options,
-                    max_package_loading_attempts=max_package_loading_attempts,
-                    verbose=verbose,
-                    model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-                    allow_untrusted_packages=allow_untrusted_packages,
-                    trt_engine_host_code_allowed=trt_engine_host_code_allowed,
-                    allow_local_code_packages=allow_local_code_packages,
-                    verify_hash_while_download=verify_hash_while_download,
-                    download_files_without_hash=download_files_without_hash,
-                    use_auto_resolution_cache=use_auto_resolution_cache,
-                    auto_resolution_cache=auto_resolution_cache,
-                    allow_direct_local_storage_loading=allow_direct_local_storage_loading,
-                    model_access_manager=model_access_manager,
-                    nms_fusion_preferences=resolved_parameters.nms_fusion_preferences,
-                    model_type=resolved_parameters.model_type,
-                    task_type=resolved_parameters.task_type,
-                    allow_loading_dependency_models=False,
-                    dependency_models_params=None,
-                    point_model_directory=dependency_directory_pointer,
-                    weights_provider_extra_query_params=weights_provider_extra_query_params,
-                    weights_provider_extra_headers=weights_provider_extra_headers,
-                    **resolved_parameters.kwargs,
-                )
-                if len(resolved_dependency_directories) != 1 or (
-                    _dependency_package_identity_for_path(
-                        dependency_name=dependency.name,
-                        dependency_directory=resolved_dependency_directories[0],
-                    )
-                    != expected_dependency_paths[dependency.name]
-                ):
-                    raise CorruptedModelPackageError(
-                        message=(
-                            f"Cached dependency `{dependency.name}` resolved "
-                            "to a different package directory than the parent manifest."
-                        ),
-                        help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                    )
-            package_init_kwargs = dict(model_init_kwargs)
-            package_init_kwargs[MODEL_DEPENDENCIES_KEY] = dependency_instances
-            if package_config.recommended_parameters is not None:
-                package_init_kwargs["recommended_parameters"] = (
-                    RecommendedParameters.model_validate(
-                        package_config.recommended_parameters
-                    )
-                )
-            model = attempt_loading_model_from_local_storage(
-                model_dir_or_weights_path=package_dir,
-                allow_local_code_packages=allow_local_code_packages,
-                model_init_kwargs=package_init_kwargs,
-            )
-            _record_model_package_path(model=model, package_dir=package_dir)
-            verbose_info(
-                message=f"Loaded model {model_id} from offline cache at {package_dir}.",
-                verbose_requested=verbose,
-            )
-            if model_access_manager is not None:
-                model_access_manager.on_model_loaded(
-                    model=model,
-                    access_identifiers=AccessIdentifiers(
-                        model_id=model_id,
-                        package_id=package_id,
-                        api_key=api_key,
-                    ),
-                    model_storage_path=package_dir,
-                )
-            return model, package_dir
-        except Exception as error:
-            LOGGER.warning(
-                f"Failed to load cached model package from {package_dir}: {error}"
-            )
-    if not found_any_package:
-        verbose_info(
-            message=f"No offline cache packages found for model {model_id}.",
-            verbose_requested=verbose,
-        )
-    else:
-        verbose_info(
-            message=f"No usable cached model package found for {model_id}.",
-            verbose_requested=verbose,
-        )
-    return None
 
 
 def all_files_exist(files: List[str]) -> bool:
