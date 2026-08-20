@@ -30,6 +30,8 @@ def test_build_options_rtsps_default_strict_verify(
     assert got is not None
     assert "rtsp_transport;tcp" in got
     assert "tls_verify;1" in got
+    assert "stimeout;5000000" in got
+    assert "timeout;5000000" in got
 
 
 def test_build_options_rtsps_with_ca(monkeypatch: pytest.MonkeyPatch) -> None:

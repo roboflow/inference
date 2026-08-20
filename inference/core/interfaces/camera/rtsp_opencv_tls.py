@@ -13,6 +13,7 @@ inference container. Unmanaged ``rtsps://`` sources with self-signed certs need
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from contextlib import contextmanager
@@ -26,6 +27,11 @@ from inference.core.interfaces.camera.rtsp_tls import (
 
 OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR = "OPENCV_FFMPEG_CAPTURE_OPTIONS"
 SSL_CERT_FILE_ENV_VAR = "SSL_CERT_FILE"
+# FFmpeg RTSP socket timeouts (microseconds). Bounds global-lock hold during capture open.
+# FFmpeg 5+ uses "timeout"; older builds use "stimeout" — set both (see webrtc/sources.py).
+_RTSPS_OPEN_TIMEOUT_US = 5_000_000
+
+logger = logging.getLogger(__name__)
 
 _opencv_rtsps_tls_lock = threading.Lock()
 
@@ -59,6 +65,11 @@ def _build_rtsps_tls_option_overrides() -> Dict[str, str]:
         # rfdm maps allow_self_signed to 126 (unknown-CA only). FFmpeg only
         # supports full verify on/off, so treat both 0 and 126 as tls_verify;0.
         if stripped in {"0", "126"}:
+            if stripped == "126":
+                logger.warning(
+                    "OpenCV/FFmpeg RTSPS cannot enforce partial TLS validation; "
+                    "tls_validation_flags=126 (allow_self_signed) maps to tls_verify=0"
+                )
             overrides["tls_verify"] = "0"
         else:
             overrides["tls_verify"] = "1"
@@ -84,10 +95,15 @@ def build_opencv_ffmpeg_capture_options(video: Union[str, int]) -> Optional[str]
         return None
 
     overrides = _build_rtsps_tls_option_overrides()
-    return merge_opencv_ffmpeg_capture_options(
-        os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR),
-        overrides,
-    )
+    existing = os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR)
+    merged = _parse_opencv_ffmpeg_capture_options(existing or "")
+    for key, value in overrides.items():
+        merged[key] = value
+    if "stimeout" not in merged and "timeout" not in merged:
+        timeout_value = str(_RTSPS_OPEN_TIMEOUT_US)
+        merged["stimeout"] = timeout_value
+        merged["timeout"] = timeout_value
+    return _format_opencv_ffmpeg_capture_options(merged)
 
 
 @contextmanager
