@@ -16,27 +16,46 @@ from inference.usage_tracking.megapixel_buckets import (
 from inference.usage_tracking.model_types import get_recorded_model_type
 
 
+def _non_empty_model_id(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    model_id = str(value).strip()
+    if not model_id:
+        return None
+    return model_id
+
+
 def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
+    """Resolve the usage ``resource_id``.
+
+    Caller-supplied ids (request / kwargs) beat ``self.model_id``. Some classes
+    store a de-aliased or rewritten id on the instance (vLLM Qwen, TrOCR);
+    promoting that field would split usage history at upgrade.
+    """
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
-        if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
-            model_id = str(_self.dataset_id)
-            if _self.version_id:
-                model_id += f"/{_self.version_id}"
+        dataset_id = getattr(_self, "dataset_id", None)
+        if dataset_id:
+            model_id = str(dataset_id)
+            version_id = getattr(_self, "version_id", None)
+            if version_id:
+                model_id += f"/{version_id}"
             return model_id
-    if "model_id" in func_kwargs:
-        return func_kwargs["model_id"]
-    if "kwargs" in func_kwargs and "model_id" in func_kwargs["kwargs"]:
-        return func_kwargs["kwargs"]["model_id"]
+    model_id = _non_empty_model_id(func_kwargs.get("model_id"))
+    if model_id:
+        return model_id
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict):
+        model_id = _non_empty_model_id(nested_kwargs.get("model_id"))
+        if model_id:
+            return model_id
     for request_key in ("inference_request", "request", "workflow_request"):
         request = func_kwargs.get(request_key)
-        model_id = getattr(request, "model_id", None)
+        model_id = _non_empty_model_id(getattr(request, "model_id", None))
         if model_id:
-            return str(model_id)
+            return model_id
     if "self" in func_kwargs:
-        model_id = getattr(func_kwargs["self"], "model_id", None)
-        if model_id:
-            return str(model_id)
+        return _non_empty_model_id(getattr(func_kwargs["self"], "model_id", None))
     return None
 
 
@@ -56,12 +75,13 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
 
 
 def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow ``modelType`` (architecture / size), not the resource id.
+    """Resolve Roboflow model type (variant when known, else architecture).
 
-    Only values already known in-process are consulted. Asking the model registry
-    would be a network call on the inference hot path, so model types are instead
-    recorded when the registry resolves them during model loading. A model whose
-    type was never recorded is reported without one.
+    Prefer ``self.model_type`` (bound at load to the platform variant when
+    known, otherwise the architecture). Fall back to the process-local map
+    keyed by model id. Asking the model registry would be a network call on
+    the inference hot path. A model whose type was never recorded is reported
+    without one.
     """
     model = func_kwargs.get("self")
     if model is not None:
