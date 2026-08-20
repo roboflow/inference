@@ -2138,64 +2138,6 @@ def test_initialize_model_rejects_regular_dependency_path_before_constructor(
     model_class.from_pretrained.assert_not_called()
     auto_resolution_cache.register.assert_not_called()
     assert not os.path.exists(os.path.join(package_dir, "model_config.json"))
-
-
-def test_initialize_local_cache_uses_discovered_legacy_package_path(
-    empty_local_dir: str,
-) -> None:
-    model_id = "workspace/canonical/1"
-    package_id = "localtrtpackage"
-    package = ModelPackageMetadata(
-        package_id=package_id,
-        backend=BackendType.TRT,
-        package_artefacts=[],
-        package_source=PackageSourceType.LOCAL_CACHE,
-        trusted_source=False,
-        cache_model_id=model_id,
-    )
-    model_class = MagicMock()
-    model_class.from_pretrained.return_value = MagicMock()
-
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        legacy_package_dir = model_cache_paths.generate_legacy_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(legacy_package_dir)
-        with open(
-            os.path.join(legacy_package_dir, "model_config.json"),
-            "w",
-            encoding="utf-8",
-        ) as config_file:
-            json.dump({"model_id": model_id}, config_file)
-        with mock.patch.object(core, "resolve_model_class", return_value=model_class):
-            _, resolved_package_dir = initialize_model(
-                model_id=model_id,
-                model_architecture="rfdetr",
-                task_type="object-detection",
-                model_package=package,
-                model_init_kwargs={},
-                auto_resolution_cache=MagicMock(),
-                auto_negotiation_hash="a" * 64,
-                model_dependencies=[],
-                model_dependencies_instances={},
-                model_dependencies_directories={},
-            )
-
-        v2_package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-
-    assert resolved_package_dir == legacy_package_dir
-    assert not os.path.exists(v2_package_dir)
-    with open(os.path.join(legacy_package_dir, "model_config.json")) as file:
-        manifest = json.load(file)
-    assert manifest["model_id"] == model_id
-    assert manifest["canonical_model_id"] == model_id
-
-
-@pytest.mark.parametrize("use_symlink", [False, True])
 def test_initialize_local_cache_revalidates_regular_artifact_md5_before_constructor(
     empty_local_dir: str,
     use_symlink: bool,

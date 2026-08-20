@@ -77,7 +77,7 @@ from inference_models.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_models.models.auto_loaders.model_cache_paths import (
-    generate_model_cache_root_candidates_for_model_id,
+    generate_model_cache_root_for_model_id,
     generate_model_package_cache_path,
     generate_models_cache_dir,
     generate_shared_blobs_path,
@@ -2668,31 +2668,16 @@ def find_cached_model_package_dir(
 
 
 def _iterate_cached_model_package_dirs(model_id: str) -> Generator[str, None, None]:
-    # model_id may originate from request data - resolve both roots and make
-    # sure scanned paths cannot escape the models cache (also guards against
-    # symlinked cache entries pointing outside of it).
-    models_cache_root = os.path.realpath(generate_models_cache_dir())
+    cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
+    if not os.path.isdir(cache_root):
+        return
     try:
-        cache_root_candidates = generate_model_cache_root_candidates_for_model_id(
-            model_id=model_id
-        )
-    except Exception:
+        entries = sorted(os.listdir(cache_root))
+    except OSError:
         return
     package_ids_by_casefold: Dict[str, Set[str]] = {}
-    for lexical_cache_root in cache_root_candidates:
-        if os.path.islink(lexical_cache_root):
-            continue
-        cache_root = os.path.realpath(lexical_cache_root)
-        if not cache_root.startswith(models_cache_root + os.sep):
-            continue
-        if not os.path.isdir(cache_root):
-            continue
-        try:
-            entries = sorted(os.listdir(cache_root))
-        except OSError:
-            continue
-        for entry in entries:
-            package_ids_by_casefold.setdefault(entry.casefold(), set()).add(entry)
+    for entry in entries:
+        package_ids_by_casefold.setdefault(entry.casefold(), set()).add(entry)
     seen_package_dirs = set()
     for casefold_package_id in sorted(package_ids_by_casefold):
         package_ids = package_ids_by_casefold[casefold_package_id]
@@ -3092,7 +3077,6 @@ def initialize_model(
         package_path_for_lock = resolve_existing_model_package_cache_path(
             model_id=cache_model_id,
             package_id=model_package.package_id,
-            allow_unattributed_local_cache=True,
         )
         if package_path_for_lock is None:
             raise CorruptedModelPackageError(
@@ -3193,7 +3177,6 @@ def initialize_model(
         model_package_cache_dir = resolve_existing_model_package_cache_path(
             model_id=cache_model_id,
             package_id=model_package.package_id,
-            allow_unattributed_local_cache=True,
         )
         if model_package_cache_dir is None:
             raise CorruptedModelPackageError(

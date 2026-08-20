@@ -295,7 +295,6 @@ def _resolve_package_dir(
         return resolve_existing_model_package_cache_path(
             model_id=cache_model_id,
             package_id=package_id,
-            allow_unattributed_local_cache=True,
         )
     except (BaseInferenceModelsError, OSError):
         return None
