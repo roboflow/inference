@@ -62,7 +62,7 @@ def _base_run_kwargs(**overrides):
         classes=None,
         api_key="rf_key:account",
         privacy_level="deny",
-        max_tokens=None,
+        max_tokens=2048,
         temperature=None,
         max_concurrent_requests=None,
     )
@@ -87,9 +87,8 @@ def test_manifest_defaults():
     assert manifest.backend == "native"
     assert manifest.model_version == DEFAULT_NATIVE_MODEL_VERSION
     assert manifest.openrouter_model_version == DEFAULT_OPENROUTER_MODEL_VERSION
-    # v2 benchmark-parity defaults: max_tokens unset (per-backend defaults
-    # apply at run time), provider-default temperature, reasoning off.
-    assert manifest.max_tokens is None
+    # UI requires an integer in [1, 8192]; 2048 is the block default.
+    assert manifest.max_tokens == 2048
     assert manifest.temperature is None
     assert manifest.reasoning_effort == "none"
 
@@ -319,7 +318,7 @@ def test_run_openrouter_passes_slug_reasoning_and_temperature(mock_or):
     assert call_kwargs["model"] == "qwen/qwen3.7-plus"
     assert call_kwargs["reasoning"] == {"enabled": False}
     assert call_kwargs["temperature"] is None
-    assert call_kwargs["max_tokens"] == 16384
+    assert call_kwargs["max_tokens"] == 2048
     assert call_kwargs["include_reasoning"] is True
     assert result == [{"output": "resp", "classes": ["dog", "cat"], "thinking": ""}]
 
@@ -383,14 +382,14 @@ def test_run_openrouter_explicit_max_tokens_overrides_default(mock_or):
         **_base_run_kwargs(
             backend="openrouter",
             task_type="ocr",
-            max_tokens=2048,
+            max_tokens=8192,
         )
     )
 
-    assert mock_or.call_args.kwargs["max_tokens"] == 2048
+    assert mock_or.call_args.kwargs["max_tokens"] == 8192
 
 
-def test_run_native_default_max_tokens_defers_to_server_default():
+def test_run_native_default_max_tokens_is_forwarded():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "answer"
@@ -404,9 +403,7 @@ def test_run_native_default_max_tokens_defers_to_server_default():
     block.run(**_base_run_kwargs())
 
     request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    # No block-side default: the request leaves max_new_tokens unset so the
-    # inference server default (512) applies.
-    assert request.max_new_tokens is None
+    assert request.max_new_tokens == 2048
 
 
 def test_run_native_explicit_max_tokens_is_forwarded_as_max_new_tokens():

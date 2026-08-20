@@ -17,18 +17,20 @@ that performed best for Qwen models in the vlm-exam benchmarks:
 * requests carry an explicit OpenRouter ``reasoning`` config: disabled by
   default (Qwen models default to extended reasoning, which bloats latency
   and can truncate answers), always-on for models that require it
-  (Qwen 3.8 Max rejects ``enabled: false``).
+  (Qwen 3.8 Max and the Qwen 3 VL Thinking variants reject
+  ``enabled: false``).
 * uploads are JPEG-encoded with iterative downscaling so the base64
   payload stays under Alibaba DashScope's data-URI limit.
-* ``max_tokens`` is unset by default; the OpenRouter path substitutes
-  16384 (benchmark parity — detection output on busy images easily
-  exceeds the old 500-token default) while the native path sends
-  nothing, so the inference server default (512) applies.
+* ``max_tokens`` defaults to 2048 on both backends so the UI always
+  sends a valid integer (an unset field fails Workflows validation).
+  Raise it explicitly (e.g. 8192) when a task needs a longer answer.
   ``temperature`` is not sent unless the user sets it.
 
-The OpenRouter model roster is restricted to the vlm-exam-benchmarked
-models. The native backend is carried over from v1 except for the
-object-detection prompt, which is unified on the benchmarked template.
+The OpenRouter roster is every current image-capable Qwen chat model
+except Qwen 2.5 VL (that family does not follow the shared
+``box_2d`` / 0-1000 detection contract). The native backend is
+carried over from v1 except for the object-detection prompt, which
+is unified on the benchmarked template.
 """
 
 import base64
@@ -97,8 +99,8 @@ from inference_sdk import InferenceHTTPClient
 #
 # - Native model_ids are Roboflow inference model IDs (e.g. ``qwen3_5-2b``).
 # - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.7-plus``).
-#   The OpenRouter roster is restricted to the models benchmarked in
-#   vlm-exam; ``reasoning_required`` marks models that reject
+#   The OpenRouter roster is every current image-capable Qwen chat model
+#   except Qwen 2.5 VL. ``reasoning_required`` marks models that reject
 #   ``reasoning: {"enabled": false}`` and must always receive an effort.
 
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
@@ -119,7 +121,7 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
         "backend": "native",
         "model_id": "qwen3_5-2b",
     },
-    # OpenRouter — vlm-exam-benchmarked hosted Qwen models.
+    # OpenRouter — image-capable hosted Qwen chat models.
     "Qwen 3.8 Max": {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.8-max",
@@ -137,13 +139,84 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.8-27b",
     },
+    "Qwen 3.6 Plus": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.6-plus",
+    },
+    "Qwen 3.6 Flash": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.6-flash",
+    },
+    "Qwen 3.6 27B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.6-27b",
+    },
+    "Qwen 3.6 35B A3B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.6-35b-a3b",
+    },
+    "Qwen 3.5 Plus": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-plus-20260420",
+    },
+    "Qwen 3.5 Plus 02-15": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-plus-02-15",
+    },
+    "Qwen 3.5 Flash": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-flash-02-23",
+    },
+    "Qwen 3.5 9B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-9b",
+    },
     "Qwen 3.5 27B": {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.5-27b",
     },
+    "Qwen 3.5 35B A3B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-35b-a3b",
+    },
+    "Qwen 3.5 122B A10B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-122b-a10b",
+    },
+    "Qwen 3.5 397B A17B": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.5-397b-a17b",
+    },
+    "Qwen 3 VL 8B Instruct": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3-vl-8b-instruct",
+    },
+    "Qwen 3 VL 8B Thinking": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3-vl-8b-thinking",
+        "reasoning_required": True,
+    },
+    "Qwen 3 VL 30B A3B Instruct": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3-vl-30b-a3b-instruct",
+    },
+    "Qwen 3 VL 30B A3B Thinking": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3-vl-30b-a3b-thinking",
+        "reasoning_required": True,
+    },
+    "Qwen 3 VL 32B Instruct": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3-vl-32b-instruct",
+    },
     "Qwen 3 VL 235B A22B": {
         "backend": "openrouter",
         "model_id": "qwen/qwen3-vl-235b-a22b-instruct",
+    },
+    "Qwen 3 VL 235B A22B Thinking": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3-vl-235b-a22b-thinking",
+        "reasoning_required": True,
     },
 }
 
@@ -199,8 +272,8 @@ REASONING_EFFORT_METADATA = {
             "Turns extended reasoning off. Qwen models default to extended "
             "reasoning on OpenRouter, which bloats latency and can consume "
             "the whole token budget before a visible answer is produced. "
-            "Models that require reasoning (Qwen 3.8 Max) fall back to low "
-            "effort instead."
+            "Models that require reasoning (Qwen 3.8 Max and the Qwen 3 VL "
+            "Thinking variants) fall back to low effort instead."
         ),
     },
     "low": {
@@ -224,14 +297,10 @@ REASONING_EFFORT_METADATA = {
 # selected model rejects `reasoning: {"enabled": false}`.
 REASONING_REQUIRED_FALLBACK_EFFORT = "low"
 
-# Default OpenRouter completion budget when the user leaves `max_tokens`
-# unset. Benchmark parity: detection output on busy images easily exceeds
-# the older 500-token default, and reasoning models need headroom to think
-# and still emit a visible answer. The native path deliberately has no
-# block-side default: nothing is sent, so the inference server's own
-# default (512) applies. (v1 sends the mixin default of 500 instead;
-# effectively the same budget, but not the identical mechanism.)
-QWEN_OPENROUTER_DEFAULT_MAX_TOKENS = 16384
+# Default completion budget when the user leaves `max_tokens` unset.
+# 2048 is a valid integer in the Workflows UI range [1, 8192]; raise it
+# explicitly when a task needs a longer answer.
+QWEN_OPENROUTER_DEFAULT_MAX_TOKENS = 2048
 
 
 def build_reasoning_config(
@@ -661,12 +730,12 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
   message, matching how Qwen models are trained.
 * **Reasoning control**: Qwen models default to extended reasoning on OpenRouter,
   which bloats latency and can consume the whole token budget. v2 disables it by
-  default and exposes a `reasoning_effort` knob. Qwen 3.8 Max requires reasoning
-  and falls back to low effort when disabled.
+  default and exposes a `reasoning_effort` knob. Qwen 3.8 Max and the Qwen 3 VL
+  Thinking variants require reasoning and fall back to low effort when disabled.
 * Uploads are downscaled automatically when they would exceed the Qwen provider
-  payload limit, and OpenRouter requests default to `max_tokens=16384` so
-  detection output is not truncated (the native backend keeps the server
-  default unless you set `max_tokens` explicitly).
+  payload limit. `max_tokens` defaults to 2048 on both backends so the UI
+  always has a valid integer; raise it explicitly (e.g. 8192) when you need
+  a longer answer.
 
 #### 🛠️ Backend selection
 
@@ -674,7 +743,7 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
   your other Roboflow models. Lower latency. Recommended for tasks
   like OCR, captioning, and visual question answering.
 
-* **OpenRouter** — benchmark-validated hosted Qwen models reached via
+* **OpenRouter** — hosted Qwen vision models reached via
   [OpenRouter](https://openrouter.ai/). Defaults to a Roboflow-managed API key and
   bills your Roboflow credits. Paste your own `sk-or-...` key in the `api_key`
   field to bypass Roboflow billing. Recommended for structured tasks that benefit
@@ -797,15 +866,14 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
 
-    # OpenRouter model picker: friendly-name dropdown bound to OpenRouter
-    # slugs, restricted to the vlm-exam-benchmarked models.
+    # OpenRouter model picker: friendly-name dropdown bound to OpenRouter slugs.
     openrouter_model_version: Union[
         Selector(kind=[STRING_KIND]), OpenRouterModelVersion
     ] = Field(
         default=DEFAULT_OPENROUTER_MODEL_VERSION,
         description=(
-            "OpenRouter-hosted Qwen variant. The roster is restricted to "
-            "benchmark-validated models."
+            "OpenRouter-hosted Qwen vision variant. The roster is every "
+            "current image-capable Qwen chat model except Qwen 2.5 VL."
         ),
         examples=[DEFAULT_OPENROUTER_MODEL_VERSION, "Qwen 3.8 Max"],
         json_schema_extra={
@@ -929,14 +997,13 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
     max_tokens: Optional[int] = Field(
-        default=None,
+        default=QWEN_OPENROUTER_DEFAULT_MAX_TOKENS,
         description=(
             "Maximum number of tokens the model can generate in its response. "
-            "When unset, each backend applies its own default: OpenRouter "
-            f"requests use {QWEN_OPENROUTER_DEFAULT_MAX_TOKENS} (headroom for "
-            "detection output and reasoning models; billing is based on "
-            "tokens actually generated, not on this limit), while the native "
-            "backend defers to the inference server default (512)."
+            f"Defaults to {QWEN_OPENROUTER_DEFAULT_MAX_TOKENS} on both backends "
+            "so the UI always sends a valid integer. Raise it explicitly "
+            "(e.g. 8192) when a task needs a longer answer. Billing is based "
+            "on tokens actually generated, not on this limit."
         ),
         gt=1,
     )
