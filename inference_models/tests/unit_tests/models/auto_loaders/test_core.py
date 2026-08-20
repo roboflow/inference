@@ -3493,16 +3493,13 @@ def test_from_pretrained_uses_effective_env_key_for_strict_exact_cache_hit() -> 
     provider.assert_not_called()
 
 
-def test_from_pretrained_returns_preloaded_model_with_verified_storage_pointer(
+def test_from_pretrained_returns_preloaded_model_without_storage_pointer(
     empty_local_dir: str,
 ) -> None:
-    package_dir = os.path.join(empty_local_dir, "owlv2-package")
-    os.makedirs(package_dir)
+    """A manager-served instance is returned as-is; the manager is its
+    authority and no package directory is tracked, so a requested
+    point_model_directory is deliberately not invoked."""
     preloaded_model = MagicMock()
-    core._record_model_package_path(
-        model=preloaded_model,
-        package_dir=package_dir,
-    )
 
     class PreloadedModelAccessManager(LiberalModelAccessManager):
         def retrieve_model_instance(
@@ -3525,7 +3522,7 @@ def test_from_pretrained_returns_preloaded_model_with_verified_storage_pointer(
         )
 
     assert result is preloaded_model
-    point_model_directory.assert_called_once_with(os.path.realpath(package_dir))
+    point_model_directory.assert_not_called()
     provider.assert_not_called()
 
 

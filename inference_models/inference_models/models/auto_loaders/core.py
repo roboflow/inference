@@ -240,52 +240,6 @@ def _credential_hash(api_key: Optional[str]) -> str:
     return hash_dict_content(content={"api_key": api_key})
 
 
-def _record_model_package_path(model: AnyModel, package_dir: str) -> None:
-    try:
-        setattr(
-            model,
-            "_inference_models_package_path",
-            os.path.realpath(package_dir),
-        )
-    except Exception:
-        LOGGER.debug(
-            "Could not attach package path attribution to model instance %s.",
-            type(model),
-        )
-
-
-def _retrieve_access_manager_model_package_path(
-    model_access_manager: ModelAccessManager,
-    model: AnyModel,
-    model_id: str,
-    package_id: Optional[str],
-    api_key: Optional[str],
-    loading_parameter_digest: str,
-) -> Optional[str]:
-    path_retriever = getattr(
-        model_access_manager,
-        "retrieve_model_storage_path",
-        None,
-    )
-    if not callable(path_retriever):
-        return None
-    package_dir = path_retriever(
-        model=model,
-        model_id=model_id,
-        package_id=package_id,
-        api_key=api_key,
-        loading_parameter_digest=loading_parameter_digest,
-    )
-    if (
-        not isinstance(package_dir, str)
-        or "\0" in package_dir
-        or os.path.islink(package_dir)
-        or not os.path.isdir(package_dir)
-    ):
-        return None
-    return os.path.realpath(package_dir)
-
-
 def _canonicalize_download_source(download_url: str) -> str:
     parsed_url = urllib.parse.urlparse(download_url)
     if not parsed_url.query:
@@ -923,14 +877,15 @@ def _dependency_package_path_identities(
             )
         names_by_casefold[dependency_name.casefold()] = dependency_name
         dependency_names.add(dependency_name)
-    if set(model_dependencies_directories) != dependency_names:
+    if not set(model_dependencies_directories) <= dependency_names:
         raise CorruptedModelPackageError(
-            message="Model dependency directories do not match declared dependencies.",
+            message="Model dependency directories contain undeclared dependencies.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     identities = []
     for dependency_name in sorted(
-        dependency_names, key=lambda value: (value.casefold(), value)
+        model_dependencies_directories,
+        key=lambda value: (value.casefold(), value),
     ):
         dependency_directory = model_dependencies_directories[dependency_name]
         if not isinstance(dependency_directory, str) or "\0" in dependency_directory:
@@ -1136,11 +1091,11 @@ def _expected_dependency_package_paths(
     parsed_identities = _parse_dependency_package_path_identities(identities)
     expected_paths = {identity["name"]: identity for identity in parsed_identities}
     dependency_names = {dependency.name for dependency in model_dependencies}
-    if set(expected_paths) != dependency_names:
+    if not set(expected_paths) <= dependency_names:
         raise CorruptedModelPackageError(
             message=(
-                "Cached dependency path identities do not match the model's "
-                "declared dependencies."
+                "Cached dependency path identities contain dependencies the "
+                "model does not declare."
             ),
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
@@ -1906,19 +1861,10 @@ class AutoModel:
                 loading_parameter_digest=auto_negotiation_hash,
             )
             if model_from_access_manager:
-                if point_model_directory is None:
-                    return model_from_access_manager
-                model_package_dir = _retrieve_access_manager_model_package_path(
-                    model_access_manager=model_access_manager,
-                    model=model_from_access_manager,
-                    model_id=model_id_or_path,
-                    package_id=model_package_id,
-                    api_key=api_key,
-                    loading_parameter_digest=auto_negotiation_hash,
-                )
-                if model_package_dir is not None:
-                    point_model_directory(model_package_dir)
-                    return model_from_access_manager
+                # The access manager is the authority for instances it serves;
+                # no package directory is tracked for them, so a requested
+                # point_model_directory is deliberately not invoked.
+                return model_from_access_manager
 
             def attempt_cached_load(cache_hash: str) -> Optional[AnyModel]:
                 return attempt_loading_model_with_auto_load_cache(
@@ -2075,19 +2021,10 @@ class AutoModel:
                 loading_parameter_digest=auto_negotiation_hash,
             )
             if model_from_access_manager:
-                if point_model_directory is None:
-                    return model_from_access_manager
-                model_package_dir = _retrieve_access_manager_model_package_path(
-                    model_access_manager=model_access_manager,
-                    model=model_from_access_manager,
-                    model_id=model_id_or_path,
-                    package_id=model_package_id,
-                    api_key=api_key,
-                    loading_parameter_digest=auto_negotiation_hash,
-                )
-                if model_package_dir is not None:
-                    point_model_directory(model_package_dir)
-                    return model_from_access_manager
+                # The access manager is the authority for instances it serves;
+                # no package directory is tracked for them, so a requested
+                # point_model_directory is deliberately not invoked.
+                return model_from_access_manager
             matching_model_packages = negotiate_model_packages(
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
@@ -2466,20 +2403,28 @@ def attempt_loading_model_with_auto_load_cache(
                 weights_provider_extra_headers=weights_provider_extra_headers,
                 **resolved_model_parameters.kwargs,
             )
-            if len(resolved_dependency_directories) != 1 or (
-                _dependency_package_identity_for_path(
-                    dependency_name=model_dependency.name,
-                    dependency_directory=resolved_dependency_directories[0],
-                )
-                != expected_dependency_paths[model_dependency.name]
-            ):
-                raise CorruptedModelPackageError(
-                    message=(
-                        f"Cached dependency `{model_dependency.name}` resolved "
-                        "to a different package directory than the parent manifest."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                )
+            # An empty pointer list means an access manager served the
+            # dependency instance - the manager is its authority and no
+            # directory verification applies. A manifest without a recorded
+            # path for this dependency cannot be verified either.
+            expected_dependency_path = expected_dependency_paths.get(
+                model_dependency.name
+            )
+            if resolved_dependency_directories and expected_dependency_path is not None:
+                if len(resolved_dependency_directories) != 1 or (
+                    _dependency_package_identity_for_path(
+                        dependency_name=model_dependency.name,
+                        dependency_directory=resolved_dependency_directories[0],
+                    )
+                    != expected_dependency_path
+                ):
+                    raise CorruptedModelPackageError(
+                        message=(
+                            f"Cached dependency `{model_dependency.name}` resolved "
+                            "to a different package directory than the parent manifest."
+                        ),
+                        help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                    )
             model_dependencies_instances[model_dependency.name] = dependency_instance
         model_class = resolve_model_class(
             model_architecture=cache_entry.model_architecture,
@@ -2502,10 +2447,6 @@ def attempt_loading_model_with_auto_load_cache(
                 model_class=model_class,
                 model_init_kwargs=model_init_kwargs,
             ),
-        )
-        _record_model_package_path(
-            model=model,
-            package_dir=model_package_cache_dir,
         )
         verbose_info(
             message=f"Successfully loaded model {model_name_or_path} using auto-loading cache.",
@@ -3328,10 +3269,6 @@ def initialize_model(
             dependency_package_paths=dependency_package_paths,
             materialized_package_artifacts=package_artifact_identities,
         )
-        _record_model_package_path(
-            model=model,
-            package_dir=model_package_cache_dir,
-        )
         return model, model_package_cache_dir
     # The versioned manifest is the marker that a package is eligible for raw
     # offline discovery.  Do not publish it until the package has initialized
@@ -3379,10 +3316,6 @@ def initialize_model(
         trusted_source=model_package.trusted_source,
         package_manifest_hash=package_manifest_hash,
         api_key=api_key,
-    )
-    _record_model_package_path(
-        model=model,
-        package_dir=model_package_cache_dir,
     )
     return model, model_package_cache_dir
 

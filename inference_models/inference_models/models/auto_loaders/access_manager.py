@@ -74,26 +74,6 @@ class ModelAccessManager(ABC):
     ) -> Optional[AnyModel]:
         pass
 
-    def retrieve_model_storage_path(
-        self,
-        model: AnyModel,
-        model_id: str,
-        package_id: Optional[str],
-        api_key: Optional[str],
-        loading_parameter_digest: Optional[str],
-    ) -> Optional[str]:
-        """Return the verified package path associated with a cached instance.
-
-        Managers that keep their own instance registry may override this.
-        Auto-loaded models also carry this private attribution directly.
-        """
-
-        model_storage_path = getattr(
-            model,
-            "_inference_models_package_path",
-            None,
-        )
-        return model_storage_path if isinstance(model_storage_path, str) else None
 
     @abstractmethod
     def on_model_loaded(
