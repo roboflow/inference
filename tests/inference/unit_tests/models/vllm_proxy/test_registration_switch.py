@@ -15,6 +15,7 @@ import sys
 import pytest
 
 from inference.models.vllm_proxy.qwen3_5_vllm import Qwen35VLLMProxy
+from inference.models.vllm_proxy.qwen3_8_vllm import Qwen38VLLMProxy
 from inference.models.vllm_proxy.qwen3vl_vllm import Qwen3VLVLLMProxy
 
 UTILS_MODULE = "inference.models.utils"
@@ -88,3 +89,18 @@ class TestQwen35RegistrationSwitch:
         self, model_types_with_proxy_enabled, task_and_variant
     ) -> None:
         assert model_types_with_proxy_enabled[task_and_variant] is Qwen35VLLMProxy
+
+
+class TestQwen38RegistrationSwitch:
+    @pytest.mark.parametrize(
+        "task_and_variant",
+        [
+            ("lmm", "qwen3_8-27b"),
+            ("text-image-pairs", "qwen3_8-27b"),
+            ("vlm", "qwen3_8"),
+        ],
+    )
+    def test_qwen3_8_ids_resolve_to_proxy(
+        self, model_types_with_proxy_enabled, task_and_variant
+    ) -> None:
+        assert model_types_with_proxy_enabled[task_and_variant] is Qwen38VLLMProxy

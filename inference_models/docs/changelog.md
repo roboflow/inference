@@ -2,20 +2,21 @@
 
 ## Unreleased
 
-### Fixed
-
-- RF-DETR TensorRT execution plans now fall back from Triton preprocessing and
-  postprocessing to their reference implementations when recoverable JIT
-  compilation or launch failures occur. Runtime diagnostics include a categorized,
-  conservative suggested action. Runtime recovery requires both
-  `allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`;
-  disabling either flag surfaces a `ModelRuntimeError` instead of applying runtime
-  fallback.
-
 ---
 ## `0.36.0`
 
-### Changed — offline mode rebuilt
+### Added
+
+
+### Changed 
+
+- The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+- Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
+  now use `class_id=-1` and `class_name="foreground"`. SAM3 Interactive previously
+  used `class_id=0`. If a downstream step filters for `class_id == 0`, update the
+  filter
+
+#### Offline mode rebuilt
 
 - **Model package directories are no longer allow-listed.** The layout-inventory and
   artifact-identity validation introduced in `0.32.0` is removed. Undeclared files in a
@@ -75,6 +76,26 @@
   appended to the offline-weights registry, so they load in `OFFLINE_MODE` without a
   prior online load. Loading them still requires
   `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True`.
+- SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
+  They can also combine point and box prompts in one conditioning frame.
+- `Qwen38HF` model class for the Qwen3.8 family (registered as `("qwen3_8", "vlm", BackendType.HF)`).
+  Qwen3.8 reuses the `qwen3_5` architecture (`Qwen3_5ForConditionalGeneration`), so the class is a
+  thin subclass of `Qwen35HF` with its own generation defaults
+  (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
+  Requires `transformers>=5.8.0` at runtime.
+
+### Fixed
+
+- RF-DETR TensorRT execution plans now fall back from Triton preprocessing and
+  postprocessing to their reference implementations when recoverable JIT
+  compilation or launch failures occur. Runtime diagnostics include a categorized,
+  conservative suggested action. Runtime recovery requires both
+  `allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`;
+  disabling either flag surfaces a `ModelRuntimeError` instead of applying runtime
+  fallback.
+- NumPy and tensor visualization blocks now wrap negative class IDs during
+  palette lookup instead of failing.
+
 
 ---
 ## `0.35.2`
