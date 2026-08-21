@@ -321,8 +321,6 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
         model_dependencies=None,
         model_features={"some": "value"},
         trusted_source=True,
-        offline_compatibility_hash="c" * 64,
-        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
     )
 
     # then
@@ -342,8 +340,6 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
             created_at=now,
             model_features={"some": "value"},
             trusted_source=True,
-            offline_compatibility_hash="c" * 64,
-            package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
         ),
     )
 
@@ -367,14 +363,15 @@ def test_dump_auto_resolution_cache_preserves_legacy_positional_slots() -> None:
         recommended_parameters,
         "canonical-model",
         canonical_model_id="canonical-model",
-        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
     )
 
     registered_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
     assert registered_entry.recommended_parameters == recommended_parameters
     assert registered_entry.cache_model_id == "canonical-model"
     assert registered_entry.trusted_source is None
-    assert registered_entry.offline_compatibility_hash is None
+    # retired v1-era fields must not resurface on the entry model
+    assert not hasattr(registered_entry, "offline_compatibility_hash")
+    assert not hasattr(registered_entry, "package_manifest_hash")
 
 
 @pytest.mark.parametrize(
@@ -440,7 +437,6 @@ def test_dump_auto_resolution_cache_persists_cache_model_id(
         resolved_files={"some/file.txt"},
         model_dependencies=None,
         model_features=None,
-        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
     )
 
     registered_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
@@ -478,7 +474,6 @@ def test_dump_auto_resolution_cache_persists_recommended_parameters(
         model_dependencies=None,
         model_features=None,
         recommended_parameters=recommended_parameters,
-        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
     )
 
     auto_resolution_cache.register.assert_called_once_with(
@@ -497,7 +492,6 @@ def test_dump_auto_resolution_cache_persists_recommended_parameters(
             created_at=now,
             model_features=None,
             recommended_parameters=recommended_parameters,
-            package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
         ),
     )
 
@@ -527,7 +521,6 @@ def test_dump_auto_resolution_cache_omits_recommended_parameters_when_none(
         resolved_files={"some/file.txt"},
         model_dependencies=None,
         model_features=None,
-        package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
     )
 
     auto_resolution_cache.register.assert_called_once_with(
@@ -546,7 +539,6 @@ def test_dump_auto_resolution_cache_omits_recommended_parameters_when_none(
             created_at=now,
             model_features=None,
             recommended_parameters=None,
-            package_manifest_hash=TEST_PACKAGE_MANIFEST_HASH,
         ),
     )
 
@@ -640,8 +632,6 @@ def test_dump_model_config_for_offline_use_upgrades_legacy_config(
         quantization="fp32",
         dynamic_batch_size_supported=False,
         static_batch_size=1,
-        runtime_compatibility_hash="a" * 64,
-        offline_compatibility_hash="b" * 64,
         canonical_model_id="workspace/project/3",
     )
 
@@ -661,8 +651,6 @@ def test_dump_model_config_for_offline_use_upgrades_legacy_config(
         "quantization": "fp32",
         "dynamic_batch_size_supported": False,
         "static_batch_size": 1,
-        "runtime_compatibility_hash": "a" * 64,
-        "offline_compatibility_hash": "b" * 64,
         "canonical_model_id": "workspace/project/3",
         "package_artifacts": [],
         "dependency_package_paths": [],
@@ -674,7 +662,6 @@ def test_dump_model_config_refuses_same_owner_provenance_change(
     empty_local_dir: str,
 ) -> None:
     config_path = os.path.join(empty_local_dir, "model_config.json")
-    runtime_hash = "a" * 64
     original_hash = dump_model_config_for_offline_use(
         config_path=config_path,
         model_architecture="yolov8",
@@ -685,7 +672,6 @@ def test_dump_model_config_refuses_same_owner_provenance_change(
         canonical_model_id="workspace/project/3",
         trusted_source=True,
         model_dependencies=[],
-        runtime_compatibility_hash=runtime_hash,
     )
     with open(config_path, "rb") as config_file:
         original_bytes = config_file.read()
@@ -701,7 +687,6 @@ def test_dump_model_config_refuses_same_owner_provenance_change(
             canonical_model_id="workspace/project/3",
             trusted_source=False,
             model_dependencies=[],
-            runtime_compatibility_hash=runtime_hash,
         )
 
     with open(config_path, "rb") as config_file:
@@ -709,9 +694,11 @@ def test_dump_model_config_refuses_same_owner_provenance_change(
     assert parse_model_config(config_path).manifest_content_hash == original_hash
 
 
-def test_dump_model_config_preserves_manifest_for_alias_request_hash(
+def test_dump_model_config_preserves_manifest_for_identical_republish(
     empty_local_dir: str,
 ) -> None:
+    """Republishing an identical package (e.g. for another request alias) must
+    keep the immutable manifest byte-stable instead of rewriting it."""
     config_path = os.path.join(empty_local_dir, "model_config.json")
     original_hash = dump_model_config_for_offline_use(
         config_path=config_path,
@@ -723,8 +710,6 @@ def test_dump_model_config_preserves_manifest_for_alias_request_hash(
         canonical_model_id="workspace/canonical/3",
         trusted_source=True,
         model_dependencies=[],
-        runtime_compatibility_hash="a" * 64,
-        offline_compatibility_hash="b" * 64,
     )
     with open(config_path, "rb") as config_file:
         original_bytes = config_file.read()
@@ -735,7 +720,7 @@ def test_dump_model_config_preserves_manifest_for_alias_request_hash(
         "replace",
         side_effect=AssertionError("an immutable manifest must not be replaced"),
     ) as replace_mock:
-        alias_hash = dump_model_config_for_offline_use(
+        republished_hash = dump_model_config_for_offline_use(
             config_path=config_path,
             model_architecture="yolov8",
             task_type="object-detection",
@@ -745,18 +730,15 @@ def test_dump_model_config_preserves_manifest_for_alias_request_hash(
             canonical_model_id="workspace/canonical/3",
             trusted_source=True,
             model_dependencies=[],
-            runtime_compatibility_hash="a" * 64,
-            offline_compatibility_hash="c" * 64,
         )
 
     with open(config_path, "rb") as config_file:
         assert config_file.read() == original_bytes
-    alias_stat = os.stat(config_path)
-    assert alias_stat.st_ino == original_stat.st_ino
-    assert alias_stat.st_mtime_ns == original_stat.st_mtime_ns
+    republished_stat = os.stat(config_path)
+    assert republished_stat.st_ino == original_stat.st_ino
+    assert republished_stat.st_mtime_ns == original_stat.st_mtime_ns
     replace_mock.assert_not_called()
-    assert alias_hash == original_hash
-    assert parse_model_config(config_path).offline_compatibility_hash == "b" * 64
+    assert republished_hash == original_hash
 
 
 def test_dump_model_config_for_offline_use_rejects_conflicting_existing_model_id(
@@ -954,8 +936,6 @@ def test_dump_model_config_for_offline_use_when_file_does_not_exists(
         "quantization": None,
         "dynamic_batch_size_supported": None,
         "static_batch_size": None,
-        "runtime_compatibility_hash": None,
-        "offline_compatibility_hash": None,
         "model_id": "workspace/project/3",
         "canonical_model_id": "workspace/project/3",
         "package_artifacts": [],
@@ -984,8 +964,6 @@ def test_dump_model_config_for_offline_use_rejects_corrupt_existing_config(
             trusted_source=True,
             model_dependencies=[],
             quantization="fp32",
-            runtime_compatibility_hash="a" * 64,
-            offline_compatibility_hash="b" * 64,
             canonical_model_id="workspace/project/3",
         )
 
@@ -1029,16 +1007,15 @@ def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> 
         "model_id",
     ]
     assert list(inspect.signature(initialize_model).parameters)[-2:] == [
-        "offline_compatibility_hash",
+        "requested_model_id",
         "api_key",
     ]
     assert (
         list(inspect.signature(attempt_loading_matching_model_packages).parameters)[-1]
-        == "offline_compatibility_hash"
+        == "requested_model_id"
     )
-    assert list(inspect.signature(dump_auto_resolution_cache).parameters)[-3:] == [
+    assert list(inspect.signature(dump_auto_resolution_cache).parameters)[-2:] == [
         "canonical_model_id",
-        "package_manifest_hash",
         "api_key",
     ]
 
@@ -1803,8 +1780,6 @@ def test_initialize_model_rewarm_registers_new_request_without_rewriting_manifes
     package_id = "package"
     first_request_hash = "a" * 64
     second_request_hash = "b" * 64
-    first_compatibility_hash = "c" * 64
-    second_compatibility_hash = "d" * 64
     file_handle = "weights.onnx"
     blob_content = b"stable model bytes"
     md5_hash = hashlib.md5(blob_content).hexdigest()
@@ -1849,7 +1824,6 @@ def test_initialize_model_rewarm_registers_new_request_without_rewriting_manifes
             model_init_kwargs={},
             auto_resolution_cache=auto_resolution_cache,
             auto_negotiation_hash=first_request_hash,
-            offline_compatibility_hash=first_compatibility_hash,
             model_dependencies=[],
             model_dependencies_instances={},
             model_dependencies_directories={},
@@ -1868,7 +1842,6 @@ def test_initialize_model_rewarm_registers_new_request_without_rewriting_manifes
             model_init_kwargs={},
             auto_resolution_cache=auto_resolution_cache,
             auto_negotiation_hash=second_request_hash,
-            offline_compatibility_hash=second_compatibility_hash,
             model_dependencies=[],
             model_dependencies_instances={},
             model_dependencies_directories={},
@@ -1901,12 +1874,6 @@ def test_initialize_model_rewarm_registers_new_request_without_rewriting_manifes
     current_manifest_stat = os.stat(manifest_path)
     assert current_manifest_stat.st_ino == original_manifest_stat.st_ino
     assert current_manifest_stat.st_mtime_ns == original_manifest_stat.st_mtime_ns
-    assert parse_model_config(manifest_path).offline_compatibility_hash == (
-        first_compatibility_hash
-    )
-    assert first_entry.offline_compatibility_hash == first_compatibility_hash
-    assert second_entry.offline_compatibility_hash == second_compatibility_hash
-    assert first_entry.package_manifest_hash == second_entry.package_manifest_hash
     assert model_class.from_pretrained.call_count == 3
     assert auto_resolution_cache.register.call_count == 2
 
@@ -2081,9 +2048,6 @@ def test_initialize_model_rejects_regular_dependency_path_before_constructor(
         canonical_model_id="workspace/encoder/1",
         trusted_source=True,
         model_dependencies=[],
-        runtime_compatibility_hash=core._runtime_compatibility_hash(
-            runtime_x_ray=core.x_ray_runtime_environment()
-        ),
     )
     with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
         package_dir = generate_model_package_cache_path(
@@ -2271,9 +2235,6 @@ def test_auto_load_exact_cache_rejects_manifest_canonical_owner_mismatch(
             canonical_model_id="tenant-b/canonical/1",
             trusted_source=True,
             model_dependencies=[],
-            runtime_compatibility_hash=core._runtime_compatibility_hash(
-                runtime_x_ray=core.x_ray_runtime_environment()
-            ),
         )
         cache_entry = AutoResolutionCacheEntry(
             model_id="shared-alias/1",
@@ -2312,78 +2273,6 @@ def test_auto_load_exact_cache_rejects_manifest_canonical_owner_mismatch(
     )
 
 
-def test_auto_load_exact_cache_rejects_same_owner_manifest_rewrite(
-    empty_local_dir: str,
-) -> None:
-    model_id = "tenant-a/canonical/1"
-    package_id = "package"
-    runtime_hash = core._runtime_compatibility_hash(
-        runtime_x_ray=core.x_ray_runtime_environment()
-    )
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        manifest_path = os.path.join(package_dir, "model_config.json")
-        original_hash = dump_model_config_for_offline_use(
-            config_path=manifest_path,
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            file_lock_acquire_timeout=1,
-            model_id=model_id,
-            canonical_model_id=model_id,
-            trusted_source=True,
-            model_dependencies=[],
-            runtime_compatibility_hash=runtime_hash,
-        )
-        with open(manifest_path) as manifest_file:
-            rewritten_manifest = json.load(manifest_file)
-        rewritten_manifest["trusted_source"] = False
-        with open(manifest_path, "w") as manifest_file:
-            json.dump(rewritten_manifest, manifest_file)
-        cache_entry = AutoResolutionCacheEntry(
-            model_id=model_id,
-            cache_model_id=model_id,
-            canonical_model_id=model_id,
-            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-            model_package_id=package_id,
-            resolved_files=[manifest_path],
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            created_at=datetime.now(),
-            model_dependencies=[],
-            trusted_source=True,
-            package_manifest_hash=original_hash,
-        )
-        auto_resolution_cache = MagicMock()
-        auto_resolution_cache.retrieve.return_value = cache_entry
-        model_access_manager = MagicMock()
-
-        with mock.patch.object(core, "resolve_model_class") as resolve_model_class:
-            result = attempt_loading_model_with_auto_load_cache(
-                use_auto_resolution_cache=True,
-                auto_resolution_cache=auto_resolution_cache,
-                auto_negotiation_hash="a" * 64,
-                model_access_manager=model_access_manager,
-                model_name_or_path=model_id,
-                model_init_kwargs={},
-                api_key="original-key",
-                allow_loading_dependency_models=True,
-                forwarded_kwargs_values={},
-            )
-
-    assert result is None
-    resolve_model_class.assert_not_called()
-    model_access_manager.is_model_package_access_granted.assert_not_called()
-    auto_resolution_cache.invalidate.assert_called_once_with(
-        auto_negotiation_hash="a" * 64
-    )
-
-
 def test_auto_load_exact_keyed_cache_accepts_matching_canonical_manifest(
     empty_local_dir: str,
 ) -> None:
@@ -2415,10 +2304,6 @@ def test_auto_load_exact_keyed_cache_accepts_matching_canonical_manifest(
             canonical_model_id=canonical_model_id,
             trusted_source=True,
             model_dependencies=[],
-            runtime_compatibility_hash=core._runtime_compatibility_hash(
-                runtime_x_ray=core.x_ray_runtime_environment()
-            ),
-            offline_compatibility_hash="a" * 64,
         )
         cache_entry = AutoResolutionCacheEntry(
             model_id=requested_model_id,
@@ -2431,7 +2316,6 @@ def test_auto_load_exact_keyed_cache_accepts_matching_canonical_manifest(
             task_type="object-detection",
             backend_type=BackendType.ONNX,
             created_at=datetime.now(),
-            offline_compatibility_hash="b" * 64,
             trusted_source=True,
             package_manifest_hash=manifest_hash,
         )
@@ -2993,111 +2877,9 @@ _OFFLINE_PACKAGE_CONFIG = {
     "quantization": "unknown",
     "dynamic_batch_size_supported": None,
     "static_batch_size": None,
-    "runtime_compatibility_hash": core._runtime_compatibility_hash(
-        runtime_x_ray=core.x_ray_runtime_environment()
-    ),
-    "offline_compatibility_hash": None,
     "package_artifacts": [],
     "dependency_package_paths": [],
 }
-
-
-def test_parent_cache_rejects_dependency_rewarm_at_same_package_path(
-    empty_local_dir: str,
-) -> None:
-    dependency_model_id = "workspace/encoder/1"
-    dependency_package_id = "dependencyPackage"
-    dependency_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=dependency_model_id,
-        package_id=dependency_package_id,
-        config=_OFFLINE_PACKAGE_CONFIG,
-    )
-    dependency_manifest_path = os.path.join(dependency_dir, "model_config.json")
-    dependency_manifest_hash = parse_model_config(
-        dependency_manifest_path
-    ).manifest_content_hash
-    dependency_identity = {
-        "name": "encoder",
-        "target_path": dependency_dir,
-        "cache_model_id": dependency_model_id,
-        "canonical_model_id": dependency_model_id,
-        "model_package_id": dependency_package_id,
-        "package_manifest_hash": dependency_manifest_hash,
-    }
-    parent_model_id = "workspace/parent/1"
-    parent_package_id = "parentPackage"
-    parent_dependencies = [
-        {
-            "name": "encoder",
-            "model_id": dependency_model_id,
-            "model_package_id": dependency_package_id,
-        }
-    ]
-    parent_dir = _write_offline_package(
-        inference_home=empty_local_dir,
-        model_id=parent_model_id,
-        package_id=parent_package_id,
-        config={
-            **_OFFLINE_PACKAGE_CONFIG,
-            "model_dependencies": parent_dependencies,
-            "dependency_package_paths": [dependency_identity],
-        },
-    )
-    dependency_links_dir = os.path.join(parent_dir, core.MODEL_DEPENDENCIES_SUB_DIR)
-    os.makedirs(dependency_links_dir)
-    os.symlink(
-        dependency_dir,
-        os.path.join(dependency_links_dir, "encoder"),
-    )
-    parent_manifest_path = os.path.join(parent_dir, "model_config.json")
-    parent_manifest_hash = parse_model_config(
-        parent_manifest_path
-    ).manifest_content_hash
-    parent_entry = AutoResolutionCacheEntry(
-        model_id=parent_model_id,
-        cache_model_id=parent_model_id,
-        canonical_model_id=parent_model_id,
-        cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-        model_package_id=parent_package_id,
-        resolved_files=[parent_manifest_path],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        model_dependencies=[ModelDependency.model_validate(parent_dependencies[0])],
-        created_at=datetime.now(),
-        trusted_source=True,
-        package_manifest_hash=parent_manifest_hash,
-    )
-    with open(dependency_manifest_path) as dependency_manifest_file:
-        rewritten_dependency_manifest = json.load(dependency_manifest_file)
-    rewritten_dependency_manifest["recommended_parameters"] = {"confidence": 0.25}
-    with open(dependency_manifest_path, "w") as dependency_manifest_file:
-        json.dump(rewritten_dependency_manifest, dependency_manifest_file)
-
-    auto_resolution_cache = MagicMock()
-    auto_resolution_cache.retrieve.return_value = parent_entry
-    model_access_manager = MagicMock()
-    with mock.patch.object(
-        model_cache_paths, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        core, "attempt_loading_model_from_local_storage"
-    ) as local_load:
-        exact_result = attempt_loading_model_with_auto_load_cache(
-            use_auto_resolution_cache=True,
-            auto_resolution_cache=auto_resolution_cache,
-            auto_negotiation_hash="a" * 64,
-            model_access_manager=model_access_manager,
-            model_name_or_path=parent_model_id,
-            model_init_kwargs={},
-            api_key="test-key",
-            allow_loading_dependency_models=True,
-            forwarded_kwargs_values={},
-        )
-
-    assert exact_result is None
-    model_access_manager.is_model_package_access_granted.assert_not_called()
-    local_load.assert_not_called()
 
 
 def test_find_cached_model_package_dir_when_valid_package_exists(
@@ -3427,7 +3209,7 @@ def test_online_retry_error_does_not_use_cache_fallback() -> None:
                 auto_resolution_cache=auto_resolution_cache,
             )
 
-    auto_resolution_cache.find_compatible_candidates.assert_not_called()
+    auto_resolution_cache.find_model_candidates.assert_not_called()
 
 
 def test_from_pretrained_uses_effective_env_key_for_strict_exact_cache_hit() -> None:
@@ -4158,7 +3940,7 @@ def test_dump_model_config_for_offline_use_persists_model_id(
     assert content["task_type"] == "object-detection"
 
 
-def _current_manifest_content(runtime_compatibility_hash: str) -> dict:
+def _current_manifest_content() -> dict:
     return {
         "offline_manifest_version": core.OFFLINE_CACHE_MANIFEST_VERSION,
         "model_id": "workspace/project/3",
@@ -4173,8 +3955,6 @@ def _current_manifest_content(runtime_compatibility_hash: str) -> dict:
         "quantization": "unknown",
         "dynamic_batch_size_supported": True,
         "static_batch_size": None,
-        "runtime_compatibility_hash": runtime_compatibility_hash,
-        "offline_compatibility_hash": "b" * 64,
         "package_artifacts": [],
         "dependency_package_paths": [],
     }
@@ -4196,22 +3976,23 @@ def _expected_manifest_fields_from_content(content: dict) -> dict:
             "quantization",
             "dynamic_batch_size_supported",
             "static_batch_size",
-            "runtime_compatibility_hash",
         )
     }
 
 
-def test_cache_attribution_accepts_package_materialized_on_another_machine(
+def test_cache_attribution_accepts_legacy_manifest_with_environment_hashes(
     empty_local_dir: str,
 ) -> None:
-    """A package cached by one machine must stay loadable on another GPU type."""
-    # given - manifest written on a machine with a different runtime hash
-    content = _current_manifest_content(runtime_compatibility_hash="a" * 64)
+    """A manifest written by an older release still carrying the removed
+    runtime/offline hash fields must stay loadable."""
+    # given - legacy manifest with the removed environment-hash fields
+    content = _current_manifest_content()
+    content["runtime_compatibility_hash"] = "a" * 64
+    content["offline_compatibility_hash"] = "b" * 64
     config_path = os.path.join(empty_local_dir, "model_config.json")
     with open(config_path, "w") as file:
         json.dump(content, file)
     expected_manifest_fields = _expected_manifest_fields_from_content(content)
-    expected_manifest_fields["runtime_compatibility_hash"] = "c" * 64
 
     # when - no error expected
     core._validate_existing_cache_package_attribution(
@@ -4228,7 +4009,7 @@ def test_cache_attribution_still_rejects_package_identity_change(
     empty_local_dir: str,
 ) -> None:
     # given - manifest differing in a genuine package-identity field
-    content = _current_manifest_content(runtime_compatibility_hash="a" * 64)
+    content = _current_manifest_content()
     config_path = os.path.join(empty_local_dir, "model_config.json")
     with open(config_path, "w") as file:
         json.dump(content, file)
@@ -4245,115 +4026,6 @@ def test_cache_attribution_still_rejects_package_identity_change(
             package_artifact_declarations=[],
             dependency_package_paths=[],
         )
-
-
-def test_dump_model_config_preserves_manifest_for_other_machine_runtime_hash(
-    empty_local_dir: str,
-) -> None:
-    """Republishing an identical package from a different machine must keep the
-    original manifest byte-stable instead of raising or rewriting it."""
-    # given
-    config_path = os.path.join(empty_local_dir, "model_config.json")
-    original_hash = dump_model_config_for_offline_use(
-        config_path=config_path,
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        file_lock_acquire_timeout=10,
-        model_id="workspace/project/3",
-        canonical_model_id="workspace/project/3",
-        trusted_source=True,
-        model_dependencies=[],
-        runtime_compatibility_hash="a" * 64,
-    )
-    with open(config_path, "rb") as config_file:
-        original_bytes = config_file.read()
-
-    # when - same package republished from a machine with another runtime hash
-    republished_hash = dump_model_config_for_offline_use(
-        config_path=config_path,
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        file_lock_acquire_timeout=10,
-        model_id="workspace/project/3",
-        canonical_model_id="workspace/project/3",
-        trusted_source=True,
-        model_dependencies=[],
-        runtime_compatibility_hash="c" * 64,
-    )
-
-    # then
-    with open(config_path, "rb") as config_file:
-        assert config_file.read() == original_bytes
-    assert republished_hash == original_hash
-
-
-def test_verified_auto_cache_package_dir_accepts_manifest_from_other_machine(
-    empty_local_dir: str,
-) -> None:
-    """An auto-resolution entry must stay valid when the package manifest was
-    materialized by a machine with a different runtime-compatibility hash —
-    the entry's lookup key already scopes it to the current runtime."""
-    # given
-    model_id = "workspace/canonical/7"
-    package_id = "sharedPackage"
-    artifact_content = b"shared weights"
-    with mock.patch.object(model_cache_paths, "INFERENCE_HOME", empty_local_dir):
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id,
-            package_id=package_id,
-        )
-        os.makedirs(package_dir)
-        with open(os.path.join(package_dir, "weights.bin"), "wb") as artifact_file:
-            artifact_file.write(artifact_content)
-        manifest_hash = dump_model_config_for_offline_use(
-            config_path=os.path.join(package_dir, MODEL_CONFIG_FILE_NAME),
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            file_lock_acquire_timeout=10,
-            model_id=model_id,
-            canonical_model_id=model_id,
-            trusted_source=True,
-            model_dependencies=[],
-            quantization="unknown",
-            dynamic_batch_size_supported=True,
-            runtime_compatibility_hash="a" * 64,  # not this machine's hash
-            offline_compatibility_hash="b" * 64,
-            package_artifacts=[
-                {
-                    "file_handle": "weights.bin",
-                    "md5_hash": hashlib.md5(artifact_content).hexdigest(),
-                    "unhashed": False,
-                    "sha256_hash": None,
-                    "source_hash": None,
-                    "storage": "package_file",
-                }
-            ],
-            dependency_package_paths=[],
-        )
-        cache_entry = AutoResolutionCacheEntry(
-            model_id=model_id,
-            cache_model_id=model_id,
-            canonical_model_id=model_id,
-            cache_attribution_version=core.CACHE_ATTRIBUTION_VERSION,
-            model_package_id=package_id,
-            resolved_files=[],
-            model_architecture="yolov8",
-            task_type="object-detection",
-            backend_type=BackendType.ONNX,
-            model_dependencies=None,
-            created_at=datetime.now(),
-            trusted_source=True,
-            package_manifest_hash=manifest_hash,
-        )
-
-        # when
-        result = core._verified_auto_cache_package_dir(cache_entry=cache_entry)
-
-    # then - entry accepted despite foreign runtime hash in the manifest
-    assert result == package_dir
 
 
 def test_verified_auto_cache_package_dir_accepts_stray_trt_engine_cache_file(
@@ -4386,10 +4058,6 @@ def test_verified_auto_cache_package_dir_accepts_stray_trt_engine_cache_file(
             model_dependencies=[],
             quantization="unknown",
             dynamic_batch_size_supported=True,
-            runtime_compatibility_hash=core._runtime_compatibility_hash(
-                runtime_x_ray=core.x_ray_runtime_environment()
-            ),
-            offline_compatibility_hash=None,
             package_artifacts=[
                 {
                     "file_handle": "weights.onnx",

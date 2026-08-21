@@ -360,14 +360,6 @@ def _runtime_compatibility_content(runtime_x_ray: object) -> dict:
             runtime_x_ray, "trt_python_package_available", False
         ),
     }
-
-
-def _runtime_compatibility_hash(runtime_x_ray: object) -> str:
-    return hash_dict_content(
-        content=_runtime_compatibility_content(runtime_x_ray=runtime_x_ray)
-    )
-
-
 def _validate_portable_cache_name(value: object, kind: str) -> str:
     windows_reserved_names = {
         "CON",
@@ -1733,7 +1725,6 @@ class AutoModel:
         model_path_exists = os.path.exists(model_id_or_path)
         if not model_path_exists:
             _validate_remote_model_id(model_id=model_id_or_path)
-        if not model_path_exists:
             api_key = _resolve_effective_api_key(
                 api_key=api_key,
                 provider=weights_provider,
@@ -1808,11 +1799,13 @@ class AutoModel:
             runtime_compatibility = _runtime_compatibility_content(
                 runtime_x_ray=runtime_x_ray
             )
-            # This digest describes whether an already-warmed package can be
-            # loaded, so it deliberately excludes provider transport, retry,
-            # and download-integrity options. Those still belong to the exact
-            # online negotiation key below because they can affect acquisition.
-            offline_compatibility_content = {
+            # The identity of an online resolution request: loading
+            # constraints, the runtime fingerprint (so a shared cache volume
+            # never serves another machine's resolution), and acquisition
+            # options. Key membership is part of the on-disk entry-cache
+            # contract - changing it invalidates every existing entry.
+            auto_negotiation_hash = hash_dict_content(
+                content={
                 "provider": weights_provider,
                 "model_id": model_id_or_path,
                 "requested_model_package_id": model_package_id,
@@ -1839,19 +1832,12 @@ class AutoModel:
                     forwarded_kwargs_values
                 ),
                 "runtime_compatibility": runtime_compatibility,
-            }
-            offline_compatibility_hash = hash_dict_content(
-                content=offline_compatibility_content
-            )
-            auto_negotiation_hash = hash_dict_content(
-                content={
-                    **offline_compatibility_content,
-                    "verify_hash_while_download": verify_hash_while_download,
-                    "download_files_without_hash": download_files_without_hash,
-                    "max_package_loading_attempts": max_package_loading_attempts,
-                    "weights_provider_extra_query_params": weights_provider_extra_query_params,
-                    "weights_provider_extra_headers": weights_provider_extra_headers,
-                    "api_key": api_key,
+                "verify_hash_while_download": verify_hash_while_download,
+                "download_files_without_hash": download_files_without_hash,
+                "max_package_loading_attempts": max_package_loading_attempts,
+                "weights_provider_extra_query_params": weights_provider_extra_query_params,
+                "weights_provider_extra_headers": weights_provider_extra_headers,
+                "api_key": api_key,
                 }
             )
             model_from_access_manager = model_access_manager.retrieve_model_instance(
@@ -1890,17 +1876,8 @@ class AutoModel:
                     dependency_models_params=dependency_models_params,
                     weights_provider_extra_query_params=weights_provider_extra_query_params,
                     weights_provider_extra_headers=weights_provider_extra_headers,
+                    point_model_directory=point_model_directory,
                 )
-
-            def verified_cached_model_directory(
-                cache_hash: str,
-            ) -> Optional[str]:
-                cache_entry = auto_resolution_cache.retrieve(
-                    auto_negotiation_hash=cache_hash
-                )
-                if cache_entry is None or cache_entry.model_id != model_id_or_path:
-                    return None
-                return _verified_auto_cache_package_dir(cache_entry=cache_entry)
 
             warm_up_metadata: Optional[ModelMetadata] = None
             if OFFLINE_MODE_WARM_UP and weights_provider == "roboflow":
@@ -1921,15 +1898,6 @@ class AutoModel:
                         error,
                     )
             model_from_cache = attempt_cached_load(auto_negotiation_hash)
-            if model_from_cache:
-                if point_model_directory:
-                    cache_dir = verified_cached_model_directory(
-                        cache_hash=auto_negotiation_hash
-                    )
-                    if cache_dir is None:
-                        model_from_cache = None
-                    else:
-                        point_model_directory(cache_dir)
             if model_from_cache:
                 if warm_up_metadata is not None:
                     cached_entry = auto_resolution_cache.retrieve(
@@ -2119,7 +2087,6 @@ class AutoModel:
                 model_init_kwargs=model_init_kwargs,
                 model_access_manager=model_access_manager,
                 auto_negotiation_hash=auto_negotiation_hash,
-                offline_compatibility_hash=offline_compatibility_hash,
                 api_key=api_key,
                 model_dependencies=model_metadata.model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
@@ -2167,18 +2134,20 @@ class AutoModel:
 def _verified_auto_cache_package_dir(
     cache_entry: AutoResolutionCacheEntry,
 ) -> Optional[str]:
+    """Resolve the entry's package directory, verifying identity attribution.
+
+    Path attribution only: the manifest must agree on which model owns the
+    directory (guards alias entries handing out another model's package).
+    Content coherence is the concern of the layers that read the files.
+    """
     if (
-        cache_entry.cache_attribution_version != CACHE_ATTRIBUTION_VERSION
+        not cache_entry.cache_model_id
+        or not cache_entry.cache_model_id.strip()
         or not cache_entry.canonical_model_id
         or not cache_entry.canonical_model_id.strip()
-        or not cache_entry.cache_model_id
-        or not cache_entry.cache_model_id.strip()
-        or not isinstance(cache_entry.package_manifest_hash, str)
-        or re.fullmatch(r"[0-9a-f]{64}", cache_entry.package_manifest_hash) is None
     ):
         LOGGER.warning(
-            "Ignoring invalid auto-load cache entry because canonical package "
-            "attribution is missing or malformed."
+            "Ignoring auto-load cache entry without canonical attribution."
         )
         return None
     try:
@@ -2193,52 +2162,21 @@ def _verified_auto_cache_package_dir(
         )
     except Exception as error:
         LOGGER.warning(
-            "Ignoring invalid auto-load cache entry because its package "
-            "attribution manifest could not be verified: %s",
+            "Ignoring auto-load cache entry because its package could not be "
+            "inspected: %s",
             error,
         )
         return None
     if (
-        package_config.offline_manifest_version != OFFLINE_CACHE_MANIFEST_VERSION
-        or package_config.model_id != cache_entry.cache_model_id
+        package_config.model_id != cache_entry.cache_model_id
         or package_config.canonical_model_id != cache_entry.canonical_model_id
-        or package_config.manifest_content_hash != cache_entry.package_manifest_hash
-        or package_config.model_architecture != cache_entry.model_architecture
-        or package_config.task_type != cache_entry.task_type
-        or package_config.backend_type != cache_entry.backend_type
-        or package_config.model_features != cache_entry.model_features
-        or package_config.trusted_source != cache_entry.trusted_source
-        or package_config.model_dependencies
-        != [
-            dependency.model_dump(mode="json")
-            for dependency in (cache_entry.model_dependencies or [])
-        ]
-        or package_config.recommended_parameters
-        != (
-            cache_entry.recommended_parameters.model_dump(mode="json")
-            if cache_entry.recommended_parameters is not None
-            else None
-        )
-        # The manifest's runtime_compatibility_hash identifies the machine
-        # that first materialized the package, not this one, so it is not
-        # compared here. Runtime applicability of the entry is already
-        # guaranteed by its lookup key: auto_negotiation_hash embeds the
-        # current runtime-compatibility content, and the entry was only
-        # written after a successful warm load under that exact runtime.
     ):
         LOGGER.warning(
-            "Ignoring invalid auto-load cache entry because its resolution "
-            "metadata does not match the package manifest published by the "
-            "successful warm."
+            "Ignoring auto-load cache entry because the package manifest is "
+            "attributed to a different model."
         )
         return None
-    if not _validate_cached_dependency_package_paths(
-        package_dir=package_dir,
-        identities=package_config.dependency_package_paths,
-    ):
-        return None
     return package_dir
-
 
 def attempt_loading_model_with_auto_load_cache(
     use_auto_resolution_cache: bool,
@@ -2263,6 +2201,7 @@ def attempt_loading_model_with_auto_load_cache(
     dependency_models_params: Optional[dict] = None,
     weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+    point_model_directory: Optional[Callable[[str], None]] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -2448,6 +2387,8 @@ def attempt_loading_model_with_auto_load_cache(
                 model_init_kwargs=model_init_kwargs,
             ),
         )
+        if point_model_directory:
+            point_model_directory(model_package_cache_dir)
         verbose_info(
             message=f"Successfully loaded model {model_name_or_path} using auto-loading cache.",
             verbose_requested=verbose,
@@ -2686,7 +2627,6 @@ def attempt_loading_matching_model_packages(
     use_auto_resolution_cache: bool = True,
     point_model_directory: Optional[Callable[[str], None]] = None,
     requested_model_id: Optional[str] = None,
-    offline_compatibility_hash: Optional[str] = None,
 ) -> AnyModel:
     if requested_model_id is None:
         requested_model_id = model_id
@@ -2720,7 +2660,6 @@ def attempt_loading_matching_model_packages(
                 model_init_kwargs=model_init_kwargs,
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
-                offline_compatibility_hash=offline_compatibility_hash,
                 model_dependencies=model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
@@ -2795,13 +2734,6 @@ def attempt_loading_matching_model_packages(
     )
 
 
-# Manifest fields describing the runtime environment rather than the package
-# identity. A package materialized on one machine must remain loadable on
-# another (e.g. model caches shared between different GPU types), so these
-# fields must not participate in the cache-mutation guard below.
-MUTATION_GUARD_ENVIRONMENT_DEPENDENT_FIELDS = {"runtime_compatibility_hash"}
-
-
 def _validate_existing_cache_package_attribution(
     package_dir: str,
     cache_model_id: str,
@@ -2861,18 +2793,6 @@ def _validate_existing_cache_package_attribution(
         )
     if content.get("offline_manifest_version") != OFFLINE_CACHE_MANIFEST_VERSION:
         return
-    existing_offline_compatibility_hash = content.get("offline_compatibility_hash")
-    if existing_offline_compatibility_hash is not None and (
-        not isinstance(existing_offline_compatibility_hash, str)
-        or re.fullmatch(r"[0-9a-f]{64}", existing_offline_compatibility_hash) is None
-    ):
-        raise CorruptedModelPackageError(
-            message=(
-                "Current cached model manifest has invalid offline "
-                "compatibility metadata."
-            ),
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        )
     try:
         existing_artifact_identities = _parse_package_artifact_identities(
             content.get("package_artifacts")
@@ -2892,7 +2812,6 @@ def _validate_existing_cache_package_attribution(
         or any(
             content.get(field_name) != expected_value
             for field_name, expected_value in expected_manifest_fields.items()
-            if field_name not in MUTATION_GUARD_ENVIRONMENT_DEPENDENT_FIELDS
         )
         or _artifact_declarations_from_identities(
             identities=existing_artifact_identities
@@ -2935,7 +2854,6 @@ def initialize_model(
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
     use_auto_resolution_cache: bool = True,
     requested_model_id: Optional[str] = None,
-    offline_compatibility_hash: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> Tuple[AnyModel, str]:
     if not isinstance(model_id, str) or not model_id.strip():
@@ -2996,9 +2914,6 @@ def initialize_model(
         if model_package.quantization is not None
         else Quantization.UNKNOWN.value
     )
-    runtime_compatibility_hash = _runtime_compatibility_hash(
-        runtime_x_ray=x_ray_runtime_environment()
-    )
     expected_manifest_fields = {
         "model_id": cache_model_id,
         "canonical_model_id": model_id,
@@ -3012,7 +2927,6 @@ def initialize_model(
         "quantization": quantization,
         "dynamic_batch_size_supported": (model_package.dynamic_batch_size_supported),
         "static_batch_size": model_package.static_batch_size,
-        "runtime_compatibility_hash": runtime_compatibility_hash,
     }
     if model_package.package_source == PackageSourceType.LOCAL_CACHE:
         package_path_for_lock = resolve_existing_model_package_cache_path(
@@ -3089,7 +3003,6 @@ def initialize_model(
                     on_symlink_deleted=on_symlink_deleted,
                     use_auto_resolution_cache=use_auto_resolution_cache,
                     requested_model_id=requested_model_id,
-                    offline_compatibility_hash=offline_compatibility_hash,
                     api_key=api_key,
                 )
             finally:
@@ -3274,7 +3187,7 @@ def initialize_model(
     # successfully: a failed online candidate may leave downloaded artefacts
     # behind, but those partial artefacts must not be advertised as a warmed
     # offline package on the next restart.
-    package_manifest_hash = dump_model_config_for_offline_use(
+    dump_model_config_for_offline_use(
         config_path=config_path,
         model_architecture=model_architecture,
         task_type=task_type,
@@ -3289,8 +3202,6 @@ def initialize_model(
         quantization=quantization,
         dynamic_batch_size_supported=model_package.dynamic_batch_size_supported,
         static_batch_size=model_package.static_batch_size,
-        runtime_compatibility_hash=runtime_compatibility_hash,
-        offline_compatibility_hash=offline_compatibility_hash,
         canonical_model_id=model_id,
         package_artifacts=package_artifact_identities,
         dependency_package_paths=dependency_package_paths,
@@ -3300,7 +3211,6 @@ def initialize_model(
         use_auto_resolution_cache=use_auto_resolution_cache,
         auto_resolution_cache=auto_resolution_cache,
         auto_negotiation_hash=auto_negotiation_hash,
-        offline_compatibility_hash=offline_compatibility_hash,
         model_id=requested_model_id,
         cache_model_id=cache_model_id,
         canonical_model_id=model_id,
@@ -3313,7 +3223,6 @@ def initialize_model(
         model_features=model_package.model_features,
         recommended_parameters=resolved_recommended_parameters,
         trusted_source=model_package.trusted_source,
-        package_manifest_hash=package_manifest_hash,
         api_key=api_key,
     )
     return model, model_package_cache_dir
@@ -3396,8 +3305,6 @@ def dump_model_config_for_offline_use(
     quantization: Optional[str] = None,
     dynamic_batch_size_supported: Optional[bool] = None,
     static_batch_size: Optional[int] = None,
-    runtime_compatibility_hash: Optional[str] = None,
-    offline_compatibility_hash: Optional[str] = None,
     canonical_model_id: Optional[str] = None,
     package_artifacts: Optional[List[dict]] = None,
     dependency_package_paths: Optional[List[dict]] = None,
@@ -3436,8 +3343,6 @@ def dump_model_config_for_offline_use(
         "quantization": quantization,
         "dynamic_batch_size_supported": dynamic_batch_size_supported,
         "static_batch_size": static_batch_size,
-        "runtime_compatibility_hash": runtime_compatibility_hash,
-        "offline_compatibility_hash": offline_compatibility_hash,
         "canonical_model_id": canonical_model_id,
         "package_artifacts": package_artifacts,
         "dependency_package_paths": dependency_package_paths,
@@ -3499,26 +3404,9 @@ def dump_model_config_for_offline_use(
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if content.get("offline_manifest_version") == OFFLINE_CACHE_MANIFEST_VERSION:
-            existing_offline_compatibility_hash = content.get(
-                "offline_compatibility_hash"
-            )
-            if existing_offline_compatibility_hash is not None and (
-                not isinstance(existing_offline_compatibility_hash, str)
-                or re.fullmatch(r"[0-9a-f]{64}", existing_offline_compatibility_hash)
-                is None
-            ):
-                raise CorruptedModelPackageError(
-                    message=(
-                        "Refusing to reuse a current cached model manifest with "
-                        "invalid offline compatibility metadata."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                )
             if any(
                 content.get(field_name) != field_value
                 for field_name, field_value in published_fields.items()
-                if field_name != "offline_compatibility_hash"
-                and field_name not in MUTATION_GUARD_ENVIRONMENT_DEPENDENT_FIELDS
             ):
                 raise CorruptedModelPackageError(
                     message=(
@@ -3527,22 +3415,6 @@ def dump_model_config_for_offline_use(
                     ),
                     help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
-            # This hash describes the request that first materialized the
-            # immutable package, not the package itself. A provider alias can
-            # legitimately resolve to the same canonical package with a
-            # different request hash. Keep the original package manifest
-            # stable; the alias-specific hash is verified on its separate
-            # auto-resolution entry.
-            published_fields["offline_compatibility_hash"] = (
-                existing_offline_compatibility_hash
-            )
-            # Likewise, the runtime compatibility hash describes the machine
-            # that first materialized the package, not the package itself.
-            # Keep the original manifest stable when another machine (e.g. a
-            # different GPU type sharing the model cache) republishes it.
-            published_fields["runtime_compatibility_hash"] = content.get(
-                "runtime_compatibility_hash"
-            )
             # Every other current-manifest field was just proven identical.
             # Do not replace the file merely to publish another request alias:
             # model_config.json is part of the immutable package, while the
@@ -3683,9 +3555,7 @@ def dump_auto_resolution_cache(
     recommended_parameters: Optional[RecommendedParameters] = None,
     cache_model_id: Optional[str] = None,
     trusted_source: Optional[bool] = None,
-    offline_compatibility_hash: Optional[str] = None,
     canonical_model_id: Optional[str] = None,
-    package_manifest_hash: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> None:
     if not use_auto_resolution_cache:
@@ -3705,14 +3575,6 @@ def dump_auto_resolution_cache(
             message="Cannot cache model resolution without canonical cache attribution.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    if (
-        not isinstance(package_manifest_hash, str)
-        or re.fullmatch(r"[0-9a-f]{64}", package_manifest_hash) is None
-    ):
-        raise CorruptedModelPackageError(
-            message="Cannot cache model resolution without a valid package manifest identity.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        )
     cache_content = AutoResolutionCacheEntry(
         model_id=model_id,
         cache_model_id=cache_model_id,
@@ -3728,9 +3590,7 @@ def dump_auto_resolution_cache(
         model_dependencies=model_dependencies,
         model_features=model_features,
         recommended_parameters=recommended_parameters,
-        offline_compatibility_hash=offline_compatibility_hash,
         trusted_source=trusted_source,
-        package_manifest_hash=package_manifest_hash,
     )
     auto_resolution_cache.register(
         auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content
@@ -3983,8 +3843,6 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
         "model_module",
         "model_class",
         "quantization",
-        "runtime_compatibility_hash",
-        "offline_compatibility_hash",
         "model_id",
         "canonical_model_id",
     )
@@ -3993,22 +3851,6 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
         if field_value is not None and not isinstance(field_value, str):
             raise CorruptedModelPackageError(
                 message=f"Cached model config contains invalid {field_name} metadata.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
-    for hash_field_name in (
-        "runtime_compatibility_hash",
-        "offline_compatibility_hash",
-    ):
-        hash_field_value = raw_config.get(hash_field_name)
-        if (
-            hash_field_value is not None
-            and re.fullmatch(r"[0-9a-f]{64}", hash_field_value) is None
-        ):
-            raise CorruptedModelPackageError(
-                message=(
-                    f"Cached model config contains invalid {hash_field_name} "
-                    "metadata."
-                ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
     if model_features is not None and not isinstance(model_features, dict):
@@ -4088,8 +3930,6 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
         quantization=raw_config.get("quantization"),
         dynamic_batch_size_supported=dynamic_batch_size_supported,
         static_batch_size=static_batch_size,
-        runtime_compatibility_hash=raw_config.get("runtime_compatibility_hash"),
-        offline_compatibility_hash=raw_config.get("offline_compatibility_hash"),
         offline_manifest_version=offline_manifest_version,
         model_id=raw_config.get("model_id"),
         canonical_model_id=raw_config.get("canonical_model_id"),
