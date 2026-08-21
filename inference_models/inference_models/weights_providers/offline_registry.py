@@ -499,26 +499,42 @@ def record_successful_load(
             aliases.add(requested_model_id)
         proven = dict(existing.get("proven") or {})
         proven[proven_package_id] = {"last_proven_at": now}
+        existing_model = (
+            existing.get("model") if isinstance(existing.get("model"), dict) else {}
+        )
+        incoming_model = {
+            "model_architecture": model_metadata.model_architecture,
+            "task_type": model_metadata.task_type,
+            "model_variant": model_metadata.model_variant,
+            "model_dependencies": (
+                [
+                    dependency.model_dump(mode="json")
+                    for dependency in model_metadata.model_dependencies
+                ]
+                if model_metadata.model_dependencies
+                else None
+            ),
+            "recommended_parameters": (
+                model_metadata.recommended_parameters.model_dump(mode="json")
+                if model_metadata.recommended_parameters is not None
+                else None
+            ),
+        }
+        merged_model = {
+            field_name: (
+                incoming_value
+                if incoming_value is not None
+                else existing_model.get(field_name)
+            )
+            for field_name, incoming_value in incoming_model.items()
+        }
         content = {
             "format_version": REGISTRY_FORMAT_VERSION,
             "canonical_model_id": canonical_model_id,
             "requested_aliases": sorted(aliases),
             "recorded_at": now,
             "source": source,
-            "model": {
-                "model_architecture": model_metadata.model_architecture,
-                "task_type": model_metadata.task_type,
-                "model_variant": model_metadata.model_variant,
-                "model_dependencies": [
-                    dependency.model_dump(mode="json")
-                    for dependency in (model_metadata.model_dependencies or [])
-                ],
-                "recommended_parameters": (
-                    model_metadata.recommended_parameters.model_dump(mode="json")
-                    if model_metadata.recommended_parameters is not None
-                    else None
-                ),
-            },
+            "model": merged_model,
             "packages": [
                 packages[package_id] for package_id in sorted(packages.keys())
             ],

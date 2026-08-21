@@ -165,20 +165,40 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
     writes a v4 manifest with shared_blob storage; the offline path rebuilds
     the package from the registry as package_file declarations. The read-only
     offline leg must not run the mutation guard / identity materialization
-    that trips on that storage-classification difference."""
-    import dataclasses
+    that trips on that storage-classification difference.
+
+    Uses a TORCH package: torch ships in every test environment, so real
+    auto-negotiation accepts it without backend-availability stubbing (the
+    ONNX backend is absent on bare CI runners)."""
     import hashlib
     import json
     import os
 
-    from packaging.version import Version
-
-    from inference_models.models.auto_loaders import auto_negotiation, model_cache_paths
-    from inference_models.runtime_introspection.core import x_ray_runtime_environment
+    from inference_models.models.auto_loaders import model_cache_paths
 
     model_id = MODEL_ID
-    weights_content = b"onnx weights bytes"
+    weights_content = b"torch weights bytes"
     weights_md5 = hashlib.md5(weights_content).hexdigest()
+    torch_metadata = ModelMetadata(
+        model_id=model_id,
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        model_packages=[
+            ModelPackageMetadata(
+                package_id="pkgtorch",
+                backend=BackendType.TORCH,
+                package_artefacts=[
+                    FileDownloadSpecs(
+                        download_url="https://signed.example/weights.pt",
+                        file_handle="weights.pt",
+                        md5_hash=weights_md5,
+                    ),
+                ],
+                quantization=Quantization.FP32,
+                trusted_source=True,
+            ),
+        ],
+    )
 
     with mock.patch.object(
         model_cache_paths, "INFERENCE_HOME", str(tmp_path)
@@ -191,10 +211,10 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
         with open(blob_path, "wb") as blob_file:
             blob_file.write(weights_content)
         package_dir = model_cache_paths.generate_model_package_cache_path(
-            model_id=model_id, package_id="pkgonnx"
+            model_id=model_id, package_id="pkgtorch"
         )
         os.makedirs(package_dir)
-        os.symlink(blob_path, os.path.join(package_dir, "weights.onnx"))
+        os.symlink(blob_path, os.path.join(package_dir, "weights.pt"))
         with open(os.path.join(package_dir, "model_config.json"), "w") as manifest_file:
             json.dump(
                 {
@@ -203,7 +223,7 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
                     "canonical_model_id": model_id,
                     "model_architecture": "rfdetr",
                     "task_type": "object-detection",
-                    "backend_type": "onnx",
+                    "backend_type": "torch",
                     "model_features": None,
                     "trusted_source": True,
                     "model_dependencies": [],
@@ -213,7 +233,7 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
                     "static_batch_size": 1,
                     "package_artifacts": [
                         {
-                            "file_handle": "weights.onnx",
+                            "file_handle": "weights.pt",
                             "md5_hash": weights_md5,
                             "unhashed": False,
                             "sha256_hash": None,
@@ -227,25 +247,14 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
             )
         # warm-up records the provider response in the registry
         offline_registry.record_successful_load(
-            model_metadata=_provider_metadata(),
+            model_metadata=torch_metadata,
             requested_model_id=model_id,
-            proven_package_id="pkgonnx",
+            proven_package_id="pkgtorch",
         )
 
-        # negotiation must see an ONNX-capable runtime even on machines
-        # without onnxruntime installed (e.g. bare CI runners)
-        onnx_capable_x_ray = dataclasses.replace(
-            x_ray_runtime_environment(),
-            onnxruntime_version=Version("1.21.0"),
-            available_onnx_execution_providers={"CPUExecutionProvider"},
-        )
         model_class = mock.MagicMock()
         with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
             core, "resolve_model_class", return_value=model_class
-        ), mock.patch.object(
-            auto_negotiation,
-            "x_ray_runtime_environment",
-            return_value=onnx_capable_x_ray,
         ):
             # when: OFFLINE load through the full flow (provider swap,
             # negotiation over recorded metadata, presence-only resolve)

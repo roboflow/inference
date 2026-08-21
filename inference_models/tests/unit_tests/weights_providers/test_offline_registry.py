@@ -370,3 +370,83 @@ def test_list_records_status_tolerates_malformed_record_fields(registry_home) ->
         offline_registry.OfflinePackagePresence.MALFORMED,
     ]
     assert [p.package_id for p in status.packages] == [None, 42]
+
+
+def test_cli_install_after_warm_up_preserves_model_metadata(registry_home) -> None:
+    """Regression: the CLI installer registers with minimal metadata (no
+    variant / recommended_parameters / dependencies) - appending it must not
+    erase what warm-up recorded, since offline deployments cannot re-warm."""
+    # given: a warm-up record carrying full model metadata
+    warm_metadata = _example_metadata()
+    warm_metadata = ModelMetadata(
+        model_id=warm_metadata.model_id,
+        model_architecture=warm_metadata.model_architecture,
+        task_type=warm_metadata.task_type,
+        model_variant="rfdetr-nano",
+        model_packages=warm_metadata.model_packages,
+        recommended_parameters=warm_metadata.recommended_parameters,
+    )
+    offline_registry.record_successful_load(
+        model_metadata=warm_metadata,
+        requested_model_id=warm_metadata.model_id,
+        proven_package_id="pkgonnx",
+    )
+
+    # when: a CLI install appends its package the way the installer does -
+    # single package, no variant / recommended_parameters / dependencies
+    cli_metadata = ModelMetadata(
+        model_id=warm_metadata.model_id,
+        model_architecture=warm_metadata.model_architecture,
+        task_type=warm_metadata.task_type,
+        model_packages=[
+            ModelPackageMetadata(
+                package_id="localtrt123",
+                backend=BackendType.TRT,
+                package_artefacts=[
+                    LocalFileArtefactSpecs(
+                        file_handle="engine.plan", md5_hash="d" * 32
+                    ),
+                ],
+                package_source=PackageSourceType.LOCAL_CACHE,
+                trusted_source=False,
+            ),
+        ],
+    )
+    offline_registry.record_successful_load(
+        model_metadata=cli_metadata,
+        requested_model_id=warm_metadata.model_id,
+        proven_package_id="localtrt123",
+        source=offline_registry.RECORD_SOURCE_CLI_INSTALL,
+    )
+
+    # then: warm-up metadata survives the append
+    record = offline_registry.load_record_raw(model_id=warm_metadata.model_id)
+    assert record["model"]["model_variant"] == "rfdetr-nano"
+    assert record["model"]["recommended_parameters"]["confidence"] == 0.4
+    assert {p["package_id"] for p in record["packages"]} == {
+        "pkgonnx",
+        "pkgtrt",
+        "localtrt123",
+    }
+    assert set(record["proven"].keys()) == {"pkgonnx", "localtrt123"}
+    loaded = offline_registry.load_model_metadata(model_id=warm_metadata.model_id)
+    assert loaded.recommended_parameters.confidence == 0.4
+    assert loaded.model_variant == "rfdetr-nano"
+
+    # and: a later warm-up with fresh values still overrides
+    refreshed = ModelMetadata(
+        model_id=warm_metadata.model_id,
+        model_architecture=warm_metadata.model_architecture,
+        task_type=warm_metadata.task_type,
+        model_variant="rfdetr-nano-v2",
+        model_packages=warm_metadata.model_packages,
+        recommended_parameters=RecommendedParameters(confidence=0.6),
+    )
+    offline_registry.record_successful_load(
+        model_metadata=refreshed,
+        requested_model_id=warm_metadata.model_id,
+        proven_package_id="pkgonnx",
+    )
+    record = offline_registry.load_record_raw(model_id=warm_metadata.model_id)
+    assert record["model"]["model_variant"] == "rfdetr-nano-v2"
+    assert record["model"]["recommended_parameters"]["confidence"] == 0.6
