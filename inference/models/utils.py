@@ -894,9 +894,14 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ModelClass
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ModelClass
             elif variant.startswith("qwen3_8"):
-                from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
-                    InferenceModelsQwen38VLAdapter as _Qwen38ModelClass,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3_8_vllm import (
+                        Qwen38VLLMProxy as _Qwen38ModelClass,
+                    )
+                else:
+                    from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
+                        InferenceModelsQwen38VLAdapter as _Qwen38ModelClass,
+                    )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen38ModelClass
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_8")] = _Qwen38ModelClass
@@ -1236,18 +1241,33 @@ if USE_INFERENCE_MODELS:
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ExplicitModelClass
 
     if QWEN_3_8_ENABLED:
-        from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
-            InferenceModelsQwen38VLAdapter as _Qwen38ExplicitModelClass,
-        )
-
-        for variant in [
-            "qwen3_8-27b",
-        ]:
-            ROBOFLOW_MODEL_TYPES[("lmm", variant)] = _Qwen38ExplicitModelClass
-            ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
-                _Qwen38ExplicitModelClass
+        _Qwen38ExplicitModelClass = None
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3_8_vllm import (
+                Qwen38VLLMProxy as _Qwen38ExplicitModelClass,
             )
-        ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_8")] = _Qwen38ExplicitModelClass
+        else:
+            try:
+                from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
+                    InferenceModelsQwen38VLAdapter as _Qwen38ExplicitModelClass,
+                )
+            except ImportError:
+                # The HF adapter needs an inference_models release carrying
+                # Qwen38HF; older environments simply don't register qwen3_8.
+                warnings.warn(
+                    "qwen3_8 models disabled: installed inference_models has "
+                    "no Qwen38HF (upgrade inference-models to enable)."
+                )
+
+        if _Qwen38ExplicitModelClass is not None:
+            for variant in [
+                "qwen3_8-27b",
+            ]:
+                ROBOFLOW_MODEL_TYPES[("lmm", variant)] = _Qwen38ExplicitModelClass
+                ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
+                    _Qwen38ExplicitModelClass
+                )
+            ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_8")] = _Qwen38ExplicitModelClass
 
     if GLM_OCR_ENABLED:
         from inference.models.glm_ocr.glm_ocr_inference_models import (
