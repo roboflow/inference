@@ -28,15 +28,25 @@ class WebRTCClient:
         "API may change in future releases. Please report issues at "
         "https://github.com/roboflow/inference/issues"
     )
-    def __init__(self, api_url: str, api_key: Optional[str]) -> None:
+    def __init__(
+        self,
+        api_url: str,
+        api_key: Optional[str],
+        api_key_transport: str = "legacy",
+    ) -> None:
         """Initialize WebRTC client.
 
         Args:
             api_url: Base URL for the inference API
             api_key: API key for authentication (optional)
+            api_key_transport: Channel used to send the API key to the
+                inference server - "legacy" (JSON-body field, default),
+                "both" (body field + `Authorization: Bearer` header), or
+                "header" (header only; requires server support).
         """
         self._api_url = api_url
         self._api_key = api_key
+        self._api_key_transport = api_key_transport
 
     def stream(
         self,
@@ -199,6 +209,7 @@ class WebRTCClient:
         return WebRTCSession(
             api_url=self._api_url,
             api_key=self._api_key,
+            api_key_transport=self._api_key_transport,
             source=source,
             image_input_name=image_input,
             workflow_config=workflow_config,

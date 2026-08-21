@@ -13,6 +13,9 @@ from tests.inference.hosted_platform_tests.conftest import (
     IMAGE_URL,
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    api_key_auth_headers,
+    apply_auth_mode,
+    without_api_key_in_header_mode,
 )
 
 EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT = {
@@ -55,14 +58,19 @@ def test_infer_from_object_detection_model_with_invalid_api_key(
     platform_environment: PlatformEnvironment,
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/{detection_model_id}",
-        params={
-            "image": IMAGE_URL,
-            "api_key": "invalid",
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": IMAGE_URL,
+                "api_key": "invalid",
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, "invalid"),
     )
 
     # then
@@ -76,14 +84,19 @@ def test_infer_from_object_detection_model_with_invalid_api_key(
 def test_infer_from_object_detection_model_with_invalid_model_id(
     platform_environment: PlatformEnvironment,
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/some/38",
-        params={
-            "image": IMAGE_URL,
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": IMAGE_URL,
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -97,14 +110,19 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
 def test_infer_from_object_detection_model_when_non_https_image_url_given(
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/{detection_model_id}",
-        params={
-            "image": f"http://some.com/image.jpg",
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": f"http://some.com/image.jpg",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -119,14 +137,19 @@ def test_infer_from_object_detection_model_when_non_https_image_url_given(
 def test_infer_from_object_detection_model_when_ip_address_as_url_given(
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/{detection_model_id}",
-        params={
-            "image": f"https://127.0.0.1/image.jpg",
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": f"https://127.0.0.1/image.jpg",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -141,6 +164,7 @@ def test_infer_from_object_detection_model_when_ip_address_as_url_given(
 def test_infer_from_object_detection_model_when_numpy_array_given(
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     data = np.zeros((192, 168, 3), dtype=np.uint8)
@@ -149,11 +173,17 @@ def test_infer_from_object_detection_model_when_numpy_array_given(
     # when
     response = requests.post(
         f"{object_detection_service_url}/{detection_model_id}",
-        params={
-            "image_type": "numpy",
-            "api_key": ROBOFLOW_API_KEY,
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image_type": "numpy",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers={
+            "Content-Type": "application/json",
+            **api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
         },
-        headers={"Content-Type": "application/json"},
         data=data_bytes,
     )
 
@@ -169,12 +199,14 @@ def test_infer_from_object_detection_model_when_numpy_array_given(
 def test_infer_from_object_detection_model_when_valid_response_expected(
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     ).select_api_v0()
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=detection_model_id)
@@ -193,6 +225,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected(
 def test_infer_from_object_detection_model_when_valid_response_expected_with_visualisation(
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     configuration = InferenceConfiguration(
@@ -207,6 +240,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
         .configure(configuration)
         .select_api_v0()
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=detection_model_id)
@@ -225,6 +259,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 def test_infer_from_object_detection_model_when_valid_response_expected_with_visualisation_and_payload(
     object_detection_service_url: str,
     detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     configuration = InferenceConfiguration(
@@ -239,6 +274,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
         .configure(configuration)
         .select_api_v0()
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=detection_model_id)
@@ -279,14 +315,19 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
     platform_environment: PlatformEnvironment,
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/{segmentation_model_id}",
-        params={
-            "image": IMAGE_URL,
-            "api_key": "invalid",
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": IMAGE_URL,
+                "api_key": "invalid",
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, "invalid"),
     )
 
     # then
@@ -300,14 +341,19 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
 def test_infer_from_instance_segmentation_model_with_invalid_model_id(
     platform_environment: PlatformEnvironment,
     instance_segmentation_service_url: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/some/38",
-        params={
-            "image": IMAGE_URL,
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": IMAGE_URL,
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -321,14 +367,19 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
 def test_infer_from_instance_segmentation_model_when_non_https_image_url_given(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/{segmentation_model_id}",
-        params={
-            "image": f"http://some.com/image.jpg",
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": f"http://some.com/image.jpg",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -343,14 +394,19 @@ def test_infer_from_instance_segmentation_model_when_non_https_image_url_given(
 def test_infer_from_instance_segmentation_model_when_ip_address_as_url_given(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/{segmentation_model_id}",
-        params={
-            "image": f"https://127.0.0.1/image.jpg",
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": f"https://127.0.0.1/image.jpg",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -365,6 +421,7 @@ def test_infer_from_instance_segmentation_model_when_ip_address_as_url_given(
 def test_infer_from_instance_segmentation_model_when_numpy_array_given(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     data = np.zeros((192, 168, 3), dtype=np.uint8)
@@ -373,11 +430,17 @@ def test_infer_from_instance_segmentation_model_when_numpy_array_given(
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/{segmentation_model_id}",
-        params={
-            "image_type": "numpy",
-            "api_key": ROBOFLOW_API_KEY,
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image_type": "numpy",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers={
+            "Content-Type": "application/json",
+            **api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
         },
-        headers={"Content-Type": "application/json"},
         data=data_bytes,
     )
 
@@ -393,12 +456,14 @@ def test_infer_from_instance_segmentation_model_when_numpy_array_given(
 def test_infer_from_instance_segmentation_model_when_valid_response_expected(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=instance_segmentation_service_url,
         api_key=ROBOFLOW_API_KEY,
     ).select_api_v0()
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=segmentation_model_id)
@@ -417,6 +482,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected(
 def test_infer_from_instance_segmentation_model_when_valid_response_expected_with_visualisation(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     configuration = InferenceConfiguration(
@@ -431,6 +497,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
         .configure(configuration)
         .select_api_v0()
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=segmentation_model_id)
@@ -449,6 +516,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 def test_infer_from_instance_segmentation_model_when_valid_response_expected_with_visualisation_and_payload(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     configuration = InferenceConfiguration(
@@ -463,6 +531,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
         .configure(configuration)
         .select_api_v0()
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=segmentation_model_id)
@@ -503,14 +572,19 @@ def test_infer_from_classification_model_with_invalid_api_key(
     platform_environment: PlatformEnvironment,
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{classification_service_url}/{classification_model_id}",
-        params={
-            "image": IMAGE_URL,
-            "api_key": "invalid",
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": IMAGE_URL,
+                "api_key": "invalid",
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, "invalid"),
     )
 
     # then
@@ -524,14 +598,19 @@ def test_infer_from_classification_model_with_invalid_api_key(
 def test_infer_from_classification_model_with_invalid_model_id(
     platform_environment: PlatformEnvironment,
     classification_service_url: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{classification_service_url}/some/38",
-        params={
-            "image": IMAGE_URL,
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": IMAGE_URL,
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -545,14 +624,19 @@ def test_infer_from_classification_model_with_invalid_model_id(
 def test_infer_from_classification_model_when_non_https_image_url_given(
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{classification_service_url}/{classification_model_id}",
-        params={
-            "image": f"http://some.com/image.jpg",
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": f"http://some.com/image.jpg",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -567,14 +651,19 @@ def test_infer_from_classification_model_when_non_https_image_url_given(
 def test_infer_from_classification_model_when_ip_address_as_url_given(
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{classification_service_url}/{classification_model_id}",
-        params={
-            "image": f"https://127.0.0.1/image.jpg",
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": f"https://127.0.0.1/image.jpg",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -589,6 +678,7 @@ def test_infer_from_classification_model_when_ip_address_as_url_given(
 def test_infer_from_classification_model_when_numpy_array_given(
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     data = np.zeros((192, 168, 3), dtype=np.uint8)
@@ -597,11 +687,17 @@ def test_infer_from_classification_model_when_numpy_array_given(
     # when
     response = requests.post(
         f"{classification_service_url}/{classification_model_id}",
-        params={
-            "image_type": "numpy",
-            "api_key": ROBOFLOW_API_KEY,
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image_type": "numpy",
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers={
+            "Content-Type": "application/json",
+            **api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
         },
-        headers={"Content-Type": "application/json"},
         data=data_bytes,
     )
 
@@ -617,12 +713,14 @@ def test_infer_from_classification_model_when_numpy_array_given(
 def test_infer_from_classification_model_when_valid_response_expected(
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=classification_service_url,
         api_key=ROBOFLOW_API_KEY,
     ).select_api_v0()
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=classification_model_id)
@@ -642,6 +740,7 @@ def test_infer_from_classification_model_when_valid_response_expected(
 def test_infer_from_classification_model_when_valid_response_expected_with_visualisation(
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     configuration = InferenceConfiguration(
@@ -656,6 +755,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
         .configure(configuration)
         .select_api_v0()
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=classification_model_id)
@@ -674,6 +774,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 def test_infer_from_classification_model_when_valid_response_expected_with_visualisation_and_payload(
     classification_service_url: str,
     classification_model_id: str,
+    auth_mode: str,
 ) -> None:
     # given
     configuration = InferenceConfiguration(
@@ -688,6 +789,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
         .configure(configuration)
         .select_api_v0()
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     response = client.infer(IMAGE_URL, model_id=classification_model_id)

@@ -31,6 +31,7 @@ from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -73,7 +74,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     third_party_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # ---------------------------------------------------------------------------
 # Model variants
@@ -965,6 +966,9 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._roboflow_api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         outputs: List[Dict[str, str]] = []
