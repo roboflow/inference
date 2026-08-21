@@ -19,39 +19,28 @@ WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION env variable — NOT a manifest field,
 so the manifest stays identical to the numpy sibling; GCP_SERVERLESS forces
 "rle"). The layout-agnostic session/state helpers
 (VideoSessionBookkeeping, decide_prompt_vs_track, build_obj_id_metadata_from_boxes,
-BoxPromptMetadata) are reused verbatim; only extract_box_prompts and
-masks_to_sv_detections get tensor-native equivalents here.
+BoxPromptMetadata) are shared with the NumPy sibling. Tensor-native prompt
+extraction and prediction assembly live in
+``segment_anything_common.streaming_video_tensor``.
 """
 
-import uuid
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
-import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
-    GCP_SERVERLESS,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION,
-)
+from inference.core.env import GCP_SERVERLESS, WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
-    split_key_point_prediction,
-)
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
-    BoxPromptMetadata,
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     decide_prompt_vs_track,
 )
-from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAME_KEY,
-    DETECTION_ID_KEY,
-    TRACKER_ID_KEY,
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor import (
+    extract_box_prompts_tensor,
+    masks_to_instance_detections,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -81,12 +70,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
-PREDICTION_TYPE = "instance-segmentation"
 
 
 def _resolve_mask_representation() -> str:
@@ -341,7 +326,7 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                 frame = np.ascontiguousarray(single_image.numpy_image[:, :, ::-1])
 
             if should_prompt:
-                boxes_xyxy, per_box_meta = _extract_box_prompts_tensor(boxes_for_image)
+                boxes_xyxy, per_box_meta = extract_box_prompts_tensor(boxes_for_image)
                 masks, obj_ids, new_state = model.prompt(
                     image=frame,
                     bboxes=boxes_xyxy,
@@ -369,7 +354,7 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
 
             results.append(
                 {
-                    "predictions": _masks_to_instance_detections(
+                    "predictions": masks_to_instance_detections(
                         masks=masks,
                         obj_ids=obj_ids,
                         image=single_image,
@@ -380,135 +365,3 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                 }
             )
         return results
-
-
-def _extract_box_prompts_tensor(
-    boxes_for_image,
-) -> Tuple[List[Tuple[float, float, float, float]], List[BoxPromptMetadata]]:
-    """Tensor-native equivalent of extract_box_prompts: flatten a tensor-native
-    prediction prompt into xyxy tuples + per-box metadata.
-
-    `boxes` follows the prediction kinds (OD Detections, IS InstanceDetections, or
-    the keypoint tuple Tuple[KeyPoints, Optional[Detections]]). A keypoint tuple with
-    a missing Detections component is a hard runtime error (split_key_point_prediction
-    raises). Empty / absent input returns two empty lists.
-    """
-    if boxes_for_image is None:
-        return [], []
-    _key_points, detections = split_key_point_prediction(boxes_for_image)
-    n = len(detections)
-    if n == 0:
-        return [], []
-    bboxes_metadata = detections.bboxes_metadata
-    boxes_xyxy: List[Tuple[float, float, float, float]] = []
-    metas: List[BoxPromptMetadata] = []
-    for i in range(n):
-        x1, y1, x2, y2 = detections.xyxy[i].tolist()
-        boxes_xyxy.append((float(x1), float(y1), float(x2), float(y2)))
-        meta = (
-            bboxes_metadata[i]
-            if bboxes_metadata is not None and i < len(bboxes_metadata)
-            else {}
-        )
-        parent_id = meta.get(DETECTION_ID_KEY)
-        metas.append(
-            BoxPromptMetadata(
-                class_id=int(detections.class_id[i]),
-                class_name=str(meta.get(CLASS_NAME_KEY, "foreground")),
-                confidence=(
-                    float(detections.confidence[i])
-                    if detections.confidence is not None
-                    else 1.0
-                ),
-                parent_id=str(parent_id) if parent_id is not None else None,
-            )
-        )
-    return boxes_xyxy, metas
-
-
-def _masks_to_instance_detections(
-    masks: np.ndarray,
-    obj_ids: np.ndarray,
-    image: WorkflowImageData,
-    obj_id_metadata: Dict[int, BoxPromptMetadata],
-    threshold: float,
-    mask_representation: str,
-) -> InstanceDetections:
-    """Tensor-native equivalent of masks_to_sv_detections: one InstanceDetections per
-    SAM-assigned object, tracker id carried in bboxes_metadata. Masks with no positive
-    pixels, or whose forwarded confidence < threshold, are dropped."""
-    height, width = image._read_shape_without_materialization()
-    xyxy: List[List[float]] = []
-    confidences: List[float] = []
-    class_ids: List[int] = []
-    class_names_map: Dict[int, str] = {}
-    bboxes_metadata: List[dict] = []
-    kept_masks: List[np.ndarray] = []
-
-    for mask, obj_id in zip(masks, obj_ids.tolist()):
-        meta = obj_id_metadata.get(int(obj_id))
-        confidence = meta.confidence if meta is not None else 1.0
-        if confidence < threshold:
-            continue
-        ys, xs = np.where(mask)
-        if xs.size == 0:
-            continue
-        class_id = int(meta.class_id) if meta is not None else 0
-        class_name = meta.class_name if meta is not None else "foreground"
-        xyxy.append(
-            [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
-        )
-        confidences.append(float(confidence))
-        class_ids.append(class_id)
-        class_names_map[class_id] = class_name
-        bboxes_metadata.append(
-            {
-                DETECTION_ID_KEY: str(uuid.uuid4()),
-                CLASS_NAME_KEY: class_name,
-                TRACKER_ID_KEY: int(obj_id),
-            }
-        )
-        kept_masks.append(mask.astype(bool))
-
-    n = len(kept_masks)
-    if n == 0:
-        xyxy_t = torch.zeros((0, 4), dtype=torch.float32)
-        class_id_t = torch.zeros((0,), dtype=torch.int64)
-        confidence_t = torch.zeros((0,), dtype=torch.float32)
-        mask = (
-            InstancesRLEMasks(image_size=(height, width), masks=[])
-            if mask_representation == "rle"
-            else torch.zeros((0, height, width), dtype=torch.bool)
-        )
-    else:
-        xyxy_t = torch.tensor(xyxy, dtype=torch.float32)
-        class_id_t = torch.tensor(class_ids, dtype=torch.int64)
-        confidence_t = torch.tensor(confidences, dtype=torch.float32)
-        if mask_representation == "rle":
-            rle_dicts = [
-                torch_mask_to_coco_rle(torch.from_numpy(m)) for m in kept_masks
-            ]
-            mask = InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width), masks=rle_dicts
-            )
-        else:
-            mask = torch.from_numpy(np.stack(kept_masks, axis=0))
-
-    detections = InstanceDetections(
-        xyxy=xyxy_t.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
-        class_id=class_id_t.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
-        confidence=confidence_t.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
-        mask=(
-            mask
-            if isinstance(mask, InstancesRLEMasks)
-            else mask.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
-        ),
-    )
-    detections.image_metadata = build_native_image_metadata(
-        image=image,
-        class_names=class_names_map,
-        prediction_type=PREDICTION_TYPE,
-        inference_id=str(uuid.uuid4()),
-    )
-    detections.bboxes_metadata = bboxes_metadata if n else None
-    return detections

@@ -757,6 +757,23 @@ def test_block_numpy_path_copy_semantics() -> None:
     assert not np.array_equal(buffer, scene)
 
 
+def test_block_numpy_path_wraps_negative_class_id() -> None:
+    scene = np.zeros((64, 64, 3), dtype=np.uint8)
+    masks, boxes, _ = _single_mask_inputs()
+    detections = _build_dense_detections(
+        masks,
+        boxes,
+        np.array([-1], dtype=np.int32),
+        device="cpu",
+    )
+
+    out = _run_block(_numpy_backed_image(scene), detections)
+
+    assert out._numpy_image is not None and out._tensor_image is None
+    assert np.any(out._numpy_image)
+    assert detections.class_id.tolist() == [-1]
+
+
 def test_block_empty_predictions_take_the_tensor_passthrough() -> None:
     # given
     scene = _make_scene(125, h=64, w=64)
