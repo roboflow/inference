@@ -90,7 +90,7 @@ from inference_models.models.auto_loaders.models_registry import (
     resolve_model_class,
 )
 from inference_models.models.auto_loaders.presentation_utils import (
-    calculate_artefacts_size,
+    calculate_model_package_size,
     calculate_size_of_all_model_packages_artefacts,
     render_model_package_details_table,
     render_runtime_x_ray,
@@ -212,6 +212,26 @@ def _resolve_effective_api_key(
     ):
         return ROBOFLOW_API_KEY
     return api_key
+
+
+def _swap_describe_provider_when_offline(weights_provider: str) -> str:
+    """Mirror from_pretrained's OFFLINE provider swap for describe methods.
+
+    Announces the swap loudly - the caller asked about the Roboflow platform
+    but will see the local offline-weights registry instead.
+    """
+    if not OFFLINE_MODE or weights_provider != "roboflow":
+        return weights_provider
+    Console().print(
+        Text.assemble(
+            ("OFFLINE_MODE is enabled", "bold yellow"),
+            " - metadata below comes from the local offline-weights registry "
+            f"({ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER}), not the Roboflow platform. "
+            "Only packages recorded during warm-up and present on disk are "
+            "shown - the results may be incomplete.",
+        )
+    )
+    return ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER
 
 
 def _maybe_record_warm_up_load(
@@ -1180,6 +1200,9 @@ class AutoModel:
             - `AutoModel.describe_compute_environment()`: Check your runtime environment
             - `AutoModel.from_pretrained()`: Load a model after inspecting it
         """
+        weights_provider = _swap_describe_provider_when_offline(
+            weights_provider=weights_provider
+        )
         model_metadata = get_model_from_provider(
             provider=weights_provider,
             model_id=model_id,
@@ -1190,7 +1213,8 @@ class AutoModel:
         model_packages_size = None
         if pull_artefacts_size:
             model_packages_size = calculate_size_of_all_model_packages_artefacts(
-                model_packages=model_metadata.model_packages
+                model_packages=model_metadata.model_packages,
+                model_id=model_metadata.model_id,
             )
         console = Console()
         model_overview_table = render_table_with_model_overview(
@@ -1310,6 +1334,9 @@ class AutoModel:
             - `AutoModel.describe_compute_environment()`: Check your runtime environment
             - `AutoModel.from_pretrained()`: Load a model with a specific package
         """
+        weights_provider = _swap_describe_provider_when_offline(
+            weights_provider=weights_provider
+        )
         model_metadata = get_model_from_provider(
             provider=weights_provider,
             model_id=model_id,
@@ -1329,8 +1356,9 @@ class AutoModel:
             )
         artefacts_size = None
         if pull_artefacts_size:
-            artefacts_size = calculate_artefacts_size(
-                package_artefacts=selected_package.package_artefacts
+            artefacts_size = calculate_model_package_size(
+                model_package=selected_package,
+                model_id=model_metadata.model_id,
             )
         table = render_model_package_details_table(
             model_id=model_metadata.model_id,
