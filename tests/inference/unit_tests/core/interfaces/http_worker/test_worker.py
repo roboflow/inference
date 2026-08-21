@@ -3,20 +3,20 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from inference.core.interfaces.sam3_video_session.entities import (
-    SAM3_VIDEO_EVENT_CHECKPOINTED,
-    SAM3_VIDEO_EVENT_DONE,
-    SAM3_VIDEO_EVENT_DOWNLOADING,
-    SAM3_VIDEO_EVENT_FRAME,
-    Sam3VideoArtifactTarget,
-    Sam3VideoTimeBase,
-    Sam3VideoWorkerPayload,
+from inference.core.interfaces.http_worker.entities import (
+    EVENT_CHECKPOINTED,
+    EVENT_DONE,
+    EVENT_DOWNLOADING,
+    EVENT_FRAME,
+    ArtifactTarget,
+    TimeBase,
+    WorkerPayload,
 )
-from inference.core.interfaces.sam3_video_session.worker import (
+from inference.core.interfaces.http_worker.worker import (
     FramePacket,
     HttpEventPublisher,
     process_frames,
-    run_sam3_video_session,
+    run_worker,
 )
 
 
@@ -89,18 +89,18 @@ def _frames(count: int) -> List[FramePacket]:
     return packets
 
 
-def _payload() -> Sam3VideoWorkerPayload:
-    return Sam3VideoWorkerPayload(
+def _payload() -> WorkerPayload:
+    return WorkerPayload(
         session_id="sess-1",
         video_url="https://storage.example/video.mp4",
         class_names=["forklift"],
-        artifact=Sam3VideoArtifactTarget(
+        artifact=ArtifactTarget(
             app_base_url="https://app.roboflow.com",
             video_id="video-1",
             workspace_id="ws-1",
             dataset_id="ds-1",
             revision_id="rev-1",
-            video_time_base=Sam3VideoTimeBase(numerator=1, denominator=30),
+            video_time_base=TimeBase(numerator=1, denominator=30),
         ),
         api_key="rf_key",
         events_callback_url="https://serverless.example/sam3/video/sessions/sess-1/internal/events",
@@ -121,7 +121,7 @@ def test_process_frames_checkpoints_every_n_samples_and_commits() -> None:
         revision_id="rev-1",
         publisher=publisher,
         writer=writer,
-        video_time_base=Sam3VideoTimeBase(numerator=1, denominator=30),
+        video_time_base=TimeBase(numerator=1, denominator=30),
         chunk_sample_size=2,
     )
 
@@ -138,13 +138,11 @@ def test_process_frames_checkpoints_every_n_samples_and_commits() -> None:
     assert writer.commits[0]["track_id"] == "7"
 
     event_types = [event_type for event_type, _ in publisher.events]
-    assert event_types.count(SAM3_VIDEO_EVENT_FRAME) == 5
-    assert SAM3_VIDEO_EVENT_CHECKPOINTED in event_types
-    assert event_types[-1] == SAM3_VIDEO_EVENT_DONE
+    assert event_types.count(EVENT_FRAME) == 5
+    assert EVENT_CHECKPOINTED in event_types
+    assert event_types[-1] == EVENT_DONE
     frame_event = next(
-        payload
-        for event_type, payload in publisher.events
-        if event_type == SAM3_VIDEO_EVENT_FRAME
+        payload for event_type, payload in publisher.events if event_type == EVENT_FRAME
     )
     assert (
         frame_event["serialized_output_data"]["predictions"]["predictions"][0][
@@ -167,22 +165,22 @@ def test_process_frames_stop_requested_still_flushes_and_commits() -> None:
         revision_id="rev-1",
         publisher=publisher,
         writer=writer,
-        video_time_base=Sam3VideoTimeBase(numerator=1, denominator=30),
+        video_time_base=TimeBase(numerator=1, denominator=30),
         chunk_sample_size=2,
     )
 
     assert len(writer.chunks) == 1
     assert writer.chunks[0]["samples"]
     assert writer.commits[0]["sample_count"] == 1
-    assert publisher.events[-1][0] == SAM3_VIDEO_EVENT_DONE
+    assert publisher.events[-1][0] == EVENT_DONE
     assert publisher.events[-1][1]["cancelled"] is True
 
 
-def test_run_session_with_injected_frames_emits_downloading() -> None:
+def test_run_worker_with_injected_frames_emits_downloading() -> None:
     publisher = FakePublisher()
     writer = FakeWriter()
 
-    run_sam3_video_session(
+    run_worker(
         _payload(),
         publisher=publisher,
         writer=writer,
@@ -191,8 +189,8 @@ def test_run_session_with_injected_frames_emits_downloading() -> None:
         chunk_sample_size=500,
     )
 
-    assert publisher.events[0][0] == SAM3_VIDEO_EVENT_DOWNLOADING
-    assert publisher.events[-1][0] == SAM3_VIDEO_EVENT_DONE
+    assert publisher.events[0][0] == EVENT_DOWNLOADING
+    assert publisher.events[-1][0] == EVENT_DONE
     assert writer.commits[0]["sample_count"] == 1
 
 
@@ -209,7 +207,7 @@ def test_http_event_publisher_reads_stop_requested(monkeypatch) -> None:
         return response
 
     monkeypatch.setattr(
-        "inference.core.interfaces.sam3_video_session.worker.requests.post",
+        "inference.core.interfaces.http_worker.worker.requests.post",
         fake_post,
     )
     publisher = HttpEventPublisher(

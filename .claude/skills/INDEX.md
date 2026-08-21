@@ -61,7 +61,7 @@ Independently of path, load each topic skill whose signal the PR exhibits
 These surfaces have no surface skill. Apply the generic review plus matching
 topic skills:
 
-- `inference/core/interfaces/{stream*,camera,udp,webrtc_worker}/**` (streaming pipeline)
+- `inference/core/interfaces/{stream*,camera,udp,webrtc_worker,http_worker}/**` (streaming pipeline)
 - `inference/core/{active_learning,cache,managers}/**`
 - `inference/usage_tracking/**`
 - `inference/enterprise/**`

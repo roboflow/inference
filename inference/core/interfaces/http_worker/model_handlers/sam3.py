@@ -1,8 +1,11 @@
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import cv2
 import numpy as np
 
-from inference.core.interfaces.sam3_video_session.entities import DEFAULT_CLASS_NAME
+from inference.core.interfaces.http_worker.entities import DEFAULT_CLASS_NAME
+
+MODEL_ID = "sam3video"
 
 
 def mask_to_uncompressed_rle(mask: np.ndarray) -> Dict[str, Any]:
@@ -97,3 +100,25 @@ def serialize_frame_predictions(
             }
         )
     return predictions, samples
+
+
+def load_model(api_key: Optional[str]):
+    from inference_models import AutoModel
+
+    return AutoModel.from_pretrained(model_id_or_path=MODEL_ID, api_key=api_key)
+
+
+def bgr_to_model_image(image_bgr: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+
+
+def infer_frame(
+    model: Any,
+    image_bgr: np.ndarray,
+    class_names: List[str],
+    state_dict: Any,
+) -> Any:
+    image = bgr_to_model_image(image_bgr)
+    if state_dict is None:
+        return model.prompt(image=image, text=class_names, clear_old_prompts=True)
+    return model.track(image=image, state_dict=state_dict)

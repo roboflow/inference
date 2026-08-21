@@ -1,6 +1,6 @@
 import uuid
 
-from inference.core.interfaces.sam3_video_session.session_store import (
+from inference.core.interfaces.http_worker.store import (
     append_event,
     create_session,
     is_stop_requested,
@@ -11,7 +11,7 @@ from inference.core.interfaces.sam3_video_session.session_store import (
 
 
 def test_list_events_replays_after_seq() -> None:
-    session_id = f"sam3-test-{uuid.uuid4()}"
+    session_id = f"http-worker-test-{uuid.uuid4()}"
     create_session(
         session_id,
         workspace_id="ws-1",
@@ -36,7 +36,7 @@ def test_list_events_replays_after_seq() -> None:
 
 
 def test_stop_requested_flag() -> None:
-    session_id = f"sam3-test-{uuid.uuid4()}"
+    session_id = f"http-worker-test-{uuid.uuid4()}"
     create_session(
         session_id,
         workspace_id="ws-1",

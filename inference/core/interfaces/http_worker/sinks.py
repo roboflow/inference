@@ -4,12 +4,13 @@ from urllib.parse import urljoin
 
 import requests
 
-from inference.core.interfaces.sam3_video_session.entities import (
+from inference.core.interfaces.http_worker.entities import (
     ARTIFACT_CHUNK_CONTENT_TYPE,
-    Sam3VideoTimeBase,
+    TimeBase,
     validated_app_base_url,
 )
 from inference.core.utils.requests import api_key_safe_raise_for_status
+from inference.core.utils.url_utils import wrap_url
 
 
 class ArtifactWriter:
@@ -25,7 +26,7 @@ class ArtifactWriter:
         timeout_seconds: float = 60.0,
     ):
         if not api_key:
-            raise ValueError("api_key is required to write SAM3 video artifacts")
+            raise ValueError("api_key is required to write video track artifacts")
         self._app_base_url = validated_app_base_url(app_base_url)
         self._video_id = video_id
         self._workspace_id = workspace_id
@@ -48,9 +49,11 @@ class ArtifactWriter:
         total_chunks: int,
         samples: List[Dict[str, Any]],
     ) -> None:
-        mint_url = urljoin(
-            self._app_base_url,
-            f"query/video/{self._video_id}/tracks/{track_id}/artifact-chunks/upload-url",
+        mint_url = wrap_url(
+            urljoin(
+                self._app_base_url,
+                f"query/video/{self._video_id}/tracks/{track_id}/artifact-chunks/upload-url",
+            )
         )
         mint_response = requests.post(
             mint_url,
@@ -84,15 +87,17 @@ class ArtifactWriter:
         end_frame_index: int,
         start_pts: int,
         end_pts: int,
-        video_time_base: Sam3VideoTimeBase,
+        video_time_base: TimeBase,
         class_name: str,
         tracker_id: int,
         sample_count: int,
         chunk_count: int,
     ) -> None:
-        url = urljoin(
-            self._app_base_url,
-            f"query/video/{self._video_id}/tracks/{track_id}/artifact-revisions/{self._revision_id}/commit",
+        url = wrap_url(
+            urljoin(
+                self._app_base_url,
+                f"query/video/{self._video_id}/tracks/{track_id}/artifact-revisions/{self._revision_id}/commit",
+            )
         )
         response = requests.post(
             url,
@@ -174,9 +179,7 @@ class TrackAccumulator:
             flushed += 1
         return flushed
 
-    def commit(
-        self, writer: ArtifactWriter, video_time_base: Sam3VideoTimeBase
-    ) -> None:
+    def commit(self, writer: ArtifactWriter, video_time_base: TimeBase) -> None:
         if self.sample_count == 0 or self.start_frame_index is None:
             return
         writer.commit_revision(

@@ -1,15 +1,15 @@
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
-SAM3_VIDEO_EVENT_DOWNLOADING = "downloading"
-SAM3_VIDEO_EVENT_FRAME = "frame"
-SAM3_VIDEO_EVENT_CHECKPOINTED = "checkpointed"
-SAM3_VIDEO_EVENT_DONE = "done"
-SAM3_VIDEO_EVENT_ERROR = "error"
+EVENT_DOWNLOADING = "downloading"
+EVENT_FRAME = "frame"
+EVENT_CHECKPOINTED = "checkpointed"
+EVENT_DONE = "done"
+EVENT_ERROR = "error"
 
-Sam3VideoEventType = Literal[
+EventType = Literal[
     "downloading",
     "frame",
     "checkpointed",
@@ -17,7 +17,7 @@ Sam3VideoEventType = Literal[
     "error",
 ]
 
-Sam3VideoSessionStatus = Literal[
+WorkerStatus = Literal[
     "starting",
     "downloading",
     "running",
@@ -31,7 +31,6 @@ DEFAULT_THRESHOLD = 0.35
 DEFAULT_CLASS_NAME = "object"
 SESSION_EVENT_TTL_SECONDS = 600
 MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
-MODEL_ID = "sam3video"
 
 ALLOWED_APP_HOSTS = {
     "app.roboflow.com",
@@ -61,18 +60,18 @@ def validated_app_base_url(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
-class Sam3VideoTimeBase(BaseModel):
+class TimeBase(BaseModel):
     numerator: int = Field(gt=0)
     denominator: int = Field(gt=0)
 
 
-class Sam3VideoArtifactTarget(BaseModel):
+class ArtifactTarget(BaseModel):
     app_base_url: str
     video_id: str
     workspace_id: str
     dataset_id: str
     revision_id: str
-    video_time_base: Optional[Sam3VideoTimeBase] = None
+    video_time_base: Optional[TimeBase] = None
 
     @field_validator("app_base_url")
     @classmethod
@@ -80,10 +79,10 @@ class Sam3VideoArtifactTarget(BaseModel):
         return validated_app_base_url(value).rstrip("/")
 
 
-class Sam3VideoSessionRequest(BaseModel):
+class WorkerRequest(BaseModel):
     video_url: str
     class_names: List[str]
-    artifact: Sam3VideoArtifactTarget
+    artifact: ArtifactTarget
     api_key: Optional[str] = None
     requested_plan: Optional[str] = None
     requested_region: Optional[str] = None
@@ -92,37 +91,37 @@ class Sam3VideoSessionRequest(BaseModel):
     events_callback_base: Optional[str] = None
 
 
-class Sam3VideoSessionCreated(BaseModel):
+class WorkerCreated(BaseModel):
     session_id: str
 
 
-class Sam3VideoSessionSnapshot(BaseModel):
+class WorkerSnapshot(BaseModel):
     session_id: str
-    status: Sam3VideoSessionStatus
+    status: WorkerStatus
     last_seq: int = 0
     last_frame_id: Optional[int] = None
     error_message: Optional[str] = None
     stop_requested: bool = False
 
 
-class Sam3VideoInternalEventRequest(BaseModel):
+class InternalEventRequest(BaseModel):
     publish_token: str
     event: Dict[str, Any]
 
 
-class Sam3VideoInternalEventResponse(BaseModel):
+class InternalEventResponse(BaseModel):
     stop_requested: bool = False
 
 
-class Sam3VideoSessionEndRequest(BaseModel):
+class WorkerEndRequest(BaseModel):
     api_key: Optional[str] = None
 
 
-class Sam3VideoWorkerPayload(BaseModel):
+class WorkerPayload(BaseModel):
     session_id: str
     video_url: str
     class_names: List[str]
-    artifact: Sam3VideoArtifactTarget
+    artifact: ArtifactTarget
     api_key: Optional[str] = None
     threshold: float = DEFAULT_THRESHOLD
     events_callback_url: str
@@ -130,7 +129,3 @@ class Sam3VideoWorkerPayload(BaseModel):
     requested_plan: Optional[str] = None
     workspace_id: Optional[str] = None
     processing_timeout: Optional[int] = None
-
-
-JsonDict = Dict[str, Any]
-JsonList = List[Union[JsonDict, Any]]
