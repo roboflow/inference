@@ -1,8 +1,5 @@
 import os
 import platform
-import sys
-import threading
-import types
 import uuid
 import warnings
 from typing import Optional
@@ -363,60 +360,21 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
-# Offline mode is latched on the first import of either configuration package.
-# The private marker carries the latch into normal child processes, so changing
-# the public OFFLINE_MODE variable alone cannot enable offline-only paths in a
-# spawned worker. The marker is trusted internal process state; code able to
-# rewrite it is already able to monkeypatch this module's authorization state.
-_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
-_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-if _offline_mode_process_state is None:
-    _candidate_process_state = types.ModuleType(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-    _candidate_process_state.lock = threading.Lock()
-    _offline_mode_process_state = sys.modules.setdefault(
-        _OFFLINE_MODE_PROCESS_STATE_MODULE,
-        _candidate_process_state,
-    )
-if not hasattr(_offline_mode_process_state, "lock"):
-    _offline_mode_process_state.lock = threading.Lock()
-if hasattr(os, "register_at_fork") and not getattr(
-    _offline_mode_process_state, "at_fork_registered", False
-):
-    _offline_mode_process_state.at_fork_registered = True
+# OFFLINE_MODE is decided once per process by inference_models._offline (the
+# single owner), which `import inference` triggers as its first statement.
+# The private marker env carries the latch into spawned child processes;
+# inference_models.configuration warns when the public variable is mutated
+# at runtime.
+from inference_models.configuration import OFFLINE_MODE
 
-    def _reset_offline_mode_lock_after_fork() -> None:
-        _offline_mode_process_state.lock = threading.Lock()
-
-    os.register_at_fork(after_in_child=_reset_offline_mode_lock_after_fork)
-with _offline_mode_process_state.lock:
-    if not hasattr(_offline_mode_process_state, "offline_mode"):
-        _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
-        _latched_offline_mode = (
-            str2bool(os.getenv("OFFLINE_MODE", False))
-            if _inherited_offline_mode is None
-            else str2bool(_inherited_offline_mode)
-        )
-        _offline_mode_process_state.offline_mode = _latched_offline_mode
-OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
-os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
 if OFFLINE_MODE:
+    # Republish the dependency offline switches on (re)import of this module,
+    # so a worker that sanitized its environment and re-imported env.py cannot
+    # end up offline-latched with the library switches missing.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["YOLO_OFFLINE"] = "True"
-try:
-    _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
-except Exception:
-    # The process-wide state has already been established.  A malformed
-    # runtime mutation must not crash a module reload or spawned worker.
-    _requested_offline_mode = None
-if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
-    warnings.warn(
-        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
-        "being ignored; restart the process to change offline mode.",
-        InferenceConfigurationWarning,
-        stacklevel=1,
-    )
+
 if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
     "true",
     "1",
@@ -432,27 +390,6 @@ if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
         "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
         "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
     )
-if OFFLINE_MODE and USE_INFERENCE_MODELS:
-    from inference_models import configuration as inference_models_configuration
-
-    inference_models_offline_contract = getattr(
-        inference_models_configuration,
-        "OFFLINE_MODE_CONTRACT_VERSION",
-        0,
-    )
-    if (
-        getattr(inference_models_configuration, "OFFLINE_MODE", None) is not True
-        or not isinstance(inference_models_offline_contract, int)
-        or isinstance(inference_models_offline_contract, bool)
-        or inference_models_offline_contract < 3
-    ):
-        raise RuntimeError(
-            "The installed inference-models package does not support the "
-            "required process-wide OFFLINE_MODE and trusted-cache contract. "
-            "Install the matching inference-models release before starting an "
-            "offline server."
-        )
-
 if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
     warnings.warn(
         "SAM3_EXEC_MODE=remote is not available while OFFLINE_MODE is enabled. "
@@ -1491,6 +1428,16 @@ DEFAULT_ADAPTIVE_MODE_BACKPRESSURE = str2bool(
     )
 )
 
+
+# Diagnostic mode for the tensor visualisation painters' overlap resolver:
+# before the winner-color gather, synchronise and verify that every scatter
+# index and every resolved owner is in range, raising a detailed Python error
+# (routed to the sv fallback) instead of letting an out-of-range index become
+# an asynchronous CUDA device assert that kills the process with SIGABRT and
+# no traceback. Costs one device sync per overlapping frame — off by default.
+WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS = str2bool(
+    os.getenv("WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS", "False")
+)
 
 WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
     "WORKFLOWS_IMAGE_TENSOR_DEVICE"

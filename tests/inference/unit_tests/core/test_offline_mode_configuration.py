@@ -103,9 +103,6 @@ def _assert_multiprocessing_child_retains_offline_mode_latch(
     importlib.reload(inference_models_offline)
     importlib.reload(inference_models_configuration)
 
-    process_state = sys.modules["_roboflow_inference_process_state"]
-    assert process_state.offline_mode is expected_mode
-    assert inference._LATCHED_OFFLINE_MODE is expected_mode
     assert core_env.OFFLINE_MODE is expected_mode
     assert inference_models_offline.OFFLINE_MODE is expected_mode
     assert inference_models_configuration.OFFLINE_MODE is expected_mode
@@ -117,19 +114,15 @@ def test_top_level_import_latches_mode_before_first_core_import() -> None:
     _run_with_env(
         """
 import os
-import sys
 
 import inference
 
-state = sys.modules["_roboflow_inference_process_state"]
-assert state.offline_mode is False
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
 
 os.environ["OFFLINE_MODE"] = "True"
 from inference.core import env as core_env
 
 assert core_env.OFFLINE_MODE is False
-assert state.offline_mode is False
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
 """,
         {"OFFLINE_MODE": "False"},
@@ -182,16 +175,16 @@ sys.modules["dotenv"] = dotenv
 
 try:
     import inference
-except ValueError as error:
-    assert "Expected OFFLINE_MODE to be a boolean" in str(error)
+except Exception as error:
+    assert "true or false" in str(error), str(error)
 else:
     raise AssertionError("OFFLINE_MODE without a value was accepted")
 
 os.environ["OFFLINE_MODE"] = "False"
 try:
     import inference_models
-except ValueError as error:
-    assert "Expected OFFLINE_MODE to be a boolean" in str(error)
+except Exception as error:
+    assert "true or false" in str(error), str(error)
 else:
     raise AssertionError("A competing import bypassed the malformed startup value")
 """,
@@ -208,7 +201,6 @@ def test_dotenv_offline_mode_is_import_order_independent() -> None:
             f"""
 import importlib
 import os
-import sys
 import tempfile
 from pathlib import Path
 
@@ -221,8 +213,6 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     os.chdir(temporary_directory)
 
     importlib.import_module({first_package!r})
-    state = sys.modules["_roboflow_inference_process_state"]
-    assert state.offline_mode is True
     assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "True"
     assert os.environ["HF_HUB_OFFLINE"] == "1"
     assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
@@ -248,7 +238,6 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     )
     from inference.core import env as core_env
 
-    assert state.offline_mode is True
     assert models_configuration.OFFLINE_MODE is True
     assert models_configuration.INFERENCE_HOME == expected_cache_directory
     assert os.environ["MODEL_CACHE_DIR"] == expected_cache_directory
@@ -280,8 +269,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     importlib.import_module({first_package!r})
     importlib.import_module({second_package!r})
 
-state = sys.modules["_roboflow_inference_process_state"]
-assert state.offline_mode is False
+assert sys.modules["inference_models._offline"].OFFLINE_MODE is False
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
 assert "HF_HUB_OFFLINE" not in os.environ
 assert "TRANSFORMERS_OFFLINE" not in os.environ
@@ -360,109 +348,6 @@ else:
     )
 
 
-def test_root_reserves_process_latch_before_reading_startup_environment() -> None:
-    _run_with_env(
-        """
-import _thread
-import os
-import sys
-import threading
-
-root_snapshot_started = threading.Event()
-resume_root_snapshot = threading.Event()
-models_lock_attempted = threading.Event()
-models_snapshot_attempted = threading.Event()
-original_environ_get = type(os.environ).get
-original_rlock = _thread.RLock
-root_import_thread = None
-models_import_thread = None
-root_snapshot_intercepted = False
-
-class TrackingRLock:
-    def __init__(self):
-        self._lock = original_rlock()
-
-    def acquire(self, *args, **kwargs):
-        if threading.current_thread() is models_import_thread:
-            models_lock_attempted.set()
-        return self._lock.acquire(*args, **kwargs)
-
-    def release(self):
-        return self._lock.release()
-
-    def __enter__(self):
-        self.acquire()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.release()
-
-def tracking_rlock():
-    return TrackingRLock()
-
-def blocking_environ_get(self, key, default=None):
-    global root_snapshot_intercepted
-    if (
-        key == "OFFLINE_MODE"
-        and threading.current_thread() is root_import_thread
-        and not root_snapshot_intercepted
-    ):
-        root_snapshot_intercepted = True
-        startup_value = original_environ_get(self, key, default)
-        root_snapshot_started.set()
-        assert resume_root_snapshot.wait(timeout=30)
-        return startup_value
-    if (
-        key == "OFFLINE_MODE"
-        and threading.current_thread() is models_import_thread
-    ):
-        models_snapshot_attempted.set()
-    return original_environ_get(self, key, default)
-
-_thread.RLock = tracking_rlock
-type(os.environ).get = blocking_environ_get
-root_import_error = []
-models_import_error = []
-
-def import_inference():
-    try:
-        import inference
-    except BaseException as error:
-        root_import_error.append(error)
-
-def import_inference_models():
-    try:
-        import inference_models
-    except BaseException as error:
-        models_import_error.append(error)
-
-root_import_thread = threading.Thread(target=import_inference)
-root_import_thread.start()
-assert root_snapshot_started.wait(timeout=30)
-
-os.environ["OFFLINE_MODE"] = "True"
-models_import_thread = threading.Thread(target=import_inference_models)
-models_import_thread.start()
-assert models_lock_attempted.wait(timeout=30)
-assert not models_snapshot_attempted.is_set()
-
-resume_root_snapshot.set()
-root_import_thread.join(timeout=90)
-models_import_thread.join(timeout=90)
-
-assert not root_import_thread.is_alive()
-assert not models_import_thread.is_alive()
-assert not root_import_error, root_import_error
-assert not models_import_error, models_import_error
-state = sys.modules["_roboflow_inference_process_state"]
-assert state.offline_mode_startup_snapshot == ("False", None)
-assert state.offline_mode is False
-assert sys.modules["inference_models.configuration"].OFFLINE_MODE is False
-""",
-        {"OFFLINE_MODE": "False"},
-    )
-
-
 def test_inference_models_first_contender_controls_competing_inference_import() -> None:
     _run_with_env(
         """
@@ -501,18 +386,20 @@ def import_inference():
     except BaseException as error:
         inference_import_error.append(error)
 
+# `import inference` now begins with `import inference_models`, so the
+# competing import blocks on the first contender's import lock instead of
+# completing independently. Release the first contender and verify the
+# runtime mutation still cannot change the latched decision in either package.
 inference_import_thread = threading.Thread(target=import_inference)
 inference_import_thread.start()
-inference_import_thread.join(timeout=30)
-assert not inference_import_thread.is_alive()
-assert not inference_import_error, inference_import_error
 resume_metadata_lookup.set()
 import_thread.join(timeout=90)
+inference_import_thread.join(timeout=90)
 
 assert not import_thread.is_alive()
+assert not inference_import_thread.is_alive()
 assert not import_error, import_error
-state = sys.modules["_roboflow_inference_process_state"]
-assert state.offline_mode is False
+assert not inference_import_error, inference_import_error
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
 assert sys.modules["inference_models.configuration"].OFFLINE_MODE is False
 """,
@@ -589,8 +476,7 @@ assert not import_thread.is_alive()
 assert not inference_models_import_thread.is_alive()
 assert not import_error, import_error
 assert not inference_models_import_error, inference_models_import_error
-state = sys.modules["_roboflow_inference_process_state"]
-assert state.offline_mode is False
+assert sys.modules["inference_models.configuration"].OFFLINE_MODE is False
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
 """,
         {},
@@ -609,9 +495,10 @@ expected_mode = os.environ["OFFLINE_MODE"] == "True"
 assert _offline.OFFLINE_MODE is expected_mode
 assert configuration.OFFLINE_MODE is expected_mode
 
-opposite_mode = str(not expected_mode)
-os.environ["OFFLINE_MODE"] = opposite_mode
-os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] = opposite_mode
+# The process-start marker is trusted internal state carrying the latched
+# decision; only the public variable is mutated here. A reload must re-adopt
+# the marker and ignore the runtime mutation.
+os.environ["OFFLINE_MODE"] = str(not expected_mode)
 importlib.reload(_offline)
 importlib.reload(configuration)
 
@@ -644,33 +531,6 @@ else:
 assert "inference" not in sys.modules
 """,
         {"OFFLINE_MODE": "not-a-boolean"},
-    )
-
-
-def test_isolated_usage_payload_helper_prefers_shared_process_latch() -> None:
-    payload_helpers_path = str(
-        Path(_REPO_ROOT) / "inference" / "usage_tracking" / "payload_helpers.py"
-    )
-    _run_with_env(
-        f"""
-import os
-import runpy
-import sys
-import types
-
-assert "inference" not in sys.modules
-state = types.ModuleType("_roboflow_inference_process_state")
-state.offline_mode = False
-sys.modules[state.__name__] = state
-module_globals = runpy.run_path({payload_helpers_path!r})
-assert module_globals["OFFLINE_MODE"] is False
-assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "False"
-assert "inference" not in sys.modules
-""",
-        {
-            "OFFLINE_MODE": "not-a-boolean",
-            _OFFLINE_MODE_LATCH: "also-not-a-boolean",
-        },
     )
 
 
@@ -730,7 +590,6 @@ from inference.core import env as core_env
 
 assert core_env.OFFLINE_MODE is False
 os.environ["OFFLINE_MODE"] = "True"
-os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] = "True"
 importlib.reload(core_env)
 models_config = importlib.import_module("inference_models.configuration")
 assert core_env.OFFLINE_MODE is False
@@ -1017,14 +876,11 @@ def test_both_packages_share_latch_and_offline_forces_local_execution() -> None:
         """
 import importlib
 import os
-import sys
 
 models_config = importlib.import_module("inference_models.configuration")
 assert models_config.OFFLINE_MODE is True
-assert models_config.OFFLINE_MODE_CONTRACT_VERSION >= 3
 assert os.environ["YOLO_OFFLINE"] == "True"
 os.environ["OFFLINE_MODE"] = "False"
-os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] = "False"
 from inference.core import env as core_env
 import inference
 
@@ -1045,7 +901,6 @@ assert os.environ["YOLO_OFFLINE"] == "True"
 
 importlib.reload(inference)
 importlib.reload(core_env)
-assert sys.modules["_roboflow_inference_process_state"].offline_mode is True
 assert core_env.OFFLINE_MODE is True
 assert os.environ["_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"] == "True"
 assert os.environ["YOLO_OFFLINE"] == "True"
@@ -1071,74 +926,6 @@ assert os.environ["YOLO_OFFLINE"] == "True"
             "WEBRTC_MODAL_PUBLIC_STUN_SERVERS": "stun:stun.example.com:19302",
             "OTEL_TRACING_ENABLED": "True",
             "OTEL_METRICS_ENABLED": "True",
-        },
-    )
-
-
-def test_offline_startup_rejects_incompatible_inference_models_contract() -> None:
-    incompatible_contracts = [
-        ("", True),
-        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 1", True),
-        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = True", True),
-        ('configuration.OFFLINE_MODE_CONTRACT_VERSION = "2"', True),
-        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 2", True),
-        ("configuration.OFFLINE_MODE_CONTRACT_VERSION = 3", False),
-    ]
-    for contract_declaration, inference_models_offline_mode in incompatible_contracts:
-        _run_with_env(
-            f"""
-import sys
-import types
-
-import inference
-
-inference_models = types.ModuleType("inference_models")
-configuration = types.ModuleType("inference_models.configuration")
-configuration.OFFLINE_MODE = {inference_models_offline_mode!r}
-{contract_declaration}
-inference_models.configuration = configuration
-sys.modules["inference_models"] = inference_models
-sys.modules["inference_models.configuration"] = configuration
-
-try:
-    from inference.core import env as core_env
-except RuntimeError as error:
-    assert "does not support the required process-wide OFFLINE_MODE" in str(error)
-else:
-    raise AssertionError(
-        f"Expected incompatible inference-models contract to fail, got {{core_env!r}}"
-    )
-""",
-            {
-                "OFFLINE_MODE": "True",
-                "USE_INFERENCE_MODELS": "True",
-            },
-        )
-
-
-def test_offline_startup_accepts_inference_models_contract_v3() -> None:
-    _run_with_env(
-        """
-import sys
-import types
-
-import inference
-
-inference_models = types.ModuleType("inference_models")
-configuration = types.ModuleType("inference_models.configuration")
-configuration.OFFLINE_MODE = True
-configuration.OFFLINE_MODE_CONTRACT_VERSION = 3
-inference_models.configuration = configuration
-sys.modules["inference_models"] = inference_models
-sys.modules["inference_models.configuration"] = configuration
-
-from inference.core import env as core_env
-
-assert core_env.OFFLINE_MODE is True
-""",
-        {
-            "OFFLINE_MODE": "True",
-            "USE_INFERENCE_MODELS": "True",
         },
     )
 
@@ -1186,14 +973,12 @@ def test_runtime_change_is_ignored_by_multiprocessing_spawned_child(
         f"""
 import multiprocessing
 import os
-import sys
 
 import inference
 from tests.inference.unit_tests.core.test_offline_mode_configuration import (
     _assert_multiprocessing_child_retains_offline_mode_latch,
 )
 
-assert sys.modules["_roboflow_inference_process_state"].offline_mode is {startup_mode}
 assert os.environ[
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 ] == {str(startup_mode)!r}
@@ -1231,14 +1016,12 @@ def test_runtime_change_is_ignored_by_multiprocessing_forked_child(
         f"""
 import multiprocessing
 import os
-import sys
 
 import inference
 from tests.inference.unit_tests.core.test_offline_mode_configuration import (
     _assert_multiprocessing_child_retains_offline_mode_latch,
 )
 
-assert sys.modules["_roboflow_inference_process_state"].offline_mode is {startup_mode}
 assert os.environ[
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
 ] == {str(startup_mode)!r}
@@ -1257,40 +1040,6 @@ if child.is_alive():
 assert child.exitcode == 0, child.exitcode
 """,
         {"OFFLINE_MODE": str(startup_mode)},
-    )
-
-
-def test_forked_child_resets_inherited_latch_lock() -> None:
-    _run_with_env(
-        """
-import importlib
-import os
-import signal
-import sys
-
-import inference
-
-if not hasattr(os, "fork"):
-    raise SystemExit(0)
-
-state = sys.modules["_roboflow_inference_process_state"]
-state.lock.acquire()
-pid = os.fork()
-if pid == 0:
-    signal.alarm(10)
-    importlib.reload(inference)
-    assert state.offline_mode is False
-    os._exit(0)
-
-try:
-    _, status = os.waitpid(pid, 0)
-finally:
-    state.lock.release()
-
-assert os.WIFEXITED(status)
-assert os.WEXITSTATUS(status) == 0
-""",
-        {"OFFLINE_MODE": "False"},
     )
 
 
