@@ -6,7 +6,6 @@ from inference.core.workflows.core_steps.models.foundation.meta_vlm.v1 import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_VERSION,
     DEFAULT_REASONING_EFFORT,
-    MODEL_VARIANTS,
     BlockManifest,
     MetaVlmBlockV1,
     build_muse_openrouter_prompts,
@@ -63,7 +62,7 @@ def test_manifest_defaults():
             "task_type": "caption",
         }
     )
-    assert manifest.model_version == DEFAULT_MODEL_VERSION
+    assert manifest.model_version == "Muse Spark 1.2"
     assert manifest.max_tokens == 2048
     assert manifest.temperature is None
     assert manifest.reasoning_effort == "low"
@@ -99,7 +98,7 @@ def test_run_openrouter_passes_slug_and_low_reasoning(mock_or):
             model_version="Muse Glimmer",
         )
     )
-    assert mock_or.call_args.kwargs["model"] == MODEL_VARIANTS["Muse Glimmer"]
+    assert mock_or.call_args.kwargs["model"] == "meta/muse-glimmer-30b"
     assert mock_or.call_args.kwargs["reasoning"] == {"effort": "low"}
     assert mock_or.call_args.kwargs["max_tokens"] == 2048
     assert mock_or.call_args.kwargs["temperature"] is None

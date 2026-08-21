@@ -149,6 +149,19 @@ _TASK_STRUCTURED = (
 
 
 def encode_image_for_muse_openrouter(numpy_image: np.ndarray) -> str:
+    """Encode a BGR image as base64 JPEG under the OpenRouter payload cap.
+
+    Encodes at fixed JPEG quality and, when the base64 payload exceeds
+    ``OPENROUTER_MAX_BASE64_BYTES``, iteratively downscales the longest
+    edge by 10% until it fits. Detection coordinates are normalized to
+    0-1000, so downscaling does not affect parsing.
+
+    Args:
+        numpy_image: Image in BGR channel order.
+
+    Returns:
+        Base64-encoded JPEG payload.
+    """
     working = numpy_image
     while True:
         jpeg_bytes = encode_image_to_jpeg_bytes(
@@ -279,6 +292,25 @@ def build_muse_openrouter_prompts(
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
 ) -> List[List[dict]]:
+    """Build one OpenRouter ``messages`` array per input image, Muse-style.
+
+    Every task sends a single user message with the image part first and
+    the instruction text second, with no system role, matching the
+    vlm-exam Muse request contract.
+
+    Args:
+        images: BGR numpy images.
+        task_type: One of the supported VLM task types.
+        prompt: User prompt for unconstrained / VQA tasks.
+        output_structure: Output spec for structured-answering.
+        classes: Class list for classification / detection tasks.
+
+    Returns:
+        List of ``messages`` arrays, one per image.
+
+    Raises:
+        ValueError: If the task type is not supported.
+    """
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     builder = PROMPT_BUILDERS[task_type]
@@ -296,6 +328,16 @@ def build_muse_openrouter_prompts(
 
 
 def build_reasoning_config(reasoning_effort: str) -> Dict[str, Any]:
+    """Build the OpenRouter ``reasoning`` config for Muse models.
+
+    Muse models reject disabled reasoning, so an ``effort`` is always sent.
+
+    Args:
+        reasoning_effort: ``low``, ``medium``, or ``high``.
+
+    Returns:
+        Reasoning config to attach to the OpenRouter request.
+    """
     return {"effort": reasoning_effort}
 
 
