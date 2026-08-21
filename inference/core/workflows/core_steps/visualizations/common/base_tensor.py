@@ -3,9 +3,11 @@ from typing import List, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
+import torch
 from pydantic import AliasChoices, ConfigDict, Field
 from supervision.detection.compact_mask import CompactMask
 
+from inference.core.env import WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS
 from inference.core.workflows.core_steps.common.rle_compact import (
     instances_rle_to_compact_mask,
 )
@@ -101,6 +103,75 @@ def empty_predictions_passthrough(
             numpy_image=numpy_image.copy() if copy_image else numpy_image,
         )
     }
+
+
+def resolve_overlap_winners(
+    flat: torch.Tensor,
+    priority: torch.Tensor,
+    num_cells: int,
+    num_candidates: int,
+) -> torch.Tensor:
+    """Later-wins ownership resolution for one flat indexed store.
+
+    ``flat`` (int64, values in ``[0, num_cells)``) holds the destination cell
+    of every painted pixel; ``priority`` (int32, values in
+    ``[0, num_candidates)``) is the paint order. Returns, per painted pixel,
+    the winning priority of its cell — the amax over every pixel targeting
+    that cell — as an int64 tensor provably within ``[0, num_candidates)``,
+    ready to index a per-candidate color table.
+
+    The owner buffer starts as a full ``-1`` sentinel and the scatter uses
+    ``include_self=True``, so the reduction at each cell is the documented
+    ``amax({-1} ∪ {priorities targeting the cell})`` — well defined for any
+    duplication pattern. Gathered cells are exactly the scattered cells, so
+    every gathered value is a real priority, never the sentinel.
+
+    The previous formulation — ``torch.empty`` + ``include_self=False`` —
+    leaned on two undocumented implementation details: PyTorch's internal
+    pre-fill of the dtype minimum at scattered cells, and that pre-fill
+    staying ordered before the reduce kernel. If either breaks (any leak of
+    an uninitialized or ``INT32_MIN`` value into the gather), the winner
+    becomes an out-of-range color index and the paint dies in an
+    asynchronous CUDA device assert — SIGABRT with no Python traceback.
+
+    Defence in depth on top of the provable formulation: the env-gated
+    strict mode (``WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS``) syncs
+    and raises a detailed error on any out-of-range scatter index or owner,
+    and the final clamp keeps the color gather in-bounds even under a
+    kernel malfunction (one mispainted pixel instead of a dead process).
+    """
+    if WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS:
+        _validate_scatter_indices(flat, num_cells)
+    owner = torch.full((num_cells,), -1, dtype=torch.int32, device=flat.device)
+    owner.scatter_reduce_(0, flat, priority, reduce="amax", include_self=True)
+    winners = owner[flat].long()
+    if WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS:
+        _validate_winners(winners, num_candidates)
+    return winners.clamp_(0, num_candidates - 1)
+
+
+def _validate_scatter_indices(flat: torch.Tensor, num_cells: int) -> None:
+    if int(flat.numel()) == 0:
+        return
+    lo, hi = int(flat.min().item()), int(flat.max().item())
+    if lo < 0 or hi >= num_cells:
+        raise RuntimeError(
+            f"overlap resolver received out-of-range pixel indices: "
+            f"min={lo}, max={hi}, valid range [0, {num_cells})"
+        )
+
+
+def _validate_winners(winners: torch.Tensor, num_candidates: int) -> None:
+    bad = (winners < 0) | (winners >= num_candidates)
+    if bool(bad.any().item()):
+        bad_values = winners[bad]
+        raise RuntimeError(
+            f"overlap resolver produced {int(bad.sum().item())} out-of-range "
+            f"owners (valid range [0, {num_candidates})): first values "
+            f"{bad_values[:8].tolist()} — scatter_reduce amax returned a "
+            f"value never scattered, which would have been an asynchronous "
+            f"CUDA device assert in the color gather"
+        )
 
 
 #: ``sv.Detections.data`` key the supervision annotators read class names from.

@@ -407,6 +407,22 @@ Default: `64`
 export INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K="32"
 ```
 
+#### Qwen3.8
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE="true"
+```
+
 #### Qwen2.5-VL
 
 **`INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS`**
@@ -428,6 +444,44 @@ Default: `true`
 
 ```bash
 export INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS="false"
+```
+
+#### Mage-VL
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE="true"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE`**
+Default: `hevc`. Allowed values: `hevc`, `dcvc-rt`. Any other value fails at import
+with `InvalidEnvVariable`.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE="dcvc-rt"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS`**
+Default: `16`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS="24"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS`**
+Default: `153664`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS="200000"
 ```
 
 #### Qwen3-VL

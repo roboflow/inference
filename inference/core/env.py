@@ -279,6 +279,8 @@ QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
 QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 
+QWEN_3_8_ENABLED = str2bool(os.getenv("QWEN_3_8_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -1489,6 +1491,16 @@ DEFAULT_ADAPTIVE_MODE_BACKPRESSURE = str2bool(
     )
 )
 
+
+# Diagnostic mode for the tensor visualisation painters' overlap resolver:
+# before the winner-color gather, synchronise and verify that every scatter
+# index and every resolved owner is in range, raising a detailed Python error
+# (routed to the sv fallback) instead of letting an out-of-range index become
+# an asynchronous CUDA device assert that kills the process with SIGABRT and
+# no traceback. Costs one device sync per overlapping frame — off by default.
+WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS = str2bool(
+    os.getenv("WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS", "False")
+)
 
 WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
     "WORKFLOWS_IMAGE_TENSOR_DEVICE"
