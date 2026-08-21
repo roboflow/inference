@@ -48,11 +48,6 @@ from inference_models.models.auto_loaders.access_manager import (
     ModelAccessManager,
 )
 from inference_models.models.auto_loaders.auto_negotiation import (
-    determine_default_allowed_quantization,
-    filter_model_packages_based_on_model_features,
-    filter_model_packages_by_requested_backend,
-    filter_model_packages_by_requested_batch_size,
-    filter_model_packages_by_requested_quantization,
     negotiate_model_packages,
     parse_backend_type,
 )
@@ -117,6 +112,10 @@ from inference_models.weights_providers.entities import (
     PackageSourceType,
     Quantization,
     RecommendedParameters,
+)
+from inference_models.weights_providers.offline_registry import (
+    OfflineArtefactVerification,
+    OfflineModelStatus,
 )
 from inference_models.weights_providers.roboflow import LOCAL_API_KEY
 from inference_models.weights_providers.roboflow_offline import (
@@ -1431,57 +1430,49 @@ class AutoModel:
         console.print(table)
 
     @classmethod
-    def list_offline_models(cls) -> List[Dict[str, Any]]:
+    def list_offline_models(cls) -> List[OfflineModelStatus]:
         """List offline-weights registry records with per-package presence.
 
-        Each entry describes one recorded model: canonical id, requested
-        aliases, source (``warmup`` / ``cli-install``), proven packages, and
-        for every recorded package its backend, quantization, batch limits and
-        a presence status (``ok`` / ``incomplete`` / ``missing`` /
-        ``malformed``) computed against the local cache.
+        Each ``OfflineModelStatus`` describes one recorded model: canonical
+        id, requested aliases, source (``warmup`` / ``cli-install``), proven
+        packages (package id -> last proven ``datetime``), and for every
+        recorded package an ``OfflinePackageStatus`` with its trust flag and
+        an ``OfflinePackagePresence`` status computed against the local cache.
+        Full package metadata lives in the provider response - use
+        ``describe_model`` for that view.
 
         Returns data — printing or formatting is the caller's concern.
         """
         return offline_registry.list_records_status()
 
     @classmethod
-    def verify_offline_models(
+    def verify_offline_model(
         cls,
-        model_id: Optional[str] = None,
+        model_id: str,
         check_hashes: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Verify recorded offline artefacts exist (optionally MD5-verify).
+    ) -> List[OfflineArtefactVerification]:
+        """Verify one model's recorded offline artefacts exist.
 
         Presence checks are what OFFLINE loads rely on; hashing every artefact
         is deliberately not part of the load path — pass ``check_hashes=True``
         here to pay that cost explicitly when the storage is in doubt.
 
         Args:
-            model_id: Verify a single model (canonical id or alias). ``None``
-                verifies every record.
+            model_id: Canonical model id or a recorded alias.
             check_hashes: Additionally MD5-verify every artefact.
 
         Returns:
-            One entry per recorded artefact with a ``status`` of ``ok``,
-            ``missing``, ``hash-mismatch`` or ``unreadable``.
+            One ``OfflineArtefactVerification`` per recorded artefact with an
+            ``OfflineArtefactStatus`` status. Empty when the model has no
+            registry record.
         """
-        return offline_registry.verify_records(
-            model_id=model_id,
+        record = offline_registry.load_record_raw(model_id=model_id)
+        if record is None:
+            return []
+        return offline_registry.verify_record(
+            record=record,
             check_hashes=check_hashes,
         )
-
-    @classmethod
-    def purge_offline_model(cls, model_id: str) -> bool:
-        """Remove a model's offline-weights registry record.
-
-        Accepts the canonical model id, an alias, or the id of a malformed
-        record file. Package directories in the models cache are NOT removed —
-        they may be shared with other records or the online cache.
-
-        Returns:
-            True when a record was removed.
-        """
-        return offline_registry.purge_record(model_id=model_id)
 
     @classmethod
     def from_pretrained(
@@ -3656,7 +3647,7 @@ def _resolve_local_cache_package_files(
             # OFFLINE loads verify presence only. Artefacts of packages warmed
             # online are symlinks into the shared-blobs dir, so the check must
             # follow links; hashing is available on demand through
-            # AutoModel.verify_offline_models(check_hashes=True).
+            # AutoModel.verify_offline_model(model_id, check_hashes=True).
             if not os.path.isfile(package_file_path):
                 raise CorruptedModelPackageError(
                     message=(

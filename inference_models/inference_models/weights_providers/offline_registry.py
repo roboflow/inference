@@ -17,8 +17,10 @@ import hashlib
 import json
 import os
 import tempfile
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from enum import Enum
+from typing import Dict, List, Optional, Tuple, Union
 
 from filelock import FileLock
 from packaging.version import InvalidVersion, Version
@@ -52,6 +54,52 @@ REGISTRY_DIR_NAME = "offline-weights-registry"
 
 RECORD_SOURCE_WARMUP = "warmup"
 RECORD_SOURCE_CLI_INSTALL = "cli-install"
+
+
+class OfflinePackagePresence(str, Enum):
+    OK = "ok"
+    INCOMPLETE = "incomplete"
+    MISSING = "missing"
+    MALFORMED = "malformed"
+
+
+class OfflineArtefactStatus(str, Enum):
+    OK = "ok"
+    MISSING = "missing"
+    HASH_MISMATCH = "hash-mismatch"
+    UNREADABLE = "unreadable"
+
+
+@dataclass(frozen=True)
+class OfflinePackageStatus:
+    """Presence of one recorded package, checked against the local cache."""
+
+    package_id: Optional[str]
+    trusted_source: Optional[bool]
+    presence: OfflinePackagePresence
+    missing_files: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class OfflineModelStatus:
+    """One offline-weights registry record with per-package presence."""
+
+    canonical_model_id: str
+    requested_aliases: List[str]
+    source: Optional[str]
+    recorded_at: Optional[datetime]
+    proven: Dict[str, datetime]
+    packages: List[OfflinePackageStatus] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class OfflineArtefactVerification:
+    """Verification outcome for a single recorded artefact."""
+
+    canonical_model_id: str
+    package_id: Optional[str]
+    file_handle: str
+    status: OfflineArtefactStatus
 
 
 def generate_offline_registry_dir() -> str:
@@ -566,154 +614,196 @@ def iterate_records() -> List[dict]:
 def _package_presence(
     canonical_model_id: str,
     package_payload: dict,
-) -> Tuple[str, List[str]]:
+) -> Tuple[OfflinePackagePresence, List[str]]:
     """Return (status, missing_files) for a recorded package."""
 
     package_id = package_payload.get("package_id")
     cache_model_id = package_payload.get("cache_model_id") or canonical_model_id
     if not isinstance(package_id, str):
-        return "malformed", []
+        return OfflinePackagePresence.MALFORMED, []
     package_dir = _resolve_package_dir(
         cache_model_id=cache_model_id,
         package_id=package_id,
     )
     if package_dir is None:
-        return "missing", []
+        return OfflinePackagePresence.MISSING, []
     missing = []
     for artefact in package_payload.get("artifacts") or []:
         file_handle = (
             artefact.get("file_handle") if isinstance(artefact, dict) else None
         )
         if not isinstance(file_handle, str):
-            return "malformed", []
+            return OfflinePackagePresence.MALFORMED, []
         if not os.path.isfile(os.path.join(package_dir, file_handle)):
             missing.append(file_handle)
-    return ("ok", []) if not missing else ("incomplete", missing)
+    if missing:
+        return OfflinePackagePresence.INCOMPLETE, missing
+    return OfflinePackagePresence.OK, []
 
 
-def list_records_status() -> List[Dict[str, Any]]:
+def _parse_registry_timestamp(
+    value: object,
+    context: str,
+) -> Optional[datetime]:
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    LOGGER.warning(
+        "Offline-weights registry record contains unparsable timestamp for "
+        "%s: %r",
+        context,
+        value,
+    )
+    return None
+
+
+def _proven_timestamps(record: dict) -> Dict[str, datetime]:
+    """Flatten the record's proven map to package_id -> last_proven_at."""
+
+    proven = {}
+    raw_proven = record.get("proven")
+    if not isinstance(raw_proven, dict):
+        if raw_proven is not None:
+            LOGGER.warning(
+                "Offline-weights registry record %s has malformed proven "
+                "metadata: %r",
+                record.get("canonical_model_id"),
+                raw_proven,
+            )
+        return proven
+    for package_id, proof in raw_proven.items():
+        last_proven_at = _parse_registry_timestamp(
+            value=proof.get("last_proven_at") if isinstance(proof, dict) else proof,
+            context=f"proven package {package_id}",
+        )
+        if isinstance(package_id, str) and last_proven_at is not None:
+            proven[package_id] = last_proven_at
+    return proven
+
+
+def list_records_status() -> List[OfflineModelStatus]:
     """One status entry per record, with per-package presence."""
 
     statuses = []
     for record in iterate_records():
         canonical_model_id = record.get("canonical_model_id")
         if not isinstance(canonical_model_id, str):
+            LOGGER.warning(
+                "Skipping offline-weights registry record without a valid "
+                "canonical_model_id: %r",
+                canonical_model_id,
+            )
             continue
         package_statuses = []
         for package_payload in record.get("packages") or []:
             if not isinstance(package_payload, dict):
+                package_statuses.append(
+                    OfflinePackageStatus(
+                        package_id=None,
+                        trusted_source=None,
+                        presence=OfflinePackagePresence.MALFORMED,
+                        missing_files=[],
+                    )
+                )
                 continue
             presence, missing = _package_presence(
                 canonical_model_id=canonical_model_id,
                 package_payload=package_payload,
             )
+            trusted_source = package_payload.get("trusted_source")
+            if trusted_source is not None and not isinstance(trusted_source, bool):
+                LOGGER.warning(
+                    "Offline-weights registry record %s has malformed "
+                    "trusted_source for package %s: %r",
+                    canonical_model_id,
+                    package_payload.get("package_id"),
+                    trusted_source,
+                )
+                trusted_source = None
             package_statuses.append(
-                {
-                    "package_id": package_payload.get("package_id"),
-                    "backend": package_payload.get("backend"),
-                    "quantization": package_payload.get("quantization"),
-                    "static_batch_size": package_payload.get("static_batch_size"),
-                    "dynamic_batch_size_supported": package_payload.get(
-                        "dynamic_batch_size_supported"
-                    ),
-                    "trusted_source": package_payload.get("trusted_source"),
-                    "presence": presence,
-                    "missing_files": missing,
-                }
+                OfflinePackageStatus(
+                    package_id=package_payload.get("package_id"),
+                    trusted_source=trusted_source,
+                    presence=presence,
+                    missing_files=missing,
+                )
             )
         statuses.append(
-            {
-                "canonical_model_id": canonical_model_id,
-                "requested_aliases": record.get("requested_aliases") or [],
-                "source": record.get("source"),
-                "recorded_at": record.get("recorded_at"),
-                "proven": record.get("proven") or {},
-                "packages": package_statuses,
-            }
+            OfflineModelStatus(
+                canonical_model_id=canonical_model_id,
+                requested_aliases=list(record.get("requested_aliases") or []),
+                source=record.get("source"),
+                recorded_at=_parse_registry_timestamp(
+                    value=record.get("recorded_at"),
+                    context=f"recorded_at of {canonical_model_id}",
+                ),
+                proven=_proven_timestamps(record=record),
+                packages=package_statuses,
+            )
         )
     return statuses
 
 
-def verify_records(
-    model_id: Optional[str] = None,
+def verify_record(
+    record: dict,
     check_hashes: bool = False,
-) -> List[Dict[str, Any]]:
-    """Presence (and optionally MD5) verification for recorded artefacts."""
+) -> List[OfflineArtefactVerification]:
+    """Presence (and optionally MD5) verification for one record's artefacts."""
 
-    if model_id is not None:
-        record = load_record_raw(model_id=model_id)
-        records = [] if record is None else [record]
-    else:
-        records = iterate_records()
-    results = []
-    for record in records:
-        canonical_model_id = record.get("canonical_model_id")
-        if not isinstance(canonical_model_id, str):
-            continue
-        for package_payload in record.get("packages") or []:
-            if not isinstance(package_payload, dict):
-                continue
-            package_id = package_payload.get("package_id")
-            cache_model_id = package_payload.get("cache_model_id") or canonical_model_id
-            package_dir = (
-                _resolve_package_dir(
-                    cache_model_id=cache_model_id,
-                    package_id=package_id,
-                )
-                if isinstance(package_id, str)
-                else None
-            )
-            for artefact in package_payload.get("artifacts") or []:
-                file_handle = (
-                    artefact.get("file_handle") if isinstance(artefact, dict) else None
-                )
-                if not isinstance(file_handle, str):
-                    continue
-                artefact_path = (
-                    os.path.join(package_dir, file_handle) if package_dir else None
-                )
-                if artefact_path is None or not os.path.isfile(artefact_path):
-                    status = "missing"
-                elif check_hashes:
-                    expected_md5 = artefact.get("md5_hash")
-                    try:
-                        actual_md5 = _md5_of_file(path=artefact_path)
-                        status = "ok" if actual_md5 == expected_md5 else "hash-mismatch"
-                    except OSError:
-                        status = "unreadable"
-                else:
-                    status = "ok"
-                results.append(
-                    {
-                        "canonical_model_id": canonical_model_id,
-                        "package_id": package_id,
-                        "file_handle": file_handle,
-                        "status": status,
-                    }
-                )
-    return results
-
-
-def purge_record(
-    model_id: str,
-    file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
-) -> bool:
-    """Remove the registry record for a model. Returns True when removed."""
-
-    record = load_record_raw(model_id=model_id)
-    canonical_model_id = (
-        record.get("canonical_model_id") if isinstance(record, dict) else None
-    )
+    canonical_model_id = record.get("canonical_model_id")
     if not isinstance(canonical_model_id, str):
-        canonical_model_id = model_id
-    record_path = _record_path(canonical_model_id=canonical_model_id)
-    if not os.path.isfile(record_path):
-        return False
-    with FileLock(
-        _record_lock_path(record_path=record_path),
-        timeout=file_lock_acquire_timeout,
-    ):
-        if os.path.isfile(record_path):
-            os.unlink(record_path)
-            return True
-    return False
+        LOGGER.warning(
+            "Cannot verify offline-weights registry record without a valid "
+            "canonical_model_id: %r",
+            canonical_model_id,
+        )
+        return []
+    results = []
+    for package_payload in record.get("packages") or []:
+        if not isinstance(package_payload, dict):
+            continue
+        package_id = package_payload.get("package_id")
+        cache_model_id = package_payload.get("cache_model_id") or canonical_model_id
+        package_dir = (
+            _resolve_package_dir(
+                cache_model_id=cache_model_id,
+                package_id=package_id,
+            )
+            if isinstance(package_id, str)
+            else None
+        )
+        for artefact in package_payload.get("artifacts") or []:
+            file_handle = (
+                artefact.get("file_handle") if isinstance(artefact, dict) else None
+            )
+            if not isinstance(file_handle, str):
+                continue
+            artefact_path = (
+                os.path.join(package_dir, file_handle) if package_dir else None
+            )
+            if artefact_path is None or not os.path.isfile(artefact_path):
+                status = OfflineArtefactStatus.MISSING
+            elif check_hashes:
+                expected_md5 = artefact.get("md5_hash")
+                try:
+                    actual_md5 = _md5_of_file(path=artefact_path)
+                    status = (
+                        OfflineArtefactStatus.OK
+                        if actual_md5 == expected_md5
+                        else OfflineArtefactStatus.HASH_MISMATCH
+                    )
+                except OSError:
+                    status = OfflineArtefactStatus.UNREADABLE
+            else:
+                status = OfflineArtefactStatus.OK
+            results.append(
+                OfflineArtefactVerification(
+                    canonical_model_id=canonical_model_id,
+                    package_id=package_id,
+                    file_handle=file_handle,
+                    status=status,
+                )
+            )
+    return results

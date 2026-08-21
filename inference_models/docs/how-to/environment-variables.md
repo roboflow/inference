@@ -94,9 +94,9 @@ loads re-run the standard package auto-negotiation against the recorded
 provider metadata (backend, quantization, batch and TensorRT/CUDA environment
 requirements) and verify that every recorded artefact file is present — no
 per-load hashing. The operator owns the integrity of the mounted storage; use
-`AutoModel.verify_offline_models(check_hashes=True)` for an explicit
-integrity check, `AutoModel.list_offline_models()` to inspect the registry and
-`AutoModel.purge_offline_model(...)` to drop a record. TensorRT execution
+`AutoModel.verify_offline_model(model_id, check_hashes=True)` for an explicit
+integrity check and `AutoModel.list_offline_models()` to inspect the
+registry. TensorRT execution
 provider engine caches are written and reused in offline mode like in any
 other mode, so warm restarts stay fast. Custom (non-Roboflow) weights
 providers are not restricted by `OFFLINE_MODE`; keeping them offline is the

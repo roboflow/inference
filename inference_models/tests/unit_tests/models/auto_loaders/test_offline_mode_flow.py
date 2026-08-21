@@ -253,17 +253,27 @@ def test_maintenance_classmethods_round_trip(registry_home) -> None:
 
     # when
     listed = core.AutoModel.list_offline_models()
-    verified = core.AutoModel.verify_offline_models(model_id=MODEL_ID)
-    purged = core.AutoModel.purge_offline_model(model_id="my-alias")
+    verified = core.AutoModel.verify_offline_model(model_id=MODEL_ID)
+    verified_by_alias = core.AutoModel.verify_offline_model(model_id="my-alias")
 
     # then
     assert len(listed) == 1
-    assert listed[0]["canonical_model_id"] == MODEL_ID
-    assert listed[0]["requested_aliases"] == ["my-alias"]
-    assert listed[0]["packages"][0]["presence"] == "missing"
-    assert {result["status"] for result in verified} == {"missing"}
-    assert purged is True
-    assert core.AutoModel.list_offline_models() == []
+    assert isinstance(listed[0], offline_registry.OfflineModelStatus)
+    assert listed[0].canonical_model_id == MODEL_ID
+    assert listed[0].requested_aliases == ["my-alias"]
+    assert (
+        listed[0].packages[0].presence
+        is offline_registry.OfflinePackagePresence.MISSING
+    )
+    # proven flattens to package_id -> last_proven_at datetime
+    assert set(listed[0].proven) == {"pkgonnx"}
+    assert isinstance(listed[0].proven["pkgonnx"], datetime)
+    assert isinstance(listed[0].recorded_at, datetime)
+    assert {result.status for result in verified} == {
+        offline_registry.OfflineArtefactStatus.MISSING
+    }
+    assert verified_by_alias == verified  # alias resolves to the same record
+    assert core.AutoModel.verify_offline_model(model_id="unknown/model/1") == []
 
 
 def test_without_warm_up_no_prefetch_happens_on_cache_hit(registry_home) -> None:

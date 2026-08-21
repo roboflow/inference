@@ -148,9 +148,9 @@ provider metadata — every available package with its backend, quantization,
 batch limits and TensorRT/CUDA environment requirements. Offline loads re-run
 the same auto-negotiation against those records and verify that every recorded
 artefact file is present; there is no per-load hashing (use
-`AutoModel.verify_offline_models(check_hashes=True)` for an explicit
-integrity pass, `AutoModel.list_offline_models()` to inspect the registry and
-`AutoModel.purge_offline_model(...)` to drop a record).
+`AutoModel.verify_offline_model(model_id, check_hashes=True)` for an explicit
+integrity pass and `AutoModel.list_offline_models()` to inspect the
+registry).
 
 Before disconnecting a deployment, run the full workload once with
 `OFFLINE_MODE_WARM_UP=True` on the same machine (or an identical fleet image)

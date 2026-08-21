@@ -270,25 +270,7 @@ def test_unhashed_sibling_package_is_skipped_but_proven_package_records(
     assert {p["package_id"] for p in record["packages"]} == {"pkgonnx", "pkgtrt"}
 
 
-def test_purge_record(registry_home) -> None:
-    # given
-    metadata = _example_metadata()
-    offline_registry.record_successful_load(
-        model_metadata=metadata,
-        requested_model_id="my-alias",
-        proven_package_id="pkgonnx",
-    )
-
-    # when
-    purged = offline_registry.purge_record(model_id="my-alias")
-
-    # then
-    assert purged is True
-    assert offline_registry.load_record_raw(model_id=metadata.model_id) is None
-    assert offline_registry.purge_record(model_id=metadata.model_id) is False
-
-
-def test_verify_records_reports_missing_packages(registry_home) -> None:
+def test_verify_record_reports_missing_packages(registry_home) -> None:
     # given: recorded artefacts were never materialized on disk
     metadata = _example_metadata()
     offline_registry.record_successful_load(
@@ -298,11 +280,19 @@ def test_verify_records_reports_missing_packages(registry_home) -> None:
     )
 
     # when
-    results = offline_registry.verify_records(model_id=metadata.model_id)
+    record = offline_registry.load_record_raw(model_id=metadata.model_id)
+    results = offline_registry.verify_record(record=record)
 
     # then
     assert len(results) == 3
-    assert {result["status"] for result in results} == {"missing"}
+    assert all(
+        isinstance(result, offline_registry.OfflineArtefactVerification)
+        for result in results
+    )
+    assert {result.status for result in results} == {
+        offline_registry.OfflineArtefactStatus.MISSING
+    }
+    assert {result.canonical_model_id for result in results} == {metadata.model_id}
 
 
 def _record_in_subprocess(inference_home: str, package_index: int) -> None:
@@ -345,3 +335,38 @@ def test_concurrent_appends_lose_neither_write(registry_home) -> None:
     record = offline_registry.load_record_raw(model_id="workspace/model/1")
     assert {p["package_id"] for p in record["packages"]} == {"pkgonnx", "pkgtrt"}
     assert set(record["proven"].keys()) == {"pkgonnx", "pkgtrt"}
+
+
+def test_list_records_status_tolerates_malformed_record_fields(registry_home) -> None:
+    """Unparsable fields degrade with warnings / malformed markers, not errors."""
+    # given: a hand-corrupted record - non-dict package entry, bad timestamps
+    record_dir = offline_registry.generate_offline_registry_dir()
+    os.makedirs(record_dir, exist_ok=True)
+    with open(os.path.join(record_dir, "v2-broken.json"), "w") as record_file:
+        json.dump(
+            {
+                "format_version": 1,
+                "canonical_model_id": "workspace/broken/1",
+                "requested_aliases": [],
+                "recorded_at": "not-a-timestamp",
+                "source": "warmup",
+                "model": {"model_architecture": "rfdetr"},
+                "packages": ["not-a-dict", {"package_id": 42}],
+                "proven": {"pkgonnx": {"last_proven_at": "also-not-a-timestamp"}},
+            },
+            record_file,
+        )
+
+    # when
+    statuses = offline_registry.list_records_status()
+
+    # then
+    assert len(statuses) == 1
+    status = statuses[0]
+    assert status.recorded_at is None
+    assert status.proven == {}
+    assert [p.presence for p in status.packages] == [
+        offline_registry.OfflinePackagePresence.MALFORMED,
+        offline_registry.OfflinePackagePresence.MALFORMED,
+    ]
+    assert [p.package_id for p in status.packages] == [None, 42]

@@ -60,9 +60,11 @@
   provider-attested only — the registry never computes identities from local files;
   packages loaded with `download_files_without_hash=True` are not registered.
   Mutually exclusive with `OFFLINE_MODE` — enabling both fails at model load.
-- `AutoModel.list_offline_models()`, `AutoModel.verify_offline_models(model_id=None,
-  check_hashes=False)` and `AutoModel.purge_offline_model(model_id)` maintenance
-  classmethods over the registry.
+- `AutoModel.list_offline_models()` and `AutoModel.verify_offline_model(model_id,
+  check_hashes=False)` maintenance classmethods over the
+  registry. Listing/verification results are structured dataclasses
+  (`OfflineModelStatus` / `OfflinePackageStatus` / `OfflineArtefactVerification`
+  in `inference_models.weights_providers.offline_registry`).
 - Locally compiled TensorRT packages (`inference-compiler`) are installed as regular
   files (previously symlinks that post-`0.32.0` discovery silently rejected) and are
   appended to the offline-weights registry, so they load in `OFFLINE_MODE` without a
