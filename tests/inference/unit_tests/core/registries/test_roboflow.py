@@ -28,6 +28,10 @@ from inference.core.registries.roboflow import (
     save_model_metadata_in_cache,
 )
 from inference.core.roboflow_api import ModelEndpointType
+from inference.usage_tracking.model_types import (
+    clear_recorded_model_types,
+    get_recorded_model_type,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -1518,6 +1522,48 @@ def test_get_model_type_when_roboflow_api_is_called_for_model_from_new_model_reg
     )
 
 
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_records_registry_variant_for_usage_tracking(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_model_metadata_from_inference_models_registry_mock.return_value = {
+        "modelType": "yolov8",
+        "taskType": "instance-segmentation",
+        "modelVariant": "yolov8-n",
+    }
+
+    try:
+        result = get_model_type(
+            model_id="yolov8n-seg-640",
+            api_key="my_api_key",
+        )
+
+        assert result == ("instance-segmentation", "yolov8")
+        assert get_recorded_model_type("yolov8n-seg-640") == "yolov8-n"
+        with open(metadata_path) as f:
+            persisted_metadata = json.load(f)
+        assert persisted_metadata["model_type"] == "yolov8"
+        assert persisted_metadata["model_variant"] == "yolov8-n"
+
+        _in_process_metadata_cache.cache.clear()
+        clear_recorded_model_types()
+        cached_result = get_model_type(
+            model_id="yolov8n-seg-640",
+            api_key="my_api_key",
+        )
+        assert cached_result == ("instance-segmentation", "yolov8")
+        assert get_recorded_model_type("yolov8n-seg-640") == "yolov8-n"
+        get_model_metadata_from_inference_models_registry_mock.assert_called_once()
+    finally:
+        clear_recorded_model_types()
+
+
 @mock.patch.object(
     roboflow, "ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", True
 )
@@ -1902,7 +1948,7 @@ def test_get_model_metadata_from_inference_models_cache_when_config_found(
         )
 
     # then
-    assert result == ("object-detection", "yolov8")
+    assert result == ("object-detection", "yolov8", None)
     find_cached_package.assert_called_once_with(
         model_id="coco/22",
         api_key="credential-a",

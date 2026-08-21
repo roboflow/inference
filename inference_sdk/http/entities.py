@@ -10,7 +10,10 @@ from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
     WORKFLOW_RUN_RETRIES_ENABLED,
 )
-from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
+from inference_sdk.http.errors import (
+    InvalidParameterError,
+    ModelTaskTypeNotSupportedError,
+)
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
@@ -83,6 +86,28 @@ class HTTPClientMode(str, Enum):
     V1 = "v1"
 
 
+class ApiKeyTransport(str, Enum):
+    """Enum for the channel used to send the Roboflow API key to the server.
+
+    Attributes:
+        LEGACY: Today's behaviour byte-for-byte - the key travels as the
+            `api_key` query parameter (API v0) or JSON-body field (API v1).
+            Works against every server version.
+        BOTH: Legacy channels untouched, plus an `Authorization: Bearer
+            <api_key>` header on top. Safe against every server version -
+            older servers ignore the header, newer servers read the header
+            first (it carries the same key as the legacy channels).
+        HEADER: The key travels ONLY in the `Authorization: Bearer <api_key>`
+            header - no key in URLs or request bodies. Requires an inference
+            server with header-based auth support; against an older server
+            requests are keyless.
+    """
+
+    LEGACY = "legacy"
+    BOTH = "both"
+    HEADER = "header"
+
+
 class VisualisationResponseFormat(str, Enum):
     """Enum for the visualisation response format.
 
@@ -150,6 +175,27 @@ class InferenceConfiguration:
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
     response_mask_format: Optional[Literal["polygon", "rle"]] = None
+    # None means "not chosen by the user" - the client resolves it to LEGACY
+    # and emits a one-time recommendation to move to the header transport.
+    # Pass "legacy" explicitly to keep the old behaviour silently.
+    api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
+
+    def __post_init__(self) -> None:
+        # Normalise the transport to the enum so the client can rely on
+        # identity checks. NOTE: this field configures the credential CHANNEL
+        # only - it is deliberately absent from every to_*_parameters()
+        # allowlist below, so it can never leak onto the wire.
+        if self.api_key_transport is None:
+            return
+        try:
+            object.__setattr__(
+                self, "api_key_transport", ApiKeyTransport(self.api_key_transport)
+            )
+        except ValueError:
+            raise InvalidParameterError(
+                f"Invalid api_key_transport: {self.api_key_transport}. Expected "
+                f"one of: {[transport.value for transport in ApiKeyTransport]}."
+            )
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":

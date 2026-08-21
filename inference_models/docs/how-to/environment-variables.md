@@ -407,6 +407,22 @@ Default: `64`
 export INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K="32"
 ```
 
+#### Qwen3.8
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE="true"
+```
+
 #### Qwen2.5-VL
 
 **`INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS`**
@@ -428,6 +444,44 @@ Default: `true`
 
 ```bash
 export INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS="false"
+```
+
+#### Mage-VL
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE="true"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE`**
+Default: `hevc`. Allowed values: `hevc`, `dcvc-rt`. Any other value fails at import
+with `InvalidEnvVariable`.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE="dcvc-rt"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS`**
+Default: `16`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS="24"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS`**
+Default: `153664`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS="200000"
 ```
 
 #### Qwen3-VL
@@ -523,6 +577,7 @@ plan = RFDetrExecutionPlan(
     postprocessor_id="triton-fused-v1",
     engine_plugin_id="base",
     allow_compatibility_fallback=True,
+    allow_runtime_failure_fallback=True,
 )
 model = AutoModel.from_pretrained(
     "rfdetr-small",
@@ -561,8 +616,16 @@ contract, RF-DETR uses its declared `base` fallback and records the requested
 implementation, effective implementation, and reason in logs and runtime metadata.
 This policy applies consistently to preprocessing and postprocessing. Set
 `allow_compatibility_fallback=False` in an explicit plan to require the selected
-implementation or an error. Compilation, CUDA, allocation, and other execution
-failures are never converted into fallbacks.
+implementation or an error; this global strictness gate also prevents runtime-failure
+fallback.
+
+Recoverable execution failures, such as recognized Triton JIT compilation or launch
+failures, may follow the declared `base` fallback when both
+`allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`. Both
+fields default to `True`. Set `allow_runtime_failure_fallback=False` to retain
+compatibility fallback for unsupported model or request contracts while requiring
+runtime execution failures to surface as `ModelRuntimeError`. Allocation and other
+unclassified execution failures are never converted into fallbacks.
 
 An all-`False` `PreProcessingOverrides` object is a no-op and remains compatible with
 `triton-universal-v1`. Requests with any active preprocessing override use the declared
