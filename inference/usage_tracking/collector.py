@@ -54,12 +54,14 @@ from .decorator_helpers import (
     get_model_id_from_kwargs,
     get_model_megapixel_buckets,
     get_model_resource_details_from_kwargs,
+    get_model_usage_billable_from_kwargs,
     get_request_api_key_from_kwargs,
     get_request_resource_details_from_kwargs,
     get_request_resource_id_from_kwargs,
     get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    propagate_request_usage_metadata,
 )
 from .payload_helpers import (
     APIKey,
@@ -774,7 +776,7 @@ class UsageCollector:
         usage_workflow_id: str,
         usage_workflow_preview: bool,
         usage_inference_test_run: bool,
-        usage_billable: bool,
+        usage_billable: Optional[bool],
         execution_duration: float,
         func: Callable[[Any], Any],
         category: Literal["model", "workflows", "request", "modal"],
@@ -784,7 +786,7 @@ class UsageCollector:
     ) -> Dict[str, Any]:
         func_kwargs = collect_func_params(func, args, kwargs)
         resource_details = {
-            "billable": usage_billable,
+            "billable": True if usage_billable is None else usage_billable,
         }
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
@@ -812,6 +814,12 @@ class UsageCollector:
             workflow_resource_details["is_preview"] = usage_workflow_preview
             resource_details = {**resource_details, **workflow_resource_details}
         elif category == "model":
+            if usage_billable is None:
+                request_usage_billable = get_model_usage_billable_from_kwargs(
+                    func_kwargs
+                )
+                if request_usage_billable is not None:
+                    resource_details["billable"] = request_usage_billable
             model_id = get_model_id_from_kwargs(func_kwargs)
             if model_id:
                 resource_id = model_id
@@ -968,9 +976,19 @@ class UsageCollector:
                 usage_workflow_id: str = "",
                 usage_workflow_preview: bool = False,
                 usage_inference_test_run: bool = False,
-                usage_billable: bool = True,
+                usage_billable: Optional[bool] = None,
                 **kwargs: P.kwargs,
             ) -> T:
+                if category == "request":
+                    try:
+                        propagate_request_usage_metadata(
+                            collect_func_params(func, args, kwargs)
+                        )
+                    except Exception as usage_exc:
+                        logger.debug(
+                            "Failed to propagate request usage metadata - %s",
+                            usage_exc,
+                        )
                 t1 = time.time()
                 try:
                     res = func(*args, **kwargs)
@@ -1028,9 +1046,19 @@ class UsageCollector:
                 usage_workflow_id: str = "",
                 usage_workflow_preview: bool = False,
                 usage_inference_test_run: bool = False,
-                usage_billable: bool = True,
+                usage_billable: Optional[bool] = None,
                 **kwargs: P.kwargs,
             ) -> T:
+                if category == "request":
+                    try:
+                        propagate_request_usage_metadata(
+                            collect_func_params(func, args, kwargs)
+                        )
+                    except Exception as usage_exc:
+                        logger.debug(
+                            "Failed to propagate request usage metadata - %s",
+                            usage_exc,
+                        )
                 t1 = time.time()
                 try:
                     res = await func(*args, **kwargs)

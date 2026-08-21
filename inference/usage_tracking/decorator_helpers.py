@@ -74,6 +74,58 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def propagate_request_usage_metadata(func_kwargs: Dict[str, Any]) -> None:
+    """Copy HTTP query usage metadata onto the typed inference request.
+
+    Request-category decorators wrap the HTTP handler outside the model call. Core
+    model handlers receive ``countinference``, ``source``, and ``source_info`` as
+    query parameters, while their nested model decorators usually receive only the
+    typed inference request. Persisting the metadata on that request makes it
+    available to both usage rows.
+    """
+    inference_request = func_kwargs.get("inference_request")
+    if inference_request is None:
+        return
+
+    countinference = func_kwargs.get("countinference")
+    if isinstance(countinference, bool) and hasattr(
+        inference_request, "usage_billable"
+    ):
+        inference_request.usage_billable = countinference
+
+    source = func_kwargs.get("request_source")
+    source_info = func_kwargs.get("request_source_info")
+
+    http_request = func_kwargs.get("request")
+    query_params = getattr(http_request, "query_params", None)
+    if query_params is not None:
+        if source is None:
+            source = query_params.get("source")
+        if source_info is None:
+            source_info = query_params.get("source_info")
+
+    if source is None:
+        source = func_kwargs.get("source")
+    if source_info is None:
+        source_info = func_kwargs.get("source_info")
+
+    if isinstance(source, str) and hasattr(inference_request, "source"):
+        inference_request.source = source
+    if isinstance(source_info, str) and hasattr(inference_request, "source_info"):
+        inference_request.source_info = source_info
+
+
+def get_model_usage_billable_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[bool]:
+    for request_key in ("inference_request", "request", "workflow_request"):
+        request = func_kwargs.get(request_key)
+        usage_billable = getattr(request, "usage_billable", None)
+        if usage_billable is not None:
+            return usage_billable
+    return None
+
+
 def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     """Resolve Roboflow model type (variant when known, else architecture).
 
@@ -99,6 +151,13 @@ def get_model_resource_details_from_kwargs(
         resource_details["source"] = func_kwargs["source"]
     elif "kwargs" in func_kwargs and "source" in func_kwargs["kwargs"]:
         resource_details["source"] = func_kwargs["kwargs"]["source"]
+    else:
+        for request_key in ("inference_request", "request", "workflow_request"):
+            request = func_kwargs.get(request_key)
+            source = getattr(request, "source", None)
+            if source is not None:
+                resource_details["source"] = source
+                break
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
@@ -321,8 +380,25 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
+    inference_request = func_kwargs.get("inference_request")
     if func_kwargs.get("countinference") is not None:
         resource_details["billable"] = func_kwargs["countinference"]
+    else:
+        usage_billable = getattr(inference_request, "usage_billable", None)
+        if usage_billable is not None:
+            resource_details["billable"] = usage_billable
+    source = getattr(inference_request, "source", None)
+    if source is None:
+        source = func_kwargs.get("request_source")
+    if source is None:
+        source = func_kwargs.get("source")
+    if source is None:
+        http_request = func_kwargs.get("request")
+        query_params = getattr(http_request, "query_params", None)
+        if query_params is not None:
+            source = query_params.get("source")
+    if source is not None:
+        resource_details["source"] = source
     model_id = getattr(func_kwargs.get("inference_request"), "model_id", None)
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         resource_details["execution_mode"] = SAM3_EXEC_MODE

@@ -6,8 +6,11 @@ from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
     get_model_id_from_kwargs,
+    get_model_resource_details_from_kwargs,
     get_model_type_from_kwargs,
+    get_model_usage_billable_from_kwargs,
     get_request_resource_details_from_kwargs,
+    propagate_request_usage_metadata,
 )
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
@@ -27,6 +30,59 @@ def test_get_request_resource_details_respects_explicit_countinference():
     result = get_request_resource_details_from_kwargs({"countinference": False})
 
     assert result["billable"] is False
+
+
+def test_get_request_resource_details_reads_request_usage_billable():
+    result = get_request_resource_details_from_kwargs(
+        {
+            "countinference": None,
+            "inference_request": SimpleNamespace(usage_billable=False),
+        }
+    )
+
+    assert result["billable"] is False
+
+
+def test_get_request_resource_details_reads_direct_source():
+    result = get_request_resource_details_from_kwargs(
+        {"source": "app", "inference_request": None}
+    )
+
+    assert result["source"] == "app"
+
+
+def test_propagate_request_usage_metadata_from_http_query():
+    inference_request = SimpleNamespace(
+        usage_billable=True,
+        source=None,
+        source_info=None,
+    )
+
+    propagate_request_usage_metadata(
+        {
+            "inference_request": inference_request,
+            "request": SimpleNamespace(
+                query_params={
+                    "source": "app",
+                    "source_info": "smartpolySegmentImage",
+                }
+            ),
+            "countinference": False,
+        }
+    )
+
+    assert inference_request.usage_billable is False
+    assert inference_request.source == "app"
+    assert inference_request.source_info == "smartpolySegmentImage"
+
+
+def test_model_resource_details_read_request_usage_metadata():
+    request = SimpleNamespace(source="app", usage_billable=False)
+
+    resource_details = get_model_resource_details_from_kwargs({"request": request})
+
+    assert resource_details["source"] == "app"
+    assert get_model_usage_billable_from_kwargs({"request": request}) is False
 
 
 def test_get_request_resource_details_tags_sam3_execution_mode(monkeypatch):
@@ -71,7 +127,7 @@ def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threa
             usage_workflow_id="",
             usage_workflow_preview=False,
             usage_inference_test_run=False,
-            usage_billable=True,
+            usage_billable=None,
             execution_duration=0.1,
             func=handler,
             category="request",
@@ -98,6 +154,7 @@ def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threa
     assert usage_params["roboflow_service_name"] == "async-serverless-gpu"
     assert usage_params["roboflow_internal_secret"] == "internal-secret"
     assert usage_params["resource_details"]["billable"] is True
+    assert usage_params["resource_details"]["source"] == "app"
     assert usage_params["resource_details"]["source_info"] == "async-serverless-gpu"
     assert usage_params["resource_details"]["execution_mode"] == SAM3_EXEC_MODE
 
@@ -119,7 +176,7 @@ def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
             usage_workflow_id="",
             usage_workflow_preview=False,
             usage_inference_test_run=False,
-            usage_billable=True,
+            usage_billable=None,
             execution_duration=0.1,
             func=CachedModel.infer_from_request,
             category="model",
@@ -129,6 +186,8 @@ def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
                 SimpleNamespace(
                     api_key="current-caller-api-key",
                     model_id="sam3/sam3_interactive",
+                    source="app",
+                    usage_billable=False,
                 ),
             ),
             kwargs={},
@@ -141,6 +200,34 @@ def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
         "unsupervised-segmentation"
     )
     assert usage_params["resource_details"]["model_type"] == "sam3"
+    assert usage_params["resource_details"]["source"] == "app"
+    assert usage_params["resource_details"]["billable"] is False
+
+
+def test_explicit_model_usage_billable_takes_precedence_over_request(
+    usage_collector_with_mocked_threads,
+):
+    class CachedModel:
+        def infer_from_request(self, request): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.1,
+            func=CachedModel.infer_from_request,
+            category="model",
+            error_details=None,
+            args=(CachedModel(), SimpleNamespace(usage_billable=False)),
+            kwargs={},
+        )
+    )
+
+    assert usage_params["resource_details"]["billable"] is True
 
 
 def test_extract_usage_params_for_model_includes_megapixel_buckets(
