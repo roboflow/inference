@@ -523,6 +523,7 @@ plan = RFDetrExecutionPlan(
     postprocessor_id="triton-fused-v1",
     engine_plugin_id="base",
     allow_compatibility_fallback=True,
+    allow_runtime_failure_fallback=True,
 )
 model = AutoModel.from_pretrained(
     "rfdetr-small",
@@ -561,8 +562,16 @@ contract, RF-DETR uses its declared `base` fallback and records the requested
 implementation, effective implementation, and reason in logs and runtime metadata.
 This policy applies consistently to preprocessing and postprocessing. Set
 `allow_compatibility_fallback=False` in an explicit plan to require the selected
-implementation or an error. Compilation, CUDA, allocation, and other execution
-failures are never converted into fallbacks.
+implementation or an error; this global strictness gate also prevents runtime-failure
+fallback.
+
+Recoverable execution failures, such as recognized Triton JIT compilation or launch
+failures, may follow the declared `base` fallback when both
+`allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`. Both
+fields default to `True`. Set `allow_runtime_failure_fallback=False` to retain
+compatibility fallback for unsupported model or request contracts while requiring
+runtime execution failures to surface as `ModelRuntimeError`. Allocation and other
+unclassified execution failures are never converted into fallbacks.
 
 An all-`False` `PreProcessingOverrides` object is a no-op and remains compatible with
 `triton-universal-v1`. Requests with any active preprocessing override use the declared

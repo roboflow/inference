@@ -1,0 +1,74 @@
+name: UNIT TESTS - inference-models (GPU)
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests-inference-models-gpu:
+    name: trt_extras:3.12
+    runs-on: Roboflow-GPU-VM-Runner
+    timeout-minutes: 15
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: 📦 Cache Python packages
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-3.12-${{ hashFiles('inference_models/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-3.12-
+      - name: 📦 Cache apt packages
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/apt-cache
+          key: ${{ runner.os }}-apt-cuda-12-4
+          restore-keys: |
+            ${{ runner.os }}-apt-cuda-
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          check-latest: true
+      - name: 🔧 Install CUDA development toolkit
+        run: |
+          mkdir -p ~/apt-cache
+
+          sudo mkdir -p /var/cache/apt/archives
+          sudo cp -r ~/apt-cache/* /var/cache/apt/archives/ 2>/dev/null || true
+
+          sudo apt-get update
+          sudo apt-get install -y \
+              cuda-cudart-dev-12-5 \
+              cuda-nvcc-12-5 \
+              cuda-profiler-api-12-5 \
+              libcurand-dev-12-5
+
+          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) ~/apt-cache
+      - name: 📦 Install dependencies
+        working-directory: inference_models
+        run: |
+          export CUDA_HOME=/usr/local/cuda-12.5
+          export PATH=/usr/local/cuda-12.5/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
+          export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
+          python -m pip install --upgrade pip
+          python -m pip install uv
+          python -m uv venv
+          python -m uv pip install -e .[test,trt10,torch-cu124] --python .venv
+      - name: 🧪 Run GPU-only TRT unit tests
+        working-directory: inference_models
+        timeout-minutes: 5
+        run: |
+          source .venv/bin/activate
+          export CUDA_HOME=/usr/local/cuda-12.5
+          export PATH=/usr/local/cuda-12.5/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          python -m pytest -v -m "gpu_only and trt_extras" tests/unit_tests
