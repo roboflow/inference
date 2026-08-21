@@ -22,6 +22,8 @@ CORE_STEPS_ROOT = pathlib.Path(billable_scope.__file__).parents[1] / (
     "core/workflows/core_steps"
 )
 HELPER_NAME = "remote_billing_parameters"
+CLIENT_NAME = "InferenceHTTPClient"
+CONFIGURATION_NAME = "InferenceConfiguration"
 
 
 def test_no_parameters_are_forwarded_outside_a_suppressed_scope(
@@ -59,13 +61,13 @@ def test_an_explicitly_unsuppressed_scope_forwards_nothing(configured_service_se
         assert remote_billing_parameters() == {}
 
 
-def _configuration_calls(tree: ast.AST):
+def _calls_to(tree: ast.AST, name: str):
     return [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id == "InferenceConfiguration"
+        and node.func.id == name
     ]
 
 
@@ -80,23 +82,34 @@ def _spreads_billing_parameters(call: ast.Call) -> bool:
 
 
 def _blocks_building_a_remote_client():
+    """Yield every block that builds an SDK client, with the configurations it builds.
+
+    Keyed on the client rather than the configuration so that a block reaching a
+    remote server without configuring anything at all still has to answer to the
+    guard below - that is exactly how qwen_vlm/v2 slipped through.
+    """
     for path in sorted(CORE_STEPS_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text())
-        for call in _configuration_calls(tree):
-            yield path, call
+        if not _calls_to(tree, CLIENT_NAME):
+            continue
+        yield path, _calls_to(tree, CONFIGURATION_NAME)
 
 
 def test_every_block_building_a_remote_client_forwards_the_billing_scope():
-    # A new block that builds its own InferenceConfiguration silently bills the
-    # caller who opted out, and nothing else would catch it.
+    # A new block that reaches a remote server without the spread silently bills
+    # the caller who opted out, and nothing else would catch it.
     offenders = [
         str(path.relative_to(CORE_STEPS_ROOT))
-        for path, call in _blocks_building_a_remote_client()
-        if not _spreads_billing_parameters(call)
+        for path, configurations in _blocks_building_a_remote_client()
+        if not configurations
+        or not all(
+            _spreads_billing_parameters(configuration)
+            for configuration in configurations
+        )
     ]
 
     assert not offenders, (
-        "these blocks build an InferenceConfiguration without spreading "
+        f"these blocks build an {CLIENT_NAME} without configuring it with "
         f"**{HELPER_NAME}(), so an authenticated countinference=false never "
         f"reaches the server that bills the model: {offenders}"
     )
@@ -108,19 +121,19 @@ def test_the_scan_actually_inspects_blocks():
 
 
 def test_the_scan_rejects_a_configuration_without_the_spread():
-    tree = ast.parse("InferenceConfiguration(api_key_transport='both')")
+    tree = ast.parse(f"{CONFIGURATION_NAME}(api_key_transport='both')")
 
-    assert not _spreads_billing_parameters(_configuration_calls(tree)[0])
+    assert not _spreads_billing_parameters(_calls_to(tree, CONFIGURATION_NAME)[0])
 
 
 @pytest.mark.parametrize(
     "source",
     [
-        f"InferenceConfiguration(**{HELPER_NAME}())",
-        f"InferenceConfiguration(api_key_transport='both', **{HELPER_NAME}())",
+        f"{CONFIGURATION_NAME}(**{HELPER_NAME}())",
+        f"{CONFIGURATION_NAME}(api_key_transport='both', **{HELPER_NAME}())",
     ],
 )
 def test_the_scan_accepts_a_configuration_with_the_spread(source):
     tree = ast.parse(source)
 
-    assert _spreads_billing_parameters(_configuration_calls(tree)[0])
+    assert _spreads_billing_parameters(_calls_to(tree, CONFIGURATION_NAME)[0])

@@ -3282,6 +3282,7 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
             "subject_type": "text",
             "clip_version_id": "ViT-B-32",
         },
+        params=None,
         headers={"Content-Type": "application/json"},
     )
     assert collector.drain() == [("ViT-B-32", 1.5)]
@@ -3330,6 +3331,30 @@ def test_clip_compare_when_mixed_input_is_given(
     }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_the_billing_parameters_when_configured(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - clip_compare builds its request by hand rather than through
+    # _post_images, so it has to serialize the configuration on its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.configure(
+        InferenceConfiguration(count_inference=False, service_secret="my-secret")
+    )
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+
+    # when
+    http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=my-secret" in sent_url
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_clip_compare_when_mixed_input_is_given(
@@ -3372,6 +3397,7 @@ async def test_clip_compare_when_mixed_input_is_given(
                 "prompt_type": "text",
                 "subject_type": "image",
             },
+            params=None,
             headers={"Content-Type": "application/json"},
         )
 
@@ -3473,6 +3499,7 @@ async def test_clip_compare_when_both_prompt_and_subject_are_images(
                 "prompt_type": "image",
                 "subject_type": "image",
             },
+            params=None,
             headers={"Content-Type": "application/json"},
         )
 

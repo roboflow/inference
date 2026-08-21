@@ -105,6 +105,25 @@ def test_deduct_api_key_from_string_redacts_url_embedded_key() -> None:
     assert "foo=bar" in result
 
 
+def test_deduct_api_key_from_string_redacts_url_embedded_service_secret() -> None:
+    # given - the secret belongs to the server rather than the caller, so unlike
+    # the api key it keeps no identifiable prefix
+    value = (
+        "500 Server Error: Internal Server Error for url: "
+        "https://api.roboflow.com/some/1?api_key=fake12345678"
+        "&service_secret=super-secret&countinference=False"
+    )
+
+    # when
+    result = deduct_api_key_from_string(value=value)
+
+    # then
+    assert "super-secret" not in result
+    assert "service_secret=***" in result
+    assert "api_key=fa***78" in result
+    assert "countinference=False" in result
+
+
 def test_deduct_api_key_from_string_leaves_keyless_text_untouched() -> None:
     # when
     result = deduct_api_key_from_string(value="connection refused to host x")
