@@ -178,6 +178,7 @@ class WebRTCSession:
         stream_config: StreamConfig,
         model_mode: bool = False,
         predictions_output: Optional[str] = None,
+        api_key_transport: str = "legacy",
     ) -> None:
         """Initialize WebRTC session.
 
@@ -212,6 +213,7 @@ class WebRTCSession:
 
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
+        self._api_key_transport = api_key_transport
         self._source = source
         self._image_input_name = image_input_name
         self._workflow_config = workflow_config
@@ -1213,17 +1215,21 @@ class WebRTCSession:
         }
         wf_conf.update(self._workflow_config)
 
-        payload = {
-            "api_key": self._api_key,
-            "workflow_configuration": wf_conf,
-            "webrtc_offer": {
-                "type": pc.localDescription.type,
-                "sdp": pc.localDescription.sdp,
-            },
-            "webrtc_realtime_processing": self._config.realtime_processing,
-            "stream_output": self._config.stream_output,
-            "data_output": self._config.data_output,
-        }
+        payload = {}
+        if self._api_key_transport != "header":
+            payload["api_key"] = self._api_key
+        payload.update(
+            {
+                "workflow_configuration": wf_conf,
+                "webrtc_offer": {
+                    "type": pc.localDescription.type,
+                    "sdp": pc.localDescription.sdp,
+                },
+                "webrtc_realtime_processing": self._config.realtime_processing,
+                "stream_output": self._config.stream_output,
+                "data_output": self._config.data_output,
+            }
+        )
 
         # Add WebRTC config if available (auto-fetched or user-provided)
         # Server accepts webrtc_config with iceServers array format
@@ -1264,6 +1270,8 @@ class WebRTCSession:
         # Call server to initialize worker
         url = f"{self._api_url}/initialise_webrtc_worker"
         headers = {"Content-Type": "application/json"}
+        if self._api_key_transport != "legacy" and self._api_key is not None:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
         ans: Dict[str, Any] = resp.json()

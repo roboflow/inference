@@ -47,6 +47,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_EXEC_MODE,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -56,6 +57,11 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
     split_key_point_prediction,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+    normalise_labeled_points,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -97,7 +103,7 @@ from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     torch_mask_to_coco_rle,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -138,25 +144,7 @@ def _as_sam2_points(points: List[Any]) -> List[Point]:
         if isinstance(raw_point, Point):
             result.append(raw_point)
             continue
-        if isinstance(raw_point, dict):
-            if "x" not in raw_point or "y" not in raw_point:
-                raise ValueError(
-                    f"Each point prompt must define `x` and `y` coordinates - got: {raw_point}"
-                )
-            x, y = raw_point["x"], raw_point["y"]
-            positive = raw_point.get("positive", True)
-        elif isinstance(raw_point, (list, tuple)) and len(raw_point) in {2, 3}:
-            x, y = raw_point[0], raw_point[1]
-            positive = raw_point[2] if len(raw_point) == 3 else True
-        else:
-            raise ValueError(
-                f"Invalid point prompt: {raw_point}. Expected dict with `x`, `y` and optional "
-                f"`positive` keys, or a sequence of (x, y) or (x, y, positive)."
-            )
-        if isinstance(x, bool) or isinstance(y, bool):
-            raise ValueError(f"Point coordinates must be numbers - got: {raw_point}")
-        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-            raise ValueError(f"Point coordinates must be numbers - got: {raw_point}")
+        x, y, positive = normalise_labeled_points([raw_point])[0]
         result.append(Point(x=float(x), y=float(y), positive=bool(positive)))
     return result
 
@@ -440,6 +428,9 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -617,8 +608,8 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             groups.append(
                 _PromptGroup(
                     prompts=[Sam2Prompt(points=_as_sam2_points(points))],
-                    class_ids=[0],
-                    class_names=["foreground"],
+                    class_ids=[SYNTHETIC_POINT_PROMPT_CLASS_ID],
+                    class_names=[SYNTHETIC_POINT_PROMPT_CLASS_NAME],
                     detection_ids=[None],
                 )
             )
