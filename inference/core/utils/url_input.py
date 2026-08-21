@@ -332,3 +332,91 @@ def fetch_url_content_validating_redirects(
         )
     finally:
         session.close()
+
+
+def _write_response_body_to_file(
+    response: requests.Response,
+    destination_path: str,
+    max_bytes: int,
+) -> None:
+    written = 0
+    with open(destination_path, "wb") as handle:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if not chunk:
+                continue
+            written += len(chunk)
+            if written > max_bytes:
+                raise requests.exceptions.RequestException(
+                    f"URL content exceeded the maximum of {max_bytes} bytes."
+                )
+            handle.write(chunk)
+    if written == 0:
+        raise requests.exceptions.RequestException("URL returned an empty body.")
+
+
+def fetch_url_to_file_legacy(
+    url: str,
+    destination_path: str,
+    allow_non_global_addresses: bool,
+    max_redirects: int,
+    max_bytes: int,
+    request_timeout: Optional[float] = None,
+) -> None:
+    _warn_legacy_redirect_handling()
+    session = _build_ssrf_protected_session(allow_non_global_addresses)
+    session.max_redirects = max_redirects
+    try:
+        response = session.get(
+            url, stream=True, allow_redirects=True, timeout=request_timeout
+        )
+        api_key_safe_raise_for_status(response=response)
+        _write_response_body_to_file(
+            response=response,
+            destination_path=destination_path,
+            max_bytes=max_bytes,
+        )
+    finally:
+        session.close()
+
+
+def fetch_url_to_file_validating_redirects(
+    url: str,
+    destination_path: str,
+    allow_non_global_addresses: bool,
+    max_redirects: int,
+    max_bytes: int,
+    validate_redirect: Callable[[str], str],
+    request_timeout: Optional[float] = None,
+) -> None:
+    session = _build_ssrf_protected_session(allow_non_global_addresses)
+    current_url = url
+    try:
+        for _ in range(max_redirects + 1):
+            response = session.get(
+                current_url,
+                stream=True,
+                allow_redirects=False,
+                timeout=request_timeout,
+            )
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                response.close()
+                if not location:
+                    raise requests.exceptions.RequestException(
+                        "Redirect response did not contain a Location header."
+                    )
+                next_url = urllib.parse.urljoin(current_url, location)
+                current_url = validate_redirect(next_url)
+                continue
+            api_key_safe_raise_for_status(response=response)
+            _write_response_body_to_file(
+                response=response,
+                destination_path=destination_path,
+                max_bytes=max_bytes,
+            )
+            return
+        raise requests.exceptions.TooManyRedirects(
+            f"Exceeded maximum of {max_redirects} redirects."
+        )
+    finally:
+        session.close()
