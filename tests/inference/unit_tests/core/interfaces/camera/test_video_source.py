@@ -1994,3 +1994,42 @@ def test_cv2_producer_leaves_ffmpeg_tls_env_unset_for_device_index(
     assert seen["video"] == 0
     assert seen["env"] is None
     assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_non_rtsps_open_does_not_wait_on_stuck_rtsps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+    rtsps_entered = Event()
+    release_rtsps = Event()
+    non_rtsps_opened = Event()
+
+    def fake_video_capture(video, *args, **kwargs):
+        if isinstance(video, str) and video.startswith("rtsps://"):
+            rtsps_entered.set()
+            assert release_rtsps.wait(timeout=2.0)
+        else:
+            non_rtsps_opened.set()
+        return MagicMock()
+
+    with patch.object(video_source.cv2, "VideoCapture", fake_video_capture):
+        rtsps_thread = Thread(
+            target=lambda: CV2VideoFrameProducer("rtsps://camera.example/stream")
+        )
+        rtsps_thread.start()
+        assert rtsps_entered.wait(timeout=1.0)
+
+        non_rtsps_thread = Thread(target=lambda: CV2VideoFrameProducer(0))
+        non_rtsps_thread.start()
+        opened_without_waiting = non_rtsps_opened.wait(timeout=1.0)
+
+        release_rtsps.set()
+        rtsps_thread.join(timeout=2.0)
+        non_rtsps_thread.join(timeout=2.0)
+
+    assert opened_without_waiting, (
+        "USB/file/V4L2 opens must not wait on a stuck RTSPS VideoCapture"
+    )
+    assert not rtsps_thread.is_alive()
+    assert not non_rtsps_thread.is_alive()
