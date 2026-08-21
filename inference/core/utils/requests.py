@@ -27,6 +27,15 @@ def api_key_safe_raise_for_status_aiohttp(response: aiohttp.ClientResponse) -> N
     response.raise_for_status()
 
 
+def deduct_api_key_from_string(value: str) -> str:
+    """Redact every `api_key=...` occurrence in a free-form string.
+
+    Meant for exception texts that may embed request URLs (requests.HTTPError,
+    ConnectionError and friends include the full URL in their message).
+    """
+    return API_KEY_PATTERN.sub(deduct_api_key, value)
+
+
 def deduct_api_key(match: re.Match) -> str:
     key_value = match.group(KEY_VALUE_GROUP)
     if len(key_value) < MIN_KEY_LENGTH_TO_REVEAL_PREFIX:

@@ -120,6 +120,12 @@ API_DEBUG = os.getenv("API_DEBUG", False)
 API_KEY_ENV_NAMES = ["ROBOFLOW_API_KEY", "API_KEY"]
 API_KEY = os.getenv(API_KEY_ENV_NAMES[0], None) or os.getenv(API_KEY_ENV_NAMES[1], None)
 
+# Allow reading the API key from the `Authorization: Bearer <api_key>` request
+# header. The header is a last-resort channel: an explicit `api_key` query
+# parameter or JSON-body field always takes precedence, so disabling this flag
+# only removes the header fallback. Default is True.
+ALLOW_API_KEY_FROM_HEADERS = str2bool(os.getenv("ALLOW_API_KEY_FROM_HEADERS", True))
+
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 
@@ -841,6 +847,30 @@ WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
+
+# Channel used by Workflow blocks to send the API key when executing remotely:
+# "legacy" (query/body only), "both" (default - legacy channels plus an
+# `Authorization: Bearer` header; safe with every server version, including
+# hosted targets that do not read the header yet), or "header" (header only -
+# requires the remote server to run inference release 1.5.0 or newer).
+# NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
+# directly (bypassing the SDK) and are not affected by this flag.
+WORKFLOWS_REMOTE_API_KEY_TRANSPORT = os.getenv(
+    "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", "both"
+).lower()
+# Allowed values duplicated on purpose - inference.core.env must not import
+# inference_sdk. KEEP IN SYNC with the ApiKeyTransport enum in
+# inference_sdk/http/entities.py.
+_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS = ("legacy", "both", "header")
+if (
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT
+    not in _ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS
+):
+    raise ValueError(
+        f"Invalid WORKFLOWS_REMOTE_API_KEY_TRANSPORT: "
+        f"{WORKFLOWS_REMOTE_API_KEY_TRANSPORT!r}. Expected one of: "
+        f"{list(_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS)}."
+    )
 if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
     warnings.warn(
         "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "
