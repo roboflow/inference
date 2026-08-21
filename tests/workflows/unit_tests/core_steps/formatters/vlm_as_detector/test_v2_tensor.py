@@ -219,3 +219,68 @@ def test_run_method_for_spacexai_percent_box_2d_output_tensor_native() -> None:
     assert np.allclose(
         result["predictions"].confidence.cpu().numpy(), np.array([0.9, 1.0])
     )
+
+
+def test_run_method_for_qwen_box_2d_output_tensor_native() -> None:
+    # given - qwen coordinates are normalized to 0-1000 on both axes; the
+    # bbox_2d alias and label alias keys are accepted, and model-provided
+    # confidence is ignored (hardcoded 1.0)
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [100, 200, 500, 1000], "label": "cat", "confidence": 0.75},
+  {"bbox_2d": [0, 0, 500, 500], "description": "unicorn"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="qwen",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], Detections)
+    assert _class_names(result["predictions"]) == ["cat", "unicorn"]
+    assert np.allclose(result["predictions"].class_id.cpu().numpy(), np.array([0, -1]))
+    assert np.allclose(
+        result["predictions"].xyxy.cpu().numpy(),
+        np.array(
+            [
+                [64, 96, 320, 480],
+                [0, 0, 320, 240],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(
+        result["predictions"].confidence.cpu().numpy(), np.array([1.0, 1.0])
+    )
+
+
+def test_run_method_for_qwen_unexpected_shape_sets_error_status_tensor_native() -> None:
+    # given - neither a JSON list nor a {"detections": [...]} object
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    result = block.run(
+        image=image,
+        vlm_output='{"objects": []}',
+        classes=["cat"],
+        model_type="qwen",
+        task_type="object-detection",
+    )
+
+    assert result["error_status"] is True
+    assert result["predictions"] is None
