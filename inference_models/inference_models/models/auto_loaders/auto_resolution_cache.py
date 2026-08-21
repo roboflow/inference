@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from inference_models.configuration import (
     AUTO_LOADER_CACHE_EXPIRATION_MINUTES,
     INFERENCE_HOME,
+    OFFLINE_MODE,
 )
 from inference_models.logger import LOGGER, verbose_info
 from inference_models.models.auto_loaders.entities import (
@@ -96,6 +97,11 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
     def register(
         self, auto_negotiation_hash: str, cache_entry: AutoResolutionCacheEntry
     ) -> None:
+        if OFFLINE_MODE:
+            LOGGER.warning(
+                "Ignoring auto-resolution cache registration in OFFLINE_MODE."
+            )
+            return None
         path_for_cached_content = generate_auto_resolution_cache_path(
             auto_negotiation_hash=auto_negotiation_hash
         )
@@ -164,6 +170,19 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
         lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
         if os.path.islink(target_file_dir) or os.path.islink(path_for_cached_content):
             return None
+        if OFFLINE_MODE:
+            try:
+                return _read_auto_resolution_cache_entry_without_lock(
+                    path=path_for_cached_content
+                )
+            except FileNotFoundError:
+                return None
+            except Exception as error:
+                self._log_retrieval_error(error=error)
+                # Offline cache trees may be mounted read-only and are treated
+                # as immutable input. Never attempt to lock or delete malformed
+                # metadata while offline.
+                return None
         if os.path.islink(lock_path) or not os.path.exists(path_for_cached_content):
             return None
         with FileLock(lock_path, timeout=self._file_lock_acquire_timeout):
@@ -179,7 +198,13 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
                 minutes_since_entry_created = (
                     datetime.now().timestamp() - cache_entry.created_at.timestamp()
                 ) / 60
-                if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
+                # In OFFLINE_MODE the API cannot be reached to re-resolve, so
+                # cache entries must never expire.
+                if (
+                    not OFFLINE_MODE
+                    and minutes_since_entry_created
+                    > AUTO_LOADER_CACHE_EXPIRATION_MINUTES
+                ):
                     self._invalidate_path_while_locked(
                         path_for_cached_content=path_for_cached_content
                     )
@@ -234,6 +259,11 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
         )
 
     def invalidate(self, auto_negotiation_hash: str) -> None:
+        if OFFLINE_MODE:
+            LOGGER.warning(
+                "Ignoring auto-resolution cache invalidation in OFFLINE_MODE."
+            )
+            return None
         path_for_cached_content = generate_auto_resolution_cache_path(
             auto_negotiation_hash=auto_negotiation_hash
         )
@@ -271,6 +301,57 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
             f"auto-load cache. This may indicate corrupted cache of inference bug. Contact Roboflow submitting "
             f"issue under: https://github.com/roboflow/inference/issues/"
         )
+
+
+def _read_auto_resolution_cache_entry_without_lock(
+    path: str,
+) -> AutoResolutionCacheEntry:
+    """Read immutable offline metadata without creating a cache-local lock."""
+
+    path_stat = os.lstat(path)
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise OSError(f"Auto-resolution cache entry is not a regular file: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(path, flags)
+    try:
+        opened_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ) != (
+            path_stat.st_dev,
+            path_stat.st_ino,
+            path_stat.st_size,
+            path_stat.st_mtime_ns,
+            path_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Auto-resolution cache entry changed while opening: {path}")
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as file_handle:
+            file_descriptor = -1
+            cache_content = json.load(file_handle)
+            completed_stat = os.fstat(file_handle.fileno())
+        if (
+            completed_stat.st_dev,
+            completed_stat.st_ino,
+            completed_stat.st_size,
+            completed_stat.st_mtime_ns,
+            completed_stat.st_ctime_ns,
+        ) != (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+            opened_stat.st_ctime_ns,
+        ):
+            raise OSError(f"Auto-resolution cache entry changed while reading: {path}")
+        return AutoResolutionCacheEntry.model_validate(cache_content)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
 
 
 def generate_auto_resolution_cache_path(auto_negotiation_hash: str) -> str:
