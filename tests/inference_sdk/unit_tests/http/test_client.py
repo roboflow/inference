@@ -19,6 +19,7 @@ from yarl import URL
 
 from inference_sdk.config import (
     InferenceSDKDeprecationWarning,
+    InferenceSDKGuidanceWarning,
     RemoteProcessingTimeCollector,
     remote_processing_times,
 )
@@ -34,6 +35,7 @@ from inference_sdk.http.client import (
 )
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
+    ApiKeyTransport,
     HTTPClientMode,
     InferenceConfiguration,
     ModelDescription,
@@ -4899,3 +4901,396 @@ async def test_depth_estimation_async_defaults_to_json_and_warns(
         w for w in captured if issubclass(w.category, InferenceSDKDeprecationWarning)
     ]
     assert len(sdk_warnings) == 1
+
+
+# --- api_key_transport (header-based auth) ----------------------------------
+#
+# "legacy" (default) keeps today's wire behaviour byte-for-byte (covered by
+# every other test in this module). "both" adds `Authorization: Bearer` on top
+# of the legacy channels; "header" sends the header ONLY - no api_key in URLs
+# or bodies.
+
+
+def test_configuration_rejects_invalid_api_key_transport() -> None:
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = InferenceConfiguration(api_key_transport="invalid")
+
+
+def test_list_loaded_models_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_list_loaded_models_in_both_mode_sends_key_in_query_and_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry?api_key=my-api-key",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="both")
+    )
+
+    # when
+    result = http_client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key=my-api-key" in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_load_model_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.load_model(model_id="some/1")
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert requests_mock.request_history[0].json() == {"model_id": "some/1"}
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_run_workflow_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.run_workflow(specification={"my": "specification"})
+
+    # then
+    assert result == [{"some": 3}]
+    assert "api_key" not in requests_mock.request_history[0].json()
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_run_workflow_in_both_mode_sends_key_in_body_and_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="both")
+    )
+
+    # when
+    result = http_client.run_workflow(specification={"my": "specification"})
+
+    # then
+    assert result == [{"some": 3}]
+    assert requests_mock.request_history[0].json()["api_key"] == "my-api-key"
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_list_inference_pipelines_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/list",
+        json=[],
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.list_inference_pipelines()
+
+    # then
+    assert result == []
+    assert requests_mock.request_history[0].json() == {}
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_in_v0_header_mode_keeps_key_out_of_url(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - hosted URL puts the client into v0 mode, where the key is
+    # normally spliced into the URL
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr",
+        json={"response": "Image text 1.", "time": 0.33},
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg")
+
+    # then
+    assert result == {"response": "Image text 1.", "time": 0.33}
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert "api_key" not in requests_mock.request_history[0].json()
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_in_header_mode_keeps_key_out_of_query_params(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "https://detect.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/some/1",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [],
+        },
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result["predictions"] == []
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_legacy_transport_sends_no_authorization_header(
+    requests_mock: Mocker,
+) -> None:
+    # given - the default transport must stay byte-identical on the wire
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry?api_key=my-api-key",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    _ = http_client.list_loaded_models()
+
+    # then
+    assert "Authorization" not in requests_mock.request_history[0].headers
+
+
+# --- api_key_transport guidance warning + fluent selection ------------------
+
+
+def test_default_transport_emits_guidance_warning_once(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", False)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.warns(InferenceSDKGuidanceWarning, match="release 1.5.0 onward"):
+        _ = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        # then - second resolution must NOT warn again
+        resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_explicitly_selected_legacy_transport_does_not_warn(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", False)
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="http://some.com"
+    ).configure(InferenceConfiguration(api_key_transport="legacy"))
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_transport_configured_via_configure_applies_on_the_wire(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(f"{api_url}/model/registry", json={"models": []})
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = http_client.configure(
+        InferenceConfiguration(api_key_transport="header")
+    ).list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_configure_with_fresh_config_resets_api_key_transport(monkeypatch) -> None:
+    # given - configure() swaps the WHOLE configuration object by design, so a
+    # fresh config without an explicit transport resets the client back to the
+    # unset default. Callers must carry api_key_transport in every
+    # InferenceConfiguration they build (see the workflow blocks'
+    # run_remotely) - this test documents that semantics.
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+    # when
+    http_client.configure(InferenceConfiguration(max_batch_size=2))
+
+    # then
+    resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_guidance_warning_suppressed_by_inference_warnings_disabled() -> None:
+    # given - INFERENCE_WARNINGS_DISABLED documents itself as disabling all
+    # SDK-specific warnings; the guidance warning must honour it. The flag is
+    # read at import time, hence the subprocess.
+    import subprocess
+    import sys
+
+    # NOTE: no warnings.catch_warnings(record=True) here - it would force
+    # simplefilter("always"), overriding the very ignore-filter under test.
+    # Unsuppressed warnings land on stderr via the default showwarning.
+    code = (
+        "import inference_sdk\n"
+        "from inference_sdk.http.client import InferenceHTTPClient\n"
+        "c = InferenceHTTPClient(api_key='k', api_url='http://x')\n"
+        "c._InferenceHTTPClient__resolved_api_key_transport()\n"
+        "print('DONE')\n"
+    )
+    env = dict(os.environ)
+    env["INFERENCE_WARNINGS_DISABLED"] = "true"
+
+    # when
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+
+    # then
+    assert result.returncode == 0, result.stderr
+    assert "DONE" in result.stdout
+    assert "InferenceSDKGuidanceWarning" not in result.stderr
+
+
+# --- WebRTC transport stickiness --------------------------------------------
+#
+# client.webrtc captures the api-key transport ONCE at first access and keeps
+# it (a streaming session must not change auth mid-flight). Configuration
+# changes made afterwards warn instead of silently not applying.
+
+
+def test_transport_change_after_webrtc_access_warns_about_stickiness(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    _ = http_client.webrtc  # captures the (default legacy) transport
+
+    # when / then
+    with pytest.warns(
+        InferenceSDKGuidanceWarning, match="WebRTC namespace was already initialised"
+    ):
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+    # and - the warning fires only once per client
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="both"))
+
+
+def test_transport_change_without_webrtc_access_does_not_warn(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+
+def test_matching_transport_after_webrtc_access_does_not_warn(monkeypatch) -> None:
+    # given - webrtc created AFTER the transport was configured: no divergence
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="http://some.com"
+    ).configure(InferenceConfiguration(api_key_transport="header"))
+    _ = http_client.webrtc
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))

@@ -323,6 +323,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",
     ),
+    ("qwen3_8", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.qwen3_8.qwen3_8_hf",
+        class_name="Qwen38HF",
+    ),
     ("gemma-4", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.gemma4.gemma4_hf",
         class_name="Gemma4HF",

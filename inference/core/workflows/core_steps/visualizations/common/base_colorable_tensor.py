@@ -19,6 +19,15 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult
 
 
+class _WrappingColorPalette(sv.ColorPalette):
+    """Apply palette modulo arithmetic to positive and negative indices."""
+
+    def by_idx(self, idx: int) -> sv.Color:
+        if not self.colors:
+            raise ValueError("A color palette must contain at least one color.")
+        return self.colors[idx % len(self.colors)]
+
+
 class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
     color_palette: Union[
         Literal[
@@ -116,11 +125,11 @@ class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
     @classmethod
     def getPalette(self, color_palette, palette_size, custom_colors):
         if color_palette == "CUSTOM":
-            return sv.ColorPalette(
+            palette = sv.ColorPalette(
                 colors=[str_to_color(color) for color in custom_colors]
             )
         elif hasattr(sv.ColorPalette, color_palette):
-            return getattr(sv.ColorPalette, color_palette)
+            palette = getattr(sv.ColorPalette, color_palette)
         else:
             palette_name = color_palette.replace("Matplotlib ", "")
 
@@ -145,7 +154,8 @@ class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
             else:
                 palette_name = palette_name.lower()
 
-            return sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+            palette = sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+        return _WrappingColorPalette(colors=palette.colors)
 
     @abstractmethod
     def run(

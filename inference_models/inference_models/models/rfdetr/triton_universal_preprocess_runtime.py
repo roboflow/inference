@@ -32,7 +32,8 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCropOffset,
 )
 from inference_models.models.optimization.contracts import CompatibilityResult
-from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.optimization.triton_jit import classify_triton_jit_failure
 from inference_models.models.rfdetr.triton_preprocess import (
     TRITON_AVAILABLE,
     ResampleTables,
@@ -167,6 +168,8 @@ class UniversalFastPreprocessRuntime:
         self._device = device
         self._uint8_state: Optional[_Uint8State] = None
         self._state_lock = threading.Lock()
+        self._uint8_jit_failure_reason: Optional[str] = None
+        self._uint8_jit_failure_lock = threading.Lock()
 
     def preprocess(
         self,
@@ -295,16 +298,21 @@ class UniversalFastPreprocessRuntime:
                             slot_event.record(stream)
                             state.slot_events[staging_slot] = slot_event
             except Exception as error:
-                if not is_triton_jit_failure(error):
+                diagnostic = classify_triton_jit_failure(error)
+                if diagnostic is None:
                     raise
-                raise ModelRuntimeError(
+                reason = (
+                    f"{type(error).__name__}: {error}. "
+                    f"Category: {diagnostic.category}. "
+                    f"Suggested action: {diagnostic.guidance}"
+                )
+                with self._uint8_jit_failure_lock:
+                    if self._uint8_jit_failure_reason is None:
+                        self._uint8_jit_failure_reason = reason
+                raise RecoverableStageExecutionError(
                     message=(
                         "triton-universal-v1 failed to compile or launch its "
-                        f"preprocessing kernel: {type(error).__name__}: {error}"
-                    ),
-                    help_url=(
-                        "https://inference-models.roboflow.com/errors/"
-                        "models-runtime/#modelruntimeerror"
+                        f"preprocessing kernel: {reason}"
                     ),
                 ) from error
 
@@ -514,6 +522,31 @@ class UniversalFastPreprocessRuntime:
 
         return result
 
+    def check_runtime_compatibility(self, *, images) -> CompatibilityResult:
+        """Check whether a previous uint8 JIT failure affects this request.
+
+        Args:
+            images: Single image or batch supplied to preprocessing.
+
+        Returns:
+            Floating requests remain compatible because they use torchvision.
+            Uint8 requests become incompatible after a recoverable JIT failure.
+        """
+        if not _request_uses_uint8_path(images):
+            return CompatibilityResult.compatible()
+
+        with self._uint8_jit_failure_lock:
+            reason = self._uint8_jit_failure_reason
+
+        if reason is None:
+            result = CompatibilityResult.compatible()
+        else:
+            result = CompatibilityResult.incompatible(
+                f"Triton JIT failed during an earlier request: {reason}"
+            )
+
+        return result
+
     @staticmethod
     def _raise_for_incompatibility(compatibility: CompatibilityResult) -> None:
         if compatibility.supported:
@@ -529,6 +562,25 @@ class UniversalFastPreprocessRuntime:
                 "#modelruntimeerror"
             ),
         )
+
+
+def _request_uses_uint8_path(images) -> bool:
+    # Request compatibility has already established homogeneous input semantics,
+    # so inspecting the first item is sufficient and avoids another O(batch) walk.
+    if isinstance(images, list):
+        if not images:
+            return False
+        item = images[0]
+    elif isinstance(images, (np.ndarray, torch.Tensor)) and images.ndim == 4:
+        if images.shape[0] == 0:
+            return False
+        item = images[0]
+    else:
+        item = images
+
+    item_contract = _inspect_item_contract(item)
+
+    return not isinstance(item_contract, str) and item_contract[0] == "uint8"
 
 
 def _canonicalize_batch(images) -> _CanonicalBatch:
