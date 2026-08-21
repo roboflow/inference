@@ -47,6 +47,7 @@ except ImportError:
     apply_duration_minimum = None
     execution_id = None
 
+from .billable_scope import usage_billing_suppressed
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
     get_model_api_key_from_kwargs,
@@ -60,6 +61,7 @@ from .decorator_helpers import (
     get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    stamp_bound_requests_usage_billable,
 )
 from .payload_helpers import (
     APIKey,
@@ -783,8 +785,12 @@ class UsageCollector:
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
         func_kwargs = collect_func_params(func, args, kwargs)
+        # Downgrade-only: the request scope suppresses billing for rows recorded
+        # on behalf of a caller who authenticated the intent, but never restores
+        # it for a caller that opted out some other way.
+        billable = usage_billable and not usage_billing_suppressed.get()
         resource_details = {
-            "billable": usage_billable,
+            "billable": billable,
         }
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
@@ -971,6 +977,7 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
+                stamp_bound_requests_usage_billable(func, args, kwargs)
                 t1 = time.time()
                 try:
                     res = func(*args, **kwargs)
@@ -1031,6 +1038,7 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
+                stamp_bound_requests_usage_billable(func, args, kwargs)
                 t1 = time.time()
                 try:
                     res = await func(*args, **kwargs)

@@ -42,6 +42,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
@@ -293,6 +294,7 @@ class EasyOCRBlockV1(WorkflowBlock):
             api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            **remote_billing_parameters(),
         )
         client.configure(configuration)
         non_empty_inference_images = [i.base64_image for i in images]

@@ -1205,7 +1205,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
@@ -1274,7 +1274,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
@@ -1415,6 +1415,7 @@ class InferenceHTTPClient:
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
             headers=self.__headers_with_auth(headers),
+            params=self.__inference_configuration.to_billing_query_parameters(),
         )
         _collect_processing_time_from_response(
             response, model_id=clip_version or "clip"
@@ -1445,11 +1446,20 @@ class InferenceHTTPClient:
         payload["text"] = text
         if clip_version is not None:
             payload["clip_version_id"] = clip_version
+        billing_parameters = (
+            self.__inference_configuration.to_billing_query_parameters()
+        )
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
                 json=payload,
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
+                # aiohttp rejects bool query values; requests coerces them itself.
+                params=(
+                    {k: str(v) for k, v in billing_parameters.items()}
+                    if billing_parameters
+                    else None
+                ),
             ) as response:
                 response.raise_for_status()
                 collect_remote_processing_metadata_from_headers(
@@ -1640,6 +1650,7 @@ class InferenceHTTPClient:
             ),
             json=payload,
             headers=self.__headers_with_auth(headers),
+            params=self.__inference_configuration.to_billing_query_parameters(),
         )
         _collect_processing_time_from_response(
             response,
@@ -2050,7 +2061,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
@@ -2120,7 +2131,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
@@ -2607,7 +2618,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
@@ -2661,7 +2672,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
@@ -2986,7 +2997,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -3019,7 +3030,7 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            parameters=None,
+            parameters=self.__inference_configuration.to_billing_query_parameters(),
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,

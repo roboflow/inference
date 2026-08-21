@@ -3098,6 +3098,7 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
             "clip_version_id": "ViT-B-32",
         },
         headers={"Content-Type": "application/json"},
+        params=None,
     )
     assert collector.drain() == [("ViT-B-32", 1.5)]
     assert collector.snapshot_model_ids() == {"clip/ViT-B-32"}

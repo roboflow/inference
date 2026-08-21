@@ -3,6 +3,7 @@ import hashlib
 import json
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Optional
 from unittest import mock
@@ -14,6 +15,10 @@ from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
+from inference.usage_tracking.billable_scope import (
+    billing_suppressed,
+    usage_billing_suppressed,
+)
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
@@ -1424,8 +1429,300 @@ def test_record_usage_with_exception(usage_collector_with_mocked_threads):
 
 
 @pytest.mark.parametrize("countinference", [True, False])
+def test_model_row_uses_stamped_request_usage_billable(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+    countinference,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeModel:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+        task_type = "object-detection"
+        model_type = "yolov11n"
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return "ok"
+
+        def infer_from_request(self, request):
+            # Mirrors Model.infer_from_request: the request is unpacked into
+            # infer(), which is how usage_billable reaches the decorator.
+            return self.infer(**request.dict())
+
+    class FakeRequest:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+        usage_billable = True
+
+        def dict(self):
+            return {"image": "img", "usage_billable": self.usage_billable}
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        return FakeModel().infer_from_request(inference_request)
+
+    handler(
+        FakeRequest(),
+        countinference=countinference,
+        service_secret=configured_service_secret,
+    )
+
+    request_key = usage_key("request", "yolov11n-640", billable=countinference)
+    model_key = usage_key("model", "yolov11n-640", billable=countinference)
+    request_details = json.loads(
+        usage_collector._usage["test_key"][request_key]["resource_details"]
+    )
+    model_details = json.loads(
+        usage_collector._usage["test_key"][model_key]["resource_details"]
+    )
+    assert request_details["billable"] is countinference
+    assert model_details["billable"] is countinference
+
+
+def test_rows_stay_billable_when_countinference_lacks_service_secret(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeModel:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return "ok"
+
+    class FakeRequest:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+        usage_billable = True
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        return FakeModel().infer("img", usage_billable=inference_request.usage_billable)
+
+    handler(FakeRequest(), countinference=False)
+
+    request_key = usage_key("request", "yolov11n-640", billable=True)
+    model_key = usage_key("model", "yolov11n-640", billable=True)
+    request_details = json.loads(
+        usage_collector._usage["test_key"][request_key]["resource_details"]
+    )
+    model_details = json.loads(
+        usage_collector._usage["test_key"][model_key]["resource_details"]
+    )
+    assert request_details["billable"] is True
+    assert model_details["billable"] is True
+
+
+def test_model_infer_from_request_row_reads_usage_billable(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeModel:
+        api_key = "test_key"
+        model_id = "sam2/hiera_large"
+
+        @usage_collector(category="model")
+        def infer_from_request(self, request):
+            return "ok"
+
+    class FakeRequest:
+        api_key = "test_key"
+        model_id = "sam2/hiera_large"
+        usage_billable = False
+
+    FakeModel().infer_from_request(FakeRequest())
+
+    model_key = usage_key("model", "sam2/hiera_large", billable=False)
+    details = json.loads(
+        usage_collector._usage["test_key"][model_key]["resource_details"]
+    )
+    assert details["billable"] is False
+
+
+def test_model_row_stays_billable_when_countinference_is_omitted(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeModel:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return "ok"
+
+    class FakeRequest:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+        usage_billable = True
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        return FakeModel().infer("img", usage_billable=inference_request.usage_billable)
+
+    handler(FakeRequest())
+
+    request_key = usage_key("request", "yolov11n-640", billable=True)
+    model_key = usage_key("model", "yolov11n-640", billable=True)
+    request_details = json.loads(
+        usage_collector._usage["test_key"][request_key]["resource_details"]
+    )
+    model_details = json.loads(
+        usage_collector._usage["test_key"][model_key]["resource_details"]
+    )
+    assert request_details["billable"] is True
+    assert model_details["billable"] is True
+
+
+@pytest.mark.parametrize("usage_billable", [True, False])
+def test_workflow_row_honours_usage_billable(
+    usage_collector_with_mocked_threads,
+    usage_billable,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="workflows")
+    def run_workflow(workflow, api_key="test_key"):
+        return "ok"
+
+    run_workflow(None, usage_billable=usage_billable, usage_workflow_id="workflow-1")
+
+    key = usage_key("workflows", "workflow-1", billable=usage_billable)
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["billable"] is usage_billable
+
+
+def test_billing_scope_marks_workflow_and_nested_model_rows(
+    usage_collector_with_mocked_threads,
+):
+    """A Workflow block builds its own request, so the caller's intent reaches
+    nested model rows through the billing scope rather than through a payload."""
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeModel:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return "ok"
+
+    @usage_collector(category="workflows")
+    def run_workflow(workflow, api_key="test_key"):
+        FakeModel().infer("img")
+        return "ok"
+
+    with billing_suppressed(True):
+        run_workflow(None, usage_workflow_id="workflow-1")
+
+    workflow_key = usage_key("workflows", "workflow-1", billable=False)
+    model_key = usage_key("model", "yolov11n-640", billable=False)
+    workflow_details = json.loads(
+        usage_collector._usage["test_key"][workflow_key]["resource_details"]
+    )
+    model_details = json.loads(
+        usage_collector._usage["test_key"][model_key]["resource_details"]
+    )
+    assert workflow_details["billable"] is False
+    assert model_details["billable"] is False
+
+
+def test_billing_scope_reaches_models_run_on_step_worker_threads():
+    """Steps run on a ThreadPoolExecutor, which does not inherit ContextVars.
+
+    `safe_execute_step` re-binds the scope in each worker; this asserts the
+    capture-and-rebind pair actually carries the decision across the boundary.
+    """
+    from inference.core.workflows.execution_engine.v1.executor import core
+
+    with billing_suppressed(True):
+        captured = usage_billing_suppressed.get()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            seen_without_rebind = executor.submit(usage_billing_suppressed.get).result()
+
+            def step():
+                core.usage_billing_suppressed.set(captured)
+                return usage_billing_suppressed.get()
+
+            seen_with_rebind = executor.submit(step).result()
+
+            # A reused worker must not keep the previous request's decision.
+            def next_request_step():
+                core.usage_billing_suppressed.set(False)
+                return usage_billing_suppressed.get()
+
+            seen_after_reuse = executor.submit(next_request_step).result()
+
+    assert seen_without_rebind is False
+    assert seen_with_rebind is True
+    assert seen_after_reuse is False
+    assert usage_billing_suppressed.get() is False
+
+
+def test_billing_scope_never_restores_billing_for_opted_out_caller(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="model")
+    def infer(image, api_key="test_key"):
+        return "ok"
+
+    with billing_suppressed(False):
+        infer("img", usage_billable=False)
+
+    key = usage_key("model", "unknown", billable=False)
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["billable"] is False
+
+
+def test_standalone_model_infer_defaults_to_billable(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeModel:
+        api_key = "test_key"
+        model_id = "yolov11n-640"
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            return "ok"
+
+    FakeModel().infer("img")
+
+    model_key = usage_key("model", "yolov11n-640", billable=True)
+    details = json.loads(
+        usage_collector._usage["test_key"][model_key]["resource_details"]
+    )
+    assert details["billable"] is True
+
+
+@pytest.mark.parametrize("countinference", [True, False])
 def test_request_exception_preserves_countinference_intent(
     usage_collector_with_mocked_threads,
+    configured_service_secret,
     countinference,
 ):
     usage_collector = usage_collector_with_mocked_threads
@@ -1435,11 +1732,17 @@ def test_request_exception_preserves_countinference_intent(
         model_id = "workspace/model"
 
     @usage_collector(category="request")
-    def test_func(request, countinference=True, api_key="test_key"):
+    def test_func(
+        request, countinference=True, service_secret=None, api_key="test_key"
+    ):
         raise RuntimeError("request failure")
 
     with pytest.raises(RuntimeError, match="request failure"):
-        test_func(FakeRequest(), countinference=countinference)
+        test_func(
+            FakeRequest(),
+            countinference=countinference,
+            service_secret=configured_service_secret,
+        )
 
     key = usage_key(
         "request",

@@ -79,6 +79,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
@@ -311,7 +312,10 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
         client.configure(
-            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+            InferenceConfiguration(
+                api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+                **remote_billing_parameters(),
+            )
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

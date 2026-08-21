@@ -227,8 +227,11 @@ class InferenceConfiguration:
             f"Model task {task_type} is not supported by API v1 client."
         )
 
-    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
-        """Extract v1 API query-string parameters from the current configuration.
+    def to_billing_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract the usage-billing query-string parameters.
+
+        Spelled the same way on both API versions, so every endpoint can send
+        them regardless of client mode.
 
         Returns:
             Optional[Dict[str, Any]]: The query parameters, or None if unset.
@@ -240,6 +243,14 @@ class InferenceConfiguration:
             }
         )
         return query or None
+
+    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract v1 API query-string parameters from the current configuration.
+
+        Returns:
+            Optional[Dict[str, Any]]: The query parameters, or None if unset.
+        """
+        return self.to_billing_query_parameters()
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to object detection parameters.

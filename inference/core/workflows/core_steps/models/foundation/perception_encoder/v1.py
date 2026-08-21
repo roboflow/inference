@@ -40,6 +40,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
+from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -240,7 +241,10 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
         client.configure(
-            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+            InferenceConfiguration(
+                api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+                **remote_billing_parameters(),
+            )
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
