@@ -31,9 +31,7 @@ def get_roboflow_offline_weights(
 ) -> ModelMetadata:
     model_metadata = offline_registry.load_model_metadata(model_id=model_id)
     if model_metadata is not None:
-        model_metadata = _with_materialized_packages_only(
-            model_metadata=model_metadata
-        )
+        model_metadata = _with_materialized_packages_only(model_metadata=model_metadata)
     if model_metadata is None:
         raise ModelRetrievalError(
             message=(

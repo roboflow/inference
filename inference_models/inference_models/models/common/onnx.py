@@ -98,6 +98,7 @@ MODEL_INPUT_CASTING = {
     torch.bool: {torch.uint8, torch.int8, torch.float16, torch.float32, torch.float64},
 }
 
+
 def set_onnx_execution_provider_defaults(
     providers: List[Union[str, tuple]],
     model_package_path: str,

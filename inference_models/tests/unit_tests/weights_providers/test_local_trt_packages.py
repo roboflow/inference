@@ -238,6 +238,8 @@ def test_discovered_local_trt_package_reloads_offline_without_cache_writes(
     assert package_dir == local_trt_layout["package_dir"]
     assert model_class.from_pretrained.call_count == 2
     auto_resolution_cache.register.assert_not_called()
+
+
 def test_discover_local_trt_packages_marks_untrusted_and_sets_cache_model_id(
     local_trt_layout,
 ):
@@ -463,9 +465,7 @@ def test_cli_installed_package_is_discovered(cli_installed_package):
     # Regression test for the symlink defect: the installer used to materialize
     # artefacts as symlinks to shared blobs, which discovery rejects — every
     # CLI-installed package was silently invisible to the loader.
-    discovered = discover_local_trt_packages(
-        model_id=cli_installed_package["model_id"]
-    )
+    discovered = discover_local_trt_packages(model_id=cli_installed_package["model_id"])
 
     assert [package.package_id for package in discovered] == [
         cli_installed_package["package_id"]

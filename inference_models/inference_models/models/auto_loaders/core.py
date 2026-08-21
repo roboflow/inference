@@ -106,20 +106,18 @@ from inference_models.utils.download import (
 )
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
-from inference_models.weights_providers.core import (
-    get_model_from_provider,
-)
+from inference_models.weights_providers import offline_registry
+from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
-    ModelMetadata,
     LocalFileArtefactSpecs,
     ModelDependency,
+    ModelMetadata,
     ModelPackageMetadata,
     PackageSourceType,
     Quantization,
     RecommendedParameters,
 )
-from inference_models.weights_providers import offline_registry
 from inference_models.weights_providers.roboflow import LOCAL_API_KEY
 from inference_models.weights_providers.roboflow_offline import (
     ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
@@ -360,6 +358,8 @@ def _runtime_compatibility_content(runtime_x_ray: object) -> dict:
             runtime_x_ray, "trt_python_package_available", False
         ),
     }
+
+
 def _validate_portable_cache_name(value: object, kind: str) -> str:
     windows_reserved_names = {
         "CON",
@@ -1806,38 +1806,38 @@ class AutoModel:
             # contract - changing it invalidates every existing entry.
             auto_negotiation_hash = hash_dict_content(
                 content={
-                "provider": weights_provider,
-                "model_id": model_id_or_path,
-                "requested_model_package_id": model_package_id,
-                "requested_backends": _canonicalize_unordered_request_values(
-                    backend,
-                    case_insensitive=True,
-                ),
-                "requested_batch_size": batch_size,
-                "requested_quantization": _canonicalize_unordered_request_values(
-                    quantization
-                ),
-                "device": str(device),
-                "onnx_execution_providers": onnx_execution_providers,
-                "default_onnx_trt_options": default_onnx_trt_options,
-                "allow_untrusted_packages": allow_untrusted_packages,
-                "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
-                "allow_local_code_packages": allow_local_code_packages,
-                "allow_loading_dependency_models": allow_loading_dependency_models,
-                "nms_fusion_preferences": nms_fusion_preferences,
-                "dependency_models_params": _canonicalize_cache_hash_value(
-                    dependency_models_params
-                ),
-                "forwarded_dependency_kwargs": _canonicalize_cache_hash_value(
-                    forwarded_kwargs_values
-                ),
-                "runtime_compatibility": runtime_compatibility,
-                "verify_hash_while_download": verify_hash_while_download,
-                "download_files_without_hash": download_files_without_hash,
-                "max_package_loading_attempts": max_package_loading_attempts,
-                "weights_provider_extra_query_params": weights_provider_extra_query_params,
-                "weights_provider_extra_headers": weights_provider_extra_headers,
-                "api_key": api_key,
+                    "provider": weights_provider,
+                    "model_id": model_id_or_path,
+                    "requested_model_package_id": model_package_id,
+                    "requested_backends": _canonicalize_unordered_request_values(
+                        backend,
+                        case_insensitive=True,
+                    ),
+                    "requested_batch_size": batch_size,
+                    "requested_quantization": _canonicalize_unordered_request_values(
+                        quantization
+                    ),
+                    "device": str(device),
+                    "onnx_execution_providers": onnx_execution_providers,
+                    "default_onnx_trt_options": default_onnx_trt_options,
+                    "allow_untrusted_packages": allow_untrusted_packages,
+                    "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
+                    "allow_local_code_packages": allow_local_code_packages,
+                    "allow_loading_dependency_models": allow_loading_dependency_models,
+                    "nms_fusion_preferences": nms_fusion_preferences,
+                    "dependency_models_params": _canonicalize_cache_hash_value(
+                        dependency_models_params
+                    ),
+                    "forwarded_dependency_kwargs": _canonicalize_cache_hash_value(
+                        forwarded_kwargs_values
+                    ),
+                    "runtime_compatibility": runtime_compatibility,
+                    "verify_hash_while_download": verify_hash_while_download,
+                    "download_files_without_hash": download_files_without_hash,
+                    "max_package_loading_attempts": max_package_loading_attempts,
+                    "weights_provider_extra_query_params": weights_provider_extra_query_params,
+                    "weights_provider_extra_headers": weights_provider_extra_headers,
+                    "api_key": api_key,
                 }
             )
             model_from_access_manager = model_access_manager.retrieve_model_instance(
@@ -2146,9 +2146,7 @@ def _verified_auto_cache_package_dir(
         or not cache_entry.canonical_model_id
         or not cache_entry.canonical_model_id.strip()
     ):
-        LOGGER.warning(
-            "Ignoring auto-load cache entry without canonical attribution."
-        )
+        LOGGER.warning("Ignoring auto-load cache entry without canonical attribution.")
         return None
     try:
         package_dir = resolve_existing_model_package_cache_path(
@@ -2177,6 +2175,7 @@ def _verified_auto_cache_package_dir(
         )
         return None
     return package_dir
+
 
 def attempt_loading_model_with_auto_load_cache(
     use_auto_resolution_cache: bool,

@@ -13,6 +13,7 @@ polluting the namespace. If you see a symbol that you need but is not exposed he
 https://github.com/roboflow/inference/issues/new
 """
 
+import importlib.metadata as importlib_metadata
 import os
 
 # The single process-wide OFFLINE_MODE owner. Must be the first import so
@@ -20,7 +21,6 @@ import os
 # before any heavy library gets imported.
 from inference_models._offline import OFFLINE_MODE  # noqa: F401  isort: skip
 
-import importlib.metadata as importlib_metadata
 
 try:
     # This will read version from pyproject.toml

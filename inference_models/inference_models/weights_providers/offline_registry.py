@@ -23,10 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from filelock import FileLock
 from packaging.version import InvalidVersion, Version
 
-from inference_models.configuration import (
-    FILE_LOCK_ACQUIRE_TIMEOUT,
-    INFERENCE_HOME,
-)
+from inference_models.configuration import FILE_LOCK_ACQUIRE_TIMEOUT, INFERENCE_HOME
 from inference_models.errors import BaseInferenceModelsError
 from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import BackendType
@@ -307,6 +304,7 @@ def _md5_of_file(path: str) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
+
 def _read_record_file(record_path: str) -> Optional[dict]:
     if not os.path.isfile(record_path) or os.path.islink(record_path):
         return None
@@ -583,7 +581,9 @@ def _package_presence(
         return "missing", []
     missing = []
     for artefact in package_payload.get("artifacts") or []:
-        file_handle = artefact.get("file_handle") if isinstance(artefact, dict) else None
+        file_handle = (
+            artefact.get("file_handle") if isinstance(artefact, dict) else None
+        )
         if not isinstance(file_handle, str):
             return "malformed", []
         if not os.path.isfile(os.path.join(package_dir, file_handle)):
@@ -654,9 +654,7 @@ def verify_records(
             if not isinstance(package_payload, dict):
                 continue
             package_id = package_payload.get("package_id")
-            cache_model_id = (
-                package_payload.get("cache_model_id") or canonical_model_id
-            )
+            cache_model_id = package_payload.get("cache_model_id") or canonical_model_id
             package_dir = (
                 _resolve_package_dir(
                     cache_model_id=cache_model_id,
@@ -680,9 +678,7 @@ def verify_records(
                     expected_md5 = artefact.get("md5_hash")
                     try:
                         actual_md5 = _md5_of_file(path=artefact_path)
-                        status = (
-                            "ok" if actual_md5 == expected_md5 else "hash-mismatch"
-                        )
+                        status = "ok" if actual_md5 == expected_md5 else "hash-mismatch"
                     except OSError:
                         status = "unreadable"
                 else:

@@ -3513,9 +3513,7 @@ def test_from_pretrained_rejects_invalid_remote_model_identity_before_cache_work
 
     with mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache"
-    ) as cache_load, mock.patch.object(
-        core, "get_model_from_provider"
-    ) as provider:
+    ) as cache_load, mock.patch.object(core, "get_model_from_provider") as provider:
         with pytest.raises(
             InvalidParameterError,
             match="Remote model identity must be a non-empty string",

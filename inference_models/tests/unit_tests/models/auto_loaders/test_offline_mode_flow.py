@@ -15,10 +15,10 @@ from inference_models.weights_providers import core as weights_core
 from inference_models.weights_providers import offline_registry
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
-    ONNXPackageDetails,
-    Quantization,
     ModelMetadata,
     ModelPackageMetadata,
+    ONNXPackageDetails,
+    Quantization,
 )
 
 MODEL_ID = "workspace/model/1"
@@ -191,9 +191,7 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
         )
         os.makedirs(package_dir)
         os.symlink(blob_path, os.path.join(package_dir, "weights.onnx"))
-        with open(
-            os.path.join(package_dir, "model_config.json"), "w"
-        ) as manifest_file:
+        with open(os.path.join(package_dir, "model_config.json"), "w") as manifest_file:
             json.dump(
                 {
                     "offline_manifest_version": 4,

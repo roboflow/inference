@@ -74,7 +74,6 @@ class ModelAccessManager(ABC):
     ) -> Optional[AnyModel]:
         pass
 
-
     @abstractmethod
     def on_model_loaded(
         self,

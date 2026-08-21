@@ -91,9 +91,7 @@ def _example_metadata(model_id: str = "workspace/model/1") -> ModelMetadata:
 
 @pytest.fixture
 def registry_home(tmp_path):
-    with mock.patch.object(
-        offline_registry, "INFERENCE_HOME", str(tmp_path)
-    ):
+    with mock.patch.object(offline_registry, "INFERENCE_HOME", str(tmp_path)):
         yield tmp_path
 
 
@@ -122,9 +120,7 @@ def test_record_and_load_round_trip(registry_home) -> None:
         assert all(
             isinstance(a, LocalFileArtefactSpecs) for a in package.package_artefacts
         )
-    onnx_package = next(
-        p for p in loaded.model_packages if p.package_id == "pkgonnx"
-    )
+    onnx_package = next(p for p in loaded.model_packages if p.package_id == "pkgonnx")
     assert onnx_package.environment_requirements.cuda_device_cc == Version("8.6")
     trt_package = next(p for p in loaded.model_packages if p.package_id == "pkgtrt")
     assert trt_package.trt_package_details.same_cc_compatible is True
@@ -186,9 +182,7 @@ def test_unknown_fields_are_tolerated_and_newer_format_skipped(registry_home) ->
         requested_model_id=metadata.model_id,
         proven_package_id="pkgonnx",
     )
-    record_path = offline_registry._record_path(
-        canonical_model_id=metadata.model_id
-    )
+    record_path = offline_registry._record_path(canonical_model_id=metadata.model_id)
     content = json.load(open(record_path))
     content["some_future_field"] = {"nested": True}
     json.dump(content, open(record_path, "w"))
@@ -336,9 +330,7 @@ def test_concurrent_appends_lose_neither_write(registry_home) -> None:
     # given
     context = multiprocessing.get_context("spawn")
     workers = [
-        context.Process(
-            target=_record_in_subprocess, args=(str(registry_home), index)
-        )
+        context.Process(target=_record_in_subprocess, args=(str(registry_home), index))
         for index in (0, 1)
     ]
 

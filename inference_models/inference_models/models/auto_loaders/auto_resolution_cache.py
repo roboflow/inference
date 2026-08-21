@@ -179,10 +179,7 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
                 minutes_since_entry_created = (
                     datetime.now().timestamp() - cache_entry.created_at.timestamp()
                 ) / 60
-                if (
-                    minutes_since_entry_created
-                    > AUTO_LOADER_CACHE_EXPIRATION_MINUTES
-                ):
+                if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
                     self._invalidate_path_while_locked(
                         path_for_cached_content=path_for_cached_content
                     )
@@ -274,6 +271,8 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
             f"auto-load cache. This may indicate corrupted cache of inference bug. Contact Roboflow submitting "
             f"issue under: https://github.com/roboflow/inference/issues/"
         )
+
+
 def generate_auto_resolution_cache_path(auto_negotiation_hash: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", auto_negotiation_hash):
         raise ValueError("Invalid auto-negotiation cache hash")

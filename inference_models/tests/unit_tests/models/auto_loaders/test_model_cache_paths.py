@@ -54,9 +54,7 @@ def test_package_path_is_deduced_from_slug_and_package_id() -> None:
     )
 
     # then
-    expected_root = generate_model_cache_root_for_model_id(
-        model_id="workspace/model/1"
-    )
+    expected_root = generate_model_cache_root_for_model_id(model_id="workspace/model/1")
     assert package_path == os.path.join(expected_root, "pkg1")
     assert expected_root.endswith(
         slugify_model_id_to_os_safe_format("workspace/model/1")
