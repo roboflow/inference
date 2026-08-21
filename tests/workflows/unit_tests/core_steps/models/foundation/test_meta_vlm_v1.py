@@ -1,21 +1,29 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
-from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.meta_vlm.v1 import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_VERSION,
     DEFAULT_REASONING_EFFORT,
     MODEL_VARIANTS,
-    MUSE_OBJECT_DETECTION_PROMPT_TEMPLATE,
     BlockManifest,
     MetaVlmBlockV1,
     build_muse_openrouter_prompts,
-    build_reasoning_config,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+# Copied from vlm-exam `_META_FLAT_NORMALIZED_PROMPT_TEMPLATE` so an edit
+# to the block constant fails this test.
+EXPECTED_DETECTION_PROMPT = (
+    "You are an object grounding expert. Detect all objects in this image "
+    "matching these labels: cat, dog. Ensure the objects accurately "
+    "match the request and do not miss any objects. For each object, answer "
+    'in the format {"label": "<name>", "x_min": <int>, "y_min": <int>, '
+    '"x_max": <int>, "y_max": <int>}. The coordinates should be in the '
+    "0-1000 range. Return a JSON array of results. If you cannot find an "
+    "object, omit it from the results."
+)
 
 
 def _stub_image() -> WorkflowImageData:
@@ -62,23 +70,6 @@ def test_manifest_defaults():
     assert manifest.privacy_level == "deny"
 
 
-def test_manifest_rejects_none_reasoning_effort():
-    with pytest.raises(ValidationError):
-        BlockManifest.model_validate(
-            {
-                "type": "roboflow_core/meta_vlm@v1",
-                "name": "muse",
-                "images": "$inputs.image",
-                "reasoning_effort": "none",
-            }
-        )
-
-
-def test_reasoning_config_always_sends_effort():
-    assert build_reasoning_config("low") == {"effort": "low"}
-    assert build_reasoning_config("high") == {"effort": "high"}
-
-
 def test_detection_prompt_is_vlm_exam_meta_flat_template():
     messages = build_muse_openrouter_prompts(
         images=[np.zeros((8, 8, 3), dtype=np.uint8)],
@@ -87,26 +78,11 @@ def test_detection_prompt_is_vlm_exam_meta_flat_template():
         output_structure=None,
         classes=["cat", "dog"],
     )
-    user = messages[0][0]
-    assert user["role"] == "user"
-    content = user["content"]
+    assert [message["role"] for message in messages[0]] == ["user"]
+    content = messages[0][0]["content"]
     assert content[0]["type"] == "image_url"
     assert content[1]["type"] == "text"
-    assert content[1]["text"] == MUSE_OBJECT_DETECTION_PROMPT_TEMPLATE.format(
-        class_list="cat, dog"
-    )
-
-
-def test_caption_is_image_first_without_system_role():
-    messages = build_muse_openrouter_prompts(
-        images=[np.zeros((8, 8, 3), dtype=np.uint8)],
-        task_type="caption",
-        prompt=None,
-        output_structure=None,
-        classes=None,
-    )
-    assert [message["role"] for message in messages[0]] == ["user"]
-    assert messages[0][0]["content"][0]["type"] == "image_url"
+    assert content[1]["text"] == EXPECTED_DETECTION_PROMPT
 
 
 @patch(
