@@ -131,6 +131,22 @@ class Preprocessor(InferenceStage, Protocol):
             Compatibility result with actionable reasons.
         """
 
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check whether runtime state supports this preprocessing request.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with any recorded runtime failure reason.
+        """
+
     def preprocess(
         self,
         request: PreprocessRequest,
@@ -293,6 +309,22 @@ class Postprocessor(InferenceStage, Protocol):
 
         Returns:
             Compatibility result with actionable reasons.
+        """
+
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check whether runtime state supports this postprocessing request.
+
+        Args:
+            request: Typed postprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result with any recorded runtime failure reason.
         """
 
     def postprocess(
