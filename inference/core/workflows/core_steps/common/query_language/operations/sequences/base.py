@@ -7,10 +7,13 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
+    OperationError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
 )
+
+MAX_JOINED_STRING_LENGTH = 1_000_000
 
 
 def sequence_map(
@@ -111,7 +114,7 @@ def aggregate_sequence(
 
 def join_sequence(value: Any, separator: str, execution_context: str, **kwargs) -> str:
     try:
-        return separator.join(str(v) for v in value)
+        parts = [str(v) for v in value]
     except TypeError as e:
         raise InvalidInputTypeError(
             public_message=f"While executing join_sequence(...) in context {execution_context}, encountered "
@@ -119,6 +122,17 @@ def join_sequence(value: Any, separator: str, execution_context: str, **kwargs) 
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
+    joined_length = sum(len(part) for part in parts)
+    if parts:
+        joined_length += len(separator) * (len(parts) - 1)
+    if joined_length > MAX_JOINED_STRING_LENGTH:
+        raise OperationError(
+            public_message=f"While executing join_sequence(...) in context {execution_context}, attempted to "
+            f"build a string of {joined_length} characters, which exceeds the maximum allowed "
+            f"length of {MAX_JOINED_STRING_LENGTH} characters",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        )
+    return separator.join(parts)
 
 
 def get_sequence_length(value: Any, execution_context: str, **kwargs) -> int:

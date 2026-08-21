@@ -2,6 +2,7 @@ import pytest
 
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
+    OperationError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     execute_operations,
@@ -37,3 +38,18 @@ def test_sequence_join_operation_invalid_input_raises() -> None:
     operations = [{"type": "SequenceJoin", "separator": ", "}]
     with pytest.raises(InvalidInputTypeError):
         execute_operations(value=123, operations=operations)
+
+
+def test_sequence_join_operation_when_output_exceeds_length_limit() -> None:
+    """SequenceJoin raises when the joined string would exceed the 1,000,000 char limit."""
+    operations = [{"type": "SequenceJoin", "separator": ", "}]
+    with pytest.raises(OperationError) as error:
+        execute_operations(value=["a" * 400_000] * 3, operations=operations)
+    assert "1000000" in str(error.value)
+
+
+def test_sequence_join_operation_when_output_is_within_length_limit() -> None:
+    """SequenceJoin joins normally when the result stays under the length limit."""
+    operations = [{"type": "SequenceJoin", "separator": ", "}]
+    result = execute_operations(value=["a" * 10, "b" * 10], operations=operations)
+    assert result == "a" * 10 + ", " + "b" * 10

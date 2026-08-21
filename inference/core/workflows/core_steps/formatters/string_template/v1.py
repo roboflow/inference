@@ -1,3 +1,4 @@
+import re
 from copy import copy
 from string import Formatter
 from typing import Any, Dict, List, Literal, Optional, Type, Union
@@ -76,6 +77,23 @@ This block consumes workflow inputs and step outputs and produces a string:
 - **Before sink blocks** (email, webhook, MQTT, OPC) to format message payloads, enabling
   notification workflows
 
+## Security Considerations
+
+When the template or the data reference workflow inputs or upstream model outputs, whoever
+controls those sources influences the assembled prompt and, through it, the behaviour of any
+downstream model that consumes the rendered string (OWASP LLM01, prompt injection). This block
+guarantees structural safety - no attribute or index access, no positional placeholders, and
+loud failures on template/data mismatches - but it cannot prevent semantic injection, because a
+placeholder value is substituted verbatim. Deciding who may supply those inputs is therefore the
+responsibility of the workflow deployer; prefer constrained, domain-specific inputs (for example
+an allowlisted SKU catalog) over free-form text wherever the rendered string reaches a model.
+
+Rendering is also bounded to keep a malicious or accidental template from exhausting memory.
+Numeric width and precision values in format specs are capped at 10,000 and rejected before the
+padded string is allocated. The rendered output is additionally capped at 1,000,000 characters;
+output exceeding that cap fails the step with a descriptive error instead of propagating
+downstream.
+
 ## Requirements
 
 The template must reference only variables defined in the data dictionary, using plain names
@@ -87,6 +105,10 @@ extract properties) before substitution.
 SHORT_DESCRIPTION = (
     "Build a string from a template and runtime data, e.g. a dynamic VLM prompt."
 )
+
+MAX_FORMAT_SPEC_NUMBER = 10_000
+MAX_RENDERED_TEMPLATE_LENGTH = 1_000_000
+ERROR_MESSAGE_PREFIX = "String Template block"
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -182,12 +204,43 @@ def render_template(template: str, variables: Dict[str, Any]) -> str:
             f"which are not declared in data. Declared variables: {sorted(variables)}."
         )
     try:
-        return template.format(**variables)
+        rendered = _ResourceLimitedFormatter().vformat(template, (), variables)
     except (ValueError, TypeError) as error:
+        if str(error).startswith(ERROR_MESSAGE_PREFIX):
+            # resource limit violations already carry a descriptive message - re-raise
+            # them unchanged instead of wrapping them in the generic render error
+            raise
         raise ValueError(
             f"String Template block could not render template: {error}. "
             f"Check that format specs match the types of the substituted values."
         ) from error
+    if len(rendered) > MAX_RENDERED_TEMPLATE_LENGTH:
+        raise ValueError(
+            f"String Template block rendered a template of {len(rendered)} characters, "
+            f"which exceeds the maximum allowed rendered length of "
+            f"{MAX_RENDERED_TEMPLATE_LENGTH} characters. Reduce the size of the "
+            f"substituted values or the number of placeholders."
+        )
+    return rendered
+
+
+class _ResourceLimitedFormatter(Formatter):
+    """Formatter rejecting format specs that would allocate excessive amounts of memory.
+
+    `format_field(...)` is called by `Formatter._vformat(...)` after nested replacement
+    fields in the format spec have been expanded, so runtime-provided widths such as
+    `{value:{width}}` are validated here as well as literal ones.
+    """
+
+    def format_field(self, value: Any, format_spec: str) -> str:
+        for digits_run in re.findall(r"\d+", format_spec):
+            if int(digits_run) > MAX_FORMAT_SPEC_NUMBER:
+                raise ValueError(
+                    f"String Template block encountered format spec `{format_spec}` "
+                    f"with numeric value {digits_run} exceeding the maximum allowed "
+                    f"width or precision of {MAX_FORMAT_SPEC_NUMBER}."
+                )
+        return super().format_field(value, format_spec)
 
 
 def extract_placeholders(template: str) -> set:

@@ -268,3 +268,76 @@ def test_block_run_when_template_is_not_a_string() -> None:
 
     # then
     assert "expected template to be a string" in str(error.value)
+
+
+def test_block_run_when_format_spec_declares_huge_literal_width() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(template="{value:1000000000}", data={"value": "x"}, data_operations={})
+
+    # then
+    assert "10000" in str(error.value)
+
+
+def test_block_run_when_format_spec_declares_huge_width_at_runtime() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(
+            template="{value:{width}}",
+            data={"value": "x", "width": "999999999"},
+            data_operations={},
+        )
+
+    # then
+    assert "10000" in str(error.value)
+
+
+def test_block_run_when_format_spec_declares_huge_precision() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(
+            template="{value:.999999999f}", data={"value": 1.5}, data_operations={}
+        )
+
+    # then
+    assert "10000" in str(error.value)
+
+
+def test_block_run_when_rendered_output_exceeds_length_limit() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    with pytest.raises(ValueError) as error:
+        step.run(
+            template="{value}{value}",
+            data={"value": "a" * 600_000},
+            data_operations={},
+        )
+
+    # then
+    assert "1000000" in str(error.value)
+
+
+def test_block_run_when_format_specs_are_within_limits() -> None:
+    # given
+    step = StringTemplateBlockV1()
+
+    # when
+    result = step.run(
+        template="{confidence:.2f} {value:>10}",
+        data={"confidence": 0.12345, "value": "ok"},
+        data_operations={},
+    )
+
+    # then
+    assert result == {"output": "0.12         ok"}
