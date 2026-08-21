@@ -96,8 +96,13 @@ def opencv_rtsps_tls_env(video: Union[str, int]) -> Iterator[None]:
 
     OpenCV reads this env var at capture-open time. The lock spans set →
     VideoCapture open → restore so concurrent RTSPS sources cannot clobber each
-    other's TLS options. Isolation is RTSPS-vs-RTSPS only; concurrent non-RTSPS
-    opens do not take the lock and may briefly inherit these options.
+    other's TLS options.
+
+    Non-RTSPS opens (USB, V4L2, files, plain ``rtsp://``) do not take this lock
+    and are not serialized here. A process-wide lock around every VideoCapture
+    would stall those backends, which have no FFmpeg open timeout. Concurrent
+    non-RTSPS FFmpeg opens may briefly inherit these options; that window is
+    preferred over blocking every producer on one hung camera.
     """
     options = build_opencv_ffmpeg_capture_options(video)
     if options is None:
