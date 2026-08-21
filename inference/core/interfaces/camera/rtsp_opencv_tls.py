@@ -99,9 +99,10 @@ def build_opencv_ffmpeg_capture_options(video: Union[str, int]) -> Optional[str]
     merged = _parse_opencv_ffmpeg_capture_options(existing or "")
     for key, value in overrides.items():
         merged[key] = value
-    if "stimeout" not in merged and "timeout" not in merged:
-        timeout_value = str(_RTSPS_OPEN_TIMEOUT_US)
+    timeout_value = str(_RTSPS_OPEN_TIMEOUT_US)
+    if "stimeout" not in merged:
         merged["stimeout"] = timeout_value
+    if "timeout" not in merged:
         merged["timeout"] = timeout_value
     return _format_opencv_ffmpeg_capture_options(merged)
 
