@@ -1,11 +1,22 @@
-"""OpenCV/FFmpeg RTSPS TLS option builder (ENT-1544 B3)."""
+"""OpenCV/FFmpeg RTSPS TLS option builder (ENT-1544 B3).
+
+Environment variables (also set by rfdm on Roboflow Edge devices):
+
+* ``ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS`` — ``127`` strict (default when unset),
+  ``126`` or ``0`` to disable certificate verification (self-signed / custom CA).
+* ``GST_SSL_CA_CERTIFICATE`` or ``SSL_CERT_FILE`` — PEM bundle for ``cafile``.
+
+Self-hosted / OSS deployments without rfdm must set these explicitly on the
+inference container. Unmanaged ``rtsps://`` sources with self-signed certs need
+``ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS=126`` or the open will fail after this wiring.
+"""
 
 from __future__ import annotations
 
 import os
 import threading
 from contextlib import contextmanager
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, Optional, Union
 
 from inference.core.interfaces.camera.rtsp_tls import (
     GST_SSL_CA_CERTIFICATE_ENV_VAR,
@@ -67,7 +78,7 @@ def merge_opencv_ffmpeg_capture_options(
     return _format_opencv_ffmpeg_capture_options(merged)
 
 
-def build_opencv_ffmpeg_capture_options(video: str) -> Optional[str]:
+def build_opencv_ffmpeg_capture_options(video: Union[str, int]) -> Optional[str]:
     """Build OPENCV_FFMPEG_CAPTURE_OPTIONS for RTSPS sources."""
     if not is_rtsps_url(video):
         return None
@@ -80,12 +91,18 @@ def build_opencv_ffmpeg_capture_options(video: str) -> Optional[str]:
 
 
 @contextmanager
-def opencv_rtsps_tls_env(video: str) -> Iterator[None]:
+def opencv_rtsps_tls_env(video: Union[str, int]) -> Iterator[None]:
     """Hold OPENCV_FFMPEG_CAPTURE_OPTIONS for one VideoCapture open.
 
     OpenCV reads this env var at capture-open time. The lock spans set →
     VideoCapture open → restore so concurrent RTSPS sources cannot clobber each
     other's TLS options.
+
+    Non-RTSPS opens (USB, V4L2, files, plain ``rtsp://``) do not take this lock
+    and are not serialized here. A process-wide lock around every VideoCapture
+    would stall those backends, which have no FFmpeg open timeout. Concurrent
+    non-RTSPS FFmpeg opens may briefly inherit these options; that window is
+    preferred over blocking every producer on one hung camera.
     """
     options = build_opencv_ffmpeg_capture_options(video)
     if options is None:
