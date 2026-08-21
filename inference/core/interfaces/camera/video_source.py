@@ -146,11 +146,20 @@ def lock_state_transition(
     return locked_executor
 
 
+# VideoCapture open mutates process-global state (OPENCV_FFMPEG_CAPTURE_OPTIONS
+# and stderr fd 2). Serialize so concurrent cameras cannot clobber each other.
+_capture_open_lock = Lock()
+
+
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
         self._source_ref = video
         self._connection_error_message = ""
-        with opencv_rtsps_tls_env(video), capture_process_stderr() as captured_stderr:
+        with (
+            _capture_open_lock,
+            opencv_rtsps_tls_env(video),
+            capture_process_stderr() as captured_stderr,
+        ):
             if _consumes_camera_on_jetson(video=video):
                 self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
             else:
