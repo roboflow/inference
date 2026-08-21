@@ -166,11 +166,15 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
     the package from the registry as package_file declarations. The read-only
     offline leg must not run the mutation guard / identity materialization
     that trips on that storage-classification difference."""
+    import dataclasses
     import hashlib
     import json
     import os
 
-    from inference_models.models.auto_loaders import model_cache_paths
+    from packaging.version import Version
+
+    from inference_models.models.auto_loaders import auto_negotiation, model_cache_paths
+    from inference_models.runtime_introspection.core import x_ray_runtime_environment
 
     model_id = MODEL_ID
     weights_content = b"onnx weights bytes"
@@ -228,9 +232,20 @@ def test_offline_load_of_online_warmed_package_succeeds(tmp_path) -> None:
             proven_package_id="pkgonnx",
         )
 
+        # negotiation must see an ONNX-capable runtime even on machines
+        # without onnxruntime installed (e.g. bare CI runners)
+        onnx_capable_x_ray = dataclasses.replace(
+            x_ray_runtime_environment(),
+            onnxruntime_version=Version("1.21.0"),
+            available_onnx_execution_providers={"CPUExecutionProvider"},
+        )
         model_class = mock.MagicMock()
         with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
             core, "resolve_model_class", return_value=model_class
+        ), mock.patch.object(
+            auto_negotiation,
+            "x_ray_runtime_environment",
+            return_value=onnx_capable_x_ray,
         ):
             # when: OFFLINE load through the full flow (provider swap,
             # negotiation over recorded metadata, presence-only resolve)

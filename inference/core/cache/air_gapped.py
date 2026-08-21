@@ -176,6 +176,8 @@ def _resolve_traditional_cache_model_id(
     if expected_raw_path != relative_root:
         return None
     return relative_root
+
+
 def is_model_cached(model_id: str) -> bool:
     """Best-effort check whether *model_id* has cached artifacts.
 
@@ -440,9 +442,7 @@ def scan_cached_models(
                         )
 
                         expected_slugs = {
-                            slugify_model_id_to_os_safe_format(
-                                model_id=stored_model_id
-                            )
+                            slugify_model_id_to_os_safe_format(model_id=stored_model_id)
                         }
                     except (ImportError, TypeError):
                         expected_slugs = set()
