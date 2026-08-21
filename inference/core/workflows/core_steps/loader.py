@@ -588,6 +588,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.meta_vlm.v1 import (
+    MetaVlmBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
@@ -1887,6 +1890,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GazeBlockV1,
         LlamaVisionBlockV1,
         LlamaVisionBlockV2,
+        MetaVlmBlockV1,
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
