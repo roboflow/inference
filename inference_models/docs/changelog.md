@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Optional S3-compatible shared caching for content-hashed model files. Cache
+  misses, errors, corrupt objects, and timeouts fail open to the original model
+  source.
+
 ### Fixed
 
 - RF-DETR TensorRT execution plans now fall back from Triton preprocessing and
@@ -13,6 +19,7 @@
   fallback.
 
 ---
+
 ## `0.35.2`
 
 ### Fixed
