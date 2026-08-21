@@ -49,6 +49,11 @@
   run (or `OFFLINE_MODE_WARM_UP`) to re-materialize under current paths. Attribution
   and content validation belong to the layers that read directory contents, not to
   path resolution.
+- Removed the public `ModelAccessManager.retrieve_model_storage_path` method along
+  with the package-path attribution it read (`_inference_models_package_path` stamped
+  on cached instances). It had no callers left: the auto-loader now hands the package
+  directory to the model explicitly during initialization. Custom managers overriding
+  the method must drop the override.
 
 ### Added
 

@@ -159,8 +159,10 @@ dependency settings that the offline process will use. Caches warmed by
 `inference-models <= 0.35` contain no registry records and need that warm-up
 run once.
 
-New writes use a V2 model-cache path with a 128-bit identity digest. V1 paths
-with the older 32-bit digest are read-only.
+Model-cache paths use the V2 layout with a 128-bit identity digest. V1 paths
+with the older 32-bit digest (`inference-models < 0.32.0`) are no longer read
+at all — models cached under them re-download into V2 paths on the next
+online load, and the stale V1 directories can be deleted to reclaim space.
 
 **Purge model cache:**
 ```bash
