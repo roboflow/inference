@@ -6,7 +6,11 @@
 
 - SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
   They can also combine point and box prompts in one conditioning frame.
-
+- `Qwen38HF` model class for the Qwen3.8 family (registered as `("qwen3_8", "vlm", BackendType.HF)`).
+  Qwen3.8 reuses the `qwen3_5` architecture (`Qwen3_5ForConditionalGeneration`), so the class is a
+  thin subclass of `Qwen35HF` with its own generation defaults
+  (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
+  Requires `transformers>=5.8.0` at runtime.
 ### Changed
 
 - The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
@@ -27,7 +31,6 @@
 - NumPy and tensor visualization blocks now wrap negative class IDs during
   palette lookup instead of failing.
 
----
 ## `0.35.2`
 
 ### Fixed
