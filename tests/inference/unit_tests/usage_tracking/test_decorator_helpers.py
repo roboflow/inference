@@ -1,13 +1,19 @@
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    apply_explicit_usage_billable,
     get_model_id_from_kwargs,
+    get_model_resource_details_from_kwargs,
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
+    non_billable_intent_is_authenticated,
+    stamp_bound_requests_usage_billable,
 )
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
@@ -23,10 +29,220 @@ def test_get_request_resource_details_ignores_default_countinference():
     assert "billable" not in result
 
 
-def test_get_request_resource_details_respects_explicit_countinference():
-    result = get_request_resource_details_from_kwargs({"countinference": False})
+def test_get_request_resource_details_respects_explicit_countinference(
+    configured_service_secret,
+):
+    result = get_request_resource_details_from_kwargs(
+        {"countinference": False, "service_secret": configured_service_secret}
+    )
 
     assert result["billable"] is False
+
+
+def test_get_request_resource_details_ignores_countinference_without_secret():
+    result = get_request_resource_details_from_kwargs({"countinference": False})
+
+    assert "billable" not in result
+
+
+def test_get_model_resource_details_ignores_default_countinference():
+    result = get_model_resource_details_from_kwargs({"countinference": None})
+
+    assert "billable" not in result
+
+
+def test_get_model_resource_details_respects_explicit_countinference(
+    configured_service_secret,
+):
+    result = get_model_resource_details_from_kwargs(
+        {"countinference": False, "service_secret": configured_service_secret}
+    )
+
+    assert result["billable"] is False
+
+
+def test_get_model_resource_details_respects_nested_countinference(
+    configured_service_secret,
+):
+    result = get_model_resource_details_from_kwargs(
+        {
+            "kwargs": {
+                "countinference": False,
+                "service_secret": configured_service_secret,
+            }
+        }
+    )
+
+    assert result["billable"] is False
+
+
+def test_get_model_resource_details_ignores_countinference_without_secret():
+    result = get_model_resource_details_from_kwargs({"countinference": False})
+
+    assert "billable" not in result
+
+
+def test_get_model_resource_details_ignores_countinference_with_wrong_secret(
+    configured_service_secret,
+):
+    result = get_model_resource_details_from_kwargs(
+        {"countinference": False, "service_secret": "not-the-secret"}
+    )
+
+    assert "billable" not in result
+
+
+def test_get_model_resource_details_reads_false_usage_billable_from_request():
+    result = get_model_resource_details_from_kwargs(
+        {"request": SimpleNamespace(usage_billable=False)}
+    )
+
+    assert result["billable"] is False
+
+
+def test_get_model_resource_details_ignores_default_usage_billable_on_request():
+    result = get_model_resource_details_from_kwargs(
+        {"request": SimpleNamespace(usage_billable=True)}
+    )
+
+    assert "billable" not in result
+
+
+def test_get_model_resource_details_never_upgrades_explicit_non_billable(
+    configured_service_secret,
+):
+    result = get_model_resource_details_from_kwargs(
+        {
+            "countinference": True,
+            "service_secret": configured_service_secret,
+            "request": SimpleNamespace(usage_billable=False),
+        }
+    )
+
+    assert result["billable"] is False
+
+
+@pytest.mark.parametrize(
+    "countinference, expected",
+    [
+        (False, True),
+        ("false", True),
+        ("FALSE", True),
+        ("0", True),
+        (True, False),
+        ("true", False),
+        (None, False),
+        ("nonsense", False),
+    ],
+)
+def test_non_billable_intent_coerces_string_flags(
+    configured_service_secret,
+    countinference,
+    expected,
+):
+    result = non_billable_intent_is_authenticated(
+        countinference, configured_service_secret
+    )
+
+    assert result is expected
+
+
+def test_apply_explicit_usage_billable_sets_false_and_ignores_none(
+    configured_service_secret,
+):
+    request = SimpleNamespace(usage_billable=True)
+
+    apply_explicit_usage_billable(
+        request, countinference=None, service_secret=configured_service_secret
+    )
+    assert request.usage_billable is True
+
+    apply_explicit_usage_billable(
+        request, countinference=False, service_secret=configured_service_secret
+    )
+    assert request.usage_billable is False
+
+
+def test_apply_explicit_usage_billable_requires_service_secret():
+    request = SimpleNamespace(usage_billable=True)
+
+    apply_explicit_usage_billable(request, countinference=False, service_secret=None)
+
+    assert request.usage_billable is True
+
+
+def test_apply_explicit_usage_billable_never_restores_billing(
+    configured_service_secret,
+):
+    request = SimpleNamespace(usage_billable=False)
+
+    apply_explicit_usage_billable(
+        request, countinference=True, service_secret=configured_service_secret
+    )
+
+    assert request.usage_billable is False
+
+
+def test_stamp_bound_requests_usage_billable_updates_inference_request(
+    configured_service_secret,
+):
+    inference_request = SimpleNamespace(usage_billable=True)
+
+    def handler(inference_request, countinference=None, service_secret=None):
+        return inference_request
+
+    stamp_bound_requests_usage_billable(
+        handler,
+        (),
+        {
+            "inference_request": inference_request,
+            "countinference": False,
+            "service_secret": configured_service_secret,
+        },
+    )
+
+    assert inference_request.usage_billable is False
+
+
+def test_stamp_bound_requests_usage_billable_requires_service_secret():
+    inference_request = SimpleNamespace(usage_billable=True)
+
+    def handler(inference_request, countinference=None, service_secret=None):
+        return inference_request
+
+    stamp_bound_requests_usage_billable(
+        handler, (), {"inference_request": inference_request, "countinference": False}
+    )
+
+    assert inference_request.usage_billable is True
+
+
+def test_stamp_bound_requests_usage_billable_skips_handlers_without_countinference():
+    inference_request = SimpleNamespace(usage_billable=True)
+
+    def handler(inference_request):
+        return inference_request
+
+    with mock.patch.object(
+        decorator_helpers, "collect_func_params"
+    ) as collect_func_params_mock:
+        stamp_bound_requests_usage_billable(
+            handler, (), {"inference_request": inference_request}
+        )
+
+    collect_func_params_mock.assert_not_called()
+
+
+def test_stamp_bound_requests_usage_billable_swallows_failures():
+    def handler(inference_request, countinference=None):
+        return inference_request
+
+    with mock.patch.object(
+        decorator_helpers,
+        "collect_func_params",
+        side_effect=ValueError("boom"),
+    ):
+        stamp_bound_requests_usage_billable(handler, (), {"countinference": False})
 
 
 def test_get_request_resource_details_tags_sam3_execution_mode(monkeypatch):

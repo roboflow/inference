@@ -1,7 +1,8 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
+from inference.core.roboflow_api import service_secret_is_valid
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
@@ -14,6 +15,121 @@ from inference.usage_tracking.megapixel_buckets import (
     resolve_model_input_hw,
 )
 from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.utils import (
+    coerce_optional_bool,
+    collect_func_params,
+    get_signature,
+)
+
+
+def non_billable_intent_is_authenticated(
+    countinference: Any,
+    service_secret: Any,
+) -> bool:
+    """Whether a caller both asked to skip billing and proved it may.
+
+    ``countinference=false`` is an internal-services affordance, not a public
+    one. It is honoured only alongside a valid service secret, matching the gate
+    applied in ``roboflow_api`` before contacting the platform and in the
+    serverless authorization middleware. An unauthenticated request to skip
+    billing is ignored rather than rejected, so this stays a telemetry decision
+    and never turns an otherwise valid inference into an error.
+
+    Args:
+        countinference: Raw per-request flag, as a bool or a string.
+        service_secret: Shared secret supplied alongside the flag.
+
+    Returns:
+        True when billing should be suppressed for this call.
+    """
+    if coerce_optional_bool(countinference) is not False:
+        return False
+    if not service_secret_is_valid(service_secret):
+        logger.debug("Ignoring countinference=false - service secret is not valid")
+        return False
+
+    return True
+
+
+def _lookup_in_func_kwargs(func_kwargs: Dict[str, Any], key: str) -> Any:
+    """Read a named parameter that may have landed in a catch-all ``**kwargs``."""
+    if func_kwargs.get(key) is not None:
+        return func_kwargs[key]
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict):
+        return nested_kwargs.get(key)
+
+    return None
+
+
+def apply_explicit_usage_billable(
+    request: Any,
+    countinference: Any,
+    service_secret: Any,
+) -> None:
+    """Mark a request payload as non-billable when the caller is entitled to.
+
+    ``infer_from_request`` unpacks ``request.dict()`` into ``infer()``, and the
+    model usage decorator already accepts ``usage_billable``, so stamping the
+    payload is what carries the intent down to the model-category usage row.
+
+    Only ever downgrades. ``usage_billable`` defaults to True on ``BaseRequest``
+    and on the decorator, so writing True back would override a caller that
+    deliberately opted out.
+    """
+    if request is None:
+        return
+    if not non_billable_intent_is_authenticated(countinference, service_secret):
+        return
+    if hasattr(request, "usage_billable"):
+        request.usage_billable = False
+
+
+def stamp_bound_requests_usage_billable(
+    func: Callable[..., Any],
+    args: Any,
+    kwargs: Dict[str, Any],
+) -> None:
+    """Stamp the HTTP inference payload bound to a handler before it runs.
+
+    Only ``inference_request`` is considered: the Starlette ``request`` argument
+    is not a usage payload, and workflow requests carry no ``usage_billable``
+    field.
+
+    Usage tracking must never break inference, so signature binding failures are
+    swallowed the same way the surrounding recording calls swallow theirs.
+    """
+    try:
+        if "countinference" not in get_signature(func).parameters:
+            return
+        func_kwargs = collect_func_params(func, args, kwargs)
+        apply_explicit_usage_billable(
+            func_kwargs.get("inference_request"),
+            countinference=func_kwargs.get("countinference"),
+            service_secret=func_kwargs.get("service_secret"),
+        )
+    except Exception as exc:
+        logger.debug("Failed to stamp usage billable flag - %s", exc)
+
+
+def explicit_usage_billable_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[bool]:
+    """Authenticated intent to skip billing for this call, else None.
+
+    Returns False or None rather than a plain bool: ``usage_billable`` already
+    defaults to True everywhere, so returning True would let a stray flag
+    upgrade a caller that explicitly passed ``usage_billable=False``.
+    """
+    if non_billable_intent_is_authenticated(
+        _lookup_in_func_kwargs(func_kwargs, "countinference"),
+        _lookup_in_func_kwargs(func_kwargs, "service_secret"),
+    ):
+        return False
+    for request_key in ("inference_request", "request"):
+        request = func_kwargs.get(request_key)
+        if request is not None and getattr(request, "usage_billable", None) is False:
+            return False
+
+    return None
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:
@@ -106,6 +222,9 @@ def get_model_resource_details_from_kwargs(
     model_type = get_model_type_from_kwargs(func_kwargs)
     if model_type:
         resource_details["model_type"] = model_type
+    billable = explicit_usage_billable_from_kwargs(func_kwargs)
+    if billable is not None:
+        resource_details["billable"] = billable
     return resource_details
 
 
@@ -321,8 +440,9 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
-    if func_kwargs.get("countinference") is not None:
-        resource_details["billable"] = func_kwargs["countinference"]
+    billable = explicit_usage_billable_from_kwargs(func_kwargs)
+    if billable is not None:
+        resource_details["billable"] = billable
     model_id = getattr(func_kwargs.get("inference_request"), "model_id", None)
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         resource_details["execution_mode"] = SAM3_EXEC_MODE

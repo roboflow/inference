@@ -81,7 +81,8 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     third_party_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.usage_tracking.billable_scope import remote_billing_parameters
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # ---------------------------------------------------------------------------
 # Model variants
@@ -1369,6 +1370,7 @@ class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._roboflow_api_key)
+        client.configure(InferenceConfiguration(**remote_billing_parameters()))
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         outputs: List[Dict[str, str]] = []

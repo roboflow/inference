@@ -75,6 +75,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_models.models.base.classification import ClassificationPrediction
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -375,6 +376,7 @@ class RoboflowClassificationModelBlockV3(WorkflowBlock):
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
+            **remote_billing_parameters(),
         )
         client.configure(inference_configuration=client_config)
         non_empty_inference_images = [i.base64_image for i in images]

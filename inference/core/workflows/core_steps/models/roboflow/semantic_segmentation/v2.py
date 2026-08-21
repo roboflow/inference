@@ -50,6 +50,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -259,6 +260,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
+            **remote_billing_parameters(),
         )
         client.configure(inference_configuration=client_config)
         inference_images = [i.base64_image for i in images]

@@ -42,6 +42,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
+from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.iterables import make_batches
 
@@ -258,6 +259,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
         configuration = InferenceConfiguration(
             api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            **remote_billing_parameters(),
         )
         client.configure(inference_configuration=configuration)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
