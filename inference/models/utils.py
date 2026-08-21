@@ -72,6 +72,7 @@ from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDe
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
 )
+from inference.usage_tracking.model_types import bind_usage_model_identity
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
@@ -764,7 +765,9 @@ except:
 
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)
-    return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+    instance = ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+    bind_usage_model_identity(instance, model_id)
+    return instance
 
 
 def get_roboflow_model(*args, **kwargs):
