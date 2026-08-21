@@ -2,8 +2,88 @@
 
 ## Unreleased
 
+---
+
+## `0.36.0`
+
 ### Added
 
+
+### Changed 
+
+- The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+- Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
+  now use `class_id=-1` and `class_name="foreground"`. SAM3 Interactive previously
+  used `class_id=0`. If a downstream step filters for `class_id == 0`, update the
+  filter
+
+#### Offline mode rebuilt
+
+- **Model package directories are no longer allow-listed.** The layout-inventory and
+  artifact-identity validation introduced in `0.32.0` is removed. Undeclared files in a
+  package directory (TensorRT engine caches, bytecode, tooling droppings) no longer
+  invalidate the package. This fixes the defect where the first inference under the
+  ONNX Runtime TensorRT execution provider permanently poisoned the model package.
+- **TensorRT engine caching is unconditional again**, including `OFFLINE_MODE` — warm
+  restarts on air-gapped devices reuse the cached engine instead of recompiling.
+- **`OFFLINE_MODE` now serves the offline-weights registry.** The `roboflow` provider is
+  transparently swapped for the new `roboflow-offline-weights` provider, which replays
+  the provider metadata recorded during warm-up; package auto-negotiation (backend /
+  quantization / batch / TensorRT-CUDA environment filtering) runs offline exactly as it
+  does online. Artefact verification offline is presence-only.
+- **The v1 offline fallback tiers are removed** (compatible-entry scan, raw cache scan,
+  `RetryError` cache fallback). An unreachable API in online mode is an error; raise
+  `AUTO_LOADER_CACHE_EXPIRATION_MINUTES` for outage tolerance.
+- `model_provider_requires_network` is removed. `OFFLINE_MODE` with a custom weights
+  provider is the operator's responsibility. The `ROBOFLOW_API_KEY` env fallback now
+  applies only to the `roboflow` / `roboflow-offline-weights` providers.
+- Caches warmed by `<= 0.35` contain no registry records: run once with
+  `OFFLINE_MODE_WARM_UP=True` before flipping to `OFFLINE_MODE`. Existing v4
+  `model_config.json` manifests remain on disk and are tolerated.
+- Rollback caveat: package directories used by this release may accumulate TensorRT
+  engine files that `<= 0.35` validators reject; delete `*.engine` files before
+  downgrading.
+- **Model cache paths are deduced, not discovered.** `model_cache_paths` is reduced to
+  the collision-resistant `v2-…` slug plus simple path joins;
+  `resolve_existing_model_package_cache_path` now only checks that the deduced
+  directory exists. The legacy 32-bit-digest (`pre-0.32.0`) cache directories are no
+  longer read anywhere — including the air-gapped builder scan — and need one online
+  run (or `OFFLINE_MODE_WARM_UP`) to re-materialize under current paths. Attribution
+  and content validation belong to the layers that read directory contents, not to
+  path resolution.
+- Removed the public `ModelAccessManager.retrieve_model_storage_path` method along
+  with the package-path attribution it read (`_inference_models_package_path` stamped
+  on cached instances). It had no callers left: the auto-loader now hands the package
+  directory to the model explicitly during initialization. Custom managers overriding
+  the method must drop the override.
+
+### Added
+
+- `OFFLINE_MODE_WARM_UP` env flag: online behavior plus offline-cache building. Every
+  requested model gets a metadata pre-fetch (cache hits included); packages that
+  negotiation selected and that initialized successfully are recorded in
+  `$INFERENCE_HOME/offline-weights-registry/` (one JSON per canonical model, atomic
+  file-locked writes, versioned tolerant format). Recorded artefact identities are
+  provider-attested only — the registry never computes identities from local files;
+  packages loaded with `download_files_without_hash=True` are not registered.
+  Mutually exclusive with `OFFLINE_MODE` — enabling both fails at model load.
+- `AutoModel.list_offline_models()` and `AutoModel.verify_offline_model(model_id,
+  check_hashes=False)` maintenance classmethods over the
+  registry. Listing/verification results are structured dataclasses
+  (`OfflineModelStatus` / `OfflinePackageStatus` / `OfflineArtefactVerification`
+  in `inference_models.weights_providers.offline_registry`).
+- Locally compiled TensorRT packages (`inference-compiler`) are installed as regular
+  files (previously symlinks that post-`0.32.0` discovery silently rejected) and are
+  appended to the offline-weights registry, so they load in `OFFLINE_MODE` without a
+  prior online load. Loading them still requires
+  `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True`.
+- SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
+  They can also combine point and box prompts in one conditioning frame.
+- `Qwen38HF` model class for the Qwen3.8 family (registered as `("qwen3_8", "vlm", BackendType.HF)`).
+  Qwen3.8 reuses the `qwen3_5` architecture (`Qwen3_5ForConditionalGeneration`), so the class is a
+  thin subclass of `Qwen35HF` with its own generation defaults
+  (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
+  Requires `transformers>=5.8.0` at runtime.
 - Mage-VL (`mage-vl`, VLM task, HF backend). Microsoft's codec-native streaming VLM
   (Mage-ViT encoder + Qwen3-4B backbone). Prompts over images like the other VLMs
   here, and additionally over a video file: rather than sampling frames uniformly,
@@ -53,7 +133,6 @@
   Requires `transformers>=5.8.0` at runtime.
 
 ---
-
 ## `0.35.2`
 
 ### Fixed
