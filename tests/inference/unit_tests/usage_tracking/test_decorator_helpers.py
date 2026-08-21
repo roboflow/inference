@@ -5,6 +5,7 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    get_model_id_from_kwargs,
     get_model_resource_details_from_kwargs,
     get_model_type_from_kwargs,
     get_model_usage_billable_from_kwargs,
@@ -12,6 +13,7 @@ from inference.usage_tracking.decorator_helpers import (
     propagate_request_usage_metadata,
 )
 from inference.usage_tracking.model_types import (
+    bind_usage_model_identity,
     clear_recorded_model_types,
     get_recorded_model_type,
     record_model_type,
@@ -315,6 +317,109 @@ def test_extract_usage_params_for_sam_uses_encoder_image_size(
     }
 
 
+def test_bind_usage_model_identity_copies_recorded_variant():
+    model = SimpleNamespace()
+    record_model_type("paligemma-3b-mix-224", "paligemma-3b-mix-224")
+    try:
+        bind_usage_model_identity(model, "paligemma-3b-mix-224")
+
+        assert getattr(model, "model_id", None) is None
+        assert model.model_type == "paligemma-3b-mix-224"
+    finally:
+        clear_recorded_model_types()
+
+
+def test_bind_does_not_change_alias_resource_id():
+    # HTTP add_model(de_aliased, ..., model_id_alias=alias) used to write the
+    # de-aliased id onto adapter instances. resource_id must stay the alias.
+    model = SimpleNamespace()
+    record_model_type("coco/25", "yolov11-n")
+    record_model_type("yolov11n-640", "yolov11-n")
+    try:
+        bind_usage_model_identity(model, "coco/25", "yolov11n-640", "yolov11n-640")
+
+        assert getattr(model, "model_id", None) is None
+        assert model.model_type == "yolov11-n"
+        assert (
+            get_model_id_from_kwargs({"self": model, "model_id": "yolov11n-640"})
+            == "yolov11n-640"
+        )
+        assert get_model_type_from_kwargs({"self": model}) == "yolov11-n"
+    finally:
+        clear_recorded_model_types()
+
+
+def test_get_model_type_from_kwargs_uses_instance_after_map_cleared():
+    model = SimpleNamespace(
+        model_id="paligemma-3b-mix-224",
+        model_type="paligemma-3b-mix-224",
+    )
+    clear_recorded_model_types()
+
+    assert get_model_type_from_kwargs({"self": model}) == "paligemma-3b-mix-224"
+
+
+def test_get_model_id_skips_null_kwargs_and_uses_instance():
+    model = SimpleNamespace(model_id="qwen25-vl-7b")
+
+    assert get_model_id_from_kwargs({"self": model, "model_id": None}) == "qwen25-vl-7b"
+
+
+def test_caller_model_id_beats_normalized_instance_id():
+    # vLLM Qwen stores the de-aliased id; TrOCR rewrites trocr/ → microsoft/.
+    qwen = SimpleNamespace(model_id="qwen-pretrains/2")
+    trocr = SimpleNamespace(model_id="microsoft/trocr-base-printed")
+
+    assert (
+        get_model_id_from_kwargs({"self": qwen, "model_id": "qwen3vl-2b-instruct"})
+        == "qwen3vl-2b-instruct"
+    )
+    assert (
+        get_model_id_from_kwargs(
+            {"self": trocr, "model_id": "trocr/trocr-base-printed"}
+        )
+        == "trocr/trocr-base-printed"
+    )
+
+
+def test_get_model_binds_recorded_variant_on_instance():
+    from inference.core.models.base import Model
+    from inference.models import utils as model_utils
+
+    class DummyAdapter(Model):
+        def __init__(self, model_id, api_key=None, **kwargs):
+            super().__init__()
+            self.task_type = "lmm"
+
+        def preprocess(self, image, **kwargs):
+            return image, None
+
+        def predict(self, img_in, **kwargs):
+            return (img_in,)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    record_model_type("paligemma-3b-mix-224", "paligemma-3b-mix-224")
+    previous = model_utils.ROBOFLOW_MODEL_TYPES.get(("lmm", "paligemma"))
+    try:
+        with mock.patch.object(
+            model_utils, "get_model_type", return_value=("lmm", "paligemma")
+        ):
+            model_utils.ROBOFLOW_MODEL_TYPES[("lmm", "paligemma")] = DummyAdapter
+            model = model_utils.get_model("paligemma-3b-mix-224")
+
+        assert getattr(model, "model_id", None) is None
+        assert model.model_type == "paligemma-3b-mix-224"
+        assert get_model_type_from_kwargs({"self": model}) == "paligemma-3b-mix-224"
+    finally:
+        if previous is None:
+            model_utils.ROBOFLOW_MODEL_TYPES.pop(("lmm", "paligemma"), None)
+        else:
+            model_utils.ROBOFLOW_MODEL_TYPES[("lmm", "paligemma")] = previous
+        clear_recorded_model_types()
+
+
 def test_get_model_type_reads_recorded_map_without_calling_registry():
     class UnlabelledModel:
         dataset_id = "st-inst-seg"
@@ -348,6 +453,44 @@ def test_registry_records_model_type_for_usage_tracking():
 
         assert model_type == "sam2"
         assert get_recorded_model_type("sam2/hiera_tiny") == "sam2"
+    finally:
+        clear_recorded_model_types()
+
+
+def test_registry_records_model_variant_for_usage_tracking_not_architecture():
+    from inference.core.registries import roboflow
+    from inference.core.registries.roboflow import get_model_type
+
+    try:
+        with mock.patch.object(
+            roboflow, "USE_INFERENCE_MODELS", True
+        ), mock.patch.object(
+            roboflow,
+            "get_model_metadata_from_inference_models_registry",
+            return_value={
+                "modelType": "paligemma",
+                "taskType": "lmm",
+                "modelVariant": "paligemma-3b-mix-224",
+            },
+        ), mock.patch.object(
+            roboflow,
+            "get_model_metadata_from_cache",
+            return_value=None,
+        ), mock.patch.object(
+            roboflow,
+            "_get_cached_model_metadata",
+            return_value=None,
+        ), mock.patch.object(
+            roboflow,
+            "save_model_metadata_in_cache",
+        ):
+            task_type, model_type = get_model_type(model_id="paligemma-3b-mix-224")
+
+        assert task_type == "lmm"
+        assert model_type == "paligemma"
+        assert get_recorded_model_type("paligemma-3b-mix-224") == (
+            "paligemma-3b-mix-224"
+        )
     finally:
         clear_recorded_model_types()
 
