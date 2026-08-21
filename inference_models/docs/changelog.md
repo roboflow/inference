@@ -3,6 +3,7 @@
 ## Unreleased
 
 ---
+
 ## `0.36.0`
 
 ### Added
@@ -83,6 +84,24 @@
   thin subclass of `Qwen35HF` with its own generation defaults
   (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
   Requires `transformers>=5.8.0` at runtime.
+- Mage-VL (`mage-vl`, VLM task, HF backend). Microsoft's codec-native streaming VLM
+  (Mage-ViT encoder + Qwen3-4B backbone). Prompts over images like the other VLMs
+  here, and additionally over a video file: rather than sampling frames uniformly,
+  the codec's per-macroblock bitcost selects the informative patches and packs them
+  into canvases. Two engines are supported: `hevc` (default, CPU, via the
+  `cv-preinfer` binary from `codec-video-prep`) and `dcvc-rt` (the neural codec
+  bundled in the model package). On a 30s 960x540 h264 clip, `hevc` prepares 16
+  canvases in ~1.8s against ~25s for `dcvc-rt` on its pytorch fallback path.
+  Video prompting's extra dependencies are not wired into the extras. See
+  `requirements/requirements.magevl.txt` for why they need `--no-deps`.
+
+### Changed
+
+- The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+- Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
+  now use `class_id=-1` and `class_name="foreground"`. SAM3 Interactive previously
+  used `class_id=0`. If a downstream step filters for `class_id == 0`, update the
+  filter.
 
 ### Fixed
 
@@ -95,7 +114,23 @@
   fallback.
 - NumPy and tensor visualization blocks now wrap negative class IDs during
   palette lookup instead of failing.
+- Raise the `bitsandbytes` ceiling to `<0.51.0` and move the lock to `0.50.1`.
+  Versions below `0.48` ship no `libbitsandbytes_cuda130.so`, so every 4-bit load
+  fails with `Configured CUDA binary not found` against a CUDA 13 torch build.
+  That is what both the plain PyPI wheel and the `torch-cu130` extra resolve to
+  (that extra has no `[tool.uv.sources]` index mapping, so it does not pin a
+  CUDA-specific torch). Five models quantize to 4-bit by default on CUDA, so this
+  took out Qwen2.5-VL, SmolVLM, PaliGemma, Gemma 4 and Florence-2 alike. The GPU
+  image was unaffected. It syncs `--extra torch-cu124`. `0.50.1` adds cuda130/132
+  and retains every CUDA version this repo targets.
 
+- SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
+  They can also combine point and box prompts in one conditioning frame.
+- `Qwen38HF` model class for the Qwen3.8 family (registered as `("qwen3_8", "vlm", BackendType.HF)`).
+  Qwen3.8 reuses the `qwen3_5` architecture (`Qwen3_5ForConditionalGeneration`), so the class is a
+  thin subclass of `Qwen35HF` with its own generation defaults
+  (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
+  Requires `transformers>=5.8.0` at runtime.
 
 ---
 ## `0.35.2`
