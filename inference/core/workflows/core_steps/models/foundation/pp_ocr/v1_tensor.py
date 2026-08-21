@@ -70,7 +70,6 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-from inference_sdk.http.entities import InferenceConfiguration
 
 # Fixed, non-empty `class_id -> name` fallback map. PP-OCR emits `class_id == 0` for
 # every box; the recognised text is attached per box (see module docstring), so this
