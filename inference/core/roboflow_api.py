@@ -173,6 +173,7 @@ MODEL_TYPE_DEFAULTS = {
 }
 PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"
+MODEL_VARIANT_KEY = "model_variant"
 
 NOT_FOUND_ERROR_MESSAGE = (
     "Could not find requested Roboflow resource. Check that the provided dataset and "
@@ -720,6 +721,7 @@ def get_model_metadata_from_inference_models_registry(
     api_data = {
         "modelType": model_metadata["modelArchitecture"],
         "taskType": model_metadata["taskType"],
+        "modelVariant": model_metadata.get("modelVariant"),
     }
     cache.set(
         api_data_cache_key,
