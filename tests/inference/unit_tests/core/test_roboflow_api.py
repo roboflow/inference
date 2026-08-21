@@ -1383,6 +1383,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
+        "modelVariant": "rfdetr-nano",
     }
 
 
@@ -1418,6 +1419,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
+        "modelVariant": "rfdetr-nano",
     }
 
 
@@ -1462,6 +1464,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
 
 
@@ -1513,6 +1516,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
 
 
@@ -1554,6 +1558,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
 
 
@@ -1592,6 +1597,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
