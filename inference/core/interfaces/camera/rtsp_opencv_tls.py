@@ -1,11 +1,23 @@
-"""OpenCV/FFmpeg RTSPS TLS option builder (ENT-1544 B3)."""
+"""OpenCV/FFmpeg RTSPS TLS option builder (ENT-1544 B3).
+
+Environment variables (also set by rfdm on Roboflow Edge devices):
+
+* ``ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS`` — ``127`` strict (default when unset),
+  ``126`` or ``0`` to disable certificate verification (self-signed / custom CA).
+* ``GST_SSL_CA_CERTIFICATE`` or ``SSL_CERT_FILE`` — PEM bundle for ``cafile``.
+
+Self-hosted / OSS deployments without rfdm must set these explicitly on the
+inference container. Unmanaged ``rtsps://`` sources with self-signed certs need
+``ROBOFLOW_RTSP_TLS_VALIDATION_FLAGS=126`` or the open will fail after this wiring.
+"""
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from contextlib import contextmanager
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, Optional, Union
 
 from inference.core.interfaces.camera.rtsp_tls import (
     GST_SSL_CA_CERTIFICATE_ENV_VAR,
@@ -15,6 +27,11 @@ from inference.core.interfaces.camera.rtsp_tls import (
 
 OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR = "OPENCV_FFMPEG_CAPTURE_OPTIONS"
 SSL_CERT_FILE_ENV_VAR = "SSL_CERT_FILE"
+# FFmpeg RTSP socket timeouts (microseconds). Bounds global-lock hold during capture open.
+# FFmpeg 5+ uses "timeout"; older builds use "stimeout" — set both (see webrtc/sources.py).
+_RTSPS_OPEN_TIMEOUT_US = 5_000_000
+
+logger = logging.getLogger(__name__)
 
 _opencv_rtsps_tls_lock = threading.Lock()
 
@@ -48,6 +65,11 @@ def _build_rtsps_tls_option_overrides() -> Dict[str, str]:
         # rfdm maps allow_self_signed to 126 (unknown-CA only). FFmpeg only
         # supports full verify on/off, so treat both 0 and 126 as tls_verify;0.
         if stripped in {"0", "126"}:
+            if stripped == "126":
+                logger.warning(
+                    "OpenCV/FFmpeg RTSPS cannot enforce partial TLS validation; "
+                    "tls_validation_flags=126 (allow_self_signed) maps to tls_verify=0"
+                )
             overrides["tls_verify"] = "0"
         else:
             overrides["tls_verify"] = "1"
@@ -67,25 +89,37 @@ def merge_opencv_ffmpeg_capture_options(
     return _format_opencv_ffmpeg_capture_options(merged)
 
 
-def build_opencv_ffmpeg_capture_options(video: str) -> Optional[str]:
+def build_opencv_ffmpeg_capture_options(video: Union[str, int]) -> Optional[str]:
     """Build OPENCV_FFMPEG_CAPTURE_OPTIONS for RTSPS sources."""
     if not is_rtsps_url(video):
         return None
 
     overrides = _build_rtsps_tls_option_overrides()
-    return merge_opencv_ffmpeg_capture_options(
-        os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR),
-        overrides,
-    )
+    existing = os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR)
+    merged = _parse_opencv_ffmpeg_capture_options(existing or "")
+    for key, value in overrides.items():
+        merged[key] = value
+    timeout_value = str(_RTSPS_OPEN_TIMEOUT_US)
+    if "stimeout" not in merged:
+        merged["stimeout"] = timeout_value
+    if "timeout" not in merged:
+        merged["timeout"] = timeout_value
+    return _format_opencv_ffmpeg_capture_options(merged)
 
 
 @contextmanager
-def opencv_rtsps_tls_env(video: str) -> Iterator[None]:
+def opencv_rtsps_tls_env(video: Union[str, int]) -> Iterator[None]:
     """Hold OPENCV_FFMPEG_CAPTURE_OPTIONS for one VideoCapture open.
 
     OpenCV reads this env var at capture-open time. The lock spans set →
     VideoCapture open → restore so concurrent RTSPS sources cannot clobber each
     other's TLS options.
+
+    Non-RTSPS opens (USB, V4L2, files, plain ``rtsp://``) do not take this lock
+    and are not serialized here. A process-wide lock around every VideoCapture
+    would stall those backends, which have no FFmpeg open timeout. Concurrent
+    non-RTSPS FFmpeg opens may briefly inherit these options; that window is
+    preferred over blocking every producer on one hung camera.
     """
     options = build_opencv_ffmpeg_capture_options(video)
     if options is None:

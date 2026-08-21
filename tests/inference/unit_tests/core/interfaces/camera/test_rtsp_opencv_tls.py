@@ -30,6 +30,8 @@ def test_build_options_rtsps_default_strict_verify(
     assert got is not None
     assert "rtsp_transport;tcp" in got
     assert "tls_verify;1" in got
+    assert "stimeout;5000000" in got
+    assert "timeout;5000000" in got
 
 
 def test_build_options_rtsps_with_ca(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,8 +96,19 @@ def test_build_options_merges_existing_env(
     got = build_opencv_ffmpeg_capture_options("rtsps://cam/stream")
     assert got is not None
     assert "stimeout;5000000" in got
+    assert "timeout;5000000" in got
     assert "rtsp_transport;tcp" in got
     assert "tls_verify;1" in got
+
+
+def test_build_options_fills_stimeout_when_only_timeout_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, "timeout;5000000")
+    got = build_opencv_ffmpeg_capture_options("rtsps://cam/stream")
+    assert got is not None
+    assert "stimeout;5000000" in got
+    assert "timeout;5000000" in got
 
 
 def test_rtsp_tls_validation_flags_gstreamer_suffix(

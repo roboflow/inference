@@ -36,6 +36,8 @@ from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.rtsp_opencv_tls import opencv_rtsps_tls_env
+from inference.core.interfaces.camera.rtsp_tls import is_rtsps_url
 from inference.core.interfaces.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
     sanitize_source_reference,
@@ -149,9 +151,11 @@ class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
         self._source_ref = video
         self._connection_error_message = ""
-        with capture_process_stderr() as captured_stderr:
+        with opencv_rtsps_tls_env(video), capture_process_stderr() as captured_stderr:
             if _consumes_camera_on_jetson(video=video):
                 self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
+            elif isinstance(video, str) and is_rtsps_url(video):
+                self.stream = cv2.VideoCapture(video, cv2.CAP_FFMPEG)
             else:
                 self.stream = cv2.VideoCapture(video)
         self._connection_error_message = extract_stream_open_error(

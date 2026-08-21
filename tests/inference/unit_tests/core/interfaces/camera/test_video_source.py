@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime
 from functools import partial
@@ -23,6 +24,10 @@ from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
 )
+from inference.core.interfaces.camera.rtsp_opencv_tls import (
+    OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR,
+)
+from inference.core.interfaces.camera.rtsp_tls import RTSP_TLS_VALIDATION_FLAGS_ENV_VAR
 from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
@@ -1880,3 +1885,114 @@ def test_consume_video_emits_poison_pill_on_consume_error() -> None:
     assert source._state is StreamState.ERROR
     with pytest.raises(EndOfStreamError):
         source.read_frame(timeout=0.0)
+
+
+def test_cv2_producer_sets_ffmpeg_tls_options_only_for_rtsps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+    seen = {}
+
+    def fake_video_capture(video, *args, **kwargs):
+        seen[video] = os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR)
+        return MagicMock()
+
+    # when
+    with patch.object(video_source.cv2, "VideoCapture", fake_video_capture):
+        CV2VideoFrameProducer("rtsps://camera.example/stream")
+        CV2VideoFrameProducer("rtsp://camera.example/stream")
+
+    # then - OpenCV reads the env var at capture-open time, so it must be set
+    # while VideoCapture runs for RTSPS, and left alone for plain RTSP
+    assert "tls_verify;1" in seen["rtsps://camera.example/stream"]
+    assert seen["rtsp://camera.example/stream"] is None
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_restores_ffmpeg_tls_env_after_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+
+    with patch.object(video_source.cv2, "VideoCapture", MagicMock()):
+        CV2VideoFrameProducer("rtsps://camera.example/stream")
+
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_restores_ffmpeg_tls_env_when_capture_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+
+    def failing_video_capture(*args, **kwargs):
+        raise RuntimeError("simulated open failure")
+
+    with patch.object(
+        video_source.cv2, "VideoCapture", failing_video_capture
+    ), pytest.raises(RuntimeError):
+        CV2VideoFrameProducer("rtsps://camera.example/stream")
+
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_leaves_ffmpeg_tls_env_unset_for_device_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    seen = {}
+
+    def fake_video_capture(video, *args, **kwargs):
+        seen["video"] = video
+        seen["env"] = os.environ.get(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR)
+        return MagicMock()
+
+    with patch.object(video_source.cv2, "VideoCapture", fake_video_capture):
+        CV2VideoFrameProducer(0)
+
+    assert seen["video"] == 0
+    assert seen["env"] is None
+    assert OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR not in os.environ
+
+
+def test_cv2_producer_non_rtsps_open_does_not_wait_on_stuck_rtsps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(OPENCV_FFMPEG_CAPTURE_OPTIONS_ENV_VAR, raising=False)
+    monkeypatch.delenv(RTSP_TLS_VALIDATION_FLAGS_ENV_VAR, raising=False)
+    rtsps_entered = Event()
+    release_rtsps = Event()
+    non_rtsps_opened = Event()
+
+    def fake_video_capture(video, *args, **kwargs):
+        if isinstance(video, str) and video.startswith("rtsps://"):
+            rtsps_entered.set()
+            assert release_rtsps.wait(timeout=2.0)
+        else:
+            non_rtsps_opened.set()
+        return MagicMock()
+
+    with patch.object(video_source.cv2, "VideoCapture", fake_video_capture):
+        rtsps_thread = Thread(
+            target=lambda: CV2VideoFrameProducer("rtsps://camera.example/stream")
+        )
+        rtsps_thread.start()
+        assert rtsps_entered.wait(timeout=1.0)
+
+        non_rtsps_thread = Thread(target=lambda: CV2VideoFrameProducer(0))
+        non_rtsps_thread.start()
+        opened_without_waiting = non_rtsps_opened.wait(timeout=1.0)
+
+        release_rtsps.set()
+        rtsps_thread.join(timeout=2.0)
+        non_rtsps_thread.join(timeout=2.0)
+
+    assert opened_without_waiting, (
+        "USB/file/V4L2 opens must not wait on a stuck RTSPS VideoCapture"
+    )
+    assert not rtsps_thread.is_alive()
+    assert not non_rtsps_thread.is_alive()
