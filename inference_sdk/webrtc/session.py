@@ -224,6 +224,7 @@ class WebRTCSession:
         # Internal state
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
+        self._startup_task: Optional["asyncio.Task[None]"] = None
         self._pc: Optional["RTCPeerConnection"] = None
         # In model mode queue items carry an extra raw-predictions-dict element:
         # (frame, data, metadata). In default mode: (frame, metadata).
@@ -267,53 +268,117 @@ class WebRTCSession:
     def _init_connection(self) -> None:
         """Initialize event loop, thread, and WebRTC connection."""
         # Start event loop in background thread
-        self._loop = asyncio.new_event_loop()
+        loop = asyncio.new_event_loop()
+        self._loop = loop
 
         def _run(loop: asyncio.AbstractEventLoop) -> None:
             asyncio.set_event_loop(loop)
-            loop.run_forever()
+            try:
+                loop.run_forever()
+            finally:
+                try:
+                    try:
+                        pending_tasks = asyncio.all_tasks(loop)
+                        for task in pending_tasks:
+                            task.cancel()
+                        if pending_tasks:
+                            loop.run_until_complete(
+                                asyncio.gather(*pending_tasks, return_exceptions=True)
+                            )
+                    except Exception:
+                        logger.exception("Failed to drain WebRTC event-loop tasks")
 
-        self._loop_thread = threading.Thread(
-            target=_run, args=(self._loop,), daemon=True
-        )
-        self._loop_thread.start()
+                    try:
+                        loop.run_until_complete(loop.shutdown_asyncgens())
+                    except Exception:
+                        logger.exception("Failed to shut down WebRTC async generators")
+                finally:
+                    try:
+                        loop.close()
+                    finally:
+                        asyncio.set_event_loop(None)
+
+        loop_thread = threading.Thread(target=_run, args=(loop,), daemon=True)
+        self._loop_thread = loop_thread
+        try:
+            loop_thread.start()
+        except BaseException:
+            if not loop_thread.is_alive():
+                loop.close()
+                self._loop = None
+                self._loop_thread = None
+            raise
 
         # Initialize WebRTC connection
-        fut = asyncio.run_coroutine_threadsafe(self._init(), self._loop)
+        init_coro = self._run_startup()
+        try:
+            fut = asyncio.run_coroutine_threadsafe(init_coro, loop)
+        except BaseException:
+            init_coro.close()
+            raise
+
         try:
             fut.result()
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
+        except BaseException as error:
+            if not fut.done():
+                fut.cancel()
+
+            if isinstance(error, requests.exceptions.HTTPError):
+                if error.response.status_code == 404:
+                    raise RuntimeError(
+                        f"WebRTC endpoint not found at {self._api_url}/initialise_webrtc_worker.\n"
+                        f"This API URL may not support WebRTC streaming.\n"
+                        f"Troubleshooting:\n"
+                        f"  - For self-hosted inference, ensure the server is started with WebRTC enabled\n"
+                        f"  - For Roboflow Cloud, use a dedicated inference server URL (not serverless.roboflow.com)\n"
+                        f"  - Verify the --api-url parameter points to the correct server\n"
+                        f"Response: {error.response.text}"
+                    ) from error
                 raise RuntimeError(
-                    f"WebRTC endpoint not found at {self._api_url}/initialise_webrtc_worker.\n"
-                    f"This API URL may not support WebRTC streaming.\n"
-                    f"Troubleshooting:\n"
-                    f"  - For self-hosted inference, ensure the server is started with WebRTC enabled\n"
-                    f"  - For Roboflow Cloud, use a dedicated inference server URL (not serverless.roboflow.com)\n"
-                    f"  - Verify the --api-url parameter points to the correct server\n"
-                    f"Response: {e.response.text}"
-                ) from e
-            else:
-                raise RuntimeError(
-                    f"Failed to initialize WebRTC session (HTTP {e.response.status_code}).\n"
+                    f"Failed to initialize WebRTC session (HTTP {error.response.status_code}).\n"
                     f"API URL: {self._api_url}\n"
-                    f"Error: {e}\n"
-                    f"Response: {e.response.text}"
-                ) from e
-        except Exception as e:
+                    f"Error: {error}\n"
+                    f"Response: {error.response.text}"
+                ) from error
+
+            if not isinstance(error, Exception):
+                raise
+
             raise RuntimeError(
-                f"Failed to initialize WebRTC session: {e.__class__.__name__}: {e}\n"
+                f"Failed to initialize WebRTC session: "
+                f"{error.__class__.__name__}: {error}\n"
                 f"API URL: {self._api_url}"
-            ) from e
+            ) from error
+
+    async def _run_startup(self) -> None:
+        """Track the loop-owned startup task until teardown observes it."""
+        self._startup_task = asyncio.current_task()
+        await self._init()
 
     def _ensure_started(self) -> None:
         """Ensure connection is started (thread-safe, idempotent)."""
-        with self._state_lock:
-            if self._state == SessionState.NOT_STARTED:
-                self._state = SessionState.STARTED
-                self._init_connection()
-            elif self._state == SessionState.CLOSED:
-                raise RuntimeError("Cannot use closed WebRTCSession")
+        startup_failed = False
+        try:
+            with self._state_lock:
+                if self._state == SessionState.NOT_STARTED:
+                    self._state = SessionState.STARTED
+                    try:
+                        self._init_connection()
+                    except BaseException:
+                        self._state = SessionState.CLOSED
+                        startup_failed = True
+                        raise
+                elif self._state == SessionState.CLOSED:
+                    raise RuntimeError("Cannot use closed WebRTCSession")
+        except BaseException:
+            if startup_failed:
+                try:
+                    self.close()
+                except (Exception, asyncio.CancelledError):
+                    logger.exception(
+                        "Failed to clean up WebRTC session after startup failure"
+                    )
+            raise
 
     def _parse_video_metadata(
         self,
@@ -403,11 +468,36 @@ class WebRTCSession:
         except Exception:
             logger.exception("Failed to close WebRTC session")
 
+    async def _cleanup_async_resources(self) -> None:
+        """Wait for startup to stop before reading and closing its resources."""
+        startup_task = self._startup_task
+        try:
+            if startup_task is not None and startup_task is not asyncio.current_task():
+                if not startup_task.done():
+                    startup_task.cancel()
+                try:
+                    await startup_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    # The startup caller owns reporting its original exception.
+                    pass
+        finally:
+            self._startup_task = None
+            try:
+                if self._pc is not None:
+                    await self._pc.close()
+            finally:
+                if self._source is not None:
+                    await self._source.cleanup()
+
     def _close_resources(self) -> None:
         """Close session resources once and signal waiting callers."""
         try:
             with self._state_lock:
                 self._state = SessionState.CLOSED
+                loop = self._loop
+                loop_thread = self._loop_thread
 
             # Signal video iterator to stop by putting None sentinel
             try:
@@ -415,28 +505,48 @@ class WebRTCSession:
             except Exception:
                 pass  # Queue might be full, but that's okay
 
-            # Cleanup resources (nested finally ensures all cleanup steps execute)
+            # Cleanup resources before stopping their owner event loop.
             try:
-                # Close peer connection
-                if self._loop and self._pc:
-                    asyncio.run_coroutine_threadsafe(
-                        self._pc.close(), self._loop
-                    ).result()
-            finally:
-                try:
-                    # Cleanup source (webcam, video file, etc.)
-                    if self._loop and self._source:
-                        asyncio.run_coroutine_threadsafe(
-                            self._source.cleanup(), self._loop
-                        ).result()
-                finally:
-                    # Stop event loop and join thread
-                    if self._loop:
-                        self._loop.call_soon_threadsafe(self._loop.stop)
-                    if self._loop_thread:
-                        self._loop_thread.join(
-                            timeout=WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT
+                if (
+                    loop is not None
+                    and not loop.is_closed()
+                    and loop_thread is not None
+                    and loop_thread.is_alive()
+                    and (
+                        self._startup_task is not None
+                        or self._pc is not None
+                        or self._source is not None
+                    )
+                ):
+                    cleanup_coro = self._cleanup_async_resources()
+                    try:
+                        cleanup_future = asyncio.run_coroutine_threadsafe(
+                            cleanup_coro, loop
                         )
+                    except BaseException:
+                        cleanup_coro.close()
+                        raise
+                    cleanup_future.result()
+            finally:
+                # Stop event loop and join thread
+                try:
+                    if loop is not None and not loop.is_closed():
+                        try:
+                            loop.call_soon_threadsafe(loop.stop)
+                        except RuntimeError:
+                            if not loop.is_closed():
+                                raise
+                finally:
+                    if (
+                        loop_thread is not None
+                        and loop_thread is not threading.current_thread()
+                    ):
+                        loop_thread.join(timeout=WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT)
+                        if loop_thread.is_alive():
+                            logger.warning(
+                                "WebRTC event loop thread did not stop "
+                                f"within {WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT}s"
+                            )
         finally:
             self._close_done.set()
 
@@ -971,6 +1081,7 @@ class WebRTCSession:
         turn_config = await self._get_turn_config()
 
         pc = RTCPeerConnection(configuration=turn_config)
+        self._pc = pc
         relay = MediaRelay()
 
         # Monitor ICE connection state for failures
@@ -1283,5 +1394,3 @@ class WebRTCSession:
         # Start video file upload if applicable
         if isinstance(self._source, VideoFileSource):
             asyncio.ensure_future(self._source.start_upload())
-
-        self._pc = pc
