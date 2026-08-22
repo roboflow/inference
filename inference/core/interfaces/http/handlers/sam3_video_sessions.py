@@ -8,20 +8,20 @@ from inference.core.interfaces.http.api_key_resolution import (
     api_key_override,
 )
 from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
-from inference.core.interfaces.http_worker.entities import (
-    InternalEventRequest,
-    WorkerCreated,
-    WorkerEndRequest,
-    WorkerRequest,
-    WorkerSnapshot,
+from inference.core.interfaces.sam3_video_session.entities import (
+    Sam3VideoInternalEventRequest,
+    Sam3VideoSessionCreated,
+    Sam3VideoSessionEndRequest,
+    Sam3VideoSessionRequest,
+    Sam3VideoSessionSnapshot,
 )
-from inference.core.interfaces.http_worker.service import (
-    end_worker,
+from inference.core.interfaces.sam3_video_session.service import (
+    end_session,
     iter_public_events,
     publish_internal_event,
     resolve_events_callback_base,
-    start_worker,
-    worker_snapshot,
+    session_snapshot,
+    start_session,
 )
 
 
@@ -53,13 +53,13 @@ def _map_lookup_errors(error: Exception) -> None:
     raise error
 
 
-def register_http_worker_routes(app: FastAPI) -> None:
+def register_sam3_video_session_routes(app: FastAPI) -> None:
     @app.post(
         "/sam3/video/sessions",
-        response_model=WorkerCreated,
+        response_model=Sam3VideoSessionCreated,
         summary="Start a SAM3 video tracking session",
         description=(
-            "Spawns a long-lived Modal (or local) HTTP worker that downloads "
+            "Spawns a long-lived Modal (or local) SAM3 worker that downloads "
             "video_url, writes track artifacts to GCS via Roboflow-signed "
             "upload URLs, and publishes overlay events. Auth: Roboflow API key "
             "via query, Authorization Bearer header, or JSON body. Reachable "
@@ -67,10 +67,10 @@ def register_http_worker_routes(app: FastAPI) -> None:
         ),
     )
     @with_route_exceptions_async
-    async def create_http_worker(
-        request: WorkerRequest,
+    async def create_sam3_video_session(
+        request: Sam3VideoSessionRequest,
         r: Request,
-    ) -> WorkerCreated:
+    ) -> Sam3VideoSessionCreated:
         api_key = _require_api_key(api_key_override(request.api_key))
         try:
             callback_base = resolve_events_callback_base(
@@ -79,27 +79,27 @@ def register_http_worker_routes(app: FastAPI) -> None:
             )
         except ValueError as error:
             _map_lookup_errors(error)
-        session_id = start_worker(
+        session_id = start_session(
             request,
             api_key=api_key,
             events_callback_base=callback_base,
         )
-        return WorkerCreated(session_id=session_id)
+        return Sam3VideoSessionCreated(session_id=session_id)
 
     @app.get(
         "/sam3/video/sessions/{session_id}",
-        response_model=WorkerSnapshot,
+        response_model=Sam3VideoSessionSnapshot,
         summary="SAM3 video session snapshot",
         description="Auth: Roboflow API key of the session owner. Reachable on serverless.",
     )
     @with_route_exceptions_async
-    async def get_http_worker(
+    async def get_sam3_video_session(
         session_id: str,
         api_key: Optional[str] = Query(None),
-    ) -> WorkerSnapshot:
+    ) -> Sam3VideoSessionSnapshot:
         resolved_key = _require_api_key(api_key_fallback(api_key))
         try:
-            snap = worker_snapshot(session_id, api_key=resolved_key)
+            snap = session_snapshot(session_id, api_key=resolved_key)
         except (KeyError, PermissionError) as error:
             _map_lookup_errors(error)
         if snap is None:
@@ -107,7 +107,7 @@ def register_http_worker_routes(app: FastAPI) -> None:
                 status_code=404,
                 detail={"status": "error", "message": "session not found"},
             )
-        return WorkerSnapshot.model_validate(snap)
+        return Sam3VideoSessionSnapshot.model_validate(snap)
 
     @app.get(
         "/sam3/video/sessions/{session_id}/events",
@@ -120,14 +120,14 @@ def register_http_worker_routes(app: FastAPI) -> None:
         ),
     )
     @with_route_exceptions_async
-    async def stream_http_worker_events(
+    async def stream_sam3_video_session_events(
         session_id: str,
         api_key: Optional[str] = Query(None),
         after: int = Query(0, ge=0),
     ) -> StreamingResponse:
         resolved_key = _require_api_key(api_key_fallback(api_key))
         try:
-            worker_snapshot(session_id, api_key=resolved_key)
+            session_snapshot(session_id, api_key=resolved_key)
         except (KeyError, PermissionError) as error:
             _map_lookup_errors(error)
         return StreamingResponse(
@@ -150,29 +150,29 @@ def register_http_worker_routes(app: FastAPI) -> None:
         description="Auth: Roboflow API key of the session owner. Reachable on serverless.",
     )
     @with_route_exceptions_async
-    async def end_http_worker(
+    async def end_sam3_video_session(
         session_id: str,
-        request: WorkerEndRequest,
+        request: Sam3VideoSessionEndRequest,
     ) -> dict:
         api_key = _require_api_key(api_key_override(request.api_key))
         try:
-            end_worker(session_id, api_key=api_key)
+            end_session(session_id, api_key=api_key)
         except (KeyError, PermissionError) as error:
             _map_lookup_errors(error)
         return {"status": "ok"}
 
     @app.post(
         "/sam3/video/sessions/{session_id}/internal/events",
-        summary="Worker event publish",
+        summary="SAM3 worker event publish",
         description=(
-            "Called by the HTTP worker. Auth: Roboflow API key plus the "
+            "Called by the SAM3 video worker. Auth: Roboflow API key plus the "
             "session publish_token. Reachable on serverless."
         ),
     )
     @with_route_exceptions_async
-    async def publish_http_worker_event(
+    async def publish_sam3_video_internal_event(
         session_id: str,
-        request: InternalEventRequest,
+        request: Sam3VideoInternalEventRequest,
         api_key: Optional[str] = Query(None),
     ) -> dict:
         _require_api_key(api_key_override(api_key))

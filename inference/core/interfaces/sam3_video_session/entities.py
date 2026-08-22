@@ -3,13 +3,13 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
-EVENT_DOWNLOADING = "downloading"
-EVENT_FRAME = "frame"
-EVENT_CHECKPOINTED = "checkpointed"
-EVENT_DONE = "done"
-EVENT_ERROR = "error"
+SAM3_VIDEO_EVENT_DOWNLOADING = "downloading"
+SAM3_VIDEO_EVENT_FRAME = "frame"
+SAM3_VIDEO_EVENT_CHECKPOINTED = "checkpointed"
+SAM3_VIDEO_EVENT_DONE = "done"
+SAM3_VIDEO_EVENT_ERROR = "error"
 
-EventType = Literal[
+Sam3VideoEventType = Literal[
     "downloading",
     "frame",
     "checkpointed",
@@ -17,7 +17,7 @@ EventType = Literal[
     "error",
 ]
 
-WorkerStatus = Literal[
+Sam3VideoSessionStatus = Literal[
     "starting",
     "downloading",
     "running",
@@ -60,18 +60,18 @@ def validated_app_base_url(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
-class TimeBase(BaseModel):
+class Sam3VideoTimeBase(BaseModel):
     numerator: int = Field(gt=0)
     denominator: int = Field(gt=0)
 
 
-class ArtifactTarget(BaseModel):
+class Sam3VideoArtifactTarget(BaseModel):
     app_base_url: str
     video_id: str
     workspace_id: str
     dataset_id: str
     revision_id: str
-    video_time_base: Optional[TimeBase] = None
+    video_time_base: Optional[Sam3VideoTimeBase] = None
 
     @field_validator("app_base_url")
     @classmethod
@@ -79,10 +79,10 @@ class ArtifactTarget(BaseModel):
         return validated_app_base_url(value).rstrip("/")
 
 
-class WorkerRequest(BaseModel):
+class Sam3VideoSessionRequest(BaseModel):
     video_url: str
     class_names: List[str]
-    artifact: ArtifactTarget
+    artifact: Sam3VideoArtifactTarget
     api_key: Optional[str] = None
     requested_plan: Optional[str] = None
     requested_region: Optional[str] = None
@@ -91,37 +91,37 @@ class WorkerRequest(BaseModel):
     events_callback_base: Optional[str] = None
 
 
-class WorkerCreated(BaseModel):
+class Sam3VideoSessionCreated(BaseModel):
     session_id: str
 
 
-class WorkerSnapshot(BaseModel):
+class Sam3VideoSessionSnapshot(BaseModel):
     session_id: str
-    status: WorkerStatus
+    status: Sam3VideoSessionStatus
     last_seq: int = 0
     last_frame_id: Optional[int] = None
     error_message: Optional[str] = None
     stop_requested: bool = False
 
 
-class InternalEventRequest(BaseModel):
+class Sam3VideoInternalEventRequest(BaseModel):
     publish_token: str
     event: Dict[str, Any]
 
 
-class InternalEventResponse(BaseModel):
+class Sam3VideoInternalEventResponse(BaseModel):
     stop_requested: bool = False
 
 
-class WorkerEndRequest(BaseModel):
+class Sam3VideoSessionEndRequest(BaseModel):
     api_key: Optional[str] = None
 
 
-class WorkerPayload(BaseModel):
+class Sam3VideoWorkerPayload(BaseModel):
     session_id: str
     video_url: str
     class_names: List[str]
-    artifact: ArtifactTarget
+    artifact: Sam3VideoArtifactTarget
     api_key: Optional[str] = None
     threshold: float = DEFAULT_THRESHOLD
     events_callback_url: str

@@ -4,13 +4,13 @@ from typing import Any, Dict, List, Optional
 
 from inference.core.cache import cache
 from inference.core.env import WEBRTC_WORKSPACE_STREAM_TTL_SECONDS
-from inference.core.interfaces.http_worker.entities import (
+from inference.core.interfaces.sam3_video_session.entities import (
     SESSION_EVENT_TTL_SECONDS,
-    WorkerStatus,
+    Sam3VideoSessionStatus,
 )
 
-META_KEY_PREFIX = "http_worker:meta:"
-EVENTS_KEY_PREFIX = "http_worker:events:"
+META_KEY_PREFIX = "sam3_video_session:meta:"
+EVENTS_KEY_PREFIX = "sam3_video_session:events:"
 
 
 def _meta_key(session_id: str) -> str:
@@ -107,7 +107,7 @@ def append_event(
 ) -> Dict[str, Any]:
     meta = get_session(session_id)
     if meta is None:
-        raise KeyError(f"Unknown http worker session {session_id}")
+        raise KeyError(f"Unknown SAM3 video session {session_id}")
     seq = int(meta.get("last_seq") or 0) + 1
     event: Dict[str, Any] = {"seq": seq, "type": event_type}
     if payload:
@@ -163,7 +163,7 @@ def snapshot(session_id: str) -> Optional[Dict[str, Any]]:
     meta = get_session(session_id)
     if meta is None:
         return None
-    status: WorkerStatus = meta.get("status") or "starting"
+    status: Sam3VideoSessionStatus = meta.get("status") or "starting"
     return {
         "session_id": session_id,
         "status": status,

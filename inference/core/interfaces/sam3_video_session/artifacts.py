@@ -4,9 +4,9 @@ from urllib.parse import urljoin
 
 import requests
 
-from inference.core.interfaces.http_worker.entities import (
+from inference.core.interfaces.sam3_video_session.entities import (
     ARTIFACT_CHUNK_CONTENT_TYPE,
-    TimeBase,
+    Sam3VideoTimeBase,
     validated_app_base_url,
 )
 from inference.core.utils.requests import api_key_safe_raise_for_status
@@ -87,7 +87,7 @@ class ArtifactWriter:
         end_frame_index: int,
         start_pts: int,
         end_pts: int,
-        video_time_base: TimeBase,
+        video_time_base: Sam3VideoTimeBase,
         class_name: str,
         tracker_id: int,
         sample_count: int,
@@ -108,7 +108,7 @@ class ArtifactWriter:
                 "endFrameIndex": end_frame_index,
                 "startPts": start_pts,
                 "endPts": end_pts,
-                "videoTimeBase": {
+                "videoSam3VideoTimeBase": {
                     "numerator": video_time_base.numerator,
                     "denominator": video_time_base.denominator,
                 },
@@ -179,7 +179,7 @@ class TrackAccumulator:
             flushed += 1
         return flushed
 
-    def commit(self, writer: ArtifactWriter, video_time_base: TimeBase) -> None:
+    def commit(self, writer: ArtifactWriter, video_time_base: Sam3VideoTimeBase) -> None:
         if self.sample_count == 0 or self.start_frame_index is None:
             return
         writer.commit_revision(

@@ -16,8 +16,11 @@ from inference.core.env import (
     WEBRTC_WORKSPACE_STREAM_TTL_SECONDS,
 )
 from inference.core.exceptions import CreditsExceededError, WorkspaceStreamQuotaError
-from inference.core.interfaces.http_worker.entities import WorkerPayload, WorkerRequest
-from inference.core.interfaces.http_worker.store import (
+from inference.core.interfaces.sam3_video_session.entities import (
+    Sam3VideoSessionRequest,
+    Sam3VideoWorkerPayload,
+)
+from inference.core.interfaces.sam3_video_session.session_store import (
     append_event,
     create_session,
     get_session,
@@ -28,7 +31,7 @@ from inference.core.interfaces.http_worker.store import (
     snapshot,
     update_session,
 )
-from inference.core.interfaces.http_worker.worker import run_worker_from_dict
+from inference.core.interfaces.sam3_video_session.worker import run_sam3_video_session_from_dict
 from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     is_over_quota,
@@ -64,10 +67,10 @@ def _events_callback_url(base: str, session_id: str) -> str:
 
 
 def _local_worker_process(payload: Dict[str, Any]) -> None:
-    run_worker_from_dict(payload)
+    run_sam3_video_session_from_dict(payload)
 
 
-def _spawn_local(payload: WorkerPayload) -> None:
+def _spawn_local(payload: Sam3VideoWorkerPayload) -> None:
     ctx = multiprocessing.get_context("spawn")
     process = ctx.Process(
         target=_local_worker_process,
@@ -77,25 +80,25 @@ def _spawn_local(payload: WorkerPayload) -> None:
     process.start()
 
 
-def _spawn_modal(payload: WorkerPayload) -> Optional[str]:
-    from inference.core.interfaces.http_worker.modal import spawn_http_worker_modal
+def _spawn_modal(payload: Sam3VideoWorkerPayload) -> Optional[str]:
+    from inference.core.interfaces.sam3_video_session.modal import spawn_sam3_video_session_modal
 
-    return spawn_http_worker_modal(payload)
+    return spawn_sam3_video_session_modal(payload)
 
 
 def require_owner(session_id: str, api_key: str) -> Dict[str, Any]:
     meta = get_session(session_id)
     if meta is None:
-        raise KeyError(f"Unknown http worker session {session_id}")
+        raise KeyError(f"Unknown SAM3 video session {session_id}")
     stored = str(meta.get("owner_api_key_hash") or "")
     incoming = _hash_api_key(api_key)
     if not stored or not incoming or not secrets.compare_digest(stored, incoming):
-        raise PermissionError("Invalid http worker session owner")
+        raise PermissionError("Invalid SAM3 video session owner")
     return meta
 
 
-def start_worker(
-    request: WorkerRequest,
+def start_session(
+    request: Sam3VideoSessionRequest,
     *,
     api_key: Optional[str],
     events_callback_base: str,
@@ -128,7 +131,7 @@ def start_worker(
         owner_api_key_hash=_hash_api_key(api_key),
     )
 
-    payload = WorkerPayload(
+    payload = Sam3VideoWorkerPayload(
         session_id=session_id,
         video_url=request.video_url,
         class_names=request.class_names,
@@ -153,7 +156,7 @@ def start_worker(
     else:
         _spawn_local(payload)
 
-    logger.info("Started HTTP worker session %s", session_id)
+    logger.info("Started SAM3 video session %s", session_id)
     return session_id
 
 
@@ -165,19 +168,19 @@ def publish_internal_event(
 ) -> bool:
     meta = get_session(session_id)
     if meta is None:
-        raise KeyError(f"Unknown http worker session {session_id}")
+        raise KeyError(f"Unknown SAM3 video session {session_id}")
     stored = str(meta.get("publish_token") or "")
     if len(stored) != len(publish_token) or not secrets.compare_digest(
         stored, publish_token
     ):
-        raise PermissionError("Invalid http worker session publish token")
+        raise PermissionError("Invalid SAM3 video session publish token")
     event_type = str(event.get("type") or "")
     payload = {key: value for key, value in event.items() if key != "type"}
     append_event(session_id, event_type, payload or None)
     return is_stop_requested(session_id, WEBRTC_WORKSPACE_STREAM_TTL_SECONDS)
 
 
-def end_worker(session_id: str, *, api_key: str) -> None:
+def end_session(session_id: str, *, api_key: str) -> None:
     meta = require_owner(session_id, api_key)
     request_stop(session_id)
     call_id = meta.get("modal_call_id") if meta else None
@@ -188,7 +191,7 @@ def end_worker(session_id: str, *, api_key: str) -> None:
             modal.FunctionCall.from_id(call_id).cancel()
         except Exception as error:
             logger.warning(
-                "Failed to cancel HTTP worker Modal call %s: %s",
+                "Failed to cancel SAM3 video session Modal call %s: %s",
                 call_id,
                 error,
             )
@@ -201,13 +204,13 @@ def end_worker(session_id: str, *, api_key: str) -> None:
             )
         except Exception as error:
             logger.debug(
-                "Could not deregister HTTP worker quota slot %s: %s",
+                "Could not deregister SAM3 video session quota slot %s: %s",
                 session_id,
                 error,
             )
 
 
-def worker_snapshot(session_id: str, *, api_key: str) -> Optional[Dict[str, Any]]:
+def session_snapshot(session_id: str, *, api_key: str) -> Optional[Dict[str, Any]]:
     require_owner(session_id, api_key)
     mark_client_seen(session_id)
     return snapshot(session_id)

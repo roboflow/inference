@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from inference.core.interfaces.http_worker.entities import DEFAULT_CLASS_NAME
+from inference.core.interfaces.sam3_video_session.entities import DEFAULT_CLASS_NAME
 
 MODEL_ID = "sam3video"
 

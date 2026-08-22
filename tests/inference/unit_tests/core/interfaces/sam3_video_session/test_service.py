@@ -3,19 +3,25 @@ import uuid
 
 import pytest
 
-from inference.core.interfaces.http_worker.entities import ArtifactTarget, WorkerRequest
-from inference.core.interfaces.http_worker.service import (
+from inference.core.interfaces.sam3_video_session.entities import (
+    Sam3VideoArtifactTarget,
+    Sam3VideoSessionRequest,
+)
+from inference.core.interfaces.sam3_video_session.service import (
     publish_internal_event,
     require_owner,
     resolve_events_callback_base,
-    start_worker,
-    worker_snapshot,
+    session_snapshot,
+    start_session,
 )
-from inference.core.interfaces.http_worker.store import create_session, list_events
+from inference.core.interfaces.sam3_video_session.session_store import (
+    create_session,
+    list_events,
+)
 
 
 def test_publish_internal_event_appends_and_replays_after_seq() -> None:
-    session_id = f"http-worker-test-{uuid.uuid4()}"
+    session_id = f"sam3-video-session-test-{uuid.uuid4()}"
     create_session(
         session_id,
         workspace_id="ws-1",
@@ -40,7 +46,7 @@ def test_publish_internal_event_appends_and_replays_after_seq() -> None:
 
 
 def test_publish_internal_event_rejects_bad_token() -> None:
-    session_id = f"http-worker-test-{uuid.uuid4()}"
+    session_id = f"sam3-video-session-test-{uuid.uuid4()}"
     create_session(
         session_id,
         workspace_id="ws-1",
@@ -56,7 +62,7 @@ def test_publish_internal_event_rejects_bad_token() -> None:
 
 
 def test_require_owner_rejects_other_api_key() -> None:
-    session_id = f"http-worker-test-{uuid.uuid4()}"
+    session_id = f"sam3-video-session-test-{uuid.uuid4()}"
     create_session(
         session_id,
         workspace_id="ws-1",
@@ -66,7 +72,7 @@ def test_require_owner_rejects_other_api_key() -> None:
     with pytest.raises(PermissionError):
         require_owner(session_id, "other-key")
     with pytest.raises(PermissionError):
-        worker_snapshot(session_id, api_key="other-key")
+        session_snapshot(session_id, api_key="other-key")
 
 
 def test_resolve_events_callback_base_rejects_foreign_host() -> None:
@@ -85,26 +91,26 @@ def test_resolve_events_callback_base_allows_same_host() -> None:
     assert resolved == "https://serverless.roboflow.com/"
 
 
-def test_start_worker_spawns_local_without_modal(monkeypatch) -> None:
+def test_start_session_spawns_local_without_modal(monkeypatch) -> None:
     spawned = {}
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.service.WEBRTC_MODAL_TOKEN_ID",
+        "inference.core.interfaces.sam3_video_session.service.WEBRTC_MODAL_TOKEN_ID",
         "",
     )
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.service.WEBRTC_MODAL_TOKEN_SECRET",
+        "inference.core.interfaces.sam3_video_session.service.WEBRTC_MODAL_TOKEN_SECRET",
         "",
     )
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.service.WEBRTC_MODAL_USAGE_QUOTA_ENABLED",
+        "inference.core.interfaces.sam3_video_session.service.WEBRTC_MODAL_USAGE_QUOTA_ENABLED",
         False,
     )
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.service.WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED",
+        "inference.core.interfaces.sam3_video_session.service.WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED",
         False,
     )
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.service.get_roboflow_workspace",
+        "inference.core.interfaces.sam3_video_session.service.get_roboflow_workspace",
         lambda api_key: "ws-1",
     )
 
@@ -114,15 +120,15 @@ def test_start_worker_spawns_local_without_modal(monkeypatch) -> None:
         spawned["revision_id"] = payload.artifact.revision_id
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.service._spawn_local",
+        "inference.core.interfaces.sam3_video_session.service._spawn_local",
         fake_spawn,
     )
 
-    session_id = start_worker(
-        WorkerRequest(
+    session_id = start_session(
+        Sam3VideoSessionRequest(
             video_url="https://storage.example/clip.mp4",
             class_names=["forklift"],
-            artifact=ArtifactTarget(
+            artifact=Sam3VideoArtifactTarget(
                 app_base_url="https://app.roboflow.com",
                 video_id="video-1",
                 workspace_id="ws-1",
@@ -137,6 +143,6 @@ def test_start_worker_spawns_local_without_modal(monkeypatch) -> None:
     assert spawned["session_id"] == session_id
     assert spawned["video_url"] == "https://storage.example/clip.mp4"
     assert spawned["revision_id"] == "rev-1"
-    snap = worker_snapshot(session_id, api_key="rf_key")
+    snap = session_snapshot(session_id, api_key="rf_key")
     assert snap is not None
     assert snap["session_id"] == session_id

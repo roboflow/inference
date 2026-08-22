@@ -3,14 +3,14 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from inference.core.interfaces.http.handlers.http_worker import (
-    register_http_worker_routes,
+from inference.core.interfaces.http.handlers.sam3_video_sessions import (
+    register_sam3_video_session_routes,
 )
 
 
 def test_create_requires_api_key() -> None:
     client = TestClient(FastAPI())
-    register_http_worker_routes(client.app)
+    register_sam3_video_session_routes(client.app)
     response = client.post(
         "/sam3/video/sessions",
         json={
@@ -28,7 +28,7 @@ def test_create_requires_api_key() -> None:
     assert response.status_code == 401
 
 
-def test_create_starts_worker(monkeypatch) -> None:
+def test_create_starts_session(monkeypatch) -> None:
     started = {}
 
     def fake_start(request, *, api_key, events_callback_base):
@@ -38,11 +38,11 @@ def test_create_starts_worker(monkeypatch) -> None:
         return "sess-1"
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.start_worker",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.start_session",
         fake_start,
     )
     app = FastAPI()
-    register_http_worker_routes(app)
+    register_sam3_video_session_routes(app)
     client = TestClient(app)
     response = client.post(
         "/sam3/video/sessions",
@@ -67,11 +67,11 @@ def test_create_starts_worker(monkeypatch) -> None:
 
 def test_create_rejects_foreign_events_callback_base(monkeypatch) -> None:
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.start_worker",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.start_session",
         lambda *args, **kwargs: "sess-1",
     )
     app = FastAPI()
-    register_http_worker_routes(app)
+    register_sam3_video_session_routes(app)
     client = TestClient(app)
     response = client.post(
         "/sam3/video/sessions",
@@ -97,11 +97,11 @@ def test_snapshot_404_unknown_session(monkeypatch) -> None:
         raise KeyError(session_id)
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.worker_snapshot",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.session_snapshot",
         fake_snapshot,
     )
     app = FastAPI()
-    register_http_worker_routes(app)
+    register_sam3_video_session_routes(app)
     client = TestClient(app)
     response = client.get("/sam3/video/sessions/missing", params={"api_key": "rf_key"})
     assert response.status_code == 404
@@ -112,11 +112,11 @@ def test_snapshot_401_wrong_owner(monkeypatch) -> None:
         raise PermissionError("nope")
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.worker_snapshot",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.session_snapshot",
         fake_snapshot,
     )
     app = FastAPI()
-    register_http_worker_routes(app)
+    register_sam3_video_session_routes(app)
     client = TestClient(app)
     response = client.get("/sam3/video/sessions/sess-1", params={"api_key": "other"})
     assert response.status_code == 401
@@ -127,11 +127,11 @@ def test_internal_events_401_bad_token(monkeypatch) -> None:
         raise PermissionError("bad token")
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.publish_internal_event",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.publish_internal_event",
         fake_publish,
     )
     app = FastAPI()
-    register_http_worker_routes(app)
+    register_sam3_video_session_routes(app)
     client = TestClient(app)
     response = client.post(
         "/sam3/video/sessions/sess-1/internal/events",
@@ -147,7 +147,7 @@ def test_sse_stops_on_done(monkeypatch) -> None:
         yield 'event: done\ndata: {"seq": 2, "type": "done"}\n\n'
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.worker_snapshot",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.session_snapshot",
         lambda session_id, *, api_key: {
             "session_id": session_id,
             "status": "running",
@@ -155,11 +155,11 @@ def test_sse_stops_on_done(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(
-        "inference.core.interfaces.http.handlers.http_worker.iter_public_events",
+        "inference.core.interfaces.http.handlers.sam3_video_sessions.iter_public_events",
         fake_iter,
     )
     app = FastAPI()
-    register_http_worker_routes(app)
+    register_sam3_video_session_routes(app)
     client = TestClient(app)
     with client.stream(
         "GET",

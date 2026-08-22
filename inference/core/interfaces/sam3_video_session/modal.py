@@ -7,12 +7,12 @@ from inference.core.env import (
     WEBRTC_MODAL_TOKEN_SECRET,
 )
 from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
-from inference.core.interfaces.http_worker.entities import WorkerPayload
+from inference.core.interfaces.sam3_video_session.entities import Sam3VideoWorkerPayload
 from inference.core.logger import logger
 from inference.usage_tracking.collector import usage_collector
 
 
-def spawn_http_worker_modal(payload) -> Optional[str]:
+def spawn_sam3_video_session_modal(payload) -> Optional[str]:
     import modal
     from inference.core.interfaces.webrtc_worker.modal import (
         RTCPeerConnectionModalCPU,
@@ -22,8 +22,8 @@ def spawn_http_worker_modal(payload) -> Optional[str]:
     )
     from inference.usage_tracking.plan_details import WebRTCPlan
 
-    if not isinstance(payload, WorkerPayload):
-        payload = WorkerPayload.model_validate(payload)
+    if not isinstance(payload, Sam3VideoWorkerPayload):
+        payload = Sam3VideoWorkerPayload.model_validate(payload)
 
     requested_gpu: Optional[str] = None
     requested_ram_mb: Optional[int] = None
@@ -72,11 +72,11 @@ def spawn_http_worker_modal(payload) -> Optional[str]:
         cls_with_options = cls_with_options.with_options(cpu=requested_cpu_cores)
 
     modal_obj = cls_with_options(preload_hf_ids="", preload_models="")
-    function_call: modal.FunctionCall = modal_obj.http_worker_modal.spawn(
+    function_call: modal.FunctionCall = modal_obj.sam3_video_session_modal.spawn(
         payload=payload.model_dump(mode="json"),
     )
     call_id = getattr(function_call, "object_id", None) or getattr(
         function_call, "call_id", None
     )
-    logger.info("Spawned HTTP worker Modal function")
+    logger.info("Spawned SAM3 video session Modal function")
     return str(call_id) if call_id else None

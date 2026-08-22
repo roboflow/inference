@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from inference.core.interfaces.http_worker.entities import ArtifactTarget, TimeBase
-from inference.core.interfaces.http_worker.sinks import ArtifactWriter
+from inference.core.interfaces.sam3_video_session.entities import Sam3VideoArtifactTarget, Sam3VideoTimeBase
+from inference.core.interfaces.sam3_video_session.artifacts import ArtifactWriter
 
 
 def test_artifact_writer_mints_signed_url_puts_gcs_and_posts_commit(
@@ -28,11 +28,11 @@ def test_artifact_writer_mints_signed_url_puts_gcs_and_posts_commit(
         return response
 
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.sinks.requests.put",
+        "inference.core.interfaces.sam3_video_session.artifacts.requests.put",
         fake_put,
     )
     monkeypatch.setattr(
-        "inference.core.interfaces.http_worker.sinks.requests.post",
+        "inference.core.interfaces.sam3_video_session.artifacts.requests.post",
         fake_post,
     )
 
@@ -56,7 +56,7 @@ def test_artifact_writer_mints_signed_url_puts_gcs_and_posts_commit(
         end_frame_index=4,
         start_pts=0,
         end_pts=4,
-        video_time_base=TimeBase(numerator=1, denominator=30),
+        video_time_base=Sam3VideoTimeBase(numerator=1, denominator=30),
         class_name="forklift",
         tracker_id=7,
         sample_count=5,
@@ -94,7 +94,7 @@ def test_artifact_writer_rejects_untrusted_app_host() -> None:
 
 def test_session_request_rejects_untrusted_app_host() -> None:
     with pytest.raises(ValueError, match="Roboflow app host"):
-        ArtifactTarget(
+        Sam3VideoArtifactTarget(
             app_base_url="https://evil.example",
             video_id="video-1",
             workspace_id="ws-1",

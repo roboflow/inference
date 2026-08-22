@@ -1,6 +1,6 @@
 import numpy as np
 
-from inference.core.interfaces.http_worker.model_handlers.sam3 import (
+from inference.core.interfaces.sam3_video_session.predictions import (
     class_name_for_object,
     mask_to_uncompressed_rle,
     serialize_frame_predictions,

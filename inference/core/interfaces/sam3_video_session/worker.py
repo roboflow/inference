@@ -8,21 +8,21 @@ import numpy as np
 import requests
 
 from inference.core.exceptions import InputImageLoadError
-from inference.core.interfaces.http_worker.entities import (
+from inference.core.interfaces.sam3_video_session.entities import (
     CHUNK_SAMPLE_SIZE,
     DEFAULT_CLASS_NAME,
     DEFAULT_THRESHOLD,
-    EVENT_CHECKPOINTED,
-    EVENT_DONE,
-    EVENT_DOWNLOADING,
-    EVENT_ERROR,
-    EVENT_FRAME,
+    SAM3_VIDEO_EVENT_CHECKPOINTED,
+    SAM3_VIDEO_EVENT_DONE,
+    SAM3_VIDEO_EVENT_DOWNLOADING,
+    SAM3_VIDEO_EVENT_ERROR,
+    SAM3_VIDEO_EVENT_FRAME,
     MAX_VIDEO_BYTES,
-    TimeBase,
-    WorkerPayload,
+    Sam3VideoTimeBase,
+    Sam3VideoWorkerPayload,
 )
-from inference.core.interfaces.http_worker.model_handlers import sam3
-from inference.core.interfaces.http_worker.sinks import ArtifactWriter, TrackAccumulator
+from inference.core.interfaces.sam3_video_session import predictions as sam3
+from inference.core.interfaces.sam3_video_session.artifacts import ArtifactWriter, TrackAccumulator
 from inference.core.logger import logger
 from inference.core.utils.image_utils import download_url_to_file
 from inference.core.utils.requests import api_key_safe_raise_for_status
@@ -84,15 +84,15 @@ class FramePacket:
     height: int
 
 
-def time_base_from_fps(fps: float) -> TimeBase:
+def time_base_from_fps(fps: float) -> Sam3VideoTimeBase:
     if fps <= 0:
-        return TimeBase(numerator=1, denominator=30)
-    return TimeBase(numerator=1, denominator=max(1, int(round(fps))))
+        return Sam3VideoTimeBase(numerator=1, denominator=30)
+    return Sam3VideoTimeBase(numerator=1, denominator=max(1, int(round(fps))))
 
 
 def iter_frames_from_video(
     video_path: str,
-    video_time_base: Optional[TimeBase],
+    video_time_base: Optional[Sam3VideoTimeBase],
 ) -> Iterable[FramePacket]:
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
@@ -138,7 +138,7 @@ def process_frames(
     revision_id: str,
     publisher: EventPublisher,
     writer: ArtifactWriter,
-    video_time_base: TimeBase,
+    video_time_base: Sam3VideoTimeBase,
     chunk_sample_size: int = CHUNK_SAMPLE_SIZE,
 ) -> None:
     accumulators: Dict[str, TrackAccumulator] = {}
@@ -188,11 +188,11 @@ def process_frames(
             )
         if flushed:
             publisher.publish(
-                EVENT_CHECKPOINTED,
+                SAM3_VIDEO_EVENT_CHECKPOINTED,
                 {"chunk_count": flushed},
             )
         stop_requested = publisher.publish(
-            EVENT_FRAME,
+            SAM3_VIDEO_EVENT_FRAME,
             {
                 "frame_id": packet.frame_index,
                 "revision_id": revision_id,
@@ -222,24 +222,24 @@ def process_frames(
 
     if produced == 0:
         publisher.publish(
-            EVENT_ERROR,
+            SAM3_VIDEO_EVENT_ERROR,
             {"message": "Tracker produced no frames for this video."},
         )
         return
     if not accumulators:
         publisher.publish(
-            EVENT_ERROR,
+            SAM3_VIDEO_EVENT_ERROR,
             {"message": "Tracker produced no predictions for this video."},
         )
         return
     publisher.publish(
-        EVENT_DONE,
+        SAM3_VIDEO_EVENT_DONE,
         {"cancelled": bool(stop_requested), "frame_count": produced},
     )
 
 
-def run_worker(
-    payload: WorkerPayload,
+def run_sam3_video_session(
+    payload: Sam3VideoWorkerPayload,
     *,
     publisher: Optional[EventPublisher] = None,
     writer: Optional[ArtifactWriter] = None,
@@ -266,9 +266,9 @@ def run_worker(
         api_key=payload.api_key or "",
     )
     try:
-        event_publisher.publish(EVENT_DOWNLOADING)
+        event_publisher.publish(SAM3_VIDEO_EVENT_DOWNLOADING)
         if frames is None:
-            with TemporaryDirectory(prefix="http-worker-") as temp_dir:
+            with TemporaryDirectory(prefix="sam3-video-session-") as temp_dir:
                 video_path = str(Path(temp_dir) / "video.mp4")
                 download_url_to_file(
                     payload.video_url,
@@ -304,7 +304,7 @@ def run_worker(
                 )
             return
         loaded_model = model or sam3.load_model(payload.api_key)
-        resolved_time_base = payload.artifact.video_time_base or TimeBase(
+        resolved_time_base = payload.artifact.video_time_base or Sam3VideoTimeBase(
             numerator=1, denominator=30
         )
         process_frames(
@@ -319,18 +319,18 @@ def run_worker(
             chunk_sample_size=chunk_sample_size,
         )
     except InputImageLoadError as error:
-        logger.warning("HTTP worker video download failed: %s", error)
+        logger.warning("SAM3 video session download failed: %s", error)
         event_publisher.publish(
-            EVENT_ERROR,
+            SAM3_VIDEO_EVENT_ERROR,
             {"message": error.get_public_error_details()},
         )
     except Exception as error:
-        logger.exception("HTTP worker session failed")
+        logger.exception("SAM3 video session failed")
         event_publisher.publish(
-            EVENT_ERROR,
+            SAM3_VIDEO_EVENT_ERROR,
             {"message": str(error) or "Video tracking failed"},
         )
 
 
-def run_worker_from_dict(payload: Dict[str, Any]) -> None:
-    run_worker(WorkerPayload.model_validate(payload))
+def run_sam3_video_session_from_dict(payload: Dict[str, Any]) -> None:
+    run_sam3_video_session(Sam3VideoWorkerPayload.model_validate(payload))
