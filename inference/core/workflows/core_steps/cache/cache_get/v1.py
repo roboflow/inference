@@ -46,7 +46,7 @@ This block retrieves values from an in-memory cache that was previously stored u
    - Returns False if the key was not found in the cache
    - The output type matches whatever was originally stored with Cache Set
 
-The cache is namespaced by video identifier, meaning different videos or streams have separate cache storage. This allows workflows processing multiple videos to maintain separate caches for each video. The cache is stored in memory and is cleared when the workflow execution completes or when the block is destroyed. Cache Get must be used in conjunction with Cache Set - values are stored with Cache Set and retrieved with Cache Get using the same key and namespace (determined by the same video identifier).
+The cache is namespaced by video identifier, meaning different videos or streams have separate cache storage. This allows workflows processing multiple videos to maintain separate caches for each video. The cache lives in process-wide memory. Each Cache Set / Cache Get instance retains every video namespace it touches and releases those retains when the instance is closed or garbage-collected; a namespace is deleted only when no instance still retains it. Cleanup is not tied to workflow execution completing. Cache Get must be used in conjunction with Cache Set - values are stored with Cache Set and retrieved with Cache Get using the same key and namespace (determined by the same video identifier).
 
 ## Common Use Cases
 
@@ -70,7 +70,7 @@ This block retrieves cached values and can be used throughout workflows:
 
 ## Requirements
 
-This block requires an input image (used to determine the cache namespace via video identifier) and a cache key (string) to look up the stored value. The block only works in LOCAL execution mode - it will raise a NotImplementedError if used in other execution modes. Values must be previously stored using the Cache Set block with the same key and namespace (same video identifier). The cache is stored in memory and is automatically cleared when the workflow execution completes. The cache is namespaced by video identifier, so different videos have separate cache storage. If a key is not found in the cache, the block returns False. The cached value can be any data type (strings, numbers, lists, detections, images, etc.) depending on what was originally stored.
+This block requires an input image (used to determine the cache namespace via video identifier) and a cache key (string) to look up the stored value. The block only works in LOCAL execution mode - it will raise a NotImplementedError if used in other execution modes. Values must be previously stored using the Cache Set block with the same key and namespace (same video identifier). The cache lives in process-wide memory and is not cleared merely because a workflow run finishes; each block instance releases the namespaces it retained when it is closed or garbage-collected. The cache is namespaced by video identifier, so different videos have separate cache storage. If a key is not found in the cache, the block returns False. The cached value can be any data type (strings, numbers, lists, detections, images, etc.) depending on what was originally stored.
 """
 
 SHORT_DESCRIPTION = "Fetches a previously stored value from a cache entry."
@@ -134,8 +134,6 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class CacheGetBlockV1(WorkflowBlock):
-    namespace = None
-
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -145,14 +143,27 @@ class CacheGetBlockV1(WorkflowBlock):
         step_execution_mode: StepExecutionMode,
     ):
         self._step_execution_mode = step_execution_mode
+        # Namespaces this instance has retained. close() releases each once;
+        # __del__ calls close() as a GC fallback, not as "workflow complete".
+        self._namespaces: set = set()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["step_execution_mode"]
 
+    def close(self) -> None:
+        namespaces = getattr(self, "_namespaces", None)
+        if not namespaces:
+            return
+        for namespace in list(namespaces):
+            WorkflowMemoryCache.release_namespace(namespace)
+        namespaces.clear()
+
     def __del__(self):
-        if self.namespace:
-            WorkflowMemoryCache.clear_namespace(self.namespace)
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def run(self, image: WorkflowImageData, key: str) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
@@ -162,7 +173,14 @@ class CacheGetBlockV1(WorkflowBlock):
 
         metadata = image.video_metadata
         namespace = metadata.video_identifier or "default"
-        self.namespace = namespace
-
-        cache = WorkflowMemoryCache.get_dict(namespace)
+        # Retain once per instance so close() can release once. Calling
+        # get_dict on every frame would over-count and leak the namespace.
+        # Record-first ordering makes retain→record effectively atomic: if
+        # get_dict raises, the namespace is in _namespaces but not retained,
+        # and release_namespace is a no-op (count=0).
+        if namespace not in self._namespaces:
+            self._namespaces.add(namespace)
+            cache = WorkflowMemoryCache.get_dict(namespace)
+        else:
+            cache = WorkflowMemoryCache.cache[namespace]
         return {"output": cache.get(key, False)}
