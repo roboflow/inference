@@ -238,6 +238,9 @@ from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
 )
+from inference.core.interfaces.http.handlers.sam3_video_sessions import (
+    register_sam3_video_session_routes,
+)
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
@@ -2636,6 +2639,8 @@ class HttpInterface(BaseInterface):
                     session_id=request.session_id,
                 )
                 return {"status": "ok"}
+
+        register_sam3_video_session_routes(app)
 
         if ENABLE_STREAM_API:
 

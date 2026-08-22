@@ -44,6 +44,8 @@ from inference.core.utils.url_input import (
     URLAddressNotAllowedError,
     fetch_url_content_legacy,
     fetch_url_content_validating_redirects,
+    fetch_url_to_file_legacy,
+    fetch_url_to_file_validating_redirects,
 )
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
@@ -427,6 +429,50 @@ def load_image_from_url(
     return load_image_from_encoded_bytes(
         value=image_bytes, cv_imread_flags=cv_imread_flags
     )
+
+
+def download_url_to_file(value: str, destination_path: str, max_bytes: int) -> None:
+    """Download a caller-supplied URL to disk using the same SSRF guards as
+    ``load_image_from_url``. The prepared URL is validated then fetched; the
+    body is streamed so a large video is not buffered in RAM.
+    """
+    if OFFLINE_MODE:
+        message = "Cannot load a URL while OFFLINE_MODE is enabled."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+    _ensure_url_input_allowed()
+    prepared_url = _validate_url_destination(value=value)
+    try:
+        if VALIDATE_IMAGE_URL_REDIRECTS:
+            fetch_url_to_file_validating_redirects(
+                url=prepared_url,
+                destination_path=destination_path,
+                allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
+                max_redirects=MAX_IMAGE_URL_REDIRECTS,
+                max_bytes=max_bytes,
+                validate_redirect=_validate_url_destination,
+            )
+        else:
+            fetch_url_to_file_legacy(
+                url=prepared_url,
+                destination_path=destination_path,
+                allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
+                max_redirects=MAX_IMAGE_URL_REDIRECTS,
+                max_bytes=max_bytes,
+            )
+    except URLAddressNotAllowedError as error:
+        message = "URL points to a network destination that is not allowed."
+        raise InputImageLoadError(
+            message=f"{message} Details: {error}",
+            public_message=message,
+        ) from error
+    except (RequestException, ConnectionError, OSError) as error:
+        raise InputImageLoadError(
+            message=f"Could not download URL: {value}. Details: {error}",
+            public_message="Data pointed by URL could not be downloaded.",
+        ) from error
 
 
 def _validate_url_destination(value: str) -> str:

@@ -503,6 +503,17 @@ if modal is not None:
                     )
             usage_collector.push_usage_payloads()
 
+        @modal.method()
+        def sam3_video_session_modal(self, payload: Dict[str, Any]):
+            from inference.core.interfaces.sam3_video_session.worker import (
+                run_sam3_video_session_from_dict,
+            )
+
+            self._function_call_number_on_container += 1
+            logger.info("Spawning SAM3 video session on %s", self._gpu)
+            run_sam3_video_session_from_dict(payload)
+            logger.info("SAM3 video session function completed")
+
         @modal.exit()
         def stop(self):
             logger.info("Stopping container")
