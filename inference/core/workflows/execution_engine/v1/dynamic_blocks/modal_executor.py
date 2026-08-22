@@ -61,7 +61,6 @@ else:
     MODAL_AVAILABLE = False
     logger.info("Modal credentials not configured")
 
-from datetime import datetime
 
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_detections_kind,
