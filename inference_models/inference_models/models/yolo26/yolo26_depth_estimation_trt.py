@@ -51,6 +51,7 @@ from inference_models.models.yolo26.optimization.execution_plan import (
 )
 from inference_models.models.yolo26.optimization.postprocessors import (
     BaseYOLO26DepthPostprocessor,
+    ExactTritonAAYOLO26DepthPostprocessor,
     TritonAAYOLO26DepthPostprocessor,
     build_yolo26_depth_implementation_registry,
 )
@@ -223,6 +224,7 @@ class YOLO26ForDepthEstimationTRT(
             ImplementationSelection[
                 Union[
                     BaseYOLO26DepthPostprocessor,
+                    ExactTritonAAYOLO26DepthPostprocessor,
                     TritonAAYOLO26DepthPostprocessor,
                 ]
             ],

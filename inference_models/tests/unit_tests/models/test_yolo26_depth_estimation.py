@@ -239,6 +239,28 @@ def test_yolo26_depth_explicit_triton_selection_never_silently_falls_back():
         )
 
 
+def test_yolo26_depth_auto_prefers_exact_candidate_and_retains_failed_v1():
+    from inference_models.models.optimization.contracts import OptimizationStage
+    from inference_models.models.yolo26.optimization.ids import (
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,
+    )
+    from inference_models.models.yolo26.optimization.postprocessors import (
+        ExactTritonAAYOLO26DepthPostprocessor,
+        TritonAAYOLO26DepthPostprocessor,
+        build_yolo26_depth_implementation_registry,
+    )
+
+    registry = build_yolo26_depth_implementation_registry(
+        device=torch.device("cuda:0"),
+    )
+
+    assert registry._auto_preferences[OptimizationStage.POSTPROCESS] == (
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,
+    )
+    assert TritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
+    assert not ExactTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
+
+
 def test_post_process_depth_estimation_map_scales_padding_for_low_resolution_output():
     """When the model emits a map at a lower resolution than the network input
     (e.g. eval-mode H/4 output), padding offsets are scaled to map space before
