@@ -1,4 +1,4 @@
-from typing import Dict, Generator, List, Literal, Optional, Tuple, Union
+from typing import Callable, Dict, Generator, List, Literal, Optional, Tuple, Union
 
 import torch
 import torchvision
@@ -910,15 +910,28 @@ def post_process_depth_estimation_map(
     model_results: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
     device: torch.device,
+    *,
+    resize_function: Optional[
+        Callable[[torch.Tensor, Tuple[int, int]], torch.Tensor]
+    ] = None,
 ) -> List[torch.Tensor]:
-    """Shared post-processing for depth-estimation models that emit dense
-    (B, 1, H, W) or (B, H, W) depth maps. Used by YOLO26-depth.
+    """Postprocess dense depth maps emitted as ``(B, 1, H, W)`` or ``(B, H, W)``.
 
     Values are preserved as-is (e.g. metric meters). Steps: crop out letterbox
     padding (offsets scaled to the map resolution, which may differ from the
     network input size) → resize back to pre-letterbox size → place into a
     zero-filled original-image canvas if static_crop was applied (depth outside
     the crop region is unknown and reported as 0.0).
+
+    Args:
+        model_results: Batched model depth maps.
+        pre_processing_meta: Per-image geometry needed to reverse preprocessing.
+        device: Device on which returned depth maps are constructed.
+        resize_function: Optional selectable resize implementation. The preserved
+            base path uses torchvision bilinear-antialias resize when omitted.
+
+    Returns:
+        One float32 depth-map tensor per input image.
     """
     if model_results.ndim == 3:
         model_results = model_results.unsqueeze(1)
@@ -972,14 +985,18 @@ def post_process_depth_estimation_map(
             image_results.shape[1] != image_metadata.size_after_pre_processing.height
             or image_results.shape[2] != image_metadata.size_after_pre_processing.width
         ):
-            image_results = functional.resize(
-                image_results,
-                [
-                    image_metadata.size_after_pre_processing.height,
-                    image_metadata.size_after_pre_processing.width,
-                ],
-                interpolation=functional.InterpolationMode.BILINEAR,
+            resize_size = (
+                image_metadata.size_after_pre_processing.height,
+                image_metadata.size_after_pre_processing.width,
             )
+            if resize_function is None:
+                image_results = functional.resize(
+                    image_results,
+                    list(resize_size),
+                    interpolation=functional.InterpolationMode.BILINEAR,
+                )
+            else:
+                image_results = resize_function(image_results, resize_size)
         depth_map = image_results[0].float()
         if (
             image_metadata.static_crop_offset.offset_x > 0

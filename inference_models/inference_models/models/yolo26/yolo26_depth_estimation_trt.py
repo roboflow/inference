@@ -1,6 +1,6 @@
 import threading
 from threading import Lock
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -12,6 +12,7 @@ from inference_models.errors import (
     MissingDependencyError,
     ModelRuntimeError,
 )
+from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.depth_estimation import DepthEstimationModel
 from inference_models.models.common.cuda import (
@@ -27,9 +28,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.post_processing import (
-    post_process_depth_estimation_map,
-)
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -39,6 +37,22 @@ from inference_models.models.common.trt import (
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
+)
+from inference_models.models.optimization.contracts import (
+    ExecutionContext,
+    OptimizationStage,
+)
+from inference_models.models.optimization.registry import ImplementationSelection
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
+from inference_models.models.yolo26.optimization.execution_plan import (
+    YOLO26DepthExecutionPlan,
+)
+from inference_models.models.yolo26.optimization.postprocessors import (
+    BaseYOLO26DepthPostprocessor,
+    TritonAAYOLO26DepthPostprocessor,
+    build_yolo26_depth_implementation_registry,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -83,6 +97,9 @@ class YOLO26ForDepthEstimationTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        execution_plan: Optional[YOLO26DepthExecutionPlan] = None,
+        postprocessor_implementation_id: Optional[str] = None,
+        allow_compatibility_fallback: bool = True,
         **kwargs,
     ) -> "YOLO26ForDepthEstimationTRT":
         if device.type != "cuda":
@@ -144,6 +161,11 @@ class YOLO26ForDepthEstimationTRT(
             default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
             cuda_graph_cache=trt_cuda_graph_cache,
         )
+        resolved_execution_plan = YOLO26DepthExecutionPlan.resolve(
+            execution_plan=execution_plan,
+            postprocessor_id=postprocessor_implementation_id,
+            allow_compatibility_fallback=allow_compatibility_fallback,
+        )
         return cls(
             engine=engine,
             input_name=inputs[0],
@@ -155,6 +177,7 @@ class YOLO26ForDepthEstimationTRT(
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             recommended_parameters=recommended_parameters,
+            execution_plan=resolved_execution_plan,
         )
 
     def __init__(
@@ -169,6 +192,7 @@ class YOLO26ForDepthEstimationTRT(
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         recommended_parameters: Optional[RecommendedParameters] = None,
+        execution_plan: Optional[YOLO26DepthExecutionPlan] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -183,6 +207,36 @@ class YOLO26ForDepthEstimationTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
+        self._execution_plan = YOLO26DepthExecutionPlan.resolve(
+            execution_plan=execution_plan,
+        )
+        self._optimization_context = ExecutionContext(
+            device_kind="gpu",
+            device=str(self._device),
+            compute_capability=torch.cuda.get_device_capability(self._device),
+            runtime_components=get_runtime_components(),
+        )
+        self._implementation_registry = build_yolo26_depth_implementation_registry(
+            device=self._device,
+        )
+        self._postprocessor_selection = cast(
+            ImplementationSelection[
+                Union[
+                    BaseYOLO26DepthPostprocessor,
+                    TritonAAYOLO26DepthPostprocessor,
+                ]
+            ],
+            self._implementation_registry.resolve_selection(
+                stage=OptimizationStage.POSTPROCESS,
+                requested_id=self._execution_plan.postprocessor_id,
+                context=self._optimization_context,
+                allow_fallback=self._execution_plan.allow_compatibility_fallback,
+            ),
+        )
+        LOGGER.info(
+            "YOLO26 depth postprocessor selection: %s",
+            self._postprocessor_selection.to_dict(),
+        )
 
     def pre_process(
         self,
@@ -232,13 +286,37 @@ class YOLO26ForDepthEstimationTRT(
     ) -> List[torch.Tensor]:
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
-            results = post_process_depth_estimation_map(
+            context = ExecutionContext(
+                device_kind=self._optimization_context.device_kind,
+                device=self._optimization_context.device,
+                current_stream=self._post_process_stream,
+                compute_capability=self._optimization_context.compute_capability,
+                runtime_components=self._optimization_context.runtime_components,
+            )
+            results = self._postprocessor_selection.implementation.postprocess(
                 model_results=model_results,
                 pre_processing_meta=pre_processing_meta,
-                device=self._device,
+                context=context,
             )
         self._post_process_stream.synchronize()
         return results
+
+    @property
+    def execution_plan_metadata(self) -> Dict[str, Any]:
+        """Return requested and effective inference-path implementation IDs.
+
+        Returns:
+            JSON-compatible execution-plan and postprocessor selection metadata.
+        """
+        metadata = {
+            "requested_plan": self._execution_plan.to_dict(),
+            "postprocessor": self._postprocessor_selection.to_dict(),
+            "postprocessor_metadata": (
+                self._postprocessor_selection.implementation.metadata.to_dict()
+            ),
+        }
+
+        return metadata
 
     @property
     def _pre_process_stream(self) -> torch.cuda.Stream:

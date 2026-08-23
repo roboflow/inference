@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 
+import pytest
 import torch
+from torchvision.transforms import functional
 
 
 def _meta(
@@ -117,6 +119,123 @@ def test_post_process_depth_estimation_map_resizes_to_pre_processing_size():
 
     assert results[0].shape == (16, 16)
     assert torch.allclose(results[0], torch.full((16, 16), 4.25))
+
+
+def test_post_process_depth_estimation_map_accepts_selectable_resize():
+    from inference_models.models.common.roboflow.post_processing import (
+        post_process_depth_estimation_map,
+    )
+
+    resize_calls = []
+
+    def resize(image, size):
+        resize_calls.append((image.shape, size))
+
+        return torch.full((1, *size), 6.5)
+
+    results = post_process_depth_estimation_map(
+        model_results=torch.ones((1, 1, 8, 8)),
+        pre_processing_meta=_meta(8, 8, after_h=16, after_w=16),
+        device=torch.device("cpu"),
+        resize_function=resize,
+    )
+
+    assert resize_calls == [(torch.Size([1, 8, 8]), (16, 16))]
+    assert torch.equal(results[0], torch.full((16, 16), 6.5))
+
+
+@pytest.mark.parametrize(
+    ("input_size", "output_size"),
+    [(6, 30), (6, 5)],
+)
+def test_triton_depth_resize_tables_match_torchvision_exactly(
+    input_size,
+    output_size,
+):
+    from inference_models.models.yolo26.triton_depth_postprocess import (
+        _build_axis_table,
+    )
+
+    starts, sizes, weights, _ = _build_axis_table(
+        input_size=input_size,
+        output_size=output_size,
+    )
+    basis = torch.eye(input_size, dtype=torch.float32).reshape(
+        input_size,
+        1,
+        input_size,
+    )
+    expected = functional.resize(
+        basis,
+        [1, output_size],
+        interpolation=functional.InterpolationMode.BILINEAR,
+    )[:, 0]
+    actual = torch.zeros_like(expected)
+    for output_index in range(output_size):
+        start = starts[output_index]
+        size = sizes[output_index]
+        actual[
+            start : start + size,
+            output_index,
+        ] = torch.from_numpy(weights[output_index, :size])
+
+    assert torch.equal(actual, expected)
+
+
+def test_yolo26_depth_execution_plan_preserves_base_default(monkeypatch):
+    from inference_models.models.yolo26.optimization.execution_plan import (
+        YOLO26DepthExecutionPlan,
+    )
+    from inference_models.models.yolo26.optimization.ids import (
+        YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
+    )
+
+    monkeypatch.delenv(YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME, raising=False)
+    assert YOLO26DepthExecutionPlan.resolve().postprocessor_id == "base"
+
+    monkeypatch.setenv(
+        YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
+    )
+    plan = YOLO26DepthExecutionPlan.resolve(
+        allow_compatibility_fallback=False,
+    )
+
+    assert plan.postprocessor_id == YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1
+    assert not plan.allow_compatibility_fallback
+
+
+def test_yolo26_depth_explicit_triton_selection_never_silently_falls_back():
+    from inference_models.errors import ModelRuntimeError
+    from inference_models.models.optimization.contracts import (
+        ExecutionContext,
+        OptimizationStage,
+    )
+    from inference_models.models.yolo26.optimization.ids import (
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
+    )
+    from inference_models.models.yolo26.optimization.postprocessors import (
+        build_yolo26_depth_implementation_registry,
+    )
+
+    registry = build_yolo26_depth_implementation_registry(
+        device=torch.device("cuda:0"),
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda:0",
+        compute_capability=(8, 7),
+        runtime_components={"torch": True, "torchvision": True, "triton": False},
+    )
+
+    with pytest.raises(ModelRuntimeError, match="unavailable runtime components"):
+        registry.resolve_selection(
+            stage=OptimizationStage.POSTPROCESS,
+            requested_id=YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
+            context=context,
+            allow_fallback=False,
+        )
 
 
 def test_post_process_depth_estimation_map_scales_padding_for_low_resolution_output():
