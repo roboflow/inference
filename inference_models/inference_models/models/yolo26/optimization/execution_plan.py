@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
+from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.yolo26.optimization.ids import (
-    YOLO26_DEPTH_POSTPROCESSOR_BASE,
     YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
 )
 
@@ -15,7 +15,7 @@ from inference_models.models.yolo26.optimization.ids import (
 class YOLO26DepthExecutionPlan(InferenceExecutionPlan):
     """Select the YOLO26 depth-estimation postprocessing implementation."""
 
-    postprocessor_id: str = YOLO26_DEPTH_POSTPROCESSOR_BASE
+    postprocessor_id: str = AUTO_IMPLEMENTATION_ID
 
     @classmethod
     def resolve(
@@ -50,7 +50,7 @@ class YOLO26DepthExecutionPlan(InferenceExecutionPlan):
         else:
             resolved_postprocessor_id = postprocessor_id or os.getenv(
                 YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
-                YOLO26_DEPTH_POSTPROCESSOR_BASE,
+                AUTO_IMPLEMENTATION_ID,
             )
             plan = cls(
                 postprocessor_id=resolved_postprocessor_id,

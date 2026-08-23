@@ -213,5 +213,9 @@ def build_yolo26_depth_implementation_registry(
         metadata=TritonAAYOLO26DepthPostprocessor.metadata,
         factory=lambda: TritonAAYOLO26DepthPostprocessor(device=device),
     )
+    registry.set_auto_preferences(
+        stage=OptimizationStage.POSTPROCESS,
+        implementation_ids=(YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,),
+    )
 
     return registry

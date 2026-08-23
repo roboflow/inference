@@ -182,7 +182,8 @@ def test_triton_depth_resize_tables_match_torchvision_exactly(
     assert torch.equal(actual, expected)
 
 
-def test_yolo26_depth_execution_plan_preserves_base_default(monkeypatch):
+def test_yolo26_depth_execution_plan_uses_auto_by_default(monkeypatch):
+    from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
     from inference_models.models.yolo26.optimization.execution_plan import (
         YOLO26DepthExecutionPlan,
     )
@@ -192,7 +193,7 @@ def test_yolo26_depth_execution_plan_preserves_base_default(monkeypatch):
     )
 
     monkeypatch.delenv(YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME, raising=False)
-    assert YOLO26DepthExecutionPlan.resolve().postprocessor_id == "base"
+    assert YOLO26DepthExecutionPlan.resolve().postprocessor_id == AUTO_IMPLEMENTATION_ID
 
     monkeypatch.setenv(
         YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
