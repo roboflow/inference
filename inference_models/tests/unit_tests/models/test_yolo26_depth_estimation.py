@@ -239,12 +239,13 @@ def test_yolo26_depth_explicit_triton_selection_never_silently_falls_back():
         )
 
 
-def test_yolo26_depth_auto_prefers_exact_candidate_and_retains_failed_v1():
+def test_yolo26_depth_auto_prefers_fused_v3_and_retains_prior_candidates():
     from inference_models.models.optimization.contracts import OptimizationStage
     from inference_models.models.yolo26.optimization.ids import (
-        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
     )
     from inference_models.models.yolo26.optimization.postprocessors import (
+        ExactFusedTritonAAYOLO26DepthPostprocessor,
         ExactTritonAAYOLO26DepthPostprocessor,
         TritonAAYOLO26DepthPostprocessor,
         build_yolo26_depth_implementation_registry,
@@ -255,10 +256,23 @@ def test_yolo26_depth_auto_prefers_exact_candidate_and_retains_failed_v1():
     )
 
     assert registry._auto_preferences[OptimizationStage.POSTPROCESS] == (
-        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,
+        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
     )
     assert TritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
     assert not ExactTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
+    assert not ExactFusedTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
+
+
+def test_exact_fused_v3_compacts_filters_and_dispatches_small_outputs():
+    from inference_models.models.yolo26.triton_depth_postprocess import (
+        _maximum_axis_filter_size,
+        _use_torchvision_base_path,
+    )
+
+    assert _maximum_axis_filter_size(input_size=576, output_size=480) == 3
+    assert _maximum_axis_filter_size(input_size=432, output_size=2160) == 2
+    assert _use_torchvision_base_path((480, 640))
+    assert not _use_torchvision_base_path((2160, 3840))
 
 
 def test_post_process_depth_estimation_map_scales_padding_for_low_resolution_output():

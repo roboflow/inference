@@ -20,10 +20,12 @@ from inference_models.models.optimization.contracts import (
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.yolo26.optimization.ids import (
     YOLO26_DEPTH_POSTPROCESSOR_BASE,
+    YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
     YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,
     YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
 )
 from inference_models.models.yolo26.triton_depth_postprocess import (
+    ExactFusedTritonDepthMapResizer,
     ExactSeparableTritonDepthMapResizer,
     TritonDepthMapResizer,
 )
@@ -279,6 +281,99 @@ class ExactTritonAAYOLO26DepthPostprocessor:
         return results
 
 
+class ExactFusedTritonAAYOLO26DepthPostprocessor:
+    """Run the shape-aware, exact fused resize candidate."""
+
+    metadata = OptimizationMetadata(
+        implementation_id=(YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3),
+        stage=OptimizationStage.POSTPROCESS,
+        version="3",
+        target=DeviceCompatibility(
+            device_kind="gpu",
+            minimum_compute_capability=(7, 0),
+        ),
+        inputs=InputCompatibility(
+            scenarios=(
+                "camera_640x480_batch_1_base",
+                "camera_3840x2160_batch_1_high",
+            ),
+            axis_constraints=immutable_mapping(
+                {
+                    "batch": 1,
+                    "channels": 1,
+                    "source_width_stride": 1,
+                    "maximum_antialias_filter_size": 5,
+                    "torchvision_dispatch_max_output_elements": 640 * 480,
+                }
+            ),
+            dtypes=("float32",),
+            layouts=("strided B1HW", "strided BHW"),
+        ),
+        dependencies=("torch", "torchvision", "triton"),
+        fallback_id=YOLO26_DEPTH_POSTPROCESSOR_BASE,
+        changes_numerics=False,
+        supports_concurrency=True,
+        supports_cuda_graphs=False,
+        output_contract=immutable_mapping(
+            {
+                "type": "list[torch.Tensor]",
+                "dtype": "float32",
+                "shape": "per-image original spatial dimensions",
+                "ownership": (
+                    "per-call output; immutable cached compact target-derived "
+                    "axis tables"
+                ),
+                "per_call_allocations": (
+                    "torchvision-managed output for small maps; one output depth "
+                    "map and no horizontal workspace for fused maps"
+                ),
+                "first_use_allocations": (
+                    "one compact starts, sizes, and weights table per cached axis"
+                ),
+                "aliasing": "none",
+            }
+        ),
+        numerical_behavior=(
+            "small maps retain the exact torchvision CUDA primitive; larger maps "
+            "generate compact weights with the target CUDA float32 formula and "
+            "reproduce its horizontal-then-vertical accumulation order in one "
+            "fused launch; exact target snapshot validation is required"
+        ),
+        stream_behavior=(
+            "runs on the active caller stream; small maps use torchvision and "
+            "large maps launch one Triton kernel; immutable table readiness is "
+            "established once per consuming stream"
+        ),
+    )
+
+    def __init__(self, *, device: torch.device) -> None:
+        self._resizer = ExactFusedTritonDepthMapResizer(device=device)
+
+    def is_compatible(self, context: ExecutionContext) -> bool:
+        """Return whether the fused exact implementation supports the target."""
+        return metadata_supports_context(self.metadata, context)
+
+    def postprocess(
+        self,
+        *,
+        model_results: torch.Tensor,
+        pre_processing_meta: List[PreProcessingMetadata],
+        context: ExecutionContext,
+    ) -> List[torch.Tensor]:
+        """Run shape-aware exact resize inside the shared geometry pipeline."""
+        with torch.cuda.nvtx.range(
+            "yolo26-depth.postprocess[" "effective=triton-aa-resize-exact-fused-v3]"
+        ):
+            results = post_process_depth_estimation_map(
+                model_results=model_results,
+                pre_processing_meta=pre_processing_meta,
+                device=torch.device(context.device),
+                resize_function=self._resizer.resize,
+            )
+
+        return results
+
+
 def build_yolo26_depth_implementation_registry(
     *,
     device: torch.device,
@@ -304,9 +399,15 @@ def build_yolo26_depth_implementation_registry(
         metadata=ExactTritonAAYOLO26DepthPostprocessor.metadata,
         factory=lambda: ExactTritonAAYOLO26DepthPostprocessor(device=device),
     )
+    registry.register_factory(
+        metadata=ExactFusedTritonAAYOLO26DepthPostprocessor.metadata,
+        factory=lambda: ExactFusedTritonAAYOLO26DepthPostprocessor(device=device),
+    )
     registry.set_auto_preferences(
         stage=OptimizationStage.POSTPROCESS,
-        implementation_ids=(YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,),
+        implementation_ids=(
+            YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
+        ),
     )
 
     return registry

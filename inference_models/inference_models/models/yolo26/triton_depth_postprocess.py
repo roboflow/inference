@@ -13,7 +13,7 @@ import math
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Dict, Set, Tuple
 
 import numpy as np
 import torch
@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover
 
 _MAX_TABLE_CACHE_ENTRIES = 8
 _OUTPUT_BLOCK_SIZE = 256
+_BASE_DISPATCH_MAX_OUTPUT_ELEMENTS = 640 * 480
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,19 @@ class _AxisTable:
     weights: torch.Tensor
     maximum_size: int
     ready_event: torch.cuda.Event
+
+
+def _use_torchvision_base_path(size: Tuple[int, int]) -> bool:
+    """Use the lower-overhead base primitive for small exact resize requests."""
+    output_height, output_width = size
+    return output_height * output_width <= _BASE_DISPATCH_MAX_OUTPUT_ELEMENTS
+
+
+def _maximum_axis_filter_size(*, input_size: int, output_size: int) -> int:
+    """Return the largest nonzero bilinear-antialias span for one axis."""
+    scale = np.float32(input_size / output_size)
+    support = max(scale, np.float32(1.0))
+    return min(input_size, int(math.ceil(float(np.float32(2.0) * support))))
 
 
 def _build_axis_table(
@@ -95,6 +109,54 @@ def _build_axis_table(
 
 
 if TRITON_AVAILABLE:
+
+    @triton.jit
+    def _build_axis_table_exact_kernel(
+        starts,
+        sizes,
+        weights,
+        input_size,
+        output_size,
+        scale,
+        support,
+        inverse_scale,
+        MAXIMUM_SIZE: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
+    ):
+        output_indices = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        output_mask = output_indices < output_size
+        centers = scale * (output_indices + 0.5)
+        first = (centers - support + 0.5).to(tl.int32)
+        stop = (centers + support + 0.5).to(tl.int32)
+        first = tl.maximum(first, 0)
+        stop = tl.minimum(stop, input_size)
+        axis_sizes = stop - first
+        tl.store(starts + output_indices, first, mask=output_mask)
+        tl.store(sizes + output_indices, axis_sizes, mask=output_mask)
+
+        first_minus_center = first - centers
+        total_weight = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
+        for kernel_index in tl.static_range(MAXIMUM_SIZE):
+            distance = (kernel_index + first_minus_center + 0.5) * inverse_scale
+            distance = tl.abs(distance)
+            weight = tl.where(distance < 1.0, 1.0 - distance, 0.0)
+            total_weight = tl.where(
+                output_mask & (kernel_index < axis_sizes),
+                total_weight + weight,
+                total_weight,
+            )
+
+        for kernel_index in tl.static_range(MAXIMUM_SIZE):
+            distance = (kernel_index + first_minus_center + 0.5) * inverse_scale
+            distance = tl.abs(distance)
+            weight = tl.where(distance < 1.0, 1.0 - distance, 0.0)
+            weight_mask = output_mask & (kernel_index < axis_sizes)
+            normalized_weight = tl.div_rn(weight, total_weight)
+            tl.store(
+                weights + output_indices * MAXIMUM_SIZE + kernel_index,
+                tl.where(weight_mask, normalized_weight, 0.0),
+                mask=output_mask,
+            )
 
     @triton.jit
     def _resize_bilinear_antialias_kernel(
@@ -150,6 +212,111 @@ if TRITON_AVAILABLE:
                 other=0.0,
             )
             output += horizontal * weight_y
+
+        tl.store(destination + offsets, output, mask=output_mask)
+
+    @triton.jit
+    def _resize_bilinear_antialias_exact_kernel(
+        source,
+        destination,
+        y_starts,
+        y_sizes,
+        y_weights,
+        x_starts,
+        x_sizes,
+        x_weights,
+        output_height,
+        output_width,
+        source_stride_h,
+        source_stride_w,
+        MAXIMUM_Y_SIZE: tl.constexpr,
+        MAXIMUM_X_SIZE: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
+    ):
+        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        output_elements = output_height * output_width
+        output_mask = offsets < output_elements
+        output_y = offsets // output_width
+        output_x = offsets % output_width
+
+        y_start = tl.load(y_starts + output_y, mask=output_mask, other=0)
+        y_size = tl.load(y_sizes + output_y, mask=output_mask, other=0)
+        x_start = tl.load(x_starts + output_x, mask=output_mask, other=0)
+        x_size = tl.load(x_sizes + output_x, mask=output_mask, other=0)
+
+        first_sample = tl.load(
+            source + y_start * source_stride_h + x_start * source_stride_w,
+            mask=output_mask,
+            other=0.0,
+        )
+        first_x_weight = tl.load(
+            x_weights + output_x * MAXIMUM_X_SIZE,
+            mask=output_mask,
+            other=0.0,
+        )
+        horizontal = first_sample * first_x_weight
+        for kernel_x in tl.static_range(1, MAXIMUM_X_SIZE):
+            sample = tl.load(
+                source
+                + y_start * source_stride_h
+                + (x_start + kernel_x) * source_stride_w,
+                mask=output_mask & (kernel_x < x_size),
+                other=0.0,
+            )
+            weight = tl.load(
+                x_weights + output_x * MAXIMUM_X_SIZE + kernel_x,
+                mask=output_mask & (kernel_x < x_size),
+                other=0.0,
+            )
+            accumulated = horizontal + sample * weight
+            horizontal = tl.where(
+                output_mask & (kernel_x < x_size),
+                accumulated,
+                horizontal,
+            )
+
+        first_y_weight = tl.load(
+            y_weights + output_y * MAXIMUM_Y_SIZE,
+            mask=output_mask,
+            other=0.0,
+        )
+        output = horizontal * first_y_weight
+        for kernel_y in tl.static_range(1, MAXIMUM_Y_SIZE):
+            source_y = y_start + kernel_y
+            y_mask = output_mask & (kernel_y < y_size)
+            first_sample = tl.load(
+                source + source_y * source_stride_h + x_start * source_stride_w,
+                mask=y_mask,
+                other=0.0,
+            )
+            horizontal = first_sample * first_x_weight
+            for kernel_x in tl.static_range(1, MAXIMUM_X_SIZE):
+                sample = tl.load(
+                    source
+                    + source_y * source_stride_h
+                    + (x_start + kernel_x) * source_stride_w,
+                    mask=y_mask & (kernel_x < x_size),
+                    other=0.0,
+                )
+                weight = tl.load(
+                    x_weights + output_x * MAXIMUM_X_SIZE + kernel_x,
+                    mask=y_mask & (kernel_x < x_size),
+                    other=0.0,
+                )
+                accumulated = horizontal + sample * weight
+                horizontal = tl.where(
+                    y_mask & (kernel_x < x_size),
+                    accumulated,
+                    horizontal,
+                )
+
+            y_weight = tl.load(
+                y_weights + output_y * MAXIMUM_Y_SIZE + kernel_y,
+                mask=y_mask,
+                other=0.0,
+            )
+            accumulated = output + horizontal * y_weight
+            output = tl.where(y_mask, accumulated, output)
 
         tl.store(destination + offsets, output, mask=output_mask)
 
@@ -548,3 +715,157 @@ class ExactSeparableTritonDepthMapResizer(TritonDepthMapResizer):
             self._prepare_table_for_stream(table=table)
 
         return table
+
+
+class ExactFusedTritonDepthMapResizer(TritonDepthMapResizer):
+    """Exact shape-aware resize with compact target-side table construction.
+
+    Small output maps retain the lower-overhead torchvision CUDA primitive.
+    Larger maps use one fused Triton launch with weights generated directly by
+    the same float32 formula as the target torchvision CUDA kernel. Construction
+    allocates only the compact tables, and the steady-state path has no
+    horizontal workspace.
+    """
+
+    _IMPLEMENTATION_ID = "triton-aa-resize-exact-fused-v3"
+
+    def __init__(self, *, device: torch.device) -> None:
+        super().__init__(device=device)
+        self._prepared_streams: Dict[Tuple[int, int], Set[int]] = {}
+
+    def resize(
+        self,
+        image: torch.Tensor,
+        size: Tuple[int, int],
+    ) -> torch.Tensor:
+        """Resize one CUDA depth map with exact shape-aware dispatch."""
+        self._validate_request(image=image, size=size)
+        if _use_torchvision_base_path(size):
+            with torch.cuda.nvtx.range("yolo26-depth.resize[path=torchvision-base]"):
+                return functional.resize(
+                    image,
+                    list(size),
+                    interpolation=functional.InterpolationMode.BILINEAR,
+                )
+
+        output_height, output_width = size
+        _, input_height, input_width = image.shape
+        y_table = self._axis_table(
+            input_size=input_height,
+            output_size=output_height,
+        )
+        x_table = self._axis_table(
+            input_size=input_width,
+            output_size=output_width,
+        )
+        output = torch.empty(
+            (1, output_height, output_width),
+            dtype=torch.float32,
+            device=self._device,
+        )
+
+        output_elements = output_height * output_width
+        grid = (triton.cdiv(output_elements, _OUTPUT_BLOCK_SIZE),)
+        with torch.cuda.nvtx.range("yolo26-depth.resize[path=triton-exact-fused]"):
+            _resize_bilinear_antialias_exact_kernel[grid](
+                image,
+                output,
+                y_table.starts,
+                y_table.sizes,
+                y_table.weights,
+                x_table.starts,
+                x_table.sizes,
+                x_table.weights,
+                output_height,
+                output_width,
+                image.stride(1),
+                image.stride(2),
+                MAXIMUM_Y_SIZE=y_table.maximum_size,
+                MAXIMUM_X_SIZE=x_table.maximum_size,
+                BLOCK_SIZE=_OUTPUT_BLOCK_SIZE,
+            )
+
+        return output
+
+    def _axis_table(self, *, input_size: int, output_size: int) -> _AxisTable:
+        key = (input_size, output_size)
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+                self._prepare_table_for_stream(key=key, table=cached)
+
+                return cached
+
+            scale = np.float32(input_size / output_size)
+            support = max(scale, np.float32(1.0))
+            inverse_scale = (
+                np.float32(1.0) / scale if scale >= np.float32(1.0) else np.float32(1.0)
+            )
+            maximum_size = _maximum_axis_filter_size(
+                input_size=input_size,
+                output_size=output_size,
+            )
+            starts_tensor = torch.empty(
+                output_size,
+                dtype=torch.int32,
+                device=self._device,
+            )
+            sizes_tensor = torch.empty(
+                output_size,
+                dtype=torch.int32,
+                device=self._device,
+            )
+            weights_tensor = torch.empty(
+                (output_size, maximum_size),
+                dtype=torch.float32,
+                device=self._device,
+            )
+            grid = (triton.cdiv(output_size, _OUTPUT_BLOCK_SIZE),)
+            _build_axis_table_exact_kernel[grid](
+                starts_tensor,
+                sizes_tensor,
+                weights_tensor,
+                input_size,
+                output_size,
+                float(scale),
+                float(support),
+                float(inverse_scale),
+                MAXIMUM_SIZE=maximum_size,
+                BLOCK_SIZE=_OUTPUT_BLOCK_SIZE,
+            )
+
+            ready_event = torch.cuda.Event()
+            ready_stream = torch.cuda.current_stream(device=self._device)
+            ready_event.record(ready_stream)
+            table = _AxisTable(
+                starts=starts_tensor,
+                sizes=sizes_tensor,
+                weights=weights_tensor,
+                maximum_size=maximum_size,
+                ready_event=ready_event,
+            )
+            self._cache[key] = table
+            self._prepared_streams[key] = {int(ready_stream.cuda_stream)}
+            if len(self._cache) > _MAX_TABLE_CACHE_ENTRIES:
+                evicted_key, _ = self._cache.popitem(last=False)
+                self._prepared_streams.pop(evicted_key, None)
+            self._prepare_table_for_stream(key=key, table=table)
+
+        return table
+
+    def _prepare_table_for_stream(
+        self,
+        *,
+        key: Tuple[int, int],
+        table: _AxisTable,
+    ) -> None:
+        stream = torch.cuda.current_stream(device=self._device)
+        stream_handle = int(stream.cuda_stream)
+        prepared_streams = self._prepared_streams.setdefault(key, set())
+        if stream_handle not in prepared_streams:
+            stream.wait_event(table.ready_event)
+            prepared_streams.add(stream_handle)
+        table.starts.record_stream(stream)
+        table.sizes.record_stream(stream)
+        table.weights.record_stream(stream)
