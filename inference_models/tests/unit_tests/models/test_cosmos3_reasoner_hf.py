@@ -156,75 +156,78 @@ def test_prompt_video_returns_single_string() -> None:
 
 
 @pytest.mark.parametrize(
-    ("text", "class_names", "num_frames", "fps", "expected"),
+    ("text", "class_names", "num_frames", "expected"),
     [
         (
+            '[{"start": 2, "end": 5, "class": "running"}]',
+            ["running"],
+            10,
+            [{"start_frame_idx": 2, "end_frame_idx": 5, "class": "running"}],
+        ),
+        (
+            # Only plain JSON integers under "class" survive: floats,
+            # numeric strings, and the "caption" key are all rejected.
+            '[{"start": 1.0, "end": "3", "caption": "jumping"}]',
+            ["jumping"],
+            8,
+            [],
+        ),
+        (
+            # Non-integer indices mean the model ignored the schema: drop.
             '[{"start": 0.21, "end": 1.01, "class": "running"}]',
             ["running"],
             10,
-            4.0,
-            [{"start_frame_idx": 0, "end_frame_idx": 5, "class": "running"}],
+            [],
         ),
         (
+            # Timestamps are not converted: drop.
             '[{"start": "00:01.25", "end": "00:02.01", '
             '"class": "running"}]',
             ["running"],
             10,
-            2.0,
-            [{"start_frame_idx": 2, "end_frame_idx": 5, "class": "running"}],
-        ),
-        (
-            '[{"start": "0.5", "end": "1", "caption": " jumping "}]',
-            ["jumping"],
-            8,
-            4.0,
-            [{"start_frame_idx": 2, "end_frame_idx": 4, "class": "jumping"}],
+            [],
         ),
         (
             '[{"start": 0, "end": 1, "class": "unknown"}]',
             ["running"],
             8,
-            4.0,
             [],
         ),
         (
-            '[{"start": -3, "end": 100, "class": "running"}]',
+            # Out-of-range indices are invalid: drop, no clamping.
+            '[{"start": -3, "end": 2, "class": "running"}, '
+            '{"start": 0, "end": 100, "class": "running"}]',
             ["running"],
             5,
-            4.0,
-            [{"start_frame_idx": 0, "end_frame_idx": 4, "class": "running"}],
+            [],
         ),
         (
             '[{"start": 2, "end": 1, "class": "running"}]',
             ["running"],
             10,
-            2.0,
-            [{"start_frame_idx": 2, "end_frame_idx": 4, "class": "running"}],
+            [{"start_frame_idx": 1, "end_frame_idx": 2, "class": "running"}],
         ),
-        ("The video contains somebody walking.", ["walking"], 10, 5.0, []),
+        ("The video contains somebody walking.", ["walking"], 10, []),
         (
             'analysis about the clip</think> '
-            '[{"start": 0, "end": 0.4, "class": "walking"}]',
+            '[{"start": 0, "end": 2, "class": "walking"}]',
             ["walking"],
             10,
-            5.0,
             [{"start_frame_idx": 0, "end_frame_idx": 2, "class": "walking"}],
         ),
         (
-            'Result:\n```json\n[{"start": 0.5, "end": 1.0, '
+            'Result:\n```json\n[{"start": 1, "end": 3, '
             '"class": "walking"}]\n```',
             ["walking"],
             10,
-            4.0,
-            [{"start_frame_idx": 2, "end_frame_idx": 4, "class": "walking"}],
+            [{"start_frame_idx": 1, "end_frame_idx": 3, "class": "walking"}],
         ),
         (
             '[{"start": "soon", "end": 1, "class": "walking"}, '
-            '{"start": 1, "end": 1.5, "class": "walking"}]',
+            '{"start": 1, "end": 3, "class": "walking"}]',
             ["walking"],
             10,
-            4.0,
-            [{"start_frame_idx": 4, "end_frame_idx": 6, "class": "walking"}],
+            [{"start_frame_idx": 1, "end_frame_idx": 3, "class": "walking"}],
         ),
     ],
 )
@@ -232,17 +235,16 @@ def test_parse_temporal_segments(
     text: str,
     class_names: list[str],
     num_frames: int,
-    fps: float,
     expected: list[dict],
 ) -> None:
-    assert _parse_temporal_segments(text, class_names, num_frames, fps) == expected
+    assert _parse_temporal_segments(text, class_names, num_frames) == expected
 
 
 def test_temporal_localization_builds_prompt_with_clip_metadata() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
     reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 0.4, "class": "walking"}]'
+        '[{"start": 0, "end": 2, "class": "walking"}]'
     ]
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
 
@@ -258,6 +260,7 @@ def test_temporal_localization_builds_prompt_with_clip_metadata() -> None:
     assert "jumping" in prompt
     assert "4 frames" in prompt
     assert "5.0 fps" in prompt
+    assert "frame indices between 0 and 3" in prompt
     assert result == [
         {"start_frame_idx": 0, "end_frame_idx": 2, "class": "walking"}
     ]
@@ -267,7 +270,7 @@ def test_temporal_localization_accepts_chw_tensor_frames() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
     reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 0.5, "class": "moving"}]'
+        '[{"start": 0, "end": 2, "class": "moving"}]'
     ]
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
 

@@ -4,7 +4,6 @@ originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 """
 
 import json
-import math
 import re
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -28,9 +27,10 @@ TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
     "Class vocabulary: {class_vocabulary}\n"
     "The clip contains {num_frames} frames sampled at {fps} fps.\n"
     "Return STRICT JSON array output using this schema:\n"
-    '[{{"start": <seconds>, "end": <seconds>, '
+    '[{{"start": <frame index>, "end": <frame index>, '
     '"class": "<one of the vocabulary>"}}]\n'
-    "Report start and end times in SECONDS, not frame indices. Events may overlap.\n"
+    "Report start and end as frame indices between 0 and {max_frame_idx}, "
+    "not timestamps. Events may overlap.\n"
     "Return [] when no event matches the class vocabulary."
 )
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
@@ -38,50 +38,25 @@ THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL)
 THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
 
 
-def _parse_temporal_time(value: Any) -> Optional[float]:
-    if isinstance(value, bool):
+def _parse_frame_index(value: Any) -> Optional[int]:
+    """Return ``value`` when it is a plain JSON integer, else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, int):
         return None
-    if isinstance(value, (int, float)):
-        seconds = float(value)
-    elif isinstance(value, str):
-        value = value.strip()
-        if not value:
-            return None
-        if ":" in value:
-            parts = value.split(":")
-            if len(parts) != 2:
-                return None
-            try:
-                minutes = int(parts[0])
-                remaining_seconds = float(parts[1])
-            except ValueError:
-                return None
-            if minutes < 0 or not 0 <= remaining_seconds < 60:
-                return None
-            seconds = minutes * 60 + remaining_seconds
-        else:
-            try:
-                seconds = float(value)
-            except ValueError:
-                return None
-    else:
-        return None
-    return seconds if math.isfinite(seconds) else None
+    return value
 
 
 def _parse_temporal_segments(
     text: str,
     class_names: Optional[List[str]],
     num_frames: int,
-    fps: float,
 ) -> List[dict]:
-    """Parse temporal-localization output into sampled-frame ranges."""
-    if (
-        not isinstance(text, str)
-        or num_frames <= 0
-        or fps <= 0
-        or not math.isfinite(fps)
-    ):
+    """Parse temporal-localization output into frame-index ranges.
+
+    An entry survives only when both boundaries are valid integer frame
+    indices inside ``[0, num_frames - 1]``; inverted boundaries are
+    swapped.
+    """
+    if not isinstance(text, str) or num_frames <= 0:
         return []
     decoder = json.JSONDecoder()
     entries = None
@@ -106,20 +81,22 @@ def _parse_temporal_segments(
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        label_value = entry.get("class") or entry.get("caption")
-        if label_value is None:
+        label_value = entry.get("class")
+        if not isinstance(label_value, str):
             continue
-        label = str(label_value).strip()
+        label = label_value.strip()
         if not label or (
             allowed_classes is not None and label not in allowed_classes
         ):
             continue
-        start_seconds = _parse_temporal_time(entry.get("start"))
-        end_seconds = _parse_temporal_time(entry.get("end"))
-        if start_seconds is None or end_seconds is None:
+        start_frame_idx = _parse_frame_index(entry.get("start"))
+        end_frame_idx = _parse_frame_index(entry.get("end"))
+        if start_frame_idx is None or end_frame_idx is None:
             continue
-        start_frame_idx = min(max(math.floor(start_seconds * fps), 0), max_frame_idx)
-        end_frame_idx = min(max(math.ceil(end_seconds * fps), 0), max_frame_idx)
+        if not 0 <= start_frame_idx <= max_frame_idx:
+            continue
+        if not 0 <= end_frame_idx <= max_frame_idx:
+            continue
         if start_frame_idx > end_frame_idx:
             start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
         result.append(
@@ -298,6 +275,7 @@ class Cosmos3EdgeReasoner:
             class_vocabulary=json.dumps(class_vocabulary),
             num_frames=len(normalized_frames),
             fps=fps,
+            max_frame_idx=max(len(normalized_frames) - 1, 0),
         )
         response = self.prompt_video(
             frames=normalized_frames,
@@ -313,7 +291,6 @@ class Cosmos3EdgeReasoner:
             text=response,
             class_names=class_names,
             num_frames=len(normalized_frames),
-            fps=fps,
         )
 
     def pre_process_generation(
