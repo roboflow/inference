@@ -239,6 +239,8 @@ When `AutoModel.from_pretrained()` is called:
 
 - `"gaze-detection"` - Detect gaze direction
 
+- `"video-multi-label-classification"` - Classify overlapping video events
+
 - `"open-vocabulary-object-detection"` - Open-vocabulary detection
 
 - `"interactive-instance-segmentation"` - Interactive segmentation (SAM-like)
@@ -389,4 +391,3 @@ Your documentation should cover:
 For more information:
 - [Writing Tests](writing-tests.md) - Best practices for testing
 - [Dependencies and Backends](dependencies-and-backends.md) - Managing dependencies
-

@@ -400,6 +400,9 @@
 - NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
   image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
   standard VLM contract. The generative world-model tower ships separately.
+- NVIDIA Cosmos 3 Edge temporal action localization (`cosmos-3-edge`, task
+  `video-multi-label-classification`, backend `hugging-face`): overlapping video events
+  returned as class-labelled frame ranges.
 - NVIDIA Cosmos 3 Edge generator (`cosmos-3-edge-world`, task `world-model`, backend
   `custom`): image-to-video (`generate_video`), forward dynamics (`start_rollout` +
   `forward_dynamics` with explicit session-state threading), and inverse dynamics

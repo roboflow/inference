@@ -24,6 +24,7 @@ GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 WORLD_MODEL_TASK = "world-model"
+VIDEO_MULTI_LABEL_CLASSIFICATION_TASK = "video-multi-label-classification"
 
 
 @dataclass(frozen=True)
@@ -308,6 +309,14 @@ REGISTERED_MODELS: Dict[
         class_name="Qwen3VLHF",
     ),
     ("cosmos-3-edge", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
+        class_name="Cosmos3EdgeReasoner",
+    ),
+    (
+        "cosmos-3-edge",
+        VIDEO_MULTI_LABEL_CLASSIFICATION_TASK,
+        BackendType.HF,
+    ): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",
     ),

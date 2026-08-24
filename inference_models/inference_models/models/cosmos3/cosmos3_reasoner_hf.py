@@ -3,6 +3,8 @@ This is inference-models wrapper for the reasoner tower of NVIDIA Cosmos 3 Edge,
 originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 """
 
+import json
+import math
 import re
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -21,9 +23,113 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat
 
 DEFAULT_PROMPT = "Describe what's in this image."
+TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
+    "Identify every temporal event in this video that matches the class vocabulary.\n"
+    "Class vocabulary: {class_vocabulary}\n"
+    "The clip contains {num_frames} frames sampled at {fps} fps.\n"
+    "Return STRICT JSON array output using this schema:\n"
+    '[{{"start": <seconds>, "end": <seconds>, '
+    '"class": "<one of the vocabulary>"}}]\n'
+    "Report start and end times in SECONDS, not frame indices. Events may overlap.\n"
+    "Return [] when no event matches the class vocabulary."
+)
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
 THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL)
 THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
+
+
+def _parse_temporal_time(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+    elif isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        if ":" in value:
+            parts = value.split(":")
+            if len(parts) != 2:
+                return None
+            try:
+                minutes = int(parts[0])
+                remaining_seconds = float(parts[1])
+            except ValueError:
+                return None
+            if minutes < 0 or not 0 <= remaining_seconds < 60:
+                return None
+            seconds = minutes * 60 + remaining_seconds
+        else:
+            try:
+                seconds = float(value)
+            except ValueError:
+                return None
+    else:
+        return None
+    return seconds if math.isfinite(seconds) else None
+
+
+def _parse_temporal_segments(
+    text: str,
+    class_names: Optional[List[str]],
+    num_frames: int,
+    fps: float,
+) -> List[dict]:
+    """Parse temporal-localization output into sampled-frame ranges."""
+    if (
+        not isinstance(text, str)
+        or num_frames <= 0
+        or fps <= 0
+        or not math.isfinite(fps)
+    ):
+        return []
+    decoder = json.JSONDecoder()
+    entries = None
+    for match in re.finditer(r"\[", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, list):
+            entries = value
+            break
+    if entries is None:
+        return []
+
+    allowed_classes = (
+        {str(class_name).strip() for class_name in class_names}
+        if class_names is not None
+        else None
+    )
+    max_frame_idx = num_frames - 1
+    result = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        label_value = entry.get("class") or entry.get("caption")
+        if label_value is None:
+            continue
+        label = str(label_value).strip()
+        if not label or (
+            allowed_classes is not None and label not in allowed_classes
+        ):
+            continue
+        start_seconds = _parse_temporal_time(entry.get("start"))
+        end_seconds = _parse_temporal_time(entry.get("end"))
+        if start_seconds is None or end_seconds is None:
+            continue
+        start_frame_idx = min(max(math.floor(start_seconds * fps), 0), max_frame_idx)
+        end_frame_idx = min(max(math.ceil(end_seconds * fps), 0), max_frame_idx)
+        if start_frame_idx > end_frame_idx:
+            start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
+        result.append(
+            {
+                "start_frame_idx": start_frame_idx,
+                "end_frame_idx": end_frame_idx,
+                "class": label,
+            }
+        )
+    return result
 
 
 def _get_cosmos3_attn_implementation(device: torch.device) -> str:
@@ -165,6 +271,50 @@ class Cosmos3EdgeReasoner:
             skip_special_tokens=skip_special_tokens,
             return_thinking=return_thinking,
         )[0]
+
+    def temporal_localization(
+        self,
+        frames: Union[List[np.ndarray], List[torch.Tensor]],
+        class_names: Optional[List[str]] = None,
+        input_color_format: ColorFormat = None,
+        fps: Optional[float] = None,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """Locate vocabulary events in a video clip."""
+        if fps is None:
+            raise ValueError("fps is required for temporal localization")
+        normalized_frames = []
+        for frame in frames:
+            if isinstance(frame, torch.Tensor):
+                frame = frame.detach().cpu().permute(1, 2, 0)
+                if frame.dtype == torch.bfloat16:
+                    frame = frame.float()
+                frame = frame.numpy()
+            normalized_frames.append(frame)
+        class_vocabulary = [str(class_name).strip() for class_name in class_names or []]
+        prompt = TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE.format(
+            class_vocabulary=json.dumps(class_vocabulary),
+            num_frames=len(normalized_frames),
+            fps=fps,
+        )
+        response = self.prompt_video(
+            frames=normalized_frames,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            **kwargs,
+        )
+        if isinstance(response, dict):
+            response = response.get("answer", "")
+        return _parse_temporal_segments(
+            text=response,
+            class_names=class_names,
+            num_frames=len(normalized_frames),
+            fps=fps,
+        )
 
     def pre_process_generation(
         self,
