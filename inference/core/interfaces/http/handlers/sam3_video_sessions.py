@@ -1,6 +1,7 @@
+import asyncio
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from inference.core.interfaces.http.api_key_resolution import (
@@ -69,17 +70,14 @@ def register_sam3_video_session_routes(app: FastAPI) -> None:
     @with_route_exceptions_async
     async def create_sam3_video_session(
         request: Sam3VideoSessionRequest,
-        r: Request,
     ) -> Sam3VideoSessionCreated:
         api_key = _require_api_key(api_key_override(request.api_key))
         try:
-            callback_base = resolve_events_callback_base(
-                request.events_callback_base,
-                str(r.base_url),
-            )
+            callback_base = resolve_events_callback_base(request.events_callback_base)
         except ValueError as error:
             _map_lookup_errors(error)
-        session_id = start_session(
+        session_id = await asyncio.to_thread(
+            start_session,
             request,
             api_key=api_key,
             events_callback_base=callback_base,
@@ -99,7 +97,11 @@ def register_sam3_video_session_routes(app: FastAPI) -> None:
     ) -> Sam3VideoSessionSnapshot:
         resolved_key = _require_api_key(api_key_fallback(api_key))
         try:
-            snap = session_snapshot(session_id, api_key=resolved_key)
+            snap = await asyncio.to_thread(
+                session_snapshot,
+                session_id,
+                api_key=resolved_key,
+            )
         except (KeyError, PermissionError) as error:
             _map_lookup_errors(error)
         if snap is None:
@@ -127,7 +129,11 @@ def register_sam3_video_session_routes(app: FastAPI) -> None:
     ) -> StreamingResponse:
         resolved_key = _require_api_key(api_key_fallback(api_key))
         try:
-            session_snapshot(session_id, api_key=resolved_key)
+            await asyncio.to_thread(
+                session_snapshot,
+                session_id,
+                api_key=resolved_key,
+            )
         except (KeyError, PermissionError) as error:
             _map_lookup_errors(error)
         return StreamingResponse(
@@ -156,7 +162,7 @@ def register_sam3_video_session_routes(app: FastAPI) -> None:
     ) -> dict:
         api_key = _require_api_key(api_key_override(request.api_key))
         try:
-            end_session(session_id, api_key=api_key)
+            await asyncio.to_thread(end_session, session_id, api_key=api_key)
         except (KeyError, PermissionError) as error:
             _map_lookup_errors(error)
         return {"status": "ok"}
@@ -177,7 +183,8 @@ def register_sam3_video_session_routes(app: FastAPI) -> None:
     ) -> dict:
         _require_api_key(api_key_override(api_key))
         try:
-            stop_requested = publish_internal_event(
+            stop_requested = await asyncio.to_thread(
+                publish_internal_event,
                 session_id,
                 publish_token=request.publish_token,
                 event=request.event,

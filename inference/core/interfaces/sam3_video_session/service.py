@@ -1,13 +1,19 @@
 import asyncio
 import hashlib
+import hmac
+import ipaddress
 import json
 import multiprocessing
 import secrets
+import time
 import uuid
 from typing import Any, AsyncIterator, Dict, Optional
 from urllib.parse import urljoin, urlparse
 
 from inference.core.env import (
+    PORT,
+    SAM3_VIDEO_EVENTS_CALLBACK_BASE,
+    SAM3_VIDEO_SESSION_SILENCE_TIMEOUT_SECONDS,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
@@ -17,6 +23,8 @@ from inference.core.env import (
 )
 from inference.core.exceptions import CreditsExceededError, WorkspaceStreamQuotaError
 from inference.core.interfaces.sam3_video_session.entities import (
+    ALLOWED_APP_HOST_SUFFIXES,
+    ALLOWED_APP_HOSTS,
     Sam3VideoSessionRequest,
     Sam3VideoWorkerPayload,
 )
@@ -31,7 +39,9 @@ from inference.core.interfaces.sam3_video_session.session_store import (
     snapshot,
     update_session,
 )
-from inference.core.interfaces.sam3_video_session.worker import run_sam3_video_session_from_dict
+from inference.core.interfaces.sam3_video_session.worker import (
+    run_sam3_video_session_from_dict,
+)
 from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     is_over_quota,
@@ -42,22 +52,81 @@ from inference.core.interfaces.webrtc_worker.utils import (
 from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
 
+_OWNER_KEY_HMAC_MESSAGE = b"inference-sam3-video-session-owner-v1"
+
 
 def _hash_api_key(api_key: Optional[str]) -> str:
     if not api_key:
         return ""
-    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    # codeql[py/weak-sensitive-data-hashing]: HMAC owner fingerprint, not password storage.
+    return hmac.new(
+        key=api_key.encode("utf-8"),
+        msg=_OWNER_KEY_HMAC_MESSAGE,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
 
 
-def resolve_events_callback_base(requested: Optional[str], request_base: str) -> str:
-    fallback = str(request_base).rstrip("/") + "/"
+def _is_loopback_host(host: str) -> bool:
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def configured_events_callback_base() -> str:
+    configured = SAM3_VIDEO_EVENTS_CALLBACK_BASE
+    if configured:
+        return configured.rstrip("/") + "/"
+    return f"http://127.0.0.1:{PORT}/"
+
+
+def _configured_callback_host() -> str:
+    return (urlparse(configured_events_callback_base()).hostname or "").lower()
+
+
+def _is_allowed_events_callback_host(host: str) -> bool:
+    normalized = host.lower().strip("[]")
+    if not normalized:
+        return False
+    if _is_loopback_host(normalized):
+        return True
+    try:
+        ipaddress.ip_address(normalized)
+    except ValueError:
+        pass
+    else:
+        return False
+    if normalized in ALLOWED_APP_HOSTS:
+        return True
+    if normalized.endswith(ALLOWED_APP_HOST_SUFFIXES):
+        return True
+    configured_host = _configured_callback_host()
+    return bool(configured_host) and normalized == configured_host
+
+
+def _is_allowed_events_callback_base(url: str) -> bool:
+    if "\\" in url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not host or "\\" in (parsed.netloc or ""):
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if not _is_loopback_host(host) and parsed.scheme != "https":
+        return False
+    return _is_allowed_events_callback_host(host)
+
+
+def resolve_events_callback_base(requested: Optional[str]) -> str:
+    fallback = configured_events_callback_base()
     if not requested:
         return fallback
-    requested_host = (urlparse(requested).hostname or "").lower()
-    fallback_host = (urlparse(fallback).hostname or "").lower()
-    if requested_host and requested_host == fallback_host:
-        return requested.rstrip("/") + "/"
-    raise ValueError("events_callback_base host must match this inference server")
+    if not _is_allowed_events_callback_base(requested):
+        raise ValueError("events_callback_base host must match this inference server")
+    return requested.rstrip("/") + "/"
 
 
 def _events_callback_url(base: str, session_id: str) -> str:
@@ -81,7 +150,9 @@ def _spawn_local(payload: Sam3VideoWorkerPayload) -> None:
 
 
 def _spawn_modal(payload: Sam3VideoWorkerPayload) -> Optional[str]:
-    from inference.core.interfaces.sam3_video_session.modal import spawn_sam3_video_session_modal
+    from inference.core.interfaces.sam3_video_session.modal import (
+        spawn_sam3_video_session_modal,
+    )
 
     return spawn_sam3_video_session_modal(payload)
 
@@ -111,6 +182,7 @@ def start_session(
         workspace_id = get_roboflow_workspace(api_key=api_key)
 
     session_id = str(uuid.uuid4())
+    quota_registered = False
     if WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED and workspace_id:
         if is_over_workspace_session_quota(
             workspace_id=workspace_id,
@@ -122,6 +194,7 @@ def start_session(
                 f"concurrent streams."
             )
         register_webrtc_session(workspace_id=workspace_id, session_id=session_id)
+        quota_registered = True
 
     publish_token = secrets.token_urlsafe(32)
     create_session(
@@ -145,16 +218,28 @@ def start_session(
         processing_timeout=request.processing_timeout,
     )
 
-    if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
-        try:
+    try:
+        if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
             call_id = _spawn_modal(payload)
             if call_id:
                 update_session(session_id, modal_call_id=call_id)
-        except Exception:
-            request_stop(session_id)
-            raise
-    else:
-        _spawn_local(payload)
+        else:
+            _spawn_local(payload)
+    except Exception:
+        request_stop(session_id)
+        if quota_registered and workspace_id:
+            try:
+                deregister_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                )
+            except Exception as error:
+                logger.debug(
+                    "Could not deregister SAM3 video session quota slot %s: %s",
+                    session_id,
+                    error,
+                )
+        raise
 
     logger.info("Started SAM3 video session %s", session_id)
     return session_id
@@ -220,25 +305,50 @@ def _public_event(event: dict) -> dict:
     return {key: value for key, value in event.items() if key != "publish_token"}
 
 
+def _release_session_resources(session_id: str, workspace_id: Optional[str]) -> None:
+    request_stop(session_id)
+    if not workspace_id:
+        return
+    try:
+        deregister_webrtc_session(
+            workspace_id=workspace_id,
+            session_id=session_id,
+        )
+    except Exception as error:
+        logger.debug(
+            "Could not deregister SAM3 video session quota slot %s: %s",
+            session_id,
+            error,
+        )
+
+
 async def iter_public_events(
     session_id: str,
     *,
     api_key: str,
     after_seq: int,
 ) -> AsyncIterator[str]:
-    meta = require_owner(session_id, api_key)
+    meta = await asyncio.to_thread(require_owner, session_id, api_key)
     workspace_id = meta.get("workspace_id")
     last_seq = after_seq
+    last_progress_at = time.time()
+    silence_timeout = max(0, SAM3_VIDEO_SESSION_SILENCE_TIMEOUT_SECONDS)
     while True:
-        mark_client_seen(session_id)
+        await asyncio.to_thread(mark_client_seen, session_id)
         if workspace_id:
-            refresh_webrtc_session(workspace_id=workspace_id, session_id=session_id)
-        current = snapshot(session_id)
+            await asyncio.to_thread(
+                refresh_webrtc_session,
+                workspace_id=workspace_id,
+                session_id=session_id,
+            )
+        current = await asyncio.to_thread(snapshot, session_id)
         if current is None:
             error = {"seq": last_seq, "type": "error", "message": "session not found"}
             yield f"event: error\ndata: {json.dumps(error)}\n\n"
             return
-        events = list_events(session_id, after_seq=last_seq)
+        events = await asyncio.to_thread(list_events, session_id, after_seq=last_seq)
+        if events or int(current.get("last_seq") or 0) != last_seq:
+            last_progress_at = time.time()
         for event in events:
             last_seq = int(event.get("seq") or last_seq)
             public = _public_event(event)
@@ -246,5 +356,20 @@ async def iter_public_events(
             if public.get("type") in {"done", "error"}:
                 return
         if current.get("status") in {"completed", "failed", "cancelled"}:
+            return
+        if (time.time() - last_progress_at) >= silence_timeout:
+            timeout_event = await asyncio.to_thread(
+                append_event,
+                session_id,
+                "error",
+                {"message": "worker timed out"},
+            )
+            public = _public_event(timeout_event)
+            yield f"event: error\ndata: {json.dumps(public)}\n\n"
+            await asyncio.to_thread(
+                _release_session_resources,
+                session_id,
+                workspace_id,
+            )
             return
         await asyncio.sleep(0.2)

@@ -1,4 +1,3 @@
-import hashlib
 import uuid
 
 import pytest
@@ -8,6 +7,9 @@ from inference.core.interfaces.sam3_video_session.entities import (
     Sam3VideoSessionRequest,
 )
 from inference.core.interfaces.sam3_video_session.service import (
+    _hash_api_key,
+    configured_events_callback_base,
+    iter_public_events,
     publish_internal_event,
     require_owner,
     resolve_events_callback_base,
@@ -67,7 +69,7 @@ def test_require_owner_rejects_other_api_key() -> None:
         session_id,
         workspace_id="ws-1",
         publish_token="token",
-        owner_api_key_hash=hashlib.sha256(b"owner-key").hexdigest(),
+        owner_api_key_hash=_hash_api_key("owner-key"),
     )
     with pytest.raises(PermissionError):
         require_owner(session_id, "other-key")
@@ -77,17 +79,22 @@ def test_require_owner_rejects_other_api_key() -> None:
 
 def test_resolve_events_callback_base_rejects_foreign_host() -> None:
     with pytest.raises(ValueError, match="must match this inference server"):
-        resolve_events_callback_base(
-            "https://evil.example/callback",
-            "https://serverless.roboflow.com",
-        )
+        resolve_events_callback_base("https://evil.example/callback")
 
 
-def test_resolve_events_callback_base_allows_same_host() -> None:
-    resolved = resolve_events_callback_base(
-        "https://serverless.roboflow.com",
-        "https://serverless.roboflow.com/",
-    )
+def test_resolve_events_callback_base_rejects_metadata_ip() -> None:
+    with pytest.raises(ValueError, match="must match this inference server"):
+        resolve_events_callback_base("http://169.254.169.254/")
+
+
+def test_resolve_events_callback_base_defaults_to_loopback() -> None:
+    resolved = resolve_events_callback_base(None)
+    assert resolved == configured_events_callback_base()
+    assert "127.0.0.1" in resolved
+
+
+def test_resolve_events_callback_base_allows_roboflow_host() -> None:
+    resolved = resolve_events_callback_base("https://serverless.roboflow.com")
     assert resolved == "https://serverless.roboflow.com/"
 
 
@@ -146,3 +153,40 @@ def test_start_session_spawns_local_without_modal(monkeypatch) -> None:
     snap = session_snapshot(session_id, api_key="rf_key")
     assert snap is not None
     assert snap["session_id"] == session_id
+
+
+@pytest.mark.asyncio
+async def test_iter_public_events_terminates_when_worker_is_silent(
+    monkeypatch,
+) -> None:
+    session_id = f"sam3-video-session-test-{uuid.uuid4()}"
+    create_session(
+        session_id,
+        workspace_id="ws-1",
+        publish_token="token",
+        owner_api_key_hash=_hash_api_key("rf_key"),
+    )
+    monkeypatch.setattr(
+        "inference.core.interfaces.sam3_video_session.service.SAM3_VIDEO_SESSION_SILENCE_TIMEOUT_SECONDS",
+        0,
+    )
+
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "inference.core.interfaces.sam3_video_session.service.asyncio.sleep",
+        no_sleep,
+    )
+
+    chunks = []
+    async for chunk in iter_public_events(
+        session_id,
+        api_key="rf_key",
+        after_seq=0,
+    ):
+        chunks.append(chunk)
+
+    body = "".join(chunks)
+    assert "event: error" in body
+    assert "worker timed out" in body

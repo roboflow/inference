@@ -3,7 +3,11 @@ import time
 from typing import Any, Dict, List, Optional
 
 from inference.core.cache import cache
-from inference.core.env import WEBRTC_WORKSPACE_STREAM_TTL_SECONDS
+from inference.core.env import (
+    SAM3_VIDEO_SESSION_EVENT_PAGE_SIZE,
+    SAM3_VIDEO_SESSION_MAX_RETAINED_EVENTS,
+    WEBRTC_WORKSPACE_STREAM_TTL_SECONDS,
+)
 from inference.core.interfaces.sam3_video_session.entities import (
     SESSION_EVENT_TTL_SECONDS,
     Sam3VideoSessionStatus,
@@ -112,12 +116,20 @@ def append_event(
     event: Dict[str, Any] = {"seq": seq, "type": event_type}
     if payload:
         event.update(payload)
+    events_key = _events_key(session_id)
     cache.zadd(
-        _events_key(session_id),
+        events_key,
         event,
         float(seq),
         expire=_event_ttl_seconds(),
     )
+    max_retained = max(1, SAM3_VIDEO_SESSION_MAX_RETAINED_EVENTS)
+    if seq > max_retained:
+        cache.zremrangebyscore(
+            events_key,
+            min=-1,
+            max=float(seq - max_retained),
+        )
     fields: Dict[str, Any] = {"last_seq": seq}
     if event_type == "frame":
         frame_id = event.get("frame_id")
@@ -136,14 +148,21 @@ def append_event(
     return event
 
 
-def list_events(session_id: str, after_seq: int = 0) -> List[Dict[str, Any]]:
+def list_events(
+    session_id: str,
+    after_seq: int = 0,
+    *,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    page_size = SAM3_VIDEO_SESSION_EVENT_PAGE_SIZE if limit is None else limit
+    page_size = max(1, int(page_size))
     raw_events = cache.zrangebyscore(
         _events_key(session_id),
         min=float(after_seq) + 0.5,
         max=float("inf"),
     )
     events: List[Dict[str, Any]] = []
-    for item in raw_events:
+    for item in raw_events[:page_size]:
         if isinstance(item, dict):
             events.append(item)
             continue

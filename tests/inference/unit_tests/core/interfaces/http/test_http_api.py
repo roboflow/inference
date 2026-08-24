@@ -1780,6 +1780,32 @@ def _build_plain_interface(monkeypatch):
     return interface, model_manager
 
 
+def test_sam3_video_sessions_register_when_flag_enabled_without_webrtc(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "SAM3_VIDEO_SESSIONS_ENABLED", True)
+    monkeypatch.setattr(http_api, "WEBRTC_WORKER_ENABLED", False)
+    interface, _ = _build_plain_interface(monkeypatch)
+    paths = _route_paths(interface)
+    assert "/sam3/video/sessions" in paths
+    assert "/initialise_webrtc_worker" not in paths
+
+
+def test_sam3_video_sessions_do_not_register_when_flag_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "SAM3_VIDEO_SESSIONS_ENABLED", False)
+    monkeypatch.setattr(http_api, "WEBRTC_WORKER_ENABLED", True)
+    interface, _ = _build_plain_interface(monkeypatch)
+    paths = _route_paths(interface)
+    assert "/sam3/video/sessions" not in paths
+    assert "/initialise_webrtc_worker" in paths
+
+
 @pytest.mark.parametrize("location", ["query", "body", "bearer"])
 def test_dedicated_middleware_accepts_key_from_each_location(
     monkeypatch, location

@@ -201,6 +201,7 @@ from inference.core.env import (
     SAM3_3D_OBJECTS_ENABLED,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
+    SAM3_VIDEO_SESSIONS_ENABLED,
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
@@ -2640,7 +2641,8 @@ class HttpInterface(BaseInterface):
                 )
                 return {"status": "ok"}
 
-        register_sam3_video_session_routes(app)
+        if SAM3_VIDEO_SESSIONS_ENABLED:
+            register_sam3_video_session_routes(app)
 
         if ENABLE_STREAM_API:
 

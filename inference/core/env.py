@@ -232,6 +232,21 @@ _sam3_fine_tuned_default = "False" if SAM3_EXEC_MODE == "remote" else "True"
 SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
     os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
 )
+# Independent of WEBRTC_WORKER_ENABLED so SAM3 HTTP sessions can stay
+# on when the WebRTC surface is disabled, and vice versa.
+SAM3_VIDEO_SESSIONS_ENABLED = str2bool(os.getenv("SAM3_VIDEO_SESSIONS_ENABLED", "True"))
+# Trusted public base the SAM3 video worker POSTs events to. Never derived
+# from the request Host header. Unset falls back to loopback on PORT.
+SAM3_VIDEO_EVENTS_CALLBACK_BASE = os.getenv("SAM3_VIDEO_EVENTS_CALLBACK_BASE")
+SAM3_VIDEO_SESSION_SILENCE_TIMEOUT_SECONDS = int(
+    os.getenv("SAM3_VIDEO_SESSION_SILENCE_TIMEOUT_SECONDS", "600")
+)
+SAM3_VIDEO_SESSION_MAX_RETAINED_EVENTS = int(
+    os.getenv("SAM3_VIDEO_SESSION_MAX_RETAINED_EVENTS", "32")
+)
+SAM3_VIDEO_SESSION_EVENT_PAGE_SIZE = int(
+    os.getenv("SAM3_VIDEO_SESSION_EVENT_PAGE_SIZE", "32")
+)
 
 # DEPRECATED: Gaze detection has been removed along with the MediaPipe
 # dependency. When True (default), the legacy POST /gaze/gaze_detection
