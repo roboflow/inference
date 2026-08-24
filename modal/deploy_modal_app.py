@@ -29,7 +29,7 @@ from utils import (
     validate_deployment_prerequisites,
 )
 
-from inference.core.env import WEBEXEC_INFERENCE_VERSION, WEBEXEC_MODAL_APP_NAME
+from inference.core.env import WEBEXEC_MODAL_APP_NAME
 from inference.core.version import __version__
 
 
@@ -50,7 +50,8 @@ except ImportError as e:
     print("\nPlease make sure you're running this script from the correct directory.")
     sys.exit(1)
 
-inference_version = WEBEXEC_INFERENCE_VERSION
+INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
+inference_version = INFERENCE_VERSION
 if not inference_version:
     try:
         from inference.core.version import __version__
