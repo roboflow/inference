@@ -311,6 +311,26 @@ def test_model_row_omits_source_for_the_external_placeholder():
     assert "source" not in result
 
 
+@pytest.mark.parametrize("placeholder", ["external", None])
+def test_model_row_omits_the_placeholder_the_legacy_route_supplies(placeholder):
+    """The legacy route defaults ``source`` to "external", and ``/infer/*`` to None.
+
+    ``infer_from_request`` unpacks ``request.dict()`` into ``infer(**kwargs)``, so
+    the field always reaches this function whether or not the caller set it, and
+    the row used to carry it either way. Neither value names a caller, so the key
+    is now omitted instead - a deliberate narrowing of what the dimension holds.
+    """
+    result = get_model_resource_details_from_kwargs({"source": placeholder})
+
+    assert "source" not in result
+
+
+def test_model_row_records_a_source_the_caller_actually_supplied():
+    result = get_model_resource_details_from_kwargs({"source": "app"})
+
+    assert result["source"] == "app"
+
+
 def test_request_row_records_source():
     result = get_request_resource_details_from_kwargs(
         {"inference_request": SimpleNamespace(source="app")}
