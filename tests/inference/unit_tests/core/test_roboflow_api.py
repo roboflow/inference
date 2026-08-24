@@ -4849,6 +4849,11 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
     }
 
 
+# Pin retry-related globals to their defaults so leaked module state from an
+# earlier test in the suite cannot turn a single mocked fetch into several
+# backoff retries (observed as a flaky `call_count == 7` in CI).
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
 def test_get_workflow_specification_when_valid_response_given_on_consecutive_requests(
     requests_mock: Mocker,
 ) -> None:
