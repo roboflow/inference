@@ -2146,6 +2146,8 @@ def test_model_decorator_records_fixed_input_megapixel_buckets(
     details = json.loads(row["resource_details"])
     assert details["model_architecture"] == "rfdetr"
     assert details["model_variant"] == "rfdetr-seg-nano"
+    assert details["model_input_height"] == 640
+    assert details["model_input_width"] == 640
     assert details["task_type"] == "instance-segmentation"
 
 

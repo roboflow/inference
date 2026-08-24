@@ -5,9 +5,15 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
     get_model_identity_from_kwargs,
+    get_model_resource_details_from_kwargs,
     get_request_resource_details_from_kwargs,
+)
+from inference.usage_tracking.megapixel_buckets import (
+    clear_measured_model_input,
+    record_measured_model_hw,
 )
 from inference.usage_tracking.model_types import (
     ModelIdentity,
@@ -182,12 +188,62 @@ def test_extract_usage_params_for_model_includes_megapixel_buckets(
     assert usage_params["frames"] == 3
     assert usage_params["resource_details"]["model_architecture"] == "rfdetr"
     assert usage_params["resource_details"]["model_variant"] == "rfdetr-seg-nano"
+    assert usage_params["resource_details"]["model_input_height"] == 640
+    assert usage_params["resource_details"]["model_input_width"] == 640
     assert usage_params["megapixel_buckets"] == {
         "0.25-0.5": {
             "processed_frames": 3,
             "execution_duration": 0.25,
         }
     }
+
+
+def test_model_resource_details_report_non_square_configured_input():
+    class LetterboxedModel:
+        task_type = "object-detection"
+        preproc = {"resize": {"height": 480, "width": 640}}
+
+    resource_details = get_model_resource_details_from_kwargs(
+        {"self": LetterboxedModel()}
+    )
+
+    assert resource_details["model_input_height"] == 480
+    assert resource_details["model_input_width"] == 640
+
+
+def test_model_resource_details_omit_input_size_for_dynamic_input_model():
+    # A model with no configured canvas sizes itself from the upload, so the
+    # size varies per call and must not be reported as a row-level scalar.
+    class DynamicInputModel:
+        task_type = "lmm"
+
+    resource_details = get_model_resource_details_from_kwargs(
+        {"self": DynamicInputModel()}
+    )
+
+    assert "model_input_height" not in resource_details
+    assert "model_input_width" not in resource_details
+
+
+def test_model_resource_details_input_size_does_not_consume_measured_input():
+    # get_model_resource_details_from_kwargs runs before the megapixel buckets
+    # are built; consuming the measured-input ContextVar here would blank them.
+    class DynamicInputModel:
+        task_type = "object-detection"
+
+        def infer(self, image, **kwargs): ...
+
+    model = DynamicInputModel()
+    record_measured_model_hw(height=1080, width=1920)
+    try:
+        get_model_resource_details_from_kwargs({"self": model})
+
+        assert get_model_frames_and_input_hw({"self": model, "image": object()}) == (
+            1,
+            (1080, 1920),
+        )
+    finally:
+        clear_measured_model_input()
 
 
 def test_extract_usage_params_for_sam_uses_encoder_image_size(

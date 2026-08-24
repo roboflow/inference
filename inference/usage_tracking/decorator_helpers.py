@@ -10,6 +10,7 @@ from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     consume_measured_model_input,
     count_inference_images,
+    get_fixed_model_input_hw,
     record_measured_model_hw,
     resolve_model_input_hw,
 )
@@ -117,6 +118,14 @@ def get_model_resource_details_from_kwargs(
         resource_details["model_architecture"] = model_identity.architecture
         if model_identity.variant:
             resource_details["model_variant"] = model_identity.variant
+    # Only the configured canvas, never the observed one. Rows aggregate over
+    # calls that may each see a different upload, and resource details merge
+    # last-write-wins, so a size that varies per call would be attributed to
+    # every frame in the row. Per-call size is reported as megapixel buckets.
+    fixed_input_hw = get_fixed_model_input_hw(func_kwargs.get("self"))
+    if fixed_input_hw:
+        resource_details["model_input_height"] = fixed_input_hw[0]
+        resource_details["model_input_width"] = fixed_input_hw[1]
     return resource_details
 
 
