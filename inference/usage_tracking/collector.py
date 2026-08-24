@@ -61,7 +61,7 @@ from .decorator_helpers import (
     get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
     get_workflow_resource_details_from_kwargs,
-    stamp_bound_requests_usage_billable,
+    stamp_bound_request_metadata,
 )
 from .payload_helpers import (
     APIKey,
@@ -977,7 +977,7 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
-                stamp_bound_requests_usage_billable(func, args, kwargs)
+                stamp_bound_request_metadata(func, args, kwargs)
                 t1 = time.time()
                 try:
                     res = func(*args, **kwargs)
@@ -1038,7 +1038,7 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
-                stamp_bound_requests_usage_billable(func, args, kwargs)
+                stamp_bound_request_metadata(func, args, kwargs)
                 t1 = time.time()
                 try:
                     res = await func(*args, **kwargs)

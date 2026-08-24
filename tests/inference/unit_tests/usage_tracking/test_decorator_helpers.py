@@ -13,7 +13,7 @@ from inference.usage_tracking.decorator_helpers import (
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
     non_billable_intent_is_authenticated,
-    stamp_bound_requests_usage_billable,
+    stamp_bound_request_metadata,
 )
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
@@ -183,7 +183,7 @@ def test_apply_explicit_usage_billable_never_restores_billing(
     assert request.usage_billable is False
 
 
-def test_stamp_bound_requests_usage_billable_updates_inference_request(
+def test_stamp_bound_request_metadata_updates_inference_request(
     configured_service_secret,
 ):
     inference_request = SimpleNamespace(usage_billable=True)
@@ -191,7 +191,7 @@ def test_stamp_bound_requests_usage_billable_updates_inference_request(
     def handler(inference_request, countinference=None, service_secret=None):
         return inference_request
 
-    stamp_bound_requests_usage_billable(
+    stamp_bound_request_metadata(
         handler,
         (),
         {
@@ -204,36 +204,131 @@ def test_stamp_bound_requests_usage_billable_updates_inference_request(
     assert inference_request.usage_billable is False
 
 
-def test_stamp_bound_requests_usage_billable_requires_service_secret():
+def test_stamp_bound_request_metadata_requires_service_secret():
     inference_request = SimpleNamespace(usage_billable=True)
 
     def handler(inference_request, countinference=None, service_secret=None):
         return inference_request
 
-    stamp_bound_requests_usage_billable(
+    stamp_bound_request_metadata(
         handler, (), {"inference_request": inference_request, "countinference": False}
     )
 
     assert inference_request.usage_billable is True
 
 
-def test_stamp_bound_requests_usage_billable_skips_handlers_without_countinference():
-    inference_request = SimpleNamespace(usage_billable=True)
-
-    def handler(inference_request):
-        return inference_request
+def test_stamp_bound_request_metadata_skips_handlers_without_an_inference_request():
+    # Every usage-collected call pays for this check, including the model hot
+    # path, so binding a signature that has nothing to stamp is pure overhead.
+    def handler(countinference=None):
+        return countinference
 
     with mock.patch.object(
         decorator_helpers, "collect_func_params"
     ) as collect_func_params_mock:
-        stamp_bound_requests_usage_billable(
-            handler, (), {"inference_request": inference_request}
-        )
+        stamp_bound_request_metadata(handler, (), {"countinference": False})
 
     collect_func_params_mock.assert_not_called()
 
 
-def test_stamp_bound_requests_usage_billable_swallows_failures():
+@pytest.mark.parametrize(
+    "handler_kwargs",
+    [
+        # Aliased, as the SAM3 routes declare them; plain, as the legacy route
+        # does; and absent, which is every other route - there the tags reach us
+        # only through the query string.
+        {"request_source": "app", "request_source_info": "smart-polygon"},
+        {"source": "app", "source_info": "smart-polygon"},
+        {
+            "request": SimpleNamespace(
+                query_params={"source": "app", "source_info": "smart-polygon"}
+            )
+        },
+    ],
+    ids=["aliased", "plain", "query_string_only"],
+)
+def test_stamp_bound_request_metadata_persists_source_however_it_was_declared(
+    handler_kwargs,
+):
+    inference_request = SimpleNamespace(
+        usage_billable=True, source=None, source_info=None
+    )
+
+    def handler(
+        inference_request,
+        request=None,
+        source=None,
+        source_info=None,
+        request_source=None,
+        request_source_info=None,
+    ):
+        return inference_request
+
+    stamp_bound_request_metadata(
+        handler, (), {"inference_request": inference_request, **handler_kwargs}
+    )
+
+    assert inference_request.source == "app"
+    assert inference_request.source_info == "smart-polygon"
+
+
+def test_stamp_bound_request_metadata_ignores_the_external_placeholder():
+    # The legacy route defaults both parameters to "external", which describes
+    # no caller and must not overwrite what the payload already carries.
+    inference_request = SimpleNamespace(source="app", source_info="smart-polygon")
+
+    def handler(inference_request, source=None, source_info=None):
+        return inference_request
+
+    stamp_bound_request_metadata(
+        handler,
+        (),
+        {
+            "inference_request": inference_request,
+            "source": "external",
+            "source_info": "external",
+        },
+    )
+
+    assert inference_request.source == "app"
+    assert inference_request.source_info == "smart-polygon"
+
+
+def test_model_row_takes_source_from_the_request_it_was_handed():
+    # A nested model decorator receives the typed request and nothing else.
+    result = get_model_resource_details_from_kwargs(
+        {"inference_request": SimpleNamespace(source="app")}
+    )
+
+    assert result["source"] == "app"
+
+
+def test_model_row_omits_source_for_the_external_placeholder():
+    result = get_model_resource_details_from_kwargs(
+        {"inference_request": SimpleNamespace(source="external")}
+    )
+
+    assert "source" not in result
+
+
+def test_request_row_records_source():
+    result = get_request_resource_details_from_kwargs(
+        {"inference_request": SimpleNamespace(source="app")}
+    )
+
+    assert result["source"] == "app"
+
+
+def test_request_row_omits_source_for_the_external_placeholder():
+    # Every legacy-route call would otherwise land in a synthetic bucket.
+    result = get_request_resource_details_from_kwargs(
+        {"source": "external", "countinference": True}
+    )
+
+    assert "source" not in result
+
+
+def test_stamp_bound_request_metadata_swallows_failures():
     def handler(inference_request, countinference=None):
         return inference_request
 
@@ -242,7 +337,7 @@ def test_stamp_bound_requests_usage_billable_swallows_failures():
         "collect_func_params",
         side_effect=ValueError("boom"),
     ):
-        stamp_bound_requests_usage_billable(handler, (), {"countinference": False})
+        stamp_bound_request_metadata(handler, (), {"countinference": False})
 
 
 def test_get_request_resource_details_tags_sam3_execution_mode(monkeypatch):
