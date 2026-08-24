@@ -2079,7 +2079,8 @@ def test_record_usage_accumulates_megapixel_buckets(
         resource_details={
             "billable": True,
             "task_type": "instance-segmentation",
-            "model_type": "rfdetr-seg-nano",
+            "model_architecture": "rfdetr",
+            "model_variant": "rfdetr-seg-nano",
         },
         execution_duration=0.4,
         megapixel_buckets={
@@ -2095,7 +2096,8 @@ def test_record_usage_accumulates_megapixel_buckets(
         resource_details={
             "billable": True,
             "task_type": "instance-segmentation",
-            "model_type": "rfdetr-seg-nano",
+            "model_architecture": "rfdetr",
+            "model_variant": "rfdetr-seg-nano",
         },
         execution_duration=0.2,
         megapixel_buckets={
@@ -2112,7 +2114,8 @@ def test_record_usage_accumulates_megapixel_buckets(
         0.6
     )
     details = json.loads(row["resource_details"])
-    assert details["model_type"] == "rfdetr-seg-nano"
+    assert details["model_architecture"] == "rfdetr"
+    assert details["model_variant"] == "rfdetr-seg-nano"
 
 
 def test_model_decorator_records_fixed_input_megapixel_buckets(
@@ -2125,7 +2128,8 @@ def test_model_decorator_records_fixed_input_megapixel_buckets(
         dataset_id = "st-inst-seg"
         version_id = "9"
         task_type = "instance-segmentation"
-        model_type = "rfdetr-seg-nano"
+        model_architecture = "rfdetr"
+        model_variant = "rfdetr-seg-nano"
         img_size_h = 640
         img_size_w = 640
 
@@ -2140,7 +2144,8 @@ def test_model_decorator_records_fixed_input_megapixel_buckets(
     assert row["processed_frames"] == 2
     assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 2
     details = json.loads(row["resource_details"])
-    assert details["model_type"] == "rfdetr-seg-nano"
+    assert details["model_architecture"] == "rfdetr"
+    assert details["model_variant"] == "rfdetr-seg-nano"
     assert details["task_type"] == "instance-segmentation"
 
 
@@ -2154,7 +2159,8 @@ def test_model_decorator_does_not_count_batch_padding(
         dataset_id = "padded"
         version_id = "1"
         task_type = "object-detection"
-        model_type = "yolov8n"
+        model_architecture = "yolov8"
+        model_variant = "yolov8-n"
         img_size_h = 640
         img_size_w = 640
 
@@ -2214,7 +2220,8 @@ def test_model_decorator_isolates_measured_input_across_threads(
         dataset_id = "dynamic"
         version_id = "1"
         task_type = "object-detection"
-        model_type = "yolov8n"
+        model_architecture = "yolov8"
+        model_variant = "yolov8-n"
 
         @usage_collector(category="model")
         def infer(self, image, tag=None, **kwargs):

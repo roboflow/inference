@@ -13,7 +13,10 @@ from inference.usage_tracking.megapixel_buckets import (
     record_measured_model_hw,
     resolve_model_input_hw,
 )
-from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.model_types import (
+    ModelIdentity,
+    get_recorded_model_identity,
+)
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:
@@ -74,21 +77,27 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow model type (variant when known, else architecture).
+def get_model_identity_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[ModelIdentity]:
+    """Resolve the Roboflow architecture / variant pair behind a model call.
 
-    Prefer ``self.model_type`` (bound at load to the platform variant when
-    known, otherwise the architecture). Fall back to the process-local map
-    keyed by model id. Asking the model registry would be a network call on
-    the inference hot path. A model whose type was never recorded is reported
-    without one.
+    Prefer the labels bound onto the instance at load time. Fall back to the
+    process-local map keyed by model id. Asking the model registry would be a
+    network call on the inference hot path. A model whose identity was never
+    recorded is reported without one.
     """
     model = func_kwargs.get("self")
     if model is not None:
-        model_type = getattr(model, "model_type", None)
-        if model_type:
-            return str(model_type)
-    return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
+        architecture = getattr(model, "model_architecture", None)
+        if architecture:
+            variant = getattr(model, "model_variant", None)
+            return ModelIdentity(
+                architecture=str(architecture),
+                variant=str(variant) if variant else None,
+            )
+
+    return get_recorded_model_identity(get_model_id_from_kwargs(func_kwargs))
 
 
 def get_model_resource_details_from_kwargs(
@@ -103,9 +112,11 @@ def get_model_resource_details_from_kwargs(
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
             resource_details["task_type"] = _self.task_type
-    model_type = get_model_type_from_kwargs(func_kwargs)
-    if model_type:
-        resource_details["model_type"] = model_type
+    model_identity = get_model_identity_from_kwargs(func_kwargs)
+    if model_identity:
+        resource_details["model_architecture"] = model_identity.architecture
+        if model_identity.variant:
+            resource_details["model_variant"] = model_identity.variant
     return resource_details
 
 
