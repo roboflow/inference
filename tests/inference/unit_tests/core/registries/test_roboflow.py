@@ -1,7 +1,7 @@
 import json
 import os.path
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -2108,10 +2108,50 @@ def test_get_model_metadata_from_inference_models_cache_reads_variant_by_canonic
         )
 
     assert result == ("object-detection", "rfdetr", "rfdetr-nano")
-    assert [call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list] == [
+    assert [
+        call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list
+    ] == [
         "rfdetr-nano",
         "coco/38",
     ]
+
+
+@pytest.mark.parametrize("corrupt_value", [["coco/38"], {"id": "coco/38"}, 38, None])
+def test_get_model_metadata_from_inference_models_cache_survives_corrupt_id_fields(
+    corrupt_value: Any,
+    empty_local_dir: str,
+) -> None:
+    # given - model_config.json is read without schema validation, so a
+    # hand-edited or truncated file must degrade to "no variant", not raise
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": corrupt_value,
+                "canonical_model_id": corrupt_value,
+                "task_type": "object-detection",
+                "model_architecture": "rfdetr",
+                "backend_type": "torch",
+            },
+            f,
+        )
+
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=package_dir
+    ), mock.patch.object(
+        roboflow, "load_record_raw", return_value=None
+    ) as load_record_raw_mock:
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/38"
+        )
+
+    # then - the unusable candidates are skipped, the requested id is still tried
+    assert result == ("object-detection", "rfdetr", None)
+    assert [
+        call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list
+    ] == ["coco/38"]
 
 
 @mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")

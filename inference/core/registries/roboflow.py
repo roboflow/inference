@@ -870,17 +870,25 @@ def _model_variant_from_offline_registry(
     registry record keeps the same ``modelVariant`` a live
     ``/models/v1/external/stat`` call would return, keyed by canonical id
     or a requested alias.
+
+    Candidates come from an unvalidated ``model_config.json``, so anything
+    that is not a non-empty string is skipped rather than coerced: this
+    helper must degrade to "no variant" for a corrupt config, never raise.
     """
     if load_record_raw is None:
         return None
 
     seen = set()
     for candidate_id in (model_id, *extra_model_ids):
-        if not candidate_id or candidate_id in seen:
+        if (
+            not isinstance(candidate_id, str)
+            or not candidate_id
+            or candidate_id in seen
+        ):
             continue
 
         seen.add(candidate_id)
-        record = load_record_raw(model_id=str(candidate_id))
+        record = load_record_raw(model_id=candidate_id)
         if not isinstance(record, dict):
             continue
 
