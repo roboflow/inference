@@ -59,7 +59,12 @@ from .decorator_helpers import (
     get_request_resource_id_from_kwargs,
     get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
+    get_workflow_block_api_key_from_kwargs,
+    get_workflow_block_frames_from_kwargs,
+    get_workflow_block_resource_details_from_kwargs,
+    get_workflow_block_resource_id_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    resolve_workflow_block_execution,
 )
 from .payload_helpers import (
     APIKey,
@@ -777,7 +782,7 @@ class UsageCollector:
         usage_billable: bool,
         execution_duration: float,
         func: Callable[[Any], Any],
-        category: Literal["model", "workflows", "request", "modal"],
+        category: Literal["model", "workflows", "workflow_block", "request", "modal"],
         error_details: Optional[Dict[str, Any]],
         args: List[Any],
         kwargs: Dict[str, Any],
@@ -829,6 +834,25 @@ class UsageCollector:
                 execution_duration=execution_duration,
                 inference_test_run=usage_inference_test_run,
             )
+        elif category == "workflow_block":
+            block_api_key = get_workflow_block_api_key_from_kwargs(func_kwargs)
+            if not usage_api_key and block_api_key:
+                usage_api_key = block_api_key
+            resource_id = (
+                get_workflow_block_resource_id_from_kwargs(func_kwargs) or "unknown"
+            )
+            block_resource_details = get_workflow_block_resource_details_from_kwargs(
+                func_kwargs
+            )
+            frames = get_workflow_block_frames_from_kwargs(func_kwargs)
+            execution_duration, execution_details = resolve_workflow_block_execution(
+                execution_duration=execution_duration,
+            )
+            resource_details = {
+                **resource_details,
+                **block_resource_details,
+                **execution_details,
+            }
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
@@ -957,7 +981,7 @@ class UsageCollector:
         return None
 
     def __call__(
-        self, category: Literal["model", "workflows", "request"]
+        self, category: Literal["model", "workflows", "workflow_block", "request"]
     ) -> Callable[P, T]:
         def decorator(func: Callable[P, T]) -> Callable[P, T]:
             @wraps(func)

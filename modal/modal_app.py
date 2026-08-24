@@ -560,6 +560,10 @@ from datetime import datetime
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
+            # Measured around the user function only: the client bills this
+            # instead of its own wall clock, which also covers serialization
+            # and the network round trip.
+            started_at = time.perf_counter()
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # If function expects 'self' as first param, create a simple object to pass
@@ -573,6 +577,7 @@ from datetime import datetime
                         result = user_function(block_self, **inputs)
                     else:
                         result = user_function(**inputs)
+                    execution_time_seconds = time.perf_counter() - started_at
 
                 json_result = serialize_for_modal_remote_execution(result)
 
@@ -581,6 +586,7 @@ from datetime import datetime
                     "result": json_result,
                     "stdout": stdout_buf.getvalue() or None,
                     "stderr": stderr_buf.getvalue() or None,
+                    "execution_time_seconds": execution_time_seconds,
                 }
             except Exception as e:
                 # On error, capture stdout/stderr and return error details
@@ -590,6 +596,7 @@ from datetime import datetime
                     "error_type": type(e).__name__,
                     "stdout": stdout_buf.getvalue() or None,
                     "stderr": stderr_buf.getvalue() or None,
+                    "execution_time_seconds": time.perf_counter() - started_at,
                 }
 
                 # Get the line number and function name from evaluated code
@@ -671,6 +678,10 @@ from datetime import datetime
 
         _workflow_context = workflow_context or {}
 
+        # Measured around the user function only: the client bills this instead
+        # of its own wall clock, which also covers serialization and the
+        # network round trip.
+        started_at = time.perf_counter()
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
@@ -683,12 +694,14 @@ from datetime import datetime
                     result = user_function(block_self, **inputs)
                 else:
                     result = user_function(**inputs)
+                execution_time_seconds = time.perf_counter() - started_at
 
             return {
                 "success": True,
                 "result": result,
                 "stdout": stdout_buf.getvalue() or None,
                 "stderr": stderr_buf.getvalue() or None,
+                "execution_time_seconds": execution_time_seconds,
             }
         except Exception as e:
             resp: Dict[str, Any] = {
@@ -697,6 +710,7 @@ from datetime import datetime
                 "error_type": type(e).__name__,
                 "stdout": stdout_buf.getvalue() or None,
                 "stderr": stderr_buf.getvalue() or None,
+                "execution_time_seconds": time.perf_counter() - started_at,
             }
             tb = traceback.extract_tb(e.__traceback__)
             if tb:
