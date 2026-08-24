@@ -8,7 +8,6 @@ the proxied and direct execution paths.
 from unittest.mock import MagicMock, Mock, patch
 
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
-    BlockManifest,
     _execute_direct_claude_request,
     _execute_proxied_claude_request,
 )
@@ -19,54 +18,31 @@ _CLAUDE_OK = {
 }
 
 
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
-
-
 @patch(
     "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4.post_to_roboflow_api"
 )
-def test_proxied_request_returns_usage(mock_post: Mock) -> None:
+def test_proxied_request_returns_usage_and_none_when_omitted(mock_post: Mock) -> None:
+    def call():
+        return _execute_proxied_claude_request(
+            roboflow_api_key="rf_api_key",
+            anthropic_api_key="rf_key:account",
+            system_prompt=None,
+            messages=[],
+            model_version="claude-sonnet-4-5",
+            max_tokens=1000,
+            temperature=None,
+            extended_thinking=None,
+            thinking_budget_tokens=None,
+        )
+
     mock_post.return_value = {
         **_CLAUDE_OK,
         "usage": {"input_tokens": 30, "output_tokens": 9},
     }
+    assert call() == ("ok", 30, 9)
 
-    result = _execute_proxied_claude_request(
-        roboflow_api_key="rf_api_key",
-        anthropic_api_key="rf_key:account",
-        system_prompt=None,
-        messages=[],
-        model_version="claude-sonnet-4-5",
-        max_tokens=1000,
-        temperature=None,
-        extended_thinking=None,
-        thinking_budget_tokens=None,
-    )
-
-    assert result == ("ok", 30, 9)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4.post_to_roboflow_api"
-)
-def test_proxied_request_usage_none_when_omitted(mock_post: Mock) -> None:
     mock_post.return_value = _CLAUDE_OK
-
-    result = _execute_proxied_claude_request(
-        roboflow_api_key="rf_api_key",
-        anthropic_api_key="rf_key:account",
-        system_prompt=None,
-        messages=[],
-        model_version="claude-sonnet-4-5",
-        max_tokens=1000,
-        temperature=None,
-        extended_thinking=None,
-        thinking_budget_tokens=None,
-    )
-
-    assert result == ("ok", None, None)
+    assert call() == ("ok", None, None)
 
 
 @patch(

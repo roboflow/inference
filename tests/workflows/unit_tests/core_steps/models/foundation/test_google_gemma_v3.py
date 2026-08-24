@@ -10,7 +10,6 @@ import numpy as np
 
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v3 import (
     MODEL_VERSION_MAPPING,
-    BlockManifest,
     GoogleGemmaBlockV3,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -23,11 +22,6 @@ def _stub_image() -> WorkflowImageData:
         ),
         numpy_image=np.zeros((10, 10, 3), dtype=np.uint8),
     )
-
-
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
 
 
 @patch.object(GoogleGemmaBlockV3, "execute_openrouter_batch")

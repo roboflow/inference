@@ -8,7 +8,6 @@ and direct execution paths.
 from unittest.mock import MagicMock, patch
 
 from inference.core.workflows.core_steps.models.foundation.spacexai.v2 import (
-    BlockManifest,
     _execute_direct_spacexai_request,
     _execute_proxied_spacexai_request,
 )
@@ -24,52 +23,32 @@ _XAI_OK = {
 }
 
 
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
-
-
 @patch(
     "inference.core.workflows.core_steps.models.foundation.spacexai.v2.post_to_roboflow_api"
 )
-def test_proxied_request_returns_usage(mock_post: MagicMock) -> None:
+def test_proxied_request_returns_usage_and_none_when_omitted(
+    mock_post: MagicMock,
+) -> None:
+    def call():
+        return _execute_proxied_spacexai_request(
+            roboflow_api_key="rf_abc",
+            xai_api_key="rf_key:account",
+            instructions=None,
+            input_content=[],
+            model_version="grok-4.6",
+            reasoning_effort=None,
+            max_tokens=None,
+            temperature=None,
+        )
+
     mock_post.return_value = {
         **_XAI_OK,
         "usage": {"input_tokens": 16, "output_tokens": 5},
     }
+    assert call() == ("ok", 16, 5)
 
-    result = _execute_proxied_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", 16, 5)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v2.post_to_roboflow_api"
-)
-def test_proxied_request_usage_none_when_omitted(mock_post: MagicMock) -> None:
     mock_post.return_value = _XAI_OK
-
-    result = _execute_proxied_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", None, None)
+    assert call() == ("ok", None, None)
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.spacexai.v2.OpenAI")

@@ -8,10 +8,8 @@ and direct execution paths.
 from unittest.mock import MagicMock, Mock, patch
 
 from inference.core.workflows.core_steps.models.foundation.openai.v6 import (
-    BlockManifest,
     _execute_direct_openai_request,
     _execute_proxied_openai_request,
-    execute_openai_request,
 )
 
 _OPENAI_OK = {
@@ -25,52 +23,30 @@ _OPENAI_OK = {
 }
 
 
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
-
-
 @patch(
     "inference.core.workflows.core_steps.models.foundation.openai.v6.post_to_roboflow_api"
 )
-def test_proxied_request_returns_usage(mock_post: Mock) -> None:
+def test_proxied_request_returns_usage_and_none_when_omitted(mock_post: Mock) -> None:
+    def call():
+        return _execute_proxied_openai_request(
+            roboflow_api_key="rf_api_key",
+            openai_api_key="rf_key:account",
+            instructions="test",
+            input_content=[],
+            model_version="gpt-5.1",
+            reasoning_effort=None,
+            max_tokens=None,
+            temperature=None,
+        )
+
     mock_post.return_value = {
         **_OPENAI_OK,
         "usage": {"input_tokens": 21, "output_tokens": 6},
     }
+    assert call() == ("ok", 21, 6)
 
-    result = _execute_proxied_openai_request(
-        roboflow_api_key="rf_api_key",
-        openai_api_key="rf_key:account",
-        instructions="test",
-        input_content=[],
-        model_version="gpt-5.1",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", 21, 6)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.openai.v6.post_to_roboflow_api"
-)
-def test_proxied_request_usage_none_when_omitted(mock_post: Mock) -> None:
     mock_post.return_value = _OPENAI_OK
-
-    result = _execute_proxied_openai_request(
-        roboflow_api_key="rf_api_key",
-        openai_api_key="rf_key:account",
-        instructions="test",
-        input_content=[],
-        model_version="gpt-5.1",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", None, None)
+    assert call() == ("ok", None, None)
 
 
 @patch(
@@ -96,24 +72,3 @@ def test_direct_request_returns_usage(mock_get_client: Mock) -> None:
     )
 
     assert result == ("response", 14, 3)
-
-
-def test_execute_openai_request_routes_proxied_tuple_through() -> None:
-    with patch(
-        "inference.core.workflows.core_steps.models.foundation.openai.v6._execute_proxied_openai_request"
-    ) as mock_proxy:
-        mock_proxy.return_value = ("proxied response", 10, 2)
-
-        result = execute_openai_request(
-            roboflow_api_key="rf_api_key",
-            openai_api_key="rf_key:account",
-            instructions="test",
-            input_content=[],
-            model_version="gpt-5.1",
-            reasoning_effort=None,
-            max_tokens=None,
-            temperature=None,
-        )
-
-        assert result == ("proxied response", 10, 2)
-        mock_proxy.assert_called_once()

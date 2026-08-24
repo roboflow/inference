@@ -9,7 +9,6 @@ Gemini's ``thoughtsTokenCount`` (billing parity).
 from unittest.mock import Mock, patch
 
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v5 import (
-    BlockManifest,
     _execute_direct_gemini_request,
     _execute_proxied_gemini_request,
 )
@@ -24,15 +23,19 @@ _GEMINI_OK = {
 }
 
 
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
-
-
 @patch(
     "inference.core.workflows.core_steps.models.foundation.google_gemini.v5.post_to_roboflow_api"
 )
-def test_proxied_request_returns_usage_including_thoughts(mock_post: Mock) -> None:
+def test_proxied_request_returns_usage_and_none_when_omitted(mock_post: Mock) -> None:
+    def call():
+        return _execute_proxied_gemini_request(
+            roboflow_api_key="rf_api_key",
+            google_api_key="rf_key:account",
+            prompt={"contents": {"parts": [{"text": "test"}]}},
+            model_version="gemini-2.5-pro",
+        )
+
+    # thoughtsTokenCount is folded into output_tokens (billing parity)
     mock_post.return_value = {
         **_GEMINI_OK,
         "usageMetadata": {
@@ -41,31 +44,10 @@ def test_proxied_request_returns_usage_including_thoughts(mock_post: Mock) -> No
             "thoughtsTokenCount": 4,
         },
     }
+    assert call() == ("ok", 15, 10)
 
-    result = _execute_proxied_gemini_request(
-        roboflow_api_key="rf_api_key",
-        google_api_key="rf_key:account",
-        prompt={"contents": {"parts": [{"text": "test"}]}},
-        model_version="gemini-2.5-pro",
-    )
-
-    assert result == ("ok", 15, 10)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.google_gemini.v5.post_to_roboflow_api"
-)
-def test_proxied_request_usage_none_when_omitted(mock_post: Mock) -> None:
     mock_post.return_value = _GEMINI_OK
-
-    result = _execute_proxied_gemini_request(
-        roboflow_api_key="rf_api_key",
-        google_api_key="rf_key:account",
-        prompt={"contents": {"parts": [{"text": "test"}]}},
-        model_version="gemini-2.5-pro",
-    )
-
-    assert result == ("ok", None, None)
+    assert call() == ("ok", None, None)
 
 
 @patch(

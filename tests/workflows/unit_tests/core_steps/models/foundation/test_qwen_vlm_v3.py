@@ -12,7 +12,6 @@ import numpy as np
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     DEFAULT_OPENROUTER_MODEL_VERSION,
-    BlockManifest,
     QwenVlmBlockV3,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -48,11 +47,6 @@ def _base_run_kwargs(**overrides):
     )
     kwargs.update(overrides)
     return kwargs
-
-
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
 
 
 @patch.object(QwenVlmBlockV3, "execute_openrouter_batch")

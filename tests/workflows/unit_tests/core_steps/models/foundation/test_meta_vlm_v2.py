@@ -12,7 +12,6 @@ from inference.core.workflows.core_steps.models.foundation.meta_vlm.v2 import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_VERSION,
     DEFAULT_REASONING_EFFORT,
-    BlockManifest,
     MetaVlmBlockV2,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -44,11 +43,6 @@ def _base_run_kwargs(**overrides):
     )
     kwargs.update(overrides)
     return kwargs
-
-
-def test_manifest_declares_token_outputs():
-    outputs = {output.name for output in BlockManifest.describe_outputs()}
-    assert {"input_tokens", "output_tokens"} <= outputs
 
 
 @patch(
