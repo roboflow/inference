@@ -12,7 +12,6 @@ _RUNTIME_COMPONENT_MODULES = {
     "torch": "torch",
     "torchvision": "torchvision",
     "triton": "triton",
-    "VPI": "vpi",
 }
 
 

@@ -56,7 +56,6 @@ from inference_models.models.yolo26.optimization.preprocessors import (
     BaseYOLO26DepthPreprocessor,
     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
     TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
-    VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor,
 )
 from inference_models.models.yolo26.optimization.schedulers import (
     BaseYOLO26DepthExecutionScheduler,
@@ -235,7 +234,6 @@ class YOLO26ForDepthEstimationTRT(
                     BaseYOLO26DepthPreprocessor,
                     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
                     TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
-                    VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor,
                 ]
             ],
             self._implementation_registry.resolve_selection(

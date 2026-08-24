@@ -118,7 +118,6 @@ def test_runtime_component_discovery_centralizes_package_import_checks(
         "torch": True,
         "torchvision": True,
         "triton": False,
-        "VPI": True,
     }
 
 
