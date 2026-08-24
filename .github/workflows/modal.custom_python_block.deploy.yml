@@ -58,6 +58,7 @@ jobs:
 
   deploy:
     needs: setup
+    name: deploy ${{ matrix.app_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -71,7 +72,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: python3 -m pip install modal requests packaging pydantic structlog python-dotenv rich
+        run: python3 -m pip install modal packaging pydantic python-dotenv requests rich starlette structlog
       - name: Deploy webexec (${{ matrix.target }} -> Modal env ${{ matrix.environment }}, project ${{ matrix.project }})
         env:
           PROJECT: ${{ matrix.project }}
