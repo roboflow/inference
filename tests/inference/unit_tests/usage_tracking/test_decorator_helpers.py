@@ -5,6 +5,8 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    get_model_api_key_from_kwargs,
+    get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
@@ -431,6 +433,43 @@ def test_recorded_model_types_evict_oldest_when_full(monkeypatch):
         assert get_recorded_model_type("d/1") == "yolov8l"
     finally:
         clear_recorded_model_types()
+
+
+def test_model_frames_count_images_kwarg_used_by_video_blocks():
+    frames, _ = get_model_frames_and_input_hw(
+        {"images": [object(), object(), object()]}
+    )
+
+    assert frames == 3
+
+
+def test_model_frames_count_workflow_batch_used_by_video_blocks():
+    class FakeWorkflowBatch:
+        def __init__(self, items):
+            self._content = items
+
+        def __len__(self):
+            return len(self._content)
+
+        def __iter__(self):
+            return iter(self._content)
+
+        def iter_with_indices(self):
+            return enumerate(self._content)
+
+    frames, _ = get_model_frames_and_input_hw(
+        {"images": FakeWorkflowBatch([object(), object(), object()])}
+    )
+
+    assert frames == 3
+
+
+def test_model_api_key_from_workflow_block_private_attr():
+    api_key = get_model_api_key_from_kwargs(
+        {"self": SimpleNamespace(_api_key="workflow-block-key")}
+    )
+
+    assert api_key == "workflow-block-key"
 
 
 def test_explicit_model_usage_api_key_takes_precedence_over_request(

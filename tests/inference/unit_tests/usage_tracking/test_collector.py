@@ -4,6 +4,7 @@ import json
 import sys
 import threading
 from queue import Queue
+from types import SimpleNamespace
 from typing import Optional
 from unittest import mock
 
@@ -14,6 +15,9 @@ from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
@@ -2113,6 +2117,45 @@ def test_record_usage_accumulates_megapixel_buckets(
     )
     details = json.loads(row["resource_details"])
     assert details["model_type"] == "rfdetr-seg-nano"
+
+
+def test_clip_shaped_infer_from_request_records_model_row(
+    usage_collector_with_mocked_threads,
+):
+    """CLIP serves production traffic through infer_from_request, not infer().
+
+    The request entrypoint must emit a model-category row. Canvas size is
+    attributed via megapixel buckets when the model exposes a fixed size
+    that ``get_fixed_model_input_hw`` already recognizes (``image_size``).
+    """
+    usage_collector = usage_collector_with_mocked_threads
+
+    class ClipLike:
+        api_key = "test_key"
+        dataset_id = "clip"
+        version_id = "ViT-B-32"
+        task_type = "embedding"
+        image_size = 224
+
+        @usage_collector(category="model")
+        def infer_from_request(self, request):
+            record_fixed_model_input_for_request(self, request)
+            return {"ok": True}
+
+    request = SimpleNamespace(
+        image=object(),
+        model_id="clip/ViT-B-32",
+        api_key="test_key",
+    )
+
+    ClipLike().infer_from_request(request)
+
+    key = usage_key("model", "clip/ViT-B-32")
+    row = usage_collector._usage["test_key"][key]
+    details = json.loads(row["resource_details"])
+    assert details["task_type"] == "embedding"
+    assert row["processed_frames"] == 1
+    assert row["megapixel_buckets"]["0-0.25"]["processed_frames"] == 1
 
 
 def test_model_decorator_records_fixed_input_megapixel_buckets(

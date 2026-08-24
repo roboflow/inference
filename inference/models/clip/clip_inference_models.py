@@ -32,6 +32,10 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity
+from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import AutoModel
 from inference_models.models.clip.clip_onnx import ClipOnnx
 from inference_models.models.clip.clip_pytorch import ClipTorch
@@ -80,6 +84,13 @@ class InferenceModelsClipAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        # ClipOnnx stores the square canvas as `_image_size`; ClipTorch only
+        # keeps it on the inner CLIP visual tower. Usage telemetry reads
+        # `resolution` the same way the legacy ONNX Clip class does.
+        self.resolution = getattr(self._model, "_image_size", None)
+        if self.resolution is None:
+            visual = getattr(getattr(self._model, "_model", None), "visual", None)
+            self.resolution = getattr(visual, "input_resolution", None)
 
     def run_tensor_native_inference(
         self, action: Literal["compare", "embed-image", "embed-text"], **kwargs
@@ -303,6 +314,7 @@ class InferenceModelsClipAdapter(Model):
         response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: ClipInferenceRequest
     ) -> ClipEmbeddingResponse:
@@ -314,6 +326,7 @@ class InferenceModelsClipAdapter(Model):
         Returns:
             ClipEmbeddingResponse: The response object containing the embeddings.
         """
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, ClipImageEmbeddingRequest):
             infer_func = self.embed_image

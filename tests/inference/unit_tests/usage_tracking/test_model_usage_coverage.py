@@ -1,9 +1,10 @@
-"""Guards that model families reimplementing ``infer()`` still report usage.
+"""Guards that model families still report a ``model``-category usage row.
 
 ``@usage_collector("model")`` normally rides along on ``BaseInference.infer``.
-These families override ``infer()`` and never call ``super()``, so the decorator
-has to be applied to each override; without it they emit no model-category row
-and disappear from per-model telemetry entirely.
+Families that override ``infer()`` without calling ``super()``, or that serve
+production traffic through ``infer_from_request`` / a workflow ``run()`` that
+never calls ``infer()``, must decorate those entrypoints themselves. Without
+that they emit no model-category row and disappear from per-model telemetry.
 """
 
 import inspect
@@ -32,6 +33,70 @@ MODELS_OVERRIDING_INFER = [
     ),
 ]
 
+# Production traffic for these families is ``infer_from_request``, which does
+# not call ``infer()``. The decorator has to live on that method.
+MODELS_DECORATING_INFER_FROM_REQUEST = [
+    ("inference.models.clip.clip_model", "Clip"),
+    (
+        "inference.models.clip.clip_inference_models",
+        "InferenceModelsClipAdapter",
+    ),
+    (
+        "inference.models.perception_encoder.perception_encoder",
+        "PerceptionEncoder",
+    ),
+    (
+        "inference.models.perception_encoder.perception_encoder_inference_models",
+        "InferenceModelsPerceptionEncoderAdapter",
+    ),
+    ("inference.models.sam.segment_anything", "SegmentAnything"),
+    (
+        "inference.models.sam.segment_anything_inference_models",
+        "InferenceModelsSAMAdapter",
+    ),
+    (
+        "inference.models.sam2.segment_anything2",
+        "SegmentAnything2",
+    ),
+    (
+        "inference.models.sam2.segment_anything2_inference_models",
+        "InferenceModelsSAM2Adapter",
+    ),
+    (
+        "inference.models.sam3.segment_anything3",
+        "SegmentAnything3",
+    ),
+    (
+        "inference.models.sam3.segment_anything3_inference_models",
+        "InferenceModelsSAM3Adapter",
+    ),
+    (
+        "inference.models.sam3.visual_segmentation",
+        "Sam3ForInteractiveImageSegmentation",
+    ),
+    (
+        "inference.models.sam3.visual_segmentation_inference_models",
+        "InferenceModelsSAM3InteractiveAdapter",
+    ),
+    (
+        "inference.models.sam3_3d.segment_anything_3d",
+        "SegmentAnything3_3D_Objects",
+    ),
+]
+
+# Video trackers load ``AutoModel`` in the block and never go through
+# ModelManager, so ``run()`` itself must emit the model-category row.
+BLOCKS_DECORATING_RUN = [
+    (
+        "inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1",
+        "SegmentAnything2VideoBlockV1",
+    ),
+    (
+        "inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1",
+        "SegmentAnything3VideoBlockV1",
+    ),
+]
+
 
 def _is_usage_collected(func) -> bool:
     # functools.wraps hides the wrapper, so read the unfollowed signature and
@@ -48,6 +113,29 @@ def test_model_overriding_infer_is_usage_collected(module_path, class_name):
     assert _is_usage_collected(
         model_class.infer
     ), f"{class_name}.infer() must be decorated with @usage_collector('model')"
+
+
+@pytest.mark.parametrize("module_path, class_name", MODELS_DECORATING_INFER_FROM_REQUEST)
+def test_model_infer_from_request_is_usage_collected(module_path, class_name):
+    module = pytest.importorskip(module_path)
+    model_class = getattr(module, class_name)
+
+    assert _is_usage_collected(
+        model_class.infer_from_request
+    ), (
+        f"{class_name}.infer_from_request() must be decorated with "
+        "@usage_collector('model')"
+    )
+
+
+@pytest.mark.parametrize("module_path, class_name", BLOCKS_DECORATING_RUN)
+def test_video_block_run_is_usage_collected(module_path, class_name):
+    module = pytest.importorskip(module_path)
+    block_class = getattr(module, class_name)
+
+    assert _is_usage_collected(
+        block_class.run
+    ), f"{class_name}.run() must be decorated with @usage_collector('model')"
 
 
 def test_detection_helper_rejects_undecorated_function():

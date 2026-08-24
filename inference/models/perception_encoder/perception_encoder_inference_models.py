@@ -32,6 +32,10 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity
+from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import AutoModel
 from inference_models.models.perception_encoder.perception_encoder_pytorch import (
     PerceptionEncoderTorch,
@@ -76,6 +80,8 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        inner = getattr(self._model, "model", None)
+        self.image_size = getattr(inner, "image_size", None)
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         """Preprocesses an inference request image."""
@@ -260,10 +266,12 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
         prompt_embeddings_norm = F.normalize(prompt_embeddings, dim=1)
         return subject_embeddings_norm @ prompt_embeddings_norm.T
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: PerceptionEncoderInferenceRequest
     ) -> PerceptionEncoderEmbeddingResponse:
         """Routes the request to the appropriate inference function."""
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, PerceptionEncoderImageEmbeddingRequest):
             infer_func = self.embed_image

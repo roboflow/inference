@@ -71,6 +71,11 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
         api_key = getattr(request, "api_key", None)
         if api_key:
             return api_key
+    if "self" in func_kwargs:
+        _self = func_kwargs["self"]
+        api_key = getattr(_self, "api_key", None) or getattr(_self, "_api_key", None)
+        if api_key:
+            return api_key
     return None
 
 
@@ -109,12 +114,28 @@ def get_model_resource_details_from_kwargs(
     return resource_details
 
 
+def _as_image_sequence(value: Any) -> Any:
+    """Normalize a workflow Batch of images to a list for frame counting.
+
+    ``Batch`` is sized and iterable but is not a list/tuple, so
+    ``count_inference_images`` would otherwise treat a multi-image batch as
+    a single frame.
+    """
+    if value is not None and hasattr(value, "iter_with_indices"):
+        return list(value)
+    return value
+
+
 def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
     if "image" in func_kwargs:
-        return func_kwargs["image"]
+        return _as_image_sequence(func_kwargs["image"])
+    if "images" in func_kwargs:
+        return _as_image_sequence(func_kwargs["images"])
     nested_kwargs = func_kwargs.get("kwargs")
     if isinstance(nested_kwargs, dict) and "image" in nested_kwargs:
-        return nested_kwargs["image"]
+        return _as_image_sequence(nested_kwargs["image"])
+    if isinstance(nested_kwargs, dict) and "images" in nested_kwargs:
+        return _as_image_sequence(nested_kwargs["images"])
     for request_key in ("inference_request", "request"):
         request = func_kwargs.get(request_key)
         image = getattr(request, "image", None)

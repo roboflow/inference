@@ -26,6 +26,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.usage_tracking.collector import usage_collector
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -371,6 +372,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             self._visual_sessions.clear()
         return self._model
 
+    @usage_collector("model")
     def run(
         self,
         images: Batch[WorkflowImageData],

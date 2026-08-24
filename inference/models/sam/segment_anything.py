@@ -25,6 +25,10 @@ from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 
 
 class SegmentAnything(RoboflowCoreModel):
@@ -122,6 +126,7 @@ class SegmentAnything(RoboflowCoreModel):
                 del self.image_size_cache[cache_key]
         return (embedding, img_in.shape[:2])
 
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
         """Performs inference based on the request type.
 
@@ -131,6 +136,7 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        record_fixed_model_input_for_request(self, request)
         with self._state_lock:
             t1 = perf_counter()
             if isinstance(request, SamEmbeddingRequest):

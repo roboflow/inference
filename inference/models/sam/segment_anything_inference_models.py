@@ -30,6 +30,10 @@ from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import AutoModel
 from inference_models.models.sam.cache import (
     SamImageEmbeddingsInMemoryCache,
@@ -97,7 +101,9 @@ class InferenceModelsSAMAdapter(Model):
             return self._model.embed_images(**kwargs)
         return self._model.segment_images(**kwargs)
 
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, SamEmbeddingRequest):
             embedding, _ = self.embed_image(**request.dict())
