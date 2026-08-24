@@ -284,3 +284,85 @@ def test_run_method_for_qwen_unexpected_shape_sets_error_status_tensor_native() 
 
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+def test_run_method_for_muse_named_fields_output_tensor_native() -> None:
+    # given - muse coordinates are named x_min/y_min/x_max/y_max fields
+    # normalized to 0-1000 on both axes; out-of-range values are clamped
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"label": "cat", "x_min": 100, "y_min": 200, "x_max": 500, "y_max": 1000},
+  {"label": "unicorn", "x_min": -50, "y_min": 0, "x_max": 1200, "y_max": 500}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="muse",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], Detections)
+    assert _class_names(result["predictions"]) == ["cat", "unicorn"]
+    assert np.allclose(result["predictions"].class_id.cpu().numpy(), np.array([0, -1]))
+    assert np.allclose(
+        result["predictions"].xyxy.cpu().numpy(),
+        np.array(
+            [
+                [64, 96, 320, 480],
+                [0, 0, 640, 240],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(
+        result["predictions"].confidence.cpu().numpy(), np.array([1.0, 1.0])
+    )
+
+
+def test_run_method_for_muse_recovers_loose_objects_tensor_native() -> None:
+    # given - Glimmer-style `{...}, {...}` output without array brackets,
+    # which string2json rejects; the muse fallback must recover it
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        '{"label": "cat", "x_min": 100, "y_min": 200, "x_max": 300, "y_max": 400}, '
+        '{"label": "dog", "x_min": 10, "y_min": 20, "x_max": 30, "y_max": 40}'
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="muse",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], Detections)
+    assert _class_names(result["predictions"]) == ["cat", "dog"]
+    assert np.allclose(
+        result["predictions"].xyxy.cpu().numpy(),
+        np.array(
+            [
+                [100, 200, 300, 400],
+                [10, 20, 30, 40],
+            ]
+        ),
+        atol=1.0,
+    )
