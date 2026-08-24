@@ -239,12 +239,14 @@ def test_yolo26_depth_explicit_triton_selection_never_silently_falls_back():
         )
 
 
-def test_yolo26_depth_auto_prefers_fused_v3_and_retains_prior_candidates():
-    from inference_models.models.optimization.contracts import OptimizationStage
-    from inference_models.models.yolo26.optimization.ids import (
-        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
+def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
+    from inference_models.models.optimization.contracts import (
+        ExecutionContext,
+        OptimizationStage,
     )
+    from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
     from inference_models.models.yolo26.optimization.postprocessors import (
+        BaseYOLO26DepthPostprocessor,
         ExactFusedTritonAAYOLO26DepthPostprocessor,
         ExactTritonAAYOLO26DepthPostprocessor,
         TritonAAYOLO26DepthPostprocessor,
@@ -255,9 +257,19 @@ def test_yolo26_depth_auto_prefers_fused_v3_and_retains_prior_candidates():
         device=torch.device("cuda:0"),
     )
 
-    assert registry._auto_preferences[OptimizationStage.POSTPROCESS] == (
-        YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
+    assert registry._auto_preferences[OptimizationStage.POSTPROCESS] == ()
+    selection = registry.resolve_selection(
+        stage=OptimizationStage.POSTPROCESS,
+        requested_id=AUTO_IMPLEMENTATION_ID,
+        context=ExecutionContext(
+            device_kind="gpu",
+            device="cuda:0",
+            compute_capability=(8, 7),
+            runtime_components={"torch": True, "torchvision": True, "triton": True},
+        ),
+        allow_fallback=True,
     )
+    assert isinstance(selection.implementation, BaseYOLO26DepthPostprocessor)
     assert TritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
     assert not ExactTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
     assert not ExactFusedTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics

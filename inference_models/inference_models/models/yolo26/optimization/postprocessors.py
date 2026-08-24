@@ -59,7 +59,7 @@ class BaseYOLO26DepthPostprocessor:
             }
         ),
         numerical_behavior="reference torchvision bilinear-antialias resize",
-        stream_behavior="runs and synchronizes on the caller postprocessing stream",
+        stream_behavior="runs on the caller postprocessing stream",
     )
 
     def is_compatible(self, context: ExecutionContext) -> bool:
@@ -90,11 +90,12 @@ class BaseYOLO26DepthPostprocessor:
         Returns:
             Per-image float32 depth maps.
         """
-        results = post_process_depth_estimation_map(
-            model_results=model_results,
-            pre_processing_meta=pre_processing_meta,
-            device=torch.device(context.device),
-        )
+        with torch.cuda.nvtx.range("yolo26-depth.postprocess[effective=base]"):
+            results = post_process_depth_estimation_map(
+                model_results=model_results,
+                pre_processing_meta=pre_processing_meta,
+                device=torch.device(context.device),
+            )
 
         return results
 
@@ -405,9 +406,7 @@ def build_yolo26_depth_implementation_registry(
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.POSTPROCESS,
-        implementation_ids=(
-            YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_FUSED_V3,
-        ),
+        implementation_ids=(),
     )
 
     return registry

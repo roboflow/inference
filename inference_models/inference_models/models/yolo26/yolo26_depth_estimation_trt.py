@@ -249,16 +249,19 @@ class YOLO26ForDepthEstimationTRT(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        with torch.cuda.stream(self._pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                pre_processing_overrides=pre_processing_overrides,
-            )
-        self._pre_process_stream.synchronize()
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.nvtx.range("yolo26-depth.preprocess[phase=submit]"):
+            with torch.cuda.stream(pre_process_stream):
+                pre_processed_images, pre_processing_meta = pre_process_network_input(
+                    images=images,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    target_device=self._device,
+                    input_color_format=input_color_format,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
+        with torch.cuda.nvtx.range("yolo26-depth.preprocess[phase=synchronize]"):
+            pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
 
     def forward(
@@ -288,21 +291,29 @@ class YOLO26ForDepthEstimationTRT(
         pre_processing_meta: List[PreProcessingMetadata],
         **kwargs,
     ) -> List[torch.Tensor]:
-        with torch.cuda.stream(self._post_process_stream):
-            model_results.record_stream(self._post_process_stream)
-            context = ExecutionContext(
-                device_kind=self._optimization_context.device_kind,
-                device=self._optimization_context.device,
-                current_stream=self._post_process_stream,
-                compute_capability=self._optimization_context.compute_capability,
-                runtime_components=self._optimization_context.runtime_components,
-            )
-            results = self._postprocessor_selection.implementation.postprocess(
-                model_results=model_results,
-                pre_processing_meta=pre_processing_meta,
-                context=context,
-            )
-        self._post_process_stream.synchronize()
+        post_process_stream = self._post_process_stream
+        effective_id = self._postprocessor_selection.effective_id
+        with torch.cuda.nvtx.range(
+            f"yolo26-depth.postprocess[phase=submit,effective={effective_id}]"
+        ):
+            with torch.cuda.stream(post_process_stream):
+                model_results.record_stream(post_process_stream)
+                context = ExecutionContext(
+                    device_kind=self._optimization_context.device_kind,
+                    device=self._optimization_context.device,
+                    current_stream=post_process_stream,
+                    compute_capability=self._optimization_context.compute_capability,
+                    runtime_components=self._optimization_context.runtime_components,
+                )
+                results = self._postprocessor_selection.implementation.postprocess(
+                    model_results=model_results,
+                    pre_processing_meta=pre_processing_meta,
+                    context=context,
+                )
+        with torch.cuda.nvtx.range(
+            f"yolo26-depth.postprocess[phase=synchronize,effective={effective_id}]"
+        ):
+            post_process_stream.synchronize()
         return results
 
     @property

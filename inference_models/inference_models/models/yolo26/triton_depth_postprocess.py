@@ -758,11 +758,14 @@ class ExactFusedTritonDepthMapResizer(TritonDepthMapResizer):
             input_size=input_width,
             output_size=output_width,
         )
-        output = torch.empty(
-            (1, output_height, output_width),
-            dtype=torch.float32,
-            device=self._device,
-        )
+        with torch.cuda.nvtx.range(
+            "yolo26-depth.resize[phase=output-allocation,path=triton-exact-fused]"
+        ):
+            output = torch.empty(
+                (1, output_height, output_width),
+                dtype=torch.float32,
+                device=self._device,
+            )
 
         output_elements = output_height * output_width
         grid = (triton.cdiv(output_elements, _OUTPUT_BLOCK_SIZE),)
@@ -797,60 +800,76 @@ class ExactFusedTritonDepthMapResizer(TritonDepthMapResizer):
 
                 return cached
 
-            scale = np.float32(input_size / output_size)
-            support = max(scale, np.float32(1.0))
-            inverse_scale = (
-                np.float32(1.0) / scale if scale >= np.float32(1.0) else np.float32(1.0)
-            )
-            maximum_size = _maximum_axis_filter_size(
-                input_size=input_size,
-                output_size=output_size,
-            )
-            starts_tensor = torch.empty(
-                output_size,
-                dtype=torch.int32,
-                device=self._device,
-            )
-            sizes_tensor = torch.empty(
-                output_size,
-                dtype=torch.int32,
-                device=self._device,
-            )
-            weights_tensor = torch.empty(
-                (output_size, maximum_size),
-                dtype=torch.float32,
-                device=self._device,
-            )
-            grid = (triton.cdiv(output_size, _OUTPUT_BLOCK_SIZE),)
-            _build_axis_table_exact_kernel[grid](
-                starts_tensor,
-                sizes_tensor,
-                weights_tensor,
-                input_size,
-                output_size,
-                float(scale),
-                float(support),
-                float(inverse_scale),
-                MAXIMUM_SIZE=maximum_size,
-                BLOCK_SIZE=_OUTPUT_BLOCK_SIZE,
-            )
+            range_suffix = f"input={input_size},output={output_size}"
+            with torch.cuda.nvtx.range(
+                f"yolo26-depth.axis-table[phase=build,{range_suffix}]"
+            ):
+                scale = np.float32(input_size / output_size)
+                support = max(scale, np.float32(1.0))
+                inverse_scale = (
+                    np.float32(1.0) / scale
+                    if scale >= np.float32(1.0)
+                    else np.float32(1.0)
+                )
+                maximum_size = _maximum_axis_filter_size(
+                    input_size=input_size,
+                    output_size=output_size,
+                )
+                with torch.cuda.nvtx.range(
+                    f"yolo26-depth.axis-table[phase=allocate,{range_suffix}]"
+                ):
+                    starts_tensor = torch.empty(
+                        output_size,
+                        dtype=torch.int32,
+                        device=self._device,
+                    )
+                    sizes_tensor = torch.empty(
+                        output_size,
+                        dtype=torch.int32,
+                        device=self._device,
+                    )
+                    weights_tensor = torch.empty(
+                        (output_size, maximum_size),
+                        dtype=torch.float32,
+                        device=self._device,
+                    )
+                    ready_event = torch.cuda.Event()
 
-            ready_event = torch.cuda.Event()
-            ready_stream = torch.cuda.current_stream(device=self._device)
-            ready_event.record(ready_stream)
-            table = _AxisTable(
-                starts=starts_tensor,
-                sizes=sizes_tensor,
-                weights=weights_tensor,
-                maximum_size=maximum_size,
-                ready_event=ready_event,
-            )
-            self._cache[key] = table
-            self._prepared_streams[key] = {int(ready_stream.cuda_stream)}
-            if len(self._cache) > _MAX_TABLE_CACHE_ENTRIES:
-                evicted_key, _ = self._cache.popitem(last=False)
-                self._prepared_streams.pop(evicted_key, None)
-            self._prepare_table_for_stream(key=key, table=table)
+                with torch.cuda.nvtx.range(
+                    f"yolo26-depth.axis-table[phase=generate,{range_suffix}]"
+                ):
+                    grid = (triton.cdiv(output_size, _OUTPUT_BLOCK_SIZE),)
+                    _build_axis_table_exact_kernel[grid](
+                        starts_tensor,
+                        sizes_tensor,
+                        weights_tensor,
+                        input_size,
+                        output_size,
+                        float(scale),
+                        float(support),
+                        float(inverse_scale),
+                        MAXIMUM_SIZE=maximum_size,
+                        BLOCK_SIZE=_OUTPUT_BLOCK_SIZE,
+                    )
+                    ready_stream = torch.cuda.current_stream(device=self._device)
+                    ready_event.record(ready_stream)
+
+                with torch.cuda.nvtx.range(
+                    f"yolo26-depth.axis-table[phase=publish,{range_suffix}]"
+                ):
+                    table = _AxisTable(
+                        starts=starts_tensor,
+                        sizes=sizes_tensor,
+                        weights=weights_tensor,
+                        maximum_size=maximum_size,
+                        ready_event=ready_event,
+                    )
+                    self._cache[key] = table
+                    self._prepared_streams[key] = {int(ready_stream.cuda_stream)}
+                    if len(self._cache) > _MAX_TABLE_CACHE_ENTRIES:
+                        evicted_key, _ = self._cache.popitem(last=False)
+                        self._prepared_streams.pop(evicted_key, None)
+                    self._prepare_table_for_stream(key=key, table=table)
 
         return table
 
