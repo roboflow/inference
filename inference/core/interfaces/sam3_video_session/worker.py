@@ -8,23 +8,23 @@ import numpy as np
 import requests
 
 from inference.core.exceptions import InputImageLoadError
+from inference.core.interfaces.sam3_video_session import predictions as sam3
+from inference.core.interfaces.sam3_video_session.artifacts import (
+    ArtifactWriter,
+    TrackAccumulator,
+)
 from inference.core.interfaces.sam3_video_session.entities import (
     CHUNK_SAMPLE_SIZE,
     DEFAULT_CLASS_NAME,
     DEFAULT_THRESHOLD,
+    MAX_VIDEO_BYTES,
     SAM3_VIDEO_EVENT_CHECKPOINTED,
     SAM3_VIDEO_EVENT_DONE,
     SAM3_VIDEO_EVENT_DOWNLOADING,
     SAM3_VIDEO_EVENT_ERROR,
     SAM3_VIDEO_EVENT_FRAME,
-    MAX_VIDEO_BYTES,
     Sam3VideoTimeBase,
     Sam3VideoWorkerPayload,
-)
-from inference.core.interfaces.sam3_video_session import predictions as sam3
-from inference.core.interfaces.sam3_video_session.artifacts import (
-    ArtifactWriter,
-    TrackAccumulator,
 )
 from inference.core.logger import logger
 from inference.core.utils.image_utils import download_url_to_file
