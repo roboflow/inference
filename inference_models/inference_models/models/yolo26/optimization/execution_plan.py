@@ -12,6 +12,7 @@ from inference_models.models.optimization.ids import (
 from inference_models.models.yolo26.optimization.ids import (
     YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
     YOLO26_DEPTH_PREPROCESSOR_ENV_NAME,
+    YOLO26_DEPTH_SCHEDULER_ENV_NAME,
 )
 
 
@@ -27,6 +28,7 @@ class YOLO26DepthExecutionPlan(InferenceExecutionPlan):
         *,
         execution_plan: Optional["YOLO26DepthExecutionPlan"] = None,
         preprocessor_id: Optional[str] = None,
+        scheduler_id: Optional[str] = None,
         postprocessor_id: Optional[str] = None,
         allow_compatibility_fallback: bool = True,
     ) -> "YOLO26DepthExecutionPlan":
@@ -36,6 +38,7 @@ class YOLO26DepthExecutionPlan(InferenceExecutionPlan):
             execution_plan: Complete explicit plan. Mutually exclusive with
                 stage-specific implementation IDs.
             preprocessor_id: Explicit preprocessor ID supplied by a model loader.
+            scheduler_id: Explicit scheduler ID supplied by a model loader.
             postprocessor_id: Explicit postprocessor ID supplied by a model loader.
             allow_compatibility_fallback: Whether static incompatibility may follow
                 the candidate's declared fallback to ``base``.
@@ -46,8 +49,13 @@ class YOLO26DepthExecutionPlan(InferenceExecutionPlan):
         Raises:
             ValueError: If a complete plan and stage-specific IDs are supplied.
         """
-        if execution_plan is not None and (
-            preprocessor_id is not None or postprocessor_id is not None
+        if execution_plan is not None and any(
+            implementation_id is not None
+            for implementation_id in (
+                preprocessor_id,
+                scheduler_id,
+                postprocessor_id,
+            )
         ):
             raise ValueError(
                 "Specify either execution_plan or stage-specific implementation "
@@ -65,8 +73,13 @@ class YOLO26DepthExecutionPlan(InferenceExecutionPlan):
                 YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
                 AUTO_IMPLEMENTATION_ID,
             )
+            resolved_scheduler_id = scheduler_id or os.getenv(
+                YOLO26_DEPTH_SCHEDULER_ENV_NAME,
+                BASE_IMPLEMENTATION_ID,
+            )
             plan = cls(
                 preprocessor_id=resolved_preprocessor_id,
+                scheduler_id=resolved_scheduler_id,
                 postprocessor_id=resolved_postprocessor_id,
                 allow_compatibility_fallback=allow_compatibility_fallback,
             )

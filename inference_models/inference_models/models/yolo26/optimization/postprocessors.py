@@ -27,6 +27,11 @@ from inference_models.models.yolo26.optimization.ids import (
 from inference_models.models.yolo26.optimization.preprocessors import (
     BaseYOLO26DepthPreprocessor,
     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+    TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
+)
+from inference_models.models.yolo26.optimization.schedulers import (
+    BaseYOLO26DepthExecutionScheduler,
+    CUDAEventHandoffYOLO26DepthExecutionScheduler,
 )
 from inference_models.models.yolo26.triton_depth_postprocess import (
     ExactFusedTritonDepthMapResizer,
@@ -403,6 +408,20 @@ def build_yolo26_depth_implementation_registry(
         ),
     )
     registry.register_factory(
+        metadata=TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor.metadata,
+        factory=lambda: TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
+            device=device
+        ),
+    )
+    registry.register_factory(
+        metadata=BaseYOLO26DepthExecutionScheduler.metadata,
+        factory=lambda: BaseYOLO26DepthExecutionScheduler(device=device),
+    )
+    registry.register_factory(
+        metadata=CUDAEventHandoffYOLO26DepthExecutionScheduler.metadata,
+        factory=lambda: CUDAEventHandoffYOLO26DepthExecutionScheduler(device=device),
+    )
+    registry.register_factory(
         metadata=BaseYOLO26DepthPostprocessor.metadata,
         factory=BaseYOLO26DepthPostprocessor,
     )
@@ -420,6 +439,10 @@ def build_yolo26_depth_implementation_registry(
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.PREPROCESS,
+        implementation_ids=(),
+    )
+    registry.set_auto_preferences(
+        stage=OptimizationStage.SCHEDULER,
         implementation_ids=(),
     )
     registry.set_auto_preferences(

@@ -195,17 +195,25 @@ def test_yolo26_depth_execution_plan_uses_safe_stage_defaults(monkeypatch):
         YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
         YOLO26_DEPTH_PREPROCESSOR_ENV_NAME,
         YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
+        YOLO26_DEPTH_SCHEDULER_CUDA_EVENT_HANDOFF_V1,
+        YOLO26_DEPTH_SCHEDULER_ENV_NAME,
     )
 
     monkeypatch.delenv(YOLO26_DEPTH_PREPROCESSOR_ENV_NAME, raising=False)
+    monkeypatch.delenv(YOLO26_DEPTH_SCHEDULER_ENV_NAME, raising=False)
     monkeypatch.delenv(YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME, raising=False)
     default_plan = YOLO26DepthExecutionPlan.resolve()
     assert default_plan.preprocessor_id == BASE_IMPLEMENTATION_ID
+    assert default_plan.scheduler_id == BASE_IMPLEMENTATION_ID
     assert default_plan.postprocessor_id == AUTO_IMPLEMENTATION_ID
 
     monkeypatch.setenv(
         YOLO26_DEPTH_PREPROCESSOR_ENV_NAME,
         YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
+    )
+    monkeypatch.setenv(
+        YOLO26_DEPTH_SCHEDULER_ENV_NAME,
+        YOLO26_DEPTH_SCHEDULER_CUDA_EVENT_HANDOFF_V1,
     )
     monkeypatch.setenv(
         YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
@@ -219,6 +227,7 @@ def test_yolo26_depth_execution_plan_uses_safe_stage_defaults(monkeypatch):
         plan.preprocessor_id
         == YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1
     )
+    assert plan.scheduler_id == YOLO26_DEPTH_SCHEDULER_CUDA_EVENT_HANDOFF_V1
     assert plan.postprocessor_id == YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1
     assert not plan.allow_compatibility_fallback
 
@@ -291,7 +300,7 @@ def test_yolo26_depth_explicit_triton_preprocessor_rejects_missing_runtime():
         )
 
 
-def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
+def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates(monkeypatch):
     from inference_models.models.optimization.contracts import (
         ExecutionContext,
         OptimizationStage,
@@ -307,11 +316,17 @@ def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
     from inference_models.models.yolo26.optimization.preprocessors import (
         BaseYOLO26DepthPreprocessor,
         TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+        TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
+    )
+    from inference_models.models.yolo26.optimization.schedulers import (
+        BaseYOLO26DepthExecutionScheduler,
+        CUDAEventHandoffYOLO26DepthExecutionScheduler,
     )
 
     registry = build_yolo26_depth_implementation_registry(
         device=torch.device("cuda:0"),
     )
+    monkeypatch.setattr(torch.cuda, "Stream", lambda device: MagicMock(device=device))
 
     assert registry._auto_preferences[OptimizationStage.PREPROCESS] == ()
     preprocessor_selection = registry.resolve_selection(
@@ -332,6 +347,27 @@ def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
     assert (
         not TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor.metadata.changes_numerics
     )
+    assert (
+        not TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor.metadata.changes_numerics
+    )
+
+    assert registry._auto_preferences[OptimizationStage.SCHEDULER] == ()
+    scheduler_selection = registry.resolve_selection(
+        stage=OptimizationStage.SCHEDULER,
+        requested_id=AUTO_IMPLEMENTATION_ID,
+        context=ExecutionContext(
+            device_kind="gpu",
+            device="cuda:0",
+            compute_capability=(8, 7),
+            runtime_components={"torch": True},
+        ),
+        allow_fallback=True,
+    )
+    assert isinstance(
+        scheduler_selection.implementation,
+        BaseYOLO26DepthExecutionScheduler,
+    )
+    assert not CUDAEventHandoffYOLO26DepthExecutionScheduler.metadata.changes_numerics
 
     assert registry._auto_preferences[OptimizationStage.POSTPROCESS] == ()
     selection = registry.resolve_selection(
@@ -402,6 +438,15 @@ def test_triton_preprocessor_preserves_opencv_letterbox_image_and_metadata():
         input_color_mode=ColorMode.BGR,
         pre_processing_overrides=None,
     )
+    pinned_buffer = np.empty_like(prepared_image)
+    pinned_image, pinned_metadata = _prepare_large_numpy_image(
+        image=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        input_color_mode=ColorMode.BGR,
+        pre_processing_overrides=None,
+        output_buffer=pinned_buffer,
+    )
     base_tensor, base_metadata = pre_process_network_input(
         images=[image],
         image_pre_processing=image_pre_processing,
@@ -415,6 +460,9 @@ def test_triton_preprocessor_preserves_opencv_letterbox_image_and_metadata():
 
     assert torch.equal(candidate_tensor, base_tensor)
     assert candidate_metadata == base_metadata[0]
+    assert pinned_image is pinned_buffer
+    assert np.array_equal(pinned_image, prepared_image)
+    assert pinned_metadata == candidate_metadata
 
 
 def test_exact_fused_v3_compacts_filters_and_dispatches_small_outputs():

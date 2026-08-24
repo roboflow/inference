@@ -1,5 +1,4 @@
 import threading
-from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
@@ -56,6 +55,11 @@ from inference_models.models.yolo26.optimization.postprocessors import (
 from inference_models.models.yolo26.optimization.preprocessors import (
     BaseYOLO26DepthPreprocessor,
     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+    TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
+)
+from inference_models.models.yolo26.optimization.schedulers import (
+    BaseYOLO26DepthExecutionScheduler,
+    CUDAEventHandoffYOLO26DepthExecutionScheduler,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -102,6 +106,7 @@ class YOLO26ForDepthEstimationTRT(
         recommended_parameters: Optional[RecommendedParameters] = None,
         execution_plan: Optional[YOLO26DepthExecutionPlan] = None,
         preprocessor_implementation_id: Optional[str] = None,
+        scheduler_implementation_id: Optional[str] = None,
         postprocessor_implementation_id: Optional[str] = None,
         allow_compatibility_fallback: bool = True,
         **kwargs,
@@ -168,6 +173,7 @@ class YOLO26ForDepthEstimationTRT(
         resolved_execution_plan = YOLO26DepthExecutionPlan.resolve(
             execution_plan=execution_plan,
             preprocessor_id=preprocessor_implementation_id,
+            scheduler_id=scheduler_implementation_id,
             postprocessor_id=postprocessor_implementation_id,
             allow_compatibility_fallback=allow_compatibility_fallback,
         )
@@ -208,8 +214,6 @@ class YOLO26ForDepthEstimationTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
-        self._lock = Lock()
-        self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
         self._execution_plan = YOLO26DepthExecutionPlan.resolve(
@@ -229,11 +233,26 @@ class YOLO26ForDepthEstimationTRT(
                 Union[
                     BaseYOLO26DepthPreprocessor,
                     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+                    TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
                 ]
             ],
             self._implementation_registry.resolve_selection(
                 stage=OptimizationStage.PREPROCESS,
                 requested_id=self._execution_plan.preprocessor_id,
+                context=self._optimization_context,
+                allow_fallback=self._execution_plan.allow_compatibility_fallback,
+            ),
+        )
+        self._scheduler_selection = cast(
+            ImplementationSelection[
+                Union[
+                    BaseYOLO26DepthExecutionScheduler,
+                    CUDAEventHandoffYOLO26DepthExecutionScheduler,
+                ]
+            ],
+            self._implementation_registry.resolve_selection(
+                stage=OptimizationStage.SCHEDULER,
+                requested_id=self._execution_plan.scheduler_id,
                 context=self._optimization_context,
                 allow_fallback=self._execution_plan.allow_compatibility_fallback,
             ),
@@ -259,18 +278,41 @@ class YOLO26ForDepthEstimationTRT(
             self._preprocessor_selection.to_dict(),
         )
         LOGGER.info(
+            "YOLO26 depth scheduler selection: %s",
+            self._scheduler_selection.to_dict(),
+        )
+        LOGGER.info(
             "YOLO26 depth postprocessor selection: %s",
             self._postprocessor_selection.to_dict(),
         )
+
+    def infer(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        """Run composed inference with scheduler-managed preprocessing readiness."""
+        kwargs.pop("independent_stage_execution", None)
+        pre_processed_images, pre_processing_meta = self.pre_process(
+            images=images,
+            independent_stage_execution=False,
+            **kwargs,
+        )
+        model_results = self.forward(pre_processed_images, **kwargs)
+
+        return self.post_process(model_results, pre_processing_meta, **kwargs)
 
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        independent_stage_execution: bool = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        pre_process_stream = self._pre_process_stream
+        pre_process_stream = (
+            self._scheduler_selection.implementation.preprocess_stream()
+        )
         effective_id = self._preprocessor_selection.effective_id
         with torch.cuda.nvtx.range(
             f"yolo26-depth.preprocess[phase=submit,effective={effective_id}]"
@@ -296,10 +338,14 @@ class YOLO26ForDepthEstimationTRT(
                         context=context,
                     )
                 )
-        with torch.cuda.nvtx.range(
-            f"yolo26-depth.preprocess[phase=synchronize,effective={effective_id}]"
-        ):
-            pre_process_stream.synchronize()
+        pre_processed_images = (
+            self._scheduler_selection.implementation.finalize_preprocess(
+                pre_processed_images,
+                context=context,
+                independent_stage_execution=independent_stage_execution,
+            )
+        )
+
         return pre_processed_images, pre_processing_meta
 
     def forward(
@@ -309,7 +355,8 @@ class YOLO26ForDepthEstimationTRT(
         **kwargs,
     ) -> torch.Tensor:
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
-        with self._lock:
+
+        def execute_engine(stream: torch.cuda.Stream) -> torch.Tensor:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
@@ -319,9 +366,14 @@ class YOLO26ForDepthEstimationTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
-                    stream=self._inference_stream,
+                    stream=stream,
                     trt_cuda_graph_cache=cache,
                 )[0]
+
+        return self._scheduler_selection.implementation.execute_engine(
+            pre_processed_images,
+            operation=execute_engine,
+        )
 
     def post_process(
         self,
@@ -367,6 +419,10 @@ class YOLO26ForDepthEstimationTRT(
             "preprocessor_metadata": (
                 self._preprocessor_selection.implementation.metadata.to_dict()
             ),
+            "scheduler": self._scheduler_selection.to_dict(),
+            "scheduler_metadata": (
+                self._scheduler_selection.implementation.metadata.to_dict()
+            ),
             "postprocessor": self._postprocessor_selection.to_dict(),
             "postprocessor_metadata": (
                 self._postprocessor_selection.implementation.metadata.to_dict()
@@ -374,14 +430,6 @@ class YOLO26ForDepthEstimationTRT(
         }
 
         return metadata
-
-    @property
-    def _pre_process_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
 
     @property
     def _post_process_stream(self) -> torch.cuda.Stream:

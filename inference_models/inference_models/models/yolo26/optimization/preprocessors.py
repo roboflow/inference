@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import queue
+import threading
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import cv2
@@ -35,12 +38,14 @@ from inference_models.models.optimization.contracts import (
 from inference_models.models.yolo26.optimization.ids import (
     YOLO26_DEPTH_PREPROCESSOR_BASE,
     YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
+    YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_PINNED_FUSED_CONVERT_V2,
 )
 from inference_models.models.yolo26.triton_depth_preprocess import (
     ExactTritonImageTensorConverter,
 )
 
 _BASE_DISPATCH_MAX_SOURCE_ELEMENTS = 640 * 480
+_PINNED_STAGING_SLOT_COUNT = 2
 _SUPPORTED_FUSED_RESIZE_MODES = {
     ResizeMode.STRETCH_TO,
     ResizeMode.LETTERBOX,
@@ -52,6 +57,50 @@ ImageInput = Union[
     np.ndarray,
     List[np.ndarray],
 ]
+
+
+@dataclass
+class _PinnedImageSlot:
+    tensor: torch.Tensor
+    array: np.ndarray
+    reuse_event: torch.cuda.Event
+    transfer_pending: bool = False
+
+
+class _PinnedImageSlotPool:
+    """Bounded pinned target-image storage with H2D reuse ordering."""
+
+    def __init__(self, *, height: int, width: int) -> None:
+        self.height = height
+        self.width = width
+        self._slots = queue.LifoQueue(maxsize=_PINNED_STAGING_SLOT_COUNT)
+        for _ in range(_PINNED_STAGING_SLOT_COUNT):
+            tensor = torch.empty(
+                (height, width, 3),
+                dtype=torch.uint8,
+                pin_memory=True,
+            )
+            self._slots.put(
+                _PinnedImageSlot(
+                    tensor=tensor,
+                    array=tensor.numpy(),
+                    reuse_event=torch.cuda.Event(),
+                )
+            )
+
+    def acquire(self) -> _PinnedImageSlot:
+        slot = self._slots.get()
+        if slot.transfer_pending:
+            with torch.cuda.nvtx.range(
+                "yolo26-depth.preprocess.pinned-slot-reuse-wait"
+            ):
+                slot.reuse_event.synchronize()
+            slot.transfer_pending = False
+
+        return slot
+
+    def release(self, slot: _PinnedImageSlot) -> None:
+        self._slots.put(slot)
 
 
 def _raise_incompatible_candidate(*reasons: str) -> None:
@@ -104,6 +153,7 @@ def _prepare_large_numpy_image(
     network_input: NetworkInputDefinition,
     input_color_mode: ColorMode,
     pre_processing_overrides: Optional[PreProcessingOverrides],
+    output_buffer: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, PreProcessingMetadata]:
     """Apply the preserved CPU image transforms and build identical metadata."""
     reasons = []
@@ -157,11 +207,31 @@ def _prepare_large_numpy_image(
         height=network_input.training_input_size.height,
         width=network_input.training_input_size.width,
     )
-    if network_input.resize_mode is ResizeMode.STRETCH_TO:
-        prepared_image = cv2.resize(
-            image,
-            (target_size.width, target_size.height),
+    if output_buffer is not None and (
+        output_buffer.dtype != np.uint8
+        or output_buffer.shape != (target_size.height, target_size.width, 3)
+        or not output_buffer.flags.c_contiguous
+    ):
+        _raise_incompatible_candidate(
+            "pinned output must be contiguous uint8 HWC with target shape, received "
+            f"dtype={output_buffer.dtype} shape={output_buffer.shape} "
+            f"contiguous={output_buffer.flags.c_contiguous}"
         )
+    if network_input.resize_mode is ResizeMode.STRETCH_TO:
+        if output_buffer is None:
+            prepared_image = cv2.resize(
+                image,
+                (target_size.width, target_size.height),
+            )
+        else:
+            resized_image = cv2.resize(
+                image,
+                (target_size.width, target_size.height),
+                dst=output_buffer,
+            )
+            if not np.shares_memory(resized_image, output_buffer):
+                np.copyto(output_buffer, resized_image)
+            prepared_image = output_buffer
         pad_left = pad_top = pad_right = pad_bottom = 0
         scale_width = target_size.width / size_after_pre_processing.width
         scale_height = target_size.height / size_after_pre_processing.height
@@ -175,25 +245,45 @@ def _prepare_large_numpy_image(
         pad_left = int((target_size.width - new_width) / 2)
         pad_right = target_size.width - pad_left - new_width
         pad_bottom = target_size.height - pad_top - new_height
-        scaled_image = cv2.resize(image, (new_width, new_height))
         padding_value = network_input.padding_value or 0
-        if pad_left == pad_top == pad_right == pad_bottom == 0:
-            prepared_image = scaled_image
-        else:
-            if not 0 <= padding_value <= 255:
-                _raise_incompatible_candidate(
-                    "letterbox padding value must fit uint8, received "
-                    f"{padding_value!r}"
-                )
-            prepared_image = np.full(
-                (target_size.height, target_size.width, 3),
-                padding_value,
-                dtype=np.uint8,
+        if not 0 <= padding_value <= 255:
+            _raise_incompatible_candidate(
+                "letterbox padding value must fit uint8, received " f"{padding_value!r}"
             )
-            prepared_image[
+        if output_buffer is None:
+            scaled_image = cv2.resize(image, (new_width, new_height))
+            if pad_left == pad_top == pad_right == pad_bottom == 0:
+                prepared_image = scaled_image
+            else:
+                prepared_image = np.full(
+                    (target_size.height, target_size.width, 3),
+                    padding_value,
+                    dtype=np.uint8,
+                )
+                prepared_image[
+                    pad_top : pad_top + new_height,
+                    pad_left : pad_left + new_width,
+                ] = scaled_image
+        else:
+            output_buffer.fill(padding_value)
+            resized_region = output_buffer[
                 pad_top : pad_top + new_height,
                 pad_left : pad_left + new_width,
-            ] = scaled_image
+            ]
+            if resized_region.flags.c_contiguous:
+                scaled_image = cv2.resize(
+                    image,
+                    (new_width, new_height),
+                    dst=resized_region,
+                )
+                if not np.shares_memory(scaled_image, output_buffer):
+                    np.copyto(resized_region, scaled_image)
+            else:
+                np.copyto(
+                    resized_region,
+                    cv2.resize(image, (new_width, new_height)),
+                )
+            prepared_image = output_buffer
         scale_width = scale
         scale_height = scale
 
@@ -360,12 +450,11 @@ class TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor:
         pre_processing_overrides: Optional[PreProcessingOverrides],
         context: ExecutionContext,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        del context
         image = _extract_single_numpy_image(images)
         if _use_base_preprocess_path(image):
             with torch.cuda.nvtx.range(
-                "yolo26-depth.preprocess["
-                "effective=triton-cv2-resize-fused-convert-v1,path=base]"
+                "yolo26-depth.preprocess[effective="
+                f"{self.metadata.implementation_id},path=base]"
             ):
                 return pre_process_network_input(
                     images=images,
@@ -382,24 +471,174 @@ class TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor:
             else ColorMode.BGR
         )
         with torch.cuda.nvtx.range(
-            "yolo26-depth.preprocess["
-            "effective=triton-cv2-resize-fused-convert-v1,path=fused-large]"
+            "yolo26-depth.preprocess[effective="
+            f"{self.metadata.implementation_id},path=fused-large]"
         ):
+            output, metadata = self._prepare_and_convert(
+                image=image,
+                image_pre_processing=image_pre_processing,
+                network_input=network_input,
+                target_device=target_device,
+                input_color_mode=input_color_mode,
+                pre_processing_overrides=pre_processing_overrides,
+                context=context,
+            )
+
+        return output, [metadata]
+
+    def _prepare_and_convert(
+        self,
+        *,
+        image: np.ndarray,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+        target_device: torch.device,
+        input_color_mode: ColorMode,
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+        context: ExecutionContext,
+    ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+        del context
+        with torch.cuda.nvtx.range("yolo26-depth.preprocess.cv2-resize"):
+            prepared_image, metadata = _prepare_large_numpy_image(
+                image=image,
+                image_pre_processing=image_pre_processing,
+                network_input=network_input,
+                input_color_mode=input_color_mode,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        with torch.cuda.nvtx.range("yolo26-depth.preprocess.h2d"):
+            image_tensor = torch.from_numpy(prepared_image).to(device=target_device)
+        with torch.cuda.nvtx.range("yolo26-depth.preprocess.fused-convert"):
+            output = self._converter.convert(
+                image=image_tensor,
+                reverse_channels=input_color_mode != network_input.color_mode,
+                scaling_factor=float(network_input.scaling_factor),
+            )
+
+        return output, metadata
+
+
+class TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
+    TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor
+):
+    """Preserve OpenCV pixels while using bounded pinned asynchronous staging."""
+
+    metadata = OptimizationMetadata(
+        implementation_id=(
+            YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_PINNED_FUSED_CONVERT_V2
+        ),
+        stage=OptimizationStage.PREPROCESS,
+        version="2",
+        target=DeviceCompatibility(
+            device_kind="gpu",
+            minimum_compute_capability=(7, 0),
+        ),
+        inputs=TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor.metadata.inputs,
+        dependencies=("opencv-python", "torch", "triton"),
+        fallback_id=YOLO26_DEPTH_PREPROCESSOR_BASE,
+        changes_numerics=False,
+        supports_concurrency=True,
+        supports_cuda_graphs=False,
+        output_contract=immutable_mapping(
+            {
+                "type": "torch.Tensor",
+                "dtype": "float32",
+                "shape": "1x3xHxW",
+                "layout": "contiguous NCHW",
+                "ownership": "per-call CUDA staging and output tensors",
+                "persistent_allocations": (
+                    f"{_PINNED_STAGING_SLOT_COUNT} target-sized pinned uint8 HWC "
+                    "host slots, allocated only after large-path dispatch"
+                ),
+                "aliasing": "none",
+            }
+        ),
+        numerical_behavior=(
+            "uses the preserved CPU OpenCV resize directly into bounded pinned "
+            "target storage where layout permits; channel reversal, layout, and "
+            "IEEE round-to-nearest float32 division remain unchanged; the base "
+            "source shape uses the preserved path"
+        ),
+        stream_behavior=(
+            "non-blocking H2D and the Triton conversion run on the caller stream; "
+            "pinned host slots are not reused before their H2D completion event"
+        ),
+    )
+
+    def __init__(self, *, device: torch.device) -> None:
+        super().__init__(device=device)
+        self._pool_lock = threading.Lock()
+        self._pinned_pool: Optional[_PinnedImageSlotPool] = None
+
+    def _prepare_and_convert(
+        self,
+        *,
+        image: np.ndarray,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+        target_device: torch.device,
+        input_color_mode: ColorMode,
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+        context: ExecutionContext,
+    ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+        stream = context.current_stream
+        if stream is None:
+            _raise_incompatible_candidate(
+                "pinned staging requires a caller preprocessing CUDA stream"
+            )
+        target_height = network_input.training_input_size.height
+        target_width = network_input.training_input_size.width
+        pool = self._get_pinned_pool(height=target_height, width=target_width)
+        slot = pool.acquire()
+        copy_enqueued = False
+        try:
             with torch.cuda.nvtx.range("yolo26-depth.preprocess.cv2-resize"):
-                prepared_image, metadata = _prepare_large_numpy_image(
+                _, metadata = _prepare_large_numpy_image(
                     image=image,
                     image_pre_processing=image_pre_processing,
                     network_input=network_input,
                     input_color_mode=input_color_mode,
                     pre_processing_overrides=pre_processing_overrides,
+                    output_buffer=slot.array,
                 )
-            with torch.cuda.nvtx.range("yolo26-depth.preprocess.h2d"):
-                image_tensor = torch.from_numpy(prepared_image).to(device=target_device)
-            with torch.cuda.nvtx.range("yolo26-depth.preprocess.fused-convert"):
-                output = self._converter.convert(
-                    image=image_tensor,
-                    reverse_channels=input_color_mode != network_input.color_mode,
-                    scaling_factor=float(network_input.scaling_factor),
+            with torch.cuda.stream(stream):
+                with torch.cuda.nvtx.range("yolo26-depth.preprocess.h2d-pinned"):
+                    image_tensor = torch.empty(
+                        slot.tensor.shape,
+                        dtype=torch.uint8,
+                        device=target_device,
+                    )
+                    image_tensor.copy_(slot.tensor, non_blocking=True)
+                    copy_enqueued = True
+                    slot.reuse_event.record(stream)
+                    slot.transfer_pending = True
+                with torch.cuda.nvtx.range("yolo26-depth.preprocess.fused-convert"):
+                    output = self._converter.convert(
+                        image=image_tensor,
+                        reverse_channels=(input_color_mode != network_input.color_mode),
+                        scaling_factor=float(network_input.scaling_factor),
+                    )
+        except Exception:
+            if copy_enqueued and not slot.transfer_pending:
+                stream.synchronize()
+            raise
+        finally:
+            pool.release(slot)
+
+        return output, metadata
+
+    def _get_pinned_pool(self, *, height: int, width: int) -> _PinnedImageSlotPool:
+        with self._pool_lock:
+            if self._pinned_pool is None:
+                self._pinned_pool = _PinnedImageSlotPool(
+                    height=height,
+                    width=width,
+                )
+            elif self._pinned_pool.height != height or self._pinned_pool.width != width:
+                _raise_incompatible_candidate(
+                    "pinned staging target shape is fixed per model instance; "
+                    f"initialized {(self._pinned_pool.height, self._pinned_pool.width)} "
+                    f"but received {(height, width)}"
                 )
 
-        return output, [metadata]
+            return self._pinned_pool

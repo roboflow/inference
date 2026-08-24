@@ -263,3 +263,38 @@ This round changes only preprocessing. Validation should compare the new preproc
 against the already measured `v3` execution plan to attribute its effect, then compare
 the composed preprocessor plus `v3` postprocessor against the original base acceptance
 threshold.
+
+## Fused-convert validation and pinned event-handoff revision
+
+The corrected `triton-cv2-resize-fused-convert-v1` campaign executed the intended
+candidate and preserved exact input/output snapshot parity. It did not meet the complete
+acceptance gate:
+
+- base median latency changed by `+1.00%`, but incremental device memory increased by
+  `5.27%`;
+- large median latency was `8.553 ms`, a `9.15%` improvement over the original base but
+  a `1.92%` regression from the `v3` plan and short of the required `8.003 ms`;
+- large incremental device memory improved by `0.64%` relative to the original base.
+
+Nsight confirmed that the fused conversion removed the intended layout/conversion
+traffic. The remaining large path still spent approximately `1.335 ms` in CPU OpenCV
+resize, while preprocessing synchronization increased by approximately `0.290 ms`.
+Moving that wait to an event without changing staging would mostly relocate the
+dependency in synchronous `infer()`, so the next revision pairs two inseparable pieces:
+
+- `triton-cv2-resize-pinned-fused-convert-v2` retains OpenCV pixels and metadata, writes
+  into a bounded pool of pinned target-image slots, and performs non-blocking H2D before
+  the existing exact Triton conversion;
+- `cuda-event-handoff-v1` records readiness for the exact returned tensor and makes the
+  serialized TensorRT stream wait on that event during composed inference.
+
+Direct `pre_process()` calls remain synchronous. The base source-shape dispatch remains
+on the preserved preprocessor and does not initialize the pinned large-path pool. Host
+slots are not reused until their H2D event completes, CUDA staging/output tensors remain
+per call, and neither implementation participates in `auto`.
+
+The expected trace change is a pinned H2D transfer, lower transient host allocation/copy
+work around OpenCV, no blocking preprocessing-stream synchronization in composed
+inference, and one TensorRT-stream event dependency. Validation must still require exact
+snapshots, the base latency/memory guard, bounded pinned-host residency, and the original
+large-latency target.
