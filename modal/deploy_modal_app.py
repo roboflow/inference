@@ -46,7 +46,6 @@ except ImportError as e:
     print("\nPlease make sure you're running this script from the correct directory.")
     sys.exit(1)
 
-WEBEXEC_MODAL_APP_NAME = os.environ.get("WEBEXEC_MODAL_APP_NAME", "webexec")
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 inference_version = INFERENCE_VERSION
 if not inference_version:
@@ -76,7 +75,7 @@ try:
     print("\n📡 Web Endpoint URLs:")
     try:
         cls = modal.Cls.from_name(
-            app_name=WEBEXEC_MODAL_APP_NAME,
+            app_name=app.name,
             name="Executor",
         )
         # Create an instance to get the method

@@ -49,6 +49,7 @@ WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
 WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
 
 
+# mirrors inference/core/workflows/execution_engine/v1/dynamic_blocks (avoiding `from inference import ...`)
 class _ThreadDispatchStream:
     """Stream wrapper that tees writes into a per-thread StringIO buffer
     (when one is active) while still forwarding them to the original stream.
