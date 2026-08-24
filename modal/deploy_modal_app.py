@@ -29,10 +29,6 @@ from utils import (
     validate_deployment_prerequisites,
 )
 
-from inference.core.env import WEBEXEC_MODAL_APP_NAME
-from inference.core.version import __version__
-
-
 prepare_deployment()
 
 # Initialize Modal and get credentials
@@ -50,15 +46,11 @@ except ImportError as e:
     print("\nPlease make sure you're running this script from the correct directory.")
     sys.exit(1)
 
+WEBEXEC_MODAL_APP_NAME = os.environ.get("WEBEXEC_MODAL_APP_NAME", "webexec")
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 inference_version = INFERENCE_VERSION
 if not inference_version:
-    try:
-        from inference.core.version import __version__
-
-        inference_version = __version__
-    except ImportError:
-        inference_version = "latest"
+    raise ValueError("INFERENCE_VERSION was not set, refusing to deploy")
 
 validate_deployment_prerequisites(app, MODAL_INSTALLED)
 
