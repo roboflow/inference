@@ -22,7 +22,7 @@ from starlette.requests import Request
 
 import modal
 
-from inference.core.env import WEBEXEC_INFERENCE_VERSION, WEBEXEC_MODAL_APP_NAME
+from inference.core.env import WEBEXEC_MODAL_APP_NAME
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
@@ -79,7 +79,7 @@ def get_inference_image():
     """Get the Modal Image for inference."""
 
     # Use the pre-built shared image or create on-the-fly
-    inference_version = WEBEXEC_INFERENCE_VERSION
+    inference_version = INFERENCE_VERSION
     if not inference_version:
         try:
             from inference.core.version import __version__
