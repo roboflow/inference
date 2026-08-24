@@ -1,0 +1,18 @@
+{
+  "name": "Roboflow Inference",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "inference-server",
+      "command": "bash .cursor/start-server.sh",
+      "description": "Roboflow Inference HTTP API (CPU) on http://127.0.0.1:9001 — serves the landing page, Swagger docs at /docs, model inference (e.g. /clip/compare) and Workflows (/workflows/run)."
+    }
+  ],
+  "ports": [
+    {
+      "name": "inference-server",
+      "port": 9001
+    }
+  ]
+}
