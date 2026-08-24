@@ -19,10 +19,6 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
     MODEL_VERSION_IDS as V4_MODEL_VERSION_IDS,
 )
-from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
-    _execute_direct_gemini_request,
-    _execute_proxied_gemini_request,
-)
 
 STALE_MODEL_IDS = {
     "gemini-3-pro-preview",
@@ -472,73 +468,3 @@ def test_execute_gemini_request_http_error(mock_post: Mock) -> None:
         )
 
     assert "HTTP Error" in str(exc_info.value)
-
-
-_GEMINI_OK = {
-    "candidates": [
-        {
-            "content": {"parts": [{"text": "ok"}]},
-            "finishReason": "STOP",
-        }
-    ]
-}
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.google_gemini.v4.post_to_roboflow_api"
-)
-def test_v4_proxied_request_returns_usage(mock_post: Mock) -> None:
-    mock_post.return_value = {
-        **_GEMINI_OK,
-        "usageMetadata": {
-            "promptTokenCount": 15,
-            "candidatesTokenCount": 6,
-            "thoughtsTokenCount": 4,
-        },
-    }
-
-    result = _execute_proxied_gemini_request(
-        roboflow_api_key="rf_api_key",
-        google_api_key="rf_key:account",
-        prompt={"contents": {"parts": [{"text": "test"}]}},
-        model_version="gemini-2.5-pro",
-    )
-
-    assert result == ("ok", 15, 10)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.google_gemini.v4.post_to_roboflow_api"
-)
-def test_v4_proxied_request_usage_none_when_omitted(mock_post: Mock) -> None:
-    mock_post.return_value = _GEMINI_OK
-
-    result = _execute_proxied_gemini_request(
-        roboflow_api_key="rf_api_key",
-        google_api_key="rf_key:account",
-        prompt={"contents": {"parts": [{"text": "test"}]}},
-        model_version="gemini-2.5-pro",
-    )
-
-    assert result == ("ok", None, None)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.google_gemini.v4.requests.post"
-)
-def test_v4_direct_request_returns_usage(mock_post: Mock) -> None:
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        **_GEMINI_OK,
-        "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 2},
-    }
-    mock_post.return_value = mock_response
-
-    result = _execute_direct_gemini_request(
-        google_api_key="user-google-key",
-        prompt={"contents": {"parts": [{"text": "test"}]}},
-        model_version="gemini-2.5-pro",
-    )
-
-    assert result == ("ok", 8, 2)

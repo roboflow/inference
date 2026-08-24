@@ -9,28 +9,28 @@ from inference.core.workflows.core_steps.common.token_usage import (
     parse_gemini_usage_metadata,
     parse_responses_api_usage,
 )
-from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     BlockManifest as ClaudeManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v5 import (
     BlockManifest as GeminiManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v3 import (
     BlockManifest as GemmaManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.meta_vlm.v1 import (
+from inference.core.workflows.core_steps.models.foundation.meta_vlm.v2 import (
     BlockManifest as MetaManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
+from inference.core.workflows.core_steps.models.foundation.openai.v6 import (
     BlockManifest as OpenAIManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
+from inference.core.workflows.core_steps.models.foundation.openrouter.v2 import (
     BlockManifest as OpenRouterManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v2 import (
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     BlockManifest as QwenManifest,
 )
-from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
+from inference.core.workflows.core_steps.models.foundation.spacexai.v2 import (
     BlockManifest as SpaceXAIManifest,
 )
 

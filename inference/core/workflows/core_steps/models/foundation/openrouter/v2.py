@@ -1,3 +1,16 @@
+"""Generic OpenRouter workflow block.
+
+Like the Qwen-VL / Kimi / Gemma OpenRouter blocks, but the model is a free-form
+string instead of a fixed dropdown. The user pastes any OpenRouter model slug
+(e.g. ``openai/gpt-4o-mini``, ``anthropic/claude-3.5-sonnet``,
+``qwen/qwen3.6-27b``) and the block routes through Roboflow's
+``apiproxy/openrouter`` proxy by default, or directly to OpenRouter when the
+user provides their own ``sk-or-...`` key.
+
+The task-type surface (unconstrained, OCR, classification, detection, etc.)
+is the one shared via ``common.openrouter`` with the other VLM blocks.
+"""
+
 from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -10,6 +23,9 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -29,88 +45,116 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     WorkflowBlockManifest,
-    is_workflow_selector,
     third_party_model,
 )
 
-MODEL_VERSION_MAPPING = {
-    "Gemma 4 31B - OpenRouter": "google/gemma-4-31b-it",
-    "Gemma 4 26B A4B - OpenRouter": "google/gemma-4-26b-a4b-it",
-}
-
-ModelVersion = Literal[
-    "Gemma 4 31B - OpenRouter",
-    "Gemma 4 26B A4B - OpenRouter",
-]
-
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
+
 
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 
-LONG_DESCRIPTION = f"""
-Ask a question to Google's Gemma model with vision capabilities.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+LONG_DESCRIPTION = f"""
+Run **any** vision-language model available on [OpenRouter](https://openrouter.ai/) by
+pasting its model slug into the `model_id` field — e.g.
+`openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`, `google/gemini-2.5-pro`,
+`qwen/qwen3.6-27b`.
+
+This is the generic escape hatch for OpenRouter — when you want a model that
+doesn't have a dedicated block (Qwen-VL, Kimi, Gemma, Llama Vision) and you
+want to try it out without waiting for a new block to be added.
+
+The block supports the standard VLM task-type surface:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-#### 🛠️ API providers and model variants
+#### 🛠️ API key
 
-Gemma is exposed via [OpenRouter](https://openrouter.ai/). By default this block uses
-the **Roboflow-managed OpenRouter key** and bills your Roboflow credits — no extra
-setup needed. To bypass Roboflow billing, paste your own `sk-or-...` key into the
-`api_key` field.
+By default the block uses the **Roboflow-managed OpenRouter key** and bills your
+Roboflow credits — no extra setup needed. To bypass Roboflow billing, paste your
+own `sk-or-...` key into the `api_key` field.
 
-The `privacy_level` field controls which OpenRouter providers may serve the request:
+#### 🔒 Privacy filter
 
 * **No data collection** *(default)* – providers may not train on your inputs.
-* **Allow data collection** – broader provider pool, including providers that train on inputs.
+* **Allow data collection** – broader provider pool.
 * **Zero data retention** – strictest, restricts to providers that retain nothing.
 
-#### 💡 Further reading and Acceptable Use Policy
+!!! warning "Model availability"
 
-!!! warning "Model license"
-
-    Check the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) before use.
+    OpenRouter exposes hundreds of models with different capabilities. Not every
+    model supports image inputs, and some are text-only or reasoning-only. If
+    the model can't return a visible response (e.g. a reasoning model that
+    burns all of `max_tokens` on internal thinking), try increasing
+    `max_tokens` or pick a different model.
 """
 
 
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Google Gemma",
+            "name": "OpenRouter",
             "version": "v2",
-            "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
+            "short_description": "Run any OpenRouter model by pasting its model slug.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Gemma Terms of Use",
+            "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Gemma", "Google", "OpenRouter"],
+            "search_keywords": [
+                "OpenRouter",
+                "VLM",
+                "LMM",
+                "Qwen",
+                "Llama",
+                "generic",
+            ],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fa-brands fa-google",
+                "icon": "fal fa-globe",
+                "blockPriority": 5.6,
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemma@v2"]
+    type: Literal["roboflow_core/openrouter@v2"]
+
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+
+    model_id: Union[Selector(kind=[STRING_KIND]), str] = Field(
+        description=(
+            "OpenRouter model slug, e.g. `openai/gpt-4o-mini`, "
+            "`anthropic/claude-3.5-sonnet`, `qwen/qwen3.6-27b`. See "
+            "https://openrouter.ai/models for the full list."
+        ),
+        examples=[
+            "openai/gpt-4o-mini",
+            "anthropic/claude-3.5-sonnet",
+            "google/gemini-2.5-pro",
+            "qwen/qwen3.6-27b",
+            "$inputs.openrouter_model_id",
+        ],
+    )
+
     task_type: TaskType = Field(
         default="unconstrained",
-        description="Task type to be performed by model. Value determines required parameters and output response.",
+        description=(
+            "Task type to be performed by model. Value determines required "
+            "parameters and output response."
+        ),
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": RECOMMENDED_PARSERS,
             "always_visible": True,
         },
     )
+
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Gemma model",
+        description="Text prompt to send to the model.",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -124,7 +168,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     )
     output_structure: Optional[Dict[str, str]] = Field(
         default=None,
-        description="Dictionary with structure of expected JSON response",
+        description="Dictionary with structure of expected JSON response.",
         examples=[{"my_key": "description"}, "$inputs.output_structure"],
         json_schema_extra={
             "relevant_for": {
@@ -134,7 +178,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     )
     classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
-        description="List of classes to be used",
+        description="List of classes to be used.",
         examples=[["class-a", "class-b"], "$inputs.classes"],
         json_schema_extra={
             "relevant_for": {
@@ -148,11 +192,6 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 },
             },
         },
-    )
-    model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
-        default="Gemma 4 31B - OpenRouter",
-        description="Model to be used",
-        examples=["Gemma 4 31B - OpenRouter", "$inputs.gemma_model"],
     )
 
     @model_validator(mode="after")
@@ -191,6 +230,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -198,26 +238,10 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         return ">=1.3.0,<2.0.0"
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
-        if is_workflow_selector(self.model_version):
-            # Friendly-label selector returned verbatim; the attached resolver
-            # performs the MODEL_VERSION_MAPPING lookup once the input value
-            # is substituted.
-            return [
-                third_party_model(
-                    provider="openrouter",
-                    model_id=self.model_version,
-                    model_id_resolver=lambda label: MODEL_VERSION_MAPPING[label],
-                )
-            ]
-        return [
-            third_party_model(
-                provider="openrouter",
-                model_id=MODEL_VERSION_MAPPING[self.model_version],
-            )
-        ]
+        return [third_party_model(provider="openrouter", model_id=self.model_id)]
 
 
-class GoogleGemmaBlockV2(OpenRouterWorkflowBlockBase):
+class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -230,13 +254,13 @@ class GoogleGemmaBlockV2(OpenRouterWorkflowBlockBase):
     def run(
         self,
         images: Batch[WorkflowImageData],
+        model_id: str,
         task_type: str,
         prompt: Optional[str],
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
         api_key: str,
         privacy_level: str,
-        model_version: ModelVersion,
         max_tokens: int,
         temperature: float,
         max_concurrent_requests: Optional[int],
@@ -251,13 +275,20 @@ class GoogleGemmaBlockV2(OpenRouterWorkflowBlockBase):
         )
         raw_outputs = self.execute_openrouter_batch(
             openrouter_api_key=api_key,
-            model=MODEL_VERSION_MAPPING[model_version],
+            model=model_id,
             prompts=prompts,
             max_tokens=max_tokens,
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
+            include_usage=True,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, input_tokens, output_tokens in raw_outputs
         ]

@@ -89,7 +89,7 @@ def test_detection_prompt_is_vlm_exam_meta_flat_template():
     "OpenRouterWorkflowBlockBase.execute_openrouter_batch"
 )
 def test_run_openrouter_passes_slug_and_low_reasoning(mock_or):
-    mock_or.return_value = [("boxes", "trace", 20, 8)]
+    mock_or.return_value = [("boxes", "trace")]
     block = MetaVlmBlockV1(model_manager=MagicMock(), api_key="rf_key")
     result = block.run(
         **_base_run_kwargs(
@@ -102,12 +102,4 @@ def test_run_openrouter_passes_slug_and_low_reasoning(mock_or):
     assert mock_or.call_args.kwargs["reasoning"] == {"effort": "low"}
     assert mock_or.call_args.kwargs["max_tokens"] == 2048
     assert mock_or.call_args.kwargs["temperature"] is None
-    assert result == [
-        {
-            "output": "boxes",
-            "classes": ["cat"],
-            "thinking": "trace",
-            "input_tokens": 20,
-            "output_tokens": 8,
-        }
-    ]
+    assert result == [{"output": "boxes", "classes": ["cat"], "thinking": "trace"}]

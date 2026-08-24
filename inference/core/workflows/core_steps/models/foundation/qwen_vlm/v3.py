@@ -52,6 +52,9 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+)
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
 )
@@ -752,7 +755,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Qwen",
-            "version": "v2",
+            "version": "v3",
             "short_description": "Run any Qwen vision model — natively or via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -777,7 +780,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/qwen_vlm@v2"]
+    type: Literal["roboflow_core/qwen_vlm@v3"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
@@ -1091,6 +1094,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                     "otherwise."
                 ),
             ),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -1159,7 +1163,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 # ---------------------------------------------------------------------------
 
 
-class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
+class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
     """Unified Qwen-VL block v2. Inherits OpenRouter routing/execution from
     base, uses Qwen-specific prompt building on the OpenRouter path, and
     keeps the native local/remote dispatch from v1.
@@ -1260,10 +1264,17 @@ class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
                 max_concurrent_requests=max_concurrent_requests,
                 reasoning=reasoning,
                 include_reasoning=True,
+                include_usage=True,
             )
             return [
-                {"output": content, "classes": classes, "thinking": reasoning_trace}
-                for content, reasoning_trace in raw_outputs
+                {
+                    "output": content,
+                    "classes": classes,
+                    "thinking": reasoning_trace,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                }
+                for content, reasoning_trace, input_tokens, output_tokens in raw_outputs
             ]
 
         # `enable_thinking` is only meaningful on Qwen3.5-VL native variants
@@ -1282,7 +1293,13 @@ class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
             max_tokens=max_tokens,
         )
         return [
-            {"output": o["output"], "classes": classes, "thinking": o["thinking"]}
+            {
+                "output": o["output"],
+                "classes": classes,
+                "thinking": o["thinking"],
+                "input_tokens": None,
+                "output_tokens": None,
+            }
             for o in native_outputs
         ]
 

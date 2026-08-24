@@ -24,6 +24,9 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+)
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
 )
@@ -376,7 +379,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Meta",
-            "version": "v1",
+            "version": "v2",
             "short_description": "Run Meta Muse vision models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -400,7 +403,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/meta_vlm@v1"]
+    type: Literal["roboflow_core/meta_vlm@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
@@ -556,6 +559,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                     "one. Empty string otherwise."
                 ),
             ),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -579,7 +583,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class MetaVlmBlockV1(OpenRouterWorkflowBlockBase):
+class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -626,8 +630,15 @@ class MetaVlmBlockV1(OpenRouterWorkflowBlockBase):
             max_concurrent_requests=max_concurrent_requests,
             reasoning=build_reasoning_config(reasoning_effort),
             include_reasoning=True,
+            include_usage=True,
         )
         return [
-            {"output": content, "classes": classes, "thinking": reasoning_trace}
-            for content, reasoning_trace in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "thinking": reasoning_trace,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, reasoning_trace, input_tokens, output_tokens in raw_outputs
         ]

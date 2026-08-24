@@ -9,8 +9,6 @@ from pydantic import ValidationError
 from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
     OBJECT_DETECTION_PROMPT_TEMPLATE,
     BlockManifest,
-    _execute_direct_spacexai_request,
-    _execute_proxied_spacexai_request,
     encode_image_for_task,
     execute_spacexai_request,
     prepare_object_detection_prompt,
@@ -243,80 +241,3 @@ def test_execute_spacexai_request_routes_direct_key(
     )
     assert result == "direct"
     direct_mock.assert_called_once()
-
-
-_XAI_OK = {
-    "status": "completed",
-    "output": [
-        {
-            "type": "message",
-            "content": [{"type": "output_text", "text": "ok"}],
-        }
-    ],
-}
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v1.post_to_roboflow_api"
-)
-def test_proxied_request_returns_usage(mock_post: MagicMock) -> None:
-    mock_post.return_value = {
-        **_XAI_OK,
-        "usage": {"input_tokens": 16, "output_tokens": 5},
-    }
-
-    result = _execute_proxied_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", 16, 5)
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v1.post_to_roboflow_api"
-)
-def test_proxied_request_usage_none_when_omitted(mock_post: MagicMock) -> None:
-    mock_post.return_value = _XAI_OK
-
-    result = _execute_proxied_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", None, None)
-
-
-@patch("inference.core.workflows.core_steps.models.foundation.spacexai.v1.OpenAI")
-def test_direct_request_returns_usage(mock_openai_cls: MagicMock) -> None:
-    client = MagicMock()
-    response = MagicMock()
-    response.status = "completed"
-    response.output_text = "ok"
-    response.usage = MagicMock(input_tokens=12, output_tokens=4)
-    client.responses.create.return_value = response
-    mock_openai_cls.return_value = client
-
-    result = _execute_direct_spacexai_request(
-        xai_api_key="xai-secret",
-        instructions=None,
-        input_content=[],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-
-    assert result == ("ok", 12, 4)

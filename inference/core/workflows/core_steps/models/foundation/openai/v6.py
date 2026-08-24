@@ -1,8 +1,10 @@
 import base64
 import json
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
+import cv2
+import numpy as np
 import requests
 from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
@@ -11,7 +13,15 @@ from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_RE
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+    parse_responses_api_usage,
+)
+from inference.core.workflows.core_steps.common.utils import (
+    DETECTION_MAX_EDGE_PIXELS,
+    run_in_parallel,
+    scale_dimensions_to_max_edge,
+)
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -38,91 +48,122 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
+# Detection prompt styles (selected per model based on a 17-model x 10-format
+# x 100-image benchmark; see the object-detection prompt builders below):
+# - "structured-absolute": absolute pixel box_2d enforced via structured
+#   outputs (json_schema). Best for gpt-5.2 and newer generations; the default
+#   for unknown/future models.
+# - "normalized-legacy": v4-style normalized 0.0-1.0 dict. Best for the
+#   gpt-5.1/gpt-5 generation, whose vision pipelines resize internally.
+# - "plain-absolute": absolute pixel box_2d requested via free-text JSON.
+#   Safest for gpt-4.x/4o and nano-tier models, which regress under
+#   structured outputs.
+STRUCTURED_ABSOLUTE_STYLE = "structured-absolute"
+NORMALIZED_LEGACY_STYLE = "normalized-legacy"
+PLAIN_ABSOLUTE_STYLE = "plain-absolute"
+
 OPENAI_MODELS = [
     {
         "id": "gpt-5.6-sol",
         "name": "GPT-5.6 Sol",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.6-terra",
         "name": "GPT-5.6 Terra",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.6-luna",
         "name": "GPT-5.6 Luna",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.5",
         "name": "GPT-5.5",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.4",
         "name": "GPT-5.4",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.4-mini",
         "name": "GPT-5.4 mini",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.4-nano",
         "name": "GPT-5.4 nano",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": PLAIN_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.2",
         "name": "GPT-5.2",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.1",
         "name": "GPT-5.1",
         "reasoning_effort_values": ["none", "low", "medium", "high"],
+        "detection_prompt_style": NORMALIZED_LEGACY_STYLE,
     },
     {
         "id": "gpt-5",
         "name": "GPT-5",
         "reasoning_effort_values": ["minimal", "low", "medium", "high"],
+        "detection_prompt_style": NORMALIZED_LEGACY_STYLE,
     },
     {
         "id": "gpt-5-mini",
         "name": "GPT-5 mini",
         "reasoning_effort_values": ["minimal", "low", "medium", "high"],
+        "detection_prompt_style": NORMALIZED_LEGACY_STYLE,
     },
     {
         "id": "gpt-5-nano",
         "name": "GPT-5 nano",
         "reasoning_effort_values": ["minimal", "low", "medium", "high"],
+        "detection_prompt_style": NORMALIZED_LEGACY_STYLE,
     },
     {
         "id": "gpt-4.1",
         "name": "GPT-4.1",
         "reasoning_effort_values": [],
+        "detection_prompt_style": PLAIN_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-4.1-mini",
         "name": "GPT-4.1 mini",
         "reasoning_effort_values": [],
+        "detection_prompt_style": PLAIN_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-4.1-nano",
         "name": "GPT-4.1 nano",
         "reasoning_effort_values": [],
+        "detection_prompt_style": PLAIN_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-4o",
         "name": "GPT-4o",
         "reasoning_effort_values": [],
+        "detection_prompt_style": PLAIN_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-4o-mini",
         "name": "GPT-4o mini",
         "reasoning_effort_values": [],
+        "detection_prompt_style": PLAIN_ABSOLUTE_STYLE,
     },
 ]
 
@@ -142,6 +183,92 @@ MODELS_NOT_SUPPORTING_REASONING_EFFORT = [
 
 MODEL_REASONING_EFFORT_VALUES = {
     model["id"]: model["reasoning_effort_values"] for model in OPENAI_MODELS
+}
+
+MODEL_DETECTION_PROMPT_STYLES = {
+    model["id"]: model["detection_prompt_style"] for model in OPENAI_MODELS
+}
+
+
+def get_detection_prompt_style(model_version: str) -> str:
+    """Resolve the object-detection prompt style for a model.
+
+    Unknown (future) models default to the structured-absolute contract, which
+    matches the behavior of the newest generations in the registry.
+
+    Args:
+        model_version: OpenAI model identifier, e.g. ``gpt-5.6-sol``.
+
+    Returns:
+        One of ``STRUCTURED_ABSOLUTE_STYLE``, ``NORMALIZED_LEGACY_STYLE`` or
+        ``PLAIN_ABSOLUTE_STYLE``.
+    """
+    return MODEL_DETECTION_PROMPT_STYLES.get(model_version, STRUCTURED_ABSOLUTE_STYLE)
+
+
+OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners in absolute pixel coordinates "
+    "of the {width}x{height} pixel image. "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
+)
+
+STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    'Output JSON with the key "detections" holding a list where each entry '
+    'contains the 2D bounding box in the key "box_2d" and the text label '
+    'in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners in absolute pixel coordinates "
+    "of the {width}x{height} pixel image. "
+    "Only use these labels: {class_list}"
+)
+
+NORMALIZED_OBJECT_DETECTION_INSTRUCTIONS = (
+    "You act as object-detection model. You must provide reasonable predictions. "
+    "You are only allowed to produce JSON document. "
+    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, '
+    '"x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
+    "`my-class-X` must be one of the class names defined by user. All coordinates "
+    "must be in range 0.0-1.0, representing percentage of image dimensions. "
+    "`confidence` is a value in range 0.0-1.0 representing your confidence in "
+    "prediction. You should detect all instances of classes provided by user."
+)
+
+STRUCTURED_OBJECT_DETECTION_OUTPUT_FORMAT = {
+    "format": {
+        "type": "json_schema",
+        "name": "detections",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "detections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "box_2d": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                                "minItems": 4,
+                                "maxItems": 4,
+                            },
+                        },
+                        "required": ["label", "box_2d"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["detections"],
+            "additionalProperties": False,
+        },
+    }
 }
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -172,6 +299,26 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
+The `object-detection` task uses a per-model prompt contract selected from a
+large-scale benchmark - use `roboflow_core/vlm_as_detector@v2` to convert any of
+the outputs into predictions:
+
+* Most models (GPT-5.2 and newer, plus unknown/future models) return
+`{{"detections": [...]}}` with `box_2d` boxes in `[x_min, y_min, x_max, y_max]`
+format (absolute pixel coordinates of the uploaded image) and a `label` key,
+enforced via structured outputs.
+* GPT-5.1/GPT-5 generation models return the legacy normalized dict
+(`x_min`/`y_min`/`x_max`/`y_max` in 0.0-1.0 with `class_name` and `confidence`).
+* GPT-4.x/GPT-4o and nano-tier models return a plain JSON list of `box_2d`
+entries in absolute pixel coordinates.
+
+The absolute-coordinate formats do not provide confidence scores.
+`roboflow_core/vlm_as_detector@v2` assigns these detections a confidence of
+`1.0`, so downstream confidence filtering is not meaningful for these formats.
+
+Images are downscaled so that their longest edge does not exceed
+{DETECTION_MAX_EDGE_PIXELS}px and are sent as lossless PNG for this task.
+
 Provide your OpenAI API key or set the value to ``rf_key:account`` (or
 ``rf_key:user:<id>``) to proxy requests through Roboflow's API.
 """
@@ -198,7 +345,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "OpenAI",
-            "version": "v4",
+            "version": "v6",
             "short_description": "Run OpenAI's GPT models with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -215,7 +362,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/open_ai@v4"]
+    type: Literal["roboflow_core/open_ai@v6"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -311,7 +458,8 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
     ] = Field(
         default="auto",
-        description="Indicates the image's quality, with 'high' suggesting it is of high resolution and should be processed or displayed with high fidelity.",
+        description="Indicates the image's quality, with 'high' suggesting it is of high resolution and should be processed or displayed with high fidelity. "
+        "Not applied to the `object-detection` task, which always sends the image without the detail hint.",
         examples=["auto", "high", "low"],
     )
     max_tokens: Optional[int] = Field(
@@ -368,6 +516,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -378,7 +527,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [third_party_model(provider="openai", model_id=self.model_version)]
 
 
-class OpenAIBlockV4(WorkflowBlock):
+class OpenAIBlockV6(WorkflowBlock):
 
     def __init__(
         self,
@@ -432,7 +581,13 @@ class OpenAIBlockV4(WorkflowBlock):
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": raw_output,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for raw_output, input_tokens, output_tokens in raw_outputs
         ]
 
 
@@ -450,21 +605,54 @@ def run_openai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
+    """Encode images, build per-task prompts and execute OpenAI requests.
+
+    Each image is preprocessed according to the task type (see
+    ``encode_image_for_task``), turned into a request payload by the prompt
+    builder registered for the task in ``PROMPT_BUILDERS`` and executed via
+    ``execute_openai_requests``.
+
+    Args:
+        roboflow_api_key: Roboflow API key, required only for proxied
+            execution with an ``rf_key:`` OpenAI key.
+        images: Input images in loadable form.
+        task_type: Task determining preprocessing and prompt construction.
+        prompt: Free-form text prompt for tasks that accept one.
+        output_structure: Field descriptions for structured answering.
+        classes: Class names for classification and detection tasks.
+        openai_api_key: OpenAI API key or Roboflow-proxied ``rf_key:`` key.
+        model_version: OpenAI model identifier.
+        reasoning_effort: Reasoning effort for models that support it.
+        image_detail: Requested image detail level.
+        max_tokens: Maximum number of output tokens.
+        temperature: Sampling temperature.
+        max_concurrent_requests: Cap on concurrent OpenAI requests.
+
+    Returns:
+        ``(output_text, input_tokens, output_tokens)`` tuples, one per input
+        image; token counts are ``None`` when the provider omits usage data.
+
+    Raises:
+        ValueError: If the task type has no registered prompt builder.
+    """
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     openai_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
-        base64_image = base64.b64encode(
-            encode_image_to_jpeg_bytes(loaded_image)
-        ).decode("ascii")
+        base64_image, image_width, image_height = encode_image_for_task(
+            loaded_image, task_type=task_type
+        )
         generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
             image_detail=image_detail,
+            image_width=image_width,
+            image_height=image_height,
+            model_version=model_version,
         )
         openai_prompts.append(generated_prompt)
     return execute_openai_requests(
@@ -479,6 +667,57 @@ def run_openai_prompting(
     )
 
 
+def encode_image_for_task(
+    image: np.ndarray, *, task_type: TaskType
+) -> Tuple[str, int, int]:
+    """Encode an image as base64 using task-appropriate preprocessing.
+
+    The `object-detection` task mirrors the preprocessing used for detection
+    benchmarks: the image is downscaled so its longest edge does not exceed
+    ``DETECTION_MAX_EDGE_PIXELS`` (aspect ratio preserved, never upscaled) and
+    encoded as lossless PNG. All other tasks send the image unchanged as JPEG.
+
+    Args:
+        image: BGR image to be encoded.
+        task_type: Task type determining the preprocessing applied.
+
+    Returns:
+        Tuple of the base64-encoded image payload (without a data URL prefix)
+        and the ``(width, height)`` of the encoded image.
+    """
+    if task_type == "object-detection":
+        encoded_image = _downscale_image_to_max_edge(
+            image, max_edge=DETECTION_MAX_EDGE_PIXELS
+        )
+        image_bytes = _encode_image_to_png_bytes(encoded_image)
+    else:
+        encoded_image = image
+        image_bytes = encode_image_to_jpeg_bytes(encoded_image)
+
+    base64_image = base64.b64encode(image_bytes).decode("ascii")
+    encoded_height, encoded_width = encoded_image.shape[:2]
+
+    return base64_image, encoded_width, encoded_height
+
+
+def _downscale_image_to_max_edge(image: np.ndarray, *, max_edge: int) -> np.ndarray:
+    height, width = image.shape[:2]
+    target_width, target_height = scale_dimensions_to_max_edge(width, height, max_edge)
+    if (target_width, target_height) == (width, height):
+        return image
+
+    resized_image = cv2.resize(
+        image, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4
+    )
+
+    return resized_image
+
+
+def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
+    _, encoded_image = cv2.imencode(".png", image)
+    return encoded_image.tobytes()
+
+
 def execute_openai_requests(
     roboflow_api_key: Optional[str],
     openai_api_key: str,
@@ -488,7 +727,25 @@ def execute_openai_requests(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
+    """Execute prepared OpenAI request payloads in parallel.
+
+    Args:
+        roboflow_api_key: Roboflow API key for proxied execution.
+        openai_api_key: OpenAI API key or Roboflow-proxied ``rf_key:`` key.
+        openai_prompts: Prompt payloads with ``input`` and optionally
+            ``instructions`` and ``text`` (structured-output format) keys.
+        model_version: OpenAI model identifier.
+        reasoning_effort: Reasoning effort for models that support it.
+        max_tokens: Maximum number of output tokens.
+        temperature: Sampling temperature.
+        max_concurrent_requests: Cap on concurrent requests; defaults to
+            ``WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS``.
+
+    Returns:
+        ``(output_text, input_tokens, output_tokens)`` tuples in the order of
+        the input prompts.
+    """
     tasks = [
         partial(
             execute_openai_request,
@@ -496,6 +753,7 @@ def execute_openai_requests(
             openai_api_key=openai_api_key,
             instructions=prompt.get("instructions"),
             input_content=prompt["input"],
+            text_format=prompt.get("text"),
             model_version=model_version,
             reasoning_effort=reasoning_effort,
             max_tokens=max_tokens,
@@ -522,7 +780,8 @@ def _execute_proxied_openai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> str:
+    text_format: Optional[dict] = None,
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request via Roboflow proxy."""
     payload = {
         "model": model_version,
@@ -532,6 +791,9 @@ def _execute_proxied_openai_request(
 
     if instructions is not None:
         payload["instructions"] = instructions
+
+    if text_format is not None:
+        payload["text"] = text_format
 
     if max_tokens is not None:
         payload["max_output_tokens"] = max_tokens
@@ -559,7 +821,11 @@ def _execute_proxied_openai_request(
             api_key=roboflow_api_key,
             payload=payload,
         )
-        return _extract_output_text(response_data)
+        text = _extract_output_text(response_data)
+        input_tokens, output_tokens = parse_responses_api_usage(
+            response_data.get("usage")
+        )
+        return text, input_tokens, output_tokens
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
@@ -621,7 +887,8 @@ def _execute_direct_openai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> str:
+    text_format: Optional[dict] = None,
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request directly."""
     client = _get_openai_client(openai_api_key)
 
@@ -632,6 +899,9 @@ def _execute_direct_openai_request(
 
     if instructions is not None:
         request_params["instructions"] = instructions
+
+    if text_format is not None:
+        request_params["text"] = text_format
 
     if max_tokens is not None:
         request_params["max_output_tokens"] = max_tokens
@@ -682,7 +952,10 @@ def _execute_direct_openai_request(
     if not output_text:
         raise ValueError("OpenAI API returned no text content in response.")
 
-    return output_text
+    input_tokens, output_tokens = parse_responses_api_usage(
+        getattr(response, "usage", None)
+    )
+    return output_text, input_tokens, output_tokens
 
 
 def execute_openai_request(
@@ -694,8 +967,35 @@ def execute_openai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> str:
+    text_format: Optional[dict] = None,
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Execute a single OpenAI request, routing to direct or proxied mode.
+
+    Requests are proxied through Roboflow when the OpenAI key is a Roboflow
+    managed ``rf_key:`` key; otherwise the OpenAI API is called directly.
+
+    Args:
+        roboflow_api_key: Roboflow API key, required for proxied execution.
+        openai_api_key: OpenAI API key or Roboflow-proxied ``rf_key:`` key.
+        instructions: Optional system instructions.
+        input_content: ``input`` entries of the Responses API payload.
+        model_version: OpenAI model identifier.
+        reasoning_effort: Reasoning effort for models that support it.
+        max_tokens: Maximum number of output tokens.
+        temperature: Sampling temperature.
+        text_format: Optional structured-output ``text`` payload forwarded
+            with the request.
+
+    Returns:
+        Tuple of the raw text output and the input/output token counts
+        (``None`` when the provider omits usage data).
+    """
     if openai_api_key.startswith(("rf_key:account", "rf_key:user:")):
+        if not roboflow_api_key:
+            raise ValueError(
+                "Roboflow API key is required when using a Roboflow-managed OpenAI API key."
+            )
+
         return _execute_proxied_openai_request(
             roboflow_api_key=roboflow_api_key,
             openai_api_key=openai_api_key,
@@ -705,6 +1005,7 @@ def execute_openai_request(
             reasoning_effort=reasoning_effort,
             max_tokens=max_tokens,
             temperature=temperature,
+            text_format=text_format,
         )
     else:
         return _execute_direct_openai_request(
@@ -715,6 +1016,7 @@ def execute_openai_request(
             reasoning_effort=reasoning_effort,
             max_tokens=max_tokens,
             temperature=temperature,
+            text_format=text_format,
         )
 
 
@@ -724,6 +1026,17 @@ def prepare_unconstrained_prompt(
     image_detail: str,
     **kwargs,
 ) -> dict:
+    """Build a request forwarding the user's prompt without instructions.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        prompt: Free-form user prompt.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with an ``input`` key.
+    """
     return {
         "input": [
             {
@@ -747,6 +1060,17 @@ def prepare_classification_prompt(
     image_detail: str,
     **kwargs,
 ) -> dict:
+    """Build a single-label classification request.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        classes: Class names the model may predict.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``instructions`` and ``input`` keys.
+    """
     serialised_classes = ", ".join(classes)
     return {
         "instructions": (
@@ -781,6 +1105,17 @@ def prepare_multi_label_classification_prompt(
     image_detail: str,
     **kwargs,
 ) -> dict:
+    """Build a multi-label classification request.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        classes: Class names the model may predict.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``instructions`` and ``input`` keys.
+    """
     serialised_classes = ", ".join(classes)
     return {
         "instructions": (
@@ -817,6 +1152,17 @@ def prepare_vqa_prompt(
     image_detail: str,
     **kwargs,
 ) -> dict:
+    """Build a visual-question-answering request.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        prompt: Question to be answered.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``instructions`` and ``input`` keys.
+    """
     return {
         "instructions": (
             "You act as Visual Question Answering model. Your task is to provide answer to question "
@@ -844,6 +1190,16 @@ def prepare_ocr_prompt(
     image_detail: str,
     **kwargs,
 ) -> dict:
+    """Build an OCR request returning recognised text as paragraphs.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``instructions`` and ``input`` keys.
+    """
     return {
         "instructions": (
             "You act as OCR model. Your task is to read text from the image and return it in "
@@ -871,6 +1227,18 @@ def prepare_caption_prompt(
     short_description: bool,
     **kwargs,
 ) -> dict:
+    """Build an image captioning request.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        image_detail: Requested image detail level.
+        short_description: Whether to request a short caption instead of an
+            extensive one.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``instructions`` and ``input`` keys.
+    """
     caption_detail_level = "Caption should be short."
     if not short_description:
         caption_detail_level = "Caption should be extensive."
@@ -900,6 +1268,18 @@ def prepare_structured_answering_prompt(
     image_detail: str,
     **kwargs,
 ) -> dict:
+    """Build a structured-answering request producing user-defined JSON.
+
+    Args:
+        base64_image: Base64-encoded JPEG image.
+        output_structure: Mapping of output field names to descriptions of
+            the values the model should generate.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``instructions`` and ``input`` keys.
+    """
     output_structure_serialised = json.dumps(output_structure, indent=4)
     return {
         "instructions": (
@@ -931,35 +1311,83 @@ def prepare_structured_answering_prompt(
 def prepare_object_detection_prompt(
     base64_image: str,
     classes: List[str],
-    image_detail: str,
+    image_width: int,
+    image_height: int,
+    model_version: str = "",
     **kwargs,
 ) -> dict:
+    """Build the detection request using the model's preferred prompt style.
+
+    All styles share the same preprocessing (max-edge downscale, lossless
+    PNG); they differ only in the coordinate contract and whether structured
+    outputs are enforced:
+
+    - structured-absolute: absolute pixel ``box_2d`` entries wrapped in a
+      ``{"detections": [...]}`` object enforced via a JSON schema in the
+      returned ``text`` key,
+    - plain-absolute: a bare JSON list of absolute pixel ``box_2d`` entries,
+    - normalized-legacy: the v4-style ``{"detections": [{"x_min": ...}]}``
+      dict with coordinates normalized to 0.0-1.0.
+
+    Args:
+        base64_image: Base64-encoded PNG of the (possibly downscaled) image.
+        classes: Class names the model may use as labels.
+        image_width: Width of the encoded image in pixels.
+        image_height: Height of the encoded image in pixels.
+        model_version: OpenAI model identifier used to resolve the style.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with an ``input`` key and, depending on the style,
+        ``instructions`` and a structured-output ``text`` key.
+    """
     serialised_classes = ", ".join(classes)
-    return {
-        "instructions": (
-            "You act as object-detection model. You must provide reasonable predictions. "
-            "You are only allowed to produce JSON document. "
-            'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
-            "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-            "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user."
-        ),
+    style = get_detection_prompt_style(model_version)
+    if style == NORMALIZED_LEGACY_STYLE:
+        return {
+            "instructions": NORMALIZED_OBJECT_DETECTION_INSTRUCTIONS,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{base64_image}",
+                        },
+                    ],
+                }
+            ],
+        }
+    if style == STRUCTURED_ABSOLUTE_STYLE:
+        template = STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE
+    else:
+        template = OBJECT_DETECTION_PROMPT_TEMPLATE
+    prompt_text = template.format(
+        width=image_width,
+        height=image_height,
+        class_list=serialised_classes,
+    )
+    prompt: dict = {
         "input": [
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_text",
-                        "text": f"List of all classes to be recognised by model: {serialised_classes}",
-                    },
-                    {
                         "type": "input_image",
-                        "image_url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": image_detail,
+                        "image_url": f"data:image/png;base64,{base64_image}",
                     },
+                    {"type": "input_text", "text": prompt_text},
                 ],
             }
         ],
     }
+    if style == STRUCTURED_ABSOLUTE_STYLE:
+        prompt["text"] = STRUCTURED_OBJECT_DETECTION_OUTPUT_FORMAT
+    return prompt
 
 
 def _get_openai_client(api_key: str):

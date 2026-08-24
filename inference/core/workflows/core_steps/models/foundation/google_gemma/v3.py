@@ -11,6 +11,9 @@ from inference.core.workflows.core_steps.common.openrouter import (
     build_prompts_from_images,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -82,7 +85,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Google Gemma",
-            "version": "v2",
+            "version": "v3",
             "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Gemma Terms of Use",
@@ -97,7 +100,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemma@v2"]
+    type: Literal["roboflow_core/google_gemma@v3"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -191,6 +194,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -217,7 +221,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class GoogleGemmaBlockV2(OpenRouterWorkflowBlockBase):
+class GoogleGemmaBlockV3(OpenRouterWorkflowBlockBase):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -257,7 +261,14 @@ class GoogleGemmaBlockV2(OpenRouterWorkflowBlockBase):
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
+            include_usage=True,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, input_tokens, output_tokens in raw_outputs
         ]

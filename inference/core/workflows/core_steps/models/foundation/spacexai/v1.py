@@ -28,10 +28,6 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.token_usage import (
-    TOKEN_OUTPUT_DEFINITIONS,
-    parse_responses_api_usage,
-)
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -343,7 +339,6 @@ class BlockManifest(WorkflowBlockManifest):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
-            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -406,13 +401,7 @@ class SpaceXAIBlockV1(WorkflowBlock):
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
-            {
-                "output": content,
-                "classes": classes,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-            }
-            for content, input_tokens, output_tokens in raw_outputs
+            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
         ]
 
 
@@ -429,7 +418,7 @@ def run_spacexai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
-) -> List[Tuple[str, Optional[int], Optional[int]]]:
+) -> List[str]:
     """Encode images, build per-task prompts and execute xAI requests.
 
     Args:
@@ -524,7 +513,7 @@ def execute_spacexai_requests(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
-) -> List[Tuple[str, Optional[int], Optional[int]]]:
+) -> List[str]:
     """Execute prepared xAI request payloads in parallel.
 
     Args:
@@ -574,7 +563,7 @@ def execute_spacexai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> Tuple[str, Optional[int], Optional[int]]:
+) -> str:
     """Execute a single xAI request, routing to direct or proxied mode.
 
     Args:
@@ -633,7 +622,7 @@ def _execute_proxied_spacexai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> Tuple[str, Optional[int], Optional[int]]:
+) -> str:
     """Execute xAI request via Roboflow proxy."""
     payload = {
         "model": model_version,
@@ -660,11 +649,7 @@ def _execute_proxied_spacexai_request(
             api_key=roboflow_api_key,
             payload=payload,
         )
-        text = _extract_output_text(response_data)
-        input_tokens, output_tokens = parse_responses_api_usage(
-            response_data.get("usage")
-        )
-        return text, input_tokens, output_tokens
+        return _extract_output_text(response_data)
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
@@ -691,7 +676,7 @@ def _execute_direct_spacexai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> Tuple[str, Optional[int], Optional[int]]:
+) -> str:
     """Execute xAI request directly against api.x.ai."""
     client = OpenAI(base_url=XAI_BASE_URL, api_key=xai_api_key)
 
@@ -751,10 +736,7 @@ def _execute_direct_spacexai_request(
     if not output_text:
         raise ValueError("xAI API returned no text content in response.")
 
-    input_tokens, output_tokens = parse_responses_api_usage(
-        getattr(response, "usage", None)
-    )
-    return output_text, input_tokens, output_tokens
+    return output_text
 
 
 def _extract_output_text(response_data: dict) -> str:
