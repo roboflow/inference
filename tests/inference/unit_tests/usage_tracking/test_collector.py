@@ -3,7 +3,9 @@ import hashlib
 import json
 import sys
 import threading
+import time
 from queue import Queue
+from types import SimpleNamespace
 from typing import Optional
 from unittest import mock
 
@@ -17,6 +19,7 @@ from inference.usage_tracking import payload_helpers
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
+    record_measured_predict_duration,
 )
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
@@ -2245,3 +2248,62 @@ def test_model_decorator_isolates_measured_input_across_threads(
     assert row["processed_frames"] == 5
     assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 1
     assert row["megapixel_buckets"]["2-4"]["processed_frames"] == 4
+
+
+def test_model_decorator_buckets_predict_duration_not_row_duration(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class SlowProcessingModel:
+        api_key = "test_key"
+        dataset_id = "slow-processing"
+        version_id = "1"
+        task_type = "object-detection"
+        model_type = "yolov8n"
+        img_size_h = 640
+        img_size_w = 640
+
+        @usage_collector(category="model")
+        def infer(self, image, **kwargs):
+            clear_measured_model_input()
+            record_measured_predict_duration(0.01)
+            time.sleep(0.05)
+            return {"ok": True}
+
+    SlowProcessingModel().infer([object()])
+
+    row = usage_collector._usage["test_key"][usage_key("model", "slow-processing/1")]
+    # The row keeps wall-clock time; only the bucket narrows to predict.
+    assert row["execution_duration"] >= 0.05
+    assert row["megapixel_buckets"]["0.25-0.5"]["execution_duration"] == pytest.approx(
+        0.01
+    )
+
+
+def test_model_decorator_buckets_full_duration_without_predict_phase(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class NoPredictPhaseModel:
+        api_key = "test_key"
+        dataset_id = "no-predict"
+        version_id = "1"
+        task_type = "instance-segmentation"
+        model_type = "sam2"
+        img_size_h = 640
+        img_size_w = 640
+
+        @usage_collector(category="model")
+        def infer_from_request(self, request, **kwargs):
+            clear_measured_model_input()
+            time.sleep(0.05)
+            return {"ok": True}
+
+    NoPredictPhaseModel().infer_from_request(SimpleNamespace(image=[object()]))
+
+    row = usage_collector._usage["test_key"][usage_key("model", "no-predict/1")]
+    bucket_duration = row["megapixel_buckets"]["0.25-0.5"]["execution_duration"]
+    assert bucket_duration == pytest.approx(row["execution_duration"])
+    assert bucket_duration >= 0.05

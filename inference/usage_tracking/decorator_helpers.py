@@ -9,6 +9,7 @@ from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
     clear_measured_model_input,
     consume_measured_model_input,
+    consume_measured_predict_duration,
     count_inference_images,
     record_measured_model_hw,
     resolve_model_input_hw,
@@ -154,15 +155,42 @@ def get_model_megapixel_buckets(
     execution_duration: float,
     inference_test_run: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
+    """Attribute one model call's frames and duration to its input-size bucket.
+
+    Bucket duration is the predict phase alone when the entrypoint published
+    one, so that it can be compared across models without pre- and
+    post-processing overhead in the way. Entrypoints with no separable predict
+    phase fall back to ``execution_duration``, the decorator's full call time.
+
+    The published duration is consumed before the test-run check, so an
+    unreported call cannot leak its measurement into the next one.
+
+    Args:
+        frames: Images the caller asked this call to process.
+        input_hw: Model input resolution as (height, width), None when unknown.
+        execution_duration: Full call duration, used when no predict phase was
+            timed.
+        inference_test_run: True for test traffic, which is not bucketed.
+
+    Returns:
+        Single-entry bucket map, empty for a test run or a call with no frames.
+    """
+    predict_duration = consume_measured_predict_duration()
     if inference_test_run:
         return {}
+
     height, width = input_hw if input_hw else (None, None)
-    return build_megapixel_buckets(
+    bucket_duration = (
+        predict_duration if predict_duration is not None else execution_duration
+    )
+    megapixel_buckets = build_megapixel_buckets(
         height=height,
         width=width,
         frames=frames,
-        execution_duration=execution_duration,
+        execution_duration=bucket_duration,
     )
+
+    return megapixel_buckets
 
 
 def record_fixed_model_input_for_request(model: Any, request: Any = None) -> None:

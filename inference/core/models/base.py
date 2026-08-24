@@ -13,7 +13,9 @@ from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     parse_image_dims_hw,
+    prediction_is_deferred,
     record_measured_model_input,
+    record_measured_predict_duration,
 )
 
 
@@ -42,7 +44,10 @@ class BaseInference:
             if hasattr(preproc_image, "shape"):
                 set_span_attribute("model.input_shape", str(preproc_image.shape))
         with start_span("model.predict"):
+            predict_started_at = perf_counter()
             predicted_arrays = self.predict(preproc_image, **kwargs)
+            if not prediction_is_deferred(predicted_arrays):
+                record_measured_predict_duration(perf_counter() - predict_started_at)
         with start_span("model.postprocess"):
             postprocessed = self.postprocess(
                 predicted_arrays, returned_metadata, **kwargs

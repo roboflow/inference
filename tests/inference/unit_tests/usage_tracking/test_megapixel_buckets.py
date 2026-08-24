@@ -1,9 +1,11 @@
+import time
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from inference.usage_tracking.decorator_helpers import (
+    get_model_megapixel_buckets,
     record_fixed_model_input_for_request,
 )
 from inference.usage_tracking.megapixel_buckets import (
@@ -11,12 +13,15 @@ from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
     clear_measured_model_input,
     consume_measured_model_input,
+    consume_measured_predict_duration,
     count_inference_images,
     get_fixed_model_input_hw,
     get_tensor_spatial_hw,
     megapixel_bucket_for_hw,
     parse_image_dims_hw,
+    prediction_is_deferred,
     record_measured_model_input,
+    record_measured_predict_duration,
     resolve_model_input_hw,
 )
 from inference.usage_tracking.payload_helpers import (
@@ -412,3 +417,146 @@ def test_base_inference_falls_back_to_image_dims_when_pixel_values_are_unreadabl
     BaseInference.infer.__wrapped__(PatchTokenModel(), object())
 
     assert consume_measured_model_input() == ((1080, 1920), None)
+
+
+def test_record_measured_predict_duration_accumulates_across_calls():
+    # A model that chunks its own batch runs predict more than once per call.
+    record_measured_predict_duration(0.2)
+    record_measured_predict_duration(0.3)
+
+    assert consume_measured_predict_duration() == pytest.approx(0.5)
+
+
+def test_consume_measured_predict_duration_clears_value():
+    record_measured_predict_duration(0.2)
+
+    assert consume_measured_predict_duration() == pytest.approx(0.2)
+    # A later call with no separable predict phase must not inherit this one.
+    assert consume_measured_predict_duration() is None
+
+
+def test_record_measured_predict_duration_ignores_unusable_values():
+    record_measured_predict_duration(-1.0)
+    record_measured_predict_duration("not-a-duration")
+    record_measured_predict_duration(None)
+
+    assert consume_measured_predict_duration() is None
+
+
+def test_clear_measured_model_input_also_clears_predict_duration():
+    record_measured_predict_duration(0.2)
+
+    clear_measured_model_input()
+
+    assert consume_measured_predict_duration() is None
+
+
+def test_bucket_duration_prefers_recorded_predict_duration():
+    record_measured_predict_duration(0.2)
+
+    buckets = get_model_megapixel_buckets(
+        frames=1,
+        input_hw=(640, 640),
+        execution_duration=1.5,
+    )
+
+    assert buckets["0.25-0.5"]["execution_duration"] == pytest.approx(0.2)
+
+
+def test_bucket_duration_falls_back_to_call_duration_without_predict_phase():
+    buckets = get_model_megapixel_buckets(
+        frames=1,
+        input_hw=(640, 640),
+        execution_duration=1.5,
+    )
+
+    assert buckets["0.25-0.5"]["execution_duration"] == pytest.approx(1.5)
+
+
+def test_bucket_duration_is_consumed_even_for_unbucketed_test_run():
+    record_measured_predict_duration(0.2)
+
+    assert (
+        get_model_megapixel_buckets(
+            frames=1,
+            input_hw=(640, 640),
+            execution_duration=1.5,
+            inference_test_run=True,
+        )
+        == {}
+    )
+    # The test run reported nothing, so its measurement must not survive into
+    # the next call.
+    assert consume_measured_predict_duration() is None
+
+
+def test_base_inference_bucket_duration_excludes_pre_and_postprocessing():
+    from inference.core.models.base import BaseInference
+
+    class SlowProcessingModel(BaseInference):
+        def preprocess(self, image, **kwargs):
+            time.sleep(0.05)
+            return np.zeros((1, 3, 640, 640), dtype=np.float32), None
+
+        def predict(self, img_in, **kwargs):
+            time.sleep(0.01)
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            time.sleep(0.05)
+            return predictions
+
+    started_at = time.perf_counter()
+    BaseInference.infer.__wrapped__(SlowProcessingModel(), object())
+    call_duration = time.perf_counter() - started_at
+
+    frames, input_hw = 1, (640, 640)
+    buckets = get_model_megapixel_buckets(
+        frames=frames,
+        input_hw=input_hw,
+        execution_duration=call_duration,
+    )
+
+    bucket_duration = buckets["0.25-0.5"]["execution_duration"]
+    assert bucket_duration >= 0.01
+    assert bucket_duration < 0.05
+    assert call_duration >= 0.11
+
+
+def test_prediction_is_deferred_detects_future_like_results():
+    assert prediction_is_deferred(SimpleNamespace(result=lambda: [1]))
+    assert not prediction_is_deferred((np.zeros(1),))
+    assert not prediction_is_deferred(np.zeros(1))
+    assert not prediction_is_deferred({"logits": np.zeros(1)})
+    # An attribute that merely shares the name is not a pending result.
+    assert not prediction_is_deferred(SimpleNamespace(result=[1]))
+
+
+def test_base_inference_skips_predict_timing_when_work_is_deferred():
+    from inference.core.models.base import BaseInference
+
+    class PipelinedModel(BaseInference):
+        """Mirrors the RF-DETR stream pipeline: predict launches, postprocess resolves."""
+
+        def preprocess(self, image, **kwargs):
+            return np.zeros((1, 3, 640, 640), dtype=np.float32), None
+
+        def predict(self, img_in, **kwargs):
+            return SimpleNamespace(result=lambda: (np.zeros(1),))
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            time.sleep(0.05)
+            return predictions.result()
+
+    BaseInference.infer.__wrapped__(PipelinedModel(), object())
+
+    # Timing the launch would have reported a near-zero predict phase, so the
+    # call must publish nothing and fall back to the full duration instead.
+    assert consume_measured_predict_duration() is None
+
+    buckets = get_model_megapixel_buckets(
+        frames=1,
+        input_hw=(640, 640),
+        execution_duration=1.5,
+    )
+    assert buckets["0.25-0.5"]["execution_duration"] == pytest.approx(1.5)
