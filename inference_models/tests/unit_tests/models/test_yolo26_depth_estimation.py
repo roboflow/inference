@@ -182,19 +182,31 @@ def test_triton_depth_resize_tables_match_torchvision_exactly(
     assert torch.equal(actual, expected)
 
 
-def test_yolo26_depth_execution_plan_uses_auto_by_default(monkeypatch):
-    from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
+def test_yolo26_depth_execution_plan_uses_safe_stage_defaults(monkeypatch):
+    from inference_models.models.optimization.ids import (
+        AUTO_IMPLEMENTATION_ID,
+        BASE_IMPLEMENTATION_ID,
+    )
     from inference_models.models.yolo26.optimization.execution_plan import (
         YOLO26DepthExecutionPlan,
     )
     from inference_models.models.yolo26.optimization.ids import (
         YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
         YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
+        YOLO26_DEPTH_PREPROCESSOR_ENV_NAME,
+        YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
     )
 
+    monkeypatch.delenv(YOLO26_DEPTH_PREPROCESSOR_ENV_NAME, raising=False)
     monkeypatch.delenv(YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME, raising=False)
-    assert YOLO26DepthExecutionPlan.resolve().postprocessor_id == AUTO_IMPLEMENTATION_ID
+    default_plan = YOLO26DepthExecutionPlan.resolve()
+    assert default_plan.preprocessor_id == BASE_IMPLEMENTATION_ID
+    assert default_plan.postprocessor_id == AUTO_IMPLEMENTATION_ID
 
+    monkeypatch.setenv(
+        YOLO26_DEPTH_PREPROCESSOR_ENV_NAME,
+        YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
+    )
     monkeypatch.setenv(
         YOLO26_DEPTH_POSTPROCESSOR_ENV_NAME,
         YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
@@ -203,6 +215,10 @@ def test_yolo26_depth_execution_plan_uses_auto_by_default(monkeypatch):
         allow_compatibility_fallback=False,
     )
 
+    assert (
+        plan.preprocessor_id
+        == YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1
+    )
     assert plan.postprocessor_id == YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1
     assert not plan.allow_compatibility_fallback
 
@@ -239,6 +255,42 @@ def test_yolo26_depth_explicit_triton_selection_never_silently_falls_back():
         )
 
 
+def test_yolo26_depth_explicit_triton_preprocessor_rejects_missing_runtime():
+    from inference_models.errors import ModelRuntimeError
+    from inference_models.models.optimization.contracts import (
+        ExecutionContext,
+        OptimizationStage,
+    )
+    from inference_models.models.yolo26.optimization.ids import (
+        YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
+    )
+    from inference_models.models.yolo26.optimization.postprocessors import (
+        build_yolo26_depth_implementation_registry,
+    )
+
+    registry = build_yolo26_depth_implementation_registry(
+        device=torch.device("cuda:0"),
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda:0",
+        compute_capability=(8, 7),
+        runtime_components={
+            "opencv-python": True,
+            "torch": True,
+            "triton": False,
+        },
+    )
+
+    with pytest.raises(ModelRuntimeError, match="unavailable runtime components"):
+        registry.resolve_selection(
+            stage=OptimizationStage.PREPROCESS,
+            requested_id=(YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1),
+            context=context,
+            allow_fallback=False,
+        )
+
+
 def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
     from inference_models.models.optimization.contracts import (
         ExecutionContext,
@@ -252,9 +304,33 @@ def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
         TritonAAYOLO26DepthPostprocessor,
         build_yolo26_depth_implementation_registry,
     )
+    from inference_models.models.yolo26.optimization.preprocessors import (
+        BaseYOLO26DepthPreprocessor,
+        TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+    )
 
     registry = build_yolo26_depth_implementation_registry(
         device=torch.device("cuda:0"),
+    )
+
+    assert registry._auto_preferences[OptimizationStage.PREPROCESS] == ()
+    preprocessor_selection = registry.resolve_selection(
+        stage=OptimizationStage.PREPROCESS,
+        requested_id=AUTO_IMPLEMENTATION_ID,
+        context=ExecutionContext(
+            device_kind="gpu",
+            device="cuda:0",
+            compute_capability=(8, 7),
+            runtime_components={"torch": True, "torchvision": True, "triton": True},
+        ),
+        allow_fallback=True,
+    )
+    assert isinstance(
+        preprocessor_selection.implementation,
+        BaseYOLO26DepthPreprocessor,
+    )
+    assert (
+        not TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor.metadata.changes_numerics
     )
 
     assert registry._auto_preferences[OptimizationStage.POSTPROCESS] == ()
@@ -273,6 +349,72 @@ def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates():
     assert TritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
     assert not ExactTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
     assert not ExactFusedTritonAAYOLO26DepthPostprocessor.metadata.changes_numerics
+
+
+def test_triton_preprocessor_uses_base_only_for_frozen_base_source_shape():
+    import numpy as np
+
+    from inference_models.models.yolo26.optimization.preprocessors import (
+        _use_base_preprocess_path,
+    )
+
+    base_image = np.zeros((480, 640, 3), dtype=np.uint8)
+    large_image = np.zeros((2160, 3840, 3), dtype=np.uint8)
+
+    assert _use_base_preprocess_path(base_image)
+    assert not _use_base_preprocess_path(large_image)
+
+
+def test_triton_preprocessor_preserves_opencv_letterbox_image_and_metadata():
+    import numpy as np
+
+    from inference_models.models.common.roboflow.model_packages import (
+        ColorMode,
+        ImagePreProcessing,
+        NetworkInputDefinition,
+        ResizeMode,
+        TrainingInputSize,
+    )
+    from inference_models.models.common.roboflow.pre_processing import (
+        pre_process_network_input,
+    )
+    from inference_models.models.yolo26.optimization.preprocessors import (
+        _prepare_large_numpy_image,
+    )
+
+    image = np.arange(12 * 20 * 3, dtype=np.uint8).reshape((12, 20, 3))
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(width=8, height=8),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.LETTERBOX,
+        padding_value=127,
+        input_channels=3,
+        scaling_factor=255,
+        normalization=None,
+    )
+
+    prepared_image, candidate_metadata = _prepare_large_numpy_image(
+        image=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        input_color_mode=ColorMode.BGR,
+        pre_processing_overrides=None,
+    )
+    base_tensor, base_metadata = pre_process_network_input(
+        images=[image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+    candidate_tensor = (
+        torch.from_numpy(prepared_image).unsqueeze(0).permute(0, 3, 1, 2)[:, [2, 1, 0]]
+        / 255
+    )
+
+    assert torch.equal(candidate_tensor, base_tensor)
+    assert candidate_metadata == base_metadata[0]
 
 
 def test_exact_fused_v3_compacts_filters_and_dispatches_small_outputs():

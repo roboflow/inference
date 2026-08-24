@@ -28,9 +28,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -55,6 +52,10 @@ from inference_models.models.yolo26.optimization.postprocessors import (
     ExactTritonAAYOLO26DepthPostprocessor,
     TritonAAYOLO26DepthPostprocessor,
     build_yolo26_depth_implementation_registry,
+)
+from inference_models.models.yolo26.optimization.preprocessors import (
+    BaseYOLO26DepthPreprocessor,
+    TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -100,6 +101,7 @@ class YOLO26ForDepthEstimationTRT(
         default_trt_cuda_graph_cache_size: int = 8,
         recommended_parameters: Optional[RecommendedParameters] = None,
         execution_plan: Optional[YOLO26DepthExecutionPlan] = None,
+        preprocessor_implementation_id: Optional[str] = None,
         postprocessor_implementation_id: Optional[str] = None,
         allow_compatibility_fallback: bool = True,
         **kwargs,
@@ -165,6 +167,7 @@ class YOLO26ForDepthEstimationTRT(
         )
         resolved_execution_plan = YOLO26DepthExecutionPlan.resolve(
             execution_plan=execution_plan,
+            preprocessor_id=preprocessor_implementation_id,
             postprocessor_id=postprocessor_implementation_id,
             allow_compatibility_fallback=allow_compatibility_fallback,
         )
@@ -221,6 +224,20 @@ class YOLO26ForDepthEstimationTRT(
         self._implementation_registry = build_yolo26_depth_implementation_registry(
             device=self._device,
         )
+        self._preprocessor_selection = cast(
+            ImplementationSelection[
+                Union[
+                    BaseYOLO26DepthPreprocessor,
+                    TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+                ]
+            ],
+            self._implementation_registry.resolve_selection(
+                stage=OptimizationStage.PREPROCESS,
+                requested_id=self._execution_plan.preprocessor_id,
+                context=self._optimization_context,
+                allow_fallback=self._execution_plan.allow_compatibility_fallback,
+            ),
+        )
         self._postprocessor_selection = cast(
             ImplementationSelection[
                 Union[
@@ -238,6 +255,10 @@ class YOLO26ForDepthEstimationTRT(
             ),
         )
         LOGGER.info(
+            "YOLO26 depth preprocessor selection: %s",
+            self._preprocessor_selection.to_dict(),
+        )
+        LOGGER.info(
             "YOLO26 depth postprocessor selection: %s",
             self._postprocessor_selection.to_dict(),
         )
@@ -250,17 +271,34 @@ class YOLO26ForDepthEstimationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.nvtx.range("yolo26-depth.preprocess[phase=submit]"):
+        effective_id = self._preprocessor_selection.effective_id
+        with torch.cuda.nvtx.range(
+            f"yolo26-depth.preprocess[phase=submit,effective={effective_id}]"
+        ):
             with torch.cuda.stream(pre_process_stream):
-                pre_processed_images, pre_processing_meta = pre_process_network_input(
-                    images=images,
-                    image_pre_processing=self._inference_config.image_pre_processing,
-                    network_input=self._inference_config.network_input,
-                    target_device=self._device,
-                    input_color_format=input_color_format,
-                    pre_processing_overrides=pre_processing_overrides,
+                context = ExecutionContext(
+                    device_kind=self._optimization_context.device_kind,
+                    device=self._optimization_context.device,
+                    current_stream=pre_process_stream,
+                    compute_capability=self._optimization_context.compute_capability,
+                    runtime_components=self._optimization_context.runtime_components,
                 )
-        with torch.cuda.nvtx.range("yolo26-depth.preprocess[phase=synchronize]"):
+                pre_processed_images, pre_processing_meta = (
+                    self._preprocessor_selection.implementation.preprocess(
+                        images=images,
+                        image_pre_processing=(
+                            self._inference_config.image_pre_processing
+                        ),
+                        network_input=self._inference_config.network_input,
+                        target_device=self._device,
+                        input_color_format=input_color_format,
+                        pre_processing_overrides=pre_processing_overrides,
+                        context=context,
+                    )
+                )
+        with torch.cuda.nvtx.range(
+            f"yolo26-depth.preprocess[phase=synchronize,effective={effective_id}]"
+        ):
             pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
 
@@ -325,6 +363,10 @@ class YOLO26ForDepthEstimationTRT(
         """
         metadata = {
             "requested_plan": self._execution_plan.to_dict(),
+            "preprocessor": self._preprocessor_selection.to_dict(),
+            "preprocessor_metadata": (
+                self._preprocessor_selection.implementation.metadata.to_dict()
+            ),
             "postprocessor": self._postprocessor_selection.to_dict(),
             "postprocessor_metadata": (
                 self._postprocessor_selection.implementation.metadata.to_dict()

@@ -24,6 +24,10 @@ from inference_models.models.yolo26.optimization.ids import (
     YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_EXACT_V2,
     YOLO26_DEPTH_POSTPROCESSOR_TRITON_AA_RESIZE_V1,
 )
+from inference_models.models.yolo26.optimization.preprocessors import (
+    BaseYOLO26DepthPreprocessor,
+    TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
+)
 from inference_models.models.yolo26.triton_depth_postprocess import (
     ExactFusedTritonDepthMapResizer,
     ExactSeparableTritonDepthMapResizer,
@@ -379,15 +383,25 @@ def build_yolo26_depth_implementation_registry(
     *,
     device: torch.device,
 ) -> ImplementationRegistry:
-    """Build the YOLO26 depth-estimation postprocessor registry.
+    """Build the YOLO26 depth-estimation implementation registry.
 
     Args:
         device: CUDA target selected for the TensorRT model.
 
     Returns:
-        Registry containing the preserved base and explicit Triton candidate.
+        Registry containing preserved and explicit preprocessing/postprocessing paths.
     """
     registry = ImplementationRegistry(scope_name="YOLO26 depth")
+    registry.register_factory(
+        metadata=BaseYOLO26DepthPreprocessor.metadata,
+        factory=BaseYOLO26DepthPreprocessor,
+    )
+    registry.register_factory(
+        metadata=TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor.metadata,
+        factory=lambda: TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor(
+            device=device
+        ),
+    )
     registry.register_factory(
         metadata=BaseYOLO26DepthPostprocessor.metadata,
         factory=BaseYOLO26DepthPostprocessor,
@@ -403,6 +417,10 @@ def build_yolo26_depth_implementation_registry(
     registry.register_factory(
         metadata=ExactFusedTritonAAYOLO26DepthPostprocessor.metadata,
         factory=lambda: ExactFusedTritonAAYOLO26DepthPostprocessor(device=device),
+    )
+    registry.set_auto_preferences(
+        stage=OptimizationStage.PREPROCESS,
+        implementation_ids=(),
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.POSTPROCESS,
