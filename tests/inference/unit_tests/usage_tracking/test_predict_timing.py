@@ -1,3 +1,4 @@
+import threading
 import time
 from types import SimpleNamespace
 
@@ -101,37 +102,53 @@ def test_prediction_is_deferred_detects_future_like_results():
     assert not prediction_is_deferred(SimpleNamespace(result=[1]))
 
 
-def test_resolve_inference_stream_prefers_the_backend_stream(monkeypatch):
+def test_resolve_inference_stream_prefers_the_declared_backend_stream(monkeypatch):
     _install_fake_cuda(monkeypatch, [])
 
-    assert (
-        resolve_inference_stream(SimpleNamespace(_inference_stream=_STREAM)) is _STREAM
+    assert resolve_inference_stream(SimpleNamespace(_inference_stream=_STREAM)) == (
+        _STREAM,
+        True,
     )
     # Adapters wrap the backend that owns the stream.
     adapter = SimpleNamespace(_model=SimpleNamespace(_inference_stream=_STREAM))
-    assert resolve_inference_stream(adapter) is _STREAM
+    assert resolve_inference_stream(adapter) == (_STREAM, True)
 
 
-def test_resolve_inference_stream_uses_current_stream_for_unmanaged_backends(
+def test_resolve_inference_stream_finds_a_scheduler_owned_stream(monkeypatch):
+    # RF-DETR TensorRT hands engine execution to a scheduler that owns the stream.
+    _install_fake_cuda(monkeypatch, [])
+    adapter = SimpleNamespace(
+        _model=SimpleNamespace(
+            _device=SimpleNamespace(type="cuda"),
+            _scheduler=SimpleNamespace(_inference_stream=_STREAM),
+        )
+    )
+
+    assert resolve_inference_stream(adapter) == (_STREAM, True)
+
+
+def test_resolve_inference_stream_assumes_current_stream_for_unmanaged_backends(
     monkeypatch,
 ):
     # Backends like the RF-DETR torch path enqueue onto the ambient stream.
     _install_fake_cuda(monkeypatch, [])
     model = SimpleNamespace(_device=SimpleNamespace(type="cuda"))
 
-    assert resolve_inference_stream(model) is _STREAM
+    assert resolve_inference_stream(model) == (_STREAM, False)
 
 
 def test_resolve_inference_stream_returns_none_off_cuda(monkeypatch):
     monkeypatch.setattr(predict_timing, "_torch_cuda", None)
 
-    assert resolve_inference_stream(SimpleNamespace()) is None
-    assert (
-        resolve_inference_stream(SimpleNamespace(_device=SimpleNamespace(type="cpu")))
-        is None
-    )
+    assert resolve_inference_stream(SimpleNamespace()) == (None, False)
+    assert resolve_inference_stream(
+        SimpleNamespace(_device=SimpleNamespace(type="cpu"))
+    ) == (None, False)
     # A backend on CPU reports no stream of its own.
-    assert resolve_inference_stream(SimpleNamespace(_inference_stream=None)) is None
+    assert resolve_inference_stream(SimpleNamespace(_inference_stream=None)) == (
+        None,
+        False,
+    )
 
 
 def test_timer_uses_host_clock_when_model_is_not_on_cuda(monkeypatch):
@@ -145,13 +162,48 @@ def test_timer_uses_host_clock_when_model_is_not_on_cuda(monkeypatch):
     assert consume_measured_predict_duration() >= 0.01
 
 
-def test_timer_prefers_the_device_measurement_over_the_host_clock(monkeypatch):
+def test_assumed_stream_reading_is_used_when_it_exceeds_the_host_window(monkeypatch):
+    # An async launch returns before the device is done, so a reading longer
+    # than the host window is the work the host clock missed.
+    _install_fake_cuda(
+        monkeypatch, [_FakeEvent(elapsed_ms=20.0), _FakeEvent(elapsed_ms=20.0)]
+    )
+    model = SimpleNamespace(_device=SimpleNamespace(type="cuda"))
+
+    timer = PredictPhaseTimer.start(model=model)
+    timer.finish(predictions=(np.zeros(1),))
+    time.sleep(0.05)
+    timer.publish()
+
+    assert consume_measured_predict_duration() == pytest.approx(0.02)
+
+
+def test_assumed_stream_reading_is_ignored_when_it_undercuts_the_host_window(
+    monkeypatch,
+):
+    # Events on a stream that turned out to hold no work read near zero.
+    # Believing that would report a launch as the whole inference.
+    _install_fake_cuda(
+        monkeypatch, [_FakeEvent(elapsed_ms=0.001), _FakeEvent(elapsed_ms=0.001)]
+    )
+    model = SimpleNamespace(_device=SimpleNamespace(type="cuda"))
+
+    timer = PredictPhaseTimer.start(model=model)
+    time.sleep(0.02)
+    timer.finish(predictions=(np.zeros(1),))
+    timer.publish()
+
+    assert consume_measured_predict_duration() >= 0.02
+
+
+def test_declared_stream_reading_replaces_the_host_clock(monkeypatch):
     start_event, end_event = _FakeEvent(elapsed_ms=5.0), _FakeEvent(elapsed_ms=5.0)
     _install_fake_cuda(monkeypatch, [start_event, end_event])
     model = SimpleNamespace(_inference_stream=_STREAM)
 
     timer = PredictPhaseTimer.start(model=model)
-    # The host clock sees far more than the device spent on the work.
+    # A declared stream is trusted to shrink the measurement: the host clock
+    # sees far more than the device spent on the work.
     time.sleep(0.05)
     timer.finish(predictions=(np.zeros(1),))
     timer.publish()
@@ -274,9 +326,70 @@ def test_base_inference_bucket_duration_excludes_pre_and_postprocessing():
     )
 
     bucket_duration = buckets["0.25-0.5"]["execution_duration"]
-    assert bucket_duration >= 0.01
-    assert bucket_duration < 0.05
     assert call_duration >= 0.11
+    assert bucket_duration >= 0.01
+    # Relative to the call rather than an absolute bound, so a loaded runner
+    # that inflates every sleep does not fail the test.
+    assert bucket_duration < call_duration / 2
+
+
+def test_predict_duration_does_not_leak_when_postprocessing_raises():
+    from inference.core.models.base import BaseInference
+
+    class FailingModel(BaseInference):
+        def preprocess(self, image, **kwargs):
+            return np.zeros((1, 3, 640, 640), dtype=np.float32), None
+
+        def predict(self, img_in, **kwargs):
+            time.sleep(0.01)
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            raise RuntimeError("postprocess exploded")
+
+    with pytest.raises(RuntimeError):
+        BaseInference.infer.__wrapped__(FailingModel(), object())
+
+    # Entrypoints that override infer() never call clear_measured_model_input(),
+    # so a duration surviving a failed call would be charged to the next one.
+    assert consume_measured_predict_duration() is None
+
+
+def test_predict_durations_do_not_leak_between_threads():
+    from inference.core.models.base import BaseInference
+
+    class Model(BaseInference):
+        def __init__(self, predict_seconds):
+            self._predict_seconds = predict_seconds
+
+        def preprocess(self, image, **kwargs):
+            return np.zeros((1, 3, 640, 640), dtype=np.float32), None
+
+        def predict(self, img_in, **kwargs):
+            time.sleep(self._predict_seconds)
+            return (np.zeros(1),)
+
+        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+            return predictions
+
+    measured = {}
+
+    def run(name, predict_seconds):
+        BaseInference.infer.__wrapped__(Model(predict_seconds), object())
+        measured[name] = consume_measured_predict_duration()
+
+    threads = [
+        threading.Thread(target=run, args=("fast", 0.01)),
+        threading.Thread(target=run, args=("slow", 0.1)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # Concurrent calls share the model registry but must not share measurements.
+    assert measured["fast"] < 0.05
+    assert measured["slow"] >= 0.1
 
 
 def test_base_inference_skips_predict_timing_when_work_is_deferred():

@@ -20,8 +20,20 @@ never waits. If they are somehow not complete, the measurement is abandoned in
 favour of the host clock instead of blocking; every path here degrades to the
 host reading rather than costing latency or raising.
 
+Events only measure the stream they are recorded on, so which stream a backend
+uses decides whether this works at all - see :func:`resolve_inference_stream`
+for how far a reading is trusted when the stream had to be guessed. Where no
+stream can be identified the host clock stands, which is the right answer for
+every backend that synchronizes and an under-report for the rest.
+
 Deferred results are excluded entirely (see :func:`prediction_is_deferred`),
 because a pipelined call has no predict phase to attribute in the first place.
+
+What is measured is the phase, not the model in isolation. Legacy ONNX models
+take their session lock inside ``predict()``, so a host reading there carries
+time spent queued behind other requests to the same model. That was true of the
+wall-clock duration this replaces as well, but it is contention rather than
+model cost sitting inside a number now labelled as the model's.
 
 Measurements are published through :class:`~contextvars.ContextVar` rather than
 attributes on the model. Model instances are shared across the server's worker
@@ -61,39 +73,49 @@ def _get_torch_cuda() -> Any:
     return _torch_cuda
 
 
-def resolve_inference_stream(model: Any) -> Any:
+def resolve_inference_stream(model: Any) -> Tuple[Any, bool]:
     """The CUDA stream a model's forward pass enqueues its work onto.
 
-    ``inference_models`` backends expose the stream they run inference on as
-    ``_inference_stream``, which is the reliable answer and is checked first,
-    on the adapter and on the backend it wraps. Backends that manage no stream
-    of their own - the RF-DETR torch path, for instance - enqueue onto the
-    ambient current stream instead, so that is used when the model declares a
-    CUDA device.
+    ``inference_models`` backends name the stream they run inference on
+    ``_inference_stream``. Most hold it on the model, but the RF-DETR
+    TensorRT path hands engine execution to a scheduler that owns one, so
+    both the adapter and the backend it wraps are searched at each level.
+    A stream found this way is declared: it is known to carry the model's
+    work.
+
+    Backends that manage no stream of their own - the RF-DETR torch path,
+    for instance - enqueue onto the ambient current stream, which is a good
+    guess but only a guess, since a backend could switch streams somewhere
+    this function does not look. Such a stream is assumed, and the caller
+    limits how far it trusts the reading.
 
     Returns:
-        The stream to record timing events on, or None when the model is not
-        running on CUDA or its stream cannot be identified. None means the
-        caller should time on the host.
+        Tuple of the stream to record timing events on and whether the model
+        declared it. The stream is None when the model is not running on CUDA
+        or no stream could be identified, meaning the caller should time on
+        the host.
     """
     candidates = (model, getattr(model, "_model", None))
     for candidate in candidates:
         if candidate is None:
             continue
-        stream = getattr(candidate, "_inference_stream", None)
-        if stream is not None:
-            return stream
+        for holder in (candidate, getattr(candidate, "_scheduler", None)):
+            if holder is None:
+                continue
+            stream = getattr(holder, "_inference_stream", None)
+            if stream is not None:
+                return stream, True
 
     torch_cuda = _get_torch_cuda()
     if torch_cuda is None:
-        return None
+        return None, False
     for candidate in candidates:
         if candidate is None:
             continue
         device = getattr(candidate, "_device", None)
         if device is not None and getattr(device, "type", None) == "cuda":
-            return torch_cuda.current_stream(device)
-    return None
+            return torch_cuda.current_stream(device), False
+    return None, False
 
 
 def _create_timing_events(torch_cuda: Any) -> Optional[Tuple[Any, Any]]:
@@ -133,6 +155,7 @@ class PredictPhaseTimer:
         "_host_duration",
         "_events",
         "_stream",
+        "_stream_is_declared",
         "_deferred",
     )
 
@@ -141,6 +164,7 @@ class PredictPhaseTimer:
         self._host_duration: Optional[float] = None
         self._events: Optional[Tuple[Any, Any]] = None
         self._stream: Any = None
+        self._stream_is_declared = False
         self._deferred = False
 
     @classmethod
@@ -149,7 +173,7 @@ class PredictPhaseTimer:
         timer = cls()
         timer._started_at = perf_counter()
         try:
-            stream = resolve_inference_stream(model)
+            stream, stream_is_declared = resolve_inference_stream(model)
             if stream is None:
                 return timer
             torch_cuda = _get_torch_cuda()
@@ -161,6 +185,7 @@ class PredictPhaseTimer:
             events[0].record(stream)
             timer._events = events
             timer._stream = stream
+            timer._stream_is_declared = stream_is_declared
         except Exception:
             timer._events = None
         return timer
@@ -195,9 +220,16 @@ class PredictPhaseTimer:
         """Seconds measured between the device events, or None to use the host.
 
         Never waits. An incomplete event means the assumption that
-        post-processing forces completion did not hold for this backend, and an
-        implausible reading means the events did not bracket the work - a
-        stream this module failed to identify. Both fall back to the host.
+        post-processing forces completion did not hold for this backend, and a
+        reading longer than the call itself means the events did not bracket
+        the work. Both fall back to the host.
+
+        A declared stream is known to carry the model's work, so its reading
+        replaces the host window outright. An assumed one is not, and events on
+        a stream that turned out to hold no work read near zero - so an assumed
+        reading is only believed when it exceeds the host window, where it can
+        only be revealing device work that finished after ``predict()``
+        returned. A wrong guess can then be ignored but never believed.
         """
         if self._events is None:
             return None
@@ -207,6 +239,8 @@ class PredictPhaseTimer:
                 return None
             seconds = start_event.elapsed_time(end_event) / 1000.0
             if seconds < 0 or seconds > perf_counter() - self._started_at:
+                return None
+            if not self._stream_is_declared and seconds <= self._host_duration:
                 return None
             return seconds
         except Exception:
