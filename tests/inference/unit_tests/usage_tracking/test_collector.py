@@ -19,7 +19,6 @@ from inference.usage_tracking import payload_helpers
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
-    record_measured_predict_duration,
 )
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
@@ -28,6 +27,7 @@ from inference.usage_tracking.payload_helpers import (
     sha256_hash,
     zip_usage_payloads,
 )
+from inference.usage_tracking.predict_timing import record_measured_predict_duration
 from inference_sdk.http.errors import HTTPCallErrorError
 
 

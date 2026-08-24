@@ -9,12 +9,12 @@ from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
     clear_measured_model_input,
     consume_measured_model_input,
-    consume_measured_predict_duration,
     count_inference_images,
     record_measured_model_hw,
     resolve_model_input_hw,
 )
 from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.predict_timing import consume_measured_predict_duration
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:

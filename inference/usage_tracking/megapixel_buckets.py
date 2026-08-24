@@ -14,19 +14,13 @@ else falls back to the decorator's full call duration, which is also what the
 row-level ``execution_duration`` always reports. Bucket durations therefore do
 not reconcile against the row total. Falling back are the families that
 override ``infer()`` wholesale, the SAM ``infer_from_request`` entrypoints, and
-any call whose ``predict()`` defers its work (see ``prediction_is_deferred``).
+any call whose ``predict()`` defers its work. Timing of that phase lives in
+:mod:`inference.usage_tracking.predict_timing`.
 
-The predict phase is timed on the host, so backends that launch CUDA work
-asynchronously still under-report whenever nothing synchronizes before
-``predict()`` returns: that wait lands in whichever later phase forces it.
-Deferred-result backends are excluded rather than under-reported, but plain
-async kernel launches cannot be detected here and are a known bias.
-
-The measured input size and predict duration are published through
-:class:`~contextvars.ContextVar` rather than attributes on the model. Model
-instances are shared across the server's worker threads, so an attribute would
-let one request overwrite the measurements of another request that is still
-running.
+The measured input size is published through :class:`~contextvars.ContextVar`
+rather than an attribute on the model. Model instances are shared across the
+server's worker threads, so an attribute would let one request overwrite the
+measurement of another request that is still running.
 """
 
 from __future__ import annotations
@@ -34,6 +28,8 @@ from __future__ import annotations
 import json
 from contextvars import ContextVar
 from typing import Any, Dict, Optional, Tuple, Union
+
+from inference.usage_tracking.predict_timing import clear_measured_predict_duration
 
 # Inclusive upper bounds in megapixels. Final bucket catches everything above.
 _MEGAPIXEL_BUCKET_UPPER_BOUNDS: Tuple[Tuple[str, float], ...] = (
@@ -55,11 +51,6 @@ MeasuredModelInput = Tuple[Optional[Tuple[int, int]], Optional[int]]
 
 _measured_model_input: ContextVar[Optional[MeasuredModelInput]] = ContextVar(
     "usage_measured_model_input",
-    default=None,
-)
-
-_measured_predict_duration: ContextVar[Optional[float]] = ContextVar(
-    "usage_measured_predict_duration",
     default=None,
 )
 
@@ -375,7 +366,7 @@ def clear_measured_model_input() -> None:
     earlier call cannot be attributed to this one.
     """
     _measured_model_input.set(None)
-    _measured_predict_duration.set(None)
+    clear_measured_predict_duration()
 
 
 def record_measured_model_input(
@@ -436,70 +427,6 @@ def consume_measured_model_input() -> MeasuredModelInput:
         return None, None
     _measured_model_input.set(None)
     return measured
-
-
-def prediction_is_deferred(predictions: Any) -> bool:
-    """Whether ``predict()`` handed back a pending result instead of doing the work.
-
-    The pipelined RF-DETR segmentation adapter returns a future from
-    ``predict()`` and resolves it later - during ``postprocess()`` for an
-    earlier frame, or after the call has returned entirely when the caller is a
-    workflow. Timing ``predict()`` there would measure the launch, not the
-    inference, so such a call has no separable predict phase and must fall back
-    to the full call duration.
-
-    Duck-typed rather than an ``isinstance`` check against the backend's future,
-    so that this module stays import-light and later future-returning adapters
-    are covered without a change here.
-
-    Args:
-        predictions: Whatever ``predict()`` returned.
-
-    Returns:
-        True when the real work has not happened yet.
-    """
-    predictions_are_deferred = callable(getattr(predictions, "result", None))
-
-    return predictions_are_deferred
-
-
-def record_measured_predict_duration(duration: float) -> None:
-    """Publish the time spent in a model's predict phase.
-
-    Accumulates, because a single decorated call may run predict more than once
-    (a model that chunks its own batch). Negative and non-numeric values are
-    dropped rather than raised: usage tracking must never break inference.
-
-    Args:
-        duration: Seconds spent inside one predict call.
-    """
-    try:
-        seconds = float(duration)
-    except (TypeError, ValueError):
-        return
-    if seconds < 0:
-        return
-
-    recorded = _measured_predict_duration.get()
-    _measured_predict_duration.set(
-        seconds if recorded is None else recorded + seconds,
-    )
-
-
-def consume_measured_predict_duration() -> Optional[float]:
-    """Read and clear the predict duration published by the current call.
-
-    Returns:
-        Seconds spent in predict, or None when the call had no separable
-        predict phase and the caller should fall back to the full call
-        duration.
-    """
-    duration = _measured_predict_duration.get()
-    if duration is None:
-        return None
-    _measured_predict_duration.set(None)
-
-    return duration
 
 
 def resolve_model_input_hw(
