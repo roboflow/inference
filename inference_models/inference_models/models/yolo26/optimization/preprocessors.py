@@ -5,7 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -37,6 +37,7 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.yolo26.optimization.ids import (
     YOLO26_DEPTH_PREPROCESSOR_BASE,
+    YOLO26_DEPTH_PREPROCESSOR_OPENCV_FIXED_MAP_5X_PINNED_FUSED_CONVERT_V4,
     YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_FUSED_CONVERT_V1,
     YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_PINNED_FUSED_CONVERT_V2,
 )
@@ -46,6 +47,11 @@ from inference_models.models.yolo26.triton_depth_preprocess import (
 
 _BASE_DISPATCH_MAX_SOURCE_ELEMENTS = 640 * 480
 _PINNED_STAGING_SLOT_COUNT = 2
+_FIXED_MAP_SOURCE_SIZE = (2160, 3840)
+_FIXED_MAP_TARGET_SIZE = (768, 768)
+_FIXED_MAP_RESIZED_SIZE = (432, 768)
+_FIXED_MAP_SCALE = 5
+_FIXED_MAP_OFFSET = 2
 _SUPPORTED_FUSED_RESIZE_MODES = {
     ResizeMode.STRETCH_TO,
     ResizeMode.LETTERBOX,
@@ -103,6 +109,76 @@ class _PinnedImageSlotPool:
         self._slots.put(slot)
 
 
+class _Exact5xFixedMapRemapper:
+    """Apply the fixed 5x bilinear sampling geometry through OpenCV remap."""
+
+    def __init__(self) -> None:
+        self._map_lock = threading.Lock()
+        self._coordinate_map: Optional[np.ndarray] = None
+
+    def resize(self, source: np.ndarray, destination: np.ndarray) -> None:
+        expected_source_shape = (*_FIXED_MAP_SOURCE_SIZE, 3)
+        expected_destination_shape = (*_FIXED_MAP_RESIZED_SIZE, 3)
+        reasons = []
+        if source.dtype != np.uint8 or source.shape != expected_source_shape:
+            reasons.append(
+                "fixed-map source must be uint8 HWC with shape "
+                f"{expected_source_shape}, received dtype={source.dtype} "
+                f"shape={source.shape}"
+            )
+        if not source.flags.c_contiguous:
+            reasons.append("fixed-map source must be contiguous HWC")
+        if destination.dtype != np.uint8 or destination.shape != (
+            expected_destination_shape
+        ):
+            reasons.append(
+                "fixed-map destination must be uint8 HWC with shape "
+                f"{expected_destination_shape}, received dtype={destination.dtype} "
+                f"shape={destination.shape}"
+            )
+        if not destination.flags.c_contiguous:
+            reasons.append("fixed-map destination must be contiguous HWC")
+        if not destination.flags.writeable:
+            reasons.append("fixed-map destination must be writeable")
+        if np.shares_memory(source, destination):
+            reasons.append("fixed-map source and destination must not alias")
+        if reasons:
+            _raise_incompatible_candidate(*reasons)
+
+        resized = cv2.remap(
+            source,
+            self._get_coordinate_map(),
+            None,
+            interpolation=cv2.INTER_NEAREST,
+            dst=destination,
+        )
+        if not np.shares_memory(resized, destination):
+            _raise_incompatible_candidate(
+                "OpenCV remap did not write into the provided pinned destination"
+            )
+
+    def _get_coordinate_map(self) -> np.ndarray:
+        with self._map_lock:
+            if self._coordinate_map is None:
+                output_height, output_width = _FIXED_MAP_RESIZED_SIZE
+                coordinate_map = np.empty(
+                    (output_height, output_width, 2),
+                    dtype=np.int16,
+                )
+                coordinate_map[..., 0] = (
+                    np.arange(output_width, dtype=np.int16) * _FIXED_MAP_SCALE
+                    + _FIXED_MAP_OFFSET
+                )
+                coordinate_map[..., 1] = (
+                    np.arange(output_height, dtype=np.int16)[:, None] * _FIXED_MAP_SCALE
+                    + _FIXED_MAP_OFFSET
+                )
+                coordinate_map.setflags(write=False)
+                self._coordinate_map = coordinate_map
+
+            return self._coordinate_map
+
+
 def _raise_incompatible_candidate(*reasons: str) -> None:
     raise ModelRuntimeError(
         message=(
@@ -154,6 +230,9 @@ def _prepare_large_numpy_image(
     input_color_mode: ColorMode,
     pre_processing_overrides: Optional[PreProcessingOverrides],
     output_buffer: Optional[np.ndarray] = None,
+    letterbox_resize_function: Optional[
+        Callable[[np.ndarray, np.ndarray], None]
+    ] = None,
 ) -> Tuple[np.ndarray, PreProcessingMetadata]:
     """Apply the preserved CPU image transforms and build identical metadata."""
     reasons = []
@@ -184,6 +263,13 @@ def _prepare_large_numpy_image(
         )
     if reasons:
         _raise_incompatible_candidate(*reasons)
+    if (
+        letterbox_resize_function is not None
+        and network_input.resize_mode is not ResizeMode.LETTERBOX
+    ):
+        _raise_incompatible_candidate(
+            "fixed-map resize requires the standard letterbox mode"
+        )
 
     original_size = ImageDimensions(height=image.shape[0], width=image.shape[1])
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
@@ -251,6 +337,10 @@ def _prepare_large_numpy_image(
                 "letterbox padding value must fit uint8, received " f"{padding_value!r}"
             )
         if output_buffer is None:
+            if letterbox_resize_function is not None:
+                _raise_incompatible_candidate(
+                    "fixed-map resize requires a pinned output buffer"
+                )
             scaled_image = cv2.resize(image, (new_width, new_height))
             if pad_left == pad_top == pad_right == pad_bottom == 0:
                 prepared_image = scaled_image
@@ -270,7 +360,9 @@ def _prepare_large_numpy_image(
                 pad_top : pad_top + new_height,
                 pad_left : pad_left + new_width,
             ]
-            if resized_region.flags.c_contiguous:
+            if letterbox_resize_function is not None:
+                letterbox_resize_function(image, resized_region)
+            elif resized_region.flags.c_contiguous:
                 scaled_image = cv2.resize(
                     image,
                     (new_width, new_height),
@@ -523,6 +615,8 @@ class TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
 ):
     """Preserve OpenCV pixels while using bounded pinned asynchronous staging."""
 
+    _RESIZE_RANGE = "yolo26-depth.preprocess.cv2-resize"
+
     metadata = OptimizationMetadata(
         implementation_id=(
             YOLO26_DEPTH_PREPROCESSOR_TRITON_CV2_RESIZE_PINNED_FUSED_CONVERT_V2
@@ -592,8 +686,8 @@ class TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
         slot = pool.acquire()
         copy_enqueued = False
         try:
-            with torch.cuda.nvtx.range("yolo26-depth.preprocess.cv2-resize"):
-                _, metadata = _prepare_large_numpy_image(
+            with torch.cuda.nvtx.range(self._RESIZE_RANGE):
+                _, metadata = self._prepare_pinned_image(
                     image=image,
                     image_pre_processing=image_pre_processing,
                     network_input=network_input,
@@ -627,6 +721,25 @@ class TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
 
         return output, metadata
 
+    def _prepare_pinned_image(
+        self,
+        *,
+        image: np.ndarray,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+        input_color_mode: ColorMode,
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+        output_buffer: np.ndarray,
+    ) -> Tuple[np.ndarray, PreProcessingMetadata]:
+        return _prepare_large_numpy_image(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+            output_buffer=output_buffer,
+        )
+
     def _get_pinned_pool(self, *, height: int, width: int) -> _PinnedImageSlotPool:
         with self._pool_lock:
             if self._pinned_pool is None:
@@ -642,3 +755,153 @@ class TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
                 )
 
             return self._pinned_pool
+
+
+class OpenCVFixedMap5xPinnedFusedConvertYOLO26DepthPreprocessor(
+    TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor
+):
+    """Replace the exact fixed 5x OpenCV resize with a cached sampling map."""
+
+    _RESIZE_RANGE = "yolo26-depth.preprocess.fixed-map-remap"
+
+    metadata = OptimizationMetadata(
+        implementation_id=(
+            YOLO26_DEPTH_PREPROCESSOR_OPENCV_FIXED_MAP_5X_PINNED_FUSED_CONVERT_V4
+        ),
+        stage=OptimizationStage.PREPROCESS,
+        version="4",
+        target=DeviceCompatibility(
+            device_kind="gpu",
+            minimum_compute_capability=(7, 0),
+        ),
+        inputs=InputCompatibility(
+            scenarios=(
+                "camera_640x480_batch_1_base",
+                "camera_3840x2160_batch_1_high",
+            ),
+            axis_constraints=immutable_mapping(
+                {
+                    "batch": 1,
+                    "channels": 3,
+                    "base_dispatch_max_source_elements": (
+                        _BASE_DISPATCH_MAX_SOURCE_ELEMENTS
+                    ),
+                    "large_source_size": _FIXED_MAP_SOURCE_SIZE,
+                    "target_size": _FIXED_MAP_TARGET_SIZE,
+                    "resized_content_size": _FIXED_MAP_RESIZED_SIZE,
+                    "resize_mode": ResizeMode.LETTERBOX.value,
+                    "scaling_factor": 255,
+                    "normalization": None,
+                }
+            ),
+            dtypes=("uint8",),
+            layouts=("contiguous HWC",),
+        ),
+        dependencies=("opencv-python", "torch", "triton"),
+        fallback_id=YOLO26_DEPTH_PREPROCESSOR_BASE,
+        changes_numerics=False,
+        supports_concurrency=True,
+        supports_cuda_graphs=False,
+        output_contract=immutable_mapping(
+            {
+                "type": "torch.Tensor",
+                "dtype": "float32",
+                "shape": "1x3x768x768",
+                "layout": "contiguous NCHW",
+                "ownership": "per-call CUDA staging and output tensors",
+                "persistent_allocations": (
+                    f"{_PINNED_STAGING_SLOT_COUNT} target-sized pinned uint8 HWC "
+                    "host slots and one immutable 432x768 CV_16SC2 coordinate map, "
+                    "allocated only after large-path dispatch"
+                ),
+                "aliasing": "none",
+            }
+        ),
+        numerical_behavior=(
+            "the guarded 3840x2160 to 768x432 5x letterbox reduction maps each "
+            "OpenCV bilinear sample center to source coordinate (5*x+2, 5*y+2); "
+            "a cached nearest-neighbor remap therefore preserves exact uint8 "
+            "pixels; channel reversal, layout, and IEEE round-to-nearest float32 "
+            "division remain unchanged; the base source shape uses the preserved path"
+        ),
+        stream_behavior=(
+            "the CPU remap writes directly into a bounded pinned slot; non-blocking "
+            "H2D and Triton conversion run on the caller stream; slots are not "
+            "reused before their H2D completion event"
+        ),
+    )
+
+    def __init__(self, *, device: torch.device) -> None:
+        super().__init__(device=device)
+        self._fixed_map_remapper = _Exact5xFixedMapRemapper()
+
+    def _prepare_and_convert(
+        self,
+        *,
+        image: np.ndarray,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+        target_device: torch.device,
+        input_color_mode: ColorMode,
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+        context: ExecutionContext,
+    ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+        expected_source_shape = (*_FIXED_MAP_SOURCE_SIZE, 3)
+        target_size = (
+            network_input.training_input_size.height,
+            network_input.training_input_size.width,
+        )
+        reasons = []
+        if (
+            image.dtype != np.uint8
+            or image.shape != expected_source_shape
+            or not image.flags.c_contiguous
+        ):
+            reasons.append(
+                "fixed-map input must be contiguous uint8 HWC with shape "
+                f"{expected_source_shape}, received dtype={image.dtype} "
+                f"shape={image.shape} contiguous={image.flags.c_contiguous}"
+            )
+        if target_size != _FIXED_MAP_TARGET_SIZE:
+            reasons.append(
+                "fixed-map target size must be "
+                f"{_FIXED_MAP_TARGET_SIZE}, received {target_size}"
+            )
+        if network_input.resize_mode is not ResizeMode.LETTERBOX:
+            reasons.append(
+                "fixed-map resize mode must be "
+                f"{ResizeMode.LETTERBOX.value!r}, received "
+                f"{network_input.resize_mode.value!r}"
+            )
+        if reasons:
+            _raise_incompatible_candidate(*reasons)
+
+        return super()._prepare_and_convert(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+            context=context,
+        )
+
+    def _prepare_pinned_image(
+        self,
+        *,
+        image: np.ndarray,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+        input_color_mode: ColorMode,
+        pre_processing_overrides: Optional[PreProcessingOverrides],
+        output_buffer: np.ndarray,
+    ) -> Tuple[np.ndarray, PreProcessingMetadata]:
+        return _prepare_large_numpy_image(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+            output_buffer=output_buffer,
+            letterbox_resize_function=self._fixed_map_remapper.resize,
+        )

@@ -26,6 +26,7 @@ from inference_models.models.yolo26.optimization.ids import (
 )
 from inference_models.models.yolo26.optimization.preprocessors import (
     BaseYOLO26DepthPreprocessor,
+    OpenCVFixedMap5xPinnedFusedConvertYOLO26DepthPreprocessor,
     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
     TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
 )
@@ -410,6 +411,12 @@ def build_yolo26_depth_implementation_registry(
     registry.register_factory(
         metadata=TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor.metadata,
         factory=lambda: TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
+            device=device
+        ),
+    )
+    registry.register_factory(
+        metadata=OpenCVFixedMap5xPinnedFusedConvertYOLO26DepthPreprocessor.metadata,
+        factory=lambda: OpenCVFixedMap5xPinnedFusedConvertYOLO26DepthPreprocessor(
             device=device
         ),
     )

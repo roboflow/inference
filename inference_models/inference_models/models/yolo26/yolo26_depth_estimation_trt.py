@@ -54,6 +54,7 @@ from inference_models.models.yolo26.optimization.postprocessors import (
 )
 from inference_models.models.yolo26.optimization.preprocessors import (
     BaseYOLO26DepthPreprocessor,
+    OpenCVFixedMap5xPinnedFusedConvertYOLO26DepthPreprocessor,
     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
     TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
 )
@@ -232,6 +233,7 @@ class YOLO26ForDepthEstimationTRT(
             ImplementationSelection[
                 Union[
                     BaseYOLO26DepthPreprocessor,
+                    OpenCVFixedMap5xPinnedFusedConvertYOLO26DepthPreprocessor,
                     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
                     TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
                 ]

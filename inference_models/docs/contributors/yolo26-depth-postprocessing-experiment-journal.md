@@ -328,3 +328,32 @@ explicit pinned/event path remains the best exact candidate. Any future resize
 experiment should accelerate the exact CPU resize or begin with an already
 device-resident decode buffer; another GPU resize library starting from the same host
 4K array is not expected to recover the target.
+
+## Fixed-map 5x CPU remap candidate
+
+The frozen large letterbox geometry has an exact integer sampling property. OpenCV's
+bilinear half-pixel mapping for `3840 × 2160` to `768 × 432` evaluates each destination
+coordinate at source `(5*x + 2, 5*y + 2)`, so every result is one source pixel rather
+than a blend. A cached `CV_16SC2` coordinate map and `cv2.remap(..., INTER_NEAREST)`
+therefore preserve the existing uint8 resize exactly without evaluating interpolation.
+
+Target-side feasibility checks in the production Jetson container showed:
+
+- exact equality on random full-frame data and the captured large snapshot input;
+- current pinned `cv2.resize` plus letterbox fill at `0.962 ms` median and `1.013 ms`
+  p95;
+- cached fixed-map remap plus the same fill at `0.403 ms` median and `0.430 ms` p95;
+- a `0.559 ms` median isolated reduction with a `1,327,104`-byte immutable host map.
+
+The explicit `opencv-fixed-map-5x-pinned-fused-convert-v4` candidate retains the
+existing bounded pinned slots, reduced-image non-blocking H2D, exact fused Triton
+conversion, and CUDA event handoff. It guards the optimized path to the frozen source,
+target, resized-content, letterbox, dtype, and layout contract. The base source shape
+continues to use the preserved implementation, and `auto` remains unchanged.
+
+The falsifiable prediction is that the large resize range falls from `1.220 ms` median
+to `0.60–0.75 ms`, reducing the `8.209 ms` pinned/event median to approximately
+`7.65–7.80 ms`. Forward, postprocessing, H2D bytes, and device allocations should
+remain unchanged. Target validation must still prove exact snapshots, both workload
+guards, explicit execution without fallback, bounded first-use map allocation, and
+same-commit memory behavior.
