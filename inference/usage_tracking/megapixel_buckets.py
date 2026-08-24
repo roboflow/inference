@@ -117,7 +117,8 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
     if height is not None and width is not None:
         return height, width
 
-    for attr in ("image_size", "img_size"):
+    # CLIP names its square canvas `resolution`, read off the ONNX input shape.
+    for attr in ("image_size", "img_size", "resolution"):
         size = _image_size_to_hw(getattr(model, attr, None))
         if size is not None:
             return size
