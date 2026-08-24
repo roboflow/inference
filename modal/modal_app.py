@@ -149,7 +149,6 @@ INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv(
     "WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu"
 )
-WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
 
 
 def get_inference_image():
