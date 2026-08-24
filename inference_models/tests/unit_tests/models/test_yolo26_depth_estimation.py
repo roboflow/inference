@@ -317,6 +317,7 @@ def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates(monkeypatch
         BaseYOLO26DepthPreprocessor,
         TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
         TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
+        VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor,
     )
     from inference_models.models.yolo26.optimization.schedulers import (
         BaseYOLO26DepthExecutionScheduler,
@@ -349,6 +350,9 @@ def test_yolo26_depth_auto_uses_base_and_retains_explicit_candidates(monkeypatch
     )
     assert (
         not TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor.metadata.changes_numerics
+    )
+    assert (
+        not VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor.metadata.changes_numerics
     )
 
     assert registry._auto_preferences[OptimizationStage.SCHEDULER] == ()

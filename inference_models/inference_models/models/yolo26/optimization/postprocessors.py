@@ -28,6 +28,7 @@ from inference_models.models.yolo26.optimization.preprocessors import (
     BaseYOLO26DepthPreprocessor,
     TritonCV2ResizeFusedConvertYOLO26DepthPreprocessor,
     TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor,
+    VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor,
 )
 from inference_models.models.yolo26.optimization.schedulers import (
     BaseYOLO26DepthExecutionScheduler,
@@ -410,6 +411,12 @@ def build_yolo26_depth_implementation_registry(
     registry.register_factory(
         metadata=TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor.metadata,
         factory=lambda: TritonCV2ResizePinnedFusedConvertYOLO26DepthPreprocessor(
+            device=device
+        ),
+    )
+    registry.register_factory(
+        metadata=VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor.metadata,
+        factory=lambda: VPICUDALetterboxFusedConvertYOLO26DepthPreprocessor(
             device=device
         ),
     )

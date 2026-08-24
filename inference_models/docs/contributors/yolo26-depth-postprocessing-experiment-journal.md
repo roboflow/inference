@@ -298,3 +298,46 @@ work around OpenCV, no blocking preprocessing-stream synchronization in composed
 inference, and one TensorRT-stream event dependency. Validation must still require exact
 snapshots, the base latency/memory guard, bounded pinned-host residency, and the original
 large-latency target.
+
+## Fixed-ratio VPI CUDA letterbox candidate
+
+The pinned-staging plus event-handoff revision preserved exact snapshots and reduced the
+large median to `8.209 ms`, a `12.82%` improvement over the original base. It remained
+`0.206 ms` above the `8.003 ms` acceptance threshold. Its largest remaining modifiable
+range was the CPU OpenCV resize at `1.220 ms` median.
+
+Target-side feasibility checks identified a narrower exact case than a general GPU
+resize:
+
+- the frozen large image is `3840 × 2160`, and letterbox content is `768 × 432`;
+- both axes therefore use an integer `5×` reduction, so OpenCV's half-pixel coordinates
+  select source pixels directly rather than blending neighboring values;
+- VPI `3.2.4` CUDA produced byte-identical content for the frozen image and measured
+  approximately `0.504 ms` submit-plus-synchronize, compared with approximately
+  `0.878 ms` for isolated OpenCV resize;
+- VPI did not match OpenCV for the `3840 × 2160` to `768 × 768` stretch case, so no
+  general VPI/OpenCV equivalence is claimed.
+
+The explicit `vpi-cuda-letterbox-fused-convert-v3` preprocessor is consequently guarded
+to the frozen `3840 × 2160` source, `768 × 768` target, `768 × 432` letterbox content,
+batch-one uint8 HWC contract. It rejects stretch, reflected padding, other dimensions,
+non-contiguous input, normalization, and unsupported VPI versions. The frozen base
+source shape still dispatches to the preserved preprocessor.
+
+The large path wraps the host image in VPI, resizes into one of two reusable VPI CUDA
+images, synchronizes the VPI stream, and borrows the output through the CUDA Array
+Interface without copying. One Triton launch writes the complete float32 NCHW engine
+input, including exact constant padding, channel order, and division by `255`. The VPI
+CUDA lock remains owned by its slot until a consumer-stream event proves that Triton no
+longer reads the image. The existing `cuda-event-handoff-v1` scheduler then transfers
+the returned tensor's readiness to TensorRT unchanged.
+
+VPI remains a Jetson system dependency rather than a Python project dependency. The
+validation container must expose the host's VPI `3.2.x` Python extension and
+`/opt/nvidia/vpi3`, or use an image that installs the matching JetPack VPI packages.
+Runtime discovery keeps the explicit candidate unavailable when `import vpi` fails.
+
+This remains an explicit candidate awaiting the full target campaign. Validation must
+prove effective implementation IDs, exact base and large snapshots, the base
+latency/memory guard, bounded VPI residency, absence of hidden staging copies, and a
+large median no greater than `8.003 ms`. `auto` remains unchanged.
