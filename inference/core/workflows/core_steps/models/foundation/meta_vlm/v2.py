@@ -1,4 +1,7 @@
-"""Meta Muse vision-language block, v1.
+"""Meta Muse vision-language block, v2.
+
+Same surface as ``meta_vlm@v1``, plus ``input_tokens`` / ``output_tokens``
+outputs with per-call token usage.
 
 OpenRouter-only. Three Muse models, using the vlm-exam request contract:
 image-first user message, no system role, reasoning always on, meta-flat

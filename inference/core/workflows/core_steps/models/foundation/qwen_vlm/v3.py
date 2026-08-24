@@ -1,6 +1,9 @@
-"""Unified Qwen-VL workflow block, v2 — Qwen-specific OpenRouter plumbing.
+"""Unified Qwen-VL workflow block, v3 — Qwen-specific OpenRouter plumbing.
 
-Same surface as ``qwen_vlm@v1`` (``backend`` = "Native (Roboflow)" or
+Same surface as ``qwen_vlm@v2``, plus ``input_tokens`` / ``output_tokens``
+outputs with per-call token usage (``None`` on the native backend).
+
+v2 kept the surface of ``qwen_vlm@v1`` (``backend`` = "Native (Roboflow)" or
 "OpenRouter", combined ``model_version`` pickers, the shared VLM
 ``task_type`` set) but the OpenRouter path no longer relies on the generic
 prompt builders from ``common.openrouter``. Instead it uses the contract
