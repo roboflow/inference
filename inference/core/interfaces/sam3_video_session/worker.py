@@ -22,7 +22,10 @@ from inference.core.interfaces.sam3_video_session.entities import (
     Sam3VideoWorkerPayload,
 )
 from inference.core.interfaces.sam3_video_session import predictions as sam3
-from inference.core.interfaces.sam3_video_session.artifacts import ArtifactWriter, TrackAccumulator
+from inference.core.interfaces.sam3_video_session.artifacts import (
+    ArtifactWriter,
+    TrackAccumulator,
+)
 from inference.core.logger import logger
 from inference.core.utils.image_utils import download_url_to_file
 from inference.core.utils.requests import api_key_safe_raise_for_status

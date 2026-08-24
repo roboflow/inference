@@ -268,6 +268,7 @@ def register_webrtc_session(workspace_id: str, session_id: str) -> None:
     try:
         cache.client.zadd(key, {session_id: time.time()})
         cache.client.expire(key, 600)  # TTL 600 seconds, extended on each heartbeat
+        # codeql[py/clear-text-logging-sensitive-data]: Workspace and session ids, not credentials.
         logger.info(
             "Registered session: workspace=%s, session=%s",
             workspace_id,
@@ -297,6 +298,7 @@ def deregister_webrtc_session(workspace_id: str, session_id: str) -> None:
     key = _get_concurrent_sessions_key(workspace_id)
     try:
         result = cache.client.zrem(key, session_id)
+        # codeql[py/clear-text-logging-sensitive-data]: Workspace and session ids, not credentials.
         logger.info(
             "Deregistered session: workspace=%s, session=%s, removed=%s",
             workspace_id,

@@ -179,7 +179,9 @@ class TrackAccumulator:
             flushed += 1
         return flushed
 
-    def commit(self, writer: ArtifactWriter, video_time_base: Sam3VideoTimeBase) -> None:
+    def commit(
+        self, writer: ArtifactWriter, video_time_base: Sam3VideoTimeBase
+    ) -> None:
         if self.sample_count == 0 or self.start_frame_index is None:
             return
         writer.commit_revision(
