@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 from queue import Empty
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from inference.core import logger
 from inference.core.env import (
