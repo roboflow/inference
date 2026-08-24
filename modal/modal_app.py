@@ -90,7 +90,7 @@ def get_inference_image():
 
     image = (
         modal.Image.from_registry(
-            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}"
+            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{inference_version}"
         )
         .apt_install(
             "libgl1-mesa-glx",
