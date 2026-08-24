@@ -158,6 +158,19 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         examples=["Gemma 4 31B - OpenRouter", "$inputs.gemma_model"],
     )
 
+    # Overrides the mixin default of 500, which reasoning models can burn
+    # entirely on internal thinking and fail with missing content.
+    max_tokens: int = Field(
+        default=2048,
+        description=(
+            "Maximum number of tokens the model can generate in its response. "
+            "Defaults to 2048. Raise it explicitly (e.g. 8192) when a task "
+            "needs a longer answer. Billing is based on tokens actually "
+            "generated, not on this limit."
+        ),
+        gt=1,
+    )
+
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         validate_task_type_required_fields(

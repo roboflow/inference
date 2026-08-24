@@ -139,6 +139,19 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ],
     )
 
+    # Overrides the mixin default of 500, which reasoning models can burn
+    # entirely on internal thinking and fail with missing content.
+    max_tokens: int = Field(
+        default=2048,
+        description=(
+            "Maximum number of tokens the model can generate in its response. "
+            "Defaults to 2048. Raise it explicitly (e.g. 8192) when a task "
+            "needs a longer answer. Billing is based on tokens actually "
+            "generated, not on this limit."
+        ),
+        gt=1,
+    )
+
     task_type: TaskType = Field(
         default="unconstrained",
         description=(
