@@ -10,6 +10,7 @@ on:
       inference_version:
         type: string
         description: "inference version to deploy (e.g., 1.5.0)"
+        required: true
       targets:
         type: choice
         description: "Region target(s) for the webexec app (fans out to each)"
@@ -18,6 +19,13 @@ on:
           - us
           - eu
         default: us,eu
+      stage:
+        type: choice
+        description: "Which Roboflow project the app talks to"
+        options:
+          - staging
+          - prod
+        default: staging
 
 jobs:
   # Build the deploy matrix from the chosen targets. Both regions live in the SAME
@@ -25,6 +33,7 @@ jobs:
   # region knobs, so one deploy credential covers both.
   #   us -> env `main` (workspace default), aws/us-east-1  (unchanged from prior behavior)
   #   eu -> env `eu`, gcp + region eu, routed eu-west       -> roboflow-eu--...eu-west.modal.run
+  # `stage` picks the Roboflow project the deployed app talks to, per region.
   setup:
     runs-on: ubuntu-latest
     outputs:
@@ -33,19 +42,24 @@ jobs:
       - id: gen
         env:
           TARGETS: ${{ github.event.inputs.targets || 'us,eu' }}
+          STAGE: ${{ github.event.inputs.stage || 'staging' }}
         run: |
           inc='[]'
           IFS=',' read -ra TS <<< "$TARGETS"
           for t in "${TS[@]}"; do
-            case "$t" in
-              us) inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"aws","region":"us-east-1","routing_region":""}]' <<< "$inc") ;;
-              eu) inc=$(jq -c '. + [{"target":"eu","environment":"eu","cloud":"gcp","region":"eu","routing_region":"eu-west"}]' <<< "$inc") ;;
+            case "$t:$STAGE" in
+              us:staging) inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"aws","region":"us-east-1","routing_region":"","project":"roboflow-staging","app_name":"webexec-roboflow-staging"}]' <<< "$inc") ;;
+              us:prod)    inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"aws","region":"us-east-1","routing_region":"","project":"roboflow-platform","app_name":"webexec-roboflow-platform"}]' <<< "$inc") ;;
+              eu:staging) inc=$(jq -c '. + [{"target":"eu","environment":"eu","cloud":"gcp","region":"eu","routing_region":"eu-west","project":"roboflow-staging","app_name":"webexec-roboflow-eu-staging"}]' <<< "$inc") ;;
+              eu:prod)    inc=$(jq -c '. + [{"target":"eu","environment":"eu","cloud":"gcp","region":"eu","routing_region":"eu-west","project":"roboflow-platform","app_name":"webexec-roboflow-eu-platform"}]' <<< "$inc") ;;
+              *) echo "unsupported target/stage combination: $t:$STAGE" >&2; exit 1 ;;
             esac
           done
           echo "matrix={\"include\":$inc}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: setup
+    name: deploy ${{ matrix.app_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -59,9 +73,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: python3 -m pip install modal requests packaging pydantic structlog python-dotenv rich
-      - name: Deploy webexec (${{ matrix.target }} -> Modal env ${{ matrix.environment }})
+        run: python3 -m pip install modal packaging pydantic python-dotenv requests rich starlette structlog
+      - name: Deploy webexec (${{ matrix.target }} -> Modal env ${{ matrix.environment }}, project ${{ matrix.project }})
         env:
+          WEBEXEC_MODAL_APP_NAME: ${{ matrix.app_name }}
           MODAL_WORKSPACE_NAME: ${{ secrets.MODAL_WORKSPACE_NAME }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID_FOR_DEPLOYMENT }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET_FOR_DEPLOYMENT }}
