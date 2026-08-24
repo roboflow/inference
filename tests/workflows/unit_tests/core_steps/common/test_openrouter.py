@@ -755,3 +755,22 @@ def test_validate_task_type_ocr_passes_with_no_extra_fields():
         classes=None,
         output_structure=None,
     )
+
+
+@pytest.mark.parametrize(
+    "effort, expected",
+    [
+        (None, None),
+        ("none", {"enabled": False}),
+        ("low", {"effort": "low"}),
+        ("medium", {"effort": "medium"}),
+        ("high", {"effort": "high"}),
+        ("xhigh", {"effort": "xhigh"}),
+    ],
+)
+def test_build_openrouter_reasoning_config(effort, expected):
+    from inference.core.workflows.core_steps.common.reasoning import (
+        build_openrouter_reasoning_config,
+    )
+
+    assert build_openrouter_reasoning_config(effort) == expected

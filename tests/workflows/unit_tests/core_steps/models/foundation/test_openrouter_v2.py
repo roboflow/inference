@@ -44,13 +44,16 @@ def test_run_surfaces_token_usage(mock_execute):
         privacy_level="deny",
         max_tokens=128,
         temperature=0.2,
+        reasoning_effort="low",
         max_concurrent_requests=None,
     )
 
+    assert mock_execute.call_args.kwargs["reasoning"] == {"effort": "low"}
     assert result == [
         {
             "output": "caption text",
             "classes": None,
+            "thinking": "",
             "input_tokens": 11,
             "output_tokens": 4,
         }

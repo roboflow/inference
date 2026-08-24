@@ -43,6 +43,7 @@ def test_run_surfaces_token_usage(mock_execute):
         model_version="Gemma 4 26B A4B - OpenRouter",
         max_tokens=128,
         temperature=0.2,
+        reasoning_effort=None,
         max_concurrent_requests=None,
     )
 
@@ -56,3 +57,4 @@ def test_run_surfaces_token_usage(mock_execute):
     ]
     kwargs = mock_execute.call_args.kwargs
     assert kwargs["model"] == MODEL_VERSION_MAPPING["Gemma 4 26B A4B - OpenRouter"]
+    assert kwargs["reasoning"] is None

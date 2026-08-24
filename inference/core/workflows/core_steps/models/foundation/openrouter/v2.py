@@ -24,6 +24,11 @@ from inference.core.workflows.core_steps.common.openrouter import (
     build_prompts_from_images,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.reasoning import (
+    REASONING_EFFORT_METADATA,
+    REASONING_EFFORT_OPTIONS,
+    build_openrouter_reasoning_config,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
 )
@@ -152,6 +157,24 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         gt=1,
     )
 
+    reasoning_effort: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal[tuple(REASONING_EFFORT_OPTIONS)],
+        ]
+    ] = Field(
+        default=None,
+        description=(
+            "Extended-reasoning budget forwarded to OpenRouter as "
+            '`reasoning: {"effort": ...}`. Unset keeps the model\'s '
+            "provider-default behavior; `none` explicitly disables reasoning. "
+            "Models that reject the config are retried without it. Reasoning "
+            "tokens count toward `max_tokens`, so raise it for medium/high."
+        ),
+        examples=["low", "$inputs.reasoning_effort"],
+        json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
+    )
+
     task_type: TaskType = Field(
         default="unconstrained",
         description=(
@@ -243,6 +266,14 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(
+                name="thinking",
+                kind=[STRING_KIND],
+                description=(
+                    "Reasoning trace when OpenRouter returns one (reasoning "
+                    "models with reasoning enabled). Empty string otherwise."
+                ),
+            ),
             *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
@@ -276,6 +307,7 @@ class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
         privacy_level: str,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: Optional[str],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -294,11 +326,13 @@ class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
+            reasoning=build_openrouter_reasoning_config(reasoning_effort),
         )
         return [
             {
                 "output": result.content,
                 "classes": classes,
+                "thinking": result.reasoning_trace,
                 "input_tokens": result.input_tokens,
                 "output_tokens": result.output_tokens,
             }

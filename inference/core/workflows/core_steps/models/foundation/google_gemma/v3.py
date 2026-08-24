@@ -11,6 +11,11 @@ from inference.core.workflows.core_steps.common.openrouter import (
     build_prompts_from_images,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.reasoning import (
+    REASONING_EFFORT_METADATA,
+    REASONING_EFFORT_OPTIONS,
+    build_openrouter_reasoning_config,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
 )
@@ -171,6 +176,23 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         gt=1,
     )
 
+    reasoning_effort: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal[tuple(REASONING_EFFORT_OPTIONS)],
+        ]
+    ] = Field(
+        default=None,
+        description=(
+            "Extended-reasoning budget forwarded to OpenRouter as "
+            '`reasoning: {"effort": ...}`. Unset keeps the model\'s '
+            "provider-default behavior; `none` explicitly disables reasoning. "
+            "Models that reject the config are retried without it."
+        ),
+        examples=["low", "$inputs.reasoning_effort"],
+        json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
+    )
+
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         validate_task_type_required_fields(
@@ -256,6 +278,7 @@ class GoogleGemmaBlockV3(OpenRouterWorkflowBlockBase):
         model_version: ModelVersion,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: Optional[str],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -274,6 +297,7 @@ class GoogleGemmaBlockV3(OpenRouterWorkflowBlockBase):
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
+            reasoning=build_openrouter_reasoning_config(reasoning_effort),
         )
         return [
             {
