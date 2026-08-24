@@ -623,7 +623,7 @@ class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
             output_structure=output_structure,
             classes=classes,
         )
-        raw_outputs = self.execute_openrouter_batch(
+        results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
             model=model_id,
             prompts=prompts,
@@ -632,16 +632,14 @@ class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
             reasoning=build_reasoning_config(reasoning_effort),
-            include_reasoning=True,
-            include_usage=True,
         )
         return [
             {
-                "output": content,
+                "output": result.content,
                 "classes": classes,
-                "thinking": reasoning_trace,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                "thinking": result.reasoning_trace,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
             }
-            for content, reasoning_trace, input_tokens, output_tokens in raw_outputs
+            for result in results
         ]

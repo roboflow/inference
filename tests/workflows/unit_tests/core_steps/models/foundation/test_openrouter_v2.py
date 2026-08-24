@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
+from inference.core.workflows.core_steps.common.openrouter import OpenRouterResult
 from inference.core.workflows.core_steps.models.foundation.openrouter.v2 import (
     OpenRouterBlockV2,
 )
@@ -25,9 +26,11 @@ def _stub_image() -> WorkflowImageData:
     )
 
 
-@patch.object(OpenRouterBlockV2, "execute_openrouter_batch")
+@patch.object(OpenRouterBlockV2, "execute_openrouter_batch_with_usage")
 def test_run_surfaces_token_usage(mock_execute):
-    mock_execute.return_value = [("caption text", 11, 4)]
+    mock_execute.return_value = [
+        OpenRouterResult(content="caption text", input_tokens=11, output_tokens=4)
+    ]
     block = OpenRouterBlockV2(model_manager=MagicMock(), api_key="ws-key")
 
     result = block.run(
@@ -52,4 +55,3 @@ def test_run_surfaces_token_usage(mock_execute):
             "output_tokens": 4,
         }
     ]
-    assert mock_execute.call_args.kwargs["include_usage"] is True

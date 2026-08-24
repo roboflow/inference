@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
+from inference.core.workflows.core_steps.common.openrouter import OpenRouterResult
 from inference.core.workflows.core_steps.models.foundation.meta_vlm.v2 import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_VERSION,
@@ -47,10 +48,14 @@ def _base_run_kwargs(**overrides):
 
 @patch(
     "inference.core.workflows.core_steps.models.foundation.meta_vlm.v2."
-    "OpenRouterWorkflowBlockBase.execute_openrouter_batch"
+    "OpenRouterWorkflowBlockBase.execute_openrouter_batch_with_usage"
 )
 def test_run_surfaces_token_usage(mock_or):
-    mock_or.return_value = [("boxes", "trace", 20, 8)]
+    mock_or.return_value = [
+        OpenRouterResult(
+            content="boxes", reasoning_trace="trace", input_tokens=20, output_tokens=8
+        )
+    ]
     block = MetaVlmBlockV2(model_manager=MagicMock(), api_key="rf_key")
 
     result = block.run(
@@ -61,7 +66,6 @@ def test_run_surfaces_token_usage(mock_or):
         )
     )
 
-    assert mock_or.call_args.kwargs["include_usage"] is True
     assert result == [
         {
             "output": "boxes",

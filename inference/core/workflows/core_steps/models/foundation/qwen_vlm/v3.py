@@ -1253,7 +1253,7 @@ class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
                 reasoning_effort,
                 reasoning_required=variant.get("reasoning_required", False),
             )
-            raw_outputs = self.execute_openrouter_batch(
+            results = self.execute_openrouter_batch_with_usage(
                 openrouter_api_key=api_key,
                 model=model_id,
                 prompts=prompts,
@@ -1266,18 +1266,16 @@ class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
                 privacy_level=privacy_level,
                 max_concurrent_requests=max_concurrent_requests,
                 reasoning=reasoning,
-                include_reasoning=True,
-                include_usage=True,
             )
             return [
                 {
-                    "output": content,
+                    "output": result.content,
                     "classes": classes,
-                    "thinking": reasoning_trace,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
+                    "thinking": result.reasoning_trace,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
                 }
-                for content, reasoning_trace, input_tokens, output_tokens in raw_outputs
+                for result in results
             ]
 
         # `enable_thinking` is only meaningful on Qwen3.5-VL native variants

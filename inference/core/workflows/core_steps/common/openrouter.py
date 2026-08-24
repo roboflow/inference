@@ -22,6 +22,7 @@ the VLM blocks live here too so the per-block files stay small.
 
 import base64
 import json
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
@@ -163,6 +164,22 @@ class OpenRouterBlockManifestMixin(WorkflowBlockManifest):
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class OpenRouterResult:
+    """One chat-completion result with its reasoning trace and token usage.
+
+    ``reasoning_trace`` is the ``message.reasoning`` string OpenRouter returns
+    for reasoning models (empty string when absent). Token counts are parsed
+    from the provider ``usage`` object; ``None`` means usage was omitted,
+    never a real zero.
+    """
+
+    content: str
+    reasoning_trace: str = ""
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+
 class OpenRouterWorkflowBlockBase(WorkflowBlock):
     """Shared base class for blocks that route through OpenRouter.
 
@@ -193,35 +210,55 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         max_concurrent_requests: Optional[int],
         reasoning: Optional[dict] = None,
         include_reasoning: bool = False,
-        include_usage: bool = False,
-    ) -> Union[
-        List[str],
-        List[Tuple[str, str]],
-        List[Tuple[str, Optional[int], Optional[int]]],
-        List[Tuple[str, str, Optional[int], Optional[int]]],
-    ]:
+    ) -> Union[List[str], List[Tuple[str, str]]]:
+        """Run a batch of OpenRouter chat-completion calls in parallel.
+
+        Legacy result shapes, kept stable for shipped block versions: bare
+        content strings by default, ``(content, reasoning_trace)`` tuples
+        with ``include_reasoning=True``. New blocks that need token usage
+        should call :meth:`execute_openrouter_batch_with_usage` instead.
+
+        See :meth:`execute_openrouter_batch_with_usage` for routing,
+        ``temperature`` and ``reasoning`` semantics.
+        """
+        results = self.execute_openrouter_batch_with_usage(
+            openrouter_api_key=openrouter_api_key,
+            model=model,
+            prompts=prompts,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            privacy_level=privacy_level,
+            max_concurrent_requests=max_concurrent_requests,
+            reasoning=reasoning,
+        )
+        if include_reasoning:
+            return [(r.content, r.reasoning_trace) for r in results]
+        return [r.content for r in results]
+
+    def execute_openrouter_batch_with_usage(
+        self,
+        openrouter_api_key: str,
+        model: str,
+        prompts: List[List[dict]],
+        max_tokens: int,
+        temperature: Optional[float],
+        privacy_level: str,
+        max_concurrent_requests: Optional[int],
+        reasoning: Optional[dict] = None,
+    ) -> List[OpenRouterResult]:
         """Run a batch of OpenRouter chat-completion calls in parallel.
 
         Routes through the Roboflow proxy when ``openrouter_api_key`` starts
         with ``rf_key:`` (managed/user-stored), otherwise calls the OpenRouter
-        API directly using the OpenAI SDK with the provided key.
+        API directly using the OpenAI SDK with the provided key. Works on
+        both paths: the reasoning trace and token usage are always populated
+        on the returned :class:`OpenRouterResult` objects.
 
         ``temperature`` set to ``None`` omits the parameter so the provider
         default applies. ``reasoning`` is an optional OpenRouter reasoning
         config object (e.g. ``{"effort": "low"}`` or ``{"enabled": False}``)
         forwarded verbatim; when the target model rejects the config, the
         request is retried once without it.
-
-        With ``include_reasoning=True`` each result is a
-        ``(content, reasoning_trace)`` tuple, where the trace is the
-        ``message.reasoning`` string OpenRouter returns for reasoning models
-        (empty string when absent). Default returns bare content strings for
-        backward compatibility.
-
-        With ``include_usage=True`` each result is extended with
-        ``(input_tokens, output_tokens)`` parsed from the provider ``usage``
-        object (``None`` when omitted). Works on both the proxied
-        ``rf_key:`` path and a user-supplied OpenRouter key.
 
         Note: honoring ``reasoning`` on managed ``rf_key:`` keys requires a
         Roboflow platform proxy version that forwards the key upstream
@@ -237,8 +274,6 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 model=model,
                 privacy_level=privacy_level,
                 reasoning=reasoning,
-                include_reasoning=include_reasoning,
-                include_usage=include_usage,
             )
         else:
             single = partial(
@@ -247,8 +282,6 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 model=model,
                 privacy_level=privacy_level,
                 reasoning=reasoning,
-                include_reasoning=include_reasoning,
-                include_usage=include_usage,
             )
         tasks = [
             partial(
@@ -350,28 +383,6 @@ def _is_unsupported_reasoning_error(error: Exception) -> bool:
     )
 
 
-def _pack_openrouter_result(
-    content: str,
-    include_reasoning: bool,
-    include_usage: bool,
-    reasoning_trace: str = "",
-    input_tokens: Optional[int] = None,
-    output_tokens: Optional[int] = None,
-) -> Union[
-    str,
-    Tuple[str, str],
-    Tuple[str, Optional[int], Optional[int]],
-    Tuple[str, str, Optional[int], Optional[int]],
-]:
-    if include_usage and include_reasoning:
-        return content, reasoning_trace, input_tokens, output_tokens
-    if include_usage:
-        return content, input_tokens, output_tokens
-    if include_reasoning:
-        return content, reasoning_trace
-    return content
-
-
 def _execute_proxied_openrouter_request(
     roboflow_api_key: Optional[str],
     openrouter_api_key: str,
@@ -381,14 +392,7 @@ def _execute_proxied_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
-    include_reasoning: bool = False,
-    include_usage: bool = False,
-) -> Union[
-    str,
-    Tuple[str, str],
-    Tuple[str, Optional[int], Optional[int]],
-    Tuple[str, str, Optional[int], Optional[int]],
-]:
+) -> OpenRouterResult:
     payload = {
         "openrouter_api_key": openrouter_api_key,
         "model": model,
@@ -458,10 +462,8 @@ def _execute_proxied_openrouter_request(
             "OpenRouter response missing message.content via Roboflow proxy." + hint
         )
     reasoning_trace = message.get("reasoning")
-    return _pack_openrouter_result(
-        content,
-        include_reasoning=include_reasoning,
-        include_usage=include_usage,
+    return OpenRouterResult(
+        content=content,
         reasoning_trace=reasoning_trace if isinstance(reasoning_trace, str) else "",
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -476,14 +478,7 @@ def _execute_direct_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
-    include_reasoning: bool = False,
-    include_usage: bool = False,
-) -> Union[
-    str,
-    Tuple[str, str],
-    Tuple[str, Optional[int], Optional[int]],
-    Tuple[str, str, Optional[int], Optional[int]],
-]:
+) -> OpenRouterResult:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     extra_body: Dict[str, Any] = {}
     provider = build_provider_routing(privacy_level)
@@ -550,10 +545,8 @@ def _execute_direct_openrouter_request(
     input_tokens, output_tokens = parse_chat_completion_usage(
         getattr(response, "usage", None)
     )
-    return _pack_openrouter_result(
-        content,
-        include_reasoning=include_reasoning,
-        include_usage=include_usage,
+    return OpenRouterResult(
+        content=content,
         reasoning_trace=reasoning_trace if isinstance(reasoning_trace, str) else "",
         input_tokens=input_tokens,
         output_tokens=output_tokens,

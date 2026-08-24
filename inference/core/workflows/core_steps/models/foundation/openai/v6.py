@@ -582,12 +582,12 @@ class OpenAIBlockV6(WorkflowBlock):
         )
         return [
             {
-                "output": raw_output,
+                "output": content,
                 "classes": classes,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
             }
-            for raw_output, input_tokens, output_tokens in raw_outputs
+            for content, input_tokens, output_tokens in raw_outputs
         ]
 
 

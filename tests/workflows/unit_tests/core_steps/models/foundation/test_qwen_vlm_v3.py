@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.openrouter import OpenRouterResult
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     DEFAULT_OPENROUTER_MODEL_VERSION,
     QwenVlmBlockV3,
@@ -49,9 +50,13 @@ def _base_run_kwargs(**overrides):
     return kwargs
 
 
-@patch.object(QwenVlmBlockV3, "execute_openrouter_batch")
+@patch.object(QwenVlmBlockV3, "execute_openrouter_batch_with_usage")
 def test_run_openrouter_surfaces_token_usage(mock_or):
-    mock_or.return_value = [("resp", "trace", 11, 7)]
+    mock_or.return_value = [
+        OpenRouterResult(
+            content="resp", reasoning_trace="trace", input_tokens=11, output_tokens=7
+        )
+    ]
     block = QwenVlmBlockV3(
         model_manager=MagicMock(),
         api_key="ws-key",
@@ -60,7 +65,6 @@ def test_run_openrouter_surfaces_token_usage(mock_or):
 
     result = block.run(**_base_run_kwargs(backend="openrouter"))
 
-    assert mock_or.call_args.kwargs["include_usage"] is True
     assert result == [
         {
             "output": "resp",
