@@ -579,3 +579,186 @@ def test_execution_policy_disable_is_reported_distinctly_from_block_parameter(fa
     assert by_policy["message"] == "Sink was disabled by workflow execution policy"
     assert by_parameter["message"] == "Sink was disabled by parameter `disable_sink`"
     assert fake_obs == []
+
+
+# --- source transform actions ------------------------------------------------
+
+import numpy as np
+import supervision as sv
+
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
+
+
+class TransformFakeOBSClient(FakeOBSClient):
+    def get_video_settings(self):
+        self._record("get_video_settings")
+        return type("Response", (), {"base_width": 1920, "base_height": 1080})()
+
+    def set_scene_item_transform(self, scene_name, item_id, transform):
+        self._record("set_scene_item_transform", scene_name, item_id, transform)
+
+
+@pytest.fixture
+def fake_transform_obs(monkeypatch):
+    created = []
+
+    def fake_connect(host, port, password, timeout):
+        client = TransformFakeOBSClient()
+        created.append(client)
+        return client
+
+    obs_client.reset_clients()
+    monkeypatch.setattr(obs_client, "_connect", fake_connect)
+    yield created
+    obs_client.reset_clients()
+
+
+def _image(width=640, height=360):
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="test"),
+        numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
+    )
+
+
+def _detections(*boxes_with_confidence):
+    boxes = np.array([b[:4] for b in boxes_with_confidence], dtype=np.float64)
+    confidence = np.array([b[4] for b in boxes_with_confidence], dtype=np.float64)
+    return sv.Detections(xyxy=boxes, confidence=confidence)
+
+
+def _move_kwargs(**overrides):
+    kwargs = dict(
+        connection=CONNECTION,
+        action="move_source_to_detection",
+        scene_name="Apple",
+        source_name="Apple GIF",
+        filter_name=None,
+        text=None,
+        enabled=None,
+        hotkey_name=None,
+        cooldown_seconds=0,
+        fire_and_forget=False,
+        disable_sink=False,
+        predictions=_detections((64, 36, 128, 108, 0.9)),
+        image=_image(),
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_move_source_maps_image_coordinates_onto_obs_canvas(fake_transform_obs):
+    # image 640x360 -> canvas 1920x1080 is a 3x scale in both axes
+    result = _action_block().run(**_move_kwargs())
+
+    assert result["error_status"] is False
+    transform_call = [
+        c for c in fake_transform_obs[0].calls if c[0] == "set_scene_item_transform"
+    ][0]
+    _, (scene, item_id, transform) = transform_call
+    assert scene == "Apple" and item_id == 7
+    assert transform["positionX"] == pytest.approx(192.0)
+    assert transform["positionY"] == pytest.approx(108.0)
+    assert transform["boundsWidth"] == pytest.approx(192.0)
+    assert transform["boundsHeight"] == pytest.approx(216.0)
+    assert transform["boundsType"] == "OBS_BOUNDS_SCALE_INNER"
+    assert ("set_scene_item_enabled", ("Apple", 7, True)) in fake_transform_obs[0].calls
+
+
+def test_move_source_follows_highest_confidence_detection(fake_transform_obs):
+    predictions = _detections((0, 0, 10, 10, 0.3), (320, 180, 480, 270, 0.95))
+
+    _action_block().run(**_move_kwargs(predictions=predictions))
+
+    transform = [
+        c for c in fake_transform_obs[0].calls if c[0] == "set_scene_item_transform"
+    ][0][1][2]
+    assert transform["positionX"] == pytest.approx(960.0)
+    assert transform["positionY"] == pytest.approx(540.0)
+
+
+def test_move_source_hides_source_when_no_detections(fake_transform_obs):
+    result = _action_block().run(**_move_kwargs(predictions=sv.Detections.empty()))
+
+    assert result["error_status"] is False
+    assert "hid source" in result["message"]
+    assert ("set_scene_item_enabled", ("Apple", 7, False)) in fake_transform_obs[
+        0
+    ].calls
+    assert not any(
+        c[0] == "set_scene_item_transform" for c in fake_transform_obs[0].calls
+    )
+
+
+def test_move_source_leaves_source_alone_when_hide_disabled(fake_transform_obs):
+    result = _action_block().run(
+        **_move_kwargs(predictions=sv.Detections.empty(), hide_when_empty=False)
+    )
+
+    assert result["error_status"] is False
+    assert "left unchanged" in result["message"]
+    assert not any(
+        c[0] in ("set_scene_item_enabled", "set_scene_item_transform")
+        for c in fake_transform_obs[0].calls
+    )
+
+
+def test_transform_lookups_are_cached_across_calls(fake_transform_obs):
+    block = _action_block()
+
+    block.run(**_move_kwargs())
+    block.run(**_move_kwargs())
+
+    calls = fake_transform_obs[0].calls
+    assert sum(1 for c in calls if c[0] == "get_scene_item_id") == 1
+    assert sum(1 for c in calls if c[0] == "get_video_settings") == 1
+    assert sum(1 for c in calls if c[0] == "set_scene_item_transform") == 2
+
+
+def test_stretch_fit_uses_stretch_bounds(fake_transform_obs):
+    _action_block().run(**_move_kwargs(fit="stretch"))
+
+    transform = [
+        c for c in fake_transform_obs[0].calls if c[0] == "set_scene_item_transform"
+    ][0][1][2]
+    assert transform["boundsType"] == "OBS_BOUNDS_STRETCH"
+
+
+def test_set_source_transform_places_source_at_explicit_coordinates(fake_transform_obs):
+    result = _action_block().run(
+        **_move_kwargs(
+            action="set_source_transform",
+            predictions=None,
+            image=None,
+            position_x=100.0,
+            position_y=200.0,
+            width=300.0,
+            height=400.0,
+        )
+    )
+
+    assert result["error_status"] is False
+    transform = [
+        c for c in fake_transform_obs[0].calls if c[0] == "set_scene_item_transform"
+    ][0][1][2]
+    assert transform["positionX"] == pytest.approx(100.0)
+    assert transform["boundsWidth"] == pytest.approx(300.0)
+
+
+def test_manifest_rejects_move_action_without_predictions_and_image():
+    with pytest.raises(ValueError) as error:
+        ActionManifest.model_validate(
+            {
+                "type": "roboflow_core/obs_action@v1",
+                "name": "obs",
+                "connection": "$steps.obs.connection",
+                "action": "move_source_to_detection",
+                "scene_name": "Apple",
+                "source_name": "Apple GIF",
+            }
+        )
+
+    assert "predictions" in str(error.value)
+    assert "image" in str(error.value)
