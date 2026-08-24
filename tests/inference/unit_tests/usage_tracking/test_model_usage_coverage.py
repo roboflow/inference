@@ -115,14 +115,14 @@ def test_model_overriding_infer_is_usage_collected(module_path, class_name):
     ), f"{class_name}.infer() must be decorated with @usage_collector('model')"
 
 
-@pytest.mark.parametrize("module_path, class_name", MODELS_DECORATING_INFER_FROM_REQUEST)
+@pytest.mark.parametrize(
+    "module_path, class_name", MODELS_DECORATING_INFER_FROM_REQUEST
+)
 def test_model_infer_from_request_is_usage_collected(module_path, class_name):
     module = pytest.importorskip(module_path)
     model_class = getattr(module, class_name)
 
-    assert _is_usage_collected(
-        model_class.infer_from_request
-    ), (
+    assert _is_usage_collected(model_class.infer_from_request), (
         f"{class_name}.infer_from_request() must be decorated with "
         "@usage_collector('model')"
     )

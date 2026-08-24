@@ -28,7 +28,6 @@ from pydantic import ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_extra_weights_provider_headers
-from inference.usage_tracking.collector import usage_collector
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -68,6 +67,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 
