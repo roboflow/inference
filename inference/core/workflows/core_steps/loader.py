@@ -258,6 +258,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_string_kind,
     deserialize_timestamp,
     deserialize_video_metadata_kind,
+    deserialize_video_multi_label_classification_kind,
     deserialize_zone_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -266,6 +267,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
+    serialize_video_multi_label_classification_kind,
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_KIND,
@@ -933,6 +935,14 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
         RoboflowMultiLabelClassificationModelBlockV3,
     )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.video_classification.v1 import (
+        VideoClassificationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.video_classification.v1_tensor import (
+        VideoClassificationModelBlockV1,
+    )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
         RoboflowObjectDetectionModelBlockV1,
@@ -1563,6 +1573,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
+    VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
     Kind,
@@ -1585,6 +1596,7 @@ REGISTERED_INITIALIZERS = {
 KINDS_SERIALIZERS = {
     IMAGE_KIND.name: serialise_image,
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
+    VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND.name: serialize_video_multi_label_classification_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
@@ -1632,6 +1644,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
+    VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND.name: deserialize_video_multi_label_classification_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
@@ -1912,6 +1925,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlockV3,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
+        VideoClassificationModelBlockV1,
         RoboflowObjectDetectionModelBlockV2,
         RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
@@ -1979,6 +1993,7 @@ def load_kinds() -> List[Kind]:
         WILDCARD_KIND,
         IMAGE_KIND,
         VIDEO_METADATA_KIND,
+        VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
         ROBOFLOW_SOLUTION_KIND,

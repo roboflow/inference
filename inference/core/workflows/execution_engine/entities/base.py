@@ -19,7 +19,7 @@ from typing import (
 import cv2
 import numpy as np
 import torch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
@@ -217,6 +217,17 @@ class VideoMetadata(BaseModel):
         "if not possible to be determined - pass None",
         default=None,
     )
+
+
+class VideoIntervalClassification(BaseModel):
+    """A classified frame interval in a video."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    start_frame_idx: int
+    end_frame_idx: int
+    class_name: str = Field(alias="class")
+    class_id: int
 
 
 class ParentOrigin(BaseModel):

@@ -148,6 +148,27 @@ VIDEO_METADATA_KIND = Kind(
     internal_data_type="VideoMetadata",
 )
 
+VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND_DOCS = """
+This kind represents classified intervals in a video. The serialized value is a
+list of dictionaries. Each dictionary has these keys:
+
+* `start_frame_idx`: The first frame in the interval.
+* `end_frame_idx`: The last frame in the interval.
+* `class`: The class name.
+* `class_id`: The class position in the block's `class_names` input.
+
+A range that contains the last classified frame is open and provisional. Its
+`end_frame_idx` advances as the stream advances. A later classification window
+closes the range when the class is absent.
+"""
+VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND = Kind(
+    name="video_multi_label_classification_prediction",
+    description="Classified frame intervals in a video",
+    docs=VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="List[dict]",
+    internal_data_type="List[VideoIntervalClassification]",
+)
+
 ROBOFLOW_MODEL_ID_KIND_DOCS = """
 This kind represents value specific for Roboflow platform. At the platform, models are
 identified with special strings in the format: `<project_name>/<version>`. You should
