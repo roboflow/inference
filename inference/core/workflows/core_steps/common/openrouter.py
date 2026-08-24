@@ -37,6 +37,9 @@ from inference.core.logger import logger
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.token_usage import (
+    parse_chat_completion_usage,
+)
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.types import (
@@ -190,7 +193,13 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         max_concurrent_requests: Optional[int],
         reasoning: Optional[dict] = None,
         include_reasoning: bool = False,
-    ) -> Union[List[str], List[Tuple[str, str]]]:
+        include_usage: bool = False,
+    ) -> Union[
+        List[str],
+        List[Tuple[str, str]],
+        List[Tuple[str, Optional[int], Optional[int]]],
+        List[Tuple[str, str, Optional[int], Optional[int]]],
+    ]:
         """Run a batch of OpenRouter chat-completion calls in parallel.
 
         Routes through the Roboflow proxy when ``openrouter_api_key`` starts
@@ -209,6 +218,11 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         (empty string when absent). Default returns bare content strings for
         backward compatibility.
 
+        With ``include_usage=True`` each result is extended with
+        ``(input_tokens, output_tokens)`` parsed from the provider ``usage``
+        object (``None`` when omitted). Works on both the proxied
+        ``rf_key:`` path and a user-supplied OpenRouter key.
+
         Note: honoring ``reasoning`` on managed ``rf_key:`` keys requires a
         Roboflow platform proxy version that forwards the key upstream
         (older proxy versions strip it and the model applies its
@@ -224,6 +238,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 privacy_level=privacy_level,
                 reasoning=reasoning,
                 include_reasoning=include_reasoning,
+                include_usage=include_usage,
             )
         else:
             single = partial(
@@ -233,6 +248,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 privacy_level=privacy_level,
                 reasoning=reasoning,
                 include_reasoning=include_reasoning,
+                include_usage=include_usage,
             )
         tasks = [
             partial(
@@ -334,6 +350,28 @@ def _is_unsupported_reasoning_error(error: Exception) -> bool:
     )
 
 
+def _pack_openrouter_result(
+    content: str,
+    include_reasoning: bool,
+    include_usage: bool,
+    reasoning_trace: str = "",
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+) -> Union[
+    str,
+    Tuple[str, str],
+    Tuple[str, Optional[int], Optional[int]],
+    Tuple[str, str, Optional[int], Optional[int]],
+]:
+    if include_usage and include_reasoning:
+        return content, reasoning_trace, input_tokens, output_tokens
+    if include_usage:
+        return content, input_tokens, output_tokens
+    if include_reasoning:
+        return content, reasoning_trace
+    return content
+
+
 def _execute_proxied_openrouter_request(
     roboflow_api_key: Optional[str],
     openrouter_api_key: str,
@@ -344,7 +382,13 @@ def _execute_proxied_openrouter_request(
     privacy_level: str,
     reasoning: Optional[dict] = None,
     include_reasoning: bool = False,
-) -> Union[str, Tuple[str, str]]:
+    include_usage: bool = False,
+) -> Union[
+    str,
+    Tuple[str, str],
+    Tuple[str, Optional[int], Optional[int]],
+    Tuple[str, str, Optional[int], Optional[int]],
+]:
     payload = {
         "openrouter_api_key": openrouter_api_key,
         "model": model,
@@ -394,6 +438,9 @@ def _execute_proxied_openrouter_request(
         )
     message = choices[0].get("message") or {}
     content = message.get("content")
+    input_tokens, output_tokens = parse_chat_completion_usage(
+        response_data.get("usage")
+    )
     if content is None:
         # Reasoning models (Kimi K2.x, some Qwen 3.5/3.6 variants) emit all
         # of their tokens as `reasoning` and run out before producing visible
@@ -410,10 +457,15 @@ def _execute_proxied_openrouter_request(
         raise RuntimeError(
             "OpenRouter response missing message.content via Roboflow proxy." + hint
         )
-    if include_reasoning:
-        reasoning_trace = message.get("reasoning")
-        return content, reasoning_trace if isinstance(reasoning_trace, str) else ""
-    return content
+    reasoning_trace = message.get("reasoning")
+    return _pack_openrouter_result(
+        content,
+        include_reasoning=include_reasoning,
+        include_usage=include_usage,
+        reasoning_trace=reasoning_trace if isinstance(reasoning_trace, str) else "",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 def _execute_direct_openrouter_request(
@@ -425,7 +477,13 @@ def _execute_direct_openrouter_request(
     privacy_level: str,
     reasoning: Optional[dict] = None,
     include_reasoning: bool = False,
-) -> Union[str, Tuple[str, str]]:
+    include_usage: bool = False,
+) -> Union[
+    str,
+    Tuple[str, str],
+    Tuple[str, Optional[int], Optional[int]],
+    Tuple[str, str, Optional[int], Optional[int]],
+]:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     extra_body: Dict[str, Any] = {}
     provider = build_provider_routing(privacy_level)
@@ -485,13 +543,21 @@ def _execute_direct_openrouter_request(
             "or reasoning tokens. Try a different prompt or model."
         )
         raise RuntimeError("OpenRouter response missing message.content." + hint)
-    if include_reasoning:
-        # OpenRouter returns the reasoning trace as an extra `reasoning`
-        # field on the message; the OpenAI SDK surfaces unknown fields as
-        # attributes on its pydantic models.
-        reasoning_trace = getattr(response.choices[0].message, "reasoning", None)
-        return content, reasoning_trace if isinstance(reasoning_trace, str) else ""
-    return content
+    # OpenRouter returns the reasoning trace as an extra `reasoning`
+    # field on the message; the OpenAI SDK surfaces unknown fields as
+    # attributes on its pydantic models.
+    reasoning_trace = getattr(response.choices[0].message, "reasoning", None)
+    input_tokens, output_tokens = parse_chat_completion_usage(
+        getattr(response, "usage", None)
+    )
+    return _pack_openrouter_result(
+        content,
+        include_reasoning=include_reasoning,
+        include_usage=include_usage,
+        reasoning_trace=reasoning_trace if isinstance(reasoning_trace, str) else "",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 # ---------------------------------------------------------------------------

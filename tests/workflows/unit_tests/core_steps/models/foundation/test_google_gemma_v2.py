@@ -74,7 +74,7 @@ def test_manifest_rejects_unconstrained_without_prompt():
 
 @patch.object(GoogleGemmaBlockV2, "execute_openrouter_batch")
 def test_run_translates_label_to_openrouter_slug(mock_execute):
-    mock_execute.return_value = ["caption text"]
+    mock_execute.return_value = [("caption text", 11, 4)]
     block = GoogleGemmaBlockV2(model_manager=MagicMock(), api_key="ws-key")
 
     result = block.run(
@@ -91,7 +91,14 @@ def test_run_translates_label_to_openrouter_slug(mock_execute):
         max_concurrent_requests=None,
     )
 
-    assert result == [{"output": "caption text", "classes": None}]
+    assert result == [
+        {
+            "output": "caption text",
+            "classes": None,
+            "input_tokens": 11,
+            "output_tokens": 4,
+        }
+    ]
     assert mock_execute.call_count == 1
     kwargs = mock_execute.call_args.kwargs
     assert (
@@ -101,3 +108,4 @@ def test_run_translates_label_to_openrouter_slug(mock_execute):
     )
     assert kwargs["openrouter_api_key"] == "rf_key:account"
     assert kwargs["privacy_level"] == "deny"
+    assert kwargs["include_usage"] is True

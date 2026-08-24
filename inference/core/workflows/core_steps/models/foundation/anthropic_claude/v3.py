@@ -13,6 +13,10 @@ from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+    parse_responses_api_usage,
+)
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -352,6 +356,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -437,7 +442,13 @@ class AnthropicClaudeBlockV3(WorkflowBlock):
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, input_tokens, output_tokens in raw_outputs
         ]
 
 
@@ -456,7 +467,7 @@ def run_claude_prompting(
     thinking_budget_tokens: Optional[int],
     max_image_size: int,
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     prompts = []
@@ -498,7 +509,7 @@ def execute_claude_requests(
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     tasks = [
         partial(
             execute_claude_request,
@@ -534,7 +545,7 @@ def execute_claude_request(
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Route to proxied or direct execution based on API key format."""
     if anthropic_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_claude_request(
@@ -571,7 +582,7 @@ def _execute_proxied_claude_request(
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Claude request via Roboflow proxy."""
     model_max_output = MAX_OUTPUT_TOKENS.get(model_version, DEFAULT_MAX_OUTPUT_TOKENS)
     effective_max_tokens = max_tokens if max_tokens is not None else model_max_output
@@ -608,7 +619,11 @@ def _execute_proxied_claude_request(
             api_key=roboflow_api_key,
             payload=payload,
         )
-        return _extract_claude_response_text(response_data)
+        text = _extract_claude_response_text(response_data)
+        input_tokens, output_tokens = parse_responses_api_usage(
+            response_data.get("usage")
+        )
+        return text, input_tokens, output_tokens
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
@@ -626,7 +641,7 @@ def _execute_direct_claude_request(
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Claude request directly to Anthropic API."""
     client = anthropic.Anthropic(api_key=anthropic_api_key)
 
@@ -662,7 +677,11 @@ def _execute_direct_claude_request(
     with client.messages.stream(**request_params) as stream:
         result = stream.get_final_message()
 
-    return _validate_and_extract_direct_response(result)
+    text = _validate_and_extract_direct_response(result)
+    input_tokens, output_tokens = parse_responses_api_usage(
+        getattr(result, "usage", None)
+    )
+    return text, input_tokens, output_tokens
 
 
 def _validate_and_extract_direct_response(result) -> str:

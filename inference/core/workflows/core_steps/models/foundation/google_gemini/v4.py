@@ -2,7 +2,7 @@ import base64
 import json
 import re
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -12,6 +12,10 @@ from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_RE
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+    parse_gemini_usage_metadata,
+)
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -396,6 +400,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -460,7 +465,13 @@ class GoogleGeminiBlockV4(WorkflowBlock):
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, input_tokens, output_tokens in raw_outputs
         ]
 
 
@@ -478,7 +489,7 @@ def run_gemini_prompting(
     thinking_level: Optional[str],
     google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     gemini_prompts = []
@@ -520,7 +531,7 @@ def execute_gemini_requests(
     gemini_prompts: List[dict],
     model_version: str,
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     tasks = [
         partial(
             execute_gemini_request,
@@ -546,7 +557,7 @@ def execute_gemini_request(
     google_api_key: str,
     prompt: dict,
     model_version: str,
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Route to proxied or direct execution based on API key format."""
     if google_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_gemini_request(
@@ -568,7 +579,7 @@ def _execute_proxied_gemini_request(
     google_api_key: str,
     prompt: dict,
     model_version: str,
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Gemini request via Roboflow proxy."""
     payload = {
         "model": model_version,
@@ -584,7 +595,11 @@ def _execute_proxied_gemini_request(
             api_key=roboflow_api_key,
             payload=payload,
         )
-        return _extract_gemini_response_text(response_data)
+        text = _extract_gemini_response_text(response_data)
+        input_tokens, output_tokens = parse_gemini_usage_metadata(
+            response_data.get("usageMetadata")
+        )
+        return text, input_tokens, output_tokens
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
@@ -597,7 +612,7 @@ def _execute_direct_gemini_request(
     google_api_key: str,
     prompt: dict,
     model_version: str,
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Gemini request directly to Google API."""
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
@@ -610,7 +625,11 @@ def _execute_direct_gemini_request(
     )
     response_data = response.json()
     google_api_key_safe_raise_for_status(response=response)
-    return _extract_gemini_response_text(response_data)
+    text = _extract_gemini_response_text(response_data)
+    input_tokens, output_tokens = parse_gemini_usage_metadata(
+        response_data.get("usageMetadata")
+    )
+    return text, input_tokens, output_tokens
 
 
 def _extract_gemini_response_text(response_data: dict) -> str:

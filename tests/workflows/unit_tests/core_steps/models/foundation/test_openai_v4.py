@@ -574,7 +574,7 @@ def test_direct_request_with_valid_reasoning_effort_for_gpt_5_1(
     )
 
     # then
-    assert result == "response"
+    assert result == ("response", None, None)
     call_kwargs = mock_client.responses.create.call_args[1]
     assert call_kwargs["reasoning"] == {"effort": "high"}
 
@@ -737,3 +737,85 @@ def test_prepare_object_detection_prompt() -> None:
     assert "x_min" in result["instructions"]
     user_content = result["input"][0]["content"]
     assert "person, car" in user_content[0]["text"]
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai.v4.post_to_roboflow_api"
+)
+def test_proxied_request_returns_usage(mock_post: Mock) -> None:
+    mock_post.return_value = {
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "ok"}],
+            }
+        ],
+        "usage": {"input_tokens": 21, "output_tokens": 6},
+    }
+
+    result = _execute_proxied_openai_request(
+        roboflow_api_key="rf_api_key",
+        openai_api_key="rf_key:account",
+        instructions="test",
+        input_content=[],
+        model_version="gpt-5.1",
+        reasoning_effort=None,
+        max_tokens=None,
+        temperature=None,
+    )
+
+    assert result == ("ok", 21, 6)
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai.v4.post_to_roboflow_api"
+)
+def test_proxied_request_usage_none_when_omitted(mock_post: Mock) -> None:
+    mock_post.return_value = {
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "ok"}],
+            }
+        ],
+    }
+
+    result = _execute_proxied_openai_request(
+        roboflow_api_key="rf_api_key",
+        openai_api_key="rf_key:account",
+        instructions="test",
+        input_content=[],
+        model_version="gpt-5.1",
+        reasoning_effort=None,
+        max_tokens=None,
+        temperature=None,
+    )
+
+    assert result == ("ok", None, None)
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai.v4._get_openai_client"
+)
+def test_direct_request_returns_usage(mock_get_client: Mock) -> None:
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status = "completed"
+    mock_response.output_text = "response"
+    mock_response.usage = MagicMock(input_tokens=14, output_tokens=3)
+    mock_client.responses.create.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    result = _execute_direct_openai_request(
+        openai_api_key="sk-test",
+        instructions="test",
+        input_content=[{"role": "user", "content": []}],
+        model_version="gpt-5.1",
+        reasoning_effort=None,
+        max_tokens=None,
+        temperature=None,
+    )
+
+    assert result == ("response", 14, 3)

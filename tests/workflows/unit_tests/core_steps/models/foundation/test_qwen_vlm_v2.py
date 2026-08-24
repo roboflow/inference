@@ -297,7 +297,7 @@ def test_encode_image_over_cap_downscales_until_it_fits():
 
 @patch.object(QwenVlmBlockV2, "execute_openrouter_batch")
 def test_run_openrouter_passes_slug_reasoning_and_temperature(mock_or):
-    mock_or.return_value = [("resp", "")]
+    mock_or.return_value = [("resp", "", 11, 7)]
     block = QwenVlmBlockV2(
         model_manager=MagicMock(),
         api_key="ws-key",
@@ -319,12 +319,20 @@ def test_run_openrouter_passes_slug_reasoning_and_temperature(mock_or):
     assert call_kwargs["temperature"] is None
     assert call_kwargs["max_tokens"] == 2048
     assert call_kwargs["include_reasoning"] is True
-    assert result == [{"output": "resp", "classes": ["dog", "cat"], "thinking": ""}]
+    assert result == [
+        {
+            "output": "resp",
+            "classes": ["dog", "cat"],
+            "thinking": "",
+            "input_tokens": 11,
+            "output_tokens": 7,
+        }
+    ]
 
 
 @patch.object(QwenVlmBlockV2, "execute_openrouter_batch")
 def test_run_openrouter_populates_thinking_from_reasoning_trace(mock_or):
-    mock_or.return_value = [("the answer", "step-by-step trace")]
+    mock_or.return_value = [("the answer", "step-by-step trace", 5, 3)]
     block = QwenVlmBlockV2(
         model_manager=MagicMock(),
         api_key="ws-key",
@@ -340,13 +348,19 @@ def test_run_openrouter_populates_thinking_from_reasoning_trace(mock_or):
     )
 
     assert result == [
-        {"output": "the answer", "classes": None, "thinking": "step-by-step trace"}
+        {
+            "output": "the answer",
+            "classes": None,
+            "thinking": "step-by-step trace",
+            "input_tokens": 5,
+            "output_tokens": 3,
+        }
     ]
 
 
 @patch.object(QwenVlmBlockV2, "execute_openrouter_batch")
 def test_run_openrouter_reasoning_required_model_falls_back_to_low_effort(mock_or):
-    mock_or.return_value = [("resp", "")]
+    mock_or.return_value = [("resp", "", 11, 7)]
     block = QwenVlmBlockV2(
         model_manager=MagicMock(),
         api_key="ws-key",
@@ -370,7 +384,7 @@ def test_run_openrouter_reasoning_required_model_falls_back_to_low_effort(mock_o
 
 @patch.object(QwenVlmBlockV2, "execute_openrouter_batch")
 def test_run_openrouter_explicit_max_tokens_overrides_default(mock_or):
-    mock_or.return_value = [("resp", "")]
+    mock_or.return_value = [("resp", "", 11, 7)]
     block = QwenVlmBlockV2(
         model_manager=MagicMock(),
         api_key="ws-key",
@@ -435,7 +449,13 @@ def test_run_dispatches_to_local_native_when_step_mode_local():
     )
     result = block.run(**_base_run_kwargs())
     assert result == [
-        {"output": "native local answer", "classes": None, "thinking": ""}
+        {
+            "output": "native local answer",
+            "classes": None,
+            "thinking": "",
+            "input_tokens": None,
+            "output_tokens": None,
+        }
     ]
     model_manager.add_model.assert_called_once_with(
         model_id="qwen3_5-2b", api_key="ws-key"
@@ -460,7 +480,15 @@ def test_run_local_native_with_enable_thinking_splits_response():
             enable_thinking=True,
         )
     )
-    assert result == [{"output": "42", "classes": None, "thinking": "reasoning..."}]
+    assert result == [
+        {
+            "output": "42",
+            "classes": None,
+            "thinking": "reasoning...",
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+    ]
     request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
     assert request.enable_thinking is True
 
@@ -484,7 +512,15 @@ def test_run_dispatches_to_remote_native_when_step_mode_remote(mock_client_cls):
             task_type="ocr",
         )
     )
-    assert result == [{"output": "remote answer", "classes": None, "thinking": ""}]
+    assert result == [
+        {
+            "output": "remote answer",
+            "classes": None,
+            "thinking": "",
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+    ]
     assert fake_client.infer_lmm.call_args.kwargs["model_id"] == "qwen3_5-0.8b"
 
 
@@ -505,7 +541,15 @@ def test_run_dispatches_to_local_native_with_fine_tuned_model_id():
             fine_tuned_model_id="your-workspace/3",
         )
     )
-    assert result == [{"output": "finetune answer", "classes": None, "thinking": ""}]
+    assert result == [
+        {
+            "output": "finetune answer",
+            "classes": None,
+            "thinking": "",
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+    ]
     model_manager.add_model.assert_called_once_with(
         model_id="your-workspace/3", api_key="ws-key"
     )

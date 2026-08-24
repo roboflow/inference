@@ -1,7 +1,7 @@
 import base64
 import json
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import requests
 from openai import OpenAI
@@ -11,6 +11,10 @@ from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_RE
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+    parse_responses_api_usage,
+)
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -368,6 +372,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -432,7 +437,13 @@ class OpenAIBlockV4(WorkflowBlock):
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, input_tokens, output_tokens in raw_outputs
         ]
 
 
@@ -450,7 +461,7 @@ def run_openai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     openai_prompts = []
@@ -488,7 +499,7 @@ def execute_openai_requests(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     tasks = [
         partial(
             execute_openai_request,
@@ -522,7 +533,7 @@ def _execute_proxied_openai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request via Roboflow proxy."""
     payload = {
         "model": model_version,
@@ -559,7 +570,11 @@ def _execute_proxied_openai_request(
             api_key=roboflow_api_key,
             payload=payload,
         )
-        return _extract_output_text(response_data)
+        text = _extract_output_text(response_data)
+        input_tokens, output_tokens = parse_responses_api_usage(
+            response_data.get("usage")
+        )
+        return text, input_tokens, output_tokens
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
@@ -621,7 +636,7 @@ def _execute_direct_openai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request directly."""
     client = _get_openai_client(openai_api_key)
 
@@ -682,7 +697,10 @@ def _execute_direct_openai_request(
     if not output_text:
         raise ValueError("OpenAI API returned no text content in response.")
 
-    return output_text
+    input_tokens, output_tokens = parse_responses_api_usage(
+        getattr(response, "usage", None)
+    )
+    return output_text, input_tokens, output_tokens
 
 
 def execute_openai_request(
@@ -694,7 +712,7 @@ def execute_openai_request(
     reasoning_effort: Optional[str],
     max_tokens: Optional[int],
     temperature: Optional[float],
-) -> str:
+) -> Tuple[str, Optional[int], Optional[int]]:
     if openai_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_openai_request(
             roboflow_api_key=roboflow_api_key,

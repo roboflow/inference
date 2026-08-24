@@ -24,6 +24,9 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+)
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
 )
@@ -556,6 +559,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                     "one. Empty string otherwise."
                 ),
             ),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -626,8 +630,15 @@ class MetaVlmBlockV1(OpenRouterWorkflowBlockBase):
             max_concurrent_requests=max_concurrent_requests,
             reasoning=build_reasoning_config(reasoning_effort),
             include_reasoning=True,
+            include_usage=True,
         )
         return [
-            {"output": content, "classes": classes, "thinking": reasoning_trace}
-            for content, reasoning_trace in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "thinking": reasoning_trace,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, reasoning_trace, input_tokens, output_tokens in raw_outputs
         ]

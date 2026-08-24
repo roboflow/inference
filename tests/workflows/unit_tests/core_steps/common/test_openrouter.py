@@ -288,6 +288,71 @@ def test_direct_request_returns_empty_trace_when_reasoning_missing(mock_openai_c
     assert out == ("answer", "")
 
 
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_returns_usage_when_requested(mock_post):
+    mock_post.return_value = {
+        "choices": [{"message": {"content": "answer"}}],
+        "usage": {"prompt_tokens": 11, "completion_tokens": 7},
+    }
+
+    out = _execute_proxied_openrouter_request(
+        roboflow_api_key="k",
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_usage=True,
+    )
+
+    assert out == ("answer", 11, 7)
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_usage_is_none_when_omitted(mock_post):
+    mock_post.return_value = {"choices": [{"message": {"content": "answer"}}]}
+
+    out = _execute_proxied_openrouter_request(
+        roboflow_api_key="k",
+        openrouter_api_key="rf_key:account",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_usage=True,
+    )
+
+    assert out == ("answer", None, None)
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_returns_usage_when_requested(mock_openai_cls):
+    client = MagicMock()
+    response = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "answer"
+    choice.message.reasoning = "trace"
+    response.choices = [choice]
+    response.usage = MagicMock(prompt_tokens=9, completion_tokens=4)
+    client.chat.completions.create.return_value = response
+    mock_openai_cls.return_value = client
+
+    out = _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+        include_reasoning=True,
+        include_usage=True,
+    )
+
+    assert out == ("answer", "trace", 9, 4)
+
+
 # ---------------------------------------------------------------------------
 # _execute_direct_openrouter_request: provider injection
 # ---------------------------------------------------------------------------
