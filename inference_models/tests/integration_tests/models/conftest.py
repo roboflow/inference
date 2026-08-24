@@ -1,9 +1,17 @@
 import os.path
+import time
 import zipfile
 
 import pytest
 import requests
 from filelock import FileLock
+
+# Test-asset downloads occasionally hit transient network failures against
+# storage.googleapis.com (e.g. `SSL: UNEXPECTED_EOF_WHILE_READING`). Retry a
+# few times with backoff so a single dropped connection does not fail the
+# whole integration-test run.
+_DOWNLOAD_MAX_ATTEMPTS = 4
+_DOWNLOAD_BACKOFF_SECONDS = 3
 
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 MODELS_DIR = os.path.join(ASSETS_DIR, "models")
@@ -279,12 +287,35 @@ def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -
     with FileLock(lock_file=lock_path, timeout=lock_timeout):
         if os.path.exists(file_path):
             return None
-        with requests.get(url, stream=True) as response:
-            response.raise_for_status()
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
+        _download_with_retries(file_path=file_path, url=url)
+
+
+def _download_with_retries(file_path: str, url: str) -> None:
+    # Stream into a temporary file and atomically move it into place so a
+    # download interrupted mid-stream never leaves a truncated artifact that a
+    # later run would treat as complete.
+    tmp_path = f"{file_path}.part"
+    last_error = None
+    for attempt in range(1, _DOWNLOAD_MAX_ATTEMPTS + 1):
+        try:
+            with requests.get(url, stream=True, timeout=(10, 60)) as response:
+                response.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+            os.replace(tmp_path, file_path)
+            return None
+        except requests.exceptions.RequestException as error:
+            last_error = error
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if attempt < _DOWNLOAD_MAX_ATTEMPTS:
+                time.sleep(_DOWNLOAD_BACKOFF_SECONDS * attempt)
+    raise RuntimeError(
+        f"Failed to download test asset from {url} after "
+        f"{_DOWNLOAD_MAX_ATTEMPTS} attempts"
+    ) from last_error
 
 
 @pytest.fixture(scope="module")
