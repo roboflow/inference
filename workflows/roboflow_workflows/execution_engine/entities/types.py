@@ -1307,6 +1307,26 @@ SECRET_KIND = Kind(
     internal_data_type="str",
 )
 
+OBS_CONNECTION_KIND_DOCS = """
+This kind represents a connection to an OBS Studio websocket server, produced by the
+**OBS Connection** block and consumed by **OBS Action** blocks.
+
+The descriptor carries only the address; credentials stay in the process that
+established the connection, so wiring it to a Workflow output exposes no secret.
+
+Example:
+```
+{"host": "127.0.0.1", "port": 4455, "timeout": 3}
+```
+"""
+OBS_CONNECTION_KIND = Kind(
+    name="obs_connection",
+    description="Connection to an OBS Studio websocket server",
+    docs=OBS_CONNECTION_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="dict",
+)
+
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
