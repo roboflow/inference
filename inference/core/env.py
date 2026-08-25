@@ -1011,7 +1011,9 @@ if OFFLINE_MODE and (
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
-RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
+RUNS_ON_JETSON = str2bool(
+    os.getenv("RUNS_ON_JETSON", os.getenv("RUNNING_ON_JETSON", "False"))
+)
 
 # Opt-out from the GStreamer-based legacy video sources (e.g. the Jetson RTSP
 # producer) — when True, plain (non-tensor) source references always decode
