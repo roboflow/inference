@@ -136,6 +136,17 @@ MODEL_VERSION_METADATA = {
 MAX_OUTPUT_TOKENS = {model["id"]: model["max_output_tokens"] for model in CLAUDE_MODELS}
 DEFAULT_MAX_OUTPUT_TOKENS = 64000
 
+DETECTION_MAX_PNG_PAYLOAD_BYTES = 2_500_000
+"""Largest PNG payload sent for object detection, before base64 growth.
+
+Lossless PNG of a large photographic upload can exceed the request body
+limits of the Roboflow proxy and Anthropic's per-image maximum. Above this
+size the block re-encodes the image as JPEG (quality 95) at the same
+resolution, which keeps the coordinate contract intact.
+"""
+
+DETECTION_JPEG_FALLBACK_QUALITY = 95
+
 OBJECT_DETECTION_PROMPT_TEMPLATE = (
     "Detect all objects in this image. "
     "Output a JSON list where each entry contains the 2D bounding box "
@@ -512,7 +523,7 @@ def run_claude_prompting(
     prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
-        base64_image, image_width, image_height = encode_image_for_task(
+        base64_image, media_type, image_width, image_height = encode_image_for_task(
             loaded_image, task_type=task_type, max_image_size=max_image_size
         )
         generated_prompt = PROMPT_BUILDERS[task_type](
@@ -522,6 +533,7 @@ def run_claude_prompting(
             classes=classes,
             image_width=image_width,
             image_height=image_height,
+            media_type=media_type,
         )
         prompts.append(generated_prompt)
     return execute_claude_requests(
@@ -556,22 +568,29 @@ def encode_image_for_task(
         max_image_size: Maximum longest edge applied to non-detection tasks.
 
     Returns:
-        Tuple of the base64-encoded image payload (without a data URL prefix)
-        and the ``(width, height)`` of the encoded image.
+        Tuple of the base64-encoded image payload (without a data URL prefix),
+        its media type, and the ``(width, height)`` of the encoded image.
     """
     if task_type == "object-detection":
         encoded_image = _resize_image_to_anthropic_upload_dimensions(image)
         image_bytes = _encode_image_to_png_bytes(encoded_image)
+        media_type = "image/png"
+        if len(image_bytes) > DETECTION_MAX_PNG_PAYLOAD_BYTES:
+            image_bytes = _encode_image_to_jpeg_bytes_with_quality(
+                encoded_image, quality=DETECTION_JPEG_FALLBACK_QUALITY
+            )
+            media_type = "image/jpeg"
     else:
         encoded_image = downscale_image_keeping_aspect_ratio(
             image=image, desired_size=(max_image_size, max_image_size)
         )
         image_bytes = encode_image_to_jpeg_bytes(encoded_image)
+        media_type = "image/jpeg"
 
     base64_image = base64.b64encode(image_bytes).decode("ascii")
     encoded_height, encoded_width = encoded_image.shape[:2]
 
-    return base64_image, encoded_width, encoded_height
+    return base64_image, media_type, encoded_width, encoded_height
 
 
 def _resize_image_to_anthropic_upload_dimensions(image: np.ndarray) -> np.ndarray:
@@ -587,6 +606,13 @@ def _resize_image_to_anthropic_upload_dimensions(image: np.ndarray) -> np.ndarra
 
 def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
     _, encoded_image = cv2.imencode(".png", image)
+    return encoded_image.tobytes()
+
+
+def _encode_image_to_jpeg_bytes_with_quality(
+    image: np.ndarray, *, quality: int
+) -> bytes:
+    _, encoded_image = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])
     return encoded_image.tobytes()
 
 
@@ -1053,19 +1079,23 @@ def prepare_object_detection_prompt(
     classes: List[str],
     image_width: int,
     image_height: int,
+    media_type: str = "image/png",
     **kwargs,
 ) -> Tuple[Optional[str], List[dict]]:
     """Build the absolute-pixel detection request used by Claude models.
 
-    Matches the vlm-exam benchmark setup: lossless PNG placed before the text
+    Matches the vlm-exam benchmark setup: the image placed before the text
     prompt, no system prompt, and coordinates requested as absolute pixels of
-    the uploaded ``image_width`` x ``image_height`` image.
+    the uploaded ``image_width`` x ``image_height`` image. The image is
+    lossless PNG unless its payload exceeded the size limit, in which case
+    it is JPEG at the same resolution.
 
     Args:
-        base64_image: Base64-encoded PNG image.
+        base64_image: Base64-encoded image.
         classes: Class names the model may predict.
         image_width: Width of the uploaded image in pixels.
         image_height: Height of the uploaded image in pixels.
+        media_type: Media type of the encoded image.
         **kwargs: Ignored builder arguments shared across task types.
 
     Returns:
@@ -1085,7 +1115,7 @@ def prepare_object_detection_prompt(
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/png",
+                        "media_type": media_type,
                         "data": base64_image,
                     },
                 },

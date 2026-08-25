@@ -85,12 +85,13 @@ def test_encode_image_for_task_resizes_detection_images_to_upload_dimensions() -
     image = np.zeros((3000, 4000, 3), dtype=np.uint8)
 
     # when
-    base64_image, width, height = encode_image_for_task(
+    base64_image, media_type, width, height = encode_image_for_task(
         image, task_type="object-detection", max_image_size=1024
     )
 
     # then - 4000x3000 uploads at 2212x1659; max_image_size is not applied
     assert (width, height) == (2212, 1659)
+    assert media_type == "image/png"
     decoded = cv2.imdecode(
         np.frombuffer(base64.b64decode(base64_image), dtype=np.uint8),
         cv2.IMREAD_COLOR,
@@ -103,12 +104,34 @@ def test_encode_image_for_task_keeps_small_detection_images_unchanged() -> None:
     image = np.zeros((480, 640, 3), dtype=np.uint8)
 
     # when
-    _, width, height = encode_image_for_task(
+    _, media_type, width, height = encode_image_for_task(
         image, task_type="object-detection", max_image_size=1024
     )
 
     # then
     assert (width, height) == (640, 480)
+    assert media_type == "image/png"
+
+
+def test_encode_image_for_task_falls_back_to_jpeg_for_oversized_png() -> None:
+    # given - random noise compresses terribly in PNG, exceeding the payload
+    # limit at Claude's upload resolution
+    rng = np.random.default_rng(42)
+    image = rng.integers(0, 256, size=(2500, 3000, 3), dtype=np.uint8)
+
+    # when
+    base64_image, media_type, width, height = encode_image_for_task(
+        image, task_type="object-detection", max_image_size=1024
+    )
+
+    # then - resolution keeps the coordinate contract, only the codec changes
+    assert media_type == "image/jpeg"
+    assert (width, height) == (2100, 1750)
+    decoded = cv2.imdecode(
+        np.frombuffer(base64.b64decode(base64_image), dtype=np.uint8),
+        cv2.IMREAD_COLOR,
+    )
+    assert decoded.shape[:2] == (1750, 2100)
 
 
 def test_encode_image_for_task_downscales_other_tasks_to_max_image_size() -> None:
@@ -116,12 +139,13 @@ def test_encode_image_for_task_downscales_other_tasks_to_max_image_size() -> Non
     image = np.zeros((3000, 4000, 3), dtype=np.uint8)
 
     # when
-    base64_image, width, height = encode_image_for_task(
+    base64_image, media_type, width, height = encode_image_for_task(
         image, task_type="unconstrained", max_image_size=1024
     )
 
     # then - JPEG payload downscaled to the max_image_size limit
     assert (width, height) == (1024, 768)
+    assert media_type == "image/jpeg"
     decoded = cv2.imdecode(
         np.frombuffer(base64.b64decode(base64_image), dtype=np.uint8),
         cv2.IMREAD_COLOR,
