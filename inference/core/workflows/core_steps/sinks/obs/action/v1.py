@@ -174,33 +174,83 @@ class BlockManifest(WorkflowBlockManifest):
         description="Name of the OBS scene. Required by `set_scene`, and identifies the scene "
         "holding the source for `set_source_visibility`.",
         examples=["Detected", "$steps.scene_expression.output"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {
+                    "values": [
+                        "set_scene",
+                        "set_source_visibility",
+                        "set_source_transform",
+                        "move_source_to_detection",
+                    ],
+                    "required": True,
+                },
+            }
+        },
     )
     source_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Name of the OBS source (called an input in OBS). Required by "
         "`set_source_visibility`, `set_text` and `toggle_filter`.",
         examples=["Overlay", "$inputs.source_name"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {
+                    "values": [
+                        "set_source_visibility",
+                        "set_text",
+                        "toggle_filter",
+                        "set_source_transform",
+                        "move_source_to_detection",
+                    ],
+                    "required": True,
+                },
+            }
+        },
     )
     filter_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Name of the filter on the source. Required by `toggle_filter`.",
         examples=["Blur"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["toggle_filter"], "required": True},
+            }
+        },
     )
     text: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Text to write into the text source. Required by `set_text`.",
         examples=["$steps.count_expression.output"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["set_text"], "required": True},
+            }
+        },
     )
     enabled: Optional[Union[bool, Selector(kind=[BOOLEAN_KIND])]] = Field(
         default=None,
         description="Target state for `set_source_visibility` and `toggle_filter`.",
         examples=[True, "$steps.detection_present.output"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {
+                    "values": ["set_source_visibility", "toggle_filter"],
+                    "required": True,
+                },
+            }
+        },
     )
     hotkey_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Name of the OBS hotkey to trigger, as listed by the obs-websocket "
         "`GetHotkeyList` request. Required by `trigger_hotkey`.",
         examples=["OBSBasic.StartStreaming"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["trigger_hotkey"], "required": True},
+            }
+        },
     )
     predictions: Optional[
         Selector(
@@ -214,44 +264,87 @@ class BlockManifest(WorkflowBlockManifest):
         description="Predictions to track. Required by `move_source_to_detection`, which follows "
         "the highest-confidence detection - filter upstream to select the class to track.",
         examples=["$steps.detections_filter.predictions"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_detection"], "required": True},
+            }
+        },
     )
     image: Optional[Selector(kind=[IMAGE_KIND])] = Field(
         default=None,
         description="The image the predictions were made on. Required by "
         "`move_source_to_detection` to map detection coordinates onto the OBS canvas.",
         examples=["$inputs.image"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_detection"], "required": True},
+            }
+        },
     )
     position_x: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Left edge of the source in OBS canvas pixels. Required by `set_source_transform`.",
         examples=[640.0],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["set_source_transform"], "required": True},
+            }
+        },
     )
     position_y: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Top edge of the source in OBS canvas pixels. Required by `set_source_transform`.",
         examples=[360.0],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["set_source_transform"], "required": True},
+            }
+        },
     )
     width: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Width of the source in OBS canvas pixels. Required by `set_source_transform`.",
         examples=[512.0],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["set_source_transform"], "required": True},
+            }
+        },
     )
     height: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Height of the source in OBS canvas pixels. Required by `set_source_transform`.",
         examples=[512.0],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["set_source_transform"], "required": True},
+            }
+        },
     )
     fit: Literal["stretch", "fit", "fill"] = Field(
         default="fit",
         description="How the source fills the target rectangle: `stretch` matches it exactly "
         "(may distort), `fit` letterboxes inside it, `fill` covers it (may crop).",
         examples=["fit"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {
+                    "values": ["set_source_transform", "move_source_to_detection"],
+                    "required": False,
+                },
+            }
+        },
     )
     hide_when_empty: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="For `move_source_to_detection`: hide the source when there are no "
         "detections, and show it again when a detection returns.",
         examples=[True],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_detection"], "required": False},
+            }
+        },
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=0,
