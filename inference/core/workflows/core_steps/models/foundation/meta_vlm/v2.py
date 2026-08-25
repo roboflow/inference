@@ -27,6 +27,10 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    validate_reasoning_level,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
 )
@@ -58,27 +62,55 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-MODEL_VARIANTS: Dict[str, str] = {
-    "Muse Spark 1.1": "meta/muse-spark-1.1",
-    "Muse Spark 1.2": "meta/muse-spark-1.2",
-    "Muse Glimmer": "meta/muse-glimmer-30b",
+# Spark `none` is HTTP 400. Glimmer has no `minimal`.
+MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
+    "Muse Spark 1.1": {
+        "model_id": "meta/muse-spark-1.1",
+        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
+    },
+    "Muse Spark 1.2": {
+        "model_id": "meta/muse-spark-1.2",
+        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
+    },
+    "Muse Glimmer": {
+        "model_id": "meta/muse-glimmer-30b",
+        "reasoning_levels": ["low", "medium", "high", "xhigh"],
+    },
 }
+
+MODEL_IDS = {label: variant["model_id"] for label, variant in MODEL_VARIANTS.items()}
+
+MODEL_REASONING_LEVELS = {
+    label: variant["reasoning_levels"] for label, variant in MODEL_VARIANTS.items()
+}
+
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {label: {"name": label} for label in MODEL_VARIANTS},
+    MODEL_REASONING_LEVELS,
+)
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
 DEFAULT_MODEL_VERSION = "Muse Spark 1.2"
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
-REASONING_EFFORT_OPTIONS = ["low", "medium", "high"]
+REASONING_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"]
 ReasoningEffort = Literal[tuple(REASONING_EFFORT_OPTIONS)]
 DEFAULT_REASONING_EFFORT = "low"
 
 REASONING_EFFORT_METADATA = {
+    "minimal": {
+        "name": "Minimal",
+        "description": (
+            "Shortest reasoning pass. Supported by Muse Spark models only — "
+            "Muse Glimmer starts at low."
+        ),
+    },
     "low": {
         "name": "Low (recommended)",
         "description": (
             "Small reasoning budget. Muse models require reasoning; this is "
-            "the lowest effort they accept."
+            "the lowest effort every variant accepts."
         ),
     },
     "medium": {
@@ -88,8 +120,15 @@ REASONING_EFFORT_METADATA = {
     "high": {
         "name": "High",
         "description": (
-            "Large reasoning budget. Slowest and most expensive; consider "
-            "raising `max_tokens` so reasoning does not crowd out the answer."
+            "Large reasoning budget. Slow and expensive; consider raising "
+            "`max_tokens` so reasoning does not crowd out the answer."
+        ),
+    },
+    "xhigh": {
+        "name": "Extra high",
+        "description": (
+            "Maximum reasoning depth. Slowest and most expensive; raise "
+            "`max_tokens` accordingly."
         ),
     },
 }
@@ -339,7 +378,7 @@ def build_reasoning_config(reasoning_effort: str) -> Dict[str, Any]:
     Muse models reject disabled reasoning, so an ``effort`` is always sent.
 
     Args:
-        reasoning_effort: ``low``, ``medium``, or ``high``.
+        reasoning_effort: One of ``REASONING_EFFORT_OPTIONS``.
 
     Returns:
         Reasoning config to attach to the OpenRouter request.
@@ -415,6 +454,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "current image-capable Muse chat models on OpenRouter."
         ),
         examples=[DEFAULT_MODEL_VERSION, "Muse Glimmer"],
+        json_schema_extra={
+            "values_metadata": MODEL_VERSION_METADATA,
+        },
     )
     task_type: TaskType = Field(
         default="unconstrained",
@@ -474,7 +516,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         description=(
             "Reasoning budget. Muse models reject disabled reasoning, so this "
             "is always sent as an effort. Low is the default used in the "
-            "vlm-exam benches."
+            "vlm-exam benches. Supported values differ per model (see the "
+            "model dropdown): 'minimal' is Spark-only."
         ),
         json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
     )
@@ -523,6 +566,11 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             prompt=self.prompt,
             classes=self.classes,
             output_structure=self.output_structure,
+        )
+        validate_reasoning_level(
+            model=self.model_version,
+            level=self.reasoning_effort,
+            levels_by_model=MODEL_REASONING_LEVELS,
         )
         return self
 
@@ -575,13 +623,13 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 third_party_model(
                     provider="openrouter",
                     model_id=self.model_version,
-                    model_id_resolver=lambda label: MODEL_VARIANTS.get(label),
+                    model_id_resolver=lambda label: MODEL_IDS.get(label),
                 )
             ]
         return [
             third_party_model(
                 provider="openrouter",
-                model_id=MODEL_VARIANTS[self.model_version],
+                model_id=MODEL_IDS[self.model_version],
             )
         ]
 
@@ -610,12 +658,17 @@ class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
-        model_id = MODEL_VARIANTS.get(model_version)
+        model_id = MODEL_IDS.get(model_version)
         if model_id is None:
             raise ValueError(
                 f"Unknown Muse variant '{model_version}'. "
                 f"Pick one of: {list(MODEL_VARIANTS)}"
             )
+        validate_reasoning_level(
+            model=model_version,
+            level=reasoning_effort,
+            levels_by_model=MODEL_REASONING_LEVELS,
+        )
         prompts = build_muse_openrouter_prompts(
             images=[image.numpy_image for image in images],
             task_type=task_type,

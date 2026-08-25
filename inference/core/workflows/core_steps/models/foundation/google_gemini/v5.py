@@ -12,6 +12,11 @@ from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_RE
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    models_supporting_reasoning,
+    validate_reasoning_level,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_gemini_usage_metadata,
@@ -54,86 +59,93 @@ MODEL_ALIASES = {
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
 }
 
+# 3.7-flash probed 2026-08-25: API rejects `minimal`. 2.5 pages contradict
+# (`thinking_level` vs `thinking_budget` only); we keep 2.5 unsupported.
 GEMINI_MODELS = [
     {
         "id": "gemini-3.7-flash",
         "name": "Gemini 3.7 Flash",
-        "supports_thinking_level": True,
+        "thinking_levels": ["low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3.6-flash",
         "name": "Gemini 3.6 Flash",
-        "supports_thinking_level": True,
+        "thinking_levels": ["minimal", "low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3.5-flash",
         "name": "Gemini 3.5 Flash",
-        "supports_thinking_level": True,
+        "thinking_levels": ["minimal", "low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3.5-flash-lite",
         "name": "Gemini 3.5 Flash-Lite",
-        "supports_thinking_level": True,
+        "thinking_levels": ["minimal", "low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3.1-pro-preview",
         "name": "Gemini 3.1 Pro",
-        "supports_thinking_level": True,
+        "thinking_levels": ["low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3.1-flash-lite",
         "name": "Gemini 3.1 Flash-Lite",
-        "supports_thinking_level": True,
+        "thinking_levels": ["minimal", "low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3-flash-preview",
         "name": "Gemini 3 Flash",
-        "supports_thinking_level": True,
+        "thinking_levels": ["minimal", "low", "medium", "high"],
         "supports_native_code_execution": True,
     },
     {
         "id": "gemini-2.5-pro",
         "name": "Gemini 2.5 Pro",
-        "supports_thinking_level": False,
+        "thinking_levels": [],
         "supports_native_code_execution": False,
     },
     {
         "id": "gemini-2.5-flash",
         "name": "Gemini 2.5 Flash",
-        "supports_thinking_level": False,
+        "thinking_levels": [],
         "supports_native_code_execution": False,
     },
     {
         "id": "gemini-2.5-flash-lite",
         "name": "Gemini 2.5 Flash-Lite",
-        "supports_thinking_level": False,
+        "thinking_levels": [],
         "supports_native_code_execution": False,
     },
 ]
 
 MODEL_VERSION_IDS = [model["id"] for model in GEMINI_MODELS]
 
-MODEL_VERSION_METADATA = {
-    model["id"]: {"name": model["name"]} for model in GEMINI_MODELS
+MODEL_THINKING_LEVELS = {
+    model["id"]: model["thinking_levels"] for model in GEMINI_MODELS
 }
 
-MODELS_SUPPORTING_THINKING_LEVEL = [
-    model["id"] for model in GEMINI_MODELS if model["supports_thinking_level"]
-]
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {model["id"]: {"name": model["name"]} for model in GEMINI_MODELS},
+    MODEL_THINKING_LEVELS,
+)
+
+MODELS_SUPPORTING_THINKING_LEVEL = models_supporting_reasoning(MODEL_THINKING_LEVELS)
 
 MODELS_SUPPORTING_NATIVE_CODE_EXECUTION = [
     model["id"] for model in GEMINI_MODELS if model["supports_native_code_execution"]
 ]
 
 MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
-    model["id"] for model in GEMINI_MODELS if not model["supports_thinking_level"]
+    model["id"] for model in GEMINI_MODELS if not model["thinking_levels"]
 ]
+
+THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high"]
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -303,14 +315,18 @@ class BlockManifest(WorkflowBlockManifest):
     thinking_level: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
-            Literal["low", "high"],
+            Literal[tuple(THINKING_LEVEL_VALUES)],
         ]
     ] = Field(
         default=None,
         description="Controls the depth of internal reasoning for Gemini 3+ models. "
-        "'low' minimizes latency and cost (best for simple tasks), 'high' maximizes reasoning depth. "
-        "When unset, the Google API default for the selected model is used. "
-        "Only supported by Gemini 3 and newer models.",
+        "'minimal' matches no-thinking for most queries, 'low' minimizes latency and cost, "
+        "'medium' balances both, 'high' maximizes reasoning depth. Supported values differ "
+        "per model (see the model dropdown): Gemini 3.1 Pro and Gemini 3.7 Flash have no "
+        "'minimal'; Gemini 3.1 Pro also cannot disable thinking. When unset, the Google "
+        "API default for the selected model is used (e.g. 'high' for Gemini 3.1 Pro, "
+        "'medium' for Gemini 3.5/3.6 Flash). "
+        "Not supported by the Gemini 2.5 series.",
         json_schema_extra={
             "relevant_for": {
                 "model_version": {
@@ -387,6 +403,12 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        validate_reasoning_level(
+            model=self.model_version,
+            level=self.thinking_level,
+            levels_by_model=MODEL_THINKING_LEVELS,
+            parameter="thinking_level",
+        )
         return self
 
     @classmethod
@@ -1060,6 +1082,12 @@ def prepare_generation_config(
     if max_tokens is not None:
         result["max_output_tokens"] = max_tokens
 
+    validate_reasoning_level(
+        model=model_version,
+        level=thinking_level,
+        levels_by_model=MODEL_THINKING_LEVELS,
+        parameter="thinking_level",
+    )
     supports_thinking_level = model_version in MODELS_SUPPORTING_THINKING_LEVEL
 
     if thinking_level is not None and supports_thinking_level:
