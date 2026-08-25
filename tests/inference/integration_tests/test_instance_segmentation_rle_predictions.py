@@ -6,14 +6,18 @@ import supervision as sv
 from numpy import ndarray
 from pycocotools import mask as mask_utils
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
+
 USE_INFERENCE_MODELS = os.getenv("USE_INFERENCE_MODELS", "false").lower() == "true"
 API_KEY = os.environ.get("API_KEY")
 PORT = os.environ.get("PORT", 9001)
 BASE_URL = os.environ.get("BASE_URL", "http://localhost")
 
 
-
-def test_v1_endpoint_with_valid_payload() -> None:
+def test_v1_endpoint_with_valid_payload(auth_mode: str) -> None:
     payload = {
         "image": {
             "type": "url",
@@ -21,11 +25,12 @@ def test_v1_endpoint_with_valid_payload() -> None:
         },
         "response_mask_format": "rle",
         "api_key": API_KEY,
-        "model_id": "yolov8n-seg-640"
+        "model_id": "yolov8n-seg-640",
     }
     response = requests.post(
         f"{BASE_URL}:{PORT}/infer/instance_segmentation",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
     response.raise_for_status()
     data = response.json()
@@ -46,7 +51,7 @@ def test_v1_endpoint_with_valid_payload() -> None:
         assert masks.shape[1:] == (1280, 720)
 
 
-def test_v1_endpoint_with_invalid_payload() -> None:
+def test_v1_endpoint_with_invalid_payload(auth_mode: str) -> None:
     payload = {
         "image": {
             "type": "url",
@@ -54,26 +59,30 @@ def test_v1_endpoint_with_invalid_payload() -> None:
         },
         "response_mask_format": "dummy",
         "api_key": API_KEY,
-        "model_id": "yolov8n-seg-640"
+        "model_id": "yolov8n-seg-640",
     }
 
     response = requests.post(
         f"{BASE_URL}:{PORT}/infer/instance_segmentation",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
 
     assert response.status_code == 422
 
 
-
-def test_legacy_endpoint_valid_payload() -> None:
+def test_legacy_endpoint_valid_payload(auth_mode: str) -> None:
     response = requests.post(
         f"{BASE_URL}:{PORT}/coco-dataset-vdnr1/2",
-        params={
-            "image": "https://media.roboflow.com/dog.jpeg",
-            "response_mask_format": "rle",
-            "api_key": API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": "https://media.roboflow.com/dog.jpeg",
+                "response_mask_format": "rle",
+                "api_key": API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
     response.raise_for_status()
     data = response.json()
@@ -92,36 +101,48 @@ def test_legacy_endpoint_valid_payload() -> None:
         assert masks.shape[1:] == (1280, 720)
 
 
-def test_legacy_endpoint_invalid_payload() -> None:
+def test_legacy_endpoint_invalid_payload(auth_mode: str) -> None:
     response = requests.post(
         f"{BASE_URL}:{PORT}/coco-dataset-vdnr1/2",
-        params={
-            "image": "https://media.roboflow.com/dog.jpeg",
-            "response_mask_format": "dummy",
-            "api_key": API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": "https://media.roboflow.com/dog.jpeg",
+                "response_mask_format": "dummy",
+                "api_key": API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
 
     assert response.status_code == 422
 
 
-def test_legacy_endpoint_both_masks_variants_comparison() -> None:
+def test_legacy_endpoint_both_masks_variants_comparison(auth_mode: str) -> None:
     response_rle = requests.post(
         f"{BASE_URL}:{PORT}/coco-dataset-vdnr1/2",
-        params={
-            "image": "https://media.roboflow.com/dog.jpeg",
-            "response_mask_format": "rle",
-            "api_key": API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": "https://media.roboflow.com/dog.jpeg",
+                "response_mask_format": "rle",
+                "api_key": API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
     response_rle.raise_for_status()
     rle_data = response_rle.json()
     response_polygon = requests.post(
         f"{BASE_URL}:{PORT}/coco-dataset-vdnr1/2",
-        params={
-            "image": "https://media.roboflow.com/dog.jpeg",
-            "api_key": API_KEY,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "image": "https://media.roboflow.com/dog.jpeg",
+                "api_key": API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
     response_polygon.raise_for_status()
     polygon_data = response_polygon.json()

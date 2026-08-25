@@ -33,7 +33,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     decide_prompt_vs_track,

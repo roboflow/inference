@@ -81,9 +81,12 @@ nav:
       - Vision-Language Models:
           - Florence-2: models/florence2.md
           - Gemma 4: models/gemma4.md
+          - Mage-VL: models/mage-vl.md
           - PaliGemma: models/paligemma.md
           - Qwen2.5-VL: models/qwen25vl.md
           - Qwen3-VL: models/qwen3vl.md
+          - Qwen3.5: models/qwen35.md
+          - Qwen3.8: models/qwen38.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
       - Embeddings:

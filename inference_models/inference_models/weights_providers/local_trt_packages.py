@@ -9,7 +9,7 @@ from typing import List, Optional, Union
 
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.model_cache_paths import (
-    generate_model_cache_root_candidates_for_model_id,
+    generate_model_cache_root_for_model_id,
     generate_models_cache_dir,
     generate_shared_blobs_path,
     resolve_existing_model_package_cache_path,
@@ -135,7 +135,6 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
             package_dir = resolve_existing_model_package_cache_path(
                 model_id=model_id,
                 package_id=package_id,
-                allow_unattributed_local_cache=True,
             )
             if package_dir is None:
                 continue
@@ -166,30 +165,15 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
 
 
 def _discover_local_trt_package_ids(model_id: str) -> List[str]:
-    """List package IDs from V2 and legacy V1 roots, de-duplicated in that order."""
+    """List package IDs under the model's cache root."""
 
-    models_cache_dir = generate_models_cache_dir()
-    resolved_models_cache_dir = os.path.realpath(models_cache_dir)
-    package_ids = []
-    seen_package_ids = set()
-    for cache_root in generate_model_cache_root_candidates_for_model_id(
-        model_id=model_id
-    ):
-        if os.path.islink(cache_root) or not os.path.isdir(cache_root):
-            continue
-        resolved_cache_root = os.path.realpath(cache_root)
-        if not resolved_cache_root.startswith(resolved_models_cache_dir + os.sep):
-            continue
-        try:
-            entries = sorted(os.listdir(cache_root))
-        except OSError:
-            continue
-        for package_id in entries:
-            if package_id in seen_package_ids:
-                continue
-            seen_package_ids.add(package_id)
-            package_ids.append(package_id)
-    return package_ids
+    cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
+    if os.path.islink(cache_root) or not os.path.isdir(cache_root):
+        return []
+    try:
+        return sorted(os.listdir(cache_root))
+    except OSError:
+        return []
 
 
 def _is_safe_local_trt_file_handle(handle: str) -> bool:

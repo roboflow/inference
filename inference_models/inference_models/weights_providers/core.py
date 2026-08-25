@@ -1,25 +1,24 @@
 from typing import Callable, Dict, Optional
 
-from inference_models.configuration import OFFLINE_MODE
 from inference_models.errors import ModelRetrievalError
 from inference_models.weights_providers.entities import ModelMetadata
 from inference_models.weights_providers.roboflow import get_roboflow_model
+from inference_models.weights_providers.roboflow_offline import (
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
+    get_roboflow_offline_weights,
+)
 
 ModelId = str
 ApiKey = Optional[str]
 WeightsProvider = Callable[[ModelId, ApiKey, ...], ModelMetadata]
 
-_BUILT_IN_NETWORK_WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
+WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
     "roboflow": get_roboflow_model,
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER: get_roboflow_offline_weights,
 }
-WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = (
-    _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS.copy()
+_RESERVED_WEIGHTS_PROVIDER_NAMES = frozenset(
+    {"roboflow", ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER}
 )
-
-
-def model_provider_requires_network(provider: str) -> bool:
-    """Return whether a registered provider is a built-in network handler."""
-    return provider in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
 
 
 def get_model_from_provider(
@@ -96,12 +95,6 @@ def get_model_from_provider(
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
     provider_handler = WEIGHTS_PROVIDERS[provider]
-    if OFFLINE_MODE and model_provider_requires_network(provider=provider):
-        raise ModelRetrievalError(
-            message=f"Cannot fetch model metadata from provider '{provider}' - "
-            f"OFFLINE_MODE is enabled. All models must be pre-cached locally.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
-        )
     return provider_handler(model_id, api_key, **kwargs)
 
 
@@ -198,8 +191,8 @@ def register_model_provider(
         or not provider_name.strip()
         or provider_name.casefold()
         in {
-            built_in_name.casefold()
-            for built_in_name in _BUILT_IN_NETWORK_WEIGHTS_PROVIDERS
+            reserved_name.casefold()
+            for reserved_name in _RESERVED_WEIGHTS_PROVIDER_NAMES
         }
     ):
         raise ValueError(
