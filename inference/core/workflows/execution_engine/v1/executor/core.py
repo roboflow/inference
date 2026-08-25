@@ -65,7 +65,6 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-from inference.usage_tracking.billable_scope import usage_billing_suppressed
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.stream_session import stream_session_id
 
@@ -355,7 +354,6 @@ def execute_steps(
     debug_collector = current_debug_collector.get()
     debug_trace = current_debug_trace.get()
     pipeline_stream_session_id = stream_session_id.get()
-    billing_suppressed = usage_billing_suppressed.get()
     # Capture OTel context so it can be re-attached inside worker threads
     otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
@@ -372,7 +370,6 @@ def execute_steps(
             debug_collector=debug_collector,
             debug_trace=debug_trace,
             pipeline_stream_session_id=pipeline_stream_session_id,
-            billing_suppressed=billing_suppressed,
             step_error_handler=step_error_handler,
             otel_ctx=otel_ctx,
         )
@@ -399,7 +396,6 @@ def safe_execute_step(
     debug_collector=None,
     debug_trace=None,
     pipeline_stream_session_id=None,
-    billing_suppressed: bool = False,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     otel_ctx=None,
 ) -> None:
@@ -415,7 +411,6 @@ def safe_execute_step(
     current_debug_collector.set(debug_collector)
     current_debug_trace.set(debug_trace)
     stream_session_id.set(pipeline_stream_session_id)
-    usage_billing_suppressed.set(billing_suppressed)
     step_name = get_last_chunk_of_selector(selector=step_selector)
     current_debug_step_name.set(step_name)
     # Re-attach OTel context in worker thread so trace propagation works.

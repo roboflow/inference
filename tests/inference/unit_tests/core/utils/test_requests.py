@@ -1,9 +1,12 @@
 import pytest
+from aiohttp import ClientResponseError, RequestInfo
 from requests import HTTPError, Response
+from yarl import URL
 
 from inference.core.utils.requests import (
     API_KEY_PATTERN,
     api_key_safe_raise_for_status,
+    api_key_safe_raise_for_status_aiohttp,
     deduct_api_key,
     deduct_api_key_from_string,
 )
@@ -87,6 +90,46 @@ def test_api_keysafe_raise_for_status_when_error_occurs(status_code: int) -> Non
     assert "https://some.com/endpoint?api_key=19***0s&param_2=some_value" in str(
         expected_error.value
     )
+
+
+def test_api_key_safe_raise_for_status_aiohttp_deducts_the_service_secret() -> None:
+    # given - the URL carries both the caller's api key and the server's own
+    # service secret; neither may leak into the raised error
+    class FakeAiohttpResponse:
+        def __init__(self, status: int, url: str) -> None:
+            self.status = status
+            self.request_info = RequestInfo(
+                url=URL(url),
+                method="GET",
+                headers={},  # type: ignore
+            )
+
+        def raise_for_status(self) -> None:
+            raise ClientResponseError(
+                request_info=self.request_info,
+                history=(),
+                status=self.status,
+                message="Internal Server Error",
+            )
+
+    response = FakeAiohttpResponse(
+        status=500,
+        url=(
+            "https://some.com/endpoint?api_key=19xjs9-XSXSAos0s"
+            "&service_secret=super-secret&param_2=some_value"
+        ),
+    )
+
+    # when
+    with pytest.raises(ClientResponseError) as expected_error:
+        api_key_safe_raise_for_status_aiohttp(response=response)
+
+    # then
+    assert "super-secret" not in str(expected_error.value)
+    assert "19xjs9-XSXSAos0s" not in str(expected_error.value)
+    assert "service_secret=***" in str(expected_error.value)
+    assert "api_key=19***0s" in str(expected_error.value)
+    assert "param_2=some_value" in str(expected_error.value)
 
 
 def test_deduct_api_key_from_string_redacts_url_embedded_key() -> None:
