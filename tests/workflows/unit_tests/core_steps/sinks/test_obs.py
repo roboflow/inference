@@ -851,3 +851,57 @@ def test_manifest_requires_keypoint_name_for_keypoint_action():
         )
 
     assert "keypoint_name" in str(error.value)
+
+
+def _pose_at(nose_x, nose_y):
+    det = sv.Detections(
+        xyxy=np.array([[200.0, 100.0, 400.0, 300.0]]),
+        confidence=np.array([0.9]),
+    )
+    det.data["keypoints_xy"] = np.array([[[nose_x, nose_y]]])
+    det.data["keypoints_class_name"] = np.array([["nose"]])
+    det.data["keypoints_confidence"] = np.array([[0.95]])
+    return det
+
+
+def _last_transform(client):
+    return [c for c in client.calls if c[0] == "set_scene_item_transform"][-1][1][2]
+
+
+def test_keypoint_smoothing_first_frame_snaps_to_target(fake_transform_obs):
+    block = _action_block()
+
+    block.run(**_keypoint_kwargs(predictions=_pose_at(300.0, 120.0), smoothing=0.8))
+
+    # no glide-in from anywhere: first sighting lands exactly on the keypoint
+    assert _last_transform(fake_transform_obs[0])["positionX"] == pytest.approx(900.0)
+
+
+def test_keypoint_smoothing_glides_toward_moved_target(fake_transform_obs):
+    block = _action_block()
+
+    block.run(**_keypoint_kwargs(predictions=_pose_at(300.0, 120.0), smoothing=0.5))
+    block.run(**_keypoint_kwargs(predictions=_pose_at(400.0, 120.0), smoothing=0.5))
+
+    # target jumped 900 -> 1200 on canvas; smoothing 0.5 lands halfway
+    assert _last_transform(fake_transform_obs[0])["positionX"] == pytest.approx(1050.0)
+
+
+def test_keypoint_smoothing_zero_follows_target_exactly(fake_transform_obs):
+    block = _action_block()
+
+    block.run(**_keypoint_kwargs(predictions=_pose_at(300.0, 120.0), smoothing=0))
+    block.run(**_keypoint_kwargs(predictions=_pose_at(400.0, 120.0), smoothing=0))
+
+    assert _last_transform(fake_transform_obs[0])["positionX"] == pytest.approx(1200.0)
+
+
+def test_keypoint_smoothing_resets_after_source_hidden(fake_transform_obs):
+    block = _action_block()
+
+    block.run(**_keypoint_kwargs(predictions=_pose_at(300.0, 120.0), smoothing=0.9))
+    block.run(**_keypoint_kwargs(predictions=sv.Detections.empty(), smoothing=0.9))
+    block.run(**_keypoint_kwargs(predictions=_pose_at(500.0, 200.0), smoothing=0.9))
+
+    # after hiding, the source snaps to the new detection instead of gliding from 900
+    assert _last_transform(fake_transform_obs[0])["positionX"] == pytest.approx(1500.0)

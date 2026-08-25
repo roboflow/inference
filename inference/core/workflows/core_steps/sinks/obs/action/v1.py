@@ -405,6 +405,20 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
+    smoothing: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.5,
+        description="For `move_source_to_keypoint`: exponential smoothing of the source's "
+        "position and size between frames. 0 follows the keypoint exactly (snappy but "
+        "jittery), values toward 0.95 glide more (smooth but laggy). The source snaps "
+        "directly to the first detection after being hidden, so smoothing never drags it "
+        "across the screen from a stale position.",
+        examples=[0.5, 0.8, 0],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
+            }
+        },
+    )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=0,
         description="Minimum number of seconds between two executions of this block. Leave at 0 "
@@ -525,6 +539,10 @@ class OBSActionBlockV1(WorkflowBlock):
         # Per-frame transforms would otherwise pay two lookup round trips per call.
         self._canvas_sizes: Dict[Tuple[str, int], Tuple[int, int]] = {}
         self._scene_item_ids: Dict[Tuple[str, int, str, str], int] = {}
+        # last smoothed (x, y, size) per pinned source, reset whenever it hides
+        self._smoothed_transforms: Dict[
+            Tuple[str, int, str, str], Tuple[float, float, float]
+        ] = {}
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -558,6 +576,7 @@ class OBSActionBlockV1(WorkflowBlock):
         keypoint_name: Optional[str] = None,
         size_scale: float = 0.4,
         keypoint_confidence: float = 0.2,
+        smoothing: float = 0.5,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -594,6 +613,7 @@ class OBSActionBlockV1(WorkflowBlock):
                 keypoint_name=keypoint_name,
                 size_scale=size_scale,
                 keypoint_confidence=keypoint_confidence,
+                smoothing=smoothing,
             )
         else:
             operation = partial(
@@ -682,6 +702,7 @@ class OBSActionBlockV1(WorkflowBlock):
         keypoint_name: Optional[str] = None,
         size_scale: float = 0.4,
         keypoint_confidence: float = 0.2,
+        smoothing: float = 0.5,
     ) -> Any:
         key = (connection["host"], connection["port"])
         bounds_type = self.BOUNDS_TYPE_BY_FIT[fit]
@@ -723,6 +744,7 @@ class OBSActionBlockV1(WorkflowBlock):
             return operation
 
         def hide_source(client: Any, reason: str) -> str:
+            self._smoothed_transforms.pop((*key, scene_name, source_name), None)
             if not hide_when_empty:
                 return f"{reason}; source '{source_name}' left unchanged"
             item_id = self._scene_item_id(client, key, scene_name, source_name)
@@ -767,15 +789,31 @@ class OBSActionBlockV1(WorkflowBlock):
                 scale_y = canvas_height / image_height
                 kp_x, kp_y = keypoints_xy[best][kp_index]
                 _, y_min, _, y_max = predictions.xyxy[best]
-                size = max(1.0, (y_max - y_min) * scale_y * size_scale)
+                target = (
+                    float(kp_x * scale_x),
+                    float(kp_y * scale_y),
+                    max(1.0, float(y_max - y_min) * scale_y * size_scale),
+                )
+                state_key = (*key, scene_name, source_name)
+                previous = self._smoothed_transforms.get(state_key)
+                factor = min(max(float(smoothing), 0.0), 0.95)
+                if previous is None or factor <= 0.0:
+                    kp_x_s, kp_y_s, size = target
+                else:
+                    step = 1.0 - factor
+                    kp_x_s, kp_y_s, size = (
+                        prev + step * (tgt - prev)
+                        for prev, tgt in zip(previous, target)
+                    )
+                self._smoothed_transforms[state_key] = (kp_x_s, kp_y_s, size)
                 item_id = self._scene_item_id(client, key, scene_name, source_name)
                 try:
                     client.set_scene_item_transform(
                         scene_name,
                         item_id,
                         {
-                            "positionX": float(kp_x * scale_x),
-                            "positionY": float(kp_y * scale_y),
+                            "positionX": kp_x_s,
+                            "positionY": kp_y_s,
                             "alignment": 0,  # centered on the keypoint
                             "boundsType": self.BOUNDS_TYPE_BY_FIT[fit],
                             "boundsAlignment": 0,
@@ -789,7 +827,7 @@ class OBSActionBlockV1(WorkflowBlock):
                     raise
                 return (
                     f"Pinned source '{source_name}' to keypoint '{keypoint_name}' at canvas "
-                    f"({kp_x * scale_x:.0f}, {kp_y * scale_y:.0f}) size {size:.0f}"
+                    f"({kp_x_s:.0f}, {kp_y_s:.0f}) size {size:.0f}"
                 )
 
             return operation
