@@ -12,6 +12,7 @@ from inference.core.exceptions import (
     RoboflowAPIUnsuccessfulRequestError,
 )
 from inference.core.workflows.core_steps.common.openrouter import (
+    OpenRouterResult,
     OpenRouterWorkflowBlockBase,
     _execute_direct_openrouter_request,
     _execute_proxied_openrouter_request,
@@ -100,7 +101,10 @@ def _stub_messages():
 def test_execute_openrouter_batch_routes_to_proxy_for_managed_key(
     mock_direct, mock_proxied
 ):
-    mock_proxied.side_effect = ["resp-1", "resp-2"]
+    mock_proxied.side_effect = [
+        OpenRouterResult(content="resp-1"),
+        OpenRouterResult(content="resp-2"),
+    ]
     block = _FakeBlock(model_manager=MagicMock(), api_key="rf-workspace-abc")
 
     out = block.execute_openrouter_batch(
@@ -138,7 +142,7 @@ def test_execute_openrouter_batch_routes_to_proxy_for_user_managed_key(
 ):
     """Both `rf_key:account` and `rf_key:user:<id>` route through the proxy.
     The platform decides whether to honor the user-stored variant."""
-    mock_proxied.side_effect = ["resp"]
+    mock_proxied.side_effect = [OpenRouterResult(content="resp")]
     block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
 
     block.execute_openrouter_batch(
@@ -165,7 +169,7 @@ def test_execute_openrouter_batch_routes_to_proxy_for_user_managed_key(
 def test_execute_openrouter_batch_routes_to_direct_for_user_key(
     mock_direct, mock_proxied
 ):
-    mock_direct.side_effect = ["direct-resp"]
+    mock_direct.side_effect = [OpenRouterResult(content="direct-resp")]
     block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
 
     out = block.execute_openrouter_batch(
@@ -205,7 +209,7 @@ def test_proxied_request_sends_expected_payload_to_roboflow(mock_post):
         privacy_level="deny",
     )
 
-    assert out == "hello world"
+    assert out == OpenRouterResult(content="hello world")
     mock_post.assert_called_once()
     call_kwargs = mock_post.call_args.kwargs
     assert call_kwargs["endpoint"] == "apiproxy/openrouter"
@@ -240,12 +244,12 @@ def test_proxied_request_raises_when_choices_empty(mock_post):
 
 
 # ---------------------------------------------------------------------------
-# include_reasoning: reasoning-trace extraction
+# OpenRouterResult: reasoning-trace and usage extraction
 # ---------------------------------------------------------------------------
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_returns_reasoning_trace_when_requested(mock_post):
+def test_proxied_request_populates_reasoning_trace(mock_post):
     mock_post.return_value = {
         "choices": [{"message": {"content": "answer", "reasoning": "trace"}}]
     }
@@ -258,10 +262,9 @@ def test_proxied_request_returns_reasoning_trace_when_requested(mock_post):
         max_tokens=10,
         temperature=None,
         privacy_level="deny",
-        include_reasoning=True,
     )
 
-    assert out == ("answer", "trace")
+    assert out == OpenRouterResult(content="answer", reasoning_trace="trace")
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
@@ -270,7 +273,8 @@ def test_direct_request_returns_empty_trace_when_reasoning_missing(mock_openai_c
     response = MagicMock()
     choice = MagicMock()
     choice.message.content = "answer"
-    # MagicMock auto-creates attributes; a non-str `reasoning` must map to "".
+    # MagicMock auto-creates attributes; a non-str `reasoning` must map to ""
+    # and non-int usage fields to None.
     response.choices = [choice]
     client.chat.completions.create.return_value = response
     mock_openai_cls.return_value = client
@@ -282,10 +286,60 @@ def test_direct_request_returns_empty_trace_when_reasoning_missing(mock_openai_c
         max_tokens=10,
         temperature=None,
         privacy_level="deny",
-        include_reasoning=True,
     )
 
-    assert out == ("answer", "")
+    assert out == OpenRouterResult(content="answer")
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_returns_usage_and_none_when_omitted(mock_post):
+    def call():
+        return _execute_proxied_openrouter_request(
+            roboflow_api_key="k",
+            openrouter_api_key="rf_key:account",
+            model="qwen/qwen3.7-plus",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=10,
+            temperature=None,
+            privacy_level="deny",
+        )
+
+    mock_post.return_value = {
+        "choices": [{"message": {"content": "answer"}}],
+        "usage": {"prompt_tokens": 11, "completion_tokens": 7},
+    }
+    assert call() == OpenRouterResult(
+        content="answer", input_tokens=11, output_tokens=7
+    )
+
+    mock_post.return_value = {"choices": [{"message": {"content": "answer"}}]}
+    assert call() == OpenRouterResult(content="answer")
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_returns_trace_and_usage(mock_openai_cls):
+    client = MagicMock()
+    response = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "answer"
+    choice.message.reasoning = "trace"
+    response.choices = [choice]
+    response.usage = MagicMock(prompt_tokens=9, completion_tokens=4)
+    client.chat.completions.create.return_value = response
+    mock_openai_cls.return_value = client
+
+    out = _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="qwen/qwen3.7-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=None,
+        privacy_level="deny",
+    )
+
+    assert out == OpenRouterResult(
+        content="answer", reasoning_trace="trace", input_tokens=9, output_tokens=4
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +577,7 @@ def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_
         reasoning={"enabled": False},
     )
 
-    assert out == "ok"
+    assert out == OpenRouterResult(content="ok")
     assert mock_post.call_count == 2
     assert "reasoning" in mock_post.call_args_list[0].kwargs["payload"]
     assert "reasoning" not in mock_post.call_args_list[1].kwargs["payload"]
@@ -591,7 +645,7 @@ def test_direct_request_retries_without_reasoning_on_rejection(
         reasoning={"effort": "low"},
     )
 
-    assert out == "ok"
+    assert out == OpenRouterResult(content="ok")
     assert client.chat.completions.create.call_count == 2
     first_extra = client.chat.completions.create.call_args_list[0].kwargs["extra_body"]
     second_extra = client.chat.completions.create.call_args_list[1].kwargs["extra_body"]
@@ -609,7 +663,7 @@ def test_direct_request_retries_without_reasoning_on_rejection(
     "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
 )
 def test_execute_openrouter_batch_forwards_reasoning_on_managed_key(mock_proxied):
-    mock_proxied.side_effect = ["resp"]
+    mock_proxied.side_effect = [OpenRouterResult(content="resp")]
     block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
 
     block.execute_openrouter_batch(
@@ -624,6 +678,38 @@ def test_execute_openrouter_batch_forwards_reasoning_on_managed_key(mock_proxied
     )
 
     assert mock_proxied.call_args.kwargs["reasoning"] == {"enabled": False}
+
+
+# ---------------------------------------------------------------------------
+# batch result shapes: legacy conversion vs. with_usage
+# ---------------------------------------------------------------------------
+
+
+@patch(
+    "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
+)
+def test_execute_openrouter_batch_legacy_shapes_and_with_usage(mock_proxied):
+    """Legacy method keeps its shipped shapes; with_usage exposes full results."""
+    rich = OpenRouterResult(
+        content="answer", reasoning_trace="trace", input_tokens=11, output_tokens=7
+    )
+    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
+    kwargs = {
+        "openrouter_api_key": "rf_key:account",
+        "model": "qwen/qwen3.7-plus",
+        "prompts": [[{"role": "user", "content": "hi"}]],
+        "max_tokens": 50,
+        "temperature": None,
+        "privacy_level": "deny",
+        "max_concurrent_requests": 1,
+    }
+
+    mock_proxied.return_value = rich
+    assert block.execute_openrouter_batch(**kwargs) == ["answer"]
+    assert block.execute_openrouter_batch(**kwargs, include_reasoning=True) == [
+        ("answer", "trace")
+    ]
+    assert block.execute_openrouter_batch_with_usage(**kwargs) == [rich]
 
 
 # ---------------------------------------------------------------------------
@@ -669,3 +755,22 @@ def test_validate_task_type_ocr_passes_with_no_extra_fields():
         classes=None,
         output_structure=None,
     )
+
+
+@pytest.mark.parametrize(
+    "effort, expected",
+    [
+        (None, None),
+        ("none", {"enabled": False}),
+        ("low", {"effort": "low"}),
+        ("medium", {"effort": "medium"}),
+        ("high", {"effort": "high"}),
+        ("xhigh", {"effort": "xhigh"}),
+    ],
+)
+def test_build_openrouter_reasoning_config(effort, expected):
+    from inference.core.workflows.core_steps.common.reasoning import (
+        build_openrouter_reasoning_config,
+    )
+
+    assert build_openrouter_reasoning_config(effort) == expected
