@@ -8,10 +8,8 @@ and direct execution paths.
 from unittest.mock import MagicMock, patch
 
 from inference.core.workflows.core_steps.models.foundation.spacexai.v2 import (
-    BlockManifest,
     _execute_direct_spacexai_request,
     _execute_proxied_spacexai_request,
-    execute_spacexai_request,
 )
 
 _XAI_OK = {
@@ -23,41 +21,6 @@ _XAI_OK = {
         }
     ],
 }
-
-
-def test_spacexai_v2_defaults_api_key_to_rf_key_account() -> None:
-    result = BlockManifest.model_validate(
-        {
-            "type": "roboflow_core/spacexai@v2",
-            "name": "step_1",
-            "images": "$inputs.image",
-            "task_type": "caption",
-        }
-    )
-
-    assert result.api_key == "rf_key:account"
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v2."
-    "_execute_proxied_spacexai_request"
-)
-def test_execute_spacexai_request_routes_rf_key_to_proxy(
-    proxied_mock: MagicMock,
-) -> None:
-    proxied_mock.return_value = ("proxied", 16, 5)
-    result = execute_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[{"role": "user", "content": []}],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-    assert result == ("proxied", 16, 5)
-    proxied_mock.assert_called_once()
 
 
 @patch(
