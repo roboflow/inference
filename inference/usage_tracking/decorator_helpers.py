@@ -91,6 +91,101 @@ def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
 
 
+def _get_available_gpu_devices() -> List[str]:
+    """Slugged GPU names from inference-models runtime introspection.
+
+    ``get_available_gpu_devices`` lowercases and hyphenates
+    ``torch.cuda.get_device_name`` (e.g. ``NVIDIA H100 80GB`` →
+    ``nvidia-h100-80gb``). Missing inference-models or a failed probe
+    yields an empty list so usage tracking never fails the inference call.
+    """
+    try:
+        from inference_models.runtime_introspection.core import (
+            get_available_gpu_devices,
+        )
+    except ImportError:
+        return []
+
+    try:
+        gpu_devices = get_available_gpu_devices()
+    except Exception as exc:
+        logger.debug("Could not identify GPU devices for usage tracking: %s", exc)
+        return []
+
+    return list(gpu_devices)
+
+
+def _iter_model_devices(model: Any):
+    if model is None:
+        return
+
+    for owner in (model, getattr(model, "_model", None)):
+        if owner is None:
+            continue
+        for attr in ("_device", "device"):
+            device = getattr(owner, attr, None)
+            if device is not None:
+                yield device
+
+
+def _is_host_device(device: Any) -> bool:
+    device_type = getattr(device, "type", None)
+    if device_type in {"cpu", "mps"}:
+        return True
+
+    if not isinstance(device, str):
+        return False
+
+    lowered = device.strip().lower()
+    return lowered in {"cpu", "mps"} or lowered.startswith(("cpu:", "mps:"))
+
+
+def _cuda_index_from_device(device: Any) -> Optional[int]:
+    device_type = getattr(device, "type", None)
+    if device_type == "cuda":
+        index = getattr(device, "index", None)
+        if index is None:
+            return 0
+        return int(index)
+
+    if not isinstance(device, str):
+        return None
+
+    lowered = device.strip().lower()
+    if lowered == "cuda":
+        return 0
+    if not lowered.startswith("cuda:"):
+        return None
+
+    try:
+        return int(lowered.split(":", 1)[1])
+    except ValueError:
+        return 0
+
+
+def _resolve_model_gpu_type(model: Any) -> Optional[str]:
+    try:
+        gpu_devices = _get_available_gpu_devices()
+        if not gpu_devices:
+            return None
+
+        for device in _iter_model_devices(model):
+            if _is_host_device(device):
+                return None
+
+            cuda_index = _cuda_index_from_device(device)
+            if cuda_index is None:
+                continue
+            if 0 <= cuda_index < len(gpu_devices):
+                return gpu_devices[cuda_index]
+            return gpu_devices[0]
+
+        return gpu_devices[0]
+    except Exception as exc:
+        logger.debug("Could not identify GPU type for usage tracking: %s", exc)
+        return None
+
+
 def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -106,6 +201,9 @@ def get_model_resource_details_from_kwargs(
     model_type = get_model_type_from_kwargs(func_kwargs)
     if model_type:
         resource_details["model_type"] = model_type
+    gpu_type = _resolve_model_gpu_type(func_kwargs.get("self"))
+    if gpu_type:
+        resource_details["gpu_type"] = gpu_type
     return resource_details
 
 

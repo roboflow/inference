@@ -6,6 +6,7 @@ from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
     get_model_id_from_kwargs,
+    get_model_resource_details_from_kwargs,
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
 )
@@ -100,6 +101,196 @@ def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threa
     assert usage_params["resource_details"]["billable"] is True
     assert usage_params["resource_details"]["source_info"] == "async-serverless-gpu"
     assert usage_params["resource_details"]["execution_mode"] == SAM3_EXEC_MODE
+
+
+def test_get_model_resource_details_slugs_torch_device_name(monkeypatch):
+    from inference_models.runtime_introspection.core import get_available_gpu_devices
+    import inference_models.runtime_introspection.core as runtime_core
+
+    torch_mock = mock.MagicMock()
+    torch_mock.cuda.device_count.return_value = 1
+    torch_mock.cuda.get_device_name.return_value = "NVIDIA H100 80GB"
+    monkeypatch.setattr(runtime_core, "torch", torch_mock)
+    get_available_gpu_devices.cache_clear()
+    try:
+        result = get_model_resource_details_from_kwargs({"self": SimpleNamespace()})
+    finally:
+        get_available_gpu_devices.cache_clear()
+
+    assert result["gpu_type"] == "nvidia-h100-80gb"
+
+
+def test_get_model_resource_details_includes_gpu_type(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb", "nvidia-l4"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {"self": SimpleNamespace(task_type="object-detection", model_type="yolov8n")}
+    )
+
+    assert result["gpu_type"] == "nvidia-h100-80gb"
+
+
+def test_get_model_resource_details_omits_gpu_type_when_no_gpu(monkeypatch):
+    monkeypatch.setattr(decorator_helpers, "_get_available_gpu_devices", lambda: [])
+
+    result = get_model_resource_details_from_kwargs(
+        {"self": SimpleNamespace(task_type="object-detection", model_type="yolov8n")}
+    )
+
+    assert "gpu_type" not in result
+
+
+def test_get_model_resource_details_uses_model_cuda_device_index(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-l4", "nvidia-h100-80gb"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                _device=SimpleNamespace(type="cuda", index=1),
+            )
+        }
+    )
+
+    assert result["gpu_type"] == "nvidia-h100-80gb"
+
+
+def test_get_model_resource_details_uses_inner_model_device(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["tesla-t4", "nvidia-h100-80gb"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                _model=SimpleNamespace(device="cuda:1"),
+            )
+        }
+    )
+
+    assert result["gpu_type"] == "nvidia-h100-80gb"
+
+
+def test_get_model_resource_details_omits_gpu_type_when_model_on_cpu(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                device="cpu",
+            )
+        }
+    )
+
+    assert "gpu_type" not in result
+
+
+def test_get_model_resource_details_omits_gpu_type_when_probe_fails(monkeypatch):
+    def _raise():
+        raise RuntimeError("cuda unavailable")
+
+    monkeypatch.setattr(decorator_helpers, "_get_available_gpu_devices", _raise)
+
+    result = get_model_resource_details_from_kwargs(
+        {"self": SimpleNamespace(task_type="object-detection", model_type="yolov8n")}
+    )
+
+    assert "gpu_type" not in result
+    assert result["model_type"] == "yolov8n"
+
+
+def test_extract_usage_params_for_model_includes_gpu_type(
+    usage_collector_with_mocked_threads,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb"],
+    )
+
+    class CachedModel:
+        api_key = "test_key"
+        dataset_id = "coco"
+        version_id = "1"
+        task_type = "object-detection"
+        model_type = "yolov8n"
+        device = "cuda:0"
+
+        def infer(self, image, **kwargs): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.1,
+            func=CachedModel.infer,
+            category="model",
+            error_details=None,
+            args=(CachedModel(), object()),
+            kwargs={},
+        )
+    )
+
+    assert usage_params["resource_details"]["gpu_type"] == "nvidia-h100-80gb"
+
+
+def test_extract_usage_params_for_request_omits_gpu_type(
+    usage_collector_with_mocked_threads,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb"],
+    )
+
+    def handler(inference_request, request): ...
+
+    usage_params = (
+        usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
+            usage_fps=0,
+            usage_api_key="",
+            usage_workflow_id="",
+            usage_workflow_preview=False,
+            usage_inference_test_run=False,
+            usage_billable=True,
+            execution_duration=0.1,
+            func=handler,
+            category="request",
+            error_details=None,
+            args=(
+                SimpleNamespace(api_key="test_key", model_id="coco/1"),
+                SimpleNamespace(),
+            ),
+            kwargs={},
+        )
+    )
+
+    assert "gpu_type" not in usage_params["resource_details"]
 
 
 def test_extract_usage_params_for_sam3_model_uses_current_request_identity(
