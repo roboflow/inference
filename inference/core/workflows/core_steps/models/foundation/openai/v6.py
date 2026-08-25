@@ -67,11 +67,7 @@ STRUCTURED_ABSOLUTE_STYLE = "structured-absolute"
 NORMALIZED_LEGACY_STYLE = "normalized-legacy"
 PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 
-# Per-model reasoning_effort values follow the official OpenAI docs:
-# https://developers.openai.com/api/docs/guides/reasoning (per-generation sets)
-# https://developers.openai.com/api/docs/models/gpt-5.6-sol (5.6 adds `max`)
-# The GPT-5.6 rows assume Terra/Luna match Sol, as the docs describe the set
-# family-wide ("GPT-5.6 models").
+# GPT-5.6 Terra/Luna assumed to match Sol's `max` (docs describe the set family-wide).
 OPENAI_MODELS = [
     {
         "id": "gpt-5.6-sol",

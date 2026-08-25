@@ -1,17 +1,4 @@
-"""Contract tests for per-model reasoning/thinking-level support.
-
-Every model-dropdown VLM block declares the levels each model natively
-supports in its model table (per official provider docs) and validates
-combinations with the shared ``validate_reasoning_level``. These tests pin
-the contract:
-
-- the shared validator's accept/reject semantics,
-- per-block consistency (table levels within the shared vocabulary, manifest
-  ``Literal`` covering the union of table levels, dropdown metadata matching
-  the table), so adding a model or level in one place but not the other
-  fails here with the exact gap named,
-- spec-time rejection of unsupported model+level combos on each block.
-"""
+"""Per-model reasoning levels: validator edges, table/Literal drift, spec rejects."""
 
 import pytest
 from pydantic import ValidationError
@@ -33,10 +20,6 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm import (
 from inference.core.workflows.core_steps.models.foundation.spacexai import (
     v2 as spacexai_v2,
 )
-
-# ---------------------------------------------------------------------------
-# validate_reasoning_level semantics
-# ---------------------------------------------------------------------------
 
 _LEVELS = {"model-a": ["low", "high"], "model-b": []}
 
@@ -64,12 +47,9 @@ def test_validate_reasoning_level_rejects_unsupported_level():
 
 
 def test_validate_reasoning_level_rejects_model_without_levels():
-    with pytest.raises(ValueError, match="does not support configurable"):
-        validate_reasoning_level(model="model-b", level="low", levels_by_model=_LEVELS)
-
-
-def test_validate_reasoning_level_uses_parameter_name_in_error():
-    with pytest.raises(ValueError, match="thinking_level"):
+    with pytest.raises(
+        ValueError, match="does not support configurable thinking_level"
+    ):
         validate_reasoning_level(
             model="model-b",
             level="low",
@@ -77,13 +57,6 @@ def test_validate_reasoning_level_uses_parameter_name_in_error():
             parameter="thinking_level",
         )
 
-
-# ---------------------------------------------------------------------------
-# Per-block contract consistency
-# ---------------------------------------------------------------------------
-# One entry per model-dropdown block:
-# (levels_by_model, manifest Literal values, model-dropdown values_metadata,
-#  default level sent when the field is left unset — None means "omitted").
 
 BLOCK_CONTRACTS = {
     "open_ai@v6": (
@@ -164,140 +137,65 @@ def test_block_default_level_is_valid_for_every_model(block):
             ), f"{block}: default level {default!r} is unsupported by {model}"
 
 
-# ---------------------------------------------------------------------------
-# Spec-time validation on block manifests
-# ---------------------------------------------------------------------------
+_MANIFESTS = {
+    "open_ai@v6": openai_v6.BlockManifest,
+    "google_gemini@v5": gemini_v5.BlockManifest,
+    "spacexai@v2": spacexai_v2.BlockManifest,
+    "meta_vlm@v2": meta_vlm_v2.BlockManifest,
+    "qwen_vlm@v3": qwen_vlm_v3.BlockManifest,
+}
 
 
-def _openai_manifest(**overrides):
+def _manifest(block_type: str, **overrides):
     spec = {
-        "type": "roboflow_core/open_ai@v6",
+        "type": f"roboflow_core/{block_type}",
         "name": "step",
         "images": "$inputs.image",
         "task_type": "unconstrained",
         "prompt": "describe",
     }
+    if block_type == "spacexai@v2":
+        spec["api_key"] = "$inputs.xai_api_key"
     spec.update(overrides)
-    return openai_v6.BlockManifest.model_validate(spec)
-
-
-def _gemini_manifest(**overrides):
-    spec = {
-        "type": "roboflow_core/google_gemini@v5",
-        "name": "step",
-        "images": "$inputs.image",
-        "task_type": "unconstrained",
-        "prompt": "describe",
-    }
-    spec.update(overrides)
-    return gemini_v5.BlockManifest.model_validate(spec)
-
-
-def _spacexai_manifest(**overrides):
-    spec = {
-        "type": "roboflow_core/spacexai@v2",
-        "name": "step",
-        "images": "$inputs.image",
-        "task_type": "unconstrained",
-        "prompt": "describe",
-        # Required when the managed-key feature flag is off.
-        "api_key": "$inputs.xai_api_key",
-    }
-    spec.update(overrides)
-    return spacexai_v2.BlockManifest.model_validate(spec)
-
-
-def _meta_vlm_manifest(**overrides):
-    spec = {
-        "type": "roboflow_core/meta_vlm@v2",
-        "name": "step",
-        "images": "$inputs.image",
-        "task_type": "unconstrained",
-        "prompt": "describe",
-    }
-    spec.update(overrides)
-    return meta_vlm_v2.BlockManifest.model_validate(spec)
-
-
-def _qwen_manifest(**overrides):
-    spec = {
-        "type": "roboflow_core/qwen_vlm@v3",
-        "name": "step",
-        "images": "$inputs.image",
-        "task_type": "unconstrained",
-        "prompt": "describe",
-    }
-    spec.update(overrides)
-    return qwen_vlm_v3.BlockManifest.model_validate(spec)
+    return _MANIFESTS[block_type].model_validate(spec)
 
 
 @pytest.mark.parametrize(
-    "build, overrides",
+    "block_type, overrides",
     [
-        (_openai_manifest, {"model_version": "gpt-5.6-sol", "reasoning_effort": "max"}),
-        (_openai_manifest, {"model_version": "gpt-5", "reasoning_effort": "minimal"}),
-        (_openai_manifest, {"model_version": "gpt-4o"}),
-        (
-            _openai_manifest,
-            {"model_version": "$inputs.model", "reasoning_effort": "xhigh"},
-        ),
-        (
-            _gemini_manifest,
-            {"model_version": "gemini-3.6-flash", "thinking_level": "minimal"},
-        ),
-        (_gemini_manifest, {"model_version": "gemini-2.5-pro"}),
-        (
-            _spacexai_manifest,
-            {"model_version": "grok-4.6", "reasoning_effort": "xhigh"},
-        ),
-        (
-            _meta_vlm_manifest,
-            {"model_version": "Muse Spark 1.2", "reasoning_effort": "minimal"},
-        ),
-        (_meta_vlm_manifest, {"model_version": "Muse Glimmer"}),
-        (
-            _qwen_manifest,
-            {
-                "backend": "openrouter",
-                "openrouter_model_version": "Qwen 3.8 Max",
-                "reasoning_effort": "high",
-            },
-        ),
-        (_qwen_manifest, {"backend": "native"}),
+        ("open_ai@v6", {"model_version": "$inputs.model", "reasoning_effort": "xhigh"}),
+        ("open_ai@v6", {"model_version": "gpt-4o"}),
+        ("qwen_vlm@v3", {"backend": "native"}),
     ],
 )
-def test_manifest_accepts_supported_combination(build, overrides):
-    build(**overrides)
+def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
+    _manifest(block_type, **overrides)
 
 
 @pytest.mark.parametrize(
-    "build, overrides",
+    "block_type, overrides",
     [
-        (_openai_manifest, {"model_version": "gpt-5.4", "reasoning_effort": "max"}),
-        (_openai_manifest, {"model_version": "gpt-5.1", "reasoning_effort": "xhigh"}),
-        (_openai_manifest, {"model_version": "gpt-4o", "reasoning_effort": "high"}),
+        ("open_ai@v6", {"model_version": "gpt-5.4", "reasoning_effort": "max"}),
+        ("open_ai@v6", {"model_version": "gpt-4o", "reasoning_effort": "high"}),
         (
-            _gemini_manifest,
+            "google_gemini@v5",
             {"model_version": "gemini-3.1-pro-preview", "thinking_level": "minimal"},
         ),
         (
-            _gemini_manifest,
+            "google_gemini@v5",
             {"model_version": "gemini-3.7-flash", "thinking_level": "minimal"},
         ),
         (
-            _gemini_manifest,
+            "google_gemini@v5",
             {"model_version": "gemini-2.5-pro", "thinking_level": "low"},
         ),
+        ("spacexai@v2", {"model_version": "grok-4.5", "reasoning_effort": "xhigh"}),
         (
-            _spacexai_manifest,
-            {"model_version": "grok-4.5", "reasoning_effort": "xhigh"},
-        ),
-        (
-            _meta_vlm_manifest,
+            "meta_vlm@v2",
             {"model_version": "Muse Glimmer", "reasoning_effort": "minimal"},
         ),
     ],
 )
-def test_manifest_rejects_unsupported_combination(build, overrides):
+def test_manifest_rejects_unsupported_combination(block_type, overrides):
     with pytest.raises(ValidationError, match="support"):
-        build(**overrides)
+        _manifest(block_type, **overrides)

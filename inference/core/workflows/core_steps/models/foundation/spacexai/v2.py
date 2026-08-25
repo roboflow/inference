@@ -65,11 +65,7 @@ from inference.core.workflows.prototypes.block import (
 
 XAI_BASE_URL = "https://api.x.ai/v1"
 
-# Per-model reasoning_effort values follow the official xAI docs:
-# https://docs.x.ai/developers/model-capabilities/text/reasoning
-# Both models default to "high" and cannot disable reasoning. xAI silently
-# treats "xhigh" as "high" on grok-4.5, so we exclude it there rather than
-# offer a level that does nothing.
+# grok-4.5 `xhigh` excluded: xAI silently downgrades it to `high`.
 GROK_MODELS = [
     {
         "id": "grok-4.6",

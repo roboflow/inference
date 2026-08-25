@@ -59,16 +59,8 @@ MODEL_ALIASES = {
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
 }
 
-# Per-model thinking_level values follow the official Gemini docs:
-# https://ai.google.dev/gemini-api/docs/thinking (per-model level table)
-# https://ai.google.dev/gemini-api/docs/gemini-3 (Gemini 3 defaults)
-# Notable: Gemini 3.1 Pro has no `minimal` and cannot disable thinking.
-# gemini-3.7-flash is not yet in Google's table; the API was probed live
-# (2026-08-25) and rejects `minimal` with "Thinking level MINIMAL is not
-# supported for this model", while low/medium/high succeed. The Gemini 2.5
-# series keeps an empty set: Google's pages are contradictory about 2.5
-# (`thinking_level` listed in one table, but the thinking guide says 2.5 only
-# supports the legacy `thinking_budget`), so we stay on the conservative side.
+# 3.7-flash probed 2026-08-25: API rejects `minimal`. 2.5 pages contradict
+# (`thinking_level` vs `thinking_budget` only); we keep 2.5 unsupported.
 GEMINI_MODELS = [
     {
         "id": "gemini-3.7-flash",

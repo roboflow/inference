@@ -62,11 +62,7 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# Per-model reasoning_effort values follow the official Meta docs:
-# https://dev.meta.ai/docs/features/reasoning (Muse Spark: minimal..xhigh,
-# "none" returns HTTP 400)
-# https://huggingface.co/meta-models/Muse-Glimmer-30B (Glimmer reasoning
-# strength: low..xhigh, no minimal)
+# Spark `none` is HTTP 400. Glimmer has no `minimal`.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "Muse Spark 1.1": {
         "model_id": "meta/muse-spark-1.1",

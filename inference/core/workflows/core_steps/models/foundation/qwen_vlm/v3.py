@@ -294,15 +294,9 @@ REASONING_EFFORT_METADATA = {
     },
 }
 
-# Per-variant reasoning levels. All OpenRouter-hosted variants expose the
-# block's full effort set: OpenRouter normalizes the value to the nearest
-# level each model natively supports
-# (https://openrouter.ai/docs/guides/best-practices/reasoning-tokens), and
-# "none" falls back to low effort on reasoning-required variants (Qwen 3.8
-# Max, the VL Thinking editions). Native variants have no effort knob —
-# Qwen3.5-VL uses the boolean `enable_thinking` instead. A variant row can
-# override with an explicit "reasoning_levels" key if a future model
-# diverges from its backend's default set.
+# OpenRouter variants use the shared set (OpenRouter normalizes). Native
+# variants have no effort knob. Override a row with `reasoning_levels` if
+# a future model diverges.
 MODEL_REASONING_LEVELS = {
     label: variant.get(
         "reasoning_levels",
