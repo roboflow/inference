@@ -1,12 +1,20 @@
 """Megapixel bucketing for model usage telemetry.
 
-Buckets prefer a configured fixed input (including HuggingFace processor /
-vision-config size), then the observed preprocess tensor (including
-``pixel_values``), then native ``image_dims``. That last fallback is a cost
-proxy for models whose tensor is not spatial (Qwen-style patch tokens):
-larger uploads produce more patches and take longer. ``unknown`` is only used
-when none of those sources are available. Bucket maps are merge-friendly
-sums; averages are derived downstream.
+Buckets are keyed on the size of the image the caller sent, measured before any
+resize, so a bucket describes the work a request asked for rather than the
+shape the model happens to run at. Model input size is deliberately not used
+here. ``unknown`` covers calls whose native size is not recoverable, which
+keeps the sum of bucket frames equal to the row's processed frames. Bucket maps
+are merge-friendly sums; averages are derived downstream.
+
+Preprocess records that size under one of four conventions, all read here:
+``img_dims``, a per-image sequence of (height, width), from core Roboflow
+models; ``image_dims``, a single (width, height) pair, from the VLM and depth
+families; a per-image sequence of records carrying ``original_size``, from the
+``inference_models`` detection, segmentation and keypoint adapters; and a bare
+per-image sequence of (height, width), from the ``inference_models``
+classification adapter. A batch is attributed to its first image, since a call
+reports one bucket.
 
 Bucket ``execution_duration`` is the model's predict phase alone, excluding
 pre- and post-processing, for entrypoints that separate the phases. Everything
@@ -17,7 +25,7 @@ override ``infer()`` wholesale, the SAM ``infer_from_request`` entrypoints, and
 any call whose ``predict()`` defers its work. Timing of that phase lives in
 :mod:`inference.usage_tracking.predict_timing`.
 
-The measured input size is published through :class:`~contextvars.ContextVar`
+The measured image size is published through :class:`~contextvars.ContextVar`
 rather than an attribute on the model. Model instances are shared across the
 server's worker threads, so an attribute would let one request overwrite the
 measurement of another request that is still running.
@@ -25,7 +33,6 @@ measurement of another request that is still running.
 
 from __future__ import annotations
 
-import json
 from contextvars import ContextVar
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -47,10 +54,10 @@ _MEGAPIXEL_BUCKET_OVERFLOW = "8+"
 # can always reconcile the two.
 MEGAPIXEL_BUCKET_UNKNOWN = "unknown"
 
-MeasuredModelInput = Tuple[Optional[Tuple[int, int]], Optional[int]]
+MeasuredImageInput = Tuple[Optional[Tuple[int, int]], Optional[int]]
 
-_measured_model_input: ContextVar[Optional[MeasuredModelInput]] = ContextVar(
-    "usage_measured_model_input",
+_measured_image_input: ContextVar[Optional[MeasuredImageInput]] = ContextVar(
+    "usage_measured_image_input",
     default=None,
 )
 
@@ -101,139 +108,6 @@ def _as_positive_int(value: Any) -> Optional[int]:
     return parsed
 
 
-def _image_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
-    """Normalize an ``image_size``-style attribute to (height, width).
-
-    Backends express it either as a single edge length for square inputs or as
-    an explicit (height, width) pair.
-    """
-    if isinstance(value, (tuple, list)):
-        if len(value) != 2:
-            return None
-        height = _as_positive_int(value[0])
-        width = _as_positive_int(value[1])
-        if height is None or width is None:
-            return None
-        return height, width
-    size = _as_positive_int(value)
-    if size is None:
-        return None
-    return size, size
-
-
-def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
-    """Return (height, width) when the model has a fixed numeric input size."""
-    height = _as_positive_int(getattr(model, "img_size_h", None))
-    width = _as_positive_int(getattr(model, "img_size_w", None))
-    if height is not None and width is not None:
-        return height, width
-
-    for attr in ("image_size", "img_size"):
-        size = _image_size_to_hw(getattr(model, attr, None))
-        if size is not None:
-            return size
-
-    # Adapters wrap backends that expose image_size / _image_size.
-    for attr in ("_model", "sam", "sam_model", "owlv2"):
-        inner = getattr(model, attr, None)
-        if inner is None:
-            continue
-        for size_attr in ("image_size", "_image_size", "img_size"):
-            size = _image_size_to_hw(getattr(inner, size_attr, None))
-            if size is not None:
-                return size
-        nested = getattr(inner, "_model", None)
-        if nested is not None:
-            for size_attr in ("image_size", "_image_size", "img_size"):
-                size = _image_size_to_hw(getattr(nested, size_attr, None))
-                if size is not None:
-                    return size
-
-    environment = getattr(model, "environment", None)
-    if isinstance(environment, dict):
-        resolution = environment.get("RESOLUTION")
-        if isinstance(resolution, (list, tuple)) and resolution:
-            resolution = resolution[0]
-        resolution = _as_positive_int(resolution)
-        if resolution is not None:
-            return resolution, resolution
-
-        preproc = environment.get("PREPROCESSING")
-        if isinstance(preproc, str):
-            try:
-                preproc = json.loads(preproc)
-            except ValueError:
-                preproc = None
-        if isinstance(preproc, dict):
-            resize = preproc.get("resize") or {}
-            if isinstance(resize, dict):
-                height = _as_positive_int(resize.get("height"))
-                width = _as_positive_int(resize.get("width"))
-                if height is not None and width is not None:
-                    return height, width
-
-    preproc = getattr(model, "preproc", None)
-    if isinstance(preproc, dict):
-        resize = preproc.get("resize") or {}
-        if isinstance(resize, dict):
-            height = _as_positive_int(resize.get("height"))
-            width = _as_positive_int(resize.get("width"))
-            if height is not None and width is not None:
-                return height, width
-
-    return _get_hf_fixed_input_hw(model)
-
-
-def _hf_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
-    """Normalize a HuggingFace ``image_processor.size`` value to (height, width)."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, dict):
-        height = _as_positive_int(value.get("height"))
-        width = _as_positive_int(value.get("width"))
-        if height is not None and width is not None:
-            return height, width
-        edge = _as_positive_int(value.get("shortest_edge"))
-        if edge is not None:
-            return edge, edge
-        return None
-    height = _as_positive_int(getattr(value, "height", None))
-    width = _as_positive_int(getattr(value, "width", None))
-    if height is not None and width is not None:
-        return height, width
-    return _image_size_to_hw(value)
-
-
-def _get_hf_fixed_input_hw(model: Any) -> Optional[Tuple[int, int]]:
-    """Read a fixed canvas from an HF processor or ``vision_config.image_size``."""
-    processor = getattr(model, "processor", None)
-    image_processor = getattr(processor, "image_processor", None)
-    size = _hf_size_to_hw(getattr(image_processor, "size", None))
-    if size is not None:
-        return size
-
-    for candidate in (getattr(model, "model", None), model):
-        if candidate is None:
-            continue
-        config = getattr(candidate, "config", None)
-        if config is None:
-            continue
-        if isinstance(config, dict):
-            vision_config = config.get("vision_config")
-        else:
-            vision_config = getattr(config, "vision_config", None)
-        if vision_config is None:
-            continue
-        if isinstance(vision_config, dict):
-            image_size = vision_config.get("image_size")
-        else:
-            image_size = getattr(vision_config, "image_size", None)
-        size = _image_size_to_hw(image_size)
-        if size is not None:
-            return size
-    return None
-
-
 def _get_pixel_values(value: Any) -> Any:
     if value is None:
         return None
@@ -251,58 +125,6 @@ def _get_pixel_values(value: Any) -> Any:
     return None
 
 
-def get_tensor_spatial_hw(
-    tensor: Any,
-    *,
-    require_channel_axis: bool = False,
-) -> Optional[Tuple[int, int]]:
-    """Best-effort spatial (height, width) from a preprocessed model tensor.
-
-    HuggingFace VLM preprocess returns a mapping with ``pixel_values`` instead of
-    a raw image tensor. Those values are unwrapped here. Patch-style tensors
-    without a channel axis are not treated as spatial.
-    """
-    pixel_values = _get_pixel_values(tensor)
-    if pixel_values is not None and pixel_values is not tensor:
-        return get_tensor_spatial_hw(
-            pixel_values,
-            require_channel_axis=True,
-        )
-
-    shape = getattr(tensor, "shape", None)
-    if shape is None:
-        return None
-    try:
-        dims = tuple(int(dim) for dim in shape)
-    except (TypeError, ValueError):
-        return None
-    if len(dims) < 2:
-        return None
-
-    # NCHW / CHW
-    if len(dims) >= 3 and dims[-3] in (1, 3, 4):
-        height = dims[-2]
-        width = dims[-1]
-        if height > 0 and width > 0:
-            return height, width
-
-    # NHWC / HWC
-    if dims[-1] in (1, 3, 4):
-        height = dims[-3] if len(dims) >= 3 else dims[-2]
-        width = dims[-2] if len(dims) >= 3 else dims[-1]
-        if height > 0 and width > 0:
-            return height, width
-
-    if require_channel_axis:
-        return None
-
-    height = dims[-2]
-    width = dims[-1]
-    if height > 0 and width > 0:
-        return height, width
-    return None
-
-
 def get_tensor_batch_size(tensor: Any) -> Optional[int]:
     pixel_values = _get_pixel_values(tensor)
     if pixel_values is not None and pixel_values is not tensor:
@@ -317,33 +139,101 @@ def get_tensor_batch_size(tensor: Any) -> Optional[int]:
         return None
 
 
-def parse_image_dims_hw(metadata: Any) -> Optional[Tuple[int, int]]:
-    """Parse preprocess ``image_dims`` (width, height) into (height, width)."""
+def _read_metadata_key(metadata: Any, key: str) -> Any:
+    """Read a key from preprocess metadata, dict-like or attribute-style."""
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    getter = getattr(metadata, "get", None)
+    if callable(getter):
+        try:
+            value = getter(key)
+        except (TypeError, ValueError, KeyError):
+            value = None
+        if value is not None:
+            return value
+    return getattr(metadata, key, None)
+
+
+def _hw_pair(height: Any, width: Any) -> Optional[Tuple[int, int]]:
+    height = _as_positive_int(height)
+    width = _as_positive_int(width)
+    if height is None or width is None:
+        return None
+    return height, width
+
+
+def _first_dims_pair(dims: Any) -> Optional[Tuple[Any, Any]]:
+    """The leading two-element pair, unwrapping a per-image sequence.
+
+    Dims arrive as one pair per image even for a single image, so the first
+    element is unwrapped when it is itself a pair. A bare pair is taken as-is.
+    """
+    if not isinstance(dims, (tuple, list)) or not dims:
+        return None
+    if isinstance(dims[0], (tuple, list)):
+        dims = dims[0]
+    if not isinstance(dims, (tuple, list)) or len(dims) != 2:
+        return None
+    return dims[0], dims[1]
+
+
+def _hw_from_original_size(metadata: Any) -> Optional[Tuple[int, int]]:
+    """(height, width) from an ``inference_models`` per-image metadata record."""
+    record = metadata
+    if not hasattr(record, "original_size"):
+        try:
+            record = metadata[0]
+        except (TypeError, KeyError, IndexError):
+            return None
+    original_size = getattr(record, "original_size", None)
+    if original_size is None:
+        return None
+    return _hw_pair(
+        getattr(original_size, "height", None),
+        getattr(original_size, "width", None),
+    )
+
+
+def parse_image_input_hw(metadata: Any) -> Optional[Tuple[int, int]]:
+    """Native (height, width) of the image a preprocess call was handed.
+
+    Reads whichever of the four conventions the model family uses, in
+    descending order of how explicit they are. A batch is attributed to its
+    first image.
+
+    Args:
+        metadata: The metadata returned alongside the preprocessed tensor.
+
+    Returns:
+        (height, width) before any resize, or None when no convention yielded a
+        usable pair.
+    """
     if metadata is None:
         return None
 
-    dims = None
-    if isinstance(metadata, dict):
-        dims = metadata.get("image_dims")
-    else:
-        getter = getattr(metadata, "get", None)
-        if callable(getter):
-            try:
-                dims = getter("image_dims")
-            except (TypeError, ValueError, KeyError):
-                dims = None
-        if dims is None:
-            dims = getattr(metadata, "image_dims", None)
+    pair = _first_dims_pair(_read_metadata_key(metadata, "img_dims"))
+    if pair is not None:
+        image_hw = _hw_pair(pair[0], pair[1])
+        if image_hw is not None:
+            return image_hw
 
-    if not isinstance(dims, (tuple, list)) or len(dims) != 2:
-        return None
+    pair = _first_dims_pair(_read_metadata_key(metadata, "image_dims"))
+    if pair is not None:
+        image_hw = _hw_pair(pair[1], pair[0])
+        if image_hw is not None:
+            return image_hw
 
-    width = _as_positive_int(dims[0])
-    height = _as_positive_int(dims[1])
-    if width is None or height is None:
-        return None
+    image_hw = _hw_from_original_size(metadata)
+    if image_hw is not None:
+        return image_hw
 
-    return height, width
+    # A bare per-image sequence of (height, width), with no key to name it.
+    if not isinstance(metadata, dict):
+        pair = _first_dims_pair(metadata)
+        if pair is not None:
+            return _hw_pair(pair[0], pair[1])
+
+    return None
 
 
 def count_inference_images(image: Any) -> int:
@@ -359,94 +249,50 @@ def count_inference_images(image: Any) -> int:
     return 1
 
 
-def clear_measured_model_input() -> None:
+def clear_measured_image_input() -> None:
     """Reset every per-call measurement published for the usage decorator.
 
     Called at the start of a model call so that a measurement published by an
     earlier call cannot be attributed to this one.
     """
-    _measured_model_input.set(None)
+    _measured_image_input.set(None)
     clear_measured_predict_duration()
 
 
-def record_measured_model_input(
-    preprocessed_tensor: Any,
+def record_measured_image_input(
+    image_hw: Optional[Tuple[int, int]],
     *,
-    fallback_hw: Optional[Tuple[int, int]] = None,
+    frames: Optional[int] = None,
 ) -> None:
-    """Publish post-preprocess spatial metadata for the usage decorator to read.
+    """Publish the caller's image size for the usage decorator to read.
 
-    ``fallback_hw`` is native ``image_dims``. It is used when the preprocess
-    object has no readable spatial tensor, including HF ``pixel_values`` that
-    are flattened patches rather than NCHW.
+    Args:
+        image_hw: Native (height, width), or None when preprocess recorded
+            neither dims convention.
+        frames: Batch size of the preprocessed tensor, used only as a frame
+            count fallback for calls whose images are not introspectable.
     """
     try:
-        measured_hw = get_tensor_spatial_hw(preprocessed_tensor)
-        if measured_hw is None and fallback_hw is not None:
-            height = _as_positive_int(fallback_hw[0])
-            width = _as_positive_int(fallback_hw[1])
+        measured_hw = None
+        if image_hw is not None:
+            height = _as_positive_int(image_hw[0])
+            width = _as_positive_int(image_hw[1])
             if height is not None and width is not None:
                 measured_hw = (height, width)
 
-        _measured_model_input.set(
-            (
-                measured_hw,
-                get_tensor_batch_size(preprocessed_tensor),
-            )
-        )
+        _measured_image_input.set((measured_hw, frames))
     except Exception:
         pass
 
 
-def record_measured_model_hw(
-    *,
-    height: int,
-    width: int,
-    frames: Optional[int] = None,
-) -> None:
-    """Publish an explicit input size (used by SAM request entrypoints)."""
-    try:
-        _measured_model_input.set(
-            (
-                (int(height), int(width)),
-                max(int(frames), 1) if frames else None,
-            )
-        )
-    except Exception:
-        pass
-
-
-def consume_measured_model_input() -> MeasuredModelInput:
-    """Read and clear the input size published by the current call.
+def consume_measured_image_input() -> MeasuredImageInput:
+    """Read and clear the image size published by the current call.
 
     Clearing on read keeps a stale value from leaking into a later call that did
     not publish one, which would otherwise attribute it to the wrong resolution.
     """
-    measured = _measured_model_input.get()
+    measured = _measured_image_input.get()
     if measured is None:
         return None, None
-    _measured_model_input.set(None)
+    _measured_image_input.set(None)
     return measured
-
-
-def resolve_model_input_hw(
-    model: Any,
-    measured_hw: Optional[Tuple[int, int]] = None,
-) -> Optional[Tuple[int, int]]:
-    """Fixed model input size when there is one, otherwise the observed size.
-
-    Observed size is the preprocessed tensor (including HF ``pixel_values``),
-    or native ``image_dims`` when that tensor is missing or not spatial.
-    """
-    if model is not None:
-        fixed_hw = get_fixed_model_input_hw(model)
-        if fixed_hw is not None:
-            return fixed_hw
-    if (
-        isinstance(measured_hw, tuple)
-        and len(measured_hw) == 2
-        and _as_positive_int(measured_hw[0]) is not None
-        and _as_positive_int(measured_hw[1]) is not None
-    ):
-        return int(measured_hw[0]), int(measured_hw[1])
-    return None

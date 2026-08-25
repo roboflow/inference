@@ -9,6 +9,7 @@ from inference.usage_tracking.decorator_helpers import (
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
 )
+from inference.usage_tracking.megapixel_buckets import record_measured_image_input
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
     clear_recorded_model_types,
@@ -152,11 +153,11 @@ def test_extract_usage_params_for_model_includes_megapixel_buckets(
         version_id = "9"
         task_type = "instance-segmentation"
         model_type = "rfdetr-seg-nano"
-        img_size_h = 640
-        img_size_w = 640
 
         def infer(self, image, **kwargs): ...
 
+    # Published by preprocess in a real call; the buckets read what it recorded.
+    record_measured_image_input((640, 640))
     usage_params = (
         usage_collector_with_mocked_threads._extract_usage_params_from_func_kwargs(
             usage_fps=0,
@@ -185,7 +186,7 @@ def test_extract_usage_params_for_model_includes_megapixel_buckets(
     }
 
 
-def test_extract_usage_params_for_sam_uses_encoder_image_size(
+def test_extract_usage_params_for_sam_reports_unknown_image_size(
     usage_collector_with_mocked_threads,
 ):
     class SamLikeModel:
@@ -194,6 +195,7 @@ def test_extract_usage_params_for_sam_uses_encoder_image_size(
         version_id = "hiera_tiny"
         task_type = "unsupervised-segmentation"
         model_type = "sam2"
+        # The encoder canvas is a model input size, so it no longer buckets.
         image_size = 1024
 
         def infer_from_request(self, request): ...
@@ -221,9 +223,9 @@ def test_extract_usage_params_for_sam_uses_encoder_image_size(
     assert usage_params["resource_id"] == "sam2/hiera_tiny"
     assert usage_params["frames"] == 1
     assert usage_params["resource_details"]["model_type"] == "sam2"
-    # 1024x1024 = ~1.05 MP -> 1-2 bucket
+    # infer_from_request never reaches preprocess, so no image size is recorded.
     assert usage_params["megapixel_buckets"] == {
-        "1-2": {
+        "unknown": {
             "processed_frames": 1,
             "execution_duration": 0.5,
         }

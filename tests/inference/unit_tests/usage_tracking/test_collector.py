@@ -17,8 +17,8 @@ from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
 from inference.usage_tracking.megapixel_buckets import (
-    clear_measured_model_input,
-    record_measured_model_input,
+    clear_measured_image_input,
+    record_measured_image_input,
 )
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
@@ -2118,30 +2118,34 @@ def test_record_usage_accumulates_megapixel_buckets(
     assert details["model_type"] == "rfdetr-seg-nano"
 
 
-def test_model_decorator_records_fixed_input_megapixel_buckets(
+def test_model_decorator_records_measured_image_megapixel_buckets(
     usage_collector_with_mocked_threads,
 ):
     usage_collector = usage_collector_with_mocked_threads
 
-    class FixedInputModel:
+    class UploadSizeModel:
         api_key = "test_key"
         dataset_id = "st-inst-seg"
         version_id = "9"
         task_type = "instance-segmentation"
         model_type = "rfdetr-seg-nano"
+        # A fixed model input size must not decide the bucket.
         img_size_h = 640
         img_size_w = 640
 
         @usage_collector(category="model")
         def infer(self, image, **kwargs):
+            clear_measured_image_input()
+            record_measured_image_input((1080, 1920))
             return {"ok": True}
 
-    FixedInputModel().infer([object(), object()])
+    UploadSizeModel().infer([object(), object()])
 
     key = usage_key("model", "st-inst-seg/9")
     row = usage_collector._usage["test_key"][key]
     assert row["processed_frames"] == 2
-    assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 2
+    # 1080x1920 uploads bucket at ~2.07 MP, not at the model's 640x640 canvas.
+    assert row["megapixel_buckets"]["2-4"]["processed_frames"] == 2
     details = json.loads(row["resource_details"])
     assert details["model_type"] == "rfdetr-seg-nano"
     assert details["task_type"] == "instance-segmentation"
@@ -2165,8 +2169,8 @@ def test_model_decorator_does_not_count_batch_padding(
         def infer(self, image, **kwargs):
             # Preprocessing pads the batch up to MAX_BATCH_SIZE when
             # FIX_BATCH_SIZE is set; the padding is not part of the request.
-            clear_measured_model_input()
-            record_measured_model_input(np.zeros((8, 3, 640, 640), dtype=np.uint8))
+            clear_measured_image_input()
+            record_measured_image_input((640, 640), frames=8)
             return {"ok": True}
 
     PaddedBatchModel().infer([object()])
@@ -2221,11 +2225,9 @@ def test_model_decorator_isolates_measured_input_across_threads(
 
         @usage_collector(category="model")
         def infer(self, image, tag=None, **kwargs):
-            clear_measured_model_input()
+            clear_measured_image_input()
             size = 640 if tag == "first" else 1600
-            record_measured_model_input(
-                np.zeros((len(image), 3, size, size), dtype=np.uint8)
-            )
+            record_measured_image_input((size, size), frames=len(image))
             if tag == "first":
                 # Hand over to the concurrent call, which shares this instance.
                 first_published.set()
@@ -2261,12 +2263,11 @@ def test_model_decorator_buckets_predict_duration_not_row_duration(
         version_id = "1"
         task_type = "object-detection"
         model_type = "yolov8n"
-        img_size_h = 640
-        img_size_w = 640
 
         @usage_collector(category="model")
         def infer(self, image, **kwargs):
-            clear_measured_model_input()
+            clear_measured_image_input()
+            record_measured_image_input((640, 640))
             record_measured_predict_duration(0.01)
             time.sleep(0.05)
             return {"ok": True}
@@ -2292,18 +2293,17 @@ def test_model_decorator_buckets_full_duration_without_predict_phase(
         version_id = "1"
         task_type = "instance-segmentation"
         model_type = "sam2"
-        img_size_h = 640
-        img_size_w = 640
 
         @usage_collector(category="model")
         def infer_from_request(self, request, **kwargs):
-            clear_measured_model_input()
+            clear_measured_image_input()
             time.sleep(0.05)
             return {"ok": True}
 
     NoPredictPhaseModel().infer_from_request(SimpleNamespace(image=[object()]))
 
     row = usage_collector._usage["test_key"][usage_key("model", "no-predict/1")]
-    bucket_duration = row["megapixel_buckets"]["0.25-0.5"]["execution_duration"]
+    # SAM entrypoints never reach preprocess, so they report no image size.
+    bucket_duration = row["megapixel_buckets"]["unknown"]["execution_duration"]
     assert bucket_duration == pytest.approx(row["execution_duration"])
     assert bucket_duration >= 0.05

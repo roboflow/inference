@@ -7,11 +7,8 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
-    clear_measured_model_input,
-    consume_measured_model_input,
+    consume_measured_image_input,
     count_inference_images,
-    record_measured_model_hw,
-    resolve_model_input_hw,
 )
 from inference.usage_tracking.model_types import get_recorded_model_type
 from inference.usage_tracking.predict_timing import consume_measured_predict_duration
@@ -127,8 +124,7 @@ def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
 def get_model_frames_and_input_hw(
     func_kwargs: Dict[str, Any],
 ) -> Tuple[int, Optional[Tuple[int, int]]]:
-    """Frames recorded for one model call, and the input resolution to attribute
-    them to.
+    """Frames recorded for one model call, and the image size to attribute them to.
 
     The frame count comes from the request rather than from the preprocessed
     tensor: preprocessing pads the batch dimension up to a fixed model batch size
@@ -136,8 +132,7 @@ def get_model_frames_and_input_hw(
     caller asked for. The tensor batch size is only a fallback for calls whose
     images are not introspectable.
     """
-    model = func_kwargs.get("self")
-    measured_hw, measured_frames = consume_measured_model_input()
+    measured_hw, measured_frames = consume_measured_image_input()
 
     frames = count_inference_images(get_model_image_from_kwargs(func_kwargs))
     if frames <= 0 and measured_frames:
@@ -145,7 +140,7 @@ def get_model_frames_and_input_hw(
     if frames <= 0:
         frames = 1
 
-    return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
+    return frames, measured_hw
 
 
 def get_model_megapixel_buckets(
@@ -155,7 +150,7 @@ def get_model_megapixel_buckets(
     execution_duration: float,
     inference_test_run: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
-    """Attribute one model call's frames and duration to its input-size bucket.
+    """Attribute one model call's frames and duration to its image-size bucket.
 
     Bucket duration is the predict phase alone when the entrypoint published
     one, so that it can be compared across models without pre- and
@@ -167,7 +162,7 @@ def get_model_megapixel_buckets(
 
     Args:
         frames: Images the caller asked this call to process.
-        input_hw: Model input resolution as (height, width), None when unknown.
+        input_hw: Native image size as (height, width), None when unknown.
         execution_duration: Full call duration, used when no predict phase was
             timed.
         inference_test_run: True for test traffic, which is not bucketed.
@@ -191,25 +186,6 @@ def get_model_megapixel_buckets(
     )
 
     return megapixel_buckets
-
-
-def record_fixed_model_input_for_request(model: Any, request: Any = None) -> None:
-    """Publish a model's fixed input size for usage telemetry on a request call.
-
-    Use this for entrypoints that decorate ``infer_from_request`` (rather than
-    ``BaseInference.infer``), so they never hit the preprocess hook that normally
-    records measured tensor size. The model's configured/fixed size is preferred
-    over native upload resolution.
-    """
-    clear_measured_model_input()
-    input_hw = resolve_model_input_hw(model)
-    if input_hw is None:
-        return
-    record_measured_model_hw(
-        height=input_hw[0],
-        width=input_hw[1],
-        frames=count_inference_images(getattr(request, "image", None)),
-    )
 
 
 def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:

@@ -11,9 +11,10 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.megapixel_buckets import (
-    clear_measured_model_input,
-    parse_image_dims_hw,
-    record_measured_model_input,
+    clear_measured_image_input,
+    get_tensor_batch_size,
+    parse_image_input_hw,
+    record_measured_image_input,
 )
 from inference.usage_tracking.predict_timing import PredictPhaseTimer
 
@@ -30,12 +31,12 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
-        clear_measured_model_input()
+        clear_measured_image_input()
         with start_span("model.preprocess"):
             preproc_image, returned_metadata = self.preprocess(image, **kwargs)
-            record_measured_model_input(
-                preproc_image,
-                fallback_hw=parse_image_dims_hw(returned_metadata),
+            record_measured_image_input(
+                parse_image_input_hw(returned_metadata),
+                frames=get_tensor_batch_size(preproc_image),
             )
             logger.debug(
                 f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"

@@ -7,7 +7,7 @@ import pytest
 
 from inference.usage_tracking import predict_timing
 from inference.usage_tracking.decorator_helpers import get_model_megapixel_buckets
-from inference.usage_tracking.megapixel_buckets import clear_measured_model_input
+from inference.usage_tracking.megapixel_buckets import clear_measured_image_input
 from inference.usage_tracking.predict_timing import (
     PredictPhaseTimer,
     clear_measured_predict_duration,
@@ -85,10 +85,10 @@ def test_record_measured_predict_duration_ignores_unusable_values():
     assert consume_measured_predict_duration() is None
 
 
-def test_clear_measured_model_input_also_clears_predict_duration():
+def test_clear_measured_image_input_also_clears_predict_duration():
     record_measured_predict_duration(0.2)
 
-    clear_measured_model_input()
+    clear_measured_image_input()
 
     assert consume_measured_predict_duration() is None
 
@@ -350,7 +350,7 @@ def test_predict_duration_does_not_leak_when_postprocessing_raises():
     with pytest.raises(RuntimeError):
         BaseInference.infer.__wrapped__(FailingModel(), object())
 
-    # Entrypoints that override infer() never call clear_measured_model_input(),
+    # Entrypoints that override infer() never call clear_measured_image_input(),
     # so a duration surviving a failed call would be charged to the next one.
     assert consume_measured_predict_duration() is None
 

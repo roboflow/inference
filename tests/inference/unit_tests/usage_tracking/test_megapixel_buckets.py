@@ -3,22 +3,16 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from inference.usage_tracking.decorator_helpers import (
-    get_model_megapixel_buckets,
-    record_fixed_model_input_for_request,
-)
+from inference.usage_tracking.decorator_helpers import get_model_megapixel_buckets
 from inference.usage_tracking.megapixel_buckets import (
     MEGAPIXEL_BUCKET_UNKNOWN,
     build_megapixel_buckets,
-    clear_measured_model_input,
-    consume_measured_model_input,
+    clear_measured_image_input,
+    consume_measured_image_input,
     count_inference_images,
-    get_fixed_model_input_hw,
-    get_tensor_spatial_hw,
     megapixel_bucket_for_hw,
-    parse_image_dims_hw,
-    record_measured_model_input,
-    resolve_model_input_hw,
+    parse_image_input_hw,
+    record_measured_image_input,
 )
 from inference.usage_tracking.payload_helpers import (
     merge_megapixel_buckets,
@@ -32,9 +26,9 @@ from inference.usage_tracking.predict_timing import (
 
 @pytest.fixture(autouse=True)
 def _clear_measured_input():
-    clear_measured_model_input()
+    clear_measured_image_input()
     yield
-    clear_measured_model_input()
+    clear_measured_image_input()
 
 
 def test_megapixel_bucket_boundaries():
@@ -131,96 +125,71 @@ def test_merge_usage_dicts_sums_megapixel_buckets():
     assert merged["megapixel_buckets"]["1-2"]["processed_frames"] == 1
 
 
-def test_get_fixed_model_input_hw_prefers_img_size_attrs():
-    model = SimpleNamespace(img_size_h=640, img_size_w=640)
-
-    assert get_fixed_model_input_hw(model) == (640, 640)
-
-
-def test_get_fixed_model_input_hw_ignores_dynamic_onnx_strings():
-    model = SimpleNamespace(img_size_h="height", img_size_w="width", preproc={})
-
-    assert get_fixed_model_input_hw(model) is None
+def test_parse_image_input_hw_reads_core_img_dims():
+    # Core Roboflow preprocess records one (height, width) pair per image.
+    assert parse_image_input_hw({"img_dims": [(1080, 1920)]}) == (1080, 1920)
+    assert parse_image_input_hw({"img_dims": ((1080, 1920),)}) == (1080, 1920)
 
 
-def test_get_tensor_spatial_hw_nchw_and_nhwc():
-    assert get_tensor_spatial_hw(np.zeros((2, 3, 640, 480))) == (640, 480)
-    assert get_tensor_spatial_hw(np.zeros((2, 640, 480, 3))) == (640, 480)
+def test_parse_image_input_hw_attributes_a_batch_to_its_first_image():
+    metadata = {"img_dims": [(1080, 1920), (480, 640)]}
+
+    assert parse_image_input_hw(metadata) == (1080, 1920)
 
 
-def test_get_tensor_spatial_hw_reads_hf_pixel_values():
-    pixel_values = np.zeros((1, 3, 224, 224), dtype=np.float32)
+def test_parse_image_input_hw_accepts_an_unwrapped_pair():
+    assert parse_image_input_hw({"img_dims": (1080, 1920)}) == (1080, 1920)
 
-    assert get_tensor_spatial_hw({"pixel_values": pixel_values}) == (224, 224)
-    assert get_tensor_spatial_hw(SimpleNamespace(pixel_values=pixel_values)) == (
-        224,
-        224,
+
+def test_parse_image_input_hw_reads_vlm_image_dims_as_width_height():
+    # The VLM and depth families record a single (width, height) pair.
+    assert parse_image_input_hw({"image_dims": (1920, 1080)}) == (1080, 1920)
+
+
+def test_parse_image_input_hw_reads_inference_models_original_size():
+    # The inference_models detection / segmentation / keypoint adapters return a
+    # per-image metadata record rather than a dims key.
+    metadata = [
+        SimpleNamespace(original_size=SimpleNamespace(height=1080, width=1920)),
+        SimpleNamespace(original_size=SimpleNamespace(height=480, width=640)),
+    ]
+
+    assert parse_image_input_hw(metadata) == (1080, 1920)
+
+
+def test_parse_image_input_hw_reads_bare_per_image_shapes():
+    # The inference_models classification adapter returns np_image.shape[:2].
+    assert parse_image_input_hw([(1080, 1920), (480, 640)]) == (1080, 1920)
+
+
+def test_parse_image_input_hw_rejects_missing_and_malformed_dims():
+    assert parse_image_input_hw(None) is None
+    assert parse_image_input_hw({}) is None
+    assert parse_image_input_hw({"img_dims": []}) is None
+    assert parse_image_input_hw({"img_dims": [(0, 1920)]}) is None
+    assert parse_image_input_hw({"image_dims": (0, 1080)}) is None
+    assert parse_image_input_hw({"img_dims": [(1080, 1920, 3)]}) is None
+
+
+def test_parse_image_input_hw_reads_attribute_style_metadata():
+    assert parse_image_input_hw(SimpleNamespace(img_dims=[(1080, 1920)])) == (
+        1080,
+        1920,
     )
 
 
-def test_get_tensor_spatial_hw_ignores_non_spatial_pixel_values():
-    # Qwen-style patch tokens: no channel axis, must not be treated as H×W.
-    assert (
-        get_tensor_spatial_hw({"pixel_values": np.zeros((256, 1176), dtype=np.float32)})
-        is None
-    )
+def test_consume_measured_image_input_clears_value():
+    record_measured_image_input((512, 768), frames=2)
 
-
-def test_parse_image_dims_hw_converts_width_height():
-    assert parse_image_dims_hw({"image_dims": (1920, 1080)}) == (1080, 1920)
-    assert parse_image_dims_hw(None) is None
-    assert parse_image_dims_hw({"image_dims": (0, 1080)}) is None
-
-
-def test_input_hw_prefers_fixed_size_over_measured():
-    model = SimpleNamespace(img_size_h=420, img_size_w=420)
-    record_measured_model_input(np.zeros((1, 3, 800, 800)))
-    measured_hw, _ = consume_measured_model_input()
-
-    assert resolve_model_input_hw(model, measured_hw=measured_hw) == (420, 420)
-
-
-def test_input_hw_uses_measured_size_when_dynamic():
-    record_measured_model_input(np.zeros((4, 3, 512, 768)))
-    measured_hw, measured_frames = consume_measured_model_input()
-
-    assert measured_frames == 4
-    assert resolve_model_input_hw(SimpleNamespace(), measured_hw=measured_hw) == (
-        512,
-        768,
-    )
-
-
-def test_fixed_input_hw_reads_non_square_image_size_pair():
-    # OwlV2 exposes image_size as a (height, width) pair rather than an edge length.
-    model = SimpleNamespace(image_size=(960, 1024))
-
-    assert get_fixed_model_input_hw(model) == (960, 1024)
-
-
-def test_fixed_input_hw_reads_square_image_size_scalar():
-    assert get_fixed_model_input_hw(SimpleNamespace(image_size=768)) == (768, 768)
-
-
-def test_fixed_input_hw_ignores_malformed_image_size():
-    assert get_fixed_model_input_hw(SimpleNamespace(image_size=(960,))) is None
-    assert get_fixed_model_input_hw(SimpleNamespace(image_size=(0, 640))) is None
-    assert get_fixed_model_input_hw(SimpleNamespace(image_size=(None, None))) is None
-
-
-def test_fixed_input_hw_reads_wrapped_owlv2_backend():
-    # SerializedOwlV2 delegates inference to a wrapped OwlV2 instance.
-    model = SimpleNamespace(owlv2=SimpleNamespace(image_size=(960, 960)))
-
-    assert get_fixed_model_input_hw(model) == (960, 960)
-
-
-def test_consume_measured_model_input_clears_value():
-    record_measured_model_input(np.zeros((1, 3, 512, 512)))
-
-    assert consume_measured_model_input() == ((512, 512), 1)
+    assert consume_measured_image_input() == ((512, 768), 2)
     # A later call that publishes nothing must not inherit the previous size.
-    assert consume_measured_model_input() == (None, None)
+    assert consume_measured_image_input() == (None, None)
+
+
+def test_record_measured_image_input_rejects_unusable_sizes():
+    record_measured_image_input((0, 768))
+
+    assert consume_measured_image_input() == (None, None)
 
 
 def test_count_inference_images():
@@ -229,98 +198,19 @@ def test_count_inference_images():
     assert count_inference_images([1, 2, 3]) == 3
 
 
-def test_get_fixed_model_input_hw_from_image_size_and_nested_backend():
-    assert get_fixed_model_input_hw(SimpleNamespace(image_size=1024)) == (1024, 1024)
-    assert get_fixed_model_input_hw(
-        SimpleNamespace(_model=SimpleNamespace(_image_size=1008))
-    ) == (1008, 1008)
-    assert get_fixed_model_input_hw(
-        SimpleNamespace(_model=SimpleNamespace(_model=SimpleNamespace(image_size=1024)))
-    ) == (1024, 1024)
-
-
-def test_fixed_input_hw_reads_hf_processor_size():
-    model = SimpleNamespace(
-        processor=SimpleNamespace(
-            image_processor=SimpleNamespace(size={"height": 224, "width": 224})
-        )
-    )
-
-    assert get_fixed_model_input_hw(model) == (224, 224)
-    assert resolve_model_input_hw(model, measured_hw=(1080, 1920)) == (224, 224)
-
-
-def test_fixed_input_hw_reads_hf_processor_size_object():
-    model = SimpleNamespace(
-        processor=SimpleNamespace(
-            image_processor=SimpleNamespace(size=SimpleNamespace(height=448, width=448))
-        )
-    )
-
-    assert get_fixed_model_input_hw(model) == (448, 448)
-
-
-def test_fixed_input_hw_reads_hf_vision_config_image_size():
-    model = SimpleNamespace(
-        model=SimpleNamespace(
-            config=SimpleNamespace(vision_config=SimpleNamespace(image_size=224))
-        )
-    )
-
-    assert get_fixed_model_input_hw(model) == (224, 224)
-
-
-def test_legacy_hf_vlm_uses_processor_size_not_native_image_dims():
+def test_base_inference_publishes_native_size_not_model_input_size():
     from inference.core.models.base import BaseInference
 
-    class LegacyHFVLM(BaseInference):
-        def __init__(self):
-            self.processor = SimpleNamespace(
-                image_processor=SimpleNamespace(size={"height": 224, "width": 224})
+    class CoreStyleModel(BaseInference):
+        # A fixed model input size must no longer influence the bucket.
+        img_size_h = 640
+        img_size_w = 640
+
+        def preprocess(self, image, **kwargs):
+            return (
+                np.zeros((1, 3, 640, 640), dtype=np.float32),
+                {"img_dims": [(1080, 1920)]},
             )
-
-        def preprocess(self, image, **kwargs):
-            return object(), {"image_dims": (1920, 1080)}
-
-        def predict(self, img_in, **kwargs):
-            return (np.zeros(1),)
-
-        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
-            return predictions
-
-    model = LegacyHFVLM()
-    BaseInference.infer.__wrapped__(model, object())
-    measured_hw, _ = consume_measured_model_input()
-
-    assert measured_hw == (1080, 1920)
-    assert resolve_model_input_hw(model, measured_hw=measured_hw) == (224, 224)
-
-
-def test_record_fixed_model_input_for_request_publishes_encoder_size():
-    record_fixed_model_input_for_request(
-        SimpleNamespace(image_size=1024),
-        SimpleNamespace(image=object()),
-    )
-
-    assert consume_measured_model_input() == ((1024, 1024), 1)
-
-
-def test_record_fixed_model_input_for_request_clears_stale_value_for_unknown_encoder():
-    record_measured_model_input(np.zeros((1, 3, 4000, 4000)))
-
-    record_fixed_model_input_for_request(
-        SimpleNamespace(), SimpleNamespace(image=object())
-    )
-
-    assert consume_measured_model_input() == (None, None)
-
-
-def test_base_inference_publishes_preprocessed_input_size():
-    from inference.core.models.base import BaseInference
-
-    class DynamicInputModel(BaseInference):
-        def preprocess(self, image, **kwargs):
-            return np.zeros((2, 3, 512, 768), dtype=np.float32), None
 
         def predict(self, img_in, **kwargs):
             return (np.zeros(1),)
@@ -330,40 +220,18 @@ def test_base_inference_publishes_preprocessed_input_size():
 
     # Call the undecorated function so the published value survives for assertion;
     # the usage decorator consumes it.
-    BaseInference.infer.__wrapped__(DynamicInputModel(), [object(), object()])
+    BaseInference.infer.__wrapped__(CoreStyleModel(), object())
 
-    assert consume_measured_model_input() == ((512, 768), 2)
-
-
-def test_record_measured_model_input_reads_hf_pixel_values():
-    record_measured_model_input(
-        {"pixel_values": np.zeros((1, 3, 224, 224), dtype=np.float32)},
-        fallback_hw=(1080, 1920),
-    )
-
-    assert consume_measured_model_input() == ((224, 224), 1)
+    measured_hw, _ = consume_measured_image_input()
+    assert measured_hw == (1080, 1920)
 
 
-def test_record_measured_model_input_falls_back_to_image_dims_for_unreadable_pixel_values():
-    record_measured_model_input(
-        {"pixel_values": np.zeros((256, 1176), dtype=np.float32)},
-        fallback_hw=(1080, 1920),
-    )
-
-    assert consume_measured_model_input() == ((1080, 1920), None)
-
-
-def test_record_measured_model_input_uses_image_dims_when_no_model_tensor():
-    record_measured_model_input(object(), fallback_hw=(1080, 1920))
-
-    assert consume_measured_model_input() == ((1080, 1920), None)
-
-
-def test_base_inference_publishes_hf_pixel_values_not_native_image_dims():
+def test_base_inference_publishes_native_size_for_vlm_preprocess():
     from inference.core.models.base import BaseInference
 
     class PaligemmaLikeModel(BaseInference):
         def preprocess(self, image, **kwargs):
+            # The processor canvas is a model input size and must be ignored.
             return (
                 {"pixel_values": np.zeros((1, 3, 224, 224), dtype=np.float32)},
                 {"image_dims": (1920, 1080)},
@@ -377,15 +245,16 @@ def test_base_inference_publishes_hf_pixel_values_not_native_image_dims():
 
     BaseInference.infer.__wrapped__(PaligemmaLikeModel(), object())
 
-    assert consume_measured_model_input() == ((224, 224), 1)
+    measured_hw, _ = consume_measured_image_input()
+    assert measured_hw == (1080, 1920)
 
 
-def test_base_inference_publishes_image_dims_when_preprocess_has_no_tensor():
+def test_base_inference_publishes_no_size_when_preprocess_records_no_dims():
     from inference.core.models.base import BaseInference
 
-    class NativeSizeModel(BaseInference):
+    class UndimensionedModel(BaseInference):
         def preprocess(self, image, **kwargs):
-            return object(), {"image_dims": (1920, 1080)}
+            return np.zeros((2, 3, 512, 768), dtype=np.float32), None
 
         def predict(self, img_in, **kwargs):
             return (np.zeros(1),)
@@ -393,30 +262,23 @@ def test_base_inference_publishes_image_dims_when_preprocess_has_no_tensor():
         def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
             return predictions
 
-    BaseInference.infer.__wrapped__(NativeSizeModel(), object())
+    BaseInference.infer.__wrapped__(UndimensionedModel(), [object(), object()])
 
-    assert consume_measured_model_input() == ((1080, 1920), None)
+    measured_hw, measured_frames = consume_measured_image_input()
+    # The preprocessed tensor is the model's canvas, so it cannot stand in for
+    # the image size - but it still answers how many frames were processed.
+    assert measured_hw is None
+    assert measured_frames == 2
 
 
-def test_base_inference_falls_back_to_image_dims_when_pixel_values_are_unreadable():
-    from inference.core.models.base import BaseInference
+def test_unsized_call_lands_in_the_unknown_bucket():
+    buckets = get_model_megapixel_buckets(
+        frames=2,
+        input_hw=None,
+        execution_duration=0.8,
+    )
 
-    class PatchTokenModel(BaseInference):
-        def preprocess(self, image, **kwargs):
-            return (
-                {"pixel_values": np.zeros((256, 1176), dtype=np.float32)},
-                {"image_dims": (1920, 1080)},
-            )
-
-        def predict(self, img_in, **kwargs):
-            return (np.zeros(1),)
-
-        def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
-            return predictions
-
-    BaseInference.infer.__wrapped__(PatchTokenModel(), object())
-
-    assert consume_measured_model_input() == ((1080, 1920), None)
+    assert buckets[MEGAPIXEL_BUCKET_UNKNOWN]["processed_frames"] == 2
 
 
 def test_bucket_duration_prefers_recorded_predict_duration():
