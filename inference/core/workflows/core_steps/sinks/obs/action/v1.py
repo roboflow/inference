@@ -405,6 +405,30 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
+    orient_from: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
+        default=None,
+        description="For `move_source_to_keypoint`: first keypoint of an orientation pair "
+        "(e.g. `right_eye`). When both orientation keypoints are set, the source rotates with "
+        "the line between them and its size follows their distance instead of the bounding "
+        "box, so a face-anchored source tilts and scales with the head.",
+        examples=["right_eye"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
+            }
+        },
+    )
+    orient_to: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
+        default=None,
+        description="For `move_source_to_keypoint`: second keypoint of the orientation pair "
+        "(e.g. `left_eye`). Must be set together with `orient_from`.",
+        examples=["left_eye"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
+            }
+        },
+    )
     smoothing: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.5,
         description="For `move_source_to_keypoint`: exponential smoothing of the source's "
@@ -436,6 +460,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Disable the block without removing it from the Workflow.",
         examples=[False],
     )
+
+    @model_validator(mode="after")
+    def validate_orientation_pair(self) -> "BlockManifest":
+        if (self.orient_from is None) != (self.orient_to is None):
+            raise ValueError(
+                "OBS Action `move_source_to_keypoint`: `orient_from` and `orient_to` must "
+                "be set together."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_required_fields_for_action(self) -> "BlockManifest":
@@ -577,6 +610,8 @@ class OBSActionBlockV1(WorkflowBlock):
         size_scale: float = 0.4,
         keypoint_confidence: float = 0.2,
         smoothing: float = 0.5,
+        orient_from: Optional[str] = None,
+        orient_to: Optional[str] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -614,6 +649,8 @@ class OBSActionBlockV1(WorkflowBlock):
                 size_scale=size_scale,
                 keypoint_confidence=keypoint_confidence,
                 smoothing=smoothing,
+                orient_from=orient_from,
+                orient_to=orient_to,
             )
         else:
             operation = partial(
@@ -703,6 +740,8 @@ class OBSActionBlockV1(WorkflowBlock):
         size_scale: float = 0.4,
         keypoint_confidence: float = 0.2,
         smoothing: float = 0.5,
+        orient_from: Optional[str] = None,
+        orient_to: Optional[str] = None,
     ) -> Any:
         key = (connection["host"], connection["port"])
         bounds_type = self.BOUNDS_TYPE_BY_FIT[fit]
@@ -788,24 +827,50 @@ class OBSActionBlockV1(WorkflowBlock):
                 scale_x = canvas_width / image_width
                 scale_y = canvas_height / image_height
                 kp_x, kp_y = keypoints_xy[best][kp_index]
-                _, y_min, _, y_max = predictions.xyxy[best]
+                rotation = 0.0
+                if orient_from is not None:
+                    if orient_from not in names or orient_to not in names:
+                        return hide_source(client, "Orientation keypoints not present")
+                    from_x, from_y = keypoints_xy[best][names.index(orient_from)]
+                    to_x, to_y = keypoints_xy[best][names.index(orient_to)]
+                    delta_x = (to_x - from_x) * scale_x
+                    delta_y = (to_y - from_y) * scale_y
+                    span = float(np.hypot(delta_x, delta_y))
+                    if span < 1.0:
+                        return hide_source(client, "Orientation keypoints coincide")
+                    rotation = float(np.degrees(np.arctan2(delta_y, delta_x)))
+                    # the pair may be given in either order; keep the source upright
+                    if rotation > 90.0:
+                        rotation -= 180.0
+                    elif rotation < -90.0:
+                        rotation += 180.0
+                    reference_span = span
+                else:
+                    _, y_min, _, y_max = predictions.xyxy[best]
+                    reference_span = float(y_max - y_min) * scale_y
                 target = (
                     float(kp_x * scale_x),
                     float(kp_y * scale_y),
-                    max(1.0, float(y_max - y_min) * scale_y * size_scale),
+                    max(1.0, reference_span * size_scale),
+                    rotation,
                 )
                 state_key = (*key, scene_name, source_name)
                 previous = self._smoothed_transforms.get(state_key)
                 factor = min(max(float(smoothing), 0.0), 0.95)
                 if previous is None or factor <= 0.0:
-                    kp_x_s, kp_y_s, size = target
+                    kp_x_s, kp_y_s, size, rotation_s = target
                 else:
                     step = 1.0 - factor
-                    kp_x_s, kp_y_s, size = (
+                    kp_x_s, kp_y_s, size, rotation_s = (
                         prev + step * (tgt - prev)
                         for prev, tgt in zip(previous, target)
                     )
-                self._smoothed_transforms[state_key] = (kp_x_s, kp_y_s, size)
+                self._smoothed_transforms[state_key] = (
+                    kp_x_s,
+                    kp_y_s,
+                    size,
+                    rotation_s,
+                )
                 item_id = self._scene_item_id(client, key, scene_name, source_name)
                 try:
                     client.set_scene_item_transform(
@@ -814,6 +879,7 @@ class OBSActionBlockV1(WorkflowBlock):
                         {
                             "positionX": kp_x_s,
                             "positionY": kp_y_s,
+                            "rotation": rotation_s,
                             "alignment": 0,  # centered on the keypoint
                             "boundsType": self.BOUNDS_TYPE_BY_FIT[fit],
                             "boundsAlignment": 0,
@@ -827,7 +893,7 @@ class OBSActionBlockV1(WorkflowBlock):
                     raise
                 return (
                     f"Pinned source '{source_name}' to keypoint '{keypoint_name}' at canvas "
-                    f"({kp_x_s:.0f}, {kp_y_s:.0f}) size {size:.0f}"
+                    f"({kp_x_s:.0f}, {kp_y_s:.0f}) size {size:.0f} rotation {rotation_s:.0f}"
                 )
 
             return operation
