@@ -62,7 +62,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json_atomic, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.model_types import record_model_identity
+from inference.usage_tracking.model_types import record_model_descriptor
 from inference_models.models.auto_loaders import core as inference_models_auto_loaders
 from inference_models.models.auto_loaders.core import parse_model_config
 from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
@@ -460,12 +460,12 @@ def get_model_type(
     # lookup below; the variant is reported alongside it so telemetry can roll
     # up by family or drill into a size. Both id spellings are recorded because
     # callers may pass an alias while the loaded model reports its resolved id.
-    record_model_identity(
+    record_model_descriptor(
         model_id=model_id,
         architecture=model_type,
         variant=model_variant,
     )
-    record_model_identity(
+    record_model_descriptor(
         model_id=resolve_roboflow_model_alias(model_id=model_id),
         architecture=model_type,
         variant=model_variant,

@@ -17,8 +17,11 @@ from typing import Any, Optional
 
 
 @dataclass(frozen=True)
-class ModelIdentity:
+class ModelDescriptor:
     """Labels describing which model served a usage row.
+
+    Not a unique id: many loaded models share the same architecture / variant
+    pair.
 
     Attributes:
         architecture: Model architecture, e.g. ``yolov8`` or ``sam2``.
@@ -35,10 +38,10 @@ class ModelIdentity:
 # ids so it is capped to keep a pathological caller from growing it without end.
 _MAX_TRACKED_MODELS = 1024
 
-_MODEL_IDENTITIES: OrderedDict[str, ModelIdentity] = OrderedDict()
+_MODEL_DESCRIPTORS: OrderedDict[str, ModelDescriptor] = OrderedDict()
 
 
-def record_model_identity(
+def record_model_descriptor(
     model_id: Optional[str],
     *,
     architecture: Optional[str],
@@ -55,30 +58,32 @@ def record_model_identity(
         return
 
     model_id = str(model_id)
-    identity = ModelIdentity(
+    descriptor = ModelDescriptor(
         architecture=str(architecture),
         variant=str(variant) if variant else None,
     )
-    if model_id in _MODEL_IDENTITIES:
-        _MODEL_IDENTITIES.move_to_end(model_id)
-        _MODEL_IDENTITIES[model_id] = identity
+    if model_id in _MODEL_DESCRIPTORS:
+        _MODEL_DESCRIPTORS.move_to_end(model_id)
+        _MODEL_DESCRIPTORS[model_id] = descriptor
         return
 
-    while len(_MODEL_IDENTITIES) >= _MAX_TRACKED_MODELS:
-        _MODEL_IDENTITIES.popitem(last=False)
-    _MODEL_IDENTITIES[model_id] = identity
+    while len(_MODEL_DESCRIPTORS) >= _MAX_TRACKED_MODELS:
+        _MODEL_DESCRIPTORS.popitem(last=False)
+    _MODEL_DESCRIPTORS[model_id] = descriptor
 
 
-def get_recorded_model_identity(model_id: Optional[str]) -> Optional[ModelIdentity]:
-    """Return the identity recorded for ``model_id``, or None."""
+def get_recorded_model_descriptor(
+    model_id: Optional[str],
+) -> Optional[ModelDescriptor]:
+    """Return the descriptor recorded for ``model_id``, or None."""
     if not model_id:
         return None
 
-    return _MODEL_IDENTITIES.get(str(model_id))
+    return _MODEL_DESCRIPTORS.get(str(model_id))
 
 
-def bind_usage_model_identity(model: Any, *model_ids: Optional[str]) -> None:
-    """Copy the recorded usage identity onto a loaded model instance.
+def bind_usage_model_descriptor(model: Any, *model_ids: Optional[str]) -> None:
+    """Copy the recorded usage descriptor onto a loaded model instance.
 
     The map is filled during registry resolve. Storing the labels on the
     instance means later ``infer()`` calls do not need the caller to pass
@@ -98,7 +103,7 @@ def bind_usage_model_identity(model: Any, *model_ids: Optional[str]) -> None:
     for model_id in model_ids:
         if not model_id:
             continue
-        recorded = get_recorded_model_identity(str(model_id))
+        recorded = get_recorded_model_descriptor(str(model_id))
         if recorded:
             break
 
@@ -107,5 +112,5 @@ def bind_usage_model_identity(model: Any, *model_ids: Optional[str]) -> None:
         model.model_variant = recorded.variant
 
 
-def clear_recorded_model_identities() -> None:
-    _MODEL_IDENTITIES.clear()
+def clear_recorded_model_descriptors() -> None:
+    _MODEL_DESCRIPTORS.clear()

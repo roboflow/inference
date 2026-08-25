@@ -29,9 +29,9 @@ from inference.core.registries.roboflow import (
 )
 from inference.core.roboflow_api import ModelEndpointType
 from inference.usage_tracking.model_types import (
-    ModelIdentity,
-    clear_recorded_model_identities,
-    get_recorded_model_identity,
+    ModelDescriptor,
+    clear_recorded_model_descriptors,
+    get_recorded_model_descriptor,
 )
 
 
@@ -1087,27 +1087,27 @@ def test_get_model_type_when_generic_model_is_utilised(
         # then
         assert result == expected_result
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 @pytest.mark.parametrize(
-    "model_id, expected_identity",
+    "model_id, expected_descriptor",
     [
-        ("sam2/hiera_large", ModelIdentity("sam2", "hiera_large")),
-        ("sam2/hiera_small", ModelIdentity("sam2", "hiera_small")),
-        ("sam2/hiera_tiny", ModelIdentity("sam2", "hiera_tiny")),
-        ("sam2/hiera_b_plus", ModelIdentity("sam2", "hiera_b_plus")),
-        ("sam3/sam3_final", ModelIdentity("sam3", "sam3_final")),
-        ("sam3/sam3_interactive", ModelIdentity("sam3", "sam3_interactive")),
-        ("yolo_world/l", ModelIdentity("yolo-world", "l")),
+        ("sam2/hiera_large", ModelDescriptor("sam2", "hiera_large")),
+        ("sam2/hiera_small", ModelDescriptor("sam2", "hiera_small")),
+        ("sam2/hiera_tiny", ModelDescriptor("sam2", "hiera_tiny")),
+        ("sam2/hiera_b_plus", ModelDescriptor("sam2", "hiera_b_plus")),
+        ("sam3/sam3_final", ModelDescriptor("sam3", "sam3_final")),
+        ("sam3/sam3_interactive", ModelDescriptor("sam3", "sam3_interactive")),
+        ("yolo_world/l", ModelDescriptor("yolo-world", "l")),
         # A bare architecture id is served in a single flavour - no variant.
-        ("clip", ModelIdentity("clip", None)),
-        ("qwen3_5-0.8b", ModelIdentity("qwen3_5-0.8b", None)),
+        ("clip", ModelDescriptor("clip", None)),
+        ("qwen3_5-0.8b", ModelDescriptor("qwen3_5-0.8b", None)),
     ],
 )
 def test_get_model_type_records_coded_model_suffix_as_usage_variant(
     model_id: str,
-    expected_identity: ModelIdentity,
+    expected_descriptor: ModelDescriptor,
 ) -> None:
     # when
     try:
@@ -1115,10 +1115,10 @@ def test_get_model_type_records_coded_model_suffix_as_usage_variant(
 
         # then - class lookup stays on the architecture, usage keeps both labels
         assert task_type
-        assert model_type == expected_identity.architecture
-        assert get_recorded_model_identity(model_id) == expected_identity
+        assert model_type == expected_descriptor.architecture
+        assert get_recorded_model_descriptor(model_id) == expected_descriptor
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 def test_model_pipelines_enumerate_all_coded_pp_ocr_ids() -> None:
@@ -1325,14 +1325,14 @@ def test_get_model_type_for_pipeline_when_inference_models_enabled(
         # Usage keeps the requested stage sizes so tiny vs small stay distinct.
         assert result == ("ocr", "pp_ocr")
         _, _, expected_variant = model_id.partition("/")
-        assert get_recorded_model_identity(model_id) == ModelIdentity(
+        assert get_recorded_model_descriptor(model_id) == ModelDescriptor(
             "pp_ocr", expected_variant or None
         )
         get_model_metadata_from_inference_models_registry_mock.assert_not_called()
         get_roboflow_model_data_mock.assert_not_called()
         get_roboflow_instant_model_data_mock.assert_not_called()
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
@@ -1588,7 +1588,7 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
         )
 
         assert result == ("instance-segmentation", "yolov8")
-        assert get_recorded_model_identity("yolov8n-seg-640") == ModelIdentity(
+        assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
             "yolov8", "yolov8-n"
         )
         with open(metadata_path) as f:
@@ -1597,18 +1597,18 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
         assert persisted_metadata["model_variant"] == "yolov8-n"
 
         _in_process_metadata_cache.cache.clear()
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
         cached_result = get_model_type(
             model_id="yolov8n-seg-640",
             api_key="my_api_key",
         )
         assert cached_result == ("instance-segmentation", "yolov8")
-        assert get_recorded_model_identity("yolov8n-seg-640") == ModelIdentity(
+        assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
             "yolov8", "yolov8-n"
         )
         get_model_metadata_from_inference_models_registry_mock.assert_called_once()
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 @mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
@@ -1634,11 +1634,11 @@ def test_get_model_type_records_architecture_when_registry_omits_variant(
 
         # then - the architecture is still labelled, the variant stays absent
         assert result == ("object-detection", "yolov8")
-        assert get_recorded_model_identity("some-project/3") == ModelIdentity(
+        assert get_recorded_model_descriptor("some-project/3") == ModelDescriptor(
             "yolov8", None
         )
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 @mock.patch.object(
@@ -2194,12 +2194,12 @@ def test_get_model_type_records_offline_registry_variant_when_model_type_json_mi
         result = get_model_type(model_id="coco/38", api_key="my_api_key")
 
         assert result == ("object-detection", "rfdetr")
-        assert get_recorded_model_identity("coco/38") == ModelIdentity(
+        assert get_recorded_model_descriptor("coco/38") == ModelDescriptor(
             "rfdetr", "rfdetr-nano"
         )
         get_model_metadata_from_inference_models_registry_mock.assert_not_called()
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 def test_get_model_metadata_from_inference_models_cache_when_no_package_found() -> None:

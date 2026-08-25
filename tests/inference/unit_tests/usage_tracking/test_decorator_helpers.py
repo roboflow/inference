@@ -5,9 +5,9 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    get_model_descriptor_from_kwargs,
     get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
-    get_model_identity_from_kwargs,
     get_model_resource_details_from_kwargs,
     get_request_resource_details_from_kwargs,
 )
@@ -16,11 +16,11 @@ from inference.usage_tracking.megapixel_buckets import (
     record_measured_model_hw,
 )
 from inference.usage_tracking.model_types import (
-    ModelIdentity,
-    bind_usage_model_identity,
-    clear_recorded_model_identities,
-    get_recorded_model_identity,
-    record_model_identity,
+    ModelDescriptor,
+    bind_usage_model_descriptor,
+    clear_recorded_model_descriptors,
+    get_recorded_model_descriptor,
+    record_model_descriptor,
 )
 
 
@@ -293,46 +293,46 @@ def test_extract_usage_params_for_sam_uses_encoder_image_size(
     }
 
 
-def test_bind_usage_model_identity_copies_recorded_variant():
+def test_bind_usage_model_descriptor_copies_recorded_variant():
     model = SimpleNamespace()
-    record_model_identity(
+    record_model_descriptor(
         "paligemma-3b-mix-224",
         architecture="paligemma",
         variant="paligemma-3b-mix-224",
     )
     try:
-        bind_usage_model_identity(model, "paligemma-3b-mix-224")
+        bind_usage_model_descriptor(model, "paligemma-3b-mix-224")
 
         assert getattr(model, "model_id", None) is None
         assert model.model_architecture == "paligemma"
         assert model.model_variant == "paligemma-3b-mix-224"
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
-def test_bind_usage_model_identity_leaves_variant_empty_when_unknown():
+def test_bind_usage_model_descriptor_leaves_variant_empty_when_unknown():
     model = SimpleNamespace()
-    record_model_identity("clip", architecture="clip")
+    record_model_descriptor("clip", architecture="clip")
     try:
-        bind_usage_model_identity(model, "clip")
+        bind_usage_model_descriptor(model, "clip")
 
         assert model.model_architecture == "clip"
         assert model.model_variant is None
-        assert get_model_identity_from_kwargs({"self": model}) == ModelIdentity(
+        assert get_model_descriptor_from_kwargs({"self": model}) == ModelDescriptor(
             "clip", None
         )
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 def test_bind_does_not_change_alias_resource_id():
     # HTTP add_model(de_aliased, ..., model_id_alias=alias) used to write the
     # de-aliased id onto adapter instances. resource_id must stay the alias.
     model = SimpleNamespace()
-    record_model_identity("coco/25", architecture="yolov11", variant="yolov11-n")
-    record_model_identity("yolov11n-640", architecture="yolov11", variant="yolov11-n")
+    record_model_descriptor("coco/25", architecture="yolov11", variant="yolov11-n")
+    record_model_descriptor("yolov11n-640", architecture="yolov11", variant="yolov11-n")
     try:
-        bind_usage_model_identity(model, "coco/25", "yolov11n-640", "yolov11n-640")
+        bind_usage_model_descriptor(model, "coco/25", "yolov11n-640", "yolov11n-640")
 
         assert getattr(model, "model_id", None) is None
         assert model.model_architecture == "yolov11"
@@ -341,22 +341,22 @@ def test_bind_does_not_change_alias_resource_id():
             get_model_id_from_kwargs({"self": model, "model_id": "yolov11n-640"})
             == "yolov11n-640"
         )
-        assert get_model_identity_from_kwargs({"self": model}) == ModelIdentity(
+        assert get_model_descriptor_from_kwargs({"self": model}) == ModelDescriptor(
             "yolov11", "yolov11-n"
         )
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
-def test_get_model_identity_from_kwargs_uses_instance_after_map_cleared():
+def test_get_model_descriptor_from_kwargs_uses_instance_after_map_cleared():
     model = SimpleNamespace(
         model_id="paligemma-3b-mix-224",
         model_architecture="paligemma",
         model_variant="paligemma-3b-mix-224",
     )
-    clear_recorded_model_identities()
+    clear_recorded_model_descriptors()
 
-    assert get_model_identity_from_kwargs({"self": model}) == ModelIdentity(
+    assert get_model_descriptor_from_kwargs({"self": model}) == ModelDescriptor(
         "paligemma", "paligemma-3b-mix-224"
     )
 
@@ -402,7 +402,7 @@ def test_get_model_binds_recorded_variant_on_instance():
         def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
             return predictions
 
-    record_model_identity(
+    record_model_descriptor(
         "paligemma-3b-mix-224",
         architecture="paligemma",
         variant="paligemma-3b-mix-224",
@@ -416,7 +416,7 @@ def test_get_model_binds_recorded_variant_on_instance():
             model = model_utils.get_model("paligemma-3b-mix-224")
 
         assert getattr(model, "model_id", None) is None
-        assert get_model_identity_from_kwargs({"self": model}) == ModelIdentity(
+        assert get_model_descriptor_from_kwargs({"self": model}) == ModelDescriptor(
             "paligemma", "paligemma-3b-mix-224"
         )
     finally:
@@ -424,10 +424,10 @@ def test_get_model_binds_recorded_variant_on_instance():
             model_utils.ROBOFLOW_MODEL_TYPES.pop(("lmm", "paligemma"), None)
         else:
             model_utils.ROBOFLOW_MODEL_TYPES[("lmm", "paligemma")] = previous
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
-def test_get_model_identity_reads_recorded_map_without_calling_registry():
+def test_get_model_descriptor_reads_recorded_map_without_calling_registry():
     class UnlabelledModel:
         dataset_id = "st-inst-seg"
         version_id = "9"
@@ -439,42 +439,42 @@ def test_get_model_identity_reads_recorded_map_without_calling_registry():
     with mock.patch(
         "inference.core.registries.roboflow.get_model_type"
     ) as registry_get_model_type:
-        assert get_model_identity_from_kwargs(func_kwargs) is None
+        assert get_model_descriptor_from_kwargs(func_kwargs) is None
 
-        record_model_identity(
+        record_model_descriptor(
             model_id="st-inst-seg/9",
             architecture="rfdetr",
             variant="rfdetr-seg-nano",
         )
         try:
-            assert get_model_identity_from_kwargs(func_kwargs) == ModelIdentity(
+            assert get_model_descriptor_from_kwargs(func_kwargs) == ModelDescriptor(
                 "rfdetr", "rfdetr-seg-nano"
             )
         finally:
-            clear_recorded_model_identities()
+            clear_recorded_model_descriptors()
 
-    # Resolving a model identity must never reach the registry: that call can
+    # Resolving a model descriptor must never reach the registry: that call can
     # issue an authenticated HTTP request from the inference hot path.
     assert not registry_get_model_type.called
 
 
-def test_registry_records_model_identity_for_usage_tracking():
+def test_registry_records_model_descriptor_for_usage_tracking():
     from inference.core.registries.roboflow import get_model_type
 
     try:
         _, model_type = get_model_type(model_id="sam2/hiera_tiny")
 
         assert model_type == "sam2"
-        assert get_recorded_model_identity("sam2/hiera_tiny") == ModelIdentity(
+        assert get_recorded_model_descriptor("sam2/hiera_tiny") == ModelDescriptor(
             "sam2", "hiera_tiny"
         )
 
         model = SimpleNamespace()
-        bind_usage_model_identity(model, "sam2/hiera_tiny")
+        bind_usage_model_descriptor(model, "sam2/hiera_tiny")
         assert model.model_architecture == "sam2"
         assert model.model_variant == "hiera_tiny"
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 def test_registry_records_model_variant_for_usage_tracking_not_architecture():
@@ -508,36 +508,36 @@ def test_registry_records_model_variant_for_usage_tracking_not_architecture():
 
         assert task_type == "lmm"
         assert model_type == "paligemma"
-        assert get_recorded_model_identity("paligemma-3b-mix-224") == ModelIdentity(
+        assert get_recorded_model_descriptor("paligemma-3b-mix-224") == ModelDescriptor(
             "paligemma", "paligemma-3b-mix-224"
         )
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 def test_recorded_model_identities_evict_oldest_when_full(monkeypatch):
     import inference.usage_tracking.model_types as model_types
 
     monkeypatch.setattr(model_types, "_MAX_TRACKED_MODELS", 2)
-    clear_recorded_model_identities()
+    clear_recorded_model_descriptors()
     try:
-        record_model_identity(model_id="a/1", architecture="yolov8", variant="yolov8-n")
-        record_model_identity(model_id="b/1", architecture="yolov8", variant="yolov8-s")
-        record_model_identity(model_id="c/1", architecture="yolov8", variant="yolov8-m")
+        record_model_descriptor(model_id="a/1", architecture="yolov8", variant="yolov8-n")
+        record_model_descriptor(model_id="b/1", architecture="yolov8", variant="yolov8-s")
+        record_model_descriptor(model_id="c/1", architecture="yolov8", variant="yolov8-m")
 
-        assert get_recorded_model_identity("a/1") is None
-        assert get_recorded_model_identity("b/1") == ModelIdentity("yolov8", "yolov8-s")
-        assert get_recorded_model_identity("c/1") == ModelIdentity("yolov8", "yolov8-m")
+        assert get_recorded_model_descriptor("a/1") is None
+        assert get_recorded_model_descriptor("b/1") == ModelDescriptor("yolov8", "yolov8-s")
+        assert get_recorded_model_descriptor("c/1") == ModelDescriptor("yolov8", "yolov8-m")
 
         # Refreshing an existing key keeps it from being the next eviction victim.
-        record_model_identity(model_id="b/1", architecture="yolov8", variant="yolov8-s")
-        record_model_identity(model_id="d/1", architecture="yolov8", variant="yolov8-l")
+        record_model_descriptor(model_id="b/1", architecture="yolov8", variant="yolov8-s")
+        record_model_descriptor(model_id="d/1", architecture="yolov8", variant="yolov8-l")
 
-        assert get_recorded_model_identity("c/1") is None
-        assert get_recorded_model_identity("b/1") == ModelIdentity("yolov8", "yolov8-s")
-        assert get_recorded_model_identity("d/1") == ModelIdentity("yolov8", "yolov8-l")
+        assert get_recorded_model_descriptor("c/1") is None
+        assert get_recorded_model_descriptor("b/1") == ModelDescriptor("yolov8", "yolov8-s")
+        assert get_recorded_model_descriptor("d/1") == ModelDescriptor("yolov8", "yolov8-l")
     finally:
-        clear_recorded_model_identities()
+        clear_recorded_model_descriptors()
 
 
 def test_explicit_model_usage_api_key_takes_precedence_over_request(

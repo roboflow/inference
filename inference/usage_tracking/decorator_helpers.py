@@ -15,8 +15,8 @@ from inference.usage_tracking.megapixel_buckets import (
     resolve_model_input_hw,
 )
 from inference.usage_tracking.model_types import (
-    ModelIdentity,
-    get_recorded_model_identity,
+    ModelDescriptor,
+    get_recorded_model_descriptor,
 )
 
 
@@ -78,14 +78,14 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def get_model_identity_from_kwargs(
+def get_model_descriptor_from_kwargs(
     func_kwargs: Dict[str, Any],
-) -> Optional[ModelIdentity]:
+) -> Optional[ModelDescriptor]:
     """Resolve the Roboflow architecture / variant pair behind a model call.
 
     Prefer the labels bound onto the instance at load time. Fall back to the
     process-local map keyed by model id. Asking the model registry would be a
-    network call on the inference hot path. A model whose identity was never
+    network call on the inference hot path. A model whose descriptor was never
     recorded is reported without one.
     """
     model = func_kwargs.get("self")
@@ -93,12 +93,12 @@ def get_model_identity_from_kwargs(
         architecture = getattr(model, "model_architecture", None)
         if architecture:
             variant = getattr(model, "model_variant", None)
-            return ModelIdentity(
+            return ModelDescriptor(
                 architecture=str(architecture),
                 variant=str(variant) if variant else None,
             )
 
-    return get_recorded_model_identity(get_model_id_from_kwargs(func_kwargs))
+    return get_recorded_model_descriptor(get_model_id_from_kwargs(func_kwargs))
 
 
 def get_model_resource_details_from_kwargs(
@@ -113,11 +113,11 @@ def get_model_resource_details_from_kwargs(
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
             resource_details["task_type"] = _self.task_type
-    model_identity = get_model_identity_from_kwargs(func_kwargs)
-    if model_identity:
-        resource_details["model_architecture"] = model_identity.architecture
-        if model_identity.variant:
-            resource_details["model_variant"] = model_identity.variant
+    model_descriptor = get_model_descriptor_from_kwargs(func_kwargs)
+    if model_descriptor:
+        resource_details["model_architecture"] = model_descriptor.architecture
+        if model_descriptor.variant:
+            resource_details["model_variant"] = model_descriptor.variant
     # Only the configured canvas, never the observed one. Rows aggregate over
     # calls that may each see a different upload, and resource details merge
     # last-write-wins, so a size that varies per call would be attributed to
