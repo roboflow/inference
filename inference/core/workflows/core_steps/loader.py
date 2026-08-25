@@ -482,6 +482,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     AnthropicClaudeBlockV4,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+    AnthropicClaudeBlockV5,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
@@ -1761,6 +1764,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
         AnthropicClaudeBlockV4,
+        AnthropicClaudeBlockV5,
         SpaceXAIBlockV1,
         SpaceXAIBlockV2,
         CosineSimilarityBlockV1,

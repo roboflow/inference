@@ -15,6 +15,9 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.anthropic_detection_parsing import (
+    parse_anthropic_object_detection_response,
+)
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     parse_gemini_object_detection_response,
 )
@@ -543,11 +546,61 @@ def parse_openai_detection_response(
     )
 
 
+def parse_anthropic_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> sv.Detections:
+    """Parse Claude object-detection output, dispatching on response format.
+
+    Claude blocks v1-v4 produce ``{"detections": [{"x_min": ...}]}`` with
+    coordinates normalized to 0.0-1.0. The v5 block produces a JSON list of
+    ``box_2d`` entries with absolute pixel coordinates of the pre-resized
+    upload.
+
+    Args:
+        image: Workflow image the detections refer to.
+        parsed_data: JSON payload extracted from the VLM output.
+        classes: Class names used to map labels onto class ids.
+        inference_id: Identifier attached to every parsed detection.
+
+    Returns:
+        Parsed detections in the original image's coordinate space.
+    """
+    if isinstance(parsed_data, dict) and "detections" in parsed_data:
+        detections = parsed_data["detections"]
+        if (
+            isinstance(detections, list)
+            and len(detections) > 0
+            and isinstance(detections[0], dict)
+            and "box_2d" in detections[0]
+        ):
+            return parse_anthropic_object_detection_response(
+                image=image,
+                parsed_data=detections,
+                classes=classes,
+                inference_id=inference_id,
+            )
+        return parse_llm_object_detection_response(
+            image=image,
+            parsed_data=parsed_data,
+            classes=classes,
+            inference_id=inference_id,
+        )
+    return parse_anthropic_object_detection_response(
+        image=image,
+        parsed_data=parsed_data,
+        classes=classes,
+        inference_id=inference_id,
+    )
+
+
 REGISTERED_PARSERS = {
     # LLMs
     ("openai", "object-detection"): parse_openai_detection_response,
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
-    ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
+    ("anthropic-claude", "object-detection"): parse_anthropic_detection_response,
     ("spacexai", "object-detection"): parse_spacexai_object_detection_response,
     ("qwen", "object-detection"): parse_qwen_object_detection_response,
     ("muse", "object-detection"): parse_muse_object_detection_response,
