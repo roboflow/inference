@@ -104,8 +104,8 @@ def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threa
 
 
 def test_get_model_resource_details_slugs_torch_device_name(monkeypatch):
-    from inference_models.runtime_introspection.core import get_available_gpu_devices
     import inference_models.runtime_introspection.core as runtime_core
+    from inference_models.runtime_introspection.core import get_available_gpu_devices
 
     torch_mock = mock.MagicMock()
     torch_mock.cuda.device_count.return_value = 1
@@ -113,7 +113,9 @@ def test_get_model_resource_details_slugs_torch_device_name(monkeypatch):
     monkeypatch.setattr(runtime_core, "torch", torch_mock)
     get_available_gpu_devices.cache_clear()
     try:
-        result = get_model_resource_details_from_kwargs({"self": SimpleNamespace()})
+        result = get_model_resource_details_from_kwargs(
+            {"self": SimpleNamespace(_device=SimpleNamespace(type="cuda", index=0))}
+        )
     finally:
         get_available_gpu_devices.cache_clear()
 
@@ -128,7 +130,13 @@ def test_get_model_resource_details_includes_gpu_type(monkeypatch):
     )
 
     result = get_model_resource_details_from_kwargs(
-        {"self": SimpleNamespace(task_type="object-detection", model_type="yolov8n")}
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                _device=SimpleNamespace(type="cuda", index=0),
+            )
+        }
     )
 
     assert result["gpu_type"] == "nvidia-h100-80gb"
@@ -202,6 +210,145 @@ def test_get_model_resource_details_omits_gpu_type_when_model_on_cpu(monkeypatch
     )
 
     assert "gpu_type" not in result
+
+
+def test_get_model_resource_details_omits_gpu_type_when_execution_device_unknown(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb", "nvidia-l4"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {"self": SimpleNamespace(task_type="object-detection", model_type="yolov8n")}
+    )
+
+    assert "gpu_type" not in result
+
+
+def test_get_model_resource_details_omits_gpu_type_when_cuda_index_out_of_range(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                _device=SimpleNamespace(type="cuda", index=3),
+            )
+        }
+    )
+
+    assert "gpu_type" not in result
+
+
+def test_get_model_resource_details_omits_gpu_type_when_onnx_on_cpu(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                onnx_session=SimpleNamespace(
+                    get_providers=lambda: [
+                        "OpenVINOExecutionProvider",
+                        "CPUExecutionProvider",
+                    ]
+                ),
+            )
+        }
+    )
+
+    assert "gpu_type" not in result
+
+
+def test_get_model_resource_details_uses_onnx_session_gpu_provider(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-h100-80gb", "nvidia-l4"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                onnx_session=SimpleNamespace(
+                    get_providers=lambda: [
+                        "CUDAExecutionProvider",
+                        "CPUExecutionProvider",
+                    ]
+                ),
+            )
+        }
+    )
+
+    assert result["gpu_type"] == "nvidia-h100-80gb"
+
+
+def test_get_model_resource_details_uses_onnx_tensorrt_provider(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-l4"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                onnx_session=SimpleNamespace(
+                    get_providers=lambda: [
+                        "TensorrtExecutionProvider",
+                        "CUDAExecutionProvider",
+                        "CPUExecutionProvider",
+                    ]
+                ),
+            )
+        }
+    )
+
+    assert result["gpu_type"] == "nvidia-l4"
+
+
+def test_get_model_resource_details_uses_onnx_provider_device_id(monkeypatch):
+    monkeypatch.setattr(
+        decorator_helpers,
+        "_get_available_gpu_devices",
+        lambda: ["nvidia-l4", "nvidia-h100-80gb"],
+    )
+
+    result = get_model_resource_details_from_kwargs(
+        {
+            "self": SimpleNamespace(
+                task_type="object-detection",
+                model_type="yolov8n",
+                onnx_session=SimpleNamespace(
+                    get_providers=lambda: ["CUDAExecutionProvider"],
+                    get_provider_options=lambda: {
+                        "CUDAExecutionProvider": {"device_id": "1"}
+                    },
+                ),
+            )
+        }
+    )
+
+    assert result["gpu_type"] == "nvidia-h100-80gb"
 
 
 def test_get_model_resource_details_omits_gpu_type_when_probe_fails(monkeypatch):

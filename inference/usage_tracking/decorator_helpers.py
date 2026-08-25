@@ -115,6 +115,20 @@ def _get_available_gpu_devices() -> List[str]:
     return list(gpu_devices)
 
 
+_ONNX_GPU_EXECUTION_PROVIDERS = frozenset(
+    {
+        "CUDAExecutionProvider",
+        "TensorrtExecutionProvider",
+        "ROCMExecutionProvider",
+    }
+)
+_ONNX_SESSION_ATTRS = (
+    "onnx_session",
+    "visual_onnx_session",
+    "textual_onnx_session",
+)
+
+
 def _iter_model_devices(model: Any):
     if model is None:
         return
@@ -128,6 +142,16 @@ def _iter_model_devices(model: Any):
                 yield device
 
 
+def _iter_onnx_sessions(model: Any):
+    if model is None:
+        return
+
+    for attr in _ONNX_SESSION_ATTRS:
+        session = getattr(model, attr, None)
+        if session is not None:
+            yield session
+
+
 def _is_host_device(device: Any) -> bool:
     device_type = getattr(device, "type", None)
     if device_type in {"cpu", "mps"}:
@@ -138,6 +162,16 @@ def _is_host_device(device: Any) -> bool:
 
     lowered = device.strip().lower()
     return lowered in {"cpu", "mps"} or lowered.startswith(("cpu:", "mps:"))
+
+
+def _onnx_provider_name(provider: Any) -> Optional[str]:
+    if isinstance(provider, str):
+        return provider
+    if isinstance(provider, (tuple, list)) and provider:
+        name = provider[0]
+        if isinstance(name, str):
+            return name
+    return None
 
 
 def _cuda_index_from_device(device: Any) -> Optional[int]:
@@ -160,10 +194,62 @@ def _cuda_index_from_device(device: Any) -> Optional[int]:
     try:
         return int(lowered.split(":", 1)[1])
     except ValueError:
-        return 0
+        return None
+
+
+def _cuda_index_from_onnx_session(session: Any) -> Optional[int]:
+    get_providers = getattr(session, "get_providers", None)
+    if not callable(get_providers):
+        return None
+
+    providers = get_providers() or []
+    gpu_providers = [
+        name
+        for name in (_onnx_provider_name(provider) for provider in providers)
+        if name in _ONNX_GPU_EXECUTION_PROVIDERS
+    ]
+    if not gpu_providers:
+        return None
+
+    index = 0
+    get_provider_options = getattr(session, "get_provider_options", None)
+    if callable(get_provider_options):
+        options_by_provider = get_provider_options() or {}
+        for name in gpu_providers:
+            device_id = (options_by_provider.get(name) or {}).get("device_id")
+            if device_id is None:
+                continue
+            try:
+                index = int(device_id)
+                break
+            except (TypeError, ValueError):
+                continue
+
+    return index
+
+
+def _cuda_index_from_onnx_model(model: Any) -> Optional[int]:
+    for session in _iter_onnx_sessions(model):
+        cuda_index = _cuda_index_from_onnx_session(session)
+        if cuda_index is not None:
+            return cuda_index
+    return None
+
+
+def _gpu_type_at_index(gpu_devices: List[str], cuda_index: int) -> Optional[str]:
+    if 0 <= cuda_index < len(gpu_devices):
+        return gpu_devices[cuda_index]
+    return None
 
 
 def _resolve_model_gpu_type(model: Any) -> Optional[str]:
+    """Identify the GPU that executed this model call, if it can be established.
+
+    A host GPU is never attributed to a CPU/MPS/OpenVINO/CoreML run. An
+    unexplained device — no torch device, no ONNX GPU execution provider, or
+    an out-of-range CUDA index — leaves the field off rather than guessing
+    GPU 0.
+    """
     try:
         gpu_devices = _get_available_gpu_devices()
         if not gpu_devices:
@@ -176,11 +262,14 @@ def _resolve_model_gpu_type(model: Any) -> Optional[str]:
             cuda_index = _cuda_index_from_device(device)
             if cuda_index is None:
                 continue
-            if 0 <= cuda_index < len(gpu_devices):
-                return gpu_devices[cuda_index]
-            return gpu_devices[0]
 
-        return gpu_devices[0]
+            return _gpu_type_at_index(gpu_devices, cuda_index)
+
+        onnx_index = _cuda_index_from_onnx_model(model)
+        if onnx_index is None:
+            return None
+
+        return _gpu_type_at_index(gpu_devices, onnx_index)
     except Exception as exc:
         logger.debug("Could not identify GPU type for usage tracking: %s", exc)
         return None
