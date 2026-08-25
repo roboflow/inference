@@ -31,9 +31,16 @@ because a pipelined call has no predict phase to attribute in the first place.
 
 What is measured is the phase, not the model in isolation. Legacy ONNX models
 take their session lock inside ``predict()``, so a host reading there carries
-time spent queued behind other requests to the same model. That was true of the
-wall-clock duration this replaces as well, but it is contention rather than
-model cost sitting inside a number now labelled as the model's.
+time spent queued behind other requests to the same model. TensorRT backends
+and the RF-DETR scheduler hold one inference stream per model instance, shared
+across the server's worker threads, so a declared-stream device reading can
+similarly fold another request's engine work into this one. Those backends
+synchronize before ``predict()`` returns (the pipelined path is excluded as
+deferred), and a declared reading that exceeds this call's host window is
+dropped so the inflation cannot exceed the number the metric reported before
+this change. Queueing was true of the wall-clock duration this replaces as
+well, but it is contention rather than model cost sitting inside a number now
+labelled as the model's.
 
 Measurements are published through :class:`~contextvars.ContextVar` rather than
 attributes on the model. Model instances are shared across the server's worker
@@ -224,12 +231,18 @@ class PredictPhaseTimer:
         reading longer than the call itself means the events did not bracket
         the work. Both fall back to the host.
 
-        A declared stream is known to carry the model's work, so its reading
-        replaces the host window outright. An assumed one is not, and events on
-        a stream that turned out to hold no work read near zero - so an assumed
-        reading is only believed when it exceeds the host window, where it can
-        only be revealing device work that finished after ``predict()``
-        returned. A wrong guess can then be ignored but never believed.
+        A declared stream is known to carry the model's work, so a shorter
+        reading replaces the host window. It is not known to carry *only*
+        this call's work: TensorRT backends share one stream per model
+        instance, and events on that stream can bracket another request's
+        engine work. Those backends synchronize before ``predict()`` returns,
+        so a declared reading past this call's host window is cross-request
+        inflation and is dropped. An assumed stream is not known to carry
+        the work at all, and events on a stream that held none read near
+        zero - so an assumed reading is only believed when it exceeds the
+        host window, where it can only be revealing device work that
+        finished after ``predict()`` returned. A wrong guess can then be
+        ignored but never believed.
         """
         if self._events is None:
             return None
@@ -240,8 +253,14 @@ class PredictPhaseTimer:
             seconds = start_event.elapsed_time(end_event) / 1000.0
             if seconds < 0 or seconds > perf_counter() - self._started_at:
                 return None
-            if not self._stream_is_declared and seconds <= self._host_duration:
+            if self._stream_is_declared:
+                if seconds > self._host_duration:
+                    return None
+
+                return seconds
+            if seconds <= self._host_duration:
                 return None
+
             return seconds
         except Exception:
             return None

@@ -196,14 +196,17 @@ def test_assumed_stream_reading_is_ignored_when_it_undercuts_the_host_window(
     assert consume_measured_predict_duration() >= 0.02
 
 
-def test_declared_stream_reading_replaces_the_host_clock(monkeypatch):
+def test_declared_stream_reading_is_used_when_it_undercuts_the_host_window(
+    monkeypatch,
+):
+    # Mirror of the assumed-stream floor: a declared stream is trusted to
+    # shrink the measurement when the host clock saw more than the device
+    # spent on this call's work.
     start_event, end_event = _FakeEvent(elapsed_ms=5.0), _FakeEvent(elapsed_ms=5.0)
     _install_fake_cuda(monkeypatch, [start_event, end_event])
     model = SimpleNamespace(_inference_stream=_STREAM)
 
     timer = PredictPhaseTimer.start(model=model)
-    # A declared stream is trusted to shrink the measurement: the host clock
-    # sees far more than the device spent on the work.
     time.sleep(0.05)
     timer.finish(predictions=(np.zeros(1),))
     timer.publish()
@@ -211,6 +214,56 @@ def test_declared_stream_reading_replaces_the_host_clock(monkeypatch):
     assert consume_measured_predict_duration() == pytest.approx(0.005)
     assert start_event.recorded_on == [_STREAM]
     assert end_event.recorded_on == [_STREAM]
+
+
+def test_declared_stream_reading_is_ignored_when_it_exceeds_the_host_window(
+    monkeypatch,
+):
+    # TensorRT backends share one stream per model instance. Events on that
+    # stream can bracket another request's engine work and still complete
+    # before post-processing returns, so the "longer than the call" guard
+    # does not catch them. Those backends synchronize before predict()
+    # returns, so anything past this call's host window is inflation.
+    _install_fake_cuda(
+        monkeypatch, [_FakeEvent(elapsed_ms=20.0), _FakeEvent(elapsed_ms=20.0)]
+    )
+    model = SimpleNamespace(_inference_stream=_STREAM)
+
+    timer = PredictPhaseTimer.start(model=model)
+    timer.finish(predictions=(np.zeros(1),))
+    time.sleep(0.05)
+    timer.publish()
+
+    # Host window is the empty predict phase; 20ms is the other request.
+    assert consume_measured_predict_duration() < 0.01
+
+
+def test_shared_declared_stream_does_not_absorb_another_calls_window(monkeypatch):
+    # Two timers over one declared stream, each reporting a span larger
+    # than either call spent on the host.
+    _install_fake_cuda(
+        monkeypatch,
+        [
+            _FakeEvent(elapsed_ms=80.0),
+            _FakeEvent(elapsed_ms=80.0),
+            _FakeEvent(elapsed_ms=80.0),
+            _FakeEvent(elapsed_ms=80.0),
+        ],
+    )
+    model = SimpleNamespace(_inference_stream=_STREAM)
+
+    first = PredictPhaseTimer.start(model=model)
+    second = PredictPhaseTimer.start(model=model)
+    first.finish(predictions=(np.zeros(1),))
+    second.finish(predictions=(np.zeros(1),))
+    time.sleep(0.05)
+    first.publish()
+    first_duration = consume_measured_predict_duration()
+    second.publish()
+    second_duration = consume_measured_predict_duration()
+
+    assert first_duration < 0.01
+    assert second_duration < 0.01
 
 
 def test_nested_timers_do_not_share_events(monkeypatch):
