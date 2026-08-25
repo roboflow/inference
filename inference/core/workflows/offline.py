@@ -1,8 +1,4 @@
-from inference.core.env import (
-    OFFLINE_MODE,
-    SECURE_GATEWAY,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
+from inference.core.env import OFFLINE_MODE, SECURE_GATEWAY, WORKFLOWS_REMOTE_API_TARGET
 from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 from inference.core.workflows.prototypes.block import StepExecutionMode
 
