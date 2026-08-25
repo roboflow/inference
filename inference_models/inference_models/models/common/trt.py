@@ -863,7 +863,9 @@ def _capture_cuda_graph(
     stream.synchronize()
 
     cuda_graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(cuda_graph, stream=stream):
+    with torch.cuda.graph(
+        cuda_graph, stream=stream, capture_error_mode="thread_local"
+    ):
         status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
         if not status:
             raise ModelRuntimeError(
