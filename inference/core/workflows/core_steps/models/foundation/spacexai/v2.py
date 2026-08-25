@@ -28,6 +28,10 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    validate_reasoning_level,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_responses_api_usage,
@@ -61,20 +65,32 @@ from inference.core.workflows.prototypes.block import (
 
 XAI_BASE_URL = "https://api.x.ai/v1"
 
+# grok-4.5 `xhigh` excluded: xAI silently downgrades it to `high`.
 GROK_MODELS = [
     {
         "id": "grok-4.6",
         "name": "Grok 4.6",
+        "reasoning_levels": ["low", "medium", "high", "xhigh"],
     },
     {
         "id": "grok-4.5",
         "name": "Grok 4.5",
+        "reasoning_levels": ["low", "medium", "high"],
     },
 ]
 
 MODEL_VERSION_IDS = [model["id"] for model in GROK_MODELS]
 
-MODEL_VERSION_METADATA = {model["id"]: {"name": model["name"]} for model in GROK_MODELS}
+MODEL_REASONING_LEVELS = {
+    model["id"]: model["reasoning_levels"] for model in GROK_MODELS
+}
+
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {model["id"]: {"name": model["name"]} for model in GROK_MODELS},
+    MODEL_REASONING_LEVELS,
+)
+
+REASONING_EFFORT_VALUES = ["low", "medium", "high", "xhigh"]
 
 OBJECT_DETECTION_PROMPT_TEMPLATE = (
     "Detect all objects in this image. "
@@ -270,15 +286,16 @@ class BlockManifest(WorkflowBlockManifest):
     reasoning_effort: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
-            Literal["low", "high"],
+            Literal[tuple(REASONING_EFFORT_VALUES)],
         ]
     ] = Field(
         default=None,
         description=(
             "Optional reasoning effort passed to xAI as "
-            '`reasoning: {"effort": ...}`. For requests with a direct xAI key, '
-            "the request is retried without reasoning when the model rejects "
-            "the parameter."
+            '`reasoning: {"effort": ...}`. Grok models default to "high" and '
+            'cannot disable reasoning. "xhigh" is only supported by grok-4.6. '
+            "For requests with a direct xAI key, the request is retried "
+            "without reasoning when the model rejects the parameter."
         ),
         examples=["low", "high"],
     )
@@ -326,6 +343,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        validate_reasoning_level(
+            model=self.model_version,
+            level=self.reasoning_effort,
+            levels_by_model=MODEL_REASONING_LEVELS,
+        )
         return self
 
     @classmethod
@@ -651,6 +673,11 @@ def _execute_proxied_spacexai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_LEVELS,
+    )
     if reasoning_effort is not None:
         payload["reasoning"] = {"effort": reasoning_effort}
 
@@ -712,6 +739,11 @@ def _execute_direct_spacexai_request(
     if temperature is not None:
         request_params["temperature"] = temperature
 
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_LEVELS,
+    )
     if reasoning_effort is not None:
         request_params["reasoning"] = {"effort": reasoning_effort}
 
