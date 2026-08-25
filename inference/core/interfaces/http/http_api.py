@@ -357,10 +357,8 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
     register_debug_session,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.billable_scope import billing_suppressed
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
-    apply_explicit_usage_billable,
     non_billable_intent_is_authenticated,
 )
 
@@ -1456,11 +1454,6 @@ class HttpInterface(BaseInterface):
             api_key = api_key_fallback(api_key)
             if api_key is not None:
                 inference_request.api_key = api_key
-            apply_explicit_usage_billable(
-                inference_request,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
             ensure_wire_safe_mask_format(inference_request)
             requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
@@ -1495,7 +1488,6 @@ class HttpInterface(BaseInterface):
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
-            usage_billable: bool = True,
         ) -> WorkflowInferenceResponse:
             workflow_request.api_key = api_key_override(workflow_request.api_key)
             if workflow_request.workflow_id:
@@ -1527,10 +1519,6 @@ class HttpInterface(BaseInterface):
             # opts in via `debug=True` (clients must set the flag - preview runs
             # do not enable it implicitly).
             debug_requested = getattr(workflow_request, "debug", False)
-            # Blocks build their own inference requests, so the caller's billing
-            # intent cannot be stamped onto a payload the way it is for the
-            # /infer routes - it is published for the whole run instead.
-            billing_ctx = billing_suppressed(not usage_billable)
             if debug_requested:
                 # Session state is published via ContextVars; the execution engine
                 # re-binds them inside every worker thread spawned by its
@@ -1538,7 +1526,7 @@ class HttpInterface(BaseInterface):
                 debug_ctx = register_debug_session()
             else:
                 debug_ctx = nullcontext()
-            with billing_ctx, debug_ctx as debug_session:
+            with debug_ctx as debug_session:
                 try:
                     workflow_results = execution_engine.run(
                         runtime_parameters=workflow_request.inputs,
@@ -2247,6 +2235,9 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
+                # Declared so FastAPI binds them and the usage decorator can read
+                # the caller's billing intent - the workflow run itself needs
+                # neither.
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ) -> WorkflowInferenceResponse:
@@ -2283,10 +2274,6 @@ class HttpInterface(BaseInterface):
                         background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
                     ),
                     profiler=profiler,
-                    usage_billable=not non_billable_intent_is_authenticated(
-                        countinference,
-                        service_secret,
-                    ),
                 )
 
             @app.post(
@@ -2307,6 +2294,9 @@ class HttpInterface(BaseInterface):
             def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                # Declared so FastAPI binds them and the usage decorator can read
+                # the caller's billing intent - the workflow run itself needs
+                # neither.
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ) -> WorkflowInferenceResponse:
@@ -2324,10 +2314,6 @@ class HttpInterface(BaseInterface):
                         background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
                     ),
                     profiler=profiler,
-                    usage_billable=not non_billable_intent_is_authenticated(
-                        countinference,
-                        service_secret,
-                    ),
                 )
 
             @app.get(

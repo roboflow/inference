@@ -60,7 +60,6 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
-from inference.usage_tracking.billable_scope import remote_billing_parameters
 from inference_models.configuration import get_rfdetr_pipeline_depth
 from inference_models.models.base.async_handoff import (
     get_async_response_context_id,
@@ -709,7 +708,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
-            **remote_billing_parameters(),
         )
         client.configure(inference_configuration=client_config)
         inference_images = [i.base64_image for i in images]

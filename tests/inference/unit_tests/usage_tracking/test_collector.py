@@ -4,6 +4,7 @@ import json
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from queue import Queue
 from typing import Optional
 from unittest import mock
@@ -15,10 +16,7 @@ from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
-from inference.usage_tracking.billable_scope import (
-    billing_suppressed,
-    usage_billing_suppressed,
-)
+from inference.usage_tracking.decorator_helpers import usage_billing_suppressed
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
@@ -30,6 +28,7 @@ from inference.usage_tracking.payload_helpers import (
     sha256_hash,
     zip_usage_payloads,
 )
+from inference_sdk.config import outbound_service_secret
 from inference_sdk.http.errors import HTTPCallErrorError
 
 
@@ -51,6 +50,16 @@ def usage_key(
     if stream_session_id:
         key = f"{key}:{stream_session_id}"
     return key
+
+
+@contextmanager
+def inherited_suppression():
+    """Stand in for an enclosing decorated call that already suppressed billing."""
+    token = usage_billing_suppressed.set(True)
+    try:
+        yield
+    finally:
+        usage_billing_suppressed.reset(token)
 
 
 def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
@@ -1428,81 +1437,159 @@ def test_record_usage_with_exception(usage_collector_with_mocked_threads):
     assert "error_status_code" not in details
 
 
-@pytest.mark.parametrize("countinference", [True, False])
-def test_model_row_uses_stamped_request_usage_billable(
-    usage_collector_with_mocked_threads,
-    configured_service_secret,
-    countinference,
-):
-    usage_collector = usage_collector_with_mocked_threads
+def _decorated_fake_model(usage_collector):
+    """A model class whose ``infer`` records a usage row of its own."""
 
     class FakeModel:
         api_key = "test_key"
         model_id = "yolov11n-640"
-        task_type = "object-detection"
-        model_type = "yolov11n"
 
         @usage_collector(category="model")
         def infer(self, image, **kwargs):
             return "ok"
 
-        def infer_from_request(self, request):
-            # Mirrors Model.infer_from_request: the request is unpacked into
-            # infer(), which is how usage_billable reaches the decorator.
-            return self.infer(**request.dict())
+    return FakeModel
 
-    class FakeRequest:
-        api_key = "test_key"
-        model_id = "yolov11n-640"
-        usage_billable = True
 
-        def dict(self):
-            return {"image": "img", "usage_billable": self.usage_billable}
+class _FakeRequest:
+    api_key = "test_key"
+    model_id = "yolov11n-640"
+
+
+def _billable_flag(usage_collector, key):
+    return json.loads(usage_collector._usage["test_key"][key]["resource_details"])[
+        "billable"
+    ]
+
+
+def test_authenticated_opt_out_marks_request_workflow_and_model_rows_non_billable(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+):
+    """The route decorator is the only place billing intent is read.
+
+    Neither nested decorator is told anything about billing - the workflow runs
+    a model it built itself - so all three rows can only agree by inheriting the
+    request's context. The nested workflow decorator must inherit the outbound
+    forwarding authority the same way, for the remote model calls a real block
+    would make from inside it.
+    """
+    usage_collector = usage_collector_with_mocked_threads
+    fake_model = _decorated_fake_model(usage_collector)
+    seen = {}
+
+    @usage_collector(category="workflows")
+    def run_workflow(workflow, api_key="test_key"):
+        seen["outbound_in_workflow"] = outbound_service_secret.get()
+        fake_model().infer("img")
+        return "ok"
 
     @usage_collector(category="request")
     def handler(
-        inference_request,
+        workflow_request,
         countinference=None,
         service_secret=None,
         api_key="test_key",
     ):
-        return FakeModel().infer_from_request(inference_request)
+        return run_workflow(None, usage_workflow_id="workflow-1")
+
+    class FakeWorkflowRequest:
+        api_key = "test_key"
+        workflow_id = "workflow-1"
 
     handler(
-        FakeRequest(),
-        countinference=countinference,
+        FakeWorkflowRequest(),
+        countinference=False,
         service_secret=configured_service_secret,
     )
 
-    request_key = usage_key("request", "yolov11n-640", billable=countinference)
-    model_key = usage_key("model", "yolov11n-640", billable=countinference)
-    request_details = json.loads(
-        usage_collector._usage["test_key"][request_key]["resource_details"]
+    assert (
+        _billable_flag(
+            usage_collector, usage_key("request", "workflow-1", billable=False)
+        )
+        is False
     )
-    model_details = json.loads(
-        usage_collector._usage["test_key"][model_key]["resource_details"]
+    assert (
+        _billable_flag(
+            usage_collector, usage_key("workflows", "workflow-1", billable=False)
+        )
+        is False
     )
-    assert request_details["billable"] is countinference
-    assert model_details["billable"] is countinference
+    assert (
+        _billable_flag(
+            usage_collector, usage_key("model", "yolov11n-640", billable=False)
+        )
+        is False
+    )
+    assert seen["outbound_in_workflow"] == configured_service_secret
+    assert outbound_service_secret.get() is None
 
 
-def test_rows_stay_billable_when_countinference_lacks_service_secret(
+def test_async_authenticated_opt_out_marks_nested_call_non_billable_and_forwards_outbound_authority(
     usage_collector_with_mocked_threads,
+    configured_service_secret,
 ):
-    usage_collector = usage_collector_with_mocked_threads
+    """Async mirror of the nesting guarantee above.
 
-    class FakeModel:
+    The async wrapper binds local suppression and publishes outbound
+    forwarding authority the same way the sync one does; a nested async
+    decorated call with no billing arguments of its own has to inherit both.
+    """
+    usage_collector = usage_collector_with_mocked_threads
+    usage_collector._async_lock = None
+    seen = {}
+
+    class FakeAsyncModel:
         api_key = "test_key"
         model_id = "yolov11n-640"
 
         @usage_collector(category="model")
-        def infer(self, image, **kwargs):
+        async def infer(self, image, **kwargs):
+            seen["suppressed_in_model"] = usage_billing_suppressed.get()
+            seen["outbound_in_model"] = outbound_service_secret.get()
             return "ok"
 
-    class FakeRequest:
-        api_key = "test_key"
-        model_id = "yolov11n-640"
-        usage_billable = True
+    @usage_collector(category="request")
+    async def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        return await FakeAsyncModel().infer("img")
+
+    asyncio.run(
+        handler(
+            _FakeRequest(),
+            countinference=False,
+            service_secret=configured_service_secret,
+        )
+    )
+
+    assert seen["suppressed_in_model"] is True
+    assert seen["outbound_in_model"] == configured_service_secret
+    assert (
+        _billable_flag(
+            usage_collector, usage_key("model", "yolov11n-640", billable=False)
+        )
+        is False
+    )
+    assert usage_billing_suppressed.get() is False
+    assert outbound_service_secret.get() is None
+
+
+@pytest.mark.parametrize(
+    "service_secret", [None, "not-the-secret"], ids=["missing", "invalid"]
+)
+def test_unauthenticated_opt_out_leaves_rows_billable(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+    service_secret,
+):
+    # An unprovable countinference=false is ignored rather than rejected: it
+    # must not become a new way for an inference request to fail.
+    usage_collector = usage_collector_with_mocked_threads
+    fake_model = _decorated_fake_model(usage_collector)
 
     @usage_collector(category="request")
     def handler(
@@ -1511,66 +1598,25 @@ def test_rows_stay_billable_when_countinference_lacks_service_secret(
         service_secret=None,
         api_key="test_key",
     ):
-        return FakeModel().infer("img", usage_billable=inference_request.usage_billable)
+        return fake_model().infer("img")
 
-    handler(FakeRequest(), countinference=False)
-
-    request_key = usage_key("request", "yolov11n-640", billable=True)
-    model_key = usage_key("model", "yolov11n-640", billable=True)
-    request_details = json.loads(
-        usage_collector._usage["test_key"][request_key]["resource_details"]
+    result = handler(
+        _FakeRequest(), countinference=False, service_secret=service_secret
     )
-    model_details = json.loads(
-        usage_collector._usage["test_key"][model_key]["resource_details"]
-    )
-    assert request_details["billable"] is True
-    assert model_details["billable"] is True
+
+    assert result == "ok"
+    assert _billable_flag(usage_collector, usage_key("request", "yolov11n-640")) is True
+    assert _billable_flag(usage_collector, usage_key("model", "yolov11n-640")) is True
+    # An unauthenticated opt-out must never gain remote forwarding authority.
+    assert outbound_service_secret.get() is None
 
 
-def test_model_infer_from_request_row_reads_usage_billable(
+def test_rows_stay_billable_when_countinference_is_omitted(
     usage_collector_with_mocked_threads,
+    configured_service_secret,
 ):
     usage_collector = usage_collector_with_mocked_threads
-
-    class FakeModel:
-        api_key = "test_key"
-        model_id = "sam2/hiera_large"
-
-        @usage_collector(category="model")
-        def infer_from_request(self, request):
-            return "ok"
-
-    class FakeRequest:
-        api_key = "test_key"
-        model_id = "sam2/hiera_large"
-        usage_billable = False
-
-    FakeModel().infer_from_request(FakeRequest())
-
-    model_key = usage_key("model", "sam2/hiera_large", billable=False)
-    details = json.loads(
-        usage_collector._usage["test_key"][model_key]["resource_details"]
-    )
-    assert details["billable"] is False
-
-
-def test_model_row_stays_billable_when_countinference_is_omitted(
-    usage_collector_with_mocked_threads,
-):
-    usage_collector = usage_collector_with_mocked_threads
-
-    class FakeModel:
-        api_key = "test_key"
-        model_id = "yolov11n-640"
-
-        @usage_collector(category="model")
-        def infer(self, image, **kwargs):
-            return "ok"
-
-    class FakeRequest:
-        api_key = "test_key"
-        model_id = "yolov11n-640"
-        usage_billable = True
+    fake_model = _decorated_fake_model(usage_collector)
 
     @usage_collector(category="request")
     def handler(
@@ -1579,20 +1625,12 @@ def test_model_row_stays_billable_when_countinference_is_omitted(
         service_secret=None,
         api_key="test_key",
     ):
-        return FakeModel().infer("img", usage_billable=inference_request.usage_billable)
+        return fake_model().infer("img")
 
-    handler(FakeRequest())
+    handler(_FakeRequest())
 
-    request_key = usage_key("request", "yolov11n-640", billable=True)
-    model_key = usage_key("model", "yolov11n-640", billable=True)
-    request_details = json.loads(
-        usage_collector._usage["test_key"][request_key]["resource_details"]
-    )
-    model_details = json.loads(
-        usage_collector._usage["test_key"][model_key]["resource_details"]
-    )
-    assert request_details["billable"] is True
-    assert model_details["billable"] is True
+    assert _billable_flag(usage_collector, usage_key("request", "yolov11n-640")) is True
+    assert _billable_flag(usage_collector, usage_key("model", "yolov11n-640")) is True
 
 
 @pytest.mark.parametrize("usage_billable", [True, False])
@@ -1609,78 +1647,42 @@ def test_workflow_row_honours_usage_billable(
     run_workflow(None, usage_billable=usage_billable, usage_workflow_id="workflow-1")
 
     key = usage_key("workflows", "workflow-1", billable=usage_billable)
-    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
-    assert details["billable"] is usage_billable
+    assert _billable_flag(usage_collector, key) is usage_billable
 
 
-def test_billing_scope_marks_workflow_and_nested_model_rows(
+def test_explicit_usage_billable_false_suppresses_nested_rows(
     usage_collector_with_mocked_threads,
 ):
-    """A Workflow block builds its own request, so the caller's intent reaches
-    nested model rows through the billing scope rather than through a payload."""
+    # Direct/native callers pass usage_billable=False instead of query
+    # parameters; the row they suppress must take everything below it with it.
     usage_collector = usage_collector_with_mocked_threads
-
-    class FakeModel:
-        api_key = "test_key"
-        model_id = "yolov11n-640"
-
-        @usage_collector(category="model")
-        def infer(self, image, **kwargs):
-            return "ok"
+    fake_model = _decorated_fake_model(usage_collector)
 
     @usage_collector(category="workflows")
     def run_workflow(workflow, api_key="test_key"):
-        FakeModel().infer("img")
+        fake_model().infer("img")
         return "ok"
 
-    with billing_suppressed(True):
-        run_workflow(None, usage_workflow_id="workflow-1")
+    run_workflow(None, usage_workflow_id="workflow-1", usage_billable=False)
 
-    workflow_key = usage_key("workflows", "workflow-1", billable=False)
-    model_key = usage_key("model", "yolov11n-640", billable=False)
-    workflow_details = json.loads(
-        usage_collector._usage["test_key"][workflow_key]["resource_details"]
+    assert (
+        _billable_flag(
+            usage_collector, usage_key("workflows", "workflow-1", billable=False)
+        )
+        is False
     )
-    model_details = json.loads(
-        usage_collector._usage["test_key"][model_key]["resource_details"]
+    assert (
+        _billable_flag(
+            usage_collector, usage_key("model", "yolov11n-640", billable=False)
+        )
+        is False
     )
-    assert workflow_details["billable"] is False
-    assert model_details["billable"] is False
+    # Explicit usage_billable=False suppresses locally but gains no remote
+    # forwarding authority without a valid service secret alongside it.
+    assert outbound_service_secret.get() is None
 
 
-def test_billing_scope_reaches_models_run_on_step_worker_threads():
-    """Steps run on a ThreadPoolExecutor, which does not inherit ContextVars.
-
-    `safe_execute_step` re-binds the scope in each worker; this asserts the
-    capture-and-rebind pair actually carries the decision across the boundary.
-    """
-    from inference.core.workflows.execution_engine.v1.executor import core
-
-    with billing_suppressed(True):
-        captured = usage_billing_suppressed.get()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            seen_without_rebind = executor.submit(usage_billing_suppressed.get).result()
-
-            def step():
-                core.usage_billing_suppressed.set(captured)
-                return usage_billing_suppressed.get()
-
-            seen_with_rebind = executor.submit(step).result()
-
-            # A reused worker must not keep the previous request's decision.
-            def next_request_step():
-                core.usage_billing_suppressed.set(False)
-                return usage_billing_suppressed.get()
-
-            seen_after_reuse = executor.submit(next_request_step).result()
-
-    assert seen_without_rebind is False
-    assert seen_with_rebind is True
-    assert seen_after_reuse is False
-    assert usage_billing_suppressed.get() is False
-
-
-def test_billing_scope_never_restores_billing_for_opted_out_caller(
+def test_explicit_usage_billable_true_cannot_lift_inherited_suppression(
     usage_collector_with_mocked_threads,
 ):
     usage_collector = usage_collector_with_mocked_threads
@@ -1689,34 +1691,186 @@ def test_billing_scope_never_restores_billing_for_opted_out_caller(
     def infer(image, api_key="test_key"):
         return "ok"
 
-    with billing_suppressed(False):
-        infer("img", usage_billable=False)
+    with inherited_suppression():
+        infer("img", usage_billable=True)
 
     key = usage_key("model", "unknown", billable=False)
-    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
-    assert details["billable"] is False
+    assert _billable_flag(usage_collector, key) is False
+
+
+def test_billing_scope_reaches_models_run_on_step_worker_threads():
+    """Steps run on a ThreadPoolExecutor, which does not inherit ContextVars.
+
+    `run_steps_in_parallel` snapshots the caller's context and re-enters it in
+    each worker; this asserts the billing scope actually carries the decision
+    across that boundary through the generic mechanism (not a billing-specific
+    rebind).
+    """
+    from inference.core.workflows.execution_engine.v1.executor.utils import (
+        run_steps_in_parallel,
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        seen_without_scope = executor.submit(usage_billing_suppressed.get).result()
+
+        with inherited_suppression():
+            seen_with_scope = run_steps_in_parallel(
+                steps=[usage_billing_suppressed.get],
+                max_workers=1,
+                executor=executor,
+            )[0]
+
+        # A reused worker must not keep the previous request's decision.
+        seen_after_reuse = run_steps_in_parallel(
+            steps=[usage_billing_suppressed.get],
+            max_workers=1,
+            executor=executor,
+        )[0]
+
+    assert seen_without_scope is False
+    assert seen_with_scope is True
+    assert seen_after_reuse is False
+    assert usage_billing_suppressed.get() is False
 
 
 def test_standalone_model_infer_defaults_to_billable(
     usage_collector_with_mocked_threads,
 ):
     usage_collector = usage_collector_with_mocked_threads
+    fake_model = _decorated_fake_model(usage_collector)
 
-    class FakeModel:
-        api_key = "test_key"
-        model_id = "yolov11n-640"
+    fake_model().infer("img")
 
-        @usage_collector(category="model")
-        def infer(self, image, **kwargs):
-            return "ok"
+    assert _billable_flag(usage_collector, usage_key("model", "yolov11n-640")) is True
 
-    FakeModel().infer("img")
 
-    model_key = usage_key("model", "yolov11n-640", billable=True)
-    details = json.loads(
-        usage_collector._usage["test_key"][model_key]["resource_details"]
-    )
-    assert details["billable"] is True
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "error"])
+def test_sync_wrapper_resets_billing_context(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+    fails,
+):
+    usage_collector = usage_collector_with_mocked_threads
+    seen = {}
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        seen["inside"] = usage_billing_suppressed.get()
+        seen["outbound_inside"] = outbound_service_secret.get()
+        if fails:
+            raise RuntimeError("request failure")
+        return "ok"
+
+    def call():
+        return handler(
+            _FakeRequest(),
+            countinference=False,
+            service_secret=configured_service_secret,
+        )
+
+    if fails:
+        with pytest.raises(RuntimeError, match="request failure"):
+            call()
+    else:
+        call()
+
+    assert seen["inside"] is True
+    assert seen["outbound_inside"] == configured_service_secret
+    assert usage_billing_suppressed.get() is False
+    assert outbound_service_secret.get() is None
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "error"])
+def test_async_wrapper_resets_billing_context(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+    fails,
+):
+    usage_collector = usage_collector_with_mocked_threads
+    usage_collector._async_lock = None
+    seen = {}
+
+    @usage_collector(category="request")
+    async def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        seen["inside"] = usage_billing_suppressed.get()
+        seen["outbound_inside"] = outbound_service_secret.get()
+        if fails:
+            raise RuntimeError("request failure")
+        return "ok"
+
+    async def scenario():
+        coroutine = handler(
+            _FakeRequest(),
+            countinference=False,
+            service_secret=configured_service_secret,
+        )
+        if fails:
+            with pytest.raises(RuntimeError, match="request failure"):
+                await coroutine
+        else:
+            await coroutine
+        return usage_billing_suppressed.get()
+
+    assert asyncio.run(scenario()) is False
+    assert seen["inside"] is True
+    assert seen["outbound_inside"] == configured_service_secret
+    assert outbound_service_secret.get() is None
+
+
+def test_concurrent_requests_with_opposite_billing_intent_stay_isolated(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+):
+    usage_collector = usage_collector_with_mocked_threads
+    fake_model = _decorated_fake_model(usage_collector)
+    # Hold both requests inside their decorated scope at the same time, so an
+    # unscoped (process-global) decision would have to leak between them.
+    both_inside = threading.Barrier(2, timeout=5)
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        countinference=None,
+        service_secret=None,
+        api_key="test_key",
+    ):
+        both_inside.wait()
+        fake_model().infer("img")
+        return "ok"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                handler,
+                _FakeRequest(),
+                countinference=countinference,
+                service_secret=configured_service_secret,
+            )
+            for countinference in (False, True)
+        ]
+        for future in futures:
+            future.result()
+
+    for category in ("request", "model"):
+        assert (
+            _billable_flag(usage_collector, usage_key(category, "yolov11n-640")) is True
+        )
+        assert (
+            _billable_flag(
+                usage_collector, usage_key(category, "yolov11n-640", billable=False)
+            )
+            is False
+        )
 
 
 @pytest.mark.parametrize("countinference", [True, False])
