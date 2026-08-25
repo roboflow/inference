@@ -4,7 +4,7 @@ from typing import Optional
 
 import torch
 
-from inference_models._offline import OFFLINE_MODE, OFFLINE_MODE_CONTRACT_VERSION
+from inference_models._offline import OFFLINE_MODE
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -98,6 +98,9 @@ if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
         RuntimeWarning,
         stacklevel=1,
     )
+OFFLINE_MODE_WARM_UP = get_boolean_from_env(
+    variable_name="OFFLINE_MODE_WARM_UP", default=False
+)
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,

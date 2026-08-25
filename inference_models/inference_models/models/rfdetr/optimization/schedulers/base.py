@@ -17,8 +17,8 @@ from inference_models.models.optimization.contracts import (
     metadata_supports_context,
 )
 from inference_models.models.rfdetr.optimization.contracts import (
-    EngineOperation,
     EngineInputBuffer,
+    EngineOperation,
     PostprocessOperation,
 )
 from inference_models.models.rfdetr.optimization.ids import RFDETR_SCHEDULER_BASE
