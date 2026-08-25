@@ -1003,3 +1003,82 @@ def test_manifest_rejects_half_specified_orientation_pair():
         )
 
     assert "orient_from" in str(error.value) and "orient_to" in str(error.value)
+
+
+def _arm_pose(elbow=(300.0, 200.0), wrist=(340.0, 200.0), wrist_conf=0.9):
+    det = sv.Detections(
+        xyxy=np.array([[200.0, 100.0, 400.0, 300.0]]),
+        confidence=np.array([0.9]),
+    )
+    det.data["keypoints_xy"] = np.array([[list(elbow), list(wrist)]])
+    det.data["keypoints_class_name"] = np.array([["left_elbow", "left_wrist"]])
+    det.data["keypoints_confidence"] = np.array([[0.9, wrist_conf]])
+    return det
+
+
+def _limb_kwargs(**overrides):
+    kwargs = _keypoint_kwargs(
+        predictions=_arm_pose(),
+        keypoint_name="left_elbow",
+        orient_from="left_elbow",
+        orient_to="left_wrist",
+        stretch_to_pair=True,
+        size_scale=1.0,
+        thickness_scale=0.35,
+        smoothing=0,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_stretch_limb_spans_from_first_joint_with_pair_length(fake_transform_obs):
+    result = _action_block().run(**_limb_kwargs())
+
+    transform = _last_transform(fake_transform_obs[0])
+    # anchored at the elbow (300,200)*3 with left-center alignment, spanning 40*3=120
+    assert transform["positionX"] == pytest.approx(900.0)
+    assert transform["positionY"] == pytest.approx(600.0)
+    assert transform["alignment"] == 1
+    assert transform["boundsType"] == "OBS_BOUNDS_STRETCH"
+    assert transform["boundsWidth"] == pytest.approx(120.0)
+    assert transform["boundsHeight"] == pytest.approx(42.0)
+    assert transform["rotation"] == pytest.approx(0.0)
+    assert result["error_status"] is False
+
+
+def test_stretch_limb_keeps_raw_downward_angle(fake_transform_obs):
+    # wrist straight below the elbow: a limb must point down (+90), not be
+    # normalized upright like a face sticker
+    _action_block().run(**_limb_kwargs(predictions=_arm_pose(wrist=(300.0, 260.0))))
+
+    assert _last_transform(fake_transform_obs[0])["rotation"] == pytest.approx(90.0)
+
+
+def test_stretch_limb_hides_when_endpoint_confidence_low(fake_transform_obs):
+    # a wrist below the desk (conf ~0.02) must hide the limb, not stretch to noise
+    result = _action_block().run(**_limb_kwargs(predictions=_arm_pose(wrist_conf=0.02)))
+
+    assert "below confidence threshold" in result["message"]
+    assert ("set_scene_item_enabled", ("Avatar", 7, False)) in fake_transform_obs[
+        0
+    ].calls
+
+
+def test_manifest_rejects_stretch_without_orientation_pair():
+    with pytest.raises(ValueError) as error:
+        ActionManifest.model_validate(
+            {
+                "type": "roboflow_core/obs_action@v1",
+                "name": "obs",
+                "connection": "$steps.obs.connection",
+                "action": "move_source_to_keypoint",
+                "scene_name": "Avatar",
+                "source_name": "Arm",
+                "predictions": "$steps.pose.predictions",
+                "image": "$inputs.image",
+                "keypoint_name": "left_elbow",
+                "stretch_to_pair": True,
+            }
+        )
+
+    assert "stretch_to_pair" in str(error.value)
