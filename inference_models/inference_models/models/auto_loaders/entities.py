@@ -64,8 +64,6 @@ class InferenceModelConfig:
     quantization: Optional[str] = None
     dynamic_batch_size_supported: Optional[bool] = None
     static_batch_size: Optional[int] = None
-    runtime_compatibility_hash: Optional[str] = None
-    offline_compatibility_hash: Optional[str] = None
     offline_manifest_version: Optional[int] = None
     model_id: Optional[str] = None
     # Provider-resolved identity that owns this cached package.  ``model_id``

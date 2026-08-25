@@ -213,3 +213,9 @@ class InferenceSDKDeprecationWarning(Warning):
     """Class used for warning of deprecated features in the Inference SDK"""
 
     pass
+
+
+class InferenceSDKGuidanceWarning(Warning):
+    """Class used for recommendations on how to use the Inference SDK"""
+
+    pass

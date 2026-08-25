@@ -31,6 +31,7 @@ from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -73,7 +74,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     third_party_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # ---------------------------------------------------------------------------
 # Model variants
@@ -85,7 +86,7 @@ from inference_sdk import InferenceHTTPClient
 # - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.6-27b``).
 
 MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
-    # Native — small models that run on Roboflow infrastructure.
+    # Native — models served on Roboflow infrastructure.
     "Qwen 2.5 VL 7B": {
         "backend": "native",
         "model_id": "qwen25-vl-7b",
@@ -101,6 +102,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
     "Qwen 3.5 VL 2B": {
         "backend": "native",
         "model_id": "qwen3_5-2b",
+    },
+    "Qwen 3.8 VL 27B": {
+        "backend": "native",
+        "model_id": "qwen3_8-27b",
     },
     # OpenRouter — large hosted models reached via OpenRouter.
     "Qwen 3.5 9B": {
@@ -187,6 +192,7 @@ NATIVE_SUPPORTED_VARIANTS = NATIVE_MODEL_IDS + ["qwen-pretrains/2"]
 # which is the qwen3.5-2b base — so include the sentinel here too.
 NATIVE_THINKING_MODEL_VERSIONS = [
     "Qwen 3.5 VL 2B",
+    "Qwen 3.8 VL 27B",
     FINE_TUNED_NATIVE_LABEL,
 ]
 
@@ -392,7 +398,7 @@ A validator catches mismatches between your selected backend and model.
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Qwen-VL",
+            "name": "Qwen",
             "version": "v1",
             "short_description": "Run any Qwen vision model — natively or via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
@@ -965,6 +971,9 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._roboflow_api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         outputs: List[Dict[str, str]] = []

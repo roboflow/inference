@@ -100,6 +100,33 @@ def test_mask_visualization_block() -> None:
     )
 
 
+def test_mask_visualization_wraps_negative_class_id() -> None:
+    mask = np.zeros((1, 32, 32), dtype=np.bool_)
+    mask[0, 4:20, 4:20] = True
+    predictions = sv.Detections(
+        xyxy=np.array([[4, 4, 20, 20]], dtype=np.float64),
+        mask=mask,
+        class_id=np.array([-1]),
+    )
+
+    output = MaskVisualizationBlockV1().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        ),
+        predictions=predictions,
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=[],
+        color_axis="CLASS",
+        opacity=0.5,
+    )
+
+    assert np.any(output["image"].numpy_image)
+    assert predictions.class_id.tolist() == [-1]
+
+
 def test_mask_visualization_block_with_semantic_segmentation() -> None:
     """Block renders sv.Detections with RLE-encoded masks as produced by the
     semantic segmentation model block (mask=None, data["rle_mask"] populated)."""

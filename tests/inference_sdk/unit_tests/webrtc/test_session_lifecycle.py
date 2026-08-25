@@ -1,5 +1,7 @@
 """Unit tests for WebRTC session lifecycle management."""
 
+import asyncio
+import threading
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +9,38 @@ import numpy as np
 import pytest
 
 from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
+
+THREAD_TIMEOUT = 5
+
+
+class AsyncPeerConnectionStub:
+    """Async peer connection with deterministic close controls."""
+
+    def __init__(self, release=None, error=None):
+        self.close_calls = 0
+        self.close_started = threading.Event()
+        self.release = release
+        self.error = error
+
+    async def close(self):
+        self.close_calls += 1
+        self.close_started.set()
+        if self.release is not None:
+            await self.release.wait()
+        if self.error is not None:
+            raise self.error
+
+
+class AsyncSourceStub:
+    """Async stream source that records cleanup calls."""
+
+    def __init__(self):
+        self.cleanup_calls = 0
+        self.cleanup_started = threading.Event()
+
+    async def cleanup(self):
+        self.cleanup_calls += 1
+        self.cleanup_started.set()
 
 
 @pytest.fixture
@@ -22,6 +56,37 @@ def mock_session():
             stream_config=MagicMock(),
         )
     return session
+
+
+@pytest.fixture
+def running_session(mock_session):
+    """Attach a real background asyncio loop to a started session."""
+    loop = asyncio.new_event_loop()
+    loop_started = threading.Event()
+
+    def run_loop():
+        asyncio.set_event_loop(loop)
+        loop_started.set()
+        loop.run_forever()
+        loop.close()
+
+    loop_thread = threading.Thread(target=run_loop, daemon=True)
+    peer_connection = AsyncPeerConnectionStub()
+    source = AsyncSourceStub()
+
+    mock_session._loop = loop
+    mock_session._loop_thread = loop_thread
+    mock_session._pc = peer_connection
+    mock_session._source = source
+    mock_session._state = SessionState.STARTED
+    loop_thread.start()
+    assert loop_started.wait(timeout=THREAD_TIMEOUT)
+
+    yield mock_session, peer_connection, source
+
+    if loop_thread.is_alive():
+        loop.call_soon_threadsafe(loop.stop)
+        loop_thread.join(timeout=THREAD_TIMEOUT)
 
 
 class TestSessionLifecycle:
@@ -365,3 +430,205 @@ class TestCloseMethod:
         # Should have stopped after first frame
         assert len(calls) == 1
         assert mock_session._state == SessionState.CLOSED
+
+    def test_close_from_event_loop_returns_and_cleans_up(self, running_session):
+        """Test that close() does not block its own event loop."""
+        session, peer_connection, source = running_session
+        close_returned = threading.Event()
+
+        def close_from_event_loop():
+            session.close()
+            close_returned.set()
+
+        session._loop.call_soon_threadsafe(close_from_event_loop)
+
+        assert close_returned.wait(timeout=THREAD_TIMEOUT)
+        assert session._close_done.wait(timeout=THREAD_TIMEOUT)
+        assert peer_connection.close_calls == 1
+        assert source.cleanup_calls == 1
+        assert not session._loop_thread.is_alive()
+
+    def test_close_from_event_loop_does_not_wait_for_state_lock(self, running_session):
+        """Test that callback shutdown can return while startup owns the state lock."""
+        session, peer_connection, source = running_session
+        close_returned = threading.Event()
+
+        def close_from_event_loop():
+            session.close()
+            close_returned.set()
+
+        session._state_lock.acquire()
+
+        try:
+            session._loop.call_soon_threadsafe(close_from_event_loop)
+            assert close_returned.wait(timeout=THREAD_TIMEOUT)
+        finally:
+            session._state_lock.release()
+
+        assert session._close_done.wait(timeout=THREAD_TIMEOUT)
+        assert peer_connection.close_calls == 1
+        assert source.cleanup_calls == 1
+
+    def test_run_waits_for_event_loop_close_to_finish(self, running_session):
+        """Test that context-manager exit waits for callback-initiated cleanup."""
+        session, peer_connection, source = running_session
+        release_peer_close = asyncio.Event()
+        peer_connection.release = release_peer_close
+        video_waiting = threading.Event()
+        run_finished = threading.Event()
+        run_errors = []
+        original_get = session._video_queue.get
+
+        def get_video_frame():
+            video_waiting.set()
+            return original_get()
+
+        def run_session():
+            try:
+                session.run()
+            except Exception as error:
+                run_errors.append(error)
+            finally:
+                run_finished.set()
+
+        with patch.object(session._video_queue, "get", side_effect=get_video_frame):
+            run_thread = threading.Thread(target=run_session, daemon=True)
+            run_thread.start()
+            try:
+                assert video_waiting.wait(timeout=THREAD_TIMEOUT)
+
+                session._loop.call_soon_threadsafe(session.close)
+                assert peer_connection.close_started.wait(timeout=THREAD_TIMEOUT)
+                assert not run_finished.is_set()
+
+                session._loop.call_soon_threadsafe(release_peer_close.set)
+                assert run_finished.wait(timeout=THREAD_TIMEOUT)
+            finally:
+                if session._loop.is_running():
+                    session._loop.call_soon_threadsafe(session.close)
+                    session._loop.call_soon_threadsafe(release_peer_close.set)
+                run_thread.join(timeout=THREAD_TIMEOUT)
+
+        assert not run_thread.is_alive()
+        assert not run_errors
+        assert peer_connection.close_calls == 1
+        assert source.cleanup_calls == 1
+
+    def test_event_loop_close_returns_during_external_cleanup(self, running_session):
+        """Test that a loop-thread duplicate never waits for an external owner."""
+        session, peer_connection, source = running_session
+        release_peer_close = asyncio.Event()
+        peer_connection.release = release_peer_close
+        external_close_finished = threading.Event()
+        loop_close_returned = threading.Event()
+
+        def close_externally():
+            session.close()
+            external_close_finished.set()
+
+        def close_from_event_loop():
+            session.close()
+            loop_close_returned.set()
+
+        external_thread = threading.Thread(target=close_externally, daemon=True)
+        external_thread.start()
+        try:
+            assert peer_connection.close_started.wait(timeout=THREAD_TIMEOUT)
+
+            session._loop.call_soon_threadsafe(close_from_event_loop)
+            assert loop_close_returned.wait(timeout=THREAD_TIMEOUT)
+
+            session._loop.call_soon_threadsafe(release_peer_close.set)
+            assert external_close_finished.wait(timeout=THREAD_TIMEOUT)
+        finally:
+            if session._loop.is_running():
+                session._loop.call_soon_threadsafe(release_peer_close.set)
+            external_thread.join(timeout=THREAD_TIMEOUT)
+
+        assert not external_thread.is_alive()
+        assert peer_connection.close_calls == 1
+        assert source.cleanup_calls == 1
+
+    def test_close_failure_still_cleans_source_and_completes(self, running_session):
+        """Test that later cleanup runs when peer connection shutdown fails."""
+        session, peer_connection, source = running_session
+        peer_connection.error = RuntimeError("peer close failed")
+
+        with pytest.raises(RuntimeError, match="peer close failed"):
+            session.close()
+
+        assert source.cleanup_calls == 1
+        assert session._close_done.is_set()
+        assert not session._loop_thread.is_alive()
+
+    def test_background_close_failure_is_logged(self, running_session):
+        """Test that callback cleanup failures are logged after the callback returns."""
+        session, peer_connection, source = running_session
+        peer_connection.error = RuntimeError("peer close failed")
+        close_returned = threading.Event()
+        error_logged = threading.Event()
+
+        def close_from_event_loop():
+            session.close()
+            close_returned.set()
+
+        with patch(
+            "inference_sdk.webrtc.session.logger.exception",
+            side_effect=lambda *args, **kwargs: error_logged.set(),
+        ) as log_exception:
+            session._loop.call_soon_threadsafe(close_from_event_loop)
+            assert close_returned.wait(timeout=THREAD_TIMEOUT)
+            assert session._close_done.wait(timeout=THREAD_TIMEOUT)
+            assert error_logged.wait(timeout=THREAD_TIMEOUT)
+
+        assert source.cleanup_calls == 1
+        log_exception.assert_called_once_with("Failed to close WebRTC session")
+
+    def test_background_close_can_retry_when_thread_start_fails(self, running_session):
+        """Test that a failed helper start does not strand later close callers."""
+        session, peer_connection, source = running_session
+        close_returned = threading.Event()
+        close_errors = []
+
+        def close_from_event_loop():
+            try:
+                session.close()
+            except RuntimeError as error:
+                close_errors.append(error)
+            finally:
+                close_returned.set()
+
+        with patch(
+            "inference_sdk.webrtc.session.threading.Thread.start",
+            side_effect=RuntimeError("thread start failed"),
+        ):
+            session._loop.call_soon_threadsafe(close_from_event_loop)
+            assert close_returned.wait(timeout=THREAD_TIMEOUT)
+
+        session.close()
+
+        assert str(close_errors[0]) == "thread start failed"
+        assert peer_connection.close_calls == 1
+        assert source.cleanup_calls == 1
+
+    def test_close_cleans_resources_when_video_queue_is_full(self, running_session):
+        """Test cleanup when the end sentinel cannot be added to a full queue."""
+        session, peer_connection, source = running_session
+        while not session._video_queue.full():
+            session._video_queue.put_nowait(MagicMock())
+
+        session.close()
+
+        assert peer_connection.close_calls == 1
+        assert source.cleanup_calls == 1
+
+    def test_close_without_peer_connection_still_cleans_source(self, running_session):
+        """Test source cleanup when connection setup did not assign a peer."""
+        session, _, source = running_session
+        session._pc = None
+
+        session.close()
+
+        assert source.cleanup_calls == 1
+        assert session._close_done.is_set()
+        assert not session._loop_thread.is_alive()

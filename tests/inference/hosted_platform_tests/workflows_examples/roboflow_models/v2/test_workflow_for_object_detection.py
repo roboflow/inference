@@ -6,6 +6,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    apply_auth_mode,
 )
 
 DETECTION_WORKFLOW = {
@@ -90,12 +91,14 @@ def test_detection_workflow(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,
     crowd_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
