@@ -395,6 +395,7 @@ from datetime import datetime
                 deserialize_image_kind,
                 deserialize_video_metadata_kind,
             )
+            from inference.core.workflows.execution_engine.entities.base import Batch
             from inference.core.workflows.prototypes.block import BlockResult
 
             def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
@@ -489,6 +490,19 @@ from datetime import datetime
                             elif obj["_type"] == "ndarray":
                                 arr = np.array(obj["value"], dtype=obj["dtype"])
                                 return arr.reshape(obj["shape"])
+                            elif obj["_type"] == "batch":
+                                # Must precede the "object" case: without it a
+                                # Batch arrives stringified and blocks declaring
+                                # batch_oriented_parameters get a repr, not data.
+                                indices = obj.get("indices")
+                                return Batch(
+                                    content=[decode_inputs(v) for v in obj["value"]],
+                                    indices=(
+                                        [tuple(i) for i in indices]
+                                        if indices
+                                        else None
+                                    ),
+                                )
                             elif obj["_type"] == "object":
                                 return obj["value"]
                             elif obj["_type"] == "sv_detections":
@@ -716,6 +730,7 @@ from datetime import datetime
             deserialize_image_kind,
             deserialize_video_metadata_kind,
         )
+        from inference.core.workflows.execution_engine.entities.base import Batch
 
         def _decode(obj):
             if isinstance(obj, dict):
@@ -790,6 +805,12 @@ from datetime import datetime
                 if _type == "ndarray":
                     return np.array(obj["value"], dtype=obj["dtype"]).reshape(
                         obj["shape"]
+                    )
+                if _type == "batch":
+                    indices = obj.get("indices")
+                    return Batch(
+                        content=[_decode(v) for v in obj["value"]],
+                        indices=[tuple(i) for i in indices] if indices else None,
                     )
                 if _type == "bytes":
                     return (

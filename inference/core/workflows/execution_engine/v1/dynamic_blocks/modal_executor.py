@@ -281,6 +281,7 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
             serialize_video_metadata_kind,
         )
         from inference.core.workflows.execution_engine.entities.base import (
+            Batch,
             VideoMetadata,
             WorkflowImageData,
         )
@@ -288,6 +289,18 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
         if isinstance(value, sv.Detections):
             serialized = serialise_sv_detections(detections=value)
             serialized["_type"] = "sv_detections"
+        elif isinstance(value, Batch):
+            # Batch is not a list/dict subclass, so without an explicit case it
+            # falls through to the generic encoder, which stringifies it via
+            # `str(obj)` and destroys the payload. Batch-oriented dynamic blocks
+            # then receive the repr instead of their data.
+            serialized = {
+                "_type": "batch",
+                "value": [patch_for_modal_serialization(item) for item in value],
+                "indices": (
+                    [list(index) for index in value.indices] if value.indices else None
+                ),
+            }
         elif isinstance(value, WorkflowImageData):
             serialized = _serialise_image_for_webexec(value)
             serialized["_type"] = "workflow_image"
@@ -747,6 +760,7 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
         serialize_video_metadata_kind,
     )
     from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
         VideoMetadata,
         WorkflowImageData,
     )
@@ -756,6 +770,16 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
             d = serialise_sv_detections(detections=value)
             d["_type"] = "sv_detections"
             return {k: _pack(v) for k, v in d.items()}
+        if isinstance(value, Batch):
+            # Mirrors the JSON transport: Batch is neither list nor dict, so it
+            # needs an explicit case or its contents never reach the block.
+            return {
+                "_type": "batch",
+                "value": [_pack(item) for item in value],
+                "indices": (
+                    [list(index) for index in value.indices] if value.indices else None
+                ),
+            }
         if isinstance(value, WorkflowImageData):
             d = _serialize_image_for_msgpack(value)
             return {k: _pack(v) for k, v in d.items()}
