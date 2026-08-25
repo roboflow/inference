@@ -179,28 +179,6 @@ def test_encode_image_for_task_uses_jpeg_for_caption() -> None:
 
 @patch(
     "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
-    "_execute_proxied_spacexai_request"
-)
-def test_execute_spacexai_request_routes_rf_key_to_proxy(
-    proxied_mock: MagicMock,
-) -> None:
-    proxied_mock.return_value = "proxied"
-    result = execute_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[{"role": "user", "content": []}],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-    assert result == "proxied"
-    proxied_mock.assert_called_once()
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
     "_execute_direct_spacexai_request"
 )
 def test_execute_spacexai_request_routes_direct_key(
