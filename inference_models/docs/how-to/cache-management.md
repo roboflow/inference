@@ -78,12 +78,11 @@ Downloaded model files (weights, configs, class names, etc.) are cached locally 
 
     This means:
 
-    - A credential-free offline load may reuse it only when current cache
-      metadata resolves the requested alias to one unambiguous canonical model
-    - A non-empty API key uses only its exact auto-resolution entry; changing
-      the key does not use credential-independent fallback
     - The default library access manager does **not add tenant authorization**
       for otherwise eligible local files
+    - `OFFLINE_MODE` loads serve the offline-weights registry with no
+      credential revalidation; plug a custom `ModelAccessManager` into
+      `AutoModel.from_pretrained` when offline auth checks are required
     - In single-user environments, this is typically the desired behavior for convenience
 
     **Multi-tenant environments:**
@@ -138,28 +137,32 @@ Files without content hashes are stored directly in the model package directory.
 
 Model package cache **does not expire automatically** - files remain until manually deleted.
 
-### Offline cache compatibility
+### Offline loading
 
-Current package manifests record the exact cache owner, provider-resolved
-canonical model ID, source trust, dependency metadata, package-selection
-constraints, and a structured runtime compatibility fingerprint.
-`OFFLINE_MODE=True` only loads a package whose manifest matches the current
-request and runtime.
+`OFFLINE_MODE=True` serves models from the **offline-weights registry**
+(`$INFERENCE_HOME/offline-weights-registry/`, one JSON record per canonical
+model). Records are written while running online with
+`OFFLINE_MODE_WARM_UP=True`: every model that package auto-negotiation
+selected and that initialized successfully is recorded together with the full
+provider metadata — every available package with its backend, quantization,
+batch limits and TensorRT/CUDA environment requirements. Offline loads re-run
+the same auto-negotiation against those records and verify that every recorded
+artefact file is present; there is no per-load hashing (use
+`AutoModel.verify_offline_model(model_id, check_hashes=True)` for an explicit
+integrity pass and `AutoModel.list_offline_models()` to inspect the
+registry).
 
-A request with a non-empty API key may use only the exact auto-resolution entry
-created for that key and set of loading parameters. A changed or rotated key
-does not use credential-independent fallback; reconnect and re-warm it. A
-credential-free offline restart may reuse compatible metadata only when every
-matching current entry is canonically attributed and all of them resolve to one
-canonical model identity. Ambiguous aliases fail closed.
+Before disconnecting a deployment, run the full workload once with
+`OFFLINE_MODE_WARM_UP=True` on the same machine (or an identical fleet image)
+with the same backend, device, quantization, batch, ONNX-provider, and
+dependency settings that the offline process will use. Caches warmed by
+`inference-models <= 0.35` contain no registry records and need that warm-up
+run once.
 
-New writes use a V2 model-cache path with a 128-bit identity digest. V1 paths
-with the older 32-bit digest are read-only and accepted only when a regular
-manifest proves the exact model owner. Ownerless or mismatched legacy entries
-are rejected. Before disconnecting a deployment, install the matching
-`inference-models` release and warm every required model again under the same
-backend, device, quantization, batch, ONNX-provider, and dependency settings
-that the offline process will use.
+Model-cache paths use the V2 layout with a 128-bit identity digest. V1 paths
+with the older 32-bit digest (`inference-models < 0.32.0`) are no longer read
+at all — models cached under them re-download into V2 paths on the next
+online load, and the stale V1 directories can be deleted to reclaim space.
 
 **Purge model cache:**
 ```bash

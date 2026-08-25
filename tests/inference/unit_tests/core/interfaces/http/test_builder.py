@@ -475,3 +475,157 @@ def test_fallback_redirect_not_exists(builder_app):
     response = client.get("/build/does-not-exist", follow_redirects=False)
     assert response.status_code == HTTP_302_FOUND
     assert response.headers["location"] == "/build"
+
+
+def _install_models_route_harness(routes, monkeypatch, scanned_models):
+    """Stub the /build/api/models data sources with a fixed scan result."""
+    fake_aliases_module = type(sys)("inference.models.aliases")
+    fake_aliases_module.REGISTERED_ALIASES = {}
+    monkeypatch.setitem(
+        sys.modules,
+        "inference.models.aliases",
+        fake_aliases_module,
+    )
+    monkeypatch.setattr(
+        routes, "get_configured_model_cache_roots", lambda: ["/cache/only"]
+    )
+    monkeypatch.setattr(
+        routes,
+        "scan_cached_models",
+        lambda cache_root, excluded_cache_roots: list(scanned_models),
+    )
+    monkeypatch.setattr(routes, "load_workflow_blocks", lambda: [])
+    monkeypatch.setattr(routes, "get_cached_foundation_models", lambda blocks: [])
+    monkeypatch.setattr(routes, "get_task_type_to_block_mapping", lambda blocks: {})
+    monkeypatch.setattr(routes, "_models_cache", None)
+    monkeypatch.setattr(routes, "USE_INFERENCE_MODELS", True)
+
+
+def _scanned_model(model_id: str) -> dict:
+    return {
+        "model_id": model_id,
+        "name": model_id,
+        "task_type": "object-detection",
+        "model_architecture": "rfdetr",
+        "is_foundation": False,
+    }
+
+
+def test_offline_mode_hides_models_absent_from_offline_registry(
+    builder_app, monkeypatch
+):
+    """A cached manifest alone is not offline-loadable: without a registry
+    record the picker must not list the model (over-promise regression)."""
+    from inference.core.interfaces.http.builder import routes
+
+    _install_models_route_harness(
+        routes,
+        monkeypatch,
+        [_scanned_model("workspace/registered/1"), _scanned_model("workspace/manifest-only/1")],
+    )
+    monkeypatch.setattr(routes, "OFFLINE_MODE", True)
+    monkeypatch.setattr(
+        routes,
+        "_offline_loadable_model_ids",
+        lambda: {"workspace/registered/1"},
+    )
+    client = TestClient(builder_app)
+
+    response = client.get("/build/api/models", headers={"X-CSRF": routes.csrf})
+
+    assert response.status_code == HTTP_200_OK
+    listed = {model["model_id"] for model in response.json()["models"]}
+    assert listed == {"workspace/registered/1"}
+
+
+def test_offline_mode_keeps_listing_when_registry_unreadable(
+    builder_app, monkeypatch
+):
+    """Registry consultation failing must fail open (full listing), not
+    present an empty picker."""
+    from inference.core.interfaces.http.builder import routes
+
+    _install_models_route_harness(
+        routes, monkeypatch, [_scanned_model("workspace/some/1")]
+    )
+    monkeypatch.setattr(routes, "OFFLINE_MODE", True)
+    monkeypatch.setattr(routes, "_offline_loadable_model_ids", lambda: None)
+    client = TestClient(builder_app)
+
+    response = client.get("/build/api/models", headers={"X-CSRF": routes.csrf})
+
+    assert response.status_code == HTTP_200_OK
+    listed = {model["model_id"] for model in response.json()["models"]}
+    assert listed == {"workspace/some/1"}
+
+
+def test_offline_loadable_model_ids_requires_materialized_package(monkeypatch):
+    """The helper mirrors the offline provider's bar: record + at least one
+    fully-present package; aliases from the record count as loadable ids."""
+    from inference.core.interfaces.http.builder import routes
+    from inference_models.weights_providers import offline_registry
+
+    materialized = offline_registry.OfflineModelStatus(
+        canonical_model_id="workspace/full/1",
+        requested_aliases=["full-alias"],
+        source="warmup",
+        recorded_at=None,
+        proven={},
+        packages=[
+            offline_registry.OfflinePackageStatus(
+                package_id="pkga",
+                trusted_source=True,
+                presence=offline_registry.OfflinePackagePresence.OK,
+            )
+        ],
+    )
+    record_only = offline_registry.OfflineModelStatus(
+        canonical_model_id="workspace/empty/1",
+        requested_aliases=[],
+        source="warmup",
+        recorded_at=None,
+        proven={},
+        packages=[
+            offline_registry.OfflinePackageStatus(
+                package_id="pkgb",
+                trusted_source=True,
+                presence=offline_registry.OfflinePackagePresence.MISSING,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        offline_registry,
+        "list_records_status",
+        lambda: [materialized, record_only],
+    )
+
+    assert routes._offline_loadable_model_ids() == {
+        "workspace/full/1",
+        "full-alias",
+    }
+
+
+def test_offline_mode_does_not_filter_legacy_loader_listing(
+    builder_app, monkeypatch
+):
+    """USE_INFERENCE_MODELS=False serves traditional-layout caches offline
+    without the registry - the picker must keep listing them."""
+    from inference.core.interfaces.http.builder import routes
+
+    _install_models_route_harness(
+        routes, monkeypatch, [_scanned_model("workspace/legacy/1")]
+    )
+    monkeypatch.setattr(routes, "OFFLINE_MODE", True)
+    monkeypatch.setattr(routes, "USE_INFERENCE_MODELS", False)
+    monkeypatch.setattr(
+        routes,
+        "_offline_loadable_model_ids",
+        lambda: set(),
+    )
+    client = TestClient(builder_app)
+
+    response = client.get("/build/api/models", headers={"X-CSRF": routes.csrf})
+
+    assert response.status_code == HTTP_200_OK
+    listed = {model["model_id"] for model in response.json()["models"]}
+    assert listed == {"workspace/legacy/1"}

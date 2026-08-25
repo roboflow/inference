@@ -18,6 +18,7 @@ from typing import List, Optional, Type
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -36,7 +37,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
 class Qwen3VLBlockV1(WorkflowBlock):
@@ -99,6 +100,9 @@ class Qwen3VLBlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

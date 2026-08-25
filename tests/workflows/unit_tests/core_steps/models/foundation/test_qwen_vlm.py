@@ -166,6 +166,13 @@ def test_all_variants_have_valid_backend():
         assert info["model_id"], label
 
 
+def test_qwen3_8_native_variant_is_registered():
+    assert MODEL_VARIANTS["Qwen 3.8 VL 27B"] == {
+        "backend": "native",
+        "model_id": "qwen3_8-27b",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Native prompt builder
 # ---------------------------------------------------------------------------

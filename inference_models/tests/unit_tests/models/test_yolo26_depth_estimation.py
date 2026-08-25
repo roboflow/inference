@@ -31,7 +31,9 @@ def _meta(
                 height=original_h if original_h is not None else after_h,
                 width=original_w if original_w is not None else after_w,
             ),
-            static_crop_offset=MagicMock(offset_x=crop_offset_x, offset_y=crop_offset_y),
+            static_crop_offset=MagicMock(
+                offset_x=crop_offset_x, offset_y=crop_offset_y
+            ),
         )
     ]
 
@@ -90,9 +92,7 @@ def test_post_process_depth_estimation_map_crops_letterbox_padding():
 
     results = post_process_depth_estimation_map(
         model_results=depth,
-        pre_processing_meta=_meta(
-            h, w, pad_top=2, pad_bottom=2, after_h=4, after_w=8
-        ),
+        pre_processing_meta=_meta(h, w, pad_top=2, pad_bottom=2, after_h=4, after_w=8),
         device=torch.device("cpu"),
     )
 
@@ -184,7 +184,11 @@ def test_yolo26_depth_estimation_registered():
     )
 
     for backend in (BackendType.ONNX, BackendType.TORCH_SCRIPT, BackendType.TRT):
-        assert ("yolo26", DEPTH_ESTIMATION_TASK, backend) in REGISTERED_MODELS, (
+        assert (
+            "yolo26",
+            DEPTH_ESTIMATION_TASK,
+            backend,
+        ) in REGISTERED_MODELS, (
             f"Missing yolo26 depth estimation entry for backend {backend}"
         )
 

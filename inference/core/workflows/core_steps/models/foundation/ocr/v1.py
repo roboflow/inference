@@ -11,6 +11,7 @@ from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -204,6 +205,7 @@ class OCRModelBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )

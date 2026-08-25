@@ -363,6 +363,15 @@ ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
+# PYTHONPATH-injection immunity for the custom CUDA OpenCV. cv2 lives outside
+# dist-packages (/opt/opencv/python) and used to be reachable ONLY through the
+# ENV PYTHONPATH above, so any orchestrator-level PYTHONPATH override silently
+# dropped cv2 from sys.path
+RUN site_dir="$(python3 -c 'import site; print(site.getsitepackages()[0])')" && \
+    echo "/opt/opencv/python" > "${site_dir}/opencv-custom-build.pth" && \
+    echo "/opt/opencv/lib" > /etc/ld.so.conf.d/000-opencv-custom-build.conf && \
+    ldconfig
+
 # GStreamer's CUDA converters (cudaconvert / cudascale / cudaconvertscale) build
 # their kernels at runtime with NVRTC, and gst-plugins-bad's gstcudanvrtc.cpp
 # dlopen()s the UNVERSIONED soname "libnvrtc.so". CUDA *runtime* base images ship
@@ -423,6 +432,10 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     sh /tmp/verify_media_runtime && \
     OPENCV_REQUIRE_CUDA_BUILD=true sh /tmp/verify_opencv && \
     rm -rf /root/.cache/gstreamer-1.0
+
+# Assert the PYTHONPATH-injection immunity established above
+RUN PYTHONPATH="/definitely/not/a/real/path" \
+    python3 -c "import cv2; print('cv2 immune to PYTHONPATH override:', cv2.__version__)"
 
 RUN --mount=type=bind,source=docker/scripts/verify_triton_jit_toolchain.py,target=/tmp/verify_triton_jit_toolchain.py,ro \
     python3 /tmp/verify_triton_jit_toolchain.py

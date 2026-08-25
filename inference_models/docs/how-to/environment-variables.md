@@ -85,14 +85,42 @@ imports to `$INFERENCE_HOME/hf_home`, `$MODEL_CACHE_DIR/hf_home`, or
 processor, and checkpoint downloads in the mounted cache across the
 online-warm and fresh-offline phases.
 
-Warm the cache online with the matching `inference-models` release and the same
-model-loading constraints and runtime environment before enabling offline mode.
-Legacy cache manifests do not contain the canonical owner, trust, dependency,
-and compatibility metadata required by the offline loader and must be
-re-warmed. A credential-free offline restart can use a cache warmed with a key
-only when the current metadata proves one unambiguous canonical model identity.
-A changed or rotated non-empty key requires an exact matching cache entry and
-otherwise fails closed.
+In `OFFLINE_MODE` the `roboflow` weights provider is transparently replaced by
+the `roboflow-offline-weights` provider, which serves models from the
+**offline-weights registry** (`$INFERENCE_HOME/offline-weights-registry/`).
+The registry is built by running online with `OFFLINE_MODE_WARM_UP=True` (see
+below); a model without a registry record cannot be loaded offline. Offline
+loads re-run the standard package auto-negotiation against the recorded
+provider metadata (backend, quantization, batch and TensorRT/CUDA environment
+requirements) and verify that every recorded artefact file is present — no
+per-load hashing. The operator owns the integrity of the mounted storage; use
+`AutoModel.verify_offline_model(model_id, check_hashes=True)` for an explicit
+integrity check and `AutoModel.list_offline_models()` to inspect the
+registry. TensorRT execution
+provider engine caches are written and reused in offline mode like in any
+other mode, so warm restarts stay fast. Custom (non-Roboflow) weights
+providers are not restricted by `OFFLINE_MODE`; keeping them offline is the
+operator's responsibility. `OFFLINE_MODE` is refused on hosted/serverless
+deployments.
+
+**`OFFLINE_MODE_WARM_UP`**
+Online mode plus offline-cache building. Mutually exclusive with
+`OFFLINE_MODE` — enabling both fails at model load.
+
+```bash
+export OFFLINE_MODE_WARM_UP="True"
+```
+
+While enabled, every requested model triggers a metadata pre-fetch from the
+Roboflow API (cache hits included), and each package that auto-negotiation
+selected and that initialized successfully is recorded in the offline-weights
+registry together with the full provider metadata. If the pre-fetch fails, the
+model is served normally from the online cache with a warning and is NOT
+registered. The intended flow: run the full workload once with
+`OFFLINE_MODE_WARM_UP=True` and network access, confirm the registry with
+`AutoModel.list_offline_models()`, then restart with `OFFLINE_MODE=True`.
+Caches warmed by inference-models `<= 0.35` contain no registry records and
+need one warm-up run.
 
 ### Device Selection
 
@@ -407,6 +435,22 @@ Default: `64`
 export INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K="32"
 ```
 
+#### Qwen3.8
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE="true"
+```
+
 #### Qwen2.5-VL
 
 **`INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS`**
@@ -428,6 +472,44 @@ Default: `true`
 
 ```bash
 export INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS="false"
+```
+
+#### Mage-VL
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE="true"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE`**
+Default: `hevc`. Allowed values: `hevc`, `dcvc-rt`. Any other value fails at import
+with `InvalidEnvVariable`.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE="dcvc-rt"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS`**
+Default: `16`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS="24"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS`**
+Default: `153664`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS="200000"
 ```
 
 #### Qwen3-VL
@@ -523,6 +605,7 @@ plan = RFDetrExecutionPlan(
     postprocessor_id="triton-fused-v1",
     engine_plugin_id="base",
     allow_compatibility_fallback=True,
+    allow_runtime_failure_fallback=True,
 )
 model = AutoModel.from_pretrained(
     "rfdetr-small",
@@ -561,8 +644,16 @@ contract, RF-DETR uses its declared `base` fallback and records the requested
 implementation, effective implementation, and reason in logs and runtime metadata.
 This policy applies consistently to preprocessing and postprocessing. Set
 `allow_compatibility_fallback=False` in an explicit plan to require the selected
-implementation or an error. Compilation, CUDA, allocation, and other execution
-failures are never converted into fallbacks.
+implementation or an error; this global strictness gate also prevents runtime-failure
+fallback.
+
+Recoverable execution failures, such as recognized Triton JIT compilation or launch
+failures, may follow the declared `base` fallback when both
+`allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`. Both
+fields default to `True`. Set `allow_runtime_failure_fallback=False` to retain
+compatibility fallback for unsupported model or request contracts while requiring
+runtime execution failures to surface as `ModelRuntimeError`. Allocation and other
+unclassified execution failures are never converted into fallbacks.
 
 An all-`False` `PreProcessingOverrides` object is a no-op and remains compatible with
 `triton-universal-v1`. Requests with any active preprocessing override use the declared
