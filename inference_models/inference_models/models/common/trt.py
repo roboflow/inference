@@ -47,6 +47,9 @@ except ImportError as import_error:
     ) from import_error
 
 
+_CUDA_GRAPH_CAPTURE_LOCK = threading.Lock()
+
+
 class InferenceTRTLogger(trt.ILogger):
     def __init__(self, with_memory: bool = False):
         super().__init__()
@@ -863,15 +866,16 @@ def _capture_cuda_graph(
     stream.synchronize()
 
     cuda_graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(
-        cuda_graph, stream=stream, capture_error_mode="thread_local"
-    ):
-        status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
-        if not status:
-            raise ModelRuntimeError(
-                message="Failed to capture CUDA graph from TRT model execution.",
-                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-            )
+    with _CUDA_GRAPH_CAPTURE_LOCK:
+        with torch.cuda.graph(
+            cuda_graph, stream=stream, capture_error_mode="thread_local"
+        ):
+            status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
+            if not status:
+                raise ModelRuntimeError(
+                    message="Failed to capture CUDA graph from TRT model execution.",
+                    help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                )
     with torch.cuda.stream(stream):
         results = [buf.clone() for buf in output_buffers]
     stream.synchronize()

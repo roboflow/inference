@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- TensorRT CUDA graphs are now captured in thread-local capture mode and serialized behind a
+  process-wide lock. Capturing in the default global mode made every other thread in the process
+  fail with `CUDA error 906` (`cudaErrorStreamCaptureImplicit`, "operation would make the legacy
+  stream depend on a capturing blocking stream") whenever a graph was captured for a newly seen
+  input shape, which broke concurrent inference on devices running several pipelines in one process.
+
 ---
 
 ## `0.36.0`
