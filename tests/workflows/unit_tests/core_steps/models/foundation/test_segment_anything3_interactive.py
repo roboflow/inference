@@ -5,16 +5,22 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
     BlockManifest,
     SegmentAnything3InteractiveBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1_tensor import (
+    SegmentAnything3InteractiveBlockV1 as TensorSegmentAnything3InteractiveBlockV1,
+)
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from inference_models.models.base.object_detection import Detections
 
 
 @pytest.fixture
@@ -145,9 +151,12 @@ def test_run_locally_with_point_prompts(
     assert prompts[0].points[0].x == 320
     assert prompts[0].points[0].positive is True
     assert prompts[0].points[1].positive is False
+    predictions = result[0]["predictions"]
+    assert predictions.class_id.tolist() == [-1]
+    assert predictions["class_name"].tolist() == ["foreground"]
 
 
-def test_run_locally_with_boxes_and_points(
+def test_numpy_boxes_and_points_keep_class_zero_distinct_from_point_prompt(
     mock_model_manager, mock_workflow_image_data
 ) -> None:
     block = SegmentAnything3InteractiveBlockV1(
@@ -181,7 +190,52 @@ def test_run_locally_with_boxes_and_points(
     assert point_prompts[0].points[0].x == 320
     # masks from both requests are merged into a single output
     predictions = result[0]["predictions"]
+    assert predictions.class_id.tolist() == [0, -1]
     assert list(predictions["class_name"]) == ["object", "foreground"]
+
+
+def test_tensor_boxes_and_points_keep_class_zero_distinct_from_point_prompt(
+    mock_workflow_image_data,
+) -> None:
+    model_manager = MagicMock()
+    model_prediction = MagicMock()
+    model_prediction.masks = torch.ones((1, 480, 640), dtype=torch.float32)
+    model_prediction.scores = torch.tensor([0.95], dtype=torch.float32)
+    model_manager.run_tensor_native_inference.side_effect = [
+        [model_prediction],
+        [model_prediction],
+    ]
+    block = TensorSegmentAnything3InteractiveBlockV1(
+        model_manager=model_manager,
+        api_key="test_api_key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    boxes = Detections(
+        xyxy=torch.tensor([[10, 10, 50, 50]], dtype=torch.float32),
+        class_id=torch.tensor([0], dtype=torch.int64),
+        confidence=torch.tensor([0.9], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {0: "object"}},
+        bboxes_metadata=[{"detection_id": "det_1"}],
+    )
+
+    result = block.run_locally(
+        images=[mock_workflow_image_data],
+        points=[[320, 240]],
+        boxes=[boxes],
+        threshold=0.0,
+        multimask_output=False,
+    )
+
+    predictions = result[0]["predictions"]
+    assert predictions.class_id.tolist() == [0, -1]
+    assert [metadata["class"] for metadata in predictions.bboxes_metadata] == [
+        "object",
+        "foreground",
+    ]
+    assert predictions.image_metadata[CLASS_NAMES_KEY] == {
+        0: "object",
+        -1: "foreground",
+    }
 
 
 def test_run_locally_with_empty_detections_and_no_points(

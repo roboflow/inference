@@ -3,6 +3,11 @@ import os
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
+
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -57,7 +62,7 @@ def assert_instances_detected(response: requests.Response) -> None:
 
 @pytest.mark.parametrize("alias", list(RFDETR_DETECTION_ALIASES))
 def test_rfdetr_detection_via_v1_endpoint(
-    alias: str, clean_loaded_models_every_test_fixture
+    alias: str, auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     payload = {
         "model_id": alias,
@@ -67,7 +72,8 @@ def test_rfdetr_detection_via_v1_endpoint(
 
     response = requests.post(
         f"{base_url}:{port}/infer/object_detection",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     assert_instances_detected(response)
@@ -79,14 +85,18 @@ def test_rfdetr_detection_via_v1_endpoint(
     ids=list(RFDETR_DETECTION_ALIASES),
 )
 def test_rfdetr_detection_via_legacy_endpoint(
-    model_id: str, clean_loaded_models_every_test_fixture
+    model_id: str, auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     response = requests.post(
         f"{base_url}:{port}/{model_id}",
-        params={
-            "api_key": api_key,
-            "image": DOG_IMAGE_URL,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "api_key": api_key,
+                "image": DOG_IMAGE_URL,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     assert_instances_detected(response)
@@ -94,7 +104,7 @@ def test_rfdetr_detection_via_legacy_endpoint(
 
 @pytest.mark.parametrize("alias", list(RFDETR_SEGMENTATION_ALIASES))
 def test_rfdetr_segmentation_via_v1_endpoint(
-    alias: str, clean_loaded_models_every_test_fixture
+    alias: str, auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     payload = {
         "model_id": alias,
@@ -104,7 +114,8 @@ def test_rfdetr_segmentation_via_v1_endpoint(
 
     response = requests.post(
         f"{base_url}:{port}/infer/instance_segmentation",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     assert_instances_detected(response)
@@ -116,14 +127,18 @@ def test_rfdetr_segmentation_via_v1_endpoint(
     ids=list(RFDETR_SEGMENTATION_ALIASES),
 )
 def test_rfdetr_segmentation_via_legacy_endpoint(
-    model_id: str, clean_loaded_models_every_test_fixture
+    model_id: str, auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     response = requests.post(
         f"{base_url}:{port}/{model_id}",
-        params={
-            "api_key": api_key,
-            "image": DOG_IMAGE_URL,
-        },
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "api_key": api_key,
+                "image": DOG_IMAGE_URL,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     assert_instances_detected(response)
