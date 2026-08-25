@@ -1284,6 +1284,23 @@ SECRET_KIND = Kind(
     internal_data_type="str",
 )
 
+OBS_CONNECTION_KIND_DOCS = """
+This kind represents a connection to an OBS Studio websocket server, produced by the
+**OBS Connection** block and consumed by **OBS Action** blocks.
+
+Example:
+```
+{"host": "127.0.0.1", "port": 4455, "password": "***", "timeout": 3}
+```
+"""
+OBS_CONNECTION_KIND = Kind(
+    name="obs_connection",
+    description="Connection to an OBS Studio websocket server",
+    docs=OBS_CONNECTION_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="dict",
+)
+
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"

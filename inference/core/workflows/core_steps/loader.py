@@ -424,6 +424,7 @@ else:
     from inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor import (
         DetectionsDifferenceBlockV1,
     )
+
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -1074,6 +1075,13 @@ else:
     from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
         VisionEventBundleSinkBlockV1,
     )
+
+from inference.core.workflows.core_steps.sinks.obs.action.v1 import (
+    OBSActionBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.obs.connection.v1 import (
+    OBSConnectionBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1542,6 +1550,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     NUMPY_ARRAY_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    OBS_CONNECTION_KIND,
     PARENT_ID_KIND,
     POINT_KIND,
     PREDICTION_TYPE_KIND,
@@ -1897,6 +1906,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TrackerSORTBlockV1,
         TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
+        OBSConnectionBlockV1,
+        OBSActionBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowInstanceSegmentationModelBlockV3,
@@ -2050,6 +2061,7 @@ def load_kinds() -> List[Kind]:
         BYTES_KIND,
         INFERENCE_ID_KIND,
         SECRET_KIND,
+        OBS_CONNECTION_KIND,
         (
             EMBEDDING_KIND
             if not ENABLE_TENSOR_DATA_REPRESENTATION
