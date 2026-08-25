@@ -178,6 +178,7 @@ class WebRTCSession:
         stream_config: StreamConfig,
         model_mode: bool = False,
         predictions_output: Optional[str] = None,
+        api_key_transport: str = "legacy",
     ) -> None:
         """Initialize WebRTC session.
 
@@ -206,9 +207,13 @@ class WebRTCSession:
 
         self._state: SessionState = SessionState.NOT_STARTED
         self._state_lock: threading.Lock = threading.Lock()
+        self._close_lock: threading.Lock = threading.Lock()
+        self._close_started = False
+        self._close_done = threading.Event()
 
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
+        self._api_key_transport = api_key_transport
         self._source = source
         self._image_input_name = image_input_name
         self._workflow_config = workflow_config
@@ -349,42 +354,91 @@ class WebRTCSession:
         This method closes the WebRTC peer connection, releases source resources
         (webcam, video files, etc.), stops the event loop, and joins the background thread.
 
-        It's safe to call this multiple times - subsequent calls are no-ops.
+        Calls from the WebRTC event loop dispatch cleanup to a helper thread so the
+        loop remains available to finish its asynchronous cleanup. Other callers
+        block until that cleanup completes.
 
         Example:
             session = client.webrtc.stream(source=source, workflow=workflow)
             session.run()  # Auto-starts and auto-closes on exception
             session.close()  # Explicit cleanup (or let __del__ handle it)
         """
-        with self._state_lock:
-            if self._state == SessionState.CLOSED:
-                return  # Already closed, nothing to do
-            self._state = SessionState.CLOSED
+        if threading.current_thread() is self._loop_thread:
+            self._close_from_event_loop()
+            return
 
-        # Signal video iterator to stop by putting None sentinel
-        try:
-            self._video_queue.put_nowait(None)
-        except Exception:
-            pass  # Queue might be full, but that's okay
+        with self._close_lock:
+            if self._close_started:
+                close_owner = False
+            else:
+                self._close_started = True
+                close_owner = True
 
-        # Cleanup resources (nested finally ensures all cleanup steps execute)
-        try:
-            # Close peer connection
-            if self._loop and self._pc:
-                asyncio.run_coroutine_threadsafe(self._pc.close(), self._loop).result()
-        finally:
+        if close_owner:
+            self._close_resources()
+        else:
+            self._close_done.wait()
+
+    def _close_from_event_loop(self) -> None:
+        """Dispatch cleanup without blocking the WebRTC event loop."""
+        with self._close_lock:
+            if self._close_started:
+                return
+            self._close_started = True
+            close_thread = threading.Thread(
+                target=self._close_in_background,
+                name="webrtc-session-close",
+                daemon=True,
+            )
             try:
-                # Cleanup source (webcam, video file, etc.)
-                if self._loop and self._source:
+                close_thread.start()
+            except Exception:
+                self._close_started = False
+                raise
+
+    def _close_in_background(self) -> None:
+        """Close resources owned by a callback without surfacing async errors."""
+        try:
+            self._close_resources()
+        except Exception:
+            logger.exception("Failed to close WebRTC session")
+
+    def _close_resources(self) -> None:
+        """Close session resources once and signal waiting callers."""
+        try:
+            with self._state_lock:
+                self._state = SessionState.CLOSED
+
+            # Signal video iterator to stop by putting None sentinel
+            try:
+                self._video_queue.put_nowait(None)
+            except Exception:
+                pass  # Queue might be full, but that's okay
+
+            # Cleanup resources (nested finally ensures all cleanup steps execute)
+            try:
+                # Close peer connection
+                if self._loop and self._pc:
                     asyncio.run_coroutine_threadsafe(
-                        self._source.cleanup(), self._loop
+                        self._pc.close(), self._loop
                     ).result()
             finally:
-                # Stop event loop and join thread
-                if self._loop:
-                    self._loop.call_soon_threadsafe(self._loop.stop)
-                if self._loop_thread:
-                    self._loop_thread.join(timeout=WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT)
+                try:
+                    # Cleanup source (webcam, video file, etc.)
+                    if self._loop and self._source:
+                        asyncio.run_coroutine_threadsafe(
+                            self._source.cleanup(), self._loop
+                        ).result()
+                finally:
+                    # Stop event loop and join thread
+                    if self._loop:
+                        self._loop.call_soon_threadsafe(self._loop.stop)
+                    if self._loop_thread:
+                        self._loop_thread.join(
+                            timeout=WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT
+                        )
+        finally:
+            self._close_done.set()
 
     def __enter__(self) -> "WebRTCSession":
         """Enter context manager - returns self.
@@ -1161,17 +1215,21 @@ class WebRTCSession:
         }
         wf_conf.update(self._workflow_config)
 
-        payload = {
-            "api_key": self._api_key,
-            "workflow_configuration": wf_conf,
-            "webrtc_offer": {
-                "type": pc.localDescription.type,
-                "sdp": pc.localDescription.sdp,
-            },
-            "webrtc_realtime_processing": self._config.realtime_processing,
-            "stream_output": self._config.stream_output,
-            "data_output": self._config.data_output,
-        }
+        payload = {}
+        if self._api_key_transport != "header":
+            payload["api_key"] = self._api_key
+        payload.update(
+            {
+                "workflow_configuration": wf_conf,
+                "webrtc_offer": {
+                    "type": pc.localDescription.type,
+                    "sdp": pc.localDescription.sdp,
+                },
+                "webrtc_realtime_processing": self._config.realtime_processing,
+                "stream_output": self._config.stream_output,
+                "data_output": self._config.data_output,
+            }
+        )
 
         # Add WebRTC config if available (auto-fetched or user-provided)
         # Server accepts webrtc_config with iceServers array format
@@ -1212,6 +1270,8 @@ class WebRTCSession:
         # Call server to initialize worker
         url = f"{self._api_url}/initialise_webrtc_worker"
         headers = {"Content-Type": "application/json"}
+        if self._api_key_transport != "legacy" and self._api_key is not None:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
         ans: Dict[str, Any] = resp.json()

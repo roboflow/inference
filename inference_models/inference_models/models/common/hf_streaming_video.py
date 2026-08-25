@@ -20,7 +20,7 @@ tracker (construction, session init, locking).  ``HFStreamingVideoBase``
 adds the SAM2-shaped visually prompted ``prompt`` / ``track`` contract
 on top; SAM3's concept tracker (``sam3_video.SAM3Video``) builds its own
 per-frame API on the plumbing layer instead, because its prompts are
-session-wide concepts rather than per-frame box seeds.
+session-wide concepts rather than per-frame visual seeds.
 """
 
 from threading import RLock
@@ -148,13 +148,13 @@ class HFVideoModelBase:
 class HFStreamingVideoBase(HFVideoModelBase):
     """SAM2-shaped visually prompted streaming tracker contract.
 
-    ``prompt`` seeds a session with box (and, where supported, text)
-    prompts attached to a specific frame; ``track`` propagates the
-    resulting tracks.  Both return ``(masks, obj_ids, state_dict)``.
+    ``prompt`` seeds a session with box, point, or supported text prompts
+    attached to a specific frame. ``track`` propagates the resulting tracks.
+    Both return ``(masks, obj_ids, state_dict)``.
     """
 
     #: Whether ``prompt`` should accept ``text=...`` prompts alongside
-    #: boxes.  SAM2 does not support them.
+    #: visual prompts. SAM2 does not support them.
     _supports_text_prompts: bool = False
 
     # ------------------------------------------------------------------
@@ -173,6 +173,7 @@ class HFStreamingVideoBase(HFVideoModelBase):
         state_dict: Optional[dict] = None,
         clear_old_prompts: bool = True,
         frame_idx: int = 0,
+        points: Optional[List[Tuple[float, float, bool]]] = None,
     ) -> Tuple[np.ndarray, np.ndarray, dict]:
         """Seed a session and run one streaming step.
 
@@ -184,7 +185,7 @@ class HFStreamingVideoBase(HFVideoModelBase):
             raise ModelRuntimeError(
                 message=(
                     f"{type(self).__name__} does not support text prompts; "
-                    "use `bboxes=` instead."
+                    "use `bboxes=` or `points=` instead."
                 ),
                 help_url=(
                     "https://inference-models.roboflow.com/errors/"
@@ -209,12 +210,41 @@ class HFStreamingVideoBase(HFVideoModelBase):
                 )
 
             box_list = _normalise_bboxes(bboxes)
-            if box_list:
+            point_list = _normalise_points(points)
+            if box_list and point_list:
+                # The processor replaces ``obj_with_new_inputs`` on each call.
+                # Send mixed prompts in one call so all objects are conditioned
+                # before the model processes the frame. Box labels 2 and 3 are
+                # the processor's native top-left and bottom-right labels.
+                box_points = [[[x1, y1], [x2, y2]] for x1, y1, x2, y2 in box_list]
+                point_coordinates = [[x, y] for x, y, _positive in point_list]
+                point_labels = [1 if positive else 0 for _x, _y, positive in point_list]
+                self._processor.add_inputs_to_inference_session(
+                    inference_session=session,
+                    frame_idx=frame_idx,
+                    obj_ids=list(range(len(box_list) + 1)),
+                    input_points=[[*box_points, point_coordinates]],
+                    input_labels=[[*[[2, 3] for _box in box_list], point_labels]],
+                    original_size=original_sizes[0],
+                )
+            elif box_list:
                 self._processor.add_inputs_to_inference_session(
                     inference_session=session,
                     frame_idx=frame_idx,
                     obj_ids=list(range(len(box_list))),
                     input_boxes=[[[float(v) for v in xyxy] for xyxy in box_list]],
+                    original_size=original_sizes[0],
+                )
+
+            elif point_list:
+                self._processor.add_inputs_to_inference_session(
+                    inference_session=session,
+                    frame_idx=frame_idx,
+                    obj_ids=[0],
+                    input_points=[[[[x, y] for x, y, _positive in point_list]]],
+                    input_labels=[
+                        [[1 if positive else 0 for _x, _y, positive in point_list]]
+                    ],
                     original_size=original_sizes[0],
                 )
 
@@ -313,6 +343,11 @@ class HFStreamingVideoBase(HFVideoModelBase):
 
 def _ensure_numpy_image(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     if isinstance(image, torch.Tensor):
+        # Workflow tensor images are channels-first (CHW); the HF processor expects
+        # channels-last (HWC). Permute before the host transfer so the processor
+        # receives a correctly-shaped image.
+        if image.ndim == 3 and image.shape[0] in (1, 3, 4):
+            image = image.permute(1, 2, 0)
         return image.detach().cpu().numpy()
     return image
 
@@ -334,6 +369,21 @@ def _normalise_bboxes(
         x_rb = float(max(x1, x2))
         y_rb = float(max(y1, y2))
         out.append((x_lt, y_lt, x_rb, y_rb))
+    return out
+
+
+def _normalise_points(
+    points: Optional[List[Tuple[float, float, bool]]],
+) -> List[Tuple[float, float, bool]]:
+    if points is None:
+        return []
+    out: List[Tuple[float, float, bool]] = []
+    for point in points:
+        if point is None or len(point) < 2:
+            continue
+        x, y = point[:2]
+        positive = point[2] if len(point) > 2 else True
+        out.append((float(x), float(y), bool(positive)))
     return out
 
 

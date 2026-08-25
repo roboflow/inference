@@ -1,8 +1,5 @@
 import os
 import platform
-import sys
-import threading
-import types
 import uuid
 import warnings
 from typing import Optional
@@ -122,6 +119,12 @@ API_DEBUG = os.getenv("API_DEBUG", False)
 # API key, default is None
 API_KEY_ENV_NAMES = ["ROBOFLOW_API_KEY", "API_KEY"]
 API_KEY = os.getenv(API_KEY_ENV_NAMES[0], None) or os.getenv(API_KEY_ENV_NAMES[1], None)
+
+# Allow reading the API key from the `Authorization: Bearer <api_key>` request
+# header. The header is a last-resort channel: an explicit `api_key` query
+# parameter or JSON-body field always takes precedence, so disabling this flag
+# only removes the header fallback. Default is True.
+ALLOW_API_KEY_FROM_HEADERS = str2bool(os.getenv("ALLOW_API_KEY_FROM_HEADERS", True))
 
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
@@ -273,6 +276,8 @@ QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
 QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 
+QWEN_3_8_ENABLED = str2bool(os.getenv("QWEN_3_8_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -355,60 +360,21 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
-# Offline mode is latched on the first import of either configuration package.
-# The private marker carries the latch into normal child processes, so changing
-# the public OFFLINE_MODE variable alone cannot enable offline-only paths in a
-# spawned worker. The marker is trusted internal process state; code able to
-# rewrite it is already able to monkeypatch this module's authorization state.
-_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
-_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-if _offline_mode_process_state is None:
-    _candidate_process_state = types.ModuleType(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-    _candidate_process_state.lock = threading.Lock()
-    _offline_mode_process_state = sys.modules.setdefault(
-        _OFFLINE_MODE_PROCESS_STATE_MODULE,
-        _candidate_process_state,
-    )
-if not hasattr(_offline_mode_process_state, "lock"):
-    _offline_mode_process_state.lock = threading.Lock()
-if hasattr(os, "register_at_fork") and not getattr(
-    _offline_mode_process_state, "at_fork_registered", False
-):
-    _offline_mode_process_state.at_fork_registered = True
+# OFFLINE_MODE is decided once per process by inference_models._offline (the
+# single owner), which `import inference` triggers as its first statement.
+# The private marker env carries the latch into spawned child processes;
+# inference_models.configuration warns when the public variable is mutated
+# at runtime.
+from inference_models.configuration import OFFLINE_MODE
 
-    def _reset_offline_mode_lock_after_fork() -> None:
-        _offline_mode_process_state.lock = threading.Lock()
-
-    os.register_at_fork(after_in_child=_reset_offline_mode_lock_after_fork)
-with _offline_mode_process_state.lock:
-    if not hasattr(_offline_mode_process_state, "offline_mode"):
-        _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
-        _latched_offline_mode = (
-            str2bool(os.getenv("OFFLINE_MODE", False))
-            if _inherited_offline_mode is None
-            else str2bool(_inherited_offline_mode)
-        )
-        _offline_mode_process_state.offline_mode = _latched_offline_mode
-OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
-os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
 if OFFLINE_MODE:
+    # Republish the dependency offline switches on (re)import of this module,
+    # so a worker that sanitized its environment and re-imported env.py cannot
+    # end up offline-latched with the library switches missing.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["YOLO_OFFLINE"] = "True"
-try:
-    _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
-except Exception:
-    # The process-wide state has already been established.  A malformed
-    # runtime mutation must not crash a module reload or spawned worker.
-    _requested_offline_mode = None
-if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
-    warnings.warn(
-        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
-        "being ignored; restart the process to change offline mode.",
-        InferenceConfigurationWarning,
-        stacklevel=1,
-    )
+
 if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
     "true",
     "1",
@@ -424,27 +390,6 @@ if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
         "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
         "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
     )
-if OFFLINE_MODE and USE_INFERENCE_MODELS:
-    from inference_models import configuration as inference_models_configuration
-
-    inference_models_offline_contract = getattr(
-        inference_models_configuration,
-        "OFFLINE_MODE_CONTRACT_VERSION",
-        0,
-    )
-    if (
-        getattr(inference_models_configuration, "OFFLINE_MODE", None) is not True
-        or not isinstance(inference_models_offline_contract, int)
-        or isinstance(inference_models_offline_contract, bool)
-        or inference_models_offline_contract < 3
-    ):
-        raise RuntimeError(
-            "The installed inference-models package does not support the "
-            "required process-wide OFFLINE_MODE and trusted-cache contract. "
-            "Install the matching inference-models release before starting an "
-            "offline server."
-        )
-
 if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
     warnings.warn(
         "SAM3_EXEC_MODE=remote is not available while OFFLINE_MODE is enabled. "
@@ -828,7 +773,9 @@ PREDICTIONS_QUEUE_SIZE = int(
     os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512)
 )
 RESTART_ATTEMPT_DELAY = int(os.getenv("INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", 1))
-DEFAULT_BUFFER_SIZE = int(os.getenv("VIDEO_SOURCE_BUFFER_SIZE", "64"))
+# DEFAULT_BUFFER_SIZE (VIDEO_SOURCE_BUFFER_SIZE) is defined further down - its
+# default depends on ENABLE_TENSOR_DATA_REPRESENTATION, which is not parsed yet
+# at this point of the module.
 DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE = float(
     os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE", "0.1")
 )
@@ -841,7 +788,6 @@ DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES = int(
 DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
     os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
 )
-
 ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = str2bool(
     os.getenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "False")
 )
@@ -903,6 +849,30 @@ WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
+
+# Channel used by Workflow blocks to send the API key when executing remotely:
+# "legacy" (query/body only), "both" (default - legacy channels plus an
+# `Authorization: Bearer` header; safe with every server version, including
+# hosted targets that do not read the header yet), or "header" (header only -
+# requires the remote server to run inference release 1.5.0 or newer).
+# NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
+# directly (bypassing the SDK) and are not affected by this flag.
+WORKFLOWS_REMOTE_API_KEY_TRANSPORT = os.getenv(
+    "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", "both"
+).lower()
+# Allowed values duplicated on purpose - inference.core.env must not import
+# inference_sdk. KEEP IN SYNC with the ApiKeyTransport enum in
+# inference_sdk/http/entities.py.
+_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS = ("legacy", "both", "header")
+if (
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT
+    not in _ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS
+):
+    raise ValueError(
+        f"Invalid WORKFLOWS_REMOTE_API_KEY_TRANSPORT: "
+        f"{WORKFLOWS_REMOTE_API_KEY_TRANSPORT!r}. Expected one of: "
+        f"{list(_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS)}."
+    )
 if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
     warnings.warn(
         "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "
@@ -942,6 +912,12 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
 )
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
+)
+# Enables the Roboflow-managed (rf_key) API key option in the SpaceXAI block.
+# Off by default until the platform-side xAI proxy (apiproxy/xai) is deployed;
+# with the flag off users must provide their own xAI API key.
+WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED = str2bool(
+    os.getenv("WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED", False)
 )
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
@@ -1036,6 +1012,22 @@ ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
+
+# Opt-out from the GStreamer-based legacy video sources (e.g. the Jetson RTSP
+# producer) — when True, plain (non-tensor) source references always decode
+# through the cv2 producer. Default is False.
+DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
+    os.getenv("DISABLE_GSTREAMER_VIDEO_SOURCES", "False")
+)
+
+# Instance-segmentation tensor blocks request dense (on-device) masks from the
+# inference_models adapter instead of the default RLE carrier. Dense masks let
+# GPU consumers (e.g. the mask-visualization compositor) skip the host-side
+# RLE decode entirely; RLE remains preferable when predictions are mostly
+# serialized to the wire. Default is False (RLE).
+WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS = str2bool(
+    os.getenv("WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS", "False")
+)
 
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
@@ -1408,3 +1400,95 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
         )
 else:
     DISABLED_INFERENCE_MODELS_BACKENDS = set()
+
+ENABLE_TENSOR_DATA_REPRESENTATION = (
+    str2bool(os.getenv("ENABLE_TENSOR_DATA_REPRESENTATION", "False"))
+    and USE_INFERENCE_MODELS
+)
+
+# ADAPTIVE buffer filling historically decided drops from rate estimates, and
+# every estimate available in VideoSource proved unreliable: the declared source
+# fps is nominal (a round 30.0 that a real stream never quite delivers), reader
+# pace is capped by whatever the decoder chose to emit, and per-source capacity
+# ledgers mis-attribute time under a shared multi-source reader. With this flag
+# on, the ADAPTIVE strategies switch to demand-driven backpressure instead: a
+# the buffer state becomes the only drop signal. Each ADAPTIVE strategy degrades
+# to its plain counterpart: ADAPTIVE_DROP_OLDEST evicts oldest at a full buffer
+# (content stays fresh, which staleness-budget consumers depend on) and
+# ADAPTIVE_DROP_LATEST skips the decode of frames a full buffer would discard
+# anyway. The buffer state is a fact, not an estimate, so there is nothing to
+# tune and none of the estimator failure modes can occur. Default mirrors
+# ENABLE_TENSOR_DATA_REPRESENTATION so the established numpy path stays
+# bit-for-bit unchanged; numpy deployments opt in by setting the variable
+# explicitly to True.
+DEFAULT_ADAPTIVE_MODE_BACKPRESSURE = str2bool(
+    os.getenv(
+        "VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE",
+        str(ENABLE_TENSOR_DATA_REPRESENTATION),
+    )
+)
+
+
+# Diagnostic mode for the tensor visualisation painters' overlap resolver:
+# before the winner-color gather, synchronise and verify that every scatter
+# index and every resolved owner is in range, raising a detailed Python error
+# (routed to the sv fallback) instead of letting an out-of-range index become
+# an asynchronous CUDA device assert that kills the process with SIGABRT and
+# no traceback. Costs one device sync per overlapping frame — off by default.
+WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS = str2bool(
+    os.getenv("WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS", "False")
+)
+
+WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
+    "WORKFLOWS_IMAGE_TENSOR_DEVICE"
+)
+# `torch` is an OPTIONAL dependency: the slim `inference-core` artifact ships
+# without it, and `import inference.core.env` must succeed when torch is ABSENT.
+# Only the tensor-native path (ENABLE_TENSOR_DATA_REPRESENTATION on) needs a torch
+# device, so both the import and the device materialisation are deferred behind
+# the flag AND guarded on torch's presence — this code never touches torch when
+# the flag is off or torch is missing. Every consumer of this value is a
+# tensor-only (flag-on) code path, so leaving it ``None`` off-flag is safe.
+WORKFLOWS_IMAGE_TENSOR_DEVICE = None
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    try:
+        import torch
+
+        if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
+            WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = (
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
+        WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)
+    except ImportError:
+        # Flag on but torch not installed: keep env import working; the tensor
+        # path surfaces a targeted error when it actually tries to use a device.
+        pass
+
+# VideoSource decode-buffer depth. 64 buffered frames is a sane host-RAM
+# default, but under ENABLE_TENSOR_DATA_REPRESENTATION the hardware decoders
+# emit CLONED GPU tensors (dgpu/jetson producers), so every buffered 1080p RGB
+# frame holds ~6 MB of VRAM (~25 MB at 4K): a 64-deep queue costs ~0.4 GB per
+# 1080p stream (~1.6 GB at 4K) before any model allocates, multiplied across
+# sources. Default to a shallow queue when the flag is on; an explicit
+# VIDEO_SOURCE_BUFFER_SIZE always wins.
+DEFAULT_BUFFER_SIZE = int(
+    os.getenv(
+        "VIDEO_SOURCE_BUFFER_SIZE",
+        "8" if ENABLE_TENSOR_DATA_REPRESENTATION else "64",
+    )
+)
+
+# Instance-mask carrier for the tensor-native SAM video-tracker blocks
+# ("rle" = compact COCO RLE, "dense" = boolean torch tensors). This is an
+# execution-level flag, NOT a block manifest field (manifests stay identical
+# across the flag swap); GCP_SERVERLESS forces "rle" at run time regardless.
+WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION = (
+    os.getenv("WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION", "rle").strip().lower()
+)
+if WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION not in {"rle", "dense"}:
+    warnings.warn(
+        "Invalid value of `WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION` variable: "
+        f"{WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION!r} - allowed values are 'rle' "
+        "and 'dense'. Falling back to 'rle'."
+    )
+    WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION = "rle"

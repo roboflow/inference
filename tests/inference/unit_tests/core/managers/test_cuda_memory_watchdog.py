@@ -127,7 +127,9 @@ def test_start_does_not_spin_daemon_when_cuda_unavailable() -> None:
 def test_start_launches_daemon_and_reclaims_then_stop_joins() -> None:
     # given
     reclaimed = threading.Event()
-    with mock.patch.object(mod, "cuda_is_available", return_value=True), mock.patch.object(
+    with mock.patch.object(
+        mod, "cuda_is_available", return_value=True
+    ), mock.patch.object(
         mod, "reclaim_cuda_memory", side_effect=lambda: reclaimed.set()
     ):
         wd = CudaMemoryReclamationWatchdog(interval_seconds=5.0)
@@ -145,9 +147,9 @@ def test_start_launches_daemon_and_reclaims_then_stop_joins() -> None:
 
 
 def test_start_is_idempotent_while_running() -> None:
-    with mock.patch.object(mod, "cuda_is_available", return_value=True), mock.patch.object(
-        mod, "reclaim_cuda_memory", return_value=None
-    ):
+    with mock.patch.object(
+        mod, "cuda_is_available", return_value=True
+    ), mock.patch.object(mod, "reclaim_cuda_memory", return_value=None):
         wd = CudaMemoryReclamationWatchdog(interval_seconds=5.0)
         wd.start()
         try:

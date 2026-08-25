@@ -8,25 +8,29 @@ as a dependency for the main inference package.
 
 import asyncio
 import base64
+from contextlib import contextmanager
 import gzip
 import hashlib
 import inspect
+from io import StringIO
 import json
 import os
+import sys
 import threading
 import time
 import traceback
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Generator, Optional, Tuple
 
 from starlette.requests import Request
 
 import modal
 
-from inference.core.env import WEBEXEC_INFERENCE_VERSION, WEBEXEC_MODAL_APP_NAME
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
-    capture_output,
-)
 
+_thread_local = threading.local()
+_install_lock = threading.Lock()
+
+
+WEBEXEC_MODAL_APP_NAME = os.environ.get("WEBEXEC_MODAL_APP_NAME", "webexec")
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
@@ -43,6 +47,80 @@ WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
 # _WS_MAX_FRAME_BYTES in
 # inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py.
 WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
+
+
+# mirrors inference/core/workflows/execution_engine/v1/dynamic_blocks (avoiding `from inference import ...`)
+class _ThreadDispatchStream:
+    """Stream wrapper that tees writes into a per-thread StringIO buffer
+    (when one is active) while still forwarding them to the original stream.
+
+    Threads that are not capturing see normal stdout/stderr behaviour; threads
+    that are capturing get both: the buffer keeps an in-memory copy for error
+    payloads, and the original stream still receives the bytes so ``print()``
+    output continues to reach Docker / the process stdout.
+    """
+
+    def __init__(self, original, attr_name: str):
+        object.__setattr__(self, "_original", original)
+        object.__setattr__(self, "_attr_name", attr_name)
+
+    def _get_buffer(self):
+        return getattr(_thread_local, self._attr_name, None)
+
+    def write(self, data):
+        buf = self._get_buffer()
+        if buf is not None:
+            try:
+                buf.write(data)
+            except Exception:
+                pass
+        return self._original.write(data)
+
+    def flush(self):
+        buf = self._get_buffer()
+        if buf is not None:
+            try:
+                buf.flush()
+            except Exception:
+                pass
+        return self._original.flush()
+
+    def fileno(self):
+        return self._original.fileno()
+
+    def isatty(self):
+        return self._original.isatty()
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+
+def _install_dispatchers() -> None:
+    if isinstance(sys.stdout, _ThreadDispatchStream):
+        return
+    with _install_lock:
+        if isinstance(sys.stdout, _ThreadDispatchStream):
+            return
+        sys.stdout = _ThreadDispatchStream(sys.stdout, "_capture_stdout")
+        sys.stderr = _ThreadDispatchStream(sys.stderr, "_capture_stderr")
+
+
+@contextmanager
+def capture_output() -> Generator[Tuple[StringIO, StringIO], None, None]:
+    """Context manager to capture stdout and stderr for the current thread.
+
+    Uses per-thread buffers via ``threading.local`` so concurrent calls in
+    different threads capture independently without any global lock.
+    """
+    _install_dispatchers()
+    stdout_buf, stderr_buf = StringIO(), StringIO()
+    _thread_local._capture_stdout = stdout_buf
+    _thread_local._capture_stderr = stderr_buf
+    try:
+        yield stdout_buf, stderr_buf
+    finally:
+        _thread_local._capture_stdout = None
+        _thread_local._capture_stderr = None
 
 
 class _NoopDebugTraces:
@@ -68,14 +146,17 @@ class _NoopDebugTraces:
 app = modal.App(WEBEXEC_MODAL_APP_NAME)
 
 
-WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
+INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
+WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv(
+    "WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu"
+)
 
 
 def get_inference_image():
     """Get the Modal Image for inference."""
 
     # Use the pre-built shared image or create on-the-fly
-    inference_version = WEBEXEC_INFERENCE_VERSION
+    inference_version = INFERENCE_VERSION
     if not inference_version:
         try:
             from inference.core.version import __version__
@@ -85,7 +166,9 @@ def get_inference_image():
             inference_version = "latest"
 
     image = (
-        modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{inference_version}")
+        modal.Image.from_registry(
+            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{inference_version}"
+        )
         .apt_install(
             "libgl1-mesa-glx",
             "libglib2.0-0",
@@ -96,7 +179,7 @@ def get_inference_image():
             "ffmpeg",
             "wget",
         )
-        .pip_install("fastapi[standard]", "msgpack")  # Add FastAPI for web endpoints
+        .pip_install("fastapi[standard]")  # Add FastAPI for web endpoints
         .entrypoint([])
     )
     return image
@@ -184,6 +267,26 @@ class Executor:
                 "debug_traces": _NoopDebugTraces(),
             }
             import_code = "\n".join(imports) if imports else ""
+            # Mirror of block_scaffolding's tensor-native IMPORTS_LINES extension.
+            # Guarded import: this runs inside the sandbox on the PINNED inference
+            # image — releases predating the tensor pivot lack the constant (and
+            # releases that carry it keep the extension a no-op unless the sandbox
+            # env enables the flag, which today it never does; tensor_native+modal
+            # is additionally blocked at compile time). Importing the constant
+            # instead of copy-pasting the lines keeps the two lists drift-free.
+            try:
+                from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+                from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
+                    TENSOR_NATIVE_IMPORTS_LINES,
+                )
+
+                tensor_native_imports = (
+                    "\n".join(TENSOR_NATIVE_IMPORTS_LINES)
+                    if ENABLE_TENSOR_DATA_REPRESENTATION
+                    else ""
+                )
+            except ImportError:
+                tensor_native_imports = ""
             full_imports = f"""
 from typing import Any, List, Dict, Set, Optional
 import supervision as sv
@@ -197,6 +300,7 @@ import cv2
 import shapely
 from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
 from inference.core.workflows.prototypes.block import BlockResult
+{tensor_native_imports}
 
 {import_code}
 

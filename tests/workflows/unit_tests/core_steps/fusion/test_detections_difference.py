@@ -672,7 +672,17 @@ def test_compute_pairwise_costs_disjoint_pairs_rank_by_distance() -> None:
 
 def test_block_is_registered_in_loader() -> None:
     # a block is invisible to the execution engine until it is listed in
-    # `load_blocks()` — this pins the registration.
+    # `load_blocks()` — this pins the registration. The loader swaps in the
+    # tensor-native sibling under ENABLE_TENSOR_DATA_REPRESENTATION, so the
+    # expected class follows the flag.
+    from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
     from inference.core.workflows.core_steps import loader
 
-    assert DetectionsDifferenceBlockV1 in loader.load_blocks()
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        from inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor import (
+            DetectionsDifferenceBlockV1 as expected_block,
+        )
+    else:
+        expected_block = DetectionsDifferenceBlockV1
+
+    assert expected_block in loader.load_blocks()

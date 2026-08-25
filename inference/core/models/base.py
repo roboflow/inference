@@ -10,6 +10,11 @@ from inference.core.env import USE_INFERENCE_MODELS
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.megapixel_buckets import (
+    clear_measured_model_input,
+    parse_image_dims_hw,
+    record_measured_model_input,
+)
 
 
 class BaseInference:
@@ -24,8 +29,13 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
+        clear_measured_model_input()
         with start_span("model.preprocess"):
             preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+            record_measured_model_input(
+                preproc_image,
+                fallback_hw=parse_image_dims_hw(returned_metadata),
+            )
             logger.debug(
                 f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
             )
@@ -39,6 +49,9 @@ class BaseInference:
             )
 
         return postprocessed
+
+    def run_tensor_native_inference(self, **kwargs) -> Any:
+        raise NotImplementedError
 
     def preprocess(
         self, image: Any, **kwargs

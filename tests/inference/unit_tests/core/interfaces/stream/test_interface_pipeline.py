@@ -77,6 +77,15 @@ class VideoSourceStub:
         self._current_round += 1
         self._emissions_in_current_round = 0
 
+    def pause(self) -> None:
+        self._calls.append("pause")
+
+    def mute(self) -> None:
+        self._calls.append("mute")
+
+    def resume(self) -> None:
+        self._calls.append("resume")
+
     @lock_state_transition
     def terminate(
         self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
@@ -224,6 +233,65 @@ def test_inference_pipeline_close_calls_handler_close_hook() -> None:
     pipeline._close_inference_handler()
 
     assert handler.close_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("method_name", "expected_call"),
+    [
+        ("pause_stream", "pause"),
+        ("mute_stream", "mute"),
+        ("resume_stream", "resume"),
+    ],
+)
+def test_stream_control_applies_to_all_sources(
+    method_name: str, expected_call: str
+) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)()
+
+    assert first_source._calls == [expected_call]
+    assert second_source._calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "expected_call"),
+    [
+        ("pause_stream", "pause"),
+        ("mute_stream", "mute"),
+        ("resume_stream", "resume"),
+    ],
+)
+def test_stream_control_applies_to_matching_source(
+    method_name: str, expected_call: str
+) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)(source_id=1)
+
+    assert first_source._calls == []
+    assert second_source._calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    "method_name", ["pause_stream", "mute_stream", "resume_stream"]
+)
+def test_stream_control_ignores_unknown_source(method_name: str) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)(source_id=2)
+
+    assert first_source._calls == []
+    assert second_source._calls == []
 
 
 @pytest.mark.timeout(90)
@@ -843,6 +911,41 @@ def test_init_with_workflow_injects_sink_execution_policy(
         ]
         is disable_sinks
     )
+
+
+def test_init_with_workflow_gives_execution_engine_a_separate_thread_pool(
+    monkeypatch,
+) -> None:
+    # A shared pool lets slow fire-and-forget sink tasks starve step execution,
+    # so the Execution Engine must get its own executor.
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    execution_engine = MagicMock()
+    execution_engine_init = MagicMock(return_value=execution_engine)
+    pipeline = MagicMock()
+    monkeypatch.setattr(ExecutionEngine, "init", execution_engine_init)
+    monkeypatch.setattr(
+        InferencePipeline,
+        "init_with_custom_logic",
+        MagicMock(return_value=pipeline),
+    )
+
+    result = InferencePipeline.init_with_workflow(
+        video_reference="video.mp4",
+        workflow_specification={"version": "1.0"},
+        model_manager=MagicMock(),
+        workflows_thread_pool_workers=3,
+        execution_engine_thread_pool_workers=5,
+    )
+
+    assert result is pipeline
+    blocks_executor = execution_engine_init.call_args.kwargs["init_parameters"][
+        "workflows_core.thread_pool_executor"
+    ]
+    execution_engine_executor = execution_engine_init.call_args.kwargs["executor"]
+    assert execution_engine_executor is not blocks_executor
+    assert blocks_executor._max_workers == 3
+    assert execution_engine_executor._max_workers == 5
 
 
 def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:

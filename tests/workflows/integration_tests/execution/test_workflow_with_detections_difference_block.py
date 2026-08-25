@@ -18,10 +18,30 @@ test hermetic while still exercising the full compile → deserialize → run �
 
 from typing import List
 
+import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the detections_difference block consumes
+# and emits native inference_models.Detections instead of sv.Detections. The
+# numpy-shaped assertions below run only with the flag off; an equivalent
+# *_tensor_native parity test asserts the same facts against the native carrier
+# with the flag on. Count-only and serialized-wire-format tests are carrier
+# agnostic and run in both directions.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections output; native under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
 
 DETECTIONS_DIFFERENCE_WORKFLOW = {
     "version": "1.3.0",
@@ -87,6 +107,7 @@ _BEFORE = _detections(
 _AFTER = _detections([_prediction(205, 0, 305, 100, "can", 1, "c0")])
 
 
+@_NUMPY_ONLY
 def test_detections_difference_workflow_verifies_partial_cleanup() -> None:
     # given
     execution_engine = ExecutionEngine.init(
@@ -120,6 +141,56 @@ def test_detections_difference_workflow_verifies_partial_cleanup() -> None:
     persisted = difference["persisted_detections"]
     assert isinstance(persisted, sv.Detections)
     assert set(persisted.data["detection_id"]) == {"c0"}, (
+        "Expected the shifted can re-detection to be reported persisted, in "
+        "candidate-image coordinates under its own detection id"
+    )
+    assert len(difference["new_detections"]) == 0
+
+
+@_TENSOR_ONLY
+def test_detections_difference_workflow_verifies_partial_cleanup_tensor_native() -> (
+    None
+):
+    # given
+    from inference.core.workflows.execution_engine.constants import DETECTION_ID_KEY
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_DIFFERENCE_WORKFLOW,
+        init_parameters={},
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "reference_predictions": _BEFORE,
+            "candidate_predictions": _AFTER,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected one output element for one datapoint"
+    assert set(result[0].keys()) == {"result"}
+    difference = result[0]["result"]
+    assert difference["removed_count"] == 2
+    assert difference["new_count"] == 0
+    assert difference["verified"] is True
+    removed = difference["removed_detections"]
+    assert isinstance(removed, NativeDetections)
+    assert {data[DETECTION_ID_KEY] for data in removed.bboxes_metadata} == {
+        "r0",
+        "r2",
+    }, (
+        "Expected the bottle and the bag from the before image to be reported "
+        "removed, with their injected detection ids preserved"
+    )
+    persisted = difference["persisted_detections"]
+    assert isinstance(persisted, NativeDetections)
+    assert {data[DETECTION_ID_KEY] for data in persisted.bboxes_metadata} == {"c0"}, (
         "Expected the shifted can re-detection to be reported persisted, in "
         "candidate-image coordinates under its own detection id"
     )

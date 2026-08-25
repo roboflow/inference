@@ -8,8 +8,9 @@ permissions:
 on:
   pull_request:
     branches: [main]
-    # `labeled` is what drives re-reviews (add the `claude-review` label); the other
-    # three drive the single automatic INITIAL review.
+    # `labeled` requests a re-review (add the `claude-review` label; it is consumed
+    # when the review starts, so a fresh request is always a plain add). The other
+    # three drive the single automatic INITIAL review. Pushes never auto-trigger.
     types: [opened, reopened, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
@@ -211,8 +212,24 @@ jobs:
             '<!-- claude-pr-review:run-marker -->' \
             "🤖 **Claude review started** at commit \`${HEAD_SHA}\`." \
             '' \
-            'New commits are **not** auto-reviewed. Add the **`claude-review`** label (remove & re-add it to trigger again) when you want another review.')"
+            'New commits are **not** auto-reviewed. Add the **`claude-review`** label to request a re-review — the label is consumed when the review starts, so just add it again next time.')"
           gh pr comment "$PR" --repo "$REPO" --body "$body"
+
+      - name: Consume the re-review label
+        if: steps.review-prompt.outputs.prompt_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.gate.outputs.number }}
+        run: |
+          set -euo pipefail
+          # The `claude-review` label is a one-shot request button: consume it as the
+          # review starts, so the PR never carries a stale "review requested" label
+          # and the next request is a plain add (no remove-&-re-add dance). Removing
+          # it cannot retrigger this workflow: `unlabeled` is not a trigger type, and
+          # GITHUB_TOKEN-driven events do not spawn new runs anyway.
+          gh api -X DELETE "repos/${REPO}/issues/${PR}/labels/claude-review" \
+            || echo "label not present — nothing to consume"
 
       - name: Claude review
         if: steps.review-prompt.outputs.prompt_available == 'true'
@@ -225,6 +242,6 @@ jobs:
           show_full_output: false
           prompt: ${{ steps.review-prompt.outputs.prompt }}
           claude_args: |
-            --model claude-opus-4-8
-            --max-turns 50
+            --model claude-opus-5
+            --max-turns 80
             --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/*/*/issues/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/reviews --paginate),Bash(gh api repos/*/*/pulls/*/commits --paginate),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"

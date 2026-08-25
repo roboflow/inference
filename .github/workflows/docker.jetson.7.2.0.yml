@@ -16,17 +16,22 @@ on:
         type: string
         description: "Custom tag to use for the image (overrides VERSION)"
         default: ""
+      rebuild_media:
+        type: boolean
+        description: "Build the media image from this ref before the server image"
+        default: false
 
 env:
   VERSION: "0.0.0"
   BASE_IMAGE: "roboflow/roboflow-inference-server-jetson-7.2.0"
+  MEDIA_BASE_IMAGE: "roboflow/roboflow-inference-media-jetson-7.2.0"
 
 jobs:
   docker:
     runs-on:
       labels: depot-ubuntu-24.04-4
       group: public-depot
-    timeout-minutes: 360
+    timeout-minutes: 1440
     permissions:
       id-token: write
       contents: read
@@ -39,7 +44,7 @@ jobs:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
       - name: Read version from file
-        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> "$GITHUB_ENV"
       - name: Determine Image Tags
         id: tags
         uses: ./.github/actions/determine-tags
@@ -51,6 +56,23 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
+      - name: Validate media rebuild tag
+        if: ${{ inputs.rebuild_media }}
+        run: test -n "${{ inputs.custom_tag }}"
+      - name: Build media image from current ref
+        if: ${{ inputs.rebuild_media }}
+        id: media
+        uses: depot/build-push-action@v1
+        with:
+          project: v1xzfwkc4b
+          context: .
+          file: ./docker/dockerfiles/Dockerfile.media.jetson.7.2.0
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.MEDIA_BASE_IMAGE }}:${{ inputs.custom_tag }}-media
+      - name: Use current-ref media image
+        if: ${{ inputs.rebuild_media }}
+        run: echo "JETSON_MEDIA_IMAGE=${{ env.MEDIA_BASE_IMAGE }}:${{ inputs.custom_tag }}-media@${{ steps.media.outputs.digest }}" >> "$GITHUB_ENV"
       - name: Build image
         uses: depot/bake-action@v1
         env:
@@ -59,6 +81,6 @@ jobs:
           files: ./docker/docker-bake.jetson.7.2.0.hcl
           targets: jetson-server-jp72
           project: v1xzfwkc4b
-          push: ${{ github.event_name == 'release' || inputs.force_push }}
+          push: ${{ github.event_name == 'release' || inputs.force_push == true }}
           save: ${{ github.event_name != 'release' && !inputs.force_push }}
           save-tag: ${{ github.event_name != 'release' && !inputs.force_push && format('server-jp72-{0}', github.sha) || '' }}

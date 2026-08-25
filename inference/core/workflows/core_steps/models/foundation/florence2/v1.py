@@ -10,6 +10,7 @@ from inference.core.env import (
     FLORENCE2_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -42,7 +43,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -439,6 +440,9 @@ class Florence2BlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -638,7 +642,7 @@ def _prepare_grounding_bounding_box_from_detections(
 
 COORDINATES_EXTRACTION = {
     "first": lambda detections: detections.xyxy[0].tolist(),
-    "last": lambda detections: detections.xyxy[0].tolist(),
+    "last": lambda detections: detections.xyxy[-1].tolist(),
     "biggest": lambda detections: detections.xyxy[np.argmax(detections.area)].tolist(),
     "smallest": lambda detections: detections.xyxy[np.argmin(detections.area)].tolist(),
     "most-confident": lambda detections: detections.xyxy[
