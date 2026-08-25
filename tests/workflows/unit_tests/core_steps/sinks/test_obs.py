@@ -762,3 +762,92 @@ def test_manifest_rejects_move_action_without_predictions_and_image():
 
     assert "predictions" in str(error.value)
     assert "image" in str(error.value)
+
+
+# --- keypoint pinning --------------------------------------------------------
+
+
+def _pose_detections():
+    """One person, bbox 100..300 tall, with nose and wrists."""
+    det = sv.Detections(
+        xyxy=np.array([[200.0, 100.0, 400.0, 300.0]]),
+        confidence=np.array([0.9]),
+    )
+    det.data["keypoints_xy"] = np.array([[[300.0, 120.0], [220.0, 260.0], [380.0, 260.0]]])
+    det.data["keypoints_class_name"] = np.array([["nose", "left_wrist", "right_wrist"]])
+    det.data["keypoints_confidence"] = np.array([[0.95, 0.9, 0.05]])
+    return det
+
+
+def _keypoint_kwargs(**overrides):
+    kwargs = _move_kwargs(
+        action="move_source_to_keypoint",
+        scene_name="Avatar",
+        source_name="Raccoon Head",
+        predictions=_pose_detections(),
+        keypoint_name="nose",
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_keypoint_action_centers_source_on_named_keypoint(fake_transform_obs):
+    # image 640x360 -> canvas 1920x1080 = 3x; nose (300,120) -> (900,360);
+    # bbox height 200*3=600, size_scale 0.4 -> 240
+    result = _action_block().run(**_keypoint_kwargs())
+
+    assert result["error_status"] is False
+    transform = [c for c in fake_transform_obs[0].calls if c[0] == "set_scene_item_transform"][0][1][2]
+    assert transform["positionX"] == pytest.approx(900.0)
+    assert transform["positionY"] == pytest.approx(360.0)
+    assert transform["alignment"] == 0
+    assert transform["boundsWidth"] == pytest.approx(240.0)
+    assert ("set_scene_item_enabled", ("Avatar", 7, True)) in fake_transform_obs[0].calls
+
+
+def test_keypoint_action_hides_source_when_keypoint_below_confidence(fake_transform_obs):
+    result = _action_block().run(**_keypoint_kwargs(keypoint_name="right_wrist"))
+
+    assert "below confidence threshold" in result["message"]
+    assert ("set_scene_item_enabled", ("Avatar", 7, False)) in fake_transform_obs[0].calls
+
+
+def test_keypoint_action_hides_source_for_unknown_keypoint_name(fake_transform_obs):
+    result = _action_block().run(**_keypoint_kwargs(keypoint_name="tail"))
+
+    assert "not present" in result["message"]
+    assert ("set_scene_item_enabled", ("Avatar", 7, False)) in fake_transform_obs[0].calls
+
+
+def test_keypoint_action_errors_on_predictions_without_keypoints(fake_transform_obs):
+    plain = _detections((0, 0, 10, 10, 0.9))
+
+    result = _action_block().run(**_keypoint_kwargs(predictions=plain))
+
+    assert result["error_status"] is True
+    assert "carry no keypoints" in result["message"]
+
+
+def test_keypoint_action_size_scale_controls_rig_part_size(fake_transform_obs):
+    _action_block().run(**_keypoint_kwargs(size_scale=0.1))
+
+    transform = [c for c in fake_transform_obs[0].calls if c[0] == "set_scene_item_transform"][0][1][2]
+    assert transform["boundsWidth"] == pytest.approx(60.0)
+
+
+def test_manifest_requires_keypoint_name_for_keypoint_action():
+    with pytest.raises(ValueError) as error:
+        ActionManifest.model_validate(
+            {
+                "type": "roboflow_core/obs_action@v1",
+                "name": "obs",
+                "connection": "$steps.obs.connection",
+                "action": "move_source_to_keypoint",
+                "scene_name": "Avatar",
+                "source_name": "Raccoon Head",
+                "predictions": "$steps.pose.predictions",
+                "image": "$inputs.image",
+            }
+        )
+
+    assert "keypoint_name" in str(error.value)

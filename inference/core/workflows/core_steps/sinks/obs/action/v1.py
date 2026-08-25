@@ -23,6 +23,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     OBS_CONNECTION_KIND,
     STRING_KIND,
@@ -44,6 +45,7 @@ TOGGLE_FILTER = "toggle_filter"
 TRIGGER_HOTKEY = "trigger_hotkey"
 SET_SOURCE_TRANSFORM = "set_source_transform"
 MOVE_SOURCE_TO_DETECTION = "move_source_to_detection"
+MOVE_SOURCE_TO_KEYPOINT = "move_source_to_keypoint"
 START_VIRTUAL_CAMERA = "start_virtual_camera"
 STOP_VIRTUAL_CAMERA = "stop_virtual_camera"
 START_RECORDING = "start_recording"
@@ -57,6 +59,7 @@ ActionType = Literal[
     TRIGGER_HOTKEY,
     SET_SOURCE_TRANSFORM,
     MOVE_SOURCE_TO_DETECTION,
+    MOVE_SOURCE_TO_KEYPOINT,
     START_VIRTUAL_CAMERA,
     STOP_VIRTUAL_CAMERA,
     START_RECORDING,
@@ -80,6 +83,13 @@ REQUIRED_FIELDS_BY_ACTION: Dict[str, Tuple[str, ...]] = {
         "height",
     ),
     MOVE_SOURCE_TO_DETECTION: ("scene_name", "source_name", "predictions", "image"),
+    MOVE_SOURCE_TO_KEYPOINT: (
+        "scene_name",
+        "source_name",
+        "predictions",
+        "image",
+        "keypoint_name",
+    ),
     START_VIRTUAL_CAMERA: (),
     STOP_VIRTUAL_CAMERA: (),
     START_RECORDING: (),
@@ -182,6 +192,7 @@ class BlockManifest(WorkflowBlockManifest):
                         "set_source_visibility",
                         "set_source_transform",
                         "move_source_to_detection",
+                        "move_source_to_keypoint",
                     ],
                     "required": True,
                 },
@@ -202,6 +213,7 @@ class BlockManifest(WorkflowBlockManifest):
                         "toggle_filter",
                         "set_source_transform",
                         "move_source_to_detection",
+                        "move_source_to_keypoint",
                     ],
                     "required": True,
                 },
@@ -257,6 +269,7 @@ class BlockManifest(WorkflowBlockManifest):
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
             ]
         )
     ] = Field(
@@ -266,7 +279,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.detections_filter.predictions"],
         json_schema_extra={
             "relevant_for": {
-                "action": {"values": ["move_source_to_detection"], "required": True},
+                "action": {
+                    "values": ["move_source_to_detection", "move_source_to_keypoint"],
+                    "required": True,
+                },
             }
         },
     )
@@ -277,7 +293,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.image"],
         json_schema_extra={
             "relevant_for": {
-                "action": {"values": ["move_source_to_detection"], "required": True},
+                "action": {
+                    "values": ["move_source_to_detection", "move_source_to_keypoint"],
+                    "required": True,
+                },
             }
         },
     )
@@ -329,7 +348,11 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "action": {
-                    "values": ["set_source_transform", "move_source_to_detection"],
+                    "values": [
+                        "set_source_transform",
+                        "move_source_to_detection",
+                        "move_source_to_keypoint",
+                    ],
                     "required": False,
                 },
             }
@@ -342,7 +365,43 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[True],
         json_schema_extra={
             "relevant_for": {
-                "action": {"values": ["move_source_to_detection"], "required": False},
+                "action": {
+                    "values": ["move_source_to_detection", "move_source_to_keypoint"],
+                    "required": False,
+                },
+            }
+        },
+    )
+    keypoint_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
+        default=None,
+        description="Name of the keypoint to pin the source to, e.g. `nose`, `left_wrist`, "
+        "`right_ankle` for COCO pose models. Required by `move_source_to_keypoint`.",
+        examples=["nose", "left_wrist"],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": True},
+            }
+        },
+    )
+    size_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.4,
+        description="For `move_source_to_keypoint`: source height as a fraction of the tracked "
+        "detection's bounding-box height, so rig parts scale with distance from the camera.",
+        examples=[0.4, 0.25],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
+            }
+        },
+    )
+    keypoint_confidence: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.2,
+        description="For `move_source_to_keypoint`: minimum confidence for the keypoint to count "
+        "as visible. Below it the source is hidden (when `hide_when_empty` is enabled).",
+        examples=[0.2],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
             }
         },
     )
@@ -496,6 +555,9 @@ class OBSActionBlockV1(WorkflowBlock):
         height: Optional[float] = None,
         fit: str = "fit",
         hide_when_empty: bool = True,
+        keypoint_name: Optional[str] = None,
+        size_scale: float = 0.4,
+        keypoint_confidence: float = 0.2,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -511,7 +573,11 @@ class OBSActionBlockV1(WorkflowBlock):
                 "throttling_status": True,
                 "message": "Sink cooldown applies",
             }
-        if action in (SET_SOURCE_TRANSFORM, MOVE_SOURCE_TO_DETECTION):
+        if action in (
+            SET_SOURCE_TRANSFORM,
+            MOVE_SOURCE_TO_DETECTION,
+            MOVE_SOURCE_TO_KEYPOINT,
+        ):
             operation = self._build_transform_operation(
                 connection=connection,
                 action=action,
@@ -525,6 +591,9 @@ class OBSActionBlockV1(WorkflowBlock):
                 height=height,
                 fit=fit,
                 hide_when_empty=hide_when_empty,
+                keypoint_name=keypoint_name,
+                size_scale=size_scale,
+                keypoint_confidence=keypoint_confidence,
             )
         else:
             operation = partial(
@@ -610,6 +679,9 @@ class OBSActionBlockV1(WorkflowBlock):
         height: Optional[float],
         fit: str,
         hide_when_empty: bool,
+        keypoint_name: Optional[str] = None,
+        size_scale: float = 0.4,
+        keypoint_confidence: float = 0.2,
     ) -> Any:
         key = (connection["host"], connection["port"])
         bounds_type = self.BOUNDS_TYPE_BY_FIT[fit]
@@ -650,17 +722,81 @@ class OBSActionBlockV1(WorkflowBlock):
 
             return operation
 
-        def operation(client: Any) -> str:
-            if predictions is None or len(predictions) == 0:
-                if not hide_when_empty:
-                    return f"No detections; source '{source_name}' left unchanged"
+        def hide_source(client: Any, reason: str) -> str:
+            if not hide_when_empty:
+                return f"{reason}; source '{source_name}' left unchanged"
+            item_id = self._scene_item_id(client, key, scene_name, source_name)
+            try:
+                client.set_scene_item_enabled(scene_name, item_id, False)
+            except Exception:
+                self._scene_item_ids.pop((*key, scene_name, source_name), None)
+                raise
+            return f"{reason}; hid source '{source_name}'"
+
+        if action == MOVE_SOURCE_TO_KEYPOINT:
+
+            def operation(client: Any) -> str:
+                if predictions is None or len(predictions) == 0:
+                    return hide_source(client, "No detections")
+                keypoints_xy = predictions.data.get("keypoints_xy")
+                keypoint_names = predictions.data.get("keypoints_class_name")
+                if keypoints_xy is None or keypoint_names is None:
+                    raise ValueError(
+                        "`move_source_to_keypoint` requires keypoint detection predictions "
+                        "(e.g. from a Keypoint Detection Model block), but the predictions "
+                        "carry no keypoints."
+                    )
+                best = int(np.argmax(predictions.confidence))
+                names = [str(name) for name in keypoint_names[best]]
+                if keypoint_name not in names:
+                    return hide_source(
+                        client, f"Keypoint '{keypoint_name}' not present"
+                    )
+                kp_index = names.index(keypoint_name)
+                confidences = predictions.data.get("keypoints_confidence")
+                if (
+                    confidences is not None
+                    and float(confidences[best][kp_index]) < keypoint_confidence
+                ):
+                    return hide_source(
+                        client, f"Keypoint '{keypoint_name}' below confidence threshold"
+                    )
+                canvas_width, canvas_height = self._canvas_size(client, key)
+                image_height, image_width = image.numpy_image.shape[:2]
+                scale_x = canvas_width / image_width
+                scale_y = canvas_height / image_height
+                kp_x, kp_y = keypoints_xy[best][kp_index]
+                _, y_min, _, y_max = predictions.xyxy[best]
+                size = max(1.0, (y_max - y_min) * scale_y * size_scale)
                 item_id = self._scene_item_id(client, key, scene_name, source_name)
                 try:
-                    client.set_scene_item_enabled(scene_name, item_id, False)
+                    client.set_scene_item_transform(
+                        scene_name,
+                        item_id,
+                        {
+                            "positionX": float(kp_x * scale_x),
+                            "positionY": float(kp_y * scale_y),
+                            "alignment": 0,  # centered on the keypoint
+                            "boundsType": self.BOUNDS_TYPE_BY_FIT[fit],
+                            "boundsAlignment": 0,
+                            "boundsWidth": size,
+                            "boundsHeight": size,
+                        },
+                    )
+                    client.set_scene_item_enabled(scene_name, item_id, True)
                 except Exception:
                     self._scene_item_ids.pop((*key, scene_name, source_name), None)
                     raise
-                return f"No detections; hid source '{source_name}'"
+                return (
+                    f"Pinned source '{source_name}' to keypoint '{keypoint_name}' at canvas "
+                    f"({kp_x * scale_x:.0f}, {kp_y * scale_y:.0f}) size {size:.0f}"
+                )
+
+            return operation
+
+        def operation(client: Any) -> str:
+            if predictions is None or len(predictions) == 0:
+                return hide_source(client, "No detections")
             canvas_width, canvas_height = self._canvas_size(client, key)
             image_height, image_width = image.numpy_image.shape[:2]
             best = int(np.argmax(predictions.confidence))
