@@ -976,11 +976,19 @@ def test_orientation_pair_order_does_not_flip_source_upside_down(fake_transform_
     assert abs(_last_transform(fake_transform_obs[0])["rotation"]) < 1.0
 
 
-def test_orientation_missing_keypoint_hides_source(fake_transform_obs):
-    result = _action_block().run(**_oriented_kwargs(orient_to="left_ear"))
+def test_orientation_missing_keypoint_falls_back_to_upright_pin(fake_transform_obs):
+    # a pinned source degrades to an upright, bbox-sized pin rather than hiding
+    result = _action_block().run(
+        **_oriented_kwargs(orient_to="left_ear", fallback_size_scale=0.3)
+    )
 
-    assert "Orientation keypoints not present" in result["message"]
-    assert ("set_scene_item_enabled", ("Avatar", 7, False)) in fake_transform_obs[
+    assert result["error_status"] is False
+    assert "upright fallback" in result["message"]
+    transform = _last_transform(fake_transform_obs[0])
+    assert transform["rotation"] == pytest.approx(0.0)
+    # bbox height 200*3=600 canvas; fallback scale 0.3 -> 180
+    assert transform["boundsWidth"] == pytest.approx(180.0)
+    assert ("set_scene_item_enabled", ("Avatar", 7, True)) in fake_transform_obs[
         0
     ].calls
 
@@ -1058,7 +1066,7 @@ def test_stretch_limb_hides_when_endpoint_confidence_low(fake_transform_obs):
     # a wrist below the desk (conf ~0.02) must hide the limb, not stretch to noise
     result = _action_block().run(**_limb_kwargs(predictions=_arm_pose(wrist_conf=0.02)))
 
-    assert "below confidence threshold" in result["message"]
+    assert "Orientation keypoints unavailable" in result["message"]
     assert ("set_scene_item_enabled", ("Avatar", 7, False)) in fake_transform_obs[
         0
     ].calls
@@ -1082,3 +1090,13 @@ def test_manifest_rejects_stretch_without_orientation_pair():
         )
 
     assert "stretch_to_pair" in str(error.value)
+
+
+def test_keep_upright_disabled_follows_raw_pair_direction(fake_transform_obs):
+    # arm pointing left (-180ish): a hand must follow it instead of flipping upright
+    leftward = _face_pose(right_eye=(340.0, 100.0), left_eye=(280.0, 120.0))
+
+    _action_block().run(**_oriented_kwargs(predictions=leftward, keep_upright=False))
+
+    rotation = _last_transform(fake_transform_obs[0])["rotation"]
+    assert abs(rotation) > 90.0  # raw angle preserved past the upright clamp

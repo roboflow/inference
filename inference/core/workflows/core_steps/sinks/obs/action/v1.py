@@ -429,6 +429,32 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
+    keep_upright: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="For `move_source_to_keypoint` with an orientation pair: normalize rotation "
+        "to +/-90 degrees so the source never renders upside down (right for face stickers, "
+        "where the eye pair may come in either order). Disable for sources that must follow the "
+        "pair's raw direction, like a hand rotating with the forearm.",
+        examples=[True, False],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
+            }
+        },
+    )
+    fallback_size_scale: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
+        default=None,
+        description="For `move_source_to_keypoint` without `stretch_to_pair`: when the "
+        "orientation keypoints are missing or below confidence, the source falls back to an "
+        "unrotated pin sized by the detection bounding box instead of hiding. This scale applies "
+        "in that fallback (the pair distance is unavailable); defaults to `size_scale`.",
+        examples=[0.22],
+        json_schema_extra={
+            "relevant_for": {
+                "action": {"values": ["move_source_to_keypoint"], "required": False},
+            }
+        },
+    )
     stretch_to_pair: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="For `move_source_to_keypoint` with an orientation pair: anchor the source "
@@ -643,6 +669,8 @@ class OBSActionBlockV1(WorkflowBlock):
         orient_to: Optional[str] = None,
         stretch_to_pair: bool = False,
         thickness_scale: float = 0.35,
+        keep_upright: bool = True,
+        fallback_size_scale: Optional[float] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -684,6 +712,8 @@ class OBSActionBlockV1(WorkflowBlock):
                 orient_to=orient_to,
                 stretch_to_pair=stretch_to_pair,
                 thickness_scale=thickness_scale,
+                keep_upright=keep_upright,
+                fallback_size_scale=fallback_size_scale,
             )
         else:
             operation = partial(
@@ -777,6 +807,8 @@ class OBSActionBlockV1(WorkflowBlock):
         orient_to: Optional[str] = None,
         stretch_to_pair: bool = False,
         thickness_scale: float = 0.35,
+        keep_upright: bool = True,
+        fallback_size_scale: Optional[float] = None,
     ) -> Any:
         key = (connection["host"], connection["port"])
         bounds_type = self.BOUNDS_TYPE_BY_FIT[fit]
@@ -863,18 +895,35 @@ class OBSActionBlockV1(WorkflowBlock):
                 scale_y = canvas_height / image_height
                 kp_x, kp_y = keypoints_xy[best][kp_index]
                 rotation = 0.0
-                if orient_from is not None:
-                    if orient_from not in names or orient_to not in names:
-                        return hide_source(client, "Orientation keypoints not present")
-                    from_index = names.index(orient_from)
-                    to_index = names.index(orient_to)
-                    if confidences is not None and (
-                        float(confidences[best][from_index]) < keypoint_confidence
-                        or float(confidences[best][to_index]) < keypoint_confidence
-                    ):
-                        return hide_source(
-                            client, "Orientation keypoints below confidence threshold"
+                orientation_note = ""
+                # local alias: assigning the closure variable directly would make it
+                # function-local and unbound on first read
+                oriented = orient_from is not None
+                if oriented:
+                    pair_present = orient_from in names and orient_to in names
+                    if pair_present:
+                        from_index = names.index(orient_from)
+                        to_index = names.index(orient_to)
+                        pair_confident = confidences is None or (
+                            float(confidences[best][from_index]) >= keypoint_confidence
+                            and float(confidences[best][to_index])
+                            >= keypoint_confidence
                         )
+                    else:
+                        pair_confident = False
+                    if not (pair_present and pair_confident):
+                        if stretch_to_pair:
+                            # a limb's length needs the pair; without it there is
+                            # nothing sensible to draw
+                            return hide_source(
+                                client, "Orientation keypoints unavailable"
+                            )
+                        # a pinned source degrades gracefully: upright, bbox-sized
+                        oriented = False
+                        orientation_note = (
+                            " (orientation unavailable; upright fallback)"
+                        )
+                if oriented:
                     from_x, from_y = keypoints_xy[best][from_index]
                     to_x, to_y = keypoints_xy[best][to_index]
                     delta_x = (to_x - from_x) * scale_x
@@ -883,9 +932,10 @@ class OBSActionBlockV1(WorkflowBlock):
                     if span < 1.0:
                         return hide_source(client, "Orientation keypoints coincide")
                     rotation = float(np.degrees(np.arctan2(delta_y, delta_x)))
-                    if not stretch_to_pair:
+                    if not stretch_to_pair and keep_upright:
                         # the pair may be given in either order; keep the source upright.
-                        # A stretched limb keeps the raw angle - direction matters.
+                        # Stretched limbs and keep_upright=False sources follow the raw
+                        # direction - a hand must track the forearm past +/-90.
                         if rotation > 90.0:
                             rotation -= 180.0
                         elif rotation < -90.0:
@@ -894,6 +944,10 @@ class OBSActionBlockV1(WorkflowBlock):
                 else:
                     _, y_min, _, y_max = predictions.xyxy[best]
                     reference_span = float(y_max - y_min) * scale_y
+                    if orientation_note and fallback_size_scale is not None:
+                        # pair distance is unavailable, so size_scale's basis changed
+                        # from pair span to bbox height; use the fallback scale
+                        reference_span *= fallback_size_scale / size_scale
                 if stretch_to_pair:
                     length = max(1.0, reference_span * size_scale)
                     target = (
@@ -958,6 +1012,7 @@ class OBSActionBlockV1(WorkflowBlock):
                 return (
                     f"Pinned source '{source_name}' to keypoint '{keypoint_name}' at canvas "
                     f"({kp_x_s:.0f}, {kp_y_s:.0f}) size {width_s:.0f}x{height_s:.0f} rotation {rotation_s:.0f}"
+                    + orientation_note
                 )
 
             return operation
