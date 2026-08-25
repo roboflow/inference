@@ -46,17 +46,20 @@ DEFAULT_MODEL_ID = "cosmos-3-edge"
 DEFAULT_SOURCE_FPS = 30.0
 SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
-Classify actions and events in a video stream. The block samples each stream
-into fixed-duration windows and adds each model result to a cumulative
-timeline. Ranges can overlap. An active range advances with the stream until a
-later window closes it.
+Classify actions and events in a video stream. The block continuously samples
+each stream into a sliding window and adds each model result to a cumulative
+timeline. Classification starts on the first frame with a growing buffer and
+repeats at a configurable stride. By default, the stride is half the window
+length for 50 percent overlap. Ranges can overlap. An active range advances
+with the stream until a later classification closes it.
 
-The block does not classify the final partial window when a stream ends. Tail
+The block does not run an extra classification when a stream ends, so frames
+after the final scheduled call do not receive a new result. Tail
 classification requires an end-of-stream signal and is planned separately.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
-and HTTP execution do not provide a continuous stream, so they return empty
-results or classify only after enough related frames reach the same process.
+and HTTP execution do not provide a continuous stream, so they classify one
+frame without temporal context.
 """
 
 
@@ -67,12 +70,12 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 @dataclass
 class _VideoClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
-    window_start: Optional[int] = None
     timeline: List[VideoIntervalClassification] = field(default_factory=list)
     open_classes: Set[str] = field(default_factory=set)
     last_frame_number: int = -1
-    signature: Tuple[Tuple[str, ...], float, float, float] = field(
-        default_factory=lambda: ((), 0.0, 0.0, 0.0)
+    last_fire_frame_number: Optional[int] = None
+    signature: Tuple[Tuple[str, ...], float, Optional[float], float, float] = field(
+        default_factory=lambda: ((), 0.0, None, 0.0, 0.0)
     )
 
 
@@ -119,12 +122,21 @@ class BlockManifest(WorkflowBlockManifest):
         description="Model used for temporal localization.",
         examples=[DEFAULT_MODEL_ID],
     )
-    window_size_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+    window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=2.0,
-        description="Duration of each classification window in seconds.",
+        description="Duration of the sliding classification window in seconds.",
         examples=[2.0],
     )
-    sampling_fps: float = Field(
+    stride_seconds: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
+        default=None,
+        description=(
+            "Time between classification calls. When unset, it defaults to "
+            "window_seconds / 2 for 50 percent overlap. Set it equal to "
+            "window_seconds for non-overlapping windows."
+        ),
+        examples=[None, 1.0, 2.0],
+    )
+    sample_fps: float = Field(
         default=4.0,
         description="Frames sampled per second for model input.",
         examples=[4.0],
@@ -132,12 +144,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_window_inputs(self) -> "BlockManifest":
-        numeric_values = [self.sampling_fps]
-        if isinstance(self.window_size_seconds, (int, float)):
-            numeric_values.append(self.window_size_seconds)
+        numeric_values = [self.sample_fps]
+        if isinstance(self.window_seconds, (int, float)):
+            numeric_values.append(self.window_seconds)
+        if isinstance(self.stride_seconds, (int, float)):
+            numeric_values.append(self.stride_seconds)
         if any(value <= 0 or not math.isfinite(value) for value in numeric_values):
             raise ValueError(
-                "Window size and sampling FPS must be positive and finite."
+                "Window, stride, and sample FPS must be positive and finite."
             )
         return self
 
@@ -153,6 +167,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND],
             ),
             OutputDefinition(name="active_classes", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="error_status", kind=[STRING_KIND]),
         ]
 
     @classmethod
@@ -233,8 +248,9 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Union[List[str], str],
         model_id: str = DEFAULT_MODEL_ID,
-        window_size_seconds: float = 2.0,
-        sampling_fps: float = 4.0,
+        window_seconds: float = 2.0,
+        stride_seconds: Optional[float] = None,
+        sample_fps: float = 4.0,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
@@ -247,8 +263,9 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
                     model=model,
                     image=image,
                     class_names=classes,
-                    window_size_seconds=window_size_seconds,
-                    sampling_fps=sampling_fps,
+                    window_seconds=window_seconds,
+                    stride_seconds=stride_seconds,
+                    sample_fps=sample_fps,
                 )
             )
         return results
@@ -258,30 +275,48 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
         model,
         image: WorkflowImageData,
         class_names: List[str],
-        window_size_seconds: float,
-        sampling_fps: float,
+        window_seconds: float,
+        stride_seconds: Optional[float],
+        sample_fps: float,
     ) -> dict:
         metadata = image.video_metadata
         source_fps = self._resolve_source_fps(metadata=metadata)
-        requested_sampling_fps = float(sampling_fps)
-        requested_window_seconds = float(window_size_seconds)
+        requested_sample_fps = float(sample_fps)
+        requested_window_seconds = float(window_seconds)
+        requested_stride_seconds = (
+            None if stride_seconds is None else float(stride_seconds)
+        )
         if (
-            requested_sampling_fps <= 0
-            or not math.isfinite(requested_sampling_fps)
+            requested_sample_fps <= 0
+            or not math.isfinite(requested_sample_fps)
             or requested_window_seconds <= 0
             or not math.isfinite(requested_window_seconds)
+            or (
+                requested_stride_seconds is not None
+                and (
+                    requested_stride_seconds <= 0
+                    or not math.isfinite(requested_stride_seconds)
+                )
+            )
         ):
             raise ValueError(
-                "Window size and sampling FPS must be positive and finite."
+                "Window, stride, and sample FPS must be positive and finite."
             )
 
-        effective_sampling_fps = min(requested_sampling_fps, source_fps)
+        effective_sample_fps = min(requested_sample_fps, source_fps)
+        sampling_stride = max(1.0, source_fps / effective_sample_fps)
         window_frames = max(1, round(requested_window_seconds * source_fps))
-        stride = max(1.0, source_fps / effective_sampling_fps)
+        effective_stride_seconds = (
+            requested_window_seconds / 2
+            if requested_stride_seconds is None
+            else requested_stride_seconds
+        )
+        stride_frames = max(1, round(effective_stride_seconds * source_fps))
         signature = (
             tuple(class_names),
             requested_window_seconds,
-            requested_sampling_fps,
+            requested_stride_seconds,
+            requested_sample_fps,
             source_fps,
         )
         video_id = metadata.video_identifier
@@ -298,39 +333,41 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
             bookkeeping = _VideoClassificationBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
 
-        if bookkeeping.window_start is None:
-            bookkeeping.window_start = frame_number
-
-        while frame_number >= bookkeeping.window_start + window_frames:
-            self._classify_window(
-                model=model,
-                bookkeeping=bookkeeping,
-                class_names=class_names,
-                effective_sampling_fps=effective_sampling_fps,
-                stride=stride,
-            )
-            bookkeeping.window_start += window_frames
-
-        frame_offset = frame_number - bookkeeping.window_start
-        next_sample_offset = len(bookkeeping.sampled) * stride
-        if frame_offset + 1e-9 >= next_sample_offset:
+        if (
+            not bookkeeping.sampled
+            or frame_number >= bookkeeping.sampled[-1][0] + sampling_stride
+        ):
             bookkeeping.sampled.append((frame_number, self._extract_frame(image=image)))
 
-        if frame_number >= bookkeeping.window_start + window_frames - 1:
-            self._classify_window(
+        cutoff_frame_number = frame_number - window_frames
+        while (
+            bookkeeping.sampled
+            and bookkeeping.sampled[0][0] <= cutoff_frame_number
+        ):
+            bookkeeping.sampled.pop(0)
+
+        error_status = ""
+        should_classify = bookkeeping.sampled and (
+            bookkeeping.last_fire_frame_number is None
+            or frame_number
+            >= bookkeeping.last_fire_frame_number + stride_frames
+        )
+        if should_classify:
+            bookkeeping.last_fire_frame_number = frame_number
+            error_status = self._classify_buffer(
                 model=model,
                 bookkeeping=bookkeeping,
                 class_names=class_names,
-                effective_sampling_fps=effective_sampling_fps,
-                stride=stride,
+                effective_sample_fps=effective_sample_fps,
+                sampling_stride=sampling_stride,
             )
-            bookkeeping.window_start += window_frames
 
         bookkeeping.last_frame_number = frame_number
         return self._build_output(
             bookkeeping=bookkeeping,
             class_names=class_names,
             frame_number=frame_number,
+            error_status=error_status,
         )
 
     def _resolve_source_fps(self, metadata: VideoMetadata) -> float:
@@ -348,32 +385,40 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
             self._warned_fps_video_ids.add(metadata.video_identifier)
         return DEFAULT_SOURCE_FPS
 
-    def _classify_window(
+    def _classify_buffer(
         self,
         model,
         bookkeeping: _VideoClassificationBookkeeping,
         class_names: List[str],
-        effective_sampling_fps: float,
-        stride: float,
-    ) -> None:
+        effective_sample_fps: float,
+        sampling_stride: float,
+    ) -> str:
         if not bookkeeping.sampled:
-            return
+            return ""
         frames = self._prepare_frames_for_model(
             [frame for _, frame in bookkeeping.sampled]
         )
-        segments = model.temporal_localization(
-            frames=frames,
-            class_names=class_names,
-            input_color_format="rgb",
-            fps=effective_sampling_fps,
-        )
+        try:
+            segments = model.temporal_localization(
+                frames=frames,
+                class_names=class_names,
+                input_color_format="rgb",
+                fps=effective_sample_fps,
+            )
+        except Exception as error:
+            logger.warning(
+                "Video Classification Model call failed: %s",
+                error,
+                exc_info=True,
+            )
+            return str(error)
         self._merge_segments(
             bookkeeping=bookkeeping,
             segments=segments,
             class_names=class_names,
-            stride=stride,
+            stride=sampling_stride,
         )
-        bookkeeping.sampled.clear()
+        return ""
 
     @staticmethod
     def _prepare_frames_for_model(frames: List[Any]) -> List[Any]:
@@ -467,6 +512,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
         bookkeeping: _VideoClassificationBookkeeping,
         class_names: List[str],
         frame_number: int,
+        error_status: str,
     ) -> dict:
         timeline = [entry.model_copy(deep=True) for entry in bookkeeping.timeline]
         for class_name in bookkeeping.open_classes:
@@ -479,4 +525,8 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
             for class_name in class_names
             if class_name in bookkeeping.open_classes
         ]
-        return {"timeline": timeline, "active_classes": active_classes}
+        return {
+            "timeline": timeline,
+            "active_classes": active_classes,
+            "error_status": error_status,
+        }

@@ -3,7 +3,7 @@
 import importlib
 import math
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -40,12 +40,16 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
+    STRING_KIND,
     VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND,
 )
 
 
 class _FakeVideoClassificationModel:
-    def __init__(self, responses: Optional[List[List[Dict]]] = None):
+    def __init__(
+        self,
+        responses: Optional[List[Union[List[Dict], Exception]]] = None,
+    ):
         self.responses = list(responses or [])
         self.calls = []
 
@@ -70,7 +74,10 @@ class _FakeVideoClassificationModel:
         )
         if not self.responses:
             return []
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def _make_frame(
@@ -107,7 +114,7 @@ def _make_frame(
 
 
 def _make_block(
-    responses: Optional[List[List[Dict]]] = None,
+    responses: Optional[List[Union[List[Dict], Exception]]] = None,
     tensor: bool = False,
 ):
     block_type = (
@@ -129,15 +136,17 @@ def _run(
     block,
     frame: WorkflowImageData,
     class_names=("walk", "run"),
-    window_size_seconds=1.0,
-    sampling_fps=2.0,
+    window_seconds=1.0,
+    stride_seconds=None,
+    sample_fps=2.0,
 ):
     return block.run(
         images=[frame],
         class_names=list(class_names),
         model_id="cosmos-3-edge",
-        window_size_seconds=window_size_seconds,
-        sampling_fps=sampling_fps,
+        window_seconds=window_seconds,
+        stride_seconds=stride_seconds,
+        sample_fps=sample_fps,
     )[0]
 
 
@@ -158,13 +167,16 @@ def test_manifest_parses_classes_and_declares_outputs(manifest_type):
 
     assert manifest.class_names == "walk, run"
     assert manifest.model_id == "cosmos-3-edge"
-    assert manifest.window_size_seconds == 2.0
-    assert manifest.sampling_fps == 4.0
+    assert manifest.window_seconds == 2.0
+    assert manifest.stride_seconds is None
+    assert manifest.sample_fps == 4.0
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     assert manifest_type.describe_outputs()[0].kind == [
         VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND
     ]
     assert manifest_type.describe_outputs()[1].kind == [LIST_OF_VALUES_KIND]
+    assert manifest_type.describe_outputs()[2].name == "error_status"
+    assert manifest_type.describe_outputs()[2].kind == [STRING_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -183,17 +195,21 @@ def test_manifest_requires_class_names(manifest_type):
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("window_size_seconds", 0),
-        ("window_size_seconds", -1),
-        ("window_size_seconds", math.inf),
-        ("window_size_seconds", math.nan),
-        ("sampling_fps", 0),
-        ("sampling_fps", -1),
-        ("sampling_fps", math.inf),
-        ("sampling_fps", math.nan),
+        ("window_seconds", 0),
+        ("window_seconds", -1),
+        ("window_seconds", math.inf),
+        ("window_seconds", math.nan),
+        ("stride_seconds", 0),
+        ("stride_seconds", -1),
+        ("stride_seconds", math.inf),
+        ("stride_seconds", math.nan),
+        ("sample_fps", 0),
+        ("sample_fps", -1),
+        ("sample_fps", math.inf),
+        ("sample_fps", math.nan),
     ],
 )
-def test_manifest_rejects_non_positive_or_non_finite_window_inputs(
+def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
     manifest_type, field, value
 ):
     data = {
@@ -208,26 +224,68 @@ def test_manifest_rejects_non_positive_or_non_finite_window_inputs(
         manifest_type.model_validate(data)
 
 
-def test_window_waits_for_completion_and_sends_sampled_rgb_frames():
-    block, model = _make_block()
-    colors = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]
+def test_first_frame_classifies_a_growing_buffer_and_sends_rgb():
+    block, model = _make_block(
+        responses=[
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}]
+        ]
+    )
 
-    for frame_number, color in enumerate(colors[:3]):
-        result = _run(block, _make_frame(frame_number, bgr_color=color))
-        assert result == {"timeline": [], "active_classes": []}
-        assert model.calls == []
+    result = _run(block, _make_frame(0, bgr_color=[1, 2, 3]))
 
-    result = _run(block, _make_frame(3, bgr_color=colors[3]))
-
-    assert result == {"timeline": [], "active_classes": []}
+    assert [entry.class_name for entry in result["timeline"]] == ["walk"]
+    assert result["active_classes"] == ["walk"]
+    assert result["error_status"] == ""
     assert len(model.calls) == 1
     call = model.calls[0]
     assert call["class_names"] == ["walk", "run"]
     assert call["input_color_format"] == "rgb"
     assert call["fps"] == 2.0
-    assert len(call["frames"]) == 2
+    assert len(call["frames"]) == 1
     np.testing.assert_array_equal(call["frames"][0][0, 0], [3, 2, 1])
-    np.testing.assert_array_equal(call["frames"][1][0, 0], [9, 8, 7])
+
+
+def test_default_stride_fires_every_half_window():
+    block, model = _make_block()
+
+    call_counts = []
+    for frame_number in range(6):
+        _run(block, _make_frame(frame_number))
+        call_counts.append(len(model.calls))
+
+    assert call_counts == [1, 1, 2, 2, 3, 3]
+
+
+def test_window_stride_produces_non_overlapping_call_cadence():
+    block, model = _make_block()
+
+    fired_at = []
+    for frame_number in range(9):
+        previous_call_count = len(model.calls)
+        _run(
+            block,
+            _make_frame(frame_number),
+            stride_seconds=1.0,
+        )
+        if len(model.calls) > previous_call_count:
+            fired_at.append(frame_number)
+
+    assert fired_at == [0, 4, 8]
+
+
+def test_default_stride_retains_overlapping_sampled_frames():
+    block, model = _make_block()
+
+    for frame_number in range(5):
+        _run(block, _make_frame(frame_number))
+
+    second_call_values = [frame[0, 0, 2] for frame in model.calls[1]["frames"]]
+    third_call_values = [frame[0, 0, 2] for frame in model.calls[2]["frames"]]
+    assert second_call_values == [0, 2]
+    assert third_call_values == [2, 4]
+    np.testing.assert_array_equal(
+        model.calls[1]["frames"][-1], model.calls[2]["frames"][0]
+    )
 
 
 def test_fps_falls_back_to_measured_then_30_and_warns(monkeypatch):
@@ -239,8 +297,8 @@ def test_fps_falls_back_to_measured_then_30_and_warns(monkeypatch):
         _run(
             block,
             _make_frame(frame_number, fps=None, measured_fps=None),
-            window_size_seconds=0.1,
-            sampling_fps=4.0,
+            window_seconds=0.1,
+            sample_fps=4.0,
         )
 
     assert model.calls[0]["fps"] == 4.0
@@ -252,45 +310,50 @@ def test_fps_falls_back_to_measured_then_30_and_warns(monkeypatch):
         _run(
             measured_block,
             _make_frame(frame_number, fps=None, measured_fps=5.0),
-            window_size_seconds=1.0,
-            sampling_fps=2.0,
+            window_seconds=1.0,
+            sample_fps=2.0,
         )
     assert measured_model.calls[0]["fps"] == 2.0
     warning.assert_called_once()
 
 
-def test_sampling_fps_is_capped_at_source_fps():
+def test_sample_fps_is_capped_at_source_fps():
     block, model = _make_block()
 
-    _run(block, _make_frame(0, fps=2.0), sampling_fps=10.0)
-    _run(block, _make_frame(1, fps=2.0), sampling_fps=10.0)
+    _run(block, _make_frame(0, fps=2.0), sample_fps=10.0)
+    _run(block, _make_frame(1, fps=2.0), sample_fps=10.0)
 
     assert model.calls[0]["fps"] == 2.0
-    assert len(model.calls[0]["frames"]) == 2
+    assert model.calls[1]["fps"] == 2.0
+    assert len(model.calls[1]["frames"]) == 2
 
 
-def test_maps_dropped_frames_across_a_window_boundary():
+def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "run"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
         ]
     )
 
-    for frame_number in [10, 12, 13, 15, 16, 17]:
-        result = _run(block, _make_frame(frame_number))
+    _run(block, _make_frame(10))
+    _run(block, _make_frame(12))
+    calls_before_gap = len(model.calls)
+    result = _run(block, _make_frame(100))
 
-    assert len(model.calls) == 2
+    assert len(model.calls) == calls_before_gap + 1
+    assert len(model.calls[-1]["frames"]) == 1
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 10,
-            "end_frame_idx": 12,
+            "end_frame_idx": 10,
             "class_name": "walk",
             "class_id": 0,
         },
         {
-            "start_frame_idx": 15,
-            "end_frame_idx": 17,
+            "start_frame_idx": 100,
+            "end_frame_idx": 100,
             "class_name": "run",
             "class_id": 1,
         },
@@ -300,18 +363,18 @@ def test_maps_dropped_frames_across_a_window_boundary():
 def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
             [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
         ]
     )
 
-    for frame_number in range(8):
+    for frame_number in range(4):
         result = _run(block, _make_frame(frame_number))
 
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 0,
-            "end_frame_idx": 7,
+            "end_frame_idx": 3,
             "class_name": "walk",
             "class_id": 0,
         }
@@ -323,15 +386,14 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
     block, _ = _make_block(
         responses=[
             [
-                {"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"},
-                {"start_frame_idx": 0, "end_frame_idx": 1, "class": "run"},
-                {"start_frame_idx": 1, "end_frame_idx": 1, "class": "walk"},
+                {"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"},
+                {"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"},
+                {"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"},
             ]
         ]
     )
 
-    for frame_number in range(4):
-        result = _run(block, _make_frame(frame_number))
+    result = _run(block, _make_frame(0))
 
     assert [
         (entry.class_name, entry.start_frame_idx) for entry in result["timeline"]
@@ -346,43 +408,42 @@ def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
     block, _ = _make_block(
         responses=[
             [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [],
             [{"start_frame_idx": 1, "end_frame_idx": 1, "class": "walk"}],
         ]
     )
 
-    for frame_number in range(8):
+    for frame_number in range(6):
         result = _run(block, _make_frame(frame_number))
 
     assert [
         (entry.start_frame_idx, entry.end_frame_idx) for entry in result["timeline"]
     ] == [
         (0, 0),
-        (6, 7),
+        (4, 5),
     ]
 
 
 def test_open_range_advances_then_closes_at_recorded_endpoint():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
             [],
         ]
     )
 
-    for frame_number in range(4):
-        first_window_result = _run(block, _make_frame(frame_number))
-    assert first_window_result["timeline"][0].end_frame_idx == 3
+    first_window_result = _run(block, _make_frame(0))
+    assert first_window_result["timeline"][0].end_frame_idx == 0
     assert first_window_result["active_classes"] == ["walk"]
 
-    for frame_number in range(4, 7):
-        advancing_result = _run(block, _make_frame(frame_number))
-    assert advancing_result["timeline"][0].end_frame_idx == 6
-    assert first_window_result["timeline"][0].end_frame_idx == 3
+    advancing_result = _run(block, _make_frame(1))
+    assert advancing_result["timeline"][0].end_frame_idx == 1
+    assert first_window_result["timeline"][0].end_frame_idx == 0
 
-    closed_result = _run(block, _make_frame(7))
-    assert closed_result["timeline"][0].end_frame_idx == 2
+    closed_result = _run(block, _make_frame(2))
+    assert closed_result["timeline"][0].end_frame_idx == 0
     assert closed_result["active_classes"] == []
-    assert _run(block, _make_frame(8))["timeline"][0].end_frame_idx == 2
+    assert _run(block, _make_frame(3))["timeline"][0].end_frame_idx == 0
 
 
 def test_wire_contract_and_alias_round_trip():
@@ -419,50 +480,96 @@ def test_deserializer_rejects_malformed_values(value):
     "reset_kwargs",
     [
         {"class_names": ("run",)},
-        {"window_size_seconds": 2.0},
-        {"sampling_fps": 1.0},
+        {"window_seconds": 2.0},
+        {"stride_seconds": 0.5},
+        {"sample_fps": 1.0},
         {"source_fps": 5.0},
     ],
 )
 def test_window_defining_input_change_clears_all_state(reset_kwargs):
     block, model = _make_block(
-        responses=[[{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}]]
+        responses=[[{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}]]
     )
-    for frame_number in range(4):
-        result = _run(block, _make_frame(frame_number))
+    result = _run(block, _make_frame(0))
     assert result["timeline"]
     assert result["active_classes"] == ["walk"]
 
     class_names = reset_kwargs.get("class_names", ("walk", "run"))
-    window_size_seconds = reset_kwargs.get("window_size_seconds", 1.0)
-    sampling_fps = reset_kwargs.get("sampling_fps", 2.0)
+    window_seconds = reset_kwargs.get("window_seconds", 1.0)
+    stride_seconds = reset_kwargs.get("stride_seconds")
+    sample_fps = reset_kwargs.get("sample_fps", 2.0)
     source_fps = reset_kwargs.get("source_fps", 4.0)
     result = _run(
         block,
-        _make_frame(4, fps=source_fps),
+        _make_frame(1, fps=source_fps),
         class_names=class_names,
-        window_size_seconds=window_size_seconds,
-        sampling_fps=sampling_fps,
+        window_seconds=window_seconds,
+        stride_seconds=stride_seconds,
+        sample_fps=sample_fps,
     )
 
-    assert result == {"timeline": [], "active_classes": []}
+    assert result == {"timeline": [], "active_classes": [], "error_status": ""}
+    assert len(model.calls) == 2
+
+
+def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
+    block, model = _make_block(
+        responses=[
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            RuntimeError("temporary model failure"),
+            [{"start_frame_idx": 1, "end_frame_idx": 1, "class": "run"}],
+        ]
+    )
+    warning = MagicMock()
+    monkeypatch.setattr(video_classification_module.logger, "warning", warning)
+
+    initial = _run(block, _make_frame(0))
+    _run(block, _make_frame(1))
+    failed = _run(block, _make_frame(2))
+
+    assert initial["active_classes"] == ["walk"]
+    assert failed["error_status"] == "temporary model failure"
+    assert [entry.class_name for entry in failed["timeline"]] == ["walk"]
+    assert failed["active_classes"] == ["walk"]
+    assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 0
+    warning.assert_called_once()
+    assert warning.call_args.kwargs["exc_info"] is True
+
+    after_failure = _run(block, _make_frame(3))
+    assert after_failure["error_status"] == ""
+    assert after_failure["active_classes"] == ["walk"]
+    assert len(model.calls) == 2
+
+    resumed = _run(block, _make_frame(4))
+
+    assert resumed["error_status"] == ""
+    assert [entry.class_name for entry in resumed["timeline"]] == ["walk", "run"]
+    assert resumed["active_classes"] == ["run"]
+    assert len(model.calls) == 3
+
+
+def test_error_status_is_empty_on_frames_without_a_failed_call():
+    block, model = _make_block()
+
+    first = _run(block, _make_frame(0))
+    ordinary = _run(block, _make_frame(1))
+
+    assert first["error_status"] == ""
+    assert ordinary["error_status"] == ""
     assert len(model.calls) == 1
 
 
 def test_frame_rollback_resets_timeline_and_buffer():
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "run"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
         ]
     )
-    for frame_number in range(4):
-        _run(block, _make_frame(frame_number))
+    _run(block, _make_frame(0))
+    _run(block, _make_frame(1))
 
-    assert _run(block, _make_frame(0)) == {"timeline": [], "active_classes": []}
-    assert len(model.calls) == 1
-    for frame_number in range(1, 4):
-        result = _run(block, _make_frame(frame_number))
+    result = _run(block, _make_frame(0))
 
     assert len(model.calls) == 2
     assert [entry.class_name for entry in result["timeline"]] == ["run"]
@@ -471,18 +578,15 @@ def test_frame_rollback_resets_timeline_and_buffer():
 def test_video_states_are_independent():
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "run"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
         ]
     )
 
-    for frame_number in range(3):
-        assert _run(block, _make_frame(frame_number, video_id="a"))["timeline"] == []
-        assert _run(block, _make_frame(frame_number, video_id="b"))["timeline"] == []
-    a_result = _run(block, _make_frame(3, video_id="a"))
+    a_result = _run(block, _make_frame(0, video_id="a"))
     assert [entry.class_name for entry in a_result["timeline"]] == ["walk"]
     assert len(model.calls) == 1
-    b_result = _run(block, _make_frame(3, video_id="b"))
+    b_result = _run(block, _make_frame(0, video_id="b"))
 
     assert [entry.class_name for entry in b_result["timeline"]] == ["run"]
     assert len(model.calls) == 2
@@ -491,14 +595,13 @@ def test_video_states_are_independent():
 def test_video_identifier_can_be_reused_after_rollback_reset():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "run"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
         ]
     )
-    for frame_number in range(4):
-        _run(block, _make_frame(frame_number, video_id="reused"))
-    for frame_number in range(4):
-        result = _run(block, _make_frame(frame_number, video_id="reused"))
+    _run(block, _make_frame(0, video_id="reused"))
+    _run(block, _make_frame(1, video_id="reused"))
+    result = _run(block, _make_frame(0, video_id="reused"))
 
     assert [entry.class_name for entry in result["timeline"]] == ["run"]
 
@@ -520,12 +623,12 @@ def test_tensor_sibling_forwards_tensor_materialised_frames():
     _run(
         block,
         _make_frame(0, fps=2.0, tensor_rgb_color=[1, 2, 3]),
-        sampling_fps=2.0,
+        sample_fps=2.0,
     )
     _run(
         block,
         _make_frame(1, fps=2.0, tensor_rgb_color=[4, 5, 6]),
-        sampling_fps=2.0,
+        sample_fps=2.0,
     )
 
     assert all(isinstance(frame, torch.Tensor) for frame in model.calls[0]["frames"])
@@ -542,15 +645,15 @@ def test_tensor_sibling_normalizes_mixed_window_to_rgb_numpy():
     _run(
         block,
         _make_frame(0, fps=2.0, tensor_rgb_color=[1, 2, 3]),
-        sampling_fps=2.0,
+        sample_fps=2.0,
     )
     _run(
         block,
         _make_frame(1, fps=2.0, bgr_color=[6, 5, 4]),
-        sampling_fps=2.0,
+        sample_fps=2.0,
     )
 
-    frames = model.calls[0]["frames"]
+    frames = model.calls[1]["frames"]
     assert all(isinstance(frame, np.ndarray) for frame in frames)
     assert all(frame.shape == (2, 2, 3) for frame in frames)
     np.testing.assert_array_equal(frames[0][0, 0], [1, 2, 3])
