@@ -2,12 +2,8 @@
 
 Calls Grok vision models via xAI's OpenAI-compatible Responses API, either
 directly with a user-provided xAI key or through Roboflow's ``apiproxy/xai``
-managed-key proxy. The managed-key (``rf_key``) option is gated behind the
-``WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED`` env flag (off by default) until the
-platform-side proxy is deployed; with the flag off users must provide their
-own xAI API key and the block never contacts the proxy. Object-detection
-prompting uses the percent-of-image ``box_2d`` contract validated in the
-vlm-exam benchmark for Grok 4.5/4.6.
+managed-key proxy. Object-detection prompting uses the percent-of-image
+``box_2d`` contract validated in the vlm-exam benchmark for Grok 4.5/4.6.
 """
 
 import base64
@@ -21,10 +17,7 @@ import requests
 from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import (
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-    WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED,
-)
+from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
@@ -123,18 +116,11 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 
-if WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED:
-    API_KEY_OPTIONS_DOCS = """### API Key Options
+API_KEY_OPTIONS_DOCS = """### API Key Options
 
 1. **Roboflow Managed API Key (Default)** - Use `rf_key:account` to proxy
    requests through Roboflow's API. Usage is billed against Roboflow credits.
 2. **Custom xAI API Key** - Provide your own xAI API key and pay xAI directly.
-"""
-else:
-    API_KEY_OPTIONS_DOCS = """### API Key
-
-Provide your own xAI API key (created at https://console.x.ai). Requests are
-sent directly to xAI and billed to your xAI account.
 """
 
 LONG_DESCRIPTION = f"""
@@ -174,25 +160,15 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
 
-if WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED:
-    ApiKeyType = Union[
-        Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
-    ]
-    API_KEY_FIELD = Field(
-        default="rf_key:account",
-        description=(
-            "Your xAI API key or 'rf_key:account' to use Roboflow's managed API key"
-        ),
-        examples=["rf_key:account", "xxx-xxx", "$inputs.xai_api_key"],
-        private=True,
-    )
-else:
-    ApiKeyType = Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str]
-    API_KEY_FIELD = Field(
-        description="Your xAI API key",
-        examples=["xxx-xxx", "$inputs.xai_api_key"],
-        private=True,
-    )
+ApiKeyType = Union[Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str]
+API_KEY_FIELD = Field(
+    default="rf_key:account",
+    description=(
+        "Your xAI API key or 'rf_key:account' to use Roboflow's managed API key"
+    ),
+    examples=["rf_key:account", "xxx-xxx", "$inputs.xai_api_key"],
+    private=True,
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -613,12 +589,6 @@ def execute_spacexai_request(
         Raw text output of the model.
     """
     if xai_api_key.startswith(("rf_key:account", "rf_key:user:")):
-        if not WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED:
-            raise ValueError(
-                "Roboflow-managed xAI API keys are not enabled on this "
-                "installation. Provide your own xAI API key in the SpaceXAI "
-                "block's `api_key` field."
-            )
         if not roboflow_api_key:
             raise ValueError(
                 "Roboflow API key is required when using a Roboflow-managed xAI API key."
