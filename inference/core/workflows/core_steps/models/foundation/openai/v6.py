@@ -13,6 +13,11 @@ from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_RE
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    models_supporting_reasoning,
+    validate_reasoning_level,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_responses_api_usage,
@@ -62,23 +67,28 @@ STRUCTURED_ABSOLUTE_STYLE = "structured-absolute"
 NORMALIZED_LEGACY_STYLE = "normalized-legacy"
 PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 
+# Per-model reasoning_effort values follow the official OpenAI docs:
+# https://developers.openai.com/api/docs/guides/reasoning (per-generation sets)
+# https://developers.openai.com/api/docs/models/gpt-5.6-sol (5.6 adds `max`)
+# The GPT-5.6 rows assume Terra/Luna match Sol, as the docs describe the set
+# family-wide ("GPT-5.6 models").
 OPENAI_MODELS = [
     {
         "id": "gpt-5.6-sol",
         "name": "GPT-5.6 Sol",
-        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
         "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.6-terra",
         "name": "GPT-5.6 Terra",
-        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
         "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
         "id": "gpt-5.6-luna",
         "name": "GPT-5.6 Luna",
-        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
         "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
@@ -169,21 +179,24 @@ OPENAI_MODELS = [
 
 MODEL_VERSION_IDS = [model["id"] for model in OPENAI_MODELS]
 
-MODEL_VERSION_METADATA = {
-    model["id"]: {"name": model["name"]} for model in OPENAI_MODELS
+MODEL_REASONING_EFFORT_VALUES = {
+    model["id"]: model["reasoning_effort_values"] for model in OPENAI_MODELS
 }
 
-MODELS_SUPPORTING_REASONING_EFFORT = [
-    model["id"] for model in OPENAI_MODELS if model["reasoning_effort_values"]
-]
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {model["id"]: {"name": model["name"]} for model in OPENAI_MODELS},
+    MODEL_REASONING_EFFORT_VALUES,
+)
+
+MODELS_SUPPORTING_REASONING_EFFORT = models_supporting_reasoning(
+    MODEL_REASONING_EFFORT_VALUES
+)
 
 MODELS_NOT_SUPPORTING_REASONING_EFFORT = [
     model["id"] for model in OPENAI_MODELS if not model["reasoning_effort_values"]
 ]
 
-MODEL_REASONING_EFFORT_VALUES = {
-    model["id"]: model["reasoning_effort_values"] for model in OPENAI_MODELS
-}
+REASONING_EFFORT_VALUES = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 MODEL_DETECTION_PROMPT_STYLES = {
     model["id"]: model["detection_prompt_style"] for model in OPENAI_MODELS
@@ -437,14 +450,16 @@ class BlockManifest(WorkflowBlockManifest):
     reasoning_effort: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
-            Literal["none", "minimal", "low", "medium", "high", "xhigh"],
+            Literal[tuple(REASONING_EFFORT_VALUES)],
         ]
     ] = Field(
         default=None,
         description="Controls reasoning. Reducing can result in faster responses and fewer tokens. "
-        "GPT-5.1 and higher models default to 'none' (no reasoning) and support 'none', 'low', 'medium', 'high'. "
-        "GPT-5.2 also supports 'xhigh'. "
-        "GPT-5 models default to 'medium' and support 'minimal', 'low', 'medium', 'high'.",
+        "Supported values differ per model (see the model dropdown): the GPT-5.6 family "
+        "supports 'none' through 'max' (default 'medium'), GPT-5.5/5.4/5.2 support 'none' "
+        "through 'xhigh', GPT-5.1 supports 'none' through 'high' (default 'none'), and "
+        "GPT-5 models support 'minimal' through 'high' (default 'medium'). "
+        "When unset, the OpenAI default for the selected model is used.",
         json_schema_extra={
             "relevant_for": {
                 "model_version": {
@@ -499,6 +514,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        validate_reasoning_level(
+            model=self.model_version,
+            level=self.reasoning_effort,
+            levels_by_model=MODEL_REASONING_EFFORT_VALUES,
+        )
         return self
 
     @classmethod
@@ -801,15 +821,15 @@ def _execute_proxied_openai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_EFFORT_VALUES,
+    )
     if (
         reasoning_effort is not None
         and model_version in MODELS_SUPPORTING_REASONING_EFFORT
     ):
-        effort_values = MODEL_REASONING_EFFORT_VALUES.get(model_version, [])
-        if reasoning_effort not in effort_values:
-            raise ValueError(
-                f'Model {model_version} does not support reasoning effort "{reasoning_effort}"'
-            )
         payload["reasoning"] = {"effort": reasoning_effort}
 
     endpoint = "apiproxy/openai/v2"
@@ -909,15 +929,15 @@ def _execute_direct_openai_request(
     if temperature is not None:
         request_params["temperature"] = temperature
 
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_EFFORT_VALUES,
+    )
     if (
         reasoning_effort is not None
         and model_version in MODELS_SUPPORTING_REASONING_EFFORT
     ):
-        effort_values = MODEL_REASONING_EFFORT_VALUES.get(model_version, [])
-        if reasoning_effort not in effort_values:
-            raise ValueError(
-                f'Model {model_version} does not support reasoning effort "{reasoning_effort}"'
-            )
         request_params["reasoning"] = {"effort": reasoning_effort}
 
     response = client.responses.create(**request_params)

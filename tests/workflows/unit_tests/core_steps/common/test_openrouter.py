@@ -762,10 +762,12 @@ def test_validate_task_type_ocr_passes_with_no_extra_fields():
     [
         (None, None),
         ("none", {"enabled": False}),
+        ("minimal", {"effort": "minimal"}),
         ("low", {"effort": "low"}),
         ("medium", {"effort": "medium"}),
         ("high", {"effort": "high"}),
         ("xhigh", {"effort": "xhigh"}),
+        ("max", {"effort": "max"}),
     ],
 )
 def test_build_openrouter_reasoning_config(effort, expected):
