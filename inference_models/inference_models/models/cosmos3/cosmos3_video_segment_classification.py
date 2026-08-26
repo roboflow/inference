@@ -95,14 +95,14 @@ def _parse_temporal_segments(
     return result
 
 
-class Cosmos3VideoSegmentClassification(VideoSegmentClassificationModel):
+class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     def __init__(self, reasoner: Cosmos3EdgeReasoner):
         self._reasoner = reasoner
 
     @classmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
-    ) -> "Cosmos3VideoSegmentClassification":
+    ) -> "Cosmos3EdgeVideoSegmentClassification":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
         return cls(reasoner=reasoner)
 

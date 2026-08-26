@@ -54,11 +54,11 @@ def test_cosmos3_reasoner_answers_scene_question() -> None:
     reason="COSMOS3_REASONER_PACKAGE_DIR not set or CUDA unavailable",
 )
 def test_cosmos3_video_classifier_localizes_moving_object() -> None:
-    from inference_models.models.cosmos3.cosmos3_video_classification import (
-        Cosmos3VideoSegmentClassification,
+    from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
+        Cosmos3EdgeVideoSegmentClassification,
     )
 
-    model = Cosmos3VideoSegmentClassification.from_pretrained(
+    model = Cosmos3EdgeVideoSegmentClassification.from_pretrained(
         REASONER_PACKAGE_DIR, device=torch.device("cuda")
     )
     fps = 8.0

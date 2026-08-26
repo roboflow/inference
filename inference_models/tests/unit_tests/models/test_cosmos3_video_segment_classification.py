@@ -8,8 +8,8 @@ from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
-from inference_models.models.cosmos3.cosmos3_video_classification import (
-    Cosmos3VideoSegmentClassification,
+from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
+    Cosmos3EdgeVideoSegmentClassification,
     _parse_temporal_segments,
 )
 
@@ -44,7 +44,7 @@ def test_infer_parses_segments_and_forwards_video_inputs() -> None:
             "answer": '[{"start": 1, "end": 3, "class": "walking"}]'
         }
     )
-    wrapper = Cosmos3VideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
 
     result = wrapper.infer(
@@ -69,7 +69,7 @@ def test_infer_parses_segments_and_forwards_video_inputs() -> None:
 
 
 def test_class_names_is_none_for_open_vocabulary_model() -> None:
-    wrapper = Cosmos3VideoSegmentClassification(reasoner=_FakeReasoner())
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=_FakeReasoner())
 
     assert wrapper.class_names is None
 
@@ -84,7 +84,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
 
     monkeypatch.setattr(Cosmos3EdgeReasoner, "from_pretrained", load_reasoner)
 
-    wrapper = Cosmos3VideoSegmentClassification.from_pretrained(
+    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(
         "nvidia/Cosmos3-Edge",
         local_files_only=False,
     )
@@ -214,7 +214,7 @@ def test_infer_builds_prompt_with_clip_metadata() -> None:
     reasoner._processor.batch_decode.return_value = [
         '[{"start": 0, "end": 2, "class": "walking"}]'
     ]
-    wrapper = Cosmos3VideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
 
     result = wrapper.infer(
@@ -245,7 +245,7 @@ def test_infer_accepts_chw_tensor_frames() -> None:
     reasoner._processor.batch_decode.return_value = [
         '[{"start": 0, "end": 2, "class": "moving"}]'
     ]
-    wrapper = Cosmos3VideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
 
     result = wrapper.infer(
@@ -267,7 +267,7 @@ def test_infer_accepts_chw_tensor_frames() -> None:
 
 
 def test_infer_requires_fps() -> None:
-    wrapper = Cosmos3VideoSegmentClassification(reasoner=_model_with_processor())
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=_model_with_processor())
 
     with pytest.raises(ValueError, match="fps"):
         wrapper.infer(

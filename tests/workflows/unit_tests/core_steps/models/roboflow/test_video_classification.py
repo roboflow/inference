@@ -16,8 +16,8 @@ from inference_models import (
     VideoSegmentClassificationPrediction as ModelVideoSegmentClassificationPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
-from inference_models.models.cosmos3.cosmos3_video_classification import (
-    Cosmos3VideoSegmentClassification,
+from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
+    Cosmos3EdgeVideoSegmentClassification,
 )
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_video_segment_classification_prediction_kind,
@@ -205,7 +205,7 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
 
     loaded = block._get_model(model_id="cosmos-3-edge")
 
-    assert isinstance(loaded, Cosmos3VideoSegmentClassification)
+    assert isinstance(loaded, Cosmos3EdgeVideoSegmentClassification)
     assert loaded._reasoner is reasoner
 
 

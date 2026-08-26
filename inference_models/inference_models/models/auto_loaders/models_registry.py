@@ -318,9 +318,9 @@ REGISTERED_MODELS: Dict[
         BackendType.HF,
     ): LazyClass(
         module_name=(
-            "inference_models.models.cosmos3.cosmos3_video_classification"
+            "inference_models.models.cosmos3.cosmos3_video_segment_classification"
         ),
-        class_name="Cosmos3VideoSegmentClassification",
+        class_name="Cosmos3EdgeVideoSegmentClassification",
     ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",

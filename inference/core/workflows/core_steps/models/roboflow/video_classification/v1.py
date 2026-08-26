@@ -247,12 +247,12 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
                 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
                     Cosmos3EdgeReasoner,
                 )
-                from inference_models.models.cosmos3.cosmos3_video_classification import (
-                    Cosmos3VideoSegmentClassification,
+                from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
+                    Cosmos3EdgeVideoSegmentClassification,
                 )
 
                 if isinstance(loaded_model, Cosmos3EdgeReasoner):
-                    loaded_model = Cosmos3VideoSegmentClassification(
+                    loaded_model = Cosmos3EdgeVideoSegmentClassification(
                         reasoner=loaded_model
                     )
                 else:
