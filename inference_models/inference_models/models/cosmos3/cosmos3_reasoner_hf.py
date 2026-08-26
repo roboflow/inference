@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from transformers.utils import is_flash_attn_2_available
+from transformers.video_utils import VideoMetadata
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -147,6 +148,7 @@ class Cosmos3EdgeReasoner:
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         return_thinking: bool = False,
+        video_fps: Optional[float] = None,
         **kwargs,
     ) -> Union[str, Dict[str, str]]:
         inputs = self.pre_process_generation(
@@ -154,6 +156,7 @@ class Cosmos3EdgeReasoner:
             prompt=prompt,
             input_color_format=input_color_format,
             as_video=True,
+            video_fps=video_fps,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -172,6 +175,7 @@ class Cosmos3EdgeReasoner:
         prompt: str = None,
         input_color_format: ColorFormat = None,
         as_video: bool = False,
+        video_fps: Optional[float] = None,
         **kwargs,
     ) -> dict:
         if isinstance(images, np.ndarray):
@@ -206,6 +210,17 @@ class Cosmos3EdgeReasoner:
             conversation, tokenize=False, add_generation_prompt=True
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
+        if as_video and video_fps is not None:
+            processor_kwargs.update(
+                video_metadata=[
+                    VideoMetadata(
+                        fps=video_fps,
+                        total_num_frames=len(images),
+                        duration=len(images) / video_fps,
+                    )
+                ],
+                do_sample_frames=False,
+            )
         model_inputs = self._processor(
             text=text_input,
             return_tensors="pt",

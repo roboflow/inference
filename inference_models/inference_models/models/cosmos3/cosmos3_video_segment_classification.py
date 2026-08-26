@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any, List, Optional, Union
@@ -17,46 +18,48 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReaso
 TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
     "Identify every temporal event in this video that matches the class vocabulary.\n"
     "Class vocabulary: {class_vocabulary}\n"
-    "The clip contains {num_frames} frames sampled at {fps} fps.\n"
+    "The clip duration is {duration:.1f} seconds at {fps} fps.\n"
     "Return STRICT JSON array output using this schema:\n"
-    '[{{"start": <frame index>, "end": <frame index>, '
+    '[{{"start": <seconds>, "end": <seconds>, '
     '"class": "<one of the vocabulary>"}}]\n'
-    "Report start and end as frame indices between 0 and {max_frame_idx}, "
-    "not timestamps. Events may overlap.\n"
+    "Report start and end as decimal seconds at 0.1 second granularity. "
+    "Events may overlap.\n"
     "Return [] when no event matches the class vocabulary."
 )
 OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
     "Identify notable temporal events in this video and label each with a short "
     "lowercase class phrase.\n"
-    "The clip contains {num_frames} frames sampled at {fps} fps.\n"
+    "The clip duration is {duration:.1f} seconds at {fps} fps.\n"
     "Return STRICT JSON array output using this schema:\n"
-    '[{{"start": <frame index>, "end": <frame index>, '
+    '[{{"start": <seconds>, "end": <seconds>, '
     '"class": "<short lowercase class phrase>"}}]\n'
-    "Report start and end as frame indices between 0 and {max_frame_idx}, "
-    "not timestamps. Events may overlap.\n"
+    "Report start and end as decimal seconds at 0.1 second granularity. "
+    "Events may overlap.\n"
     "Return [] when no notable temporal event occurs."
 )
 
 
-def _parse_frame_index(value: Any) -> Optional[int]:
-    """Return ``value`` when it is a plain JSON integer, else ``None``."""
-    if isinstance(value, bool) or not isinstance(value, int):
+def _parse_seconds(value: Any) -> Optional[float]:
+    """Return a finite JSON number as seconds, else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return value
+    value = float(value)
+    return value if math.isfinite(value) else None
 
 
 def _parse_temporal_segments(
     text: str,
     class_names: Optional[List[str]],
     num_frames: int,
+    fps: float,
 ) -> List[VideoSegmentClassificationPrediction]:
-    """Parse temporal-localization output into frame-index ranges.
-
-    An entry survives only when both boundaries are valid integer frame
-    indices inside ``[0, num_frames - 1]``; inverted boundaries are
-    swapped.
-    """
-    if not isinstance(text, str) or num_frames <= 0:
+    """Parse second-based temporal output into frame-index ranges."""
+    if (
+        not isinstance(text, str)
+        or num_frames <= 0
+        or fps <= 0
+        or not math.isfinite(fps)
+    ):
         return []
     decoder = json.JSONDecoder()
     entries = None
@@ -77,6 +80,7 @@ def _parse_temporal_segments(
         else None
     )
     max_frame_idx = num_frames - 1
+    duration = num_frames / fps
     result = []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -89,14 +93,16 @@ def _parse_temporal_segments(
             allowed_classes is not None and label not in allowed_classes
         ):
             continue
-        start_frame_idx = _parse_frame_index(entry.get("start"))
-        end_frame_idx = _parse_frame_index(entry.get("end"))
-        if start_frame_idx is None or end_frame_idx is None:
+        start_seconds = _parse_seconds(entry.get("start"))
+        end_seconds = _parse_seconds(entry.get("end"))
+        if start_seconds is None or end_seconds is None:
             continue
-        if not 0 <= start_frame_idx <= max_frame_idx:
+        if end_seconds < 0 or start_seconds > duration:
             continue
-        if not 0 <= end_frame_idx <= max_frame_idx:
-            continue
+        start_frame_idx = math.floor(start_seconds * fps)
+        end_frame_idx = math.ceil(end_seconds * fps)
+        start_frame_idx = min(max(start_frame_idx, 0), max_frame_idx)
+        end_frame_idx = min(max(end_frame_idx, 0), max_frame_idx)
         if start_frame_idx > end_frame_idx:
             start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
         result.append(
@@ -165,9 +171,8 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             else OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE
         )
         prompt_parameters = {
-            "num_frames": len(normalized_frames),
+            "duration": len(normalized_frames) / fps,
             "fps": fps,
-            "max_frame_idx": max(len(normalized_frames) - 1, 0),
         }
         if vocabulary is not None:
             prompt_parameters["class_vocabulary"] = json.dumps(
@@ -178,6 +183,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             frames=normalized_frames,
             prompt=prompt,
             input_color_format="rgb",
+            video_fps=fps,
             **kwargs,
         )
         if isinstance(response, dict):
@@ -186,4 +192,5 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             text=response,
             class_names=vocabulary,
             num_frames=len(normalized_frames),
+            fps=fps,
         )

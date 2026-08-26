@@ -63,6 +63,10 @@ repeats at a configurable stride. By default, the stride is half the window
 length for 50 percent overlap. Ranges can overlap. An active range advances
 with the stream until a later classification closes it.
 
+Frames per call equal window_seconds x sample_fps. The model spreads a fixed
+pixel budget across those frames. Use fewer frames to keep each frame sharper
+when small objects matter. Use more frames for denser temporal coverage.
+
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a new result. Tail
 classification requires an end-of-stream signal and is planned separately.
@@ -137,7 +141,12 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=2.0,
-        description="Duration of the sliding classification window in seconds.",
+        description=(
+            "Duration of the sliding classification window in seconds. Frames "
+            "per call equal window_seconds x sample_fps. The model spreads a "
+            "fixed pixel budget across those frames. A shorter window uses fewer, "
+            "sharper frames. A longer window increases temporal coverage."
+        ),
         examples=[2.0],
     )
     stride_seconds: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
@@ -151,7 +160,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     sample_fps: float = Field(
         default=4.0,
-        description="Frames sampled per second for model input.",
+        description=(
+            "Frames sampled per second for model input. Frames per call equal "
+            "window_seconds x sample_fps. The model spreads a fixed pixel budget "
+            "across those frames. A lower value keeps frames sharper for small "
+            "objects. A higher value gives denser temporal coverage."
+        ),
         examples=[4.0],
     )
 

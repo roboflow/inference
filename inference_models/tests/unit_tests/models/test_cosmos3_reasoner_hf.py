@@ -65,8 +65,29 @@ def test_pre_process_generation_video_path_passes_frames_as_video() -> None:
 
     conversation = reasoner._processor.apply_chat_template.call_args.args[0]
     assert conversation[1]["content"][0]["type"] == "video"
-    assert "videos" in reasoner._processor.call_args.kwargs
-    assert len(reasoner._processor.call_args.kwargs["videos"][0]) == 4
+    processor_kwargs = reasoner._processor.call_args.kwargs
+    assert "videos" in processor_kwargs
+    assert len(processor_kwargs["videos"][0]) == 4
+    assert "video_metadata" not in processor_kwargs
+    assert "do_sample_frames" not in processor_kwargs
+
+
+def test_pre_process_generation_video_path_passes_fps_metadata() -> None:
+    reasoner = _model_with_processor()
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
+
+    reasoner.pre_process_generation(
+        images=frames,
+        as_video=True,
+        video_fps=5.0,
+    )
+
+    processor_kwargs = reasoner._processor.call_args.kwargs
+    metadata = processor_kwargs["video_metadata"][0]
+    assert metadata.fps == 5.0
+    assert metadata.total_num_frames == 4
+    assert metadata.duration == 0.8
+    assert processor_kwargs["do_sample_frames"] is False
 
 
 def test_pre_process_generation_casts_floating_point_inputs_to_model_dtype() -> None:
@@ -146,6 +167,12 @@ def test_prompt_video_returns_single_string() -> None:
     result = reasoner.prompt_video(
         frames=[np.zeros((8, 8, 3), dtype=np.uint8)] * 2,
         prompt="What will happen next?",
+        video_fps=5.0,
     )
 
     assert result == "a robot arm"
+    metadata = reasoner._processor.call_args.kwargs["video_metadata"][0]
+    assert metadata.fps == 5.0
+    assert metadata.total_num_frames == 2
+    assert metadata.duration == 0.4
+    assert reasoner._processor.call_args.kwargs["do_sample_frames"] is False

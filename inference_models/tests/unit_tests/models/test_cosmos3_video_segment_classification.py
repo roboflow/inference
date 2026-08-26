@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -42,7 +43,7 @@ class _FakeReasoner:
 def test_infer_parses_segments_and_forwards_video_inputs() -> None:
     reasoner = _FakeReasoner(
         response={
-            "answer": '[{"start": 1, "end": 3, "class": "walking"}]'
+            "answer": '[{"start": 0.2, "end": 0.6, "class": "walking"}]'
         }
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
@@ -66,6 +67,7 @@ def test_infer_parses_segments_and_forwards_video_inputs() -> None:
     call = reasoner.calls[0]
     assert all(actual is expected for actual, expected in zip(call["frames"], frames))
     assert call["input_color_format"] == "rgb"
+    assert call["video_fps"] == 5.0
     assert call["max_new_tokens"] == 128
 
 
@@ -115,7 +117,7 @@ def test_from_pretrained_reads_class_names_from_model_config(
 
 def test_infer_parameter_vocabulary_overrides_model_vocabulary() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 1, "class": "jumping"}]'
+        response='[{"start": 0, "end": 0.2, "class": "jumping"}]'
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(
         reasoner=reasoner,
@@ -139,7 +141,7 @@ def test_infer_parameter_vocabulary_overrides_model_vocabulary() -> None:
 
 def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 1, "class": "walking"}]'
+        response='[{"start": 0, "end": 0.2, "class": "walking"}]'
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(
         reasoner=reasoner,
@@ -155,7 +157,7 @@ def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
 
 def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 1, "class": "opening a door"}]'
+        response='[{"start": 0, "end": 0.2, "class": "opening a door"}]'
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
@@ -173,78 +175,121 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
     assert "notable temporal events" in prompt
     assert "short lowercase" in prompt
     assert "Class vocabulary:" not in prompt
+    assert "0.4 seconds" in prompt
+    assert '"start": <seconds>' in prompt
 
 
 @pytest.mark.parametrize(
-    ("text", "class_names", "num_frames", "expected"),
+    ("text", "class_names", "num_frames", "fps", "expected"),
     [
         (
-            '[{"start": 2, "end": 5, "class": "running"}]',
+            '[{"start": 0.21, "end": 1.01, "class": "running"}]',
             ["running"],
             10,
+            5.0,
             [
                 VideoSegmentClassificationPrediction(
-                    start_frame_idx=2,
+                    start_frame_idx=1,
+                    end_frame_idx=6,
+                    class_name="running",
+                )
+            ],
+        ),
+        (
+            # Integer seconds remain valid numeric timestamps.
+            '[{"start": 0, "end": 1, "class": "running"}]',
+            ["running"],
+            10,
+            5.0,
+            [
+                VideoSegmentClassificationPrediction(
+                    start_frame_idx=0,
                     end_frame_idx=5,
                     class_name="running",
                 )
             ],
         ),
         (
-            # Only plain JSON integers under "class" survive: floats,
-            # numeric strings, and the "caption" key are all rejected.
-            '[{"start": 1.0, "end": "3", "caption": "jumping"}]',
+            # Numeric strings, booleans, and the "caption" key are rejected.
+            '[{"start": "0.1", "end": 0.3, "class": "jumping"}, '
+            '{"start": true, "end": 0.3, "class": "jumping"}, '
+            '{"start": 0.1, "end": 0.3, "caption": "jumping"}, '
+            '{"start": 0.1, "end": 0.3, "class": 3}]',
             ["jumping"],
             8,
-            [],
-        ),
-        (
-            # Non-integer indices mean the model ignored the schema: drop.
-            '[{"start": 0.21, "end": 1.01, "class": "running"}]',
-            ["running"],
-            10,
-            [],
-        ),
-        (
-            # Timestamps are not converted: drop.
-            '[{"start": "00:01.25", "end": "00:02.01", '
-            '"class": "running"}]',
-            ["running"],
-            10,
+            4.0,
             [],
         ),
         (
             '[{"start": 0, "end": 1, "class": "unknown"}]',
             ["running"],
             8,
+            4.0,
             [],
         ),
         (
-            # Out-of-range indices are invalid: drop, no clamping.
-            '[{"start": -3, "end": 2, "class": "running"}, '
-            '{"start": 0, "end": 100, "class": "running"}]',
+            # Boundary timestamps clamp after conversion to frame indices.
+            '[{"start": -0.3, "end": 0.4, "class": "running"}, '
+            '{"start": 0.5, "end": 1.4, "class": "running"}]',
             ["running"],
             5,
+            5.0,
+            [
+                VideoSegmentClassificationPrediction(
+                    start_frame_idx=0,
+                    end_frame_idx=2,
+                    class_name="running",
+                ),
+                VideoSegmentClassificationPrediction(
+                    start_frame_idx=2,
+                    end_frame_idx=4,
+                    class_name="running",
+                ),
+            ],
+        ),
+        (
+            # Intervals wholly before or after the clip are absurd and dropped.
+            '[{"start": -0.4, "end": -0.1, "class": "running"}, '
+            '{"start": 2.1, "end": 2.4, "class": "running"}]',
+            ["running"],
+            10,
+            5.0,
             [],
         ),
         (
-            '[{"start": 2, "end": 1, "class": "running"}]',
+            '[{"start": 1.4, "end": 0.2, "class": "running"}]',
             ["running"],
             10,
+            5.0,
             [
                 VideoSegmentClassificationPrediction(
                     start_frame_idx=1,
-                    end_frame_idx=2,
+                    end_frame_idx=7,
                     class_name="running",
                 )
             ],
         ),
-        ("The video contains somebody walking.", ["walking"], 10, []),
+        (
+            '[{"start": 0, "end": 0.2, "class": "walking"}] '
+            '[{"start": 0.2, "end": 0.4, "class": "running"}]',
+            None,
+            10,
+            5.0,
+            [
+                VideoSegmentClassificationPrediction(
+                    start_frame_idx=0,
+                    end_frame_idx=1,
+                    class_name="walking",
+                )
+            ],
+        ),
+        ("The video contains somebody walking.", ["walking"], 10, 5.0, []),
         (
             'analysis about the clip</think> '
-            '[{"start": 0, "end": 2, "class": "walking"}]',
+            '[{"start": 0, "end": 0.4, "class": "walking"}]',
             ["walking"],
             10,
+            5.0,
             [
                 VideoSegmentClassificationPrediction(
                     start_frame_idx=0,
@@ -254,10 +299,11 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
             ],
         ),
         (
-            'Result:\n```json\n[{"start": 1, "end": 3, '
+            'Result:\n```json\n[{"start": 0.2, "end": 0.6, '
             '"class": "walking"}]\n```',
             ["walking"],
             10,
+            5.0,
             [
                 VideoSegmentClassificationPrediction(
                     start_frame_idx=1,
@@ -267,10 +313,11 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
             ],
         ),
         (
-            '[{"start": "soon", "end": 1, "class": "walking"}, '
-            '{"start": 1, "end": 3, "class": "walking"}]',
+            '[{"start": "soon", "end": 0.2, "class": "walking"}, '
+            '{"start": 0.2, "end": 0.6, "class": "walking"}]',
             ["walking"],
             10,
+            5.0,
             [
                 VideoSegmentClassificationPrediction(
                     start_frame_idx=1,
@@ -283,18 +330,19 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
 )
 def test_parse_temporal_segments(
     text: str,
-    class_names: list[str],
+    class_names: Optional[list[str]],
     num_frames: int,
+    fps: float,
     expected: list[VideoSegmentClassificationPrediction],
 ) -> None:
-    assert _parse_temporal_segments(text, class_names, num_frames) == expected
+    assert _parse_temporal_segments(text, class_names, num_frames, fps) == expected
 
 
 def test_infer_builds_prompt_with_clip_metadata() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
     reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 2, "class": "walking"}]'
+        '[{"start": 0, "end": 0.4, "class": "walking"}]'
     ]
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
@@ -309,9 +357,12 @@ def test_infer_builds_prompt_with_clip_metadata() -> None:
     prompt = conversation[1]["content"][1]["text"]
     assert "walking" in prompt
     assert "jumping" in prompt
-    assert "4 frames" in prompt
+    assert "0.8 seconds" in prompt
     assert "5.0 fps" in prompt
-    assert "frame indices between 0 and 3" in prompt
+    assert '"start": <seconds>' in prompt
+    assert '"end": <seconds>' in prompt
+    assert "decimal seconds" in prompt
+    assert "0.1 second granularity" in prompt
     assert result == [
         VideoSegmentClassificationPrediction(
             start_frame_idx=0,
@@ -325,7 +376,7 @@ def test_infer_accepts_chw_tensor_frames() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
     reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 2, "class": "moving"}]'
+        '[{"start": 0, "end": 0.5, "class": "moving"}]'
     ]
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
