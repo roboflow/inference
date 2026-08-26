@@ -31,20 +31,39 @@ def _model_with_processor() -> Cosmos3EdgeReasoner:
 
 
 class _FakeReasoner:
-    def __init__(self, response="[]"):
+    def __init__(self, response="[]", text_response="{}"):
         self.response = response
+        self.text_response = text_response
         self.calls = []
+        self.text_calls = []
 
     def prompt_video(self, **kwargs):
         self.calls.append(kwargs)
         return self.response
 
+    def prompt_text(self, **kwargs):
+        self.text_calls.append(kwargs)
+        return self.text_response
+
+
+def test_infer_defaults_to_the_temporal_localization_token_budget() -> None:
+    reasoner = _FakeReasoner()
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8)]
+
+    wrapper.infer(frames=frames, class_names=None, fps=5.0)
+    wrapper.infer(frames=frames, class_names=None, fps=5.0, max_new_tokens=64)
+
+    assert reasoner.calls[0]["max_new_tokens"] == 4096
+    assert reasoner.calls[1]["max_new_tokens"] == 64
+
 
 def test_infer_parses_segments_and_forwards_video_inputs() -> None:
     reasoner = _FakeReasoner(
         response={
-            "answer": '[{"start": 0.2, "end": 0.6, "class": "walking"}]'
-        }
+            "answer": '[{"start": 0.2, "end": 0.6, "caption": "person walking by"}]'
+        },
+        text_response='{"1": "walking"}',
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
@@ -69,6 +88,38 @@ def test_infer_parses_segments_and_forwards_video_inputs() -> None:
     assert call["input_color_format"] == "rgb"
     assert call["video_fps"] == 5.0
     assert call["max_new_tokens"] == 128
+    assert len(reasoner.text_calls) == 1
+    mapping_prompt = reasoner.text_calls[0]["prompt"]
+    assert "person walking by" in mapping_prompt
+    assert '"walking"' in mapping_prompt
+
+
+def test_infer_drops_segments_the_mapping_marks_as_other() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 0.2, "caption": "a robot idles"}, '
+        '{"start": 0.2, "end": 0.4, "caption": "a person runs"}]',
+        text_response='{"1": "other", "2": "running"}',
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(3)]
+
+    result = wrapper.infer(frames=frames, class_names=["running"], fps=5.0)
+
+    assert [segment.class_name for segment in result] == ["running"]
+    assert result[0].start_frame_idx == 1
+
+
+def test_infer_returns_empty_when_the_mapping_is_unparseable() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 0.2, "caption": "a person runs"}]',
+        text_response="no json here",
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
+
+    result = wrapper.infer(frames=frames, class_names=["running"], fps=5.0)
+
+    assert result == []
 
 
 def test_class_names_is_none_for_open_vocabulary_model() -> None:
@@ -117,7 +168,8 @@ def test_from_pretrained_reads_class_names_from_model_config(
 
 def test_infer_parameter_vocabulary_overrides_model_vocabulary() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 0.2, "class": "jumping"}]'
+        response='[{"start": 0, "end": 0.2, "caption": "a person jumping"}]',
+        text_response='{"1": "jumping"}',
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(
         reasoner=reasoner,
@@ -134,14 +186,15 @@ def test_infer_parameter_vocabulary_overrides_model_vocabulary() -> None:
             class_name="jumping",
         )
     ]
-    prompt = reasoner.calls[0]["prompt"]
-    assert "jumping" in prompt
-    assert "walking" not in prompt
+    mapping_prompt = reasoner.text_calls[0]["prompt"]
+    assert '"jumping"' in mapping_prompt
+    assert "walking" not in mapping_prompt
 
 
 def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 0.2, "class": "walking"}]'
+        response='[{"start": 0, "end": 0.2, "caption": "a person walking by"}]',
+        text_response='{"1": "walking"}',
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(
         reasoner=reasoner,
@@ -152,7 +205,7 @@ def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
     result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
 
     assert [segment.class_name for segment in result] == ["walking"]
-    assert "Class vocabulary: [\"walking\"]" in reasoner.calls[0]["prompt"]
+    assert 'action classes: ["walking"]' in reasoner.text_calls[0]["prompt"]
 
 
 def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> None:
@@ -360,31 +413,22 @@ def test_parse_temporal_segments(
     assert _parse_temporal_segments(text, class_names, num_frames, fps) == expected
 
 
-def test_infer_builds_prompt_with_clip_metadata() -> None:
+def test_infer_sends_the_cookbook_prompt_through_the_reasoner() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
     reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 0.4, "class": "walking"}]'
+        '[{"start": 0, "end": 0.4, "caption": "walking"}]'
     ]
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
 
-    result = wrapper.infer(
-        frames=frames,
-        class_names=["walking", "jumping"],
-        fps=5.0,
-    )
+    result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
 
     conversation = reasoner._processor.apply_chat_template.call_args.args[0]
     prompt = conversation[1]["content"][1]["text"]
-    assert "walking" in prompt
-    assert "jumping" in prompt
-    assert "0.8 seconds" in prompt
-    assert "5.0 fps" in prompt
-    assert '"start": <seconds>' in prompt
-    assert '"end": <seconds>' in prompt
-    assert "decimal seconds" in prompt
-    assert "0.1 second granularity" in prompt
+    assert prompt.startswith("List all action segments in the video.")
+    assert "'caption'" in prompt
+    assert "Please list multiple events if applicable." in prompt
     assert result == [
         VideoSegmentClassificationPrediction(
             start_frame_idx=0,
@@ -398,14 +442,14 @@ def test_infer_accepts_chw_tensor_frames() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
     reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 0.5, "class": "moving"}]'
+        '[{"start": 0, "end": 0.5, "caption": "moving"}]'
     ]
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
 
     result = wrapper.infer(
         frames=frames,
-        class_names=["moving"],
+        class_names=None,
         fps=4.0,
     )
 
