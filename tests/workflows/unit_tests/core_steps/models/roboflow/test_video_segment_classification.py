@@ -593,6 +593,41 @@ def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
     assert _active_class_names(result) == ["walk"]
 
 
+def test_merges_reports_separated_by_a_fractional_stride_boundary():
+    # Observed live: with sampling stride 7.5, samples land alternately 7 and
+    # 8 frames apart, so adjacent windows' reports sit ceil(stride) apart and
+    # a float tolerance misses the merge by under one frame.
+    block, model = _make_block(
+        responses=[
+            [_model_segment("walk")],
+            [_model_segment("walk", start_frame_idx=1, end_frame_idx=3)],
+        ]
+    )
+
+    for frame_number in range(31):
+        result = _run(
+            block,
+            _make_frame(frame_number, fps=30.0),
+            window_seconds=2.0,
+            stride_seconds=1.0,
+            sample_fps=4.0,
+        )
+
+    assert [call["fps"] for call in model.calls] == [4.0, 4.0]
+    # Fire 1 covers absolute frame 0; fire 2's report starts at absolute
+    # frame 8 — a gap of exactly ceil(7.5) that must merge into ONE entry.
+    # The merged range is open, so its end extends to the current frame.
+    assert _timeline_as_dicts(result) == [
+        {
+            "start_frame_idx": 0,
+            "end_frame_idx": 30,
+            "class_name": "walk",
+            "class_id": 0,
+        }
+    ]
+    assert _active_class_names(result) == ["walk"]
+
+
 def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
     block, _ = _make_block(
         responses=[

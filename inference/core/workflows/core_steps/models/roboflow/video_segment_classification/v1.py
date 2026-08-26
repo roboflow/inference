@@ -454,12 +454,15 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 exc_info=True,
             )
             return str(error)
+        # A fractional stride places samples alternately floor/ceil frames
+        # apart, so adjacent windows' reports can sit ceil(stride) apart;
+        # a float tolerance misses that merge by under one frame.
         self._merge_segments(
             bookkeeping=bookkeeping,
             segments=segments,
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
-            stride=sampling_stride,
+            stride=math.ceil(sampling_stride),
         )
         return ""
 
