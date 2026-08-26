@@ -1,5 +1,6 @@
 import json
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import yaml
@@ -7,10 +8,10 @@ import yaml
 from development.profiling.analysis import build_profile_analysis
 from development.profiling.analyze import analyze_run
 from development.profiling.nsys_stats import (
-    NVTX_GPU_PROJECTION_REPORT,
+    NVTX_GPU_PROJECTION_TRACE_REPORT,
     NVTX_PUSHPOP_TRACE_REPORT,
     NsysStatsArtifacts,
-    parse_nvtx_gpu_projection,
+    parse_nvtx_gpu_projection_trace,
     parse_nvtx_pushpop_trace,
 )
 
@@ -19,7 +20,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "nsys_2025_1"
 
 def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
     host_ranges = parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv")
-    gpu_ranges = parse_nvtx_gpu_projection(FIXTURES / "nvtx_gpu_proj_sum.csv")
+    gpu_ranges = parse_nvtx_gpu_projection_trace(FIXTURES / "nvtx_gpu_proj_trace.csv")
     manifest = _manifest()
 
     analysis = build_profile_analysis(
@@ -33,9 +34,9 @@ def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
             NVTX_PUSHPOP_TRACE_REPORT: tmp_path
             / "stats"
             / "nsys_nvtx_pushpop_trace.csv",
-            NVTX_GPU_PROJECTION_REPORT: tmp_path
+            NVTX_GPU_PROJECTION_TRACE_REPORT: tmp_path
             / "stats"
-            / "nsys_nvtx_gpu_proj_sum.csv",
+            / "nsys_nvtx_gpu_proj_trace.csv",
         },
     )
 
@@ -95,7 +96,7 @@ def test_build_profile_analysis_warns_when_manifest_iteration_count_differs(
     tmp_path,
 ):
     host_ranges = parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv")
-    gpu_ranges = parse_nvtx_gpu_projection(FIXTURES / "nvtx_gpu_proj_sum.csv")
+    gpu_ranges = parse_nvtx_gpu_projection_trace(FIXTURES / "nvtx_gpu_proj_trace.csv")
     manifest = _manifest()
     manifest["workload"]["iterations"] = 3
 
@@ -109,8 +110,84 @@ def test_build_profile_analysis_warns_when_manifest_iteration_count_differs(
         report_paths={},
     )
 
+    assert analysis["warnings"] == ["Missing expected iteration indexes: [2]."]
+
+
+def test_build_profile_analysis_uses_hierarchy_for_harness_iterations(tmp_path):
+    host_ranges = [
+        (
+            replace(item, name="iteration 0", raw_name=":iteration 0")
+            if item.range_id == 3
+            else item
+        )
+        for item in parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv")
+    ]
+    gpu_ranges = [
+        (
+            replace(item, name="iteration 0", raw_name=":iteration 0")
+            if item.range_id == 3
+            else item
+        )
+        for item in parse_nvtx_gpu_projection_trace(
+            FIXTURES / "nvtx_gpu_proj_trace.csv"
+        )
+    ]
+
+    analysis = build_profile_analysis(
+        manifest=_manifest(),
+        host_ranges=host_ranges,
+        gpu_projected_ranges=gpu_ranges,
+        nsys_version="version",
+        run_dir=tmp_path,
+        trace_path=tmp_path / "trace.nsys-rep",
+        report_paths={},
+    )
+
+    assert [item["index"] for item in analysis["iterations"]] == [0, 1]
+    assert analysis["iterations"][0]["host"]["inclusive_ns"] == 431993
+    assert analysis["iterations"][0]["gpu_projection"]["projected_ns"] == 191620
+    assert _range_by_name(analysis["host_ranges"], "iteration 0")["instances"] == 1
+    assert (
+        _range_by_name(analysis["gpu_projected_ranges"], "iteration 0")["projected"][
+            "total_ns"
+        ]
+        == 2112
+    )
+
+
+def test_build_profile_analysis_warns_for_wrong_iteration_index_set(tmp_path):
+    host_ranges = [
+        (
+            replace(item, name="iteration 2", raw_name=":iteration 2")
+            if item.range_id == 7
+            else item
+        )
+        for item in parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv")
+    ]
+    gpu_ranges = [
+        (
+            replace(item, name="iteration 2", raw_name=":iteration 2")
+            if item.range_id == 7
+            else item
+        )
+        for item in parse_nvtx_gpu_projection_trace(
+            FIXTURES / "nvtx_gpu_proj_trace.csv"
+        )
+    ]
+
+    analysis = build_profile_analysis(
+        manifest=_manifest(),
+        host_ranges=host_ranges,
+        gpu_projected_ranges=gpu_ranges,
+        nsys_version="version",
+        run_dir=tmp_path,
+        trace_path=tmp_path / "trace.nsys-rep",
+        report_paths={},
+    )
+
     assert analysis["warnings"] == [
-        "Manifest expected 3 iterations, but analysis found 2."
+        "Missing expected iteration indexes: [1].",
+        "Unexpected iteration indexes: [2].",
     ]
 
 
@@ -127,13 +204,14 @@ def test_analyze_run_writes_stable_json(tmp_path, monkeypatch):
 
     report_paths = {
         NVTX_PUSHPOP_TRACE_REPORT: stats_dir / "nsys_nvtx_pushpop_trace.csv",
-        NVTX_GPU_PROJECTION_REPORT: stats_dir / "nsys_nvtx_gpu_proj_sum.csv",
+        NVTX_GPU_PROJECTION_TRACE_REPORT: stats_dir / "nsys_nvtx_gpu_proj_trace.csv",
     }
     shutil.copy(
         FIXTURES / "nvtx_pushpop_trace.csv", report_paths[NVTX_PUSHPOP_TRACE_REPORT]
     )
     shutil.copy(
-        FIXTURES / "nvtx_gpu_proj_sum.csv", report_paths[NVTX_GPU_PROJECTION_REPORT]
+        FIXTURES / "nvtx_gpu_proj_trace.csv",
+        report_paths[NVTX_GPU_PROJECTION_TRACE_REPORT],
     )
 
     monkeypatch.setattr(

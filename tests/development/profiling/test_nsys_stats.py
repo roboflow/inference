@@ -6,7 +6,7 @@ import pytest
 from development.profiling.nsys_stats import (
     NsysStatsError,
     build_nsys_stats_command,
-    parse_nvtx_gpu_projection,
+    parse_nvtx_gpu_projection_trace,
     parse_nvtx_pushpop_trace,
     run_nsys_stats,
 )
@@ -30,18 +30,21 @@ def test_parse_nvtx_pushpop_trace_from_real_nsys_output():
     assert second_iteration.child_count == 4
 
 
-def test_parse_nvtx_gpu_projection_from_real_nsys_output():
-    ranges = parse_nvtx_gpu_projection(FIXTURES / "nvtx_gpu_proj_sum.csv")
+def test_parse_nvtx_gpu_projection_trace_from_real_nsys_output():
+    ranges = parse_nvtx_gpu_projection_trace(FIXTURES / "nvtx_gpu_proj_trace.csv")
 
-    assert len(ranges) == 5
+    assert len(ranges) == 11
     capture = next(item for item in ranges if item.name == "profile-target")
-    assert capture.projected_total_ns == 336423
-    assert capture.host_total_ns == 700839
+    assert capture.projected_duration_ns == 336423
+    assert capture.original_duration_ns == 700839
     assert capture.gpu_operation_count == 8
+    assert capture.range_id == 1
+    assert capture.parent_id is None
 
-    multiply = next(item for item in ranges if item.name == "smoke multiply")
-    assert multiply.instances == 4
-    assert multiply.projected_average_ns == 1968.0
+    second_iteration = next(item for item in ranges if item.name == "iteration 1")
+    assert second_iteration.level == 1
+    assert second_iteration.parent_id == 1
+    assert second_iteration.range_id == 7
 
 
 def test_parser_rejects_report_without_required_columns(tmp_path):
@@ -65,7 +68,7 @@ def test_build_nsys_stats_command_uses_argument_list(tmp_path):
         "--report",
         "nvtx_pushpop_trace",
         "--report",
-        "nvtx_gpu_proj_sum",
+        "nvtx_gpu_proj_trace",
         "--format",
         "csv",
         "--output",
@@ -94,7 +97,7 @@ def test_run_nsys_stats_returns_expected_artifacts(tmp_path, monkeypatch):
                 stderr="",
             )
         output_base = Path(command[command.index("--output") + 1])
-        for report in ("nvtx_pushpop_trace", "nvtx_gpu_proj_sum"):
+        for report in ("nvtx_pushpop_trace", "nvtx_gpu_proj_trace"):
             output_base.with_name(f"{output_base.name}_{report}.csv").touch()
         return subprocess.CompletedProcess(
             command,

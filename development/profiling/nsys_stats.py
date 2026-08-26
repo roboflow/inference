@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 NVTX_PUSHPOP_TRACE_REPORT = "nvtx_pushpop_trace"
-NVTX_GPU_PROJECTION_REPORT = "nvtx_gpu_proj_sum"
+NVTX_GPU_PROJECTION_TRACE_REPORT = "nvtx_gpu_proj_trace"
 DEFAULT_REPORTS = (
     NVTX_PUSHPOP_TRACE_REPORT,
-    NVTX_GPU_PROJECTION_REPORT,
+    NVTX_GPU_PROJECTION_TRACE_REPORT,
 )
 
 
@@ -40,23 +40,22 @@ class HostRange:
 
 @dataclass(frozen=True)
 class GpuProjectedRange:
-    """Aggregated GPU work projected from an NVTX range."""
+    """GPU work projected from one NVTX range instance."""
 
     name: str
     raw_name: str
+    projected_start_ns: int
+    projected_duration_ns: int
+    original_start_ns: int
+    original_duration_ns: int
     style: str
-    projected_total_ns: int
-    host_total_ns: int
-    instances: int
-    projected_average_ns: float
-    projected_median_ns: float
-    projected_minimum_ns: int
-    projected_maximum_ns: int
-    projected_stddev_ns: float
+    process_id: int
+    thread_id: int
     gpu_operation_count: int
-    average_gpu_operations: float
-    average_level: float
-    average_child_count: float
+    level: int
+    child_count: int
+    range_id: int
+    parent_id: int | None
 
 
 @dataclass(frozen=True)
@@ -182,45 +181,43 @@ def parse_nvtx_pushpop_trace(path: Path) -> list[HostRange]:
     ]
 
 
-def parse_nvtx_gpu_projection(path: Path) -> list[GpuProjectedRange]:
-    """Parse the ``nvtx_gpu_proj_sum`` CSV report."""
+def parse_nvtx_gpu_projection_trace(path: Path) -> list[GpuProjectedRange]:
+    """Parse the ``nvtx_gpu_proj_trace`` CSV report."""
     rows = _read_csv_rows(
         path,
         required_columns=(
-            "Range",
+            "Name",
+            "Projected Start (ns)",
+            "Projected Duration (ns)",
+            "Orig Start (ns)",
+            "Orig Duration (ns)",
             "Style",
-            "Total Proj Time (ns)",
-            "Total Range Time (ns)",
-            "Range Instances",
-            "Proj Avg (ns)",
-            "Proj Med (ns)",
-            "Proj Min (ns)",
-            "Proj Max (ns)",
-            "Proj StdDev (ns)",
-            "Total GPU Ops",
-            "Avg GPU Ops",
-            "Avg Range Lvl",
-            "Avg Num Child",
+            "PID",
+            "TID",
+            "NumGPUOps",
+            "Lvl",
+            "NumChild",
+            "RangeId",
+            "ParentId",
         ),
     )
 
     return [
         GpuProjectedRange(
-            name=_normalize_range_name(row["Range"]),
-            raw_name=row["Range"],
+            name=_normalize_range_name(row["Name"]),
+            raw_name=row["Name"],
+            projected_start_ns=_parse_int(row, "Projected Start (ns)", path),
+            projected_duration_ns=_parse_int(row, "Projected Duration (ns)", path),
+            original_start_ns=_parse_int(row, "Orig Start (ns)", path),
+            original_duration_ns=_parse_int(row, "Orig Duration (ns)", path),
             style=row["Style"],
-            projected_total_ns=_parse_int(row, "Total Proj Time (ns)", path),
-            host_total_ns=_parse_int(row, "Total Range Time (ns)", path),
-            instances=_parse_int(row, "Range Instances", path),
-            projected_average_ns=_parse_float(row, "Proj Avg (ns)", path),
-            projected_median_ns=_parse_float(row, "Proj Med (ns)", path),
-            projected_minimum_ns=_parse_int(row, "Proj Min (ns)", path),
-            projected_maximum_ns=_parse_int(row, "Proj Max (ns)", path),
-            projected_stddev_ns=_parse_float(row, "Proj StdDev (ns)", path),
-            gpu_operation_count=_parse_int(row, "Total GPU Ops", path),
-            average_gpu_operations=_parse_float(row, "Avg GPU Ops", path),
-            average_level=_parse_float(row, "Avg Range Lvl", path),
-            average_child_count=_parse_float(row, "Avg Num Child", path),
+            process_id=_parse_int(row, "PID", path),
+            thread_id=_parse_int(row, "TID", path),
+            gpu_operation_count=_parse_int(row, "NumGPUOps", path),
+            level=_parse_int(row, "Lvl", path),
+            child_count=_parse_int(row, "NumChild", path),
+            range_id=_parse_int(row, "RangeId", path),
+            parent_id=_parse_optional_int(row, "ParentId", path),
         )
         for row in rows
     ]
@@ -292,12 +289,3 @@ def _parse_optional_int(
         return None
 
     return _parse_int(row, column, path)
-
-
-def _parse_float(row: Mapping[str, str], column: str, path: Path) -> float:
-    try:
-        return float(row[column])
-    except (KeyError, TypeError, ValueError) as error:
-        raise NsysStatsError(
-            f"Invalid number in {path} column {column!r}: {row.get(column)!r}"
-        ) from error

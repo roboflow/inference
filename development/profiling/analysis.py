@@ -27,8 +27,18 @@ def build_profile_analysis(
     report_paths: Mapping[str, Path],
 ) -> dict[str, Any]:
     """Build a compact, manifest-linked analysis from parsed Nsight reports."""
-    host_iterations, host_summaries = _summarize_host_ranges(host_ranges)
-    gpu_iterations, gpu_summaries = _summarize_gpu_ranges(gpu_projected_ranges)
+    capture_range = manifest.get("capture_range")
+    if not isinstance(capture_range, str):
+        raise ProfileAnalysisError("Manifest must define a string capture_range.")
+
+    host_iterations, host_summaries = _summarize_host_ranges(
+        host_ranges,
+        capture_range_name=capture_range,
+    )
+    gpu_iterations, gpu_summaries = _summarize_gpu_ranges(
+        gpu_projected_ranges,
+        host_iterations=host_iterations,
+    )
     iterations = _build_iteration_analysis(host_iterations, gpu_iterations)
     warnings = _build_warnings(
         manifest=manifest,
@@ -75,13 +85,21 @@ def build_profile_analysis(
 
 def _summarize_host_ranges(
     ranges: Sequence[HostRange],
+    *,
+    capture_range_name: str,
 ) -> tuple[dict[int, HostRange], list[dict[str, Any]]]:
+    capture_range = _find_capture_range(ranges, capture_range_name)
     iterations: dict[int, HostRange] = {}
     groups: dict[str, list[HostRange]] = defaultdict(list)
 
     for item in ranges:
         iteration_index = _iteration_index(item.name)
-        if iteration_index is None:
+        is_direct_capture_child = (
+            item.process_id == capture_range.process_id
+            and item.thread_id == capture_range.thread_id
+            and item.parent_id == capture_range.range_id
+        )
+        if iteration_index is None or not is_direct_capture_child:
             groups[item.name].append(item)
             continue
         if iteration_index in iterations:
@@ -109,12 +127,17 @@ def _summarize_host_ranges(
 
 def _summarize_gpu_ranges(
     ranges: Sequence[GpuProjectedRange],
+    *,
+    host_iterations: Mapping[int, HostRange],
 ) -> tuple[dict[int, GpuProjectedRange], list[dict[str, Any]]]:
     iterations: dict[int, GpuProjectedRange] = {}
-    summaries = []
+    iteration_indexes_by_range_key = {
+        _range_key(item): index for index, item in host_iterations.items()
+    }
+    groups: dict[tuple[str, str], list[GpuProjectedRange]] = defaultdict(list)
 
-    for item in sorted(ranges, key=lambda value: value.name):
-        iteration_index = _iteration_index(item.name)
+    for item in ranges:
+        iteration_index = iteration_indexes_by_range_key.get(_range_key(item))
         if iteration_index is not None:
             if iteration_index in iterations:
                 raise ProfileAnalysisError(
@@ -123,21 +146,20 @@ def _summarize_gpu_ranges(
             iterations[iteration_index] = item
             continue
 
+        groups[(item.name, item.style)].append(item)
+
+    summaries = []
+    for (name, style), items in sorted(groups.items()):
         summaries.append(
             {
-                "name": item.name,
-                "style": item.style,
-                "instances": item.instances,
-                "projected": {
-                    "total_ns": item.projected_total_ns,
-                    "mean_ns": item.projected_average_ns,
-                    "median_ns": item.projected_median_ns,
-                    "minimum_ns": item.projected_minimum_ns,
-                    "maximum_ns": item.projected_maximum_ns,
-                    "stddev_ns": item.projected_stddev_ns,
-                },
-                "host_total_ns": item.host_total_ns,
-                "gpu_operation_count": item.gpu_operation_count,
+                "name": name,
+                "style": style,
+                "instances": len(items),
+                "projected": _duration_summary(
+                    [item.projected_duration_ns for item in items]
+                ),
+                "host_total_ns": sum(item.original_duration_ns for item in items),
+                "gpu_operation_count": sum(item.gpu_operation_count for item in items),
             }
         )
 
@@ -168,8 +190,8 @@ def _build_iteration_analysis(
                 ),
                 "gpu_projection": (
                     {
-                        "projected_ns": gpu.projected_total_ns,
-                        "host_range_total_ns": gpu.host_total_ns,
+                        "projected_ns": gpu.projected_duration_ns,
+                        "host_range_total_ns": gpu.original_duration_ns,
                         "gpu_operation_count": gpu.gpu_operation_count,
                     }
                     if gpu is not None
@@ -193,11 +215,15 @@ def _build_warnings(
     expected_iterations = (
         workload.get("iterations") if isinstance(workload, Mapping) else None
     )
-    if isinstance(expected_iterations, int) and expected_iterations != len(iterations):
-        warnings.append(
-            f"Manifest expected {expected_iterations} iterations, but analysis found "
-            f"{len(iterations)}."
-        )
+    if isinstance(expected_iterations, int):
+        expected_indexes = set(range(expected_iterations))
+        observed_indexes = {item["index"] for item in iterations}
+        missing_indexes = sorted(expected_indexes - observed_indexes)
+        unexpected_indexes = sorted(observed_indexes - expected_indexes)
+        if missing_indexes:
+            warnings.append(f"Missing expected iteration indexes: {missing_indexes}.")
+        if unexpected_indexes:
+            warnings.append(f"Unexpected iteration indexes: {unexpected_indexes}.")
 
     missing_host = [item["index"] for item in iterations if item["host"] is None]
     if missing_host:
@@ -220,6 +246,28 @@ def _build_warnings(
         )
 
     return warnings
+
+
+def _find_capture_range(
+    ranges: Sequence[HostRange],
+    capture_range_name: str,
+) -> HostRange:
+    candidates = [
+        item
+        for item in ranges
+        if item.name == capture_range_name and item.parent_id is None
+    ]
+    if len(candidates) != 1:
+        raise ProfileAnalysisError(
+            "Expected exactly one top-level host capture range named "
+            f"{capture_range_name!r}, but found {len(candidates)}."
+        )
+
+    return candidates[0]
+
+
+def _range_key(item: HostRange | GpuProjectedRange) -> tuple[int, int, int]:
+    return item.process_id, item.thread_id, item.range_id
 
 
 def _summarize_iterations(

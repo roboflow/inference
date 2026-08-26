@@ -9,10 +9,10 @@ import yaml
 
 from development.profiling.analysis import ProfileAnalysisError, build_profile_analysis
 from development.profiling.nsys_stats import (
-    NVTX_GPU_PROJECTION_REPORT,
+    NVTX_GPU_PROJECTION_TRACE_REPORT,
     NVTX_PUSHPOP_TRACE_REPORT,
     NsysStatsError,
-    parse_nvtx_gpu_projection,
+    parse_nvtx_gpu_projection_trace,
     parse_nvtx_pushpop_trace,
     run_nsys_stats,
 )
@@ -76,8 +76,8 @@ def analyze_run(
     host_ranges = parse_nvtx_pushpop_trace(
         artifacts.report_paths[NVTX_PUSHPOP_TRACE_REPORT]
     )
-    gpu_projected_ranges = parse_nvtx_gpu_projection(
-        artifacts.report_paths[NVTX_GPU_PROJECTION_REPORT]
+    gpu_projected_ranges = parse_nvtx_gpu_projection_trace(
+        artifacts.report_paths[NVTX_GPU_PROJECTION_TRACE_REPORT]
     )
     analysis = build_profile_analysis(
         manifest=manifest,

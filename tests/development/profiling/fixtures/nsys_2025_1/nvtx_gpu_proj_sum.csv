@@ -1,6 +1,0 @@
-Range,Style,Total Proj Time (ns),Total Range Time (ns),Range Instances,Proj Avg (ns),Proj Med (ns),Proj Min (ns),Proj Max (ns),Proj StdDev (ns),Total GPU Ops,Avg GPU Ops,Avg Range Lvl,Avg Num Child
-:profile-target,PushPop,336423,700839,1,336423.0,336423.0,336423,336423,0.0,8,8.0,0.0,2.0
-:iteration 0,PushPop,191620,431993,1,191620.0,191620.0,191620,191620,0.0,4,4.0,1.0,4.0
-:iteration 1,PushPop,99714,138050,1,99714.0,99714.0,99714,99714,0.0,4,4.0,1.0,4.0
-:smoke reduction,PushPop,16192,131708,4,4048.0,4000.0,4000,4192,96.0,4,1.0,2.0,0.0
-:smoke multiply,PushPop,7872,277292,4,1968.0,1920.0,1920,2112,96.0,4,1.0,2.0,0.0

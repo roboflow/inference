@@ -13,7 +13,7 @@ Before analyzing a run:
    capture range, record IDs, Git commit, and expected trace path.
 2. Confirm that `trace.nsys-rep` belongs to the same run directory.
 3. Run `nsys --version`. Use a version that can read the trace and supports the
-   `nvtx_pushpop_trace` and `nvtx_gpu_proj_sum` reports.
+   `nvtx_pushpop_trace` and `nvtx_gpu_proj_trace` reports.
 4. Treat generated traces, SQLite exports, report CSV files, and analysis JSON
    as local artifacts under the ignored `inference_profiling/` directory.
 
@@ -34,7 +34,7 @@ Replace `RUN_DIRECTORY` with the directory containing `manifest.yaml` and
 The command creates these files:
 
 - `stats/nsys_nvtx_pushpop_trace.csv`
-- `stats/nsys_nvtx_gpu_proj_sum.csv`
+- `stats/nsys_nvtx_gpu_proj_trace.csv`
 - `analysis.json`
 
 If the command fails, report the exact Nsight version and error. Check for a

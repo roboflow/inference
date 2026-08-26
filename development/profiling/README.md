@@ -104,9 +104,15 @@ PYTHONPATH=./ uv run python development/profiling/analyze.py \
 The command writes:
 
 - `stats/nsys_nvtx_pushpop_trace.csv` with individual host-side NVTX ranges
-- `stats/nsys_nvtx_gpu_proj_sum.csv` with GPU work projected into NVTX ranges
+- `stats/nsys_nvtx_gpu_proj_trace.csv` with per-instance GPU work projected
+  into NVTX ranges
 - `analysis.json` with run provenance, compact range summaries, iteration
   statistics, and interpretation warnings
+
+The analyzer identifies measured iterations as direct children of the manifest's
+capture range and joins their host and GPU records by Nsight range ID. A target
+can therefore use a nested range name such as `iteration 0` without being
+mistaken for the harness iteration.
 
 `analysis.json` keeps these timing concepts separate:
 
