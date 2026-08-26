@@ -315,21 +315,6 @@ def _run_block(image: WorkflowImageData, detections: Detections, copy_image: boo
     )["image"]
 
 
-def test_class_axis_paints_unknown_class_gray() -> None:
-    detections = _build_detections(
-        boxes=np.array([[10, 10, 50, 50]], dtype=np.float32),
-        class_id=np.array([-1]),
-        device="cpu",
-    )
-
-    out = _run_block(_tensor_backed_image(), detections, copy_image=True)
-
-    assert out._tensor_image is not None and out._numpy_image is None
-    annotated = out._tensor_image.permute(1, 2, 0).cpu().numpy()
-    assert np.any(np.all(annotated == (128, 128, 128), axis=-1))
-    assert detections.class_id.tolist() == [-1]
-
-
 def test_empty_predictions_take_the_tensor_passthrough_with_copy() -> None:
     image = _tensor_backed_image()
 

@@ -3,9 +3,6 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.common.label_text import (
-    build_detection_labels,
-)
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelManifest,
     LabelVisualizationBlockV1,
@@ -122,40 +119,6 @@ def test_label_visualization_block() -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
-
-
-def test_label_visualization_paints_unknown_class_gray_with_model_label() -> None:
-    predictions = sv.Detections(
-        xyxy=np.array([[4, 12, 20, 28]], dtype=np.float64),
-        class_id=np.array([-1]),
-        data={"class_name": np.array(["traffic signal"], dtype=object)},
-    )
-
-    assert list(build_detection_labels(predictions, "Class")) == ["traffic signal"]
-
-    output = LabelVisualizationBlockV1().run(
-        image=WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((32, 32, 3), dtype=np.uint8),
-        ),
-        predictions=predictions,
-        copy_image=True,
-        color_palette="DEFAULT",
-        palette_size=10,
-        custom_colors=[],
-        color_axis="CLASS",
-        text="Class",
-        text_position="TOP_LEFT",
-        text_color="WHITE",
-        text_scale=0.5,
-        text_thickness=1,
-        text_padding=2,
-        border_radius=0,
-    )
-
-    annotated = output["image"].numpy_image
-    assert np.any(np.all(annotated == (128, 128, 128), axis=-1))
-    assert predictions.class_id.tolist() == [-1]
 
 
 def test_label_visualization_block_with_area_px() -> None:

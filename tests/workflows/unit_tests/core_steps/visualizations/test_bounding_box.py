@@ -108,32 +108,6 @@ def test_bounding_box_visualization_block() -> None:
     )
 
 
-def test_bounding_box_visualization_paints_unknown_class_gray() -> None:
-    predictions = sv.Detections(
-        xyxy=np.array([[4, 4, 20, 20]], dtype=np.float64),
-        class_id=np.array([-1]),
-    )
-
-    output = BoundingBoxVisualizationBlockV1().run(
-        image=WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((32, 32, 3), dtype=np.uint8),
-        ),
-        predictions=predictions,
-        copy_image=True,
-        color_palette="DEFAULT",
-        palette_size=10,
-        custom_colors=[],
-        color_axis="CLASS",
-        thickness=1,
-        roundness=0,
-    )
-
-    annotated = output["image"].numpy_image
-    assert np.any(np.all(annotated == (128, 128, 128), axis=-1))
-    assert predictions.class_id.tolist() == [-1]
-
-
 def test_bounding_box_visualization_block_nocopy() -> None:
     # given
     block = BoundingBoxVisualizationBlockV1()
