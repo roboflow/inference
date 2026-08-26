@@ -89,8 +89,9 @@ class _VideoSegmentClassificationBookkeeping:
     open_classes: Set[str] = field(default_factory=set)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
-    signature: Tuple[Tuple[str, ...], float, Optional[float], float, float] = field(
-        default_factory=lambda: ((), 0.0, None, 0.0, 0.0)
+    source_fps: Optional[float] = None
+    signature: Tuple[Tuple[str, ...], float, Optional[float], float] = field(
+        default_factory=lambda: ((), 0.0, None, 0.0)
     )
 
 
@@ -314,7 +315,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         sample_fps: float,
     ) -> dict:
         metadata = image.video_metadata
-        source_fps = self._resolve_source_fps(metadata=metadata)
         requested_sample_fps = float(sample_fps)
         requested_window_seconds = float(window_seconds)
         requested_stride_seconds = (
@@ -337,21 +337,11 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 "Window, stride, and sample FPS must be positive and finite."
             )
 
-        effective_sample_fps = min(requested_sample_fps, source_fps)
-        sampling_stride = max(1.0, source_fps / effective_sample_fps)
-        window_frames = max(1, round(requested_window_seconds * source_fps))
-        effective_stride_seconds = (
-            requested_window_seconds / 2
-            if requested_stride_seconds is None
-            else requested_stride_seconds
-        )
-        stride_frames = max(1, round(effective_stride_seconds * source_fps))
         signature = (
             tuple(block_filter or ()),
             requested_window_seconds,
             requested_stride_seconds,
             requested_sample_fps,
-            source_fps,
         )
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
@@ -366,6 +356,22 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         ):
             bookkeeping = _VideoSegmentClassificationBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
+
+        # Live streams re-estimate measured_fps continuously; resolving once per
+        # video pins the frame math so estimator jitter cannot reset state.
+        if bookkeeping.source_fps is None:
+            bookkeeping.source_fps = self._resolve_source_fps(metadata=metadata)
+        source_fps = bookkeeping.source_fps
+
+        effective_sample_fps = min(requested_sample_fps, source_fps)
+        sampling_stride = max(1.0, source_fps / effective_sample_fps)
+        window_frames = max(1, round(requested_window_seconds * source_fps))
+        effective_stride_seconds = (
+            requested_window_seconds / 2
+            if requested_stride_seconds is None
+            else requested_stride_seconds
+        )
+        stride_frames = max(1, round(effective_stride_seconds * source_fps))
 
         if (
             not bookkeeping.sampled

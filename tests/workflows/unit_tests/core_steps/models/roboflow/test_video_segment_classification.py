@@ -694,7 +694,6 @@ def test_deserializer_rejects_malformed_values(value):
         {"window_seconds": 2.0},
         {"stride_seconds": 0.5},
         {"sample_fps": 1.0},
-        {"source_fps": 5.0},
     ],
 )
 def test_window_defining_input_change_clears_all_state(reset_kwargs):
@@ -707,10 +706,9 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
     stride_seconds = reset_kwargs.get("stride_seconds")
     sample_fps = reset_kwargs.get("sample_fps", 2.0)
-    source_fps = reset_kwargs.get("source_fps", 4.0)
     result = _run(
         block,
-        _make_frame(1, fps=source_fps),
+        _make_frame(1),
         class_filter=class_filter,
         window_seconds=window_seconds,
         stride_seconds=stride_seconds,
@@ -722,6 +720,24 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     assert result["active_classes"]["predictions"] == {}
     assert result["error_status"] == ""
     assert len(model.calls) == 2
+
+
+def test_source_fps_jitter_does_not_reset_state():
+    # Live streams re-estimate measured_fps continuously; the first resolved
+    # value is pinned per video, so estimator jitter must not clear state.
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    result = _run(block, _make_frame(0, fps=None, measured_fps=None))
+    assert result["timeline"]
+
+    for frame_number, measured in ((1, 24.7), (2, 25.3), (3, 24.9)):
+        result = _run(
+            block,
+            _make_frame(frame_number, fps=None, measured_fps=measured),
+        )
+
+    assert [entry.class_name for entry in result["timeline"]] == ["walk"]
+    assert block._video_bookkeeping["stream-0"].source_fps == 30.0
+    assert len(model.calls) == 1
 
 
 def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
