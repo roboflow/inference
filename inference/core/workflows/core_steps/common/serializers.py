@@ -350,7 +350,7 @@ def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
     return video_metadata.dict()
 
 
-def serialize_video_multi_label_classification_kind(
+def serialize_video_segment_classification_kind(
     value: List[VideoSegmentClassificationPrediction],
 ) -> List[dict]:
     return [entry.model_dump(by_alias=True) for entry in value]

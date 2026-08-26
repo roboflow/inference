@@ -34,7 +34,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
-    VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND,
+    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND,
     ImageInputField,
     Selector,
 )
@@ -171,7 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="timeline",
-                kind=[VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND],
+                kind=[VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND],
             ),
             OutputDefinition(name="active_classes", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),

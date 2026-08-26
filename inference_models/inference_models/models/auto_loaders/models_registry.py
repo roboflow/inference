@@ -24,7 +24,7 @@ GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 WORLD_MODEL_TASK = "world-model"
-VIDEO_MULTI_LABEL_CLASSIFICATION_TASK = "video-multi-label-classification"
+VIDEO_SEGMENT_CLASSIFICATION_TASK = "video-segment-classification"
 
 
 @dataclass(frozen=True)
@@ -314,7 +314,7 @@ REGISTERED_MODELS: Dict[
     ),
     (
         "cosmos-3-edge",
-        VIDEO_MULTI_LABEL_CLASSIFICATION_TASK,
+        VIDEO_SEGMENT_CLASSIFICATION_TASK,
         BackendType.HF,
     ): LazyClass(
         module_name=(
