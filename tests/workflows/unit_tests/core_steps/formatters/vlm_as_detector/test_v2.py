@@ -541,6 +541,37 @@ def test_run_method_for_zai_bbox_2d_absolute_pixel_output() -> None:
     )
 
 
+def test_run_method_for_zai_recovers_array_from_prose_wrapped_output() -> None:
+    # given - GLM sometimes wraps the JSON array in extra text that breaks
+    # whole-string parsing; the zai path recovers the outermost [...] block
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        "Here are the detected objects: "
+        '[{"bbox_2d": [64, 96, 320, 480], "label": "cat"}] '
+        "Let me know if you need anything else."
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="zai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["cat"]
+    assert np.allclose(
+        result["predictions"].xyxy, np.array([[64, 96, 320, 480]]), atol=1.0
+    )
+
+
 def test_run_method_for_zai_unexpected_shape_sets_error_status() -> None:
     # given - neither a JSON list nor a {"detections": [...]} object
     block = VLMAsDetectorBlockV2()

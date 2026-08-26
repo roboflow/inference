@@ -42,6 +42,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_det
 )
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.zai_detection_parsing import (
     convert_zai_pixel_entries_to_normalized,
+    extract_zai_json_array,
     zai_entries_use_absolute_pixels,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -342,6 +343,10 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
             loose_entries = extract_flat_object_entries(vlm_output)
             if loose_entries:
                 error_status, parsed_data = False, loose_entries
+        if error_status and model_type == "zai":
+            recovered_entries = extract_zai_json_array(vlm_output)
+            if recovered_entries is not None:
+                error_status, parsed_data = False, recovered_entries
         if error_status:
             return {
                 "error_status": True,

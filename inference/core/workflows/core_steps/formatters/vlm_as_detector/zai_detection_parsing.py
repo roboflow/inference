@@ -1,4 +1,5 @@
-from typing import List, Union
+import json
+from typing import List, Optional, Union
 
 import supervision as sv
 
@@ -19,6 +20,32 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 # into the 0-1000 space and handed to the Qwen parser, which scales them
 # back onto the image exactly.
 ZAI_ABSOLUTE_PIXEL_BOX_KEY = "bbox_2d"
+
+
+def extract_zai_json_array(raw: str) -> Optional[list]:
+    """Recover the outermost JSON array from prose-wrapped Z.ai output.
+
+    GLM models occasionally wrap the detection list in extra text that
+    breaks whole-string JSON parsing. Mirrors the vlm-exam fallback: take
+    the substring between the first ``[`` and the last ``]`` and parse it.
+
+    Args:
+        raw: Raw VLM output that failed regular JSON parsing.
+
+    Returns:
+        The recovered list, or ``None`` when nothing recoverable.
+    """
+    start = raw.find("[")
+    stop = raw.rfind("]")
+    if start == -1 or stop <= start:
+        return None
+    try:
+        recovered = json.loads(raw[start : stop + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(recovered, list):
+        return None
+    return recovered
 
 
 def zai_entries_use_absolute_pixels(entries: List[dict]) -> bool:
