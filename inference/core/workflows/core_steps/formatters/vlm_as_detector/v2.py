@@ -554,8 +554,8 @@ def parse_anthropic_detection_response(
 ) -> sv.Detections:
     """Parse Claude object-detection output, dispatching on response format.
 
-    Claude blocks v1-v4 produce ``{"detections": [{"x_min": ...}]}`` with
-    coordinates normalized to 0.0-1.0. The v5 block produces a JSON list of
+    Claude blocks v1-v3 produce ``{"detections": [{"x_min": ...}]}`` with
+    coordinates normalized to 0.0-1.0. The v4 block produces a JSON list of
     ``box_2d`` entries with absolute pixel coordinates of the pre-resized
     upload.
 

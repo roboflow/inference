@@ -30,7 +30,7 @@ def convert_anthropic_detection_to_pixel_xyxy(
 ) -> List[float]:
     """Convert a ``box_2d`` entry into pixel coordinates of the original image.
 
-    The Claude block (v5+) pre-resizes detection images to the exact
+    The Claude block (v4+) pre-resizes detection images to the exact
     dimensions Claude's internal resize would produce, so returned
     coordinates refer to the uploaded image. This helper recomputes the
     uploaded dimensions deterministically from the original ones, clamps
@@ -66,7 +66,7 @@ def parse_anthropic_object_detection_response(
     classes: List[str],
     inference_id: str,
 ) -> sv.Detections:
-    """Parse Claude block (v5+) object-detection output into detections.
+    """Parse Claude block (v4+) object-detection output into detections.
 
     The model returns ``box_2d`` entries as ``[x_min, y_min, x_max, y_max]``
     in absolute pixel coordinates of the uploaded (pre-resized) image; see

@@ -1,9 +1,9 @@
-"""Tests for the Anthropic Claude v5 block (v4 + vlm-exam detection contract).
+"""Tests for the Anthropic Claude v4 detection contract.
 
 The v1-v3 behavior suite lives in ``test_anthropic_claude.py`` and the
-token-usage delta in ``test_anthropic_claude_v4.py``; this file covers the
-v5 delta: the absolute-pixel object-detection prompt on a PNG image
-pre-resized to Claude's native upload dimensions.
+token-usage outputs in ``test_anthropic_claude_v4.py``; this file covers
+the vlm-exam detection delta: the absolute-pixel object-detection prompt
+on a PNG image pre-resized to Claude's native upload dimensions.
 """
 
 import base64
@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 import pytest
 
-from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     BlockManifest,
     encode_image_for_task,
     prepare_object_detection_prompt,
@@ -25,7 +25,7 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 i
 def test_manifest_parsing_for_object_detection_task() -> None:
     # given
     raw_manifest = {
-        "type": "roboflow_core/anthropic_claude@v5",
+        "type": "roboflow_core/anthropic_claude@v4",
         "name": "claude",
         "images": "$inputs.image",
         "task_type": "object-detection",
@@ -44,7 +44,7 @@ def test_manifest_parsing_for_object_detection_task() -> None:
 def test_manifest_parsing_fails_for_object_detection_without_classes() -> None:
     # given
     raw_manifest = {
-        "type": "roboflow_core/anthropic_claude@v5",
+        "type": "roboflow_core/anthropic_claude@v4",
         "name": "claude",
         "images": "$inputs.image",
         "task_type": "object-detection",
@@ -154,7 +154,7 @@ def test_encode_image_for_task_downscales_other_tasks_to_max_image_size() -> Non
 
 
 @patch(
-    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5.execute_claude_requests"
+    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4.execute_claude_requests"
 )
 def test_run_claude_prompting_states_uploaded_dimensions_in_detection_prompt(
     mock_execute: Mock,
