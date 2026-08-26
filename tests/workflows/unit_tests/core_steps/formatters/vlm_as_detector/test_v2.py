@@ -357,6 +357,90 @@ def test_run_method_for_spacexai_unknown_label_gets_class_id_minus_one() -> None
     assert np.allclose(result["predictions"].class_id, np.array([-1]))
 
 
+def test_run_method_for_anthropic_claude_box_2d_output_with_resize() -> None:
+    # given - original 4000x3000 image is uploaded at 2212x1659 (Claude's
+    # high-resolution tier resize), so absolute pixel coordinates must be
+    # rescaled back onto the original image
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((3000, 4000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [553, 415, 1106, 830], "label": "cat"},
+  {"box_2d": [1106, 830, 2500, 1800], "label": "dog"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="anthropic-claude",
+        task_type="object-detection",
+    )
+
+    # then - second box exceeds the 2212x1659 upload and is clamped before scaling
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [
+                    553 * 4000 / 2212,
+                    415 * 3000 / 1659,
+                    1106 * 4000 / 2212,
+                    830 * 3000 / 1659,
+                ],
+                [1106 * 4000 / 2212, 830 * 3000 / 1659, 4000, 3000],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
+
+
+def test_run_method_for_anthropic_claude_legacy_detections_output() -> None:
+    # given - v1-v4 Claude blocks emit the normalized {"detections": [...]}
+    # contract, which must keep parsing through the legacy path
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+{"detections": [
+  {"x_min": 0.1, "y_min": 0.2, "x_max": 0.5, "y_max": 0.6, "class_name": "cat", "confidence": 0.9}
+]}
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="anthropic-claude",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat"]
+    assert np.allclose(result["predictions"].class_id, np.array([0]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[17, 38, 84, 115]]),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([0.9]))
+
+
 def test_run_method_for_invalid_claude_and_gemini_output() -> None:
     # given
     block = VLMAsDetectorBlockV2()
