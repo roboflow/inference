@@ -2,6 +2,7 @@ from unittest import mock
 
 import pytest
 
+from inference_models.utils import blob_storage
 from inference_models.utils.blob_storage import BlobStorage, BlobTooLarge, S3BlobStorage
 
 
@@ -20,6 +21,14 @@ class _StreamingBody:
 
     def close(self) -> None:
         self.closed = True
+
+
+class _MissingObjectError(Exception):
+    response = {"Error": {"Code": "NoSuchKey"}}
+
+
+def _configure_missing_object(client: mock.MagicMock) -> None:
+    client.head_object.side_effect = _MissingObjectError()
 
 
 def test_blob_storage_cannot_be_constructed_without_download_and_upload() -> None:
@@ -120,7 +129,31 @@ def test_s3_storage_completes_a_transfer_within_its_byte_cap(tmp_path) -> None:
     assert target_path.read_bytes() == b"cached weights"
 
 
-def test_s3_storage_upload_disables_transfer_threads(tmp_path) -> None:
+def test_s3_storage_conditionally_creates_small_object(tmp_path) -> None:
+    client = mock.MagicMock()
+    _configure_missing_object(client)
+    storage = S3BlobStorage(client=client, bucket="models")
+    source_path = tmp_path / "blob"
+    source_path.write_bytes(b"weights")
+    uploaded = {}
+
+    def put_object(**kwargs) -> None:
+        uploaded.update(kwargs)
+        uploaded["Body"] = kwargs["Body"].read()
+
+    client.put_object.side_effect = put_object
+
+    storage.upload("prefix/hash", str(source_path))
+
+    assert uploaded == {
+        "Bucket": "models",
+        "Key": "prefix/hash",
+        "Body": b"weights",
+        "IfNoneMatch": "*",
+    }
+
+
+def test_s3_storage_skips_upload_when_object_already_exists(tmp_path) -> None:
     client = mock.MagicMock()
     storage = S3BlobStorage(client=client, bucket="models")
     source_path = tmp_path / "blob"
@@ -128,5 +161,115 @@ def test_s3_storage_upload_disables_transfer_threads(tmp_path) -> None:
 
     storage.upload("prefix/hash", str(source_path))
 
-    transfer_config = client.upload_file.call_args.kwargs["Config"]
-    assert transfer_config.use_threads is False
+    client.head_object.assert_called_once_with(
+        Bucket="models",
+        Key="prefix/hash",
+    )
+    client.put_object.assert_not_called()
+    client.create_multipart_upload.assert_not_called()
+
+
+def test_s3_storage_treats_existing_small_object_as_success(tmp_path) -> None:
+    class PreconditionFailedError(Exception):
+        response = {
+            "Error": {"Code": "PreconditionFailed"},
+            "ResponseMetadata": {"HTTPStatusCode": 412},
+        }
+
+    client = mock.MagicMock()
+    _configure_missing_object(client)
+    client.put_object.side_effect = PreconditionFailedError()
+    storage = S3BlobStorage(client=client, bucket="models")
+    source_path = tmp_path / "blob"
+    source_path.write_bytes(b"weights")
+
+    storage.upload("prefix/hash", str(source_path))
+
+    client.put_object.assert_called_once()
+
+
+def test_s3_storage_conditionally_completes_multipart_upload(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(blob_storage, "_MULTIPART_UPLOAD_THRESHOLD", 5)
+    monkeypatch.setattr(blob_storage, "_MULTIPART_UPLOAD_CHUNK_SIZE", 5)
+    client = mock.MagicMock()
+    _configure_missing_object(client)
+    client.create_multipart_upload.return_value = {"UploadId": "upload-id"}
+    client.upload_part.side_effect = [{"ETag": "etag-1"}, {"ETag": "etag-2"}]
+    storage = S3BlobStorage(client=client, bucket="models")
+    source_path = tmp_path / "blob"
+    source_path.write_bytes(b"0123456789")
+
+    storage.upload("prefix/hash", str(source_path))
+
+    assert client.upload_part.call_args_list == [
+        mock.call(
+            Bucket="models",
+            Key="prefix/hash",
+            UploadId="upload-id",
+            PartNumber=1,
+            Body=b"01234",
+        ),
+        mock.call(
+            Bucket="models",
+            Key="prefix/hash",
+            UploadId="upload-id",
+            PartNumber=2,
+            Body=b"56789",
+        ),
+    ]
+    client.complete_multipart_upload.assert_called_once_with(
+        Bucket="models",
+        Key="prefix/hash",
+        UploadId="upload-id",
+        MultipartUpload={
+            "Parts": [
+                {"ETag": "etag-1", "PartNumber": 1},
+                {"ETag": "etag-2", "PartNumber": 2},
+            ]
+        },
+        IfNoneMatch="*",
+    )
+    client.abort_multipart_upload.assert_not_called()
+
+
+def test_s3_storage_aborts_losing_conditional_multipart_upload(
+    tmp_path, monkeypatch
+) -> None:
+    class PreconditionFailedError(Exception):
+        response = {
+            "Error": {"Code": "PreconditionFailed"},
+            "ResponseMetadata": {"HTTPStatusCode": 412},
+        }
+
+    monkeypatch.setattr(blob_storage, "_MULTIPART_UPLOAD_THRESHOLD", 5)
+    monkeypatch.setattr(blob_storage, "_MULTIPART_UPLOAD_CHUNK_SIZE", 5)
+    client = mock.MagicMock()
+    _configure_missing_object(client)
+    client.create_multipart_upload.return_value = {"UploadId": "upload-id"}
+    client.upload_part.side_effect = [{"ETag": "etag-1"}, {"ETag": "etag-2"}]
+    client.complete_multipart_upload.side_effect = PreconditionFailedError()
+    storage = S3BlobStorage(client=client, bucket="models")
+    source_path = tmp_path / "blob"
+    source_path.write_bytes(b"0123456789")
+
+    storage.upload("prefix/hash", str(source_path))
+
+    client.abort_multipart_upload.assert_called_once_with(
+        Bucket="models",
+        Key="prefix/hash",
+        UploadId="upload-id",
+    )
+
+
+def test_s3_storage_propagates_non_precondition_upload_failure(tmp_path) -> None:
+    client = mock.MagicMock()
+    _configure_missing_object(client)
+    client.put_object.side_effect = RuntimeError("upload failed")
+    storage = S3BlobStorage(client=client, bucket="models")
+    source_path = tmp_path / "blob"
+    source_path.write_bytes(b"weights")
+
+    with pytest.raises(RuntimeError, match="upload failed"):
+        storage.upload("prefix/hash", str(source_path))
