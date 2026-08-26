@@ -30,7 +30,7 @@ class VideoSegmentClassificationModel(ABC):
 
         Open-vocabulary models return None and take ``class_names`` per call.
         """
-        return None
+        return getattr(self, "_class_names", None)
 
     @abstractmethod
     def infer(
@@ -43,7 +43,7 @@ class VideoSegmentClassificationModel(ABC):
         """Classify RGB frames and return segments in their index space.
 
         Frames are numpy HWC arrays or torch CHW tensors. ``class_names``
-        constrains open-vocabulary models and is ignored by fixed-vocabulary
+        overrides a model-provided vocabulary and constrains open-vocabulary
         models.
         """
         pass

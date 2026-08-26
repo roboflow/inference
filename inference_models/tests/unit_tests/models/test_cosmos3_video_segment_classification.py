@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -91,6 +92,87 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
 
     assert wrapper._reasoner is reasoner
     assert calls == [("nvidia/Cosmos3-Edge", {"local_files_only": False})]
+
+
+def test_from_pretrained_reads_class_names_from_model_config(
+    monkeypatch, tmp_path
+) -> None:
+    reasoner = _FakeReasoner()
+    (tmp_path / "model_config.json").write_text(
+        json.dumps({"class_names": ["walking", "running"]})
+    )
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(str(tmp_path))
+
+    assert wrapper._reasoner is reasoner
+    assert wrapper.class_names == ["walking", "running"]
+
+
+def test_infer_parameter_vocabulary_overrides_model_vocabulary() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 1, "class": "jumping"}]'
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(
+        reasoner=reasoner,
+        class_names=["walking"],
+    )
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
+
+    result = wrapper.infer(frames=frames, class_names=["jumping"], fps=5.0)
+
+    assert result == [
+        VideoSegmentClassificationPrediction(
+            start_frame_idx=0,
+            end_frame_idx=1,
+            class_name="jumping",
+        )
+    ]
+    prompt = reasoner.calls[0]["prompt"]
+    assert "jumping" in prompt
+    assert "walking" not in prompt
+
+
+def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 1, "class": "walking"}]'
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(
+        reasoner=reasoner,
+        class_names=["walking"],
+    )
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
+
+    result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
+
+    assert [segment.class_name for segment in result] == ["walking"]
+    assert "Class vocabulary: [\"walking\"]" in reasoner.calls[0]["prompt"]
+
+
+def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 1, "class": "opening a door"}]'
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
+
+    result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
+
+    assert result == [
+        VideoSegmentClassificationPrediction(
+            start_frame_idx=0,
+            end_frame_idx=1,
+            class_name="opening a door",
+        )
+    ]
+    prompt = reasoner.calls[0]["prompt"]
+    assert "notable temporal events" in prompt
+    assert "short lowercase" in prompt
+    assert "Class vocabulary:" not in prompt
 
 
 @pytest.mark.parametrize(

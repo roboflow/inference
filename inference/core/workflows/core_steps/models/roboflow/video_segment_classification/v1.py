@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
+from uuid import uuid4
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
@@ -29,6 +30,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -36,6 +38,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND,
     ImageInputField,
+    RoboflowModelField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -67,6 +70,11 @@ classification requires an end-of-stream signal and is planned separately.
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream, so they classify one
 frame without temporal context.
+
+The class vocabulary is optional. Provide classes for zero-shot models, leave
+them empty for fine-tuned models that carry their own class list, or leave them
+empty on open-vocabulary models to let the model label events. The
+active_classes output works with Classification Label Visualization.
 """
 
 
@@ -112,23 +120,23 @@ class BlockManifest(WorkflowBlockManifest):
 
     type: Literal["roboflow_core/video_segment_classification_model@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    class_names: Union[
-        List[str],
-        str,
-        Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND]),
+    class_names: Optional[
+        Union[
+            List[str],
+            str,
+            Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND]),
+        ]
     ] = Field(
+        default=None,
         description=(
-            "Classes to locate, as a list or a comma-separated string. "
-            "The class position becomes the output class ID."
+            "Vocabulary for zero-shot open-vocabulary models such as cosmos-3-edge. "
+            "Leave empty for fine-tuned models, which carry their own class list. "
+            "Leave empty on open-vocabulary models to let the model label events "
+            "freely; timeline entries then use class_id -1."
         ),
         examples=[["walking", "running"]],
     )
-    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default=DEFAULT_MODEL_ID,
-        title="Model Id",
-        description="Video segment classification model.",
-        examples=[DEFAULT_MODEL_ID],
-    )
+    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=2.0,
         description="Duration of the sliding classification window in seconds.",
@@ -173,7 +181,9 @@ class BlockManifest(WorkflowBlockManifest):
                 name="timeline",
                 kind=[VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND],
             ),
-            OutputDefinition(name="active_classes", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(
+                name="active_classes", kind=[CLASSIFICATION_PREDICTION_KIND]
+            ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
         ]
 
@@ -270,8 +280,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        class_names: Union[List[str], str],
-        model_id: str = DEFAULT_MODEL_ID,
+        model_id: str,
+        class_names: Optional[Union[List[str], str]] = None,
         window_seconds: float = 2.0,
         stride_seconds: Optional[float] = None,
         sample_fps: float = 4.0,
@@ -279,14 +289,18 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
-        classes = normalise_class_names(class_names)
+        block_classes = normalise_class_names(class_names) or None
+        resolved_vocabulary = (
+            block_classes or getattr(model, "class_names", None) or None
+        )
         results = []
         for image in images:
             results.append(
                 self._process_frame(
                     model=model,
                     image=image,
-                    class_names=classes,
+                    block_classes=block_classes,
+                    resolved_vocabulary=resolved_vocabulary,
                     window_seconds=window_seconds,
                     stride_seconds=stride_seconds,
                     sample_fps=sample_fps,
@@ -298,7 +312,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         self,
         model,
         image: WorkflowImageData,
-        class_names: List[str],
+        block_classes: Optional[List[str]],
+        resolved_vocabulary: Optional[List[str]],
         window_seconds: float,
         stride_seconds: Optional[float],
         sample_fps: float,
@@ -337,7 +352,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         )
         stride_frames = max(1, round(effective_stride_seconds * source_fps))
         signature = (
-            tuple(class_names),
+            tuple(block_classes or ()),
             requested_window_seconds,
             requested_stride_seconds,
             requested_sample_fps,
@@ -381,7 +396,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             error_status = self._classify_buffer(
                 model=model,
                 bookkeeping=bookkeeping,
-                class_names=class_names,
+                block_classes=block_classes,
+                resolved_vocabulary=resolved_vocabulary,
                 effective_sample_fps=effective_sample_fps,
                 sampling_stride=sampling_stride,
             )
@@ -389,7 +405,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         bookkeeping.last_frame_number = frame_number
         return self._build_output(
             bookkeeping=bookkeeping,
-            class_names=class_names,
+            image=image,
+            resolved_vocabulary=resolved_vocabulary,
             frame_number=frame_number,
             error_status=error_status,
         )
@@ -413,7 +430,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         self,
         model,
         bookkeeping: _VideoSegmentClassificationBookkeeping,
-        class_names: List[str],
+        block_classes: Optional[List[str]],
+        resolved_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
         sampling_stride: float,
     ) -> str:
@@ -425,7 +443,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         try:
             segments = model.infer(
                 frames=frames,
-                class_names=class_names,
+                class_names=block_classes,
                 fps=effective_sample_fps,
             )
         except Exception as error:
@@ -438,7 +456,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         self._merge_segments(
             bookkeeping=bookkeeping,
             segments=segments,
-            class_names=class_names,
+            resolved_vocabulary=resolved_vocabulary,
             stride=sampling_stride,
         )
         return ""
@@ -462,14 +480,17 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         self,
         bookkeeping: _VideoSegmentClassificationBookkeeping,
         segments: List[ModelVideoSegmentClassificationPrediction],
-        class_names: List[str],
+        resolved_vocabulary: Optional[List[str]],
         stride: float,
     ) -> None:
         sampled_count = len(bookkeeping.sampled)
         new_open_classes = set()
         for segment in segments:
             class_name = segment.class_name
-            if class_name not in class_names:
+            if (
+                resolved_vocabulary is not None
+                and class_name not in resolved_vocabulary
+            ):
                 continue
             start_idx = min(
                 sampled_count - 1,
@@ -485,7 +506,11 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 start_frame_idx=bookkeeping.sampled[start_idx][0],
                 end_frame_idx=bookkeeping.sampled[end_idx][0],
                 class_name=class_name,
-                class_id=class_names.index(class_name),
+                class_id=(
+                    resolved_vocabulary.index(class_name)
+                    if resolved_vocabulary is not None
+                    else -1
+                ),
             )
             self._merge_segment(
                 timeline=bookkeeping.timeline,
@@ -533,7 +558,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
     @staticmethod
     def _build_output(
         bookkeeping: _VideoSegmentClassificationBookkeeping,
-        class_names: List[str],
+        image: WorkflowImageData,
+        resolved_vocabulary: Optional[List[str]],
         frame_number: int,
         error_status: str,
     ) -> dict:
@@ -543,11 +569,41 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 if entry.class_name == class_name:
                     entry.end_frame_idx = frame_number
                     break
-        active_classes = [
-            class_name
-            for class_name in class_names
-            if class_name in bookkeeping.open_classes
-        ]
+        if resolved_vocabulary is not None:
+            active_class_names = [
+                class_name
+                for class_name in resolved_vocabulary
+                if class_name in bookkeeping.open_classes
+            ]
+        else:
+            active_class_names = []
+            for entry in timeline:
+                if (
+                    entry.class_name in bookkeeping.open_classes
+                    and entry.class_name not in active_class_names
+                ):
+                    active_class_names.append(entry.class_name)
+        height, width = image._read_shape_without_materialization()
+        parent_id = image.parent_metadata.parent_id
+        active_classes = {
+            "image": {"width": width, "height": height},
+            "predictions": {
+                class_name: {
+                    "confidence": 1.0,
+                    "class_id": (
+                        resolved_vocabulary.index(class_name)
+                        if resolved_vocabulary is not None
+                        else -1
+                    ),
+                }
+                for class_name in active_class_names
+            },
+            "predicted_classes": active_class_names,
+            "prediction_type": "classification",
+            "parent_id": parent_id,
+            "root_parent_id": parent_id,
+            "inference_id": str(uuid4()),
+        }
         return {
             "timeline": timeline,
             "active_classes": active_classes,

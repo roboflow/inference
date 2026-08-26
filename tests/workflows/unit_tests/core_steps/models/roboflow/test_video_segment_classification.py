@@ -5,6 +5,7 @@ import math
 from datetime import datetime
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import numpy as np
 import pytest
@@ -47,7 +48,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    LIST_OF_VALUES_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
     VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND,
 )
@@ -59,9 +60,11 @@ class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
         responses: Optional[
             List[Union[List[ModelVideoSegmentClassificationPrediction], Exception]]
         ] = None,
+        class_names: Optional[List[str]] = None,
     ):
         self.responses = list(responses or [])
         self.calls = []
+        self._class_names = class_names
 
     @classmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs):
@@ -81,7 +84,9 @@ class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
         self.calls.append(
             {
                 "frames": recorded_frames,
-                "class_names": list(class_names),
+                "class_names": (
+                    list(class_names) if class_names is not None else None
+                ),
                 "fps": fps,
             }
         )
@@ -143,6 +148,7 @@ def _make_block(
         List[Union[List[ModelVideoSegmentClassificationPrediction], Exception]]
     ] = None,
     tensor: bool = False,
+    model_class_names: Optional[List[str]] = None,
 ):
     block_type = (
         TensorVideoSegmentClassificationModelBlockV1
@@ -154,7 +160,10 @@ def _make_block(
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
-    model = _FakeVideoSegmentClassificationModel(responses=responses)
+    model = _FakeVideoSegmentClassificationModel(
+        responses=responses,
+        class_names=model_class_names,
+    )
     block._model = model
     return block, model
 
@@ -179,7 +188,7 @@ def _run(
 ):
     return block.run(
         images=[frame],
-        class_names=list(class_names),
+        class_names=list(class_names) if class_names is not None else None,
         model_id="cosmos-3-edge",
         window_seconds=window_seconds,
         stride_seconds=stride_seconds,
@@ -189,6 +198,10 @@ def _run(
 
 def _timeline_as_dicts(result):
     return [entry.model_dump() for entry in result["timeline"]]
+
+
+def _active_class_names(result):
+    return result["active_classes"]["predicted_classes"]
 
 
 def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
@@ -238,6 +251,7 @@ def test_manifest_parses_classes_and_declares_outputs(manifest_type):
             "name": "video_classifier",
             "images": "$inputs.image",
             "class_names": "walk, run",
+            "model_id": "cosmos-3-edge",
         }
     )
 
@@ -250,19 +264,36 @@ def test_manifest_parses_classes_and_declares_outputs(manifest_type):
     assert manifest_type.describe_outputs()[0].kind == [
         VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND
     ]
-    assert manifest_type.describe_outputs()[1].kind == [LIST_OF_VALUES_KIND]
+    assert manifest_type.describe_outputs()[1].kind == [
+        CLASSIFICATION_PREDICTION_KIND
+    ]
     assert manifest_type.describe_outputs()[2].name == "error_status"
     assert manifest_type.describe_outputs()[2].kind == [STRING_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
-def test_manifest_requires_class_names(manifest_type):
+def test_manifest_allows_omitted_class_names(manifest_type):
+    manifest = manifest_type.model_validate(
+        {
+            "type": "roboflow_core/video_segment_classification_model@v1",
+            "name": "video_classifier",
+            "images": "$inputs.image",
+            "model_id": "cosmos-3-edge",
+        }
+    )
+
+    assert manifest.class_names is None
+
+
+@pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
+def test_manifest_requires_model_id(manifest_type):
     with pytest.raises(Exception):
         manifest_type.model_validate(
             {
                 "type": "roboflow_core/video_segment_classification_model@v1",
                 "name": "video_classifier",
                 "images": "$inputs.image",
+                "class_names": ["walk"],
             }
         )
 
@@ -292,6 +323,7 @@ def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
         "type": "roboflow_core/video_segment_classification_model@v1",
         "name": "video_classifier",
         "images": "$inputs.image",
+        "model_id": "cosmos-3-edge",
         "class_names": ["walk"],
         field: value,
     }
@@ -308,7 +340,7 @@ def test_first_frame_classifies_a_growing_buffer_and_sends_rgb():
     result = _run(block, _make_frame(0, bgr_color=[1, 2, 3]))
 
     assert [entry.class_name for entry in result["timeline"]] == ["walk"]
-    assert result["active_classes"] == ["walk"]
+    assert _active_class_names(result) == ["walk"]
     assert result["error_status"] == ""
     assert len(model.calls) == 1
     call = model.calls[0]
@@ -316,6 +348,66 @@ def test_first_frame_classifies_a_growing_buffer_and_sends_rgb():
     assert call["fps"] == 2.0
     assert len(call["frames"]) == 1
     np.testing.assert_array_equal(call["frames"][0][0, 0], [3, 2, 1])
+
+
+def test_open_vocabulary_keeps_arbitrary_labels_with_negative_class_ids():
+    block, model = _make_block(
+        responses=[
+            [
+                _model_segment("opening a door"),
+                _model_segment("sitting down"),
+            ]
+        ],
+        model_class_names=None,
+    )
+
+    result = _run(block, _make_frame(0), class_names=None)
+
+    assert model.calls[0]["class_names"] is None
+    assert [entry.class_name for entry in result["timeline"]] == [
+        "opening a door",
+        "sitting down",
+    ]
+    assert [entry.class_id for entry in result["timeline"]] == [-1, -1]
+    assert _active_class_names(result) == ["opening a door", "sitting down"]
+
+
+def test_model_vocabulary_sets_class_ids_when_block_classes_are_omitted():
+    block, model = _make_block(
+        responses=[[_model_segment("run")]],
+        model_class_names=["walk", "run"],
+    )
+
+    result = _run(block, _make_frame(0), class_names=None)
+
+    assert model.calls[0]["class_names"] is None
+    assert _timeline_as_dicts(result) == [
+        {
+            "start_frame_idx": 0,
+            "end_frame_idx": 0,
+            "class_name": "run",
+            "class_id": 1,
+        }
+    ]
+    assert _active_class_names(result) == ["run"]
+
+
+def test_active_classes_uses_multi_label_classification_shape():
+    block, _ = _make_block(responses=[[_model_segment("walk")]])
+    frame = _make_frame(0)
+
+    result = _run(block, frame)
+
+    active_classes = result["active_classes"]
+    assert active_classes["image"] == {"width": 2, "height": 2}
+    assert active_classes["predictions"] == {
+        "walk": {"confidence": 1.0, "class_id": 0}
+    }
+    assert active_classes["predicted_classes"] == ["walk"]
+    assert active_classes["prediction_type"] == "classification"
+    assert active_classes["parent_id"] == "stream-0:0"
+    assert active_classes["root_parent_id"] == "stream-0:0"
+    assert UUID(active_classes["inference_id"]).version == 4
 
 
 def test_default_stride_fires_every_half_window():
@@ -452,7 +544,7 @@ def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
             "class_id": 0,
         }
     ]
-    assert result["active_classes"] == ["walk"]
+    assert _active_class_names(result) == ["walk"]
 
 
 def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
@@ -474,7 +566,7 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
         ("walk", 0),
         ("run", 0),
     ]
-    assert result["active_classes"] == ["walk", "run"]
+    assert _active_class_names(result) == ["walk", "run"]
 
 
 def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
@@ -507,7 +599,7 @@ def test_open_range_advances_then_closes_at_recorded_endpoint():
 
     first_window_result = _run(block, _make_frame(0))
     assert first_window_result["timeline"][0].end_frame_idx == 0
-    assert first_window_result["active_classes"] == ["walk"]
+    assert _active_class_names(first_window_result) == ["walk"]
 
     advancing_result = _run(block, _make_frame(1))
     assert advancing_result["timeline"][0].end_frame_idx == 1
@@ -515,7 +607,7 @@ def test_open_range_advances_then_closes_at_recorded_endpoint():
 
     closed_result = _run(block, _make_frame(2))
     assert closed_result["timeline"][0].end_frame_idx == 0
-    assert closed_result["active_classes"] == []
+    assert _active_class_names(closed_result) == []
     assert _run(block, _make_frame(3))["timeline"][0].end_frame_idx == 0
 
 
@@ -563,7 +655,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     block, model = _make_block(responses=[[_model_segment("walk")]])
     result = _run(block, _make_frame(0))
     assert result["timeline"]
-    assert result["active_classes"] == ["walk"]
+    assert _active_class_names(result) == ["walk"]
 
     class_names = reset_kwargs.get("class_names", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
@@ -579,7 +671,10 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
         sample_fps=sample_fps,
     )
 
-    assert result == {"timeline": [], "active_classes": [], "error_status": ""}
+    assert result["timeline"] == []
+    assert _active_class_names(result) == []
+    assert result["active_classes"]["predictions"] == {}
+    assert result["error_status"] == ""
     assert len(model.calls) == 2
 
 
@@ -598,24 +693,24 @@ def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
     _run(block, _make_frame(1))
     failed = _run(block, _make_frame(2))
 
-    assert initial["active_classes"] == ["walk"]
+    assert _active_class_names(initial) == ["walk"]
     assert failed["error_status"] == "temporary model failure"
     assert [entry.class_name for entry in failed["timeline"]] == ["walk"]
-    assert failed["active_classes"] == ["walk"]
+    assert _active_class_names(failed) == ["walk"]
     assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 0
     warning.assert_called_once()
     assert warning.call_args.kwargs["exc_info"] is True
 
     after_failure = _run(block, _make_frame(3))
     assert after_failure["error_status"] == ""
-    assert after_failure["active_classes"] == ["walk"]
+    assert _active_class_names(after_failure) == ["walk"]
     assert len(model.calls) == 2
 
     resumed = _run(block, _make_frame(4))
 
     assert resumed["error_status"] == ""
     assert [entry.class_name for entry in resumed["timeline"]] == ["walk", "run"]
-    assert resumed["active_classes"] == ["run"]
+    assert _active_class_names(resumed) == ["run"]
     assert len(model.calls) == 3
 
 
