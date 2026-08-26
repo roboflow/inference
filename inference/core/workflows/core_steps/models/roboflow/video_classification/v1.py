@@ -1,4 +1,4 @@
-"""Stateful video interval classification workflow block."""
+"""Stateful video segment classification workflow block."""
 
 import math
 from dataclasses import dataclass, field
@@ -6,6 +6,13 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
+
+from inference_models.models.base.video_classification import (
+    VideoClassificationModel,
+)
+from inference_models.models.base.video_classification import (
+    VideoSegmentClassification as ModelVideoSegmentClassification,
+)
 
 from inference.core import logger
 from inference.core.managers.base import ModelManager
@@ -17,7 +24,7 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
-    VideoIntervalClassification,
+    VideoSegmentClassification,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -70,7 +77,7 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 @dataclass
 class _VideoClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
-    timeline: List[VideoIntervalClassification] = field(default_factory=list)
+    timeline: List[VideoSegmentClassification] = field(default_factory=list)
     open_classes: Set[str] = field(default_factory=set)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -193,7 +200,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class VideoClassificationModelBlockV1(WorkflowBlock):
-    """Classify temporal intervals in independent video streams."""
+    """Classify temporal segments in independent video streams."""
 
     _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
         "Video Classification Model only supports LOCAL workflow step "
@@ -231,11 +238,28 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
-            self._model = AutoModel.from_pretrained(
+            loaded_model = AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=get_extra_weights_provider_headers(),
             )
+            if not isinstance(loaded_model, VideoClassificationModel):
+                from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+                    Cosmos3EdgeReasoner,
+                )
+                from inference_models.models.cosmos3.cosmos3_video_classification import (
+                    Cosmos3VideoSegmentClassification,
+                )
+
+                if isinstance(loaded_model, Cosmos3EdgeReasoner):
+                    loaded_model = Cosmos3VideoSegmentClassification(
+                        reasoner=loaded_model
+                    )
+                else:
+                    raise ValueError(
+                        f"Model {model_id} does not support video classification."
+                    )
+            self._model = loaded_model
             self._current_model_id = model_id
             self._video_bookkeeping.clear()
         return self._model
@@ -399,10 +423,9 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
             [frame for _, frame in bookkeeping.sampled]
         )
         try:
-            segments = model.temporal_localization(
+            segments = model.infer(
                 frames=frames,
                 class_names=class_names,
-                input_color_format="rgb",
                 fps=effective_sample_fps,
             )
         except Exception as error:
@@ -438,35 +461,35 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
     def _merge_segments(
         self,
         bookkeeping: _VideoClassificationBookkeeping,
-        segments: List[dict],
+        segments: List[ModelVideoSegmentClassification],
         class_names: List[str],
         stride: float,
     ) -> None:
         sampled_count = len(bookkeeping.sampled)
         new_open_classes = set()
         for segment in segments:
-            class_name = segment.get("class")
+            class_name = segment.class_name
             if class_name not in class_names:
                 continue
             start_idx = min(
                 sampled_count - 1,
-                max(0, int(segment["start_frame_idx"])),
+                max(0, int(segment.start_frame_idx)),
             )
             end_idx = min(
                 sampled_count - 1,
-                max(0, int(segment["end_frame_idx"])),
+                max(0, int(segment.end_frame_idx)),
             )
             if start_idx > end_idx:
                 start_idx, end_idx = end_idx, start_idx
-            interval = VideoIntervalClassification(
+            segment = VideoSegmentClassification(
                 start_frame_idx=bookkeeping.sampled[start_idx][0],
                 end_frame_idx=bookkeeping.sampled[end_idx][0],
                 class_name=class_name,
                 class_id=class_names.index(class_name),
             )
-            self._merge_interval(
+            self._merge_segment(
                 timeline=bookkeeping.timeline,
-                interval=interval,
+                segment=segment,
                 stride=stride,
             )
             if end_idx == sampled_count - 1:
@@ -481,31 +504,31 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
         bookkeeping.open_classes = new_open_classes
 
     @staticmethod
-    def _merge_interval(
-        timeline: List[VideoIntervalClassification],
-        interval: VideoIntervalClassification,
+    def _merge_segment(
+        timeline: List[VideoSegmentClassification],
+        segment: VideoSegmentClassification,
         stride: float,
     ) -> None:
         matching = [
             existing
             for existing in timeline
-            if existing.class_name == interval.class_name
-            and existing.start_frame_idx <= interval.end_frame_idx + stride
-            and interval.start_frame_idx <= existing.end_frame_idx + stride
+            if existing.class_name == segment.class_name
+            and existing.start_frame_idx <= segment.end_frame_idx + stride
+            and segment.start_frame_idx <= existing.end_frame_idx + stride
         ]
         if not matching:
-            timeline.append(interval)
+            timeline.append(segment)
             return
-        interval.start_frame_idx = min(
-            interval.start_frame_idx,
+        segment.start_frame_idx = min(
+            segment.start_frame_idx,
             *(entry.start_frame_idx for entry in matching),
         )
-        interval.end_frame_idx = max(
-            interval.end_frame_idx,
+        segment.end_frame_idx = max(
+            segment.end_frame_idx,
             *(entry.end_frame_idx for entry in matching),
         )
         timeline[:] = [entry for entry in timeline if entry not in matching]
-        timeline.append(interval)
+        timeline.append(segment)
 
     @staticmethod
     def _build_output(

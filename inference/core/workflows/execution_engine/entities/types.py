@@ -149,11 +149,11 @@ VIDEO_METADATA_KIND = Kind(
 )
 
 VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND_DOCS = """
-This kind represents classified intervals in a video. The serialized value is a
+This kind represents classified segments in a video. The serialized value is a
 list of dictionaries. Each dictionary has these keys:
 
-* `start_frame_idx`: The first frame in the interval.
-* `end_frame_idx`: The last frame in the interval.
+* `start_frame_idx`: The first frame in the segment.
+* `end_frame_idx`: The last frame in the segment.
 * `class`: The class name.
 * `class_id`: The class position in the block's `class_names` input.
 
@@ -163,10 +163,10 @@ closes the range when the class is absent.
 """
 VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND = Kind(
     name="video_multi_label_classification_prediction",
-    description="Classified frame intervals in a video",
+    description="Classified frame segments in a video",
     docs=VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND_DOCS,
     serialised_data_type="List[dict]",
-    internal_data_type="List[VideoIntervalClassification]",
+    internal_data_type="List[VideoSegmentClassification]",
 )
 
 ROBOFLOW_MODEL_ID_KIND_DOCS = """

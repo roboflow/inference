@@ -3,7 +3,7 @@
 import importlib
 import math
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -11,6 +11,14 @@ import pytest
 import torch
 
 import inference.core.env as core_env
+from inference_models import VideoClassificationModel
+from inference_models import (
+    VideoSegmentClassification as ModelVideoSegmentClassification,
+)
+from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
+from inference_models.models.cosmos3.cosmos3_video_classification import (
+    Cosmos3VideoSegmentClassification,
+)
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_video_multi_label_classification_kind,
 )
@@ -34,7 +42,7 @@ from inference.core.workflows.core_steps.models.roboflow.video_classification.v1
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
-    VideoIntervalClassification,
+    VideoSegmentClassification,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -45,20 +53,26 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 
 
-class _FakeVideoClassificationModel:
+class _FakeVideoClassificationModel(VideoClassificationModel):
     def __init__(
         self,
-        responses: Optional[List[Union[List[Dict], Exception]]] = None,
+        responses: Optional[
+            List[Union[List[ModelVideoSegmentClassification], Exception]]
+        ] = None,
     ):
         self.responses = list(responses or [])
         self.calls = []
 
-    def temporal_localization(
+    @classmethod
+    def from_pretrained(cls, model_name_or_path: str, **kwargs):
+        raise NotImplementedError
+
+    def infer(
         self,
         frames,
-        class_names,
-        input_color_format="rgb",
+        class_names=None,
         fps=None,
+        **kwargs,
     ):
         recorded_frames = [
             frame.clone() if isinstance(frame, torch.Tensor) else frame.copy()
@@ -68,7 +82,6 @@ class _FakeVideoClassificationModel:
             {
                 "frames": recorded_frames,
                 "class_names": list(class_names),
-                "input_color_format": input_color_format,
                 "fps": fps,
             }
         )
@@ -78,6 +91,18 @@ class _FakeVideoClassificationModel:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+def _model_segment(
+    class_name: str,
+    start_frame_idx: int = 0,
+    end_frame_idx: int = 0,
+) -> ModelVideoSegmentClassification:
+    return ModelVideoSegmentClassification(
+        start_frame_idx=start_frame_idx,
+        end_frame_idx=end_frame_idx,
+        class_name=class_name,
+    )
 
 
 def _make_frame(
@@ -114,7 +139,9 @@ def _make_frame(
 
 
 def _make_block(
-    responses: Optional[List[Union[List[Dict], Exception]]] = None,
+    responses: Optional[
+        List[Union[List[ModelVideoSegmentClassification], Exception]]
+    ] = None,
     tensor: bool = False,
 ):
     block_type = (
@@ -130,6 +157,16 @@ def _make_block(
     model = _FakeVideoClassificationModel(responses=responses)
     block._model = model
     return block, model
+
+
+def _make_cosmos3_reasoner() -> Cosmos3EdgeReasoner:
+    model = MagicMock()
+    model.parameters.return_value = iter([torch.tensor(0.0, dtype=torch.bfloat16)])
+    return Cosmos3EdgeReasoner(
+        model=model,
+        processor=MagicMock(),
+        device=torch.device("cpu"),
+    )
 
 
 def _run(
@@ -152,6 +189,45 @@ def _run(
 
 def _timeline_as_dicts(result):
     return [entry.model_dump() for entry in result["timeline"]]
+
+
+def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
+    from inference_models import AutoModel
+
+    reasoner = _make_cosmos3_reasoner()
+    load_model = MagicMock(return_value=reasoner)
+    monkeypatch.setattr(AutoModel, "from_pretrained", load_model)
+    block = VideoClassificationModelBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    loaded = block._get_model(model_id="cosmos-3-edge")
+
+    assert isinstance(loaded, Cosmos3VideoSegmentClassification)
+    assert loaded._reasoner is reasoner
+
+
+def test_get_model_rejects_model_without_video_classification_support(monkeypatch):
+    from inference_models import AutoModel
+
+    monkeypatch.setattr(
+        AutoModel,
+        "from_pretrained",
+        MagicMock(return_value=object()),
+    )
+    block = VideoClassificationModelBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unrelated-model does not support video classification",
+    ):
+        block._get_model(model_id="unrelated-model")
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -226,9 +302,7 @@ def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
 
 def test_first_frame_classifies_a_growing_buffer_and_sends_rgb():
     block, model = _make_block(
-        responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}]
-        ]
+        responses=[[_model_segment("walk")]]
     )
 
     result = _run(block, _make_frame(0, bgr_color=[1, 2, 3]))
@@ -239,7 +313,6 @@ def test_first_frame_classifies_a_growing_buffer_and_sends_rgb():
     assert len(model.calls) == 1
     call = model.calls[0]
     assert call["class_names"] == ["walk", "run"]
-    assert call["input_color_format"] == "rgb"
     assert call["fps"] == 2.0
     assert len(call["frames"]) == 1
     np.testing.assert_array_equal(call["frames"][0][0, 0], [3, 2, 1])
@@ -331,9 +404,9 @@ def test_sample_fps_is_capped_at_source_fps():
 def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [_model_segment("walk")],
             [],
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
+            [_model_segment("run")],
         ]
     )
 
@@ -363,8 +436,8 @@ def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
 def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 1, "class": "walk"}],
+            [_model_segment("walk")],
+            [_model_segment("walk", end_frame_idx=1)],
         ]
     )
 
@@ -386,9 +459,9 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
     block, _ = _make_block(
         responses=[
             [
-                {"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"},
-                {"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"},
-                {"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"},
+                _model_segment("walk"),
+                _model_segment("run"),
+                _model_segment("walk"),
             ]
         ]
     )
@@ -407,9 +480,9 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
 def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [_model_segment("walk")],
             [],
-            [{"start_frame_idx": 1, "end_frame_idx": 1, "class": "walk"}],
+            [_model_segment("walk", start_frame_idx=1, end_frame_idx=1)],
         ]
     )
 
@@ -427,7 +500,7 @@ def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
 def test_open_range_advances_then_closes_at_recorded_endpoint():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [_model_segment("walk")],
             [],
         ]
     )
@@ -447,7 +520,7 @@ def test_open_range_advances_then_closes_at_recorded_endpoint():
 
 
 def test_wire_contract_and_alias_round_trip():
-    entity = VideoIntervalClassification(
+    entity = VideoSegmentClassification(
         start_frame_idx=3,
         end_frame_idx=9,
         class_name="walk",
@@ -487,9 +560,7 @@ def test_deserializer_rejects_malformed_values(value):
     ],
 )
 def test_window_defining_input_change_clears_all_state(reset_kwargs):
-    block, model = _make_block(
-        responses=[[{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}]]
-    )
+    block, model = _make_block(responses=[[_model_segment("walk")]])
     result = _run(block, _make_frame(0))
     assert result["timeline"]
     assert result["active_classes"] == ["walk"]
@@ -515,9 +586,9 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
 def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
+            [_model_segment("walk")],
             RuntimeError("temporary model failure"),
-            [{"start_frame_idx": 1, "end_frame_idx": 1, "class": "run"}],
+            [_model_segment("run", start_frame_idx=1, end_frame_idx=1)],
         ]
     )
     warning = MagicMock()
@@ -562,8 +633,8 @@ def test_error_status_is_empty_on_frames_without_a_failed_call():
 def test_frame_rollback_resets_timeline_and_buffer():
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
+            [_model_segment("walk")],
+            [_model_segment("run")],
         ]
     )
     _run(block, _make_frame(0))
@@ -578,8 +649,8 @@ def test_frame_rollback_resets_timeline_and_buffer():
 def test_video_states_are_independent():
     block, model = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
+            [_model_segment("walk")],
+            [_model_segment("run")],
         ]
     )
 
@@ -595,8 +666,8 @@ def test_video_states_are_independent():
 def test_video_identifier_can_be_reused_after_rollback_reset():
     block, _ = _make_block(
         responses=[
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "walk"}],
-            [{"start_frame_idx": 0, "end_frame_idx": 0, "class": "run"}],
+            [_model_segment("walk")],
+            [_model_segment("run")],
         ]
     )
     _run(block, _make_frame(0, video_id="reused"))

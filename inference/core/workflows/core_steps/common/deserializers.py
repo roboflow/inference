@@ -64,7 +64,7 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     ParentOrigin,
-    VideoIntervalClassification,
+    VideoSegmentClassification,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -218,7 +218,7 @@ def deserialize_video_metadata_kind(
 def deserialize_video_multi_label_classification_kind(
     parameter: str,
     value: Any,
-) -> List[VideoIntervalClassification]:
+) -> List[VideoSegmentClassification]:
     if not isinstance(value, list):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
@@ -228,16 +228,16 @@ def deserialize_video_multi_label_classification_kind(
     if not all(isinstance(entry, dict) for entry in value):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-            "a list of video interval classifications, but at least one entry "
+            "a list of video segment classifications, but at least one entry "
             "is not a dict.",
             context="workflow_execution | runtime_input_validation",
         )
     try:
-        return [VideoIntervalClassification.model_validate(entry) for entry in value]
+        return [VideoSegmentClassification.model_validate(entry) for entry in value]
     except ValidationError as error:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-            "a list of video interval classifications, but the provided value "
+            "a list of video segment classifications, but the provided value "
             "is malformed. See details in inner error.",
             context="workflow_execution | runtime_input_validation",
             inner_error=error,

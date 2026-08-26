@@ -219,8 +219,8 @@ class VideoMetadata(BaseModel):
     )
 
 
-class VideoIntervalClassification(BaseModel):
-    """A classified frame interval in a video."""
+class VideoSegmentClassification(BaseModel):
+    """A classified frame segment in a video."""
 
     model_config = ConfigDict(populate_by_name=True)
 

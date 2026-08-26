@@ -66,7 +66,7 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ParentOrigin,
-    VideoIntervalClassification,
+    VideoSegmentClassification,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -351,7 +351,7 @@ def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
 
 
 def serialize_video_multi_label_classification_kind(
-    value: List[VideoIntervalClassification],
+    value: List[VideoSegmentClassification],
 ) -> List[dict]:
     return [entry.model_dump(by_alias=True) for entry in value]
 

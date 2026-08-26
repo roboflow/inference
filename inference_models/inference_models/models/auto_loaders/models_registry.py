@@ -317,8 +317,10 @@ REGISTERED_MODELS: Dict[
         VIDEO_MULTI_LABEL_CLASSIFICATION_TASK,
         BackendType.HF,
     ): LazyClass(
-        module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
-        class_name="Cosmos3EdgeReasoner",
+        module_name=(
+            "inference_models.models.cosmos3.cosmos3_video_classification"
+        ),
+        class_name="Cosmos3VideoSegmentClassification",
     ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",
