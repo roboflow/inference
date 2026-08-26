@@ -58,11 +58,11 @@ SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
-timeline. Classification starts on the first frame with a growing buffer and
-repeats at a configurable stride. By default, the stride is half the window
-length for 50 percent overlap. Ranges can overlap. An active range advances
-with the stream until a later classification closes it. When a stream provides
-no source FPS, the block assumes 30 FPS and logs a warning.
+timeline. The first classification runs one stride after the stream starts.
+Later classifications run at each stride. By default, the stride is half the
+window length for 50 percent overlap. Ranges can overlap. An active range
+advances with the stream until a later classification closes it. When a stream
+provides no source FPS, the block assumes 30 FPS and logs a warning.
 
 Frames per call equal window_seconds x sample_fps. The model spreads a fixed
 pixel budget across those frames. Use fewer frames to keep each frame sharper
@@ -73,8 +73,8 @@ after the final scheduled call do not receive a new result. Tail
 classification requires an end-of-stream signal and is planned separately.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
-and HTTP execution do not provide a continuous stream, so they classify one
-frame without temporal context.
+and HTTP execution do not provide a continuous stream. A single frame has no
+temporal content, so these paths return an empty timeline.
 
 The class vocabulary is optional. Provide classes for zero-shot models, leave
 them empty for fine-tuned models that carry their own class list, or leave them
@@ -94,6 +94,7 @@ class _VideoSegmentClassificationBookkeeping:
     open_classes: Set[str] = field(default_factory=set)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
+    next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
     signature: Tuple[Tuple[str, ...], float, Optional[float], float] = field(
         default_factory=lambda: ((), 0.0, None, 0.0)
@@ -392,11 +393,16 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         )
         stride_frames = max(1, round(effective_stride_seconds * source_fps))
 
-        if (
-            not bookkeeping.sampled
-            or frame_number >= bookkeeping.sampled[-1][0] + sampling_stride
-        ):
+        if bookkeeping.next_sample_frame_number is None:
+            bookkeeping.next_sample_frame_number = float(frame_number)
+        if frame_number >= bookkeeping.next_sample_frame_number:
             bookkeeping.sampled.append((frame_number, self._extract_frame(image=image)))
+            # Advance the threshold on a float grid. Anchoring at the sampled
+            # frame's integer number rounds every step up and drags the real
+            # sample rate below sample_fps (observed: 8-frame spacing on a
+            # 7.5-frame stride), which skews the model's clock.
+            while bookkeeping.next_sample_frame_number <= frame_number:
+                bookkeeping.next_sample_frame_number += sampling_stride
 
         cutoff_frame_number = frame_number - window_frames
         while (
@@ -406,10 +412,12 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             bookkeeping.sampled.pop(0)
 
         error_status = ""
+        if bookkeeping.last_fire_frame_number is None:
+            # A single frame has no temporal content to classify; anchor the
+            # fire cadence at stream start and wait for a full stride.
+            bookkeeping.last_fire_frame_number = frame_number
         should_classify = bookkeeping.sampled and (
-            bookkeeping.last_fire_frame_number is None
-            or frame_number
-            >= bookkeeping.last_fire_frame_number + stride_frames
+            frame_number >= bookkeeping.last_fire_frame_number + stride_frames
         )
         if should_classify:
             bookkeeping.last_fire_frame_number = frame_number
