@@ -211,6 +211,11 @@ class Cosmos3EdgeReasoner:
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
         if as_video and video_fps is not None:
+            # Frames arrive pre-sampled. num_frames == len(images) makes the
+            # processor's sampler an identity pass (linspace over all frames),
+            # which keeps the frame indices it needs for its per-frame
+            # "<X.X seconds>" timestamps; do_sample_frames=False leaves those
+            # indices unset and the timestamp step crashes.
             processor_kwargs.update(
                 video_metadata=[
                     VideoMetadata(
@@ -219,7 +224,7 @@ class Cosmos3EdgeReasoner:
                         duration=len(images) / video_fps,
                     )
                 ],
-                do_sample_frames=False,
+                num_frames=len(images),
             )
         model_inputs = self._processor(
             text=text_input,

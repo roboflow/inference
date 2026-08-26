@@ -69,7 +69,7 @@ def test_pre_process_generation_video_path_passes_frames_as_video() -> None:
     assert "videos" in processor_kwargs
     assert len(processor_kwargs["videos"][0]) == 4
     assert "video_metadata" not in processor_kwargs
-    assert "do_sample_frames" not in processor_kwargs
+    assert "num_frames" not in processor_kwargs
 
 
 def test_pre_process_generation_video_path_passes_fps_metadata() -> None:
@@ -87,7 +87,7 @@ def test_pre_process_generation_video_path_passes_fps_metadata() -> None:
     assert metadata.fps == 5.0
     assert metadata.total_num_frames == 4
     assert metadata.duration == 0.8
-    assert processor_kwargs["do_sample_frames"] is False
+    assert processor_kwargs["num_frames"] == 4
 
 
 def test_pre_process_generation_casts_floating_point_inputs_to_model_dtype() -> None:
@@ -175,4 +175,4 @@ def test_prompt_video_returns_single_string() -> None:
     assert metadata.fps == 5.0
     assert metadata.total_num_frames == 2
     assert metadata.duration == 0.4
-    assert reasoner._processor.call_args.kwargs["do_sample_frames"] is False
+    assert reasoner._processor.call_args.kwargs["num_frames"] == 2
