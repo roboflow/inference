@@ -21,6 +21,9 @@ from inference_models.models.auto_loaders.dependency_models import (
     prepare_dependency_model_parameters,
 )
 from inference_models.models.auto_loaders.entities import AnyModel
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+)
 
 
 class AutoModelPipeline:
@@ -78,6 +81,9 @@ class AutoModelPipeline:
         model_access_manager: Optional[ModelAccessManager] = None,
         weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a multi-model pipeline.
@@ -131,6 +137,9 @@ class AutoModelPipeline:
 
             download_files_without_hash: Allow downloading files without checksums.
                 **Security risk**. Default: False.
+
+            content_addressed_artifact_cache: Optional content-addressed cache shared
+                by every model loaded for the pipeline. Defaults to no remote cache.
 
             use_auto_resolution_cache: Enable caching of model resolution results.
                 Default: True.
@@ -239,6 +248,7 @@ class AutoModelPipeline:
                 allow_local_code_packages=allow_local_code_packages,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 auto_resolution_cache=auto_resolution_cache,
                 allow_direct_local_storage_loading=allow_direct_local_storage_loading,

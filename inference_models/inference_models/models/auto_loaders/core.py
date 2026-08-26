@@ -98,6 +98,9 @@ from inference_models.models.auto_loaders.presentation_utils import (
 )
 from inference_models.models.auto_loaders.ranking import rank_model_packages
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+)
 from inference_models.utils.download import (
     FileHandle,
     download_files_to_directory,
@@ -1652,6 +1655,9 @@ class AutoModel:
         forwarded_kwargs: Optional[List[str]] = None,
         weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1743,6 +1749,9 @@ class AutoModel:
 
             download_files_without_hash: Allow downloading files that don't have checksums.
                 **Security risk** - only enable for trusted sources. Default: False.
+
+            content_addressed_artifact_cache: Optional content-addressed cache used
+                while downloading model artifacts. Defaults to no remote cache.
 
             use_auto_resolution_cache: Enable caching of model resolution results to speed
                 up subsequent loads. Default: True.
@@ -2035,6 +2044,7 @@ class AutoModel:
                     allow_local_code_packages=allow_local_code_packages,
                     verify_hash_while_download=verify_hash_while_download,
                     download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                     allow_direct_local_storage_loading=allow_direct_local_storage_loading,
                     dependency_models_params=dependency_models_params,
                     weights_provider_extra_query_params=weights_provider_extra_query_params,
@@ -2161,6 +2171,7 @@ class AutoModel:
                     trt_engine_host_code_allowed=trt_engine_host_code_allowed,
                     verify_hash_while_download=verify_hash_while_download,
                     download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                     allow_direct_local_storage_loading=allow_direct_local_storage_loading,
                     nms_fusion_preferences=nms_fusion_preferences,
                     weights_provider_extra_query_params=weights_provider_extra_query_params,
@@ -2378,6 +2389,7 @@ class AutoModel:
                     allow_local_code_packages=allow_local_code_packages,
                     verify_hash_while_download=verify_hash_while_download,
                     download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                     use_auto_resolution_cache=use_auto_resolution_cache,
                     auto_resolution_cache=auto_resolution_cache,
                     allow_direct_local_storage_loading=allow_direct_local_storage_loading,
@@ -2415,6 +2427,7 @@ class AutoModel:
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
                 auto_resolution_cache=auto_resolution_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 point_model_directory=point_model_directory,
@@ -2552,6 +2565,7 @@ def attempt_loading_model_with_auto_load_cache(
     weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     expected_offline_compatibility_hash: Optional[str] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -2697,6 +2711,7 @@ def attempt_loading_model_with_auto_load_cache(
                 allow_local_code_packages=allow_local_code_packages,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 auto_resolution_cache=auto_resolution_cache,
                 allow_direct_local_storage_loading=allow_direct_local_storage_loading,
@@ -3018,6 +3033,7 @@ def attempt_loading_model_from_offline_cache(
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     verbose: bool = False,
     offline_compatibility_hash: Optional[str] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> Optional[Tuple[AnyModel, str]]:
     """Try to load a model from local cache when the API is unreachable.
 
@@ -3284,6 +3300,7 @@ def attempt_loading_model_from_offline_cache(
                     allow_local_code_packages=allow_local_code_packages,
                     verify_hash_while_download=verify_hash_while_download,
                     download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                     use_auto_resolution_cache=use_auto_resolution_cache,
                     auto_resolution_cache=auto_resolution_cache,
                     allow_direct_local_storage_loading=allow_direct_local_storage_loading,
@@ -3402,6 +3419,7 @@ def attempt_loading_matching_model_packages(
     point_model_directory: Optional[Callable[[str], None]] = None,
     requested_model_id: Optional[str] = None,
     offline_compatibility_hash: Optional[str] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> AnyModel:
     if requested_model_id is None:
         requested_model_id = model_id
@@ -3442,6 +3460,7 @@ def attempt_loading_matching_model_packages(
                 recommended_parameters=recommended_parameters,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
                 on_file_created=partial(
                     model_access_manager.on_file_created,
                     access_identifiers=access_identifiers,
@@ -3652,6 +3671,7 @@ def initialize_model(
     requested_model_id: Optional[str] = None,
     offline_compatibility_hash: Optional[str] = None,
     api_key: Optional[str] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> Tuple[AnyModel, str]:
     if not isinstance(model_id, str) or not model_id.strip():
         raise CorruptedModelPackageError(
@@ -3799,6 +3819,7 @@ def initialize_model(
                     model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                     verify_hash_while_download=verify_hash_while_download,
                     download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                     on_file_created=on_file_created,
                     on_file_renamed=on_file_renamed,
                     on_symlink_created=on_symlink_created,
@@ -3903,6 +3924,7 @@ def initialize_model(
             file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
             verify_hash_while_download=verify_hash_while_download,
             download_files_without_hash=download_files_without_hash,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
             name_after="md5_hash",
             on_file_created=on_file_created,
             on_file_renamed=on_file_renamed,
@@ -3913,6 +3935,7 @@ def initialize_model(
             file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
             verify_hash_while_download=verify_hash_while_download,
             download_files_without_hash=download_files_without_hash,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
             on_file_created=on_file_created,
             on_file_renamed=on_file_renamed,
         )

@@ -51,6 +51,10 @@ class ModelManagerDecorator(ModelManager):
     def pingback(self):
         return self.model_manager.pingback
 
+    @property
+    def content_addressed_artifact_cache(self):
+        return self.model_manager.content_addressed_artifact_cache
+
     def add_model(
         self,
         model_id: str,

@@ -96,9 +96,10 @@ otherwise fails closed.
 
 #### Shared S3-Compatible Blob Cache
 
-`inference-models` can use an S3-compatible service as an optional read-through
-cache for content-hashed model files. Cache reads and writes are best-effort. A
-miss, error, corrupt object, or timeout falls back to the original model source.
+Roboflow Inference can use an S3-compatible service as an optional read-through
+cache for content-hashed model files. Its model manager creates one cache and
+shares it across model loads. Cache reads and writes are best-effort. A miss,
+error, corrupt object, or timeout falls back to the original model source.
 
 Standalone library installations must include the cache-specific dependencies:
 
@@ -115,6 +116,20 @@ export INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX="model-blobs"             # defa
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL="https://objects.example.com"
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION="region-1"
 export INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE="path"           # auto|path|virtual
+```
+
+Environment variables configure cache instances; they do not globally change
+the library's download functions. Standalone `inference-models` callers must
+create and inject the cache explicitly:
+
+```python
+from inference_models import AutoModel
+from inference_models.utils.model_blob_cache import create_model_blob_cache
+
+model = AutoModel.from_pretrained(
+    "model-id",
+    content_addressed_artifact_cache=create_model_blob_cache(),
+)
 ```
 
 By default, the client uses the standard AWS credential chain. To provide

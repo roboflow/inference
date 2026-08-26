@@ -1,6 +1,3 @@
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import pytest
@@ -27,9 +24,18 @@ def _configure(monkeypatch, **overrides) -> None:
 def test_disabled_factory_returns_null_cache(monkeypatch) -> None:
     _configure(monkeypatch, MODEL_BLOB_CACHE_ENABLED=False)
 
-    cache = model_blob_cache._initialize_model_blob_cache()
+    cache = model_blob_cache.create_model_blob_cache()
 
     assert isinstance(cache, NullContentAddressedArtifactCache)
+
+
+def test_factory_does_not_cache_instances(monkeypatch) -> None:
+    _configure(monkeypatch, MODEL_BLOB_CACHE_ENABLED=False)
+
+    first = model_blob_cache.create_model_blob_cache()
+    second = model_blob_cache.create_model_blob_cache()
+
+    assert first is not second
 
 
 def test_factory_reads_current_configuration(monkeypatch) -> None:
@@ -43,7 +49,7 @@ def test_factory_reads_current_configuration(monkeypatch) -> None:
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", return_value=client
     ) as build_client:
-        cache = model_blob_cache._initialize_model_blob_cache()
+        cache = model_blob_cache.create_model_blob_cache()
 
     assert isinstance(cache, VerifiedContentAddressedArtifactCache)
     assert cache._prefix == "/current-prefix/"
@@ -70,7 +76,7 @@ def test_factory_passes_complete_configuration(monkeypatch) -> None:
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", return_value=mock.sentinel.client
     ) as build_client:
-        cache = model_blob_cache._initialize_model_blob_cache()
+        cache = model_blob_cache.create_model_blob_cache()
 
     config = build_client.call_args.args[0]
     assert config == ModelBlobCacheConfig(
@@ -94,7 +100,7 @@ def test_missing_bucket_returns_null_cache(monkeypatch) -> None:
     _configure(monkeypatch, MODEL_BLOB_CACHE_BUCKET=None)
 
     assert isinstance(
-        model_blob_cache._initialize_model_blob_cache(),
+        model_blob_cache.create_model_blob_cache(),
         NullContentAddressedArtifactCache,
     )
 
@@ -107,7 +113,7 @@ def test_half_configured_credentials_return_null_cache(monkeypatch) -> None:
     )
 
     assert isinstance(
-        model_blob_cache._initialize_model_blob_cache(),
+        model_blob_cache.create_model_blob_cache(),
         NullContentAddressedArtifactCache,
     )
 
@@ -118,7 +124,7 @@ def test_missing_boto3_returns_null_cache(monkeypatch) -> None:
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", side_effect=ImportError("no boto3")
     ):
-        cache = model_blob_cache._initialize_model_blob_cache()
+        cache = model_blob_cache.create_model_blob_cache()
 
     assert isinstance(cache, NullContentAddressedArtifactCache)
 
@@ -129,43 +135,9 @@ def test_client_construction_failure_returns_null_cache(monkeypatch) -> None:
     with mock.patch.object(
         model_blob_cache, "_build_s3_client", side_effect=RuntimeError("bad client")
     ):
-        cache = model_blob_cache._initialize_model_blob_cache()
+        cache = model_blob_cache.create_model_blob_cache()
 
     assert isinstance(cache, NullContentAddressedArtifactCache)
-
-
-def test_get_model_blob_cache_initializes_once_under_concurrent_load() -> None:
-    caller_count = 8
-    callers_ready = threading.Barrier(caller_count)
-    initialization_started = threading.Event()
-    release_initialization = threading.Event()
-    initialized_cache = mock.sentinel.initialized_cache
-
-    def initialize():
-        initialization_started.set()
-        release_initialization.wait()
-        return initialized_cache
-
-    def get_cache():
-        callers_ready.wait()
-        return model_blob_cache.get_content_addressed_artifact_cache()
-
-    with mock.patch.object(
-        model_blob_cache,
-        "_model_blob_cache_instance",
-        model_blob_cache._MODEL_BLOB_CACHE_UNINITIALIZED,
-    ), mock.patch.object(
-        model_blob_cache, "_initialize_model_blob_cache", side_effect=initialize
-    ) as initialize_mock:
-        with ThreadPoolExecutor(max_workers=caller_count) as executor:
-            futures = [executor.submit(get_cache) for _ in range(caller_count)]
-            assert initialization_started.wait(timeout=1)
-            time.sleep(0.02)
-            assert initialize_mock.call_count == 1
-            release_initialization.set()
-            results = [future.result(timeout=1) for future in futures]
-
-    assert all(result is initialized_cache for result in results)
 
 
 def test_model_blob_cache_config_preserves_timeout_defaults() -> None:

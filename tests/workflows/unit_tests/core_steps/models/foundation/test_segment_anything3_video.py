@@ -23,6 +23,9 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video import (
     v1 as sam3_video_module,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video import (
+    v1_tensor as sam3_video_tensor_module,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
     BlockManifest,
     SegmentAnything3VideoBlockV1,
@@ -207,21 +210,37 @@ def test_block_rejects_remote_execution_mode_at_runtime():
 # ---------------------------------------------------------------------------
 
 
-def test_model_loader_forwards_extra_weight_provider_headers(monkeypatch):
+@pytest.mark.parametrize(
+    ("module", "block_class"),
+    [
+        (sam3_video_module, SegmentAnything3VideoBlockV1),
+        (
+            sam3_video_tensor_module,
+            sam3_video_tensor_module.SegmentAnything3VideoBlockV1,
+        ),
+    ],
+)
+def test_model_loader_forwards_inference_owned_dependencies(
+    monkeypatch, module, block_class
+):
     from_pretrained = MagicMock(return_value=object())
     headers = {"x-temporary-auth-token": "token"}
+    artifact_cache = MagicMock()
+    model_manager = MagicMock(
+        content_addressed_artifact_cache=artifact_cache,
+    )
     monkeypatch.setitem(
         sys.modules,
         "inference_models",
         SimpleNamespace(AutoModel=SimpleNamespace(from_pretrained=from_pretrained)),
     )
     monkeypatch.setattr(
-        sam3_video_module,
+        module,
         "get_extra_weights_provider_headers",
         MagicMock(return_value=headers),
     )
-    block = SegmentAnything3VideoBlockV1(
-        model_manager=MagicMock(),
+    block = block_class(
+        model_manager=model_manager,
         api_key="rf-test",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -232,6 +251,7 @@ def test_model_loader_forwards_extra_weight_provider_headers(monkeypatch):
         model_id_or_path="sam3video",
         api_key="rf-test",
         weights_provider_extra_headers=headers,
+        content_addressed_artifact_cache=artifact_cache,
     )
 
 

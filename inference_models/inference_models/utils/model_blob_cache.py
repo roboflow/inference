@@ -1,6 +1,5 @@
-import threading
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 from inference_models.configuration import (
     MODEL_BLOB_CACHE_ACCESS_KEY_ID,
@@ -92,7 +91,7 @@ def _current_configuration() -> ModelBlobCacheConfig:
     """Compose the cache configuration from `inference_models.configuration`.
 
     Construction validates the result, so an invalid combination raises here and
-    is turned into a fail-open cache by `_initialize_model_blob_cache`.
+    is turned into a fail-open cache by `create_model_blob_cache`.
     """
     return ModelBlobCacheConfig(
         bucket=MODEL_BLOB_CACHE_BUCKET,
@@ -139,7 +138,7 @@ def _build_s3_client(config: ModelBlobCacheConfig) -> Any:
     return boto3.client("s3", **client_kwargs)
 
 
-def _initialize_model_blob_cache() -> ContentAddressedArtifactCache:
+def create_model_blob_cache() -> ContentAddressedArtifactCache:
     try:
         if not MODEL_BLOB_CACHE_ENABLED:
             return NullContentAddressedArtifactCache()
@@ -158,18 +157,3 @@ def _initialize_model_blob_cache() -> ContentAddressedArtifactCache:
             error,
         )
         return NullContentAddressedArtifactCache()
-
-
-_MODEL_BLOB_CACHE_UNINITIALIZED = object()
-_model_blob_cache_instance: object = _MODEL_BLOB_CACHE_UNINITIALIZED
-_model_blob_cache_initialization_lock = threading.Lock()
-
-
-def get_content_addressed_artifact_cache() -> ContentAddressedArtifactCache:
-    global _model_blob_cache_instance
-
-    if _model_blob_cache_instance is _MODEL_BLOB_CACHE_UNINITIALIZED:
-        with _model_blob_cache_initialization_lock:
-            if _model_blob_cache_instance is _MODEL_BLOB_CACHE_UNINITIALIZED:
-                _model_blob_cache_instance = _initialize_model_blob_cache()
-    return cast(ContentAddressedArtifactCache, _model_blob_cache_instance)
