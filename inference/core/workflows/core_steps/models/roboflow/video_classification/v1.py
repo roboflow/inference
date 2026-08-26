@@ -11,7 +11,7 @@ from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationModel,
 )
 from inference_models.models.base.video_segment_classification import (
-    VideoSegmentClassification as ModelVideoSegmentClassification,
+    VideoSegmentClassificationPrediction as ModelVideoSegmentClassificationPrediction,
 )
 
 from inference.core import logger
@@ -24,7 +24,7 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
-    VideoSegmentClassification,
+    VideoSegmentClassificationPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -77,7 +77,7 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 @dataclass
 class _VideoClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
-    timeline: List[VideoSegmentClassification] = field(default_factory=list)
+    timeline: List[VideoSegmentClassificationPrediction] = field(default_factory=list)
     open_classes: Set[str] = field(default_factory=set)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -461,7 +461,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
     def _merge_segments(
         self,
         bookkeeping: _VideoClassificationBookkeeping,
-        segments: List[ModelVideoSegmentClassification],
+        segments: List[ModelVideoSegmentClassificationPrediction],
         class_names: List[str],
         stride: float,
     ) -> None:
@@ -481,7 +481,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
             )
             if start_idx > end_idx:
                 start_idx, end_idx = end_idx, start_idx
-            segment = VideoSegmentClassification(
+            segment = VideoSegmentClassificationPrediction(
                 start_frame_idx=bookkeeping.sampled[start_idx][0],
                 end_frame_idx=bookkeeping.sampled[end_idx][0],
                 class_name=class_name,
@@ -505,8 +505,8 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
 
     @staticmethod
     def _merge_segment(
-        timeline: List[VideoSegmentClassification],
-        segment: VideoSegmentClassification,
+        timeline: List[VideoSegmentClassificationPrediction],
+        segment: VideoSegmentClassificationPrediction,
         stride: float,
     ) -> None:
         matching = [

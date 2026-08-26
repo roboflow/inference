@@ -64,7 +64,7 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     ParentOrigin,
-    VideoSegmentClassification,
+    VideoSegmentClassificationPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -218,7 +218,7 @@ def deserialize_video_metadata_kind(
 def deserialize_video_multi_label_classification_kind(
     parameter: str,
     value: Any,
-) -> List[VideoSegmentClassification]:
+) -> List[VideoSegmentClassificationPrediction]:
     if not isinstance(value, list):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
@@ -233,7 +233,7 @@ def deserialize_video_multi_label_classification_kind(
             context="workflow_execution | runtime_input_validation",
         )
     try:
-        return [VideoSegmentClassification.model_validate(entry) for entry in value]
+        return [VideoSegmentClassificationPrediction.model_validate(entry) for entry in value]
     except ValidationError as error:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "

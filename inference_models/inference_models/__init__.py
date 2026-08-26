@@ -74,7 +74,7 @@ from inference_models.models.base.semantic_segmentation import SemanticSegmentat
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationModel,
-    VideoSegmentClassification,
+    VideoSegmentClassificationPrediction,
 )
 from inference_models.weights_providers.entities import Quantization
 from inference_models.weights_providers.offline_registry import (

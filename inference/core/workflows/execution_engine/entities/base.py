@@ -219,7 +219,7 @@ class VideoMetadata(BaseModel):
     )
 
 
-class VideoSegmentClassification(BaseModel):
+class VideoSegmentClassificationPrediction(BaseModel):
     """A classified frame segment in a video."""
 
     model_config = ConfigDict(populate_by_name=True)

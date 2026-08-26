@@ -7,7 +7,7 @@ import torch
 
 
 @dataclass(frozen=True)
-class VideoSegmentClassification:
+class VideoSegmentClassificationPrediction:
     """One classified frame segment; ranges may overlap."""
 
     start_frame_idx: int
@@ -39,7 +39,7 @@ class VideoSegmentClassificationModel(ABC):
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
         **kwargs,
-    ) -> List[VideoSegmentClassification]:
+    ) -> List[VideoSegmentClassificationPrediction]:
         """Classify RGB frames and return segments in their index space.
 
         Frames are numpy HWC arrays or torch CHW tensors. ``class_names``
@@ -54,7 +54,7 @@ class VideoSegmentClassificationModel(ABC):
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
         **kwargs,
-    ) -> List[VideoSegmentClassification]:
+    ) -> List[VideoSegmentClassificationPrediction]:
         return self.infer(
             frames=frames,
             class_names=class_names,

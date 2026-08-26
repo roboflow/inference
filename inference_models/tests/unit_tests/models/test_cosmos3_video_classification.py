@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from inference_models.models.base.video_segment_classification import (
-    VideoSegmentClassification,
+    VideoSegmentClassificationPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 from inference_models.models.cosmos3.cosmos3_video_classification import (
@@ -55,7 +55,7 @@ def test_infer_parses_segments_and_forwards_video_inputs() -> None:
     )
 
     assert result == [
-        VideoSegmentClassification(
+        VideoSegmentClassificationPrediction(
             start_frame_idx=1,
             end_frame_idx=3,
             class_name="walking",
@@ -101,7 +101,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
             ["running"],
             10,
             [
-                VideoSegmentClassification(
+                VideoSegmentClassificationPrediction(
                     start_frame_idx=2,
                     end_frame_idx=5,
                     class_name="running",
@@ -150,7 +150,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
             ["running"],
             10,
             [
-                VideoSegmentClassification(
+                VideoSegmentClassificationPrediction(
                     start_frame_idx=1,
                     end_frame_idx=2,
                     class_name="running",
@@ -164,7 +164,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
             ["walking"],
             10,
             [
-                VideoSegmentClassification(
+                VideoSegmentClassificationPrediction(
                     start_frame_idx=0,
                     end_frame_idx=2,
                     class_name="walking",
@@ -177,7 +177,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
             ["walking"],
             10,
             [
-                VideoSegmentClassification(
+                VideoSegmentClassificationPrediction(
                     start_frame_idx=1,
                     end_frame_idx=3,
                     class_name="walking",
@@ -190,7 +190,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
             ["walking"],
             10,
             [
-                VideoSegmentClassification(
+                VideoSegmentClassificationPrediction(
                     start_frame_idx=1,
                     end_frame_idx=3,
                     class_name="walking",
@@ -203,7 +203,7 @@ def test_parse_temporal_segments(
     text: str,
     class_names: list[str],
     num_frames: int,
-    expected: list[VideoSegmentClassification],
+    expected: list[VideoSegmentClassificationPrediction],
 ) -> None:
     assert _parse_temporal_segments(text, class_names, num_frames) == expected
 
@@ -231,7 +231,7 @@ def test_infer_builds_prompt_with_clip_metadata() -> None:
     assert "5.0 fps" in prompt
     assert "frame indices between 0 and 3" in prompt
     assert result == [
-        VideoSegmentClassification(
+        VideoSegmentClassificationPrediction(
             start_frame_idx=0,
             end_frame_idx=2,
             class_name="walking",
@@ -258,7 +258,7 @@ def test_infer_accepts_chw_tensor_frames() -> None:
     assert all(isinstance(frame, np.ndarray) for frame in processed_frames)
     assert all(frame.shape == (8, 9, 3) for frame in processed_frames)
     assert result == [
-        VideoSegmentClassification(
+        VideoSegmentClassificationPrediction(
             start_frame_idx=0,
             end_frame_idx=2,
             class_name="moving",

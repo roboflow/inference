@@ -7,7 +7,7 @@ import torch
 
 from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationModel,
-    VideoSegmentClassification,
+    VideoSegmentClassificationPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
@@ -35,7 +35,7 @@ def _parse_temporal_segments(
     text: str,
     class_names: Optional[List[str]],
     num_frames: int,
-) -> List[VideoSegmentClassification]:
+) -> List[VideoSegmentClassificationPrediction]:
     """Parse temporal-localization output into frame-index ranges.
 
     An entry survives only when both boundaries are valid integer frame
@@ -86,7 +86,7 @@ def _parse_temporal_segments(
         if start_frame_idx > end_frame_idx:
             start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
         result.append(
-            VideoSegmentClassification(
+            VideoSegmentClassificationPrediction(
                 start_frame_idx=start_frame_idx,
                 end_frame_idx=end_frame_idx,
                 class_name=label,
@@ -112,7 +112,7 @@ class Cosmos3VideoSegmentClassification(VideoSegmentClassificationModel):
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
         **kwargs,
-    ) -> List[VideoSegmentClassification]:
+    ) -> List[VideoSegmentClassificationPrediction]:
         if fps is None:
             raise ValueError("fps is required for temporal localization")
         normalized_frames = []

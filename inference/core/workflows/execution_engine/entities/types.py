@@ -166,7 +166,7 @@ VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND = Kind(
     description="Classified frame segments in a video",
     docs=VIDEO_MULTI_LABEL_CLASSIFICATION_PREDICTION_KIND_DOCS,
     serialised_data_type="List[dict]",
-    internal_data_type="List[VideoSegmentClassification]",
+    internal_data_type="List[VideoSegmentClassificationPrediction]",
 )
 
 ROBOFLOW_MODEL_ID_KIND_DOCS = """

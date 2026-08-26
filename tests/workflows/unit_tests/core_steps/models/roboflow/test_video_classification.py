@@ -13,7 +13,7 @@ import torch
 import inference.core.env as core_env
 from inference_models import VideoSegmentClassificationModel
 from inference_models import (
-    VideoSegmentClassification as ModelVideoSegmentClassification,
+    VideoSegmentClassificationPrediction as ModelVideoSegmentClassificationPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 from inference_models.models.cosmos3.cosmos3_video_classification import (
@@ -42,7 +42,7 @@ from inference.core.workflows.core_steps.models.roboflow.video_classification.v1
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
-    VideoSegmentClassification,
+    VideoSegmentClassificationPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -57,7 +57,7 @@ class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
     def __init__(
         self,
         responses: Optional[
-            List[Union[List[ModelVideoSegmentClassification], Exception]]
+            List[Union[List[ModelVideoSegmentClassificationPrediction], Exception]]
         ] = None,
     ):
         self.responses = list(responses or [])
@@ -97,8 +97,8 @@ def _model_segment(
     class_name: str,
     start_frame_idx: int = 0,
     end_frame_idx: int = 0,
-) -> ModelVideoSegmentClassification:
-    return ModelVideoSegmentClassification(
+) -> ModelVideoSegmentClassificationPrediction:
+    return ModelVideoSegmentClassificationPrediction(
         start_frame_idx=start_frame_idx,
         end_frame_idx=end_frame_idx,
         class_name=class_name,
@@ -140,7 +140,7 @@ def _make_frame(
 
 def _make_block(
     responses: Optional[
-        List[Union[List[ModelVideoSegmentClassification], Exception]]
+        List[Union[List[ModelVideoSegmentClassificationPrediction], Exception]]
     ] = None,
     tensor: bool = False,
 ):
@@ -520,7 +520,7 @@ def test_open_range_advances_then_closes_at_recorded_endpoint():
 
 
 def test_wire_contract_and_alias_round_trip():
-    entity = VideoSegmentClassification(
+    entity = VideoSegmentClassificationPrediction(
         start_frame_idx=3,
         end_frame_idx=9,
         class_name="walk",

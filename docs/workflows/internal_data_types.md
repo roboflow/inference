@@ -3,9 +3,9 @@ template: redirect.html
 redirect_url: https://docs.roboflow.com/workflows/developer-guide/developer-guide/data-representations
 ---
 
-## VideoSegmentClassification
+## VideoSegmentClassificationPrediction
 
-`VideoSegmentClassification` represents one classified frame range in a
+`VideoSegmentClassificationPrediction` represents one classified frame range in a
 video. It stores `start_frame_idx`, `end_frame_idx`, `class_name`, and
 `class_id`. Serialization changes `class_name` to `class`.
 
