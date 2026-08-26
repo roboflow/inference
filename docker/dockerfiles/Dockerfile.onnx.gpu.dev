@@ -91,6 +91,7 @@ RUN set -eux; \
         uvicorn \
         python3-pip \
         git \
+        ffmpeg \
         libgdal-dev \
         libvips-dev \
         wget \
