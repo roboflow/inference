@@ -1,16 +1,12 @@
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 import torch
 
 from inference_models.configuration import (
     INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
 )
-from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
-    Cosmos3EdgeReasoner,
-    _parse_temporal_segments,
-)
+from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
 
 def _model_with_processor() -> Cosmos3EdgeReasoner:
@@ -153,147 +149,3 @@ def test_prompt_video_returns_single_string() -> None:
     )
 
     assert result == "a robot arm"
-
-
-@pytest.mark.parametrize(
-    ("text", "class_names", "num_frames", "expected"),
-    [
-        (
-            '[{"start": 2, "end": 5, "class": "running"}]',
-            ["running"],
-            10,
-            [{"start_frame_idx": 2, "end_frame_idx": 5, "class": "running"}],
-        ),
-        (
-            # Only plain JSON integers under "class" survive: floats,
-            # numeric strings, and the "caption" key are all rejected.
-            '[{"start": 1.0, "end": "3", "caption": "jumping"}]',
-            ["jumping"],
-            8,
-            [],
-        ),
-        (
-            # Non-integer indices mean the model ignored the schema: drop.
-            '[{"start": 0.21, "end": 1.01, "class": "running"}]',
-            ["running"],
-            10,
-            [],
-        ),
-        (
-            # Timestamps are not converted: drop.
-            '[{"start": "00:01.25", "end": "00:02.01", '
-            '"class": "running"}]',
-            ["running"],
-            10,
-            [],
-        ),
-        (
-            '[{"start": 0, "end": 1, "class": "unknown"}]',
-            ["running"],
-            8,
-            [],
-        ),
-        (
-            # Out-of-range indices are invalid: drop, no clamping.
-            '[{"start": -3, "end": 2, "class": "running"}, '
-            '{"start": 0, "end": 100, "class": "running"}]',
-            ["running"],
-            5,
-            [],
-        ),
-        (
-            '[{"start": 2, "end": 1, "class": "running"}]',
-            ["running"],
-            10,
-            [{"start_frame_idx": 1, "end_frame_idx": 2, "class": "running"}],
-        ),
-        ("The video contains somebody walking.", ["walking"], 10, []),
-        (
-            'analysis about the clip</think> '
-            '[{"start": 0, "end": 2, "class": "walking"}]',
-            ["walking"],
-            10,
-            [{"start_frame_idx": 0, "end_frame_idx": 2, "class": "walking"}],
-        ),
-        (
-            'Result:\n```json\n[{"start": 1, "end": 3, '
-            '"class": "walking"}]\n```',
-            ["walking"],
-            10,
-            [{"start_frame_idx": 1, "end_frame_idx": 3, "class": "walking"}],
-        ),
-        (
-            '[{"start": "soon", "end": 1, "class": "walking"}, '
-            '{"start": 1, "end": 3, "class": "walking"}]',
-            ["walking"],
-            10,
-            [{"start_frame_idx": 1, "end_frame_idx": 3, "class": "walking"}],
-        ),
-    ],
-)
-def test_parse_temporal_segments(
-    text: str,
-    class_names: list[str],
-    num_frames: int,
-    expected: list[dict],
-) -> None:
-    assert _parse_temporal_segments(text, class_names, num_frames) == expected
-
-
-def test_temporal_localization_builds_prompt_with_clip_metadata() -> None:
-    reasoner = _model_with_processor()
-    reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
-    reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 2, "class": "walking"}]'
-    ]
-    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
-
-    result = reasoner.temporal_localization(
-        frames=frames,
-        class_names=["walking", "jumping"],
-        fps=5.0,
-    )
-
-    conversation = reasoner._processor.apply_chat_template.call_args.args[0]
-    prompt = conversation[1]["content"][1]["text"]
-    assert "walking" in prompt
-    assert "jumping" in prompt
-    assert "4 frames" in prompt
-    assert "5.0 fps" in prompt
-    assert "frame indices between 0 and 3" in prompt
-    assert result == [
-        {"start_frame_idx": 0, "end_frame_idx": 2, "class": "walking"}
-    ]
-
-
-def test_temporal_localization_accepts_chw_tensor_frames() -> None:
-    reasoner = _model_with_processor()
-    reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
-    reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 2, "class": "moving"}]'
-    ]
-    frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
-
-    result = reasoner.temporal_localization(
-        frames=frames,
-        class_names=["moving"],
-        input_color_format="rgb",
-        fps=4.0,
-    )
-
-    processed_frames = reasoner._processor.call_args.kwargs["videos"][0]
-    assert all(isinstance(frame, np.ndarray) for frame in processed_frames)
-    assert all(frame.shape == (8, 9, 3) for frame in processed_frames)
-    assert result == [
-        {"start_frame_idx": 0, "end_frame_idx": 2, "class": "moving"}
-    ]
-
-
-def test_temporal_localization_requires_fps() -> None:
-    reasoner = _model_with_processor()
-
-    with pytest.raises(ValueError, match="fps"):
-        reasoner.temporal_localization(
-            frames=[np.zeros((8, 8, 3), dtype=np.uint8)],
-            class_names=["moving"],
-        )

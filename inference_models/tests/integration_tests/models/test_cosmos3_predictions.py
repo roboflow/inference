@@ -53,10 +53,12 @@ def test_cosmos3_reasoner_answers_scene_question() -> None:
     not REASONER_PACKAGE_DIR or not CUDA_AVAILABLE,
     reason="COSMOS3_REASONER_PACKAGE_DIR not set or CUDA unavailable",
 )
-def test_cosmos3_reasoner_localizes_moving_object() -> None:
-    from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
+def test_cosmos3_video_classifier_localizes_moving_object() -> None:
+    from inference_models.models.cosmos3.cosmos3_video_classification import (
+        Cosmos3VideoSegmentClassification,
+    )
 
-    model = Cosmos3EdgeReasoner.from_pretrained(
+    model = Cosmos3VideoSegmentClassification.from_pretrained(
         REASONER_PACKAGE_DIR, device=torch.device("cuda")
     )
     fps = 8.0
@@ -67,22 +69,20 @@ def test_cosmos3_reasoner_localizes_moving_object() -> None:
         frames.append(frame)
 
     # Phase 0 prompt-format gate: real weights must return a recognized event.
-    segments = model.temporal_localization(
+    segments = model.infer(
         frames=frames,
         class_names=["object moving to the right"],
-        input_color_format="rgb",
         fps=fps,
     )
 
     assert isinstance(segments, list)
     assert segments
     for segment in segments:
-        assert set(segment) == {"start_frame_idx", "end_frame_idx", "class"}
-        assert segment["class"] == "object moving to the right"
-        assert isinstance(segment["start_frame_idx"], int)
-        assert isinstance(segment["end_frame_idx"], int)
-        assert 0 <= segment["start_frame_idx"] <= segment["end_frame_idx"]
-        assert segment["end_frame_idx"] < len(frames)
+        assert segment.class_name == "object moving to the right"
+        assert isinstance(segment.start_frame_idx, int)
+        assert isinstance(segment.end_frame_idx, int)
+        assert 0 <= segment.start_frame_idx <= segment.end_frame_idx
+        assert segment.end_frame_idx < len(frames)
 
 
 @pytest.mark.slow
