@@ -71,6 +71,24 @@ CLAUDE_MODELS = [
         "max_output_tokens": 128000,
     },
     {
+        "id": "claude-opus-5",
+        "name": "Claude Opus 5",
+        "exact_version": "claude-opus-5",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "exact_version": "claude-sonnet-5",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-opus-4-8",
+        "name": "Claude Opus 4.8",
+        "exact_version": "claude-opus-4-8",
+        "max_output_tokens": 128000,
+    },
+    {
         "id": "claude-opus-4-7",
         "name": "Claude Opus 4.7",
         "exact_version": "claude-opus-4-7",
