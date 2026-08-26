@@ -100,7 +100,7 @@ def test_mask_visualization_block() -> None:
     )
 
 
-def test_mask_visualization_wraps_negative_class_id() -> None:
+def test_mask_visualization_paints_unknown_class_gray() -> None:
     mask = np.zeros((1, 32, 32), dtype=np.bool_)
     mask[0, 4:20, 4:20] = True
     predictions = sv.Detections(
@@ -123,7 +123,9 @@ def test_mask_visualization_wraps_negative_class_id() -> None:
         opacity=0.5,
     )
 
-    assert np.any(output["image"].numpy_image)
+    annotated = output["image"].numpy_image
+    # opacity 0.5 over black: round(128 * 0.5) = 64
+    assert np.any(np.all(annotated[mask[0]] == (64, 64, 64), axis=-1))
     assert predictions.class_id.tolist() == [-1]
 
 

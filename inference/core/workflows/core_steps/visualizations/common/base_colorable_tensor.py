@@ -8,7 +8,10 @@ from inference.core.workflows.core_steps.visualizations.common.base_tensor impor
     PredictionsVisualizationBlock,
     PredictionsVisualizationManifest,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    str_to_color,
+    wrap_color_palette,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
@@ -17,15 +20,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult
-
-
-class _WrappingColorPalette(sv.ColorPalette):
-    """Apply palette modulo arithmetic to positive and negative indices."""
-
-    def by_idx(self, idx: int) -> sv.Color:
-        if not self.colors:
-            raise ValueError("A color palette must contain at least one color.")
-        return self.colors[idx % len(self.colors)]
 
 
 class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
@@ -112,7 +106,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CLASS",
-        description="Choose how bounding box colors are assigned.",
+        description="Choose how bounding box colors are assigned. Detections with a negative class or tracker id (for example unmatched VLM labels with class_id = -1) are painted in a neutral gray.",
         examples=["CLASS", "$inputs.color_axis"],
     )
 
@@ -155,7 +149,7 @@ class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
                 palette_name = palette_name.lower()
 
             palette = sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
-        return _WrappingColorPalette(colors=palette.colors)
+        return wrap_color_palette(palette)
 
     @abstractmethod
     def run(

@@ -108,7 +108,7 @@ def test_bounding_box_visualization_block() -> None:
     )
 
 
-def test_bounding_box_visualization_wraps_negative_class_id() -> None:
+def test_bounding_box_visualization_paints_unknown_class_gray() -> None:
     predictions = sv.Detections(
         xyxy=np.array([[4, 4, 20, 20]], dtype=np.float64),
         class_id=np.array([-1]),
@@ -129,7 +129,8 @@ def test_bounding_box_visualization_wraps_negative_class_id() -> None:
         roundness=0,
     )
 
-    assert np.any(output["image"].numpy_image)
+    annotated = output["image"].numpy_image
+    assert np.any(np.all(annotated == (128, 128, 128), axis=-1))
     assert predictions.class_id.tolist() == [-1]
 
 

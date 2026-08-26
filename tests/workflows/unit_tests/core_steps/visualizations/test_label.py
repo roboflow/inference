@@ -3,6 +3,9 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
+from inference.core.workflows.core_steps.visualizations.common.label_text import (
+    build_detection_labels,
+)
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelManifest,
     LabelVisualizationBlockV1,
@@ -121,12 +124,14 @@ def test_label_visualization_block() -> None:
     )
 
 
-def test_label_visualization_wraps_negative_class_id() -> None:
+def test_label_visualization_paints_unknown_class_gray_with_model_label() -> None:
     predictions = sv.Detections(
         xyxy=np.array([[4, 12, 20, 28]], dtype=np.float64),
         class_id=np.array([-1]),
-        data={"class_name": np.array(["foreground"], dtype=object)},
+        data={"class_name": np.array(["traffic signal"], dtype=object)},
     )
+
+    assert list(build_detection_labels(predictions, "Class")) == ["traffic signal"]
 
     output = LabelVisualizationBlockV1().run(
         image=WorkflowImageData(
@@ -148,7 +153,8 @@ def test_label_visualization_wraps_negative_class_id() -> None:
         border_radius=0,
     )
 
-    assert np.any(output["image"].numpy_image)
+    annotated = output["image"].numpy_image
+    assert np.any(np.all(annotated == (128, 128, 128), axis=-1))
     assert predictions.class_id.tolist() == [-1]
 
 

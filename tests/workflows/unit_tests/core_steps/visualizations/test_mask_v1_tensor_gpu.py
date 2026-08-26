@@ -757,7 +757,7 @@ def test_block_numpy_path_copy_semantics() -> None:
     assert not np.array_equal(buffer, scene)
 
 
-def test_block_numpy_path_wraps_negative_class_id() -> None:
+def test_block_numpy_path_paints_unknown_class_gray() -> None:
     scene = np.zeros((64, 64, 3), dtype=np.uint8)
     masks, boxes, _ = _single_mask_inputs()
     detections = _build_dense_detections(
@@ -770,8 +770,29 @@ def test_block_numpy_path_wraps_negative_class_id() -> None:
     out = _run_block(_numpy_backed_image(scene), detections)
 
     assert out._numpy_image is not None and out._tensor_image is None
-    assert np.any(out._numpy_image)
+    assert np.any(np.all(out._numpy_image == (64, 64, 64), axis=-1))
     assert detections.class_id.tolist() == [-1]
+
+
+def test_block_unknown_class_id_paints_sv_gray() -> None:
+    scene = np.full((128, 128, 3), 200, dtype=np.uint8)
+    masks = np.zeros((1, 128, 128), dtype=bool)
+    masks[0, 20:60, 30:90] = True
+    detections = _build_dense_detections(
+        masks,
+        np.array([[30, 20, 89, 59]], dtype=np.int32),
+        np.array([-1], dtype=np.int32),
+        device="cpu",
+    )
+    image = _tensor_backed_image(scene)
+
+    out = _run_block(image, detections, color_axis="CLASS")
+
+    actual = out._tensor_image.permute(1, 2, 0).cpu().numpy()[:, :, ::-1]
+    assert np.array_equal(
+        actual[masks[0]], np.full((int(masks[0].sum()), 3), 164, dtype=np.uint8)
+    )
+    assert np.array_equal(actual[~masks[0]], scene[~masks[0]])
 
 
 def test_block_empty_predictions_take_the_tensor_passthrough() -> None:

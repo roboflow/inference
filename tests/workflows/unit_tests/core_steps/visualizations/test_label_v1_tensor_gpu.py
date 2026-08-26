@@ -146,7 +146,7 @@ def _assert_gpu_bit_exact(out, expected_bgr: np.ndarray) -> None:
     assert np.array_equal(actual, expected_bgr)
 
 
-def test_class_axis_wraps_negative_class_id() -> None:
+def test_class_axis_paints_unknown_class_gray() -> None:
     scene = np.zeros((64, 64, 3), dtype=np.uint8)
     detections = _build_detections(
         boxes=np.array([[10, 20, 50, 54]], dtype=np.float32),
@@ -162,7 +162,8 @@ def test_class_axis_wraps_negative_class_id() -> None:
     )
 
     assert out._tensor_image is not None and out._numpy_image is None
-    assert torch.any(out._tensor_image)
+    annotated = _to_bgr(out._tensor_image)
+    assert np.any(np.all(annotated == (128, 128, 128), axis=-1))
     assert detections.class_id.tolist() == [-1]
 
 
