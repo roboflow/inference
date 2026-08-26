@@ -23,10 +23,7 @@ TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
     '[{{"start": <seconds>, "end": <seconds>, '
     '"class": "<one of the vocabulary>"}}]\n'
     "Report start and end as decimal seconds at 0.1 second granularity. "
-    "Report precise boundaries: an event starts when it becomes visible and "
-    "ends when it stops, not at the clip edges. Report each distinct "
-    "occurrence as its own event, even for the same class. Events may "
-    "overlap.\n"
+    "Events may overlap.\n"
     "Return [] when no event matches the class vocabulary."
 )
 OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
@@ -37,10 +34,7 @@ OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
     '[{{"start": <seconds>, "end": <seconds>, '
     '"class": "<short lowercase class phrase>"}}]\n'
     "Report start and end as decimal seconds at 0.1 second granularity. "
-    "Report precise boundaries: an event starts when it becomes visible and "
-    "ends when it stops, not at the clip edges. Report each distinct "
-    "occurrence as its own event, even for the same class. Events may "
-    "overlap.\n"
+    "Events may overlap.\n"
     "Return [] when no notable temporal event occurs."
 )
 
