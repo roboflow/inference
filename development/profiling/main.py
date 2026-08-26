@@ -467,7 +467,13 @@ def build_nsys_command(
     if config.seed is not None:
         command.extend(["--seed", str(config.seed)])
 
-    nsys_command = " \\\n  ".join(_quote_nsys_command_part(part) for part in command)
+    mkdir_command = " ".join(
+        shlex.quote(part) for part in ("mkdir", "-p", str(run_dir))
+    )
+    profile_command = " \\\n  ".join(
+        _quote_nsys_command_part(part) for part in command
+    )
+    nsys_command = f"{mkdir_command} && \\\n{profile_command}"
 
     return nsys_command
 
