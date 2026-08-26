@@ -225,6 +225,10 @@ class Cosmos3EdgeReasoner:
                     )
                 ],
                 num_frames=len(images),
+                # The checkpoint's processor config carries a default fps=2
+                # that merges into every call and collides with num_frames;
+                # an explicit None displaces it.
+                fps=None,
             )
         model_inputs = self._processor(
             text=text_input,
