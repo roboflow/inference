@@ -11,7 +11,7 @@ import pytest
 import torch
 
 import inference.core.env as core_env
-from inference_models import VideoClassificationModel
+from inference_models import VideoSegmentClassificationModel
 from inference_models import (
     VideoSegmentClassification as ModelVideoSegmentClassification,
 )
@@ -53,7 +53,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 
 
-class _FakeVideoClassificationModel(VideoClassificationModel):
+class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
     def __init__(
         self,
         responses: Optional[
@@ -154,7 +154,7 @@ def _make_block(
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
-    model = _FakeVideoClassificationModel(responses=responses)
+    model = _FakeVideoSegmentClassificationModel(responses=responses)
     block._model = model
     return block, model
 

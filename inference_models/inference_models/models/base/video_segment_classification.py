@@ -15,13 +15,13 @@ class VideoSegmentClassification:
     class_name: str
 
 
-class VideoClassificationModel(ABC):
+class VideoSegmentClassificationModel(ABC):
 
     @classmethod
     @abstractmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
-    ) -> "VideoClassificationModel":
+    ) -> "VideoSegmentClassificationModel":
         pass
 
     @property

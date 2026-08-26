@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.models.base.video_classification import (
+from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassification,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner

@@ -5,8 +5,8 @@ from typing import Any, List, Optional, Union
 import numpy as np
 import torch
 
-from inference_models.models.base.video_classification import (
-    VideoClassificationModel,
+from inference_models.models.base.video_segment_classification import (
+    VideoSegmentClassificationModel,
     VideoSegmentClassification,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
@@ -95,7 +95,7 @@ def _parse_temporal_segments(
     return result
 
 
-class Cosmos3VideoSegmentClassification(VideoClassificationModel):
+class Cosmos3VideoSegmentClassification(VideoSegmentClassificationModel):
     def __init__(self, reasoner: Cosmos3EdgeReasoner):
         self._reasoner = reasoner
 

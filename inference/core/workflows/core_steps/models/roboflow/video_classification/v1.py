@@ -7,10 +7,10 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
-from inference_models.models.base.video_classification import (
-    VideoClassificationModel,
+from inference_models.models.base.video_segment_classification import (
+    VideoSegmentClassificationModel,
 )
-from inference_models.models.base.video_classification import (
+from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassification as ModelVideoSegmentClassification,
 )
 
@@ -243,7 +243,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 weights_provider_extra_headers=get_extra_weights_provider_headers(),
             )
-            if not isinstance(loaded_model, VideoClassificationModel):
+            if not isinstance(loaded_model, VideoSegmentClassificationModel):
                 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
                     Cosmos3EdgeReasoner,
                 )
