@@ -34,6 +34,9 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.qwen_detecti
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_detection_parsing import (
     parse_spacexai_object_detection_response,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.zai_detection_parsing import (
+    parse_zai_object_detection_response,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -607,9 +610,7 @@ REGISTERED_PARSERS = {
     ("spacexai", "object-detection"): parse_spacexai_object_detection_response,
     ("qwen", "object-detection"): parse_qwen_object_detection_response,
     ("muse", "object-detection"): parse_muse_object_detection_response,
-    # The Z.ai GLM block prompts for the same box_2d / 0-1000 xyxy contract
-    # as the Qwen blocks, so the Qwen parser handles it unchanged.
-    ("zai", "object-detection"): parse_qwen_object_detection_response,
+    ("zai", "object-detection"): parse_zai_object_detection_response,
     # Florence 2
     ("florence-2", "object-detection"): partial(
         parse_florence2_object_detection_response, florence_task_type="<OD>"

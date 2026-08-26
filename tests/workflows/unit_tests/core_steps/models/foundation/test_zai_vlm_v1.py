@@ -9,6 +9,7 @@ from inference.core.workflows.core_steps.models.foundation.zai_vlm.v1 import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_VERSION,
     DEFAULT_REASONING_EFFORT,
+    ZAI_BBOX_2D_PIXEL_DETECTION_PROMPT_TEMPLATE,
     BlockManifest,
     ZaiVlmBlockV1,
     build_zai_openrouter_prompts,
@@ -147,3 +148,53 @@ def test_run_maps_reasoning_effort_to_openrouter_config(mock_or):
     block.run(**_base_run_kwargs(reasoning_effort="high"))
 
     assert mock_or.call_args.kwargs["reasoning"] == {"effort": "high"}
+
+
+# Copied from vlm-exam `_BBOX_2D_PIXEL_PROMPT_TEMPLATE` so an edit to the
+# block constant fails this test.
+EXPECTED_FLASH_DETECTION_PROMPT = (
+    "Detect all objects in this image and return their locations in the "
+    "form of coordinates. The format of output should be like "
+    '{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}. '
+    "Only use these labels: cat, dog. Return a JSON array only."
+)
+
+
+def test_flash_detection_prompt_is_vlm_exam_bbox_2d_template():
+    messages = build_zai_openrouter_prompts(
+        images=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        task_type="object-detection",
+        prompt=None,
+        output_structure=None,
+        classes=["cat", "dog"],
+        detection_prompt_template=(ZAI_BBOX_2D_PIXEL_DETECTION_PROMPT_TEMPLATE),
+    )
+    content = messages[0][0]["content"]
+    assert content[1]["text"] == EXPECTED_FLASH_DETECTION_PROMPT
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.zai_vlm.v1."
+    "OpenRouterWorkflowBlockBase.execute_openrouter_batch_with_usage"
+)
+def test_run_flash_falls_back_to_low_effort_when_reasoning_disabled(mock_or):
+    mock_or.return_value = [
+        OpenRouterResult(
+            content="boxes", reasoning_trace="t", input_tokens=9, output_tokens=3
+        )
+    ]
+    block = ZaiVlmBlockV1(model_manager=MagicMock(), api_key="rf_key")
+
+    block.run(
+        **_base_run_kwargs(
+            model_version="GLM 5.3 Flash",
+            task_type="object-detection",
+            classes=["cat"],
+            reasoning_effort="none",
+        )
+    )
+
+    assert mock_or.call_args.kwargs["model"] == "z-ai/glm-5.3-flash"
+    assert mock_or.call_args.kwargs["reasoning"] == {"effort": "low"}
+    sent_text = mock_or.call_args.kwargs["prompts"][0][0]["content"][1]["text"]
+    assert '"bbox_2d"' in sent_text

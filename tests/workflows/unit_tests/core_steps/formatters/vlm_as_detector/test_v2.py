@@ -502,6 +502,45 @@ def test_run_method_for_zai_box_2d_output() -> None:
     assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
 
 
+def test_run_method_for_zai_bbox_2d_absolute_pixel_output() -> None:
+    # given - the GLM 5.3 Flash prompt pins bbox_2d entries in absolute
+    # pixels of the original image; out-of-range values are clamped
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"bbox_2d": [64, 96, 320, 480], "label": "cat"},
+  {"bbox_2d": [-10, 0, 700, 240], "label": "dog"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="zai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [64, 96, 320, 480],
+                [0, 0, 640, 240],
+            ]
+        ),
+        atol=1.0,
+    )
+
+
 def test_run_method_for_zai_unexpected_shape_sets_error_status() -> None:
     # given - neither a JSON list nor a {"detections": [...]} object
     block = VLMAsDetectorBlockV2()

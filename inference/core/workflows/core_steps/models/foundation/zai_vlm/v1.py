@@ -62,11 +62,45 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# One row per model; add future Z.ai models (e.g. Ox Alpha) here. A row may
-# override `reasoning_levels` if a model diverges from the shared set.
+# Ported verbatim from vlm-exam's `_NORMALIZED_XYXY_PROMPT_TEMPLATE`, the
+# detection coordinate format pinned for GLM 5V Turbo in the benchmark
+# configs (`xyxy_normalized_0_to_1000`).
+ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners as integers between 0 and 1000, "
+    "normalized to the image width (x) and height (y). "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
+)
+
+# Ported verbatim from vlm-exam's `_BBOX_2D_PIXEL_PROMPT_TEMPLATE`, the
+# format pinned for GLM 5.3 Flash (`xyxy_absolute_original_image_bbox_2d`).
+# The model scores ~0 mAP with normalized 0-1000 prompts.
+ZAI_BBOX_2D_PIXEL_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image and return their locations in the "
+    "form of coordinates. The format of output should be like "
+    '{{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}}. '
+    "Only use these labels: {class_list}. Return a JSON array only."
+)
+
+# One row per model; add future Z.ai models here. A row may override
+# `reasoning_levels` if a model diverges from the shared set;
+# `reasoning_required` marks models that reject `reasoning: {enabled:
+# false}` and fall back to low effort when the user disables reasoning.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "GLM 5V Turbo": {
         "model_id": "z-ai/glm-5v-turbo",
+        "detection_prompt_template": ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE,
+    },
+    # GLM 5.3 Flash ran as the OpenRouter stealth model "Ox Alpha"; the
+    # retirement notice confirms they are the same model.
+    "GLM 5.3 Flash": {
+        "model_id": "z-ai/glm-5.3-flash",
+        "detection_prompt_template": ZAI_BBOX_2D_PIXEL_DETECTION_PROMPT_TEMPLATE,
+        "reasoning_required": True,
     },
 }
 
@@ -88,7 +122,9 @@ REASONING_EFFORT_METADATA = {
             "Turns extended reasoning off. GLM models default to extended "
             "reasoning on OpenRouter, which bloats latency and can consume "
             "the whole token budget before a visible answer is produced. "
-            "This is the configuration validated in the vlm-exam benchmarks."
+            "This is the configuration validated in the vlm-exam benchmarks. "
+            "GLM 5.3 Flash requires reasoning and falls back to low effort "
+            "instead."
         ),
     },
     "low": {
@@ -118,23 +154,38 @@ MODEL_VERSION_METADATA = attach_reasoning_levels(
     MODEL_REASONING_LEVELS,
 )
 
+# Fallback effort applied when reasoning is disabled by the user but the
+# selected model rejects `reasoning: {"enabled": false}`.
+REASONING_REQUIRED_FALLBACK_EFFORT = "low"
+
+
+def build_zai_reasoning_config(
+    reasoning_effort: str,
+    *,
+    reasoning_required: bool,
+) -> Optional[dict]:
+    """Translate the block's reasoning effort into OpenRouter's config.
+
+    Mirrors the vlm-exam benchmark behavior: reasoning is explicitly
+    disabled unless an effort is requested, except for models that require
+    reasoning and reject ``enabled: false``; those always receive an
+    effort (falling back to low when the user disabled reasoning).
+
+    Args:
+        reasoning_effort: One of ``REASONING_EFFORT_OPTIONS``.
+        reasoning_required: Whether the model rejects disabled reasoning.
+
+    Returns:
+        OpenRouter ``reasoning`` payload object.
+    """
+    if reasoning_required and reasoning_effort == "none":
+        return {"effort": REASONING_REQUIRED_FALLBACK_EFFORT}
+    return build_openrouter_reasoning_config(reasoning_effort)
+
+
 DEFAULT_MAX_TOKENS = 2048
 OPENROUTER_MAX_BASE64_BYTES = 9_500_000
 OPENROUTER_JPEG_QUALITY = 90
-
-# Ported verbatim from vlm-exam's `_NORMALIZED_XYXY_PROMPT_TEMPLATE` — the
-# detection coordinate format pinned for GLM 5V Turbo in the benchmark
-# configs (`xyxy_normalized_0_to_1000`).
-ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
-    "top-left and bottom-right corners as integers between 0 and 1000, "
-    "normalized to the image width (x) and height (y). "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
 
 _TASK_CLASSIFICATION = (
     "You act as single-class classification model. You must provide reasonable "
@@ -295,9 +346,9 @@ def _prepare_structured_answering_prompt(
 
 
 def _prepare_object_detection_prompt(
-    base64_image: str, classes: List[str], **_
+    base64_image: str, classes: List[str], detection_prompt_template: str, **_
 ) -> List[dict]:
-    text = ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list=", ".join(classes))
+    text = detection_prompt_template.format(class_list=", ".join(classes))
     return _user_message(base64_image=base64_image, text=text)
 
 
@@ -324,6 +375,7 @@ def build_zai_openrouter_prompts(
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
+    detection_prompt_template: str = ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE,
 ) -> List[List[dict]]:
     """Build one OpenRouter ``messages`` array per input image, GLM-style.
 
@@ -337,6 +389,8 @@ def build_zai_openrouter_prompts(
         prompt: User prompt for unconstrained / VQA tasks.
         output_structure: Output spec for structured-answering.
         classes: Class list for classification / detection tasks.
+        detection_prompt_template: Per-model object-detection template,
+            from ``MODEL_VARIANTS``.
 
     Returns:
         List of ``messages`` arrays, one per image.
@@ -355,6 +409,7 @@ def build_zai_openrouter_prompts(
                 prompt=prompt,
                 output_structure=output_structure,
                 classes=classes,
+                detection_prompt_template=detection_prompt_template,
             )
         )
     return built
@@ -368,23 +423,25 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Z.ai GLM vision-language models via [OpenRouter](https://openrouter.ai/).
 
-Supported model: GLM 5V Turbo.
+Supported models: GLM 5V Turbo and GLM 5.3 Flash (previously served as the
+OpenRouter stealth model "Ox Alpha").
 
 You can specify arbitrary text prompts or predefined ones. The block supports:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-Object detection uses the format validated for GLM in the vlm-exam
-benchmarks: a JSON list of `box_2d`/`label` entries with
-`[x_min, y_min, x_max, y_max]` integer coordinates normalized to 0-1000.
-Parse the output with `VLM as Detector` (`vlm_as_detector@v2`) using
-`model_type="zai"`.
+Object detection uses the per-model format validated in the vlm-exam
+benchmarks: GLM 5V Turbo emits `box_2d`/`label` entries with coordinates
+normalized to 0-1000, while GLM 5.3 Flash emits `bbox_2d`/`label` entries
+in absolute pixels. Parse either output with `VLM as Detector`
+(`vlm_as_detector@v2`) using `model_type="zai"`; it detects the format.
 
 Every request sends the image before the instruction text in a single user
 message. GLM models default to extended reasoning on OpenRouter; the block
 disables it by default (the benchmarked configuration) and exposes a
-`reasoning_effort` knob to turn it back on. `max_tokens` defaults to 2048;
-raise it (e.g. 8192) when you need a longer answer.
+`reasoning_effort` knob to turn it back on. GLM 5.3 Flash requires
+reasoning and falls back to low effort when disabled. `max_tokens`
+defaults to 2048; raise it (e.g. 8192) when you need a longer answer.
 
 By default the block uses the Roboflow-managed OpenRouter key and bills
 your Roboflow credits. Paste your own `sk-or-...` key to call OpenRouter
@@ -425,7 +482,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
         description="Z.ai GLM model to run.",
-        examples=[DEFAULT_MODEL_VERSION],
+        examples=[DEFAULT_MODEL_VERSION, "GLM 5.3 Flash"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -629,8 +686,8 @@ class ZaiVlmBlockV1(OpenRouterWorkflowBlockBase):
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
-        model_id = MODEL_IDS.get(model_version)
-        if model_id is None:
+        variant = MODEL_VARIANTS.get(model_version)
+        if variant is None:
             raise ValueError(
                 f"Unknown Z.ai model '{model_version}'. "
                 f"Pick one of: {list(MODEL_VARIANTS)}"
@@ -646,16 +703,20 @@ class ZaiVlmBlockV1(OpenRouterWorkflowBlockBase):
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            detection_prompt_template=variant["detection_prompt_template"],
         )
         results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
-            model=model_id,
+            model=variant["model_id"],
             prompts=prompts,
             max_tokens=max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
-            reasoning=build_openrouter_reasoning_config(reasoning_effort),
+            reasoning=build_zai_reasoning_config(
+                reasoning_effort,
+                reasoning_required=variant.get("reasoning_required", False),
+            ),
         )
         return [
             {

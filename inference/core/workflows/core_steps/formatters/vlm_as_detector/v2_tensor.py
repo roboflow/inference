@@ -40,6 +40,10 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_det
     convert_spacexai_detection_to_pixel_xyxy,
     extract_spacexai_detection_entries,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.zai_detection_parsing import (
+    convert_zai_pixel_entries_to_normalized,
+    zai_entries_use_absolute_pixels,
+)
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -866,6 +870,40 @@ def parse_qwen_object_detection_response(
     )
 
 
+def parse_zai_object_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> Detections:
+    """Parse Z.ai block object-detection output into native detections.
+
+    Dispatches on the box key the response carries: ``bbox_2d`` entries
+    (GLM 5.3 Flash) are rescaled from absolute pixels into the 0-1000
+    space first; either way the tensor-native Qwen parser does the parsing.
+    Tensor-native sibling of the numpy
+    ``zai_detection_parsing.parse_zai_object_detection_response``.
+
+    Raises:
+        ValueError: If the response is neither a JSON list nor a
+            ``{"detections": [...]}`` object.
+    """
+    entries = extract_qwen_detection_entries(parsed_data=parsed_data)
+    if zai_entries_use_absolute_pixels(entries):
+        image_height, image_width = image._read_shape_without_materialization()
+        parsed_data = convert_zai_pixel_entries_to_normalized(
+            entries=entries,
+            image_height=image_height,
+            image_width=image_width,
+        )
+    return parse_qwen_object_detection_response(
+        image=image,
+        parsed_data=parsed_data,
+        classes=classes,
+        inference_id=inference_id,
+    )
+
+
 def parse_muse_object_detection_response(
     image: WorkflowImageData,
     parsed_data: Union[dict, list],
@@ -970,9 +1008,7 @@ REGISTERED_PARSERS = {
     ("spacexai", "object-detection"): parse_spacexai_object_detection_response,
     ("qwen", "object-detection"): parse_qwen_object_detection_response,
     ("muse", "object-detection"): parse_muse_object_detection_response,
-    # The Z.ai GLM block prompts for the same box_2d / 0-1000 xyxy contract
-    # as the Qwen blocks, so the Qwen parser handles it unchanged.
-    ("zai", "object-detection"): parse_qwen_object_detection_response,
+    ("zai", "object-detection"): parse_zai_object_detection_response,
     # Florence 2
     ("florence-2", "object-detection"): partial(
         parse_florence2_object_detection_response, florence_task_type="<OD>"
