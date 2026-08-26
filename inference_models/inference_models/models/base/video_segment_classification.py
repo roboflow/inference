@@ -25,12 +25,13 @@ class VideoSegmentClassificationModel(ABC):
         pass
 
     @property
+    @abstractmethod
     def class_names(self) -> Optional[List[str]]:
         """Fixed-vocabulary models return their class list.
 
         Open-vocabulary models return None and take ``class_names`` per call.
         """
-        return getattr(self, "_class_names", None)
+        pass
 
     @abstractmethod
     def infer(

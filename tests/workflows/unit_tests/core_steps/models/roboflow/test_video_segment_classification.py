@@ -66,6 +66,10 @@ class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
         self.calls = []
         self._class_names = class_names
 
+    @property
+    def class_names(self) -> Optional[List[str]]:
+        return self._class_names
+
     @classmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs):
         raise NotImplementedError
