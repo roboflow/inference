@@ -17,6 +17,7 @@ class _InlineExecutor:
 
 
 def _cache(storage, upload_executor=None, **overrides):
+    storage.exists.return_value = overrides.pop("object_exists", False)
     return VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
@@ -209,6 +210,38 @@ def test_verified_cache_uploads_without_re_reading_the_source(tmp_path) -> None:
 
     # The caller vouches for the hash it verified during the download, so the
     # upload skips a second full-file read; `restore` re-verifies on the way back.
+    storage.exists.assert_called_once_with(f"model-blobs/{content_hash}")
+    storage.upload.assert_called_once_with(
+        f"model-blobs/{content_hash}", str(source_path)
+    )
+
+
+def test_upload_worker_skips_an_existing_blob(tmp_path) -> None:
+    source_path = tmp_path / "weights"
+    source_path.write_bytes(b"weights")
+    content_hash = hashlib.md5(b"weights").hexdigest()
+    storage = mock.MagicMock()
+    cache = _cache(storage, object_exists=True)
+
+    assert cache.schedule_store(content_hash, str(source_path)) is True
+
+    storage.exists.assert_called_once_with(f"model-blobs/{content_hash}")
+    storage.upload.assert_not_called()
+
+
+def test_upload_worker_replaces_a_corrupt_existing_blob(tmp_path) -> None:
+    content = b"weights"
+    content_hash = hashlib.md5(content).hexdigest()
+    source_path = tmp_path / "source"
+    source_path.write_bytes(content)
+    storage = mock.MagicMock()
+    storage.download.side_effect = _write_download(b"corrupt")
+    cache = _cache(storage, object_exists=True)
+
+    assert cache.restore(content_hash, str(tmp_path / "target")) is False
+    assert cache.schedule_store(content_hash, str(source_path)) is True
+
+    storage.exists.assert_not_called()
     storage.upload.assert_called_once_with(
         f"model-blobs/{content_hash}", str(source_path)
     )
@@ -234,6 +267,7 @@ def test_read_failures_do_not_open_write_circuit(tmp_path) -> None:
     source_path.write_bytes(content)
     storage = mock.MagicMock()
     storage.download.side_effect = RuntimeError("read failed")
+    storage.exists.return_value = False
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",
@@ -256,6 +290,7 @@ def test_write_failures_do_not_open_read_circuit(tmp_path) -> None:
     storage = mock.MagicMock()
     storage.upload.side_effect = RuntimeError("write failed")
     storage.download.return_value = False
+    storage.exists.return_value = False
     cache = VerifiedContentAddressedArtifactCache(
         storage=storage,
         prefix="model-blobs",

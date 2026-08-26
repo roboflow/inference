@@ -22,7 +22,11 @@ class _StreamingBody:
         self.closed = True
 
 
-def test_blob_storage_cannot_be_constructed_without_download_and_upload() -> None:
+class _MissingObjectError(Exception):
+    response = {"Error": {"Code": "NoSuchKey"}}
+
+
+def test_blob_storage_cannot_be_constructed_without_transfer_contract() -> None:
     class IncompleteBlobStorage(BlobStorage):
         pass
 
@@ -34,14 +38,28 @@ def test_blob_storage_cannot_be_constructed_without_download_and_upload() -> Non
 
 
 def test_s3_storage_translates_missing_object_to_false(tmp_path) -> None:
-    class MissingObjectError(Exception):
-        response = {"Error": {"Code": "NoSuchKey"}}
-
     client = mock.MagicMock()
-    client.get_object.side_effect = MissingObjectError()
+    client.get_object.side_effect = _MissingObjectError()
     storage = S3BlobStorage(client=client, bucket="models")
 
     assert storage.download("prefix/hash", str(tmp_path / "blob")) is False
+
+
+def test_s3_storage_reports_existing_object() -> None:
+    client = mock.MagicMock()
+    storage = S3BlobStorage(client=client, bucket="models")
+
+    assert storage.exists("prefix/hash") is True
+
+    client.head_object.assert_called_once_with(Bucket="models", Key="prefix/hash")
+
+
+def test_s3_storage_reports_missing_object() -> None:
+    client = mock.MagicMock()
+    client.head_object.side_effect = _MissingObjectError()
+    storage = S3BlobStorage(client=client, bucket="models")
+
+    assert storage.exists("prefix/hash") is False
 
 
 def test_s3_storage_streams_get_object_body_and_closes_it(tmp_path) -> None:

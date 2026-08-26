@@ -5,7 +5,7 @@ import re
 import threading
 from abc import ABC, abstractmethod
 from time import monotonic
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Set
 
 from inference_models.logger import LOGGER
 from inference_models.utils.blob_storage import BlobStorage
@@ -162,6 +162,8 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
         )
         self._read_circuit = _CircuitBreaker(failure_threshold, cooldown_seconds)
         self._write_circuit = _CircuitBreaker(failure_threshold, cooldown_seconds)
+        self._unhealthy_hashes: Set[str] = set()
+        self._unhealthy_hashes_lock = threading.Lock()
 
     def restore(self, content_hash: Optional[str], target_path: str) -> bool:
         """Download and verify `content_hash` into `target_path`, or report a miss.
@@ -188,25 +190,30 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
             )
         except Exception as error:
             _discard_partial_download(target_path)
+            self._mark_unhealthy(content_hash)
             self._read_circuit.record_failure(epoch)
             LOGGER.warning("Artifact cache read failed: %s", error)
             return False
         if not found:
             _discard_partial_download(target_path)
+            self._clear_unhealthy(content_hash)
             self._read_circuit.record_success(epoch)
             return False
         try:
             verified = self._md5(target_path) == content_hash.lower()
         except Exception as error:
             _discard_partial_download(target_path)
+            self._mark_unhealthy(content_hash)
             self._read_circuit.record_failure(epoch)
             LOGGER.warning("Could not verify artifact cache download: %s", error)
             return False
         if not verified:
             _discard_partial_download(target_path)
+            self._mark_unhealthy(content_hash)
             self._read_circuit.record_failure(epoch)
             LOGGER.warning("Artifact cache returned content with an invalid MD5 hash")
             return False
+        self._clear_unhealthy(content_hash)
         self._read_circuit.record_success(epoch)
         return True
 
@@ -236,7 +243,13 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
         # the download, and `restore` re-verifies everything it reads back, so
         # re-hashing the whole file here would cost a full read and buy nothing.
         try:
-            self._storage.upload(self._blob_key(content_hash), source_path)
+            blob_key = self._blob_key(content_hash)
+            force_store = self._is_unhealthy(content_hash)
+            # Separate inference processes can both observe the same miss and
+            # upload concurrently. That is acceptable: the key is a content
+            # hash and only hash-verified bytes are scheduled for storage.
+            if force_store or not self._storage.exists(blob_key):
+                self._storage.upload(blob_key, source_path)
         except FileNotFoundError as error:
             # The source can be evicted between scheduling and upload. That is a
             # local race, not a signal about cache health, so the circuit stays shut.
@@ -245,7 +258,20 @@ class VerifiedContentAddressedArtifactCache(ContentAddressedArtifactCache):
             self._write_circuit.record_failure(epoch)
             LOGGER.warning("Artifact cache upload failed: %s", error)
         else:
+            self._clear_unhealthy(content_hash)
             self._write_circuit.record_success(epoch)
+
+    def _mark_unhealthy(self, content_hash: str) -> None:
+        with self._unhealthy_hashes_lock:
+            self._unhealthy_hashes.add(content_hash.lower())
+
+    def _clear_unhealthy(self, content_hash: str) -> None:
+        with self._unhealthy_hashes_lock:
+            self._unhealthy_hashes.discard(content_hash.lower())
+
+    def _is_unhealthy(self, content_hash: str) -> bool:
+        with self._unhealthy_hashes_lock:
+            return content_hash.lower() in self._unhealthy_hashes
 
     def _blob_key(self, content_hash: str) -> str:
         prefix = self._prefix.strip("/")

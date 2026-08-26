@@ -32,6 +32,11 @@ class BlobStorage(ABC):
         pass
 
     @abstractmethod
+    def exists(self, blob_key: str) -> bool:
+        """Return whether `blob_key` is already present."""
+        pass
+
+    @abstractmethod
     def upload(self, blob_key: str, source_path: str) -> None:
         pass
 
@@ -94,6 +99,15 @@ class S3BlobStorage(BlobStorage):
                     body.close()
                 except Exception:
                     pass
+
+    def exists(self, blob_key: str) -> bool:
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=blob_key)
+        except Exception as error:
+            if _is_missing_object_error(error):
+                return False
+            raise
+        return True
 
     def upload(self, blob_key: str, source_path: str) -> None:
         from boto3.s3.transfer import TransferConfig
