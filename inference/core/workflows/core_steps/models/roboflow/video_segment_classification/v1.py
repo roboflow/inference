@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
@@ -61,7 +62,8 @@ each stream into a sliding window and adds each model result to a cumulative
 timeline. Classification starts on the first frame with a growing buffer and
 repeats at a configurable stride. By default, the stride is half the window
 length for 50 percent overlap. Ranges can overlap. An active range advances
-with the stream until a later classification closes it.
+with the stream until a later classification closes it. When a stream provides
+no source FPS, the block estimates it from frame timestamps.
 
 Frames per call equal window_seconds x sample_fps. The model spreads a fixed
 pixel budget across those frames. Use fewer frames to keep each frame sharper
@@ -94,6 +96,7 @@ class _VideoSegmentClassificationBookkeeping:
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
     source_fps: Optional[float] = None
+    recent_frame_timestamps: List[datetime] = field(default_factory=list)
     signature: Tuple[Tuple[str, ...], float, Optional[float], float] = field(
         default_factory=lambda: ((), 0.0, None, 0.0)
     )
@@ -371,11 +374,15 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             bookkeeping = _VideoSegmentClassificationBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
 
-        # Live streams re-estimate measured_fps continuously; resolving once per
-        # video pins the frame math so estimator jitter cannot reset state.
+        # Live streams re-estimate measured_fps continuously; pinning once per
+        # video keeps estimator jitter from resetting the frame math.
         if bookkeeping.source_fps is None:
-            bookkeeping.source_fps = self._resolve_source_fps(metadata=metadata)
-        source_fps = bookkeeping.source_fps
+            source_fps = self._resolve_source_fps(
+                metadata=metadata,
+                bookkeeping=bookkeeping,
+            )
+        else:
+            source_fps = bookkeeping.source_fps
 
         effective_sample_fps = min(requested_sample_fps, source_fps)
         sampling_stride = max(1.0, source_fps / effective_sample_fps)
@@ -408,6 +415,13 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         )
         if should_classify:
             bookkeeping.last_fire_frame_number = frame_number
+            # The model rounds boundaries by roughly 10-20% of its window
+            # (observed: ~2 s on 18.8 s and ~1 s on 10 s). Exact-touch closes
+            # ongoing events; the floor keeps short windows at one sample interval.
+            open_end_slack_frames = max(
+                0.15 * requested_window_seconds * source_fps,
+                sampling_stride,
+            )
             error_status = self._classify_buffer(
                 model=model,
                 bookkeeping=bookkeeping,
@@ -415,6 +429,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 id_vocabulary=id_vocabulary,
                 effective_sample_fps=effective_sample_fps,
                 sampling_stride=sampling_stride,
+                open_end_slack_frames=open_end_slack_frames,
             )
 
         bookkeeping.last_frame_number = frame_number
@@ -426,19 +441,50 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             error_status=error_status,
         )
 
-    def _resolve_source_fps(self, metadata: VideoMetadata) -> float:
+    def _resolve_source_fps(
+        self,
+        metadata: VideoMetadata,
+        bookkeeping: _VideoSegmentClassificationBookkeeping,
+    ) -> float:
         for candidate in (metadata.fps, metadata.measured_fps):
             if candidate is None:
                 continue
             candidate = float(candidate)
             if candidate > 0 and math.isfinite(candidate):
+                bookkeeping.source_fps = candidate
                 return candidate
+
+        bookkeeping.recent_frame_timestamps.append(metadata.frame_timestamp)
+        if len(bookkeeping.recent_frame_timestamps) < 9:
+            return DEFAULT_SOURCE_FPS
+
+        # Model-call delivery stalls make isolated deltas huge; the median over
+        # early frames shrugs off those outliers.
+        delta_seconds = [
+            (current - previous).total_seconds()
+            for previous, current in zip(
+                bookkeeping.recent_frame_timestamps,
+                bookkeeping.recent_frame_timestamps[1:],
+            )
+        ]
+        median_delta_seconds = float(np.median(delta_seconds))
+        if median_delta_seconds > 0 and math.isfinite(median_delta_seconds):
+            estimated_fps = min(120.0, max(1.0, 1.0 / median_delta_seconds))
+            bookkeeping.source_fps = estimated_fps
+            logger.info(
+                "Video Segment Classification Model estimated source FPS at %.2f "
+                "from frame timestamps.",
+                estimated_fps,
+            )
+            return estimated_fps
+
         if metadata.video_identifier not in self._warned_fps_video_ids:
             logger.warning(
                 "Video Segment Classification Model did not receive a valid source FPS. "
                 "It uses 30 FPS for windowing and sampling."
             )
             self._warned_fps_video_ids.add(metadata.video_identifier)
+        bookkeeping.source_fps = DEFAULT_SOURCE_FPS
         return DEFAULT_SOURCE_FPS
 
     def _classify_buffer(
@@ -449,6 +495,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
         sampling_stride: float,
+        open_end_slack_frames: float,
     ) -> str:
         if not bookkeeping.sampled:
             return ""
@@ -477,6 +524,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=math.ceil(sampling_stride),
+            open_end_slack_frames=open_end_slack_frames,
         )
         return ""
 
@@ -502,6 +550,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         stride: float,
+        open_end_slack_frames: float,
     ) -> None:
         sampled_count = len(bookkeeping.sampled)
         new_open_classes = set()
@@ -534,7 +583,10 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 segment=segment,
                 stride=stride,
             )
-            if end_idx == sampled_count - 1:
+            if (
+                bookkeeping.sampled[-1][0] - segment.end_frame_idx
+                <= open_end_slack_frames
+            ):
                 new_open_classes.add(class_name)
         bookkeeping.timeline.sort(
             key=lambda entry: (

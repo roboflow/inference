@@ -2,7 +2,7 @@
 
 import importlib
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
 from uuid import UUID
@@ -119,6 +119,7 @@ def _make_frame(
     video_id: str = "stream-0",
     fps: Optional[float] = 4.0,
     measured_fps: Optional[float] = None,
+    frame_timestamp: datetime = datetime(2024, 1, 1),
     bgr_color: Optional[List[int]] = None,
     tensor_rgb_color: Optional[List[int]] = None,
 ) -> WorkflowImageData:
@@ -127,7 +128,7 @@ def _make_frame(
         frame_number=frame_number,
         fps=fps,
         measured_fps=measured_fps,
-        frame_timestamp=datetime(2024, 1, 1),
+        frame_timestamp=frame_timestamp,
     )
     image_kwargs = {}
     if tensor_rgb_color is not None:
@@ -499,33 +500,149 @@ def test_default_stride_retains_overlapping_sampled_frames():
     )
 
 
-def test_fps_falls_back_to_measured_then_30_and_warns(monkeypatch):
+def test_estimates_25_fps_from_timestamps_and_uses_it_for_window_math(
+    monkeypatch,
+):
     block, model = _make_block()
+    info = MagicMock()
+    warning = MagicMock()
+    monkeypatch.setattr(video_classification_module.logger, "info", info)
+    monkeypatch.setattr(video_classification_module.logger, "warning", warning)
+    timestamp = datetime(2024, 1, 1)
+
+    for frame_number in range(26):
+        _run(
+            block,
+            _make_frame(
+                frame_number,
+                fps=None,
+                measured_fps=None,
+                frame_timestamp=timestamp + timedelta(milliseconds=40 * frame_number),
+            ),
+            window_seconds=1.0,
+            stride_seconds=1.0,
+            sample_fps=120.0,
+        )
+
+    bookkeeping = block._video_bookkeeping["stream-0"]
+    assert bookkeeping.source_fps == pytest.approx(25.0)
+    assert len(bookkeeping.recent_frame_timestamps) == 9
+    assert [call["fps"] for call in model.calls] == [30.0, pytest.approx(25.0)]
+    assert len(model.calls[1]["frames"]) == 25
+    info.assert_called_once()
+    assert info.call_args.args[1] == pytest.approx(25.0)
+    warning.assert_not_called()
+
+
+def test_timestamp_fps_estimate_ignores_one_large_delivery_stall():
+    block, _ = _make_block()
+    timestamp = datetime(2024, 1, 1)
+    timestamps = [timestamp]
+    for delta_seconds in [0.04, 0.04, 0.04, 7.0, 0.04, 0.04, 0.04, 0.04]:
+        timestamps.append(timestamps[-1] + timedelta(seconds=delta_seconds))
+
+    for frame_number, frame_timestamp in enumerate(timestamps):
+        _run(
+            block,
+            _make_frame(
+                frame_number,
+                fps=None,
+                measured_fps=None,
+                frame_timestamp=frame_timestamp,
+            ),
+        )
+
+    assert block._video_bookkeeping["stream-0"].source_fps == pytest.approx(25.0)
+
+
+def test_constant_timestamps_pin_30_fps_and_warn(monkeypatch):
+    block, _ = _make_block()
     warning = MagicMock()
     monkeypatch.setattr(video_classification_module.logger, "warning", warning)
 
-    for frame_number in range(3):
+    for frame_number in range(8):
         _run(
             block,
             _make_frame(frame_number, fps=None, measured_fps=None),
-            window_seconds=0.1,
-            sample_fps=4.0,
         )
 
-    assert model.calls[0]["fps"] == 4.0
+    assert block._video_bookkeeping["stream-0"].source_fps is None
+    warning.assert_not_called()
+
+    _run(
+        block,
+        _make_frame(8, fps=None, measured_fps=None),
+    )
+
+    assert block._video_bookkeeping["stream-0"].source_fps == 30.0
     warning.assert_called_once()
     assert "30" in warning.call_args.args[0]
 
-    measured_block, measured_model = _make_block()
-    for frame_number in range(5):
+
+@pytest.mark.parametrize(
+    ("fps", "measured_fps", "expected_fps"),
+    [(25.0, None, 25.0), (None, 24.5, 24.5)],
+)
+def test_valid_metadata_fps_pins_immediately_without_estimation(
+    monkeypatch, fps, measured_fps, expected_fps
+):
+    block, _ = _make_block()
+    info = MagicMock()
+    warning = MagicMock()
+    monkeypatch.setattr(video_classification_module.logger, "info", info)
+    monkeypatch.setattr(video_classification_module.logger, "warning", warning)
+
+    _run(
+        block,
+        _make_frame(0, fps=fps, measured_fps=measured_fps),
+    )
+
+    bookkeeping = block._video_bookkeeping["stream-0"]
+    assert bookkeeping.source_fps == expected_fps
+    assert bookkeeping.recent_frame_timestamps == []
+    info.assert_not_called()
+    warning.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("reset_frame_number", "reset_window_seconds"),
+    [(0, 1.0), (9, 2.0)],
+)
+def test_reset_clears_timestamp_fps_estimate_and_history(
+    reset_frame_number, reset_window_seconds
+):
+    block, _ = _make_block()
+    timestamp = datetime(2024, 1, 1)
+    for frame_number in range(9):
         _run(
-            measured_block,
-            _make_frame(frame_number, fps=None, measured_fps=5.0),
-            window_seconds=1.0,
-            sample_fps=2.0,
+            block,
+            _make_frame(
+                frame_number,
+                fps=None,
+                measured_fps=None,
+                frame_timestamp=timestamp + timedelta(milliseconds=40 * frame_number),
+            ),
         )
-    assert measured_model.calls[0]["fps"] == 2.0
-    warning.assert_called_once()
+    previous_bookkeeping = block._video_bookkeeping["stream-0"]
+    assert previous_bookkeeping.source_fps == pytest.approx(25.0)
+    assert len(previous_bookkeeping.recent_frame_timestamps) == 9
+
+    reset_timestamp = timestamp + timedelta(seconds=30)
+    _run(
+        block,
+        _make_frame(
+            reset_frame_number,
+            fps=None,
+            measured_fps=None,
+            frame_timestamp=reset_timestamp,
+        ),
+        window_seconds=reset_window_seconds,
+    )
+
+    reset_bookkeeping = block._video_bookkeeping["stream-0"]
+    assert reset_bookkeeping is not previous_bookkeeping
+    assert reset_bookkeeping.source_fps is None
+    assert reset_bookkeeping.recent_frame_timestamps == [reset_timestamp]
 
 
 def test_sample_fps_is_capped_at_source_fps():
@@ -692,6 +809,98 @@ def test_open_range_advances_then_closes_at_recorded_endpoint():
     assert _run(block, _make_frame(3))["timeline"][0].end_frame_idx == 0
 
 
+def test_end_within_window_slack_stays_open_then_closes_at_reported_endpoint():
+    block, _ = _make_block(
+        responses=[
+            [],
+            [_model_segment("walk", start_frame_idx=0, end_frame_idx=8)],
+            [],
+        ]
+    )
+
+    for frame_number in range(101):
+        result = _run(
+            block,
+            _make_frame(frame_number, fps=10.0),
+            window_seconds=10.0,
+            stride_seconds=10.0,
+            sample_fps=1.0,
+        )
+
+    assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 90
+    assert result["timeline"][0].end_frame_idx == 100
+    assert _active_class_names(result) == ["walk"]
+
+    advancing_result = _run(
+        block,
+        _make_frame(101, fps=10.0),
+        window_seconds=10.0,
+        stride_seconds=10.0,
+        sample_fps=1.0,
+    )
+    assert advancing_result["timeline"][0].end_frame_idx == 101
+
+    for frame_number in range(102, 201):
+        closed_result = _run(
+            block,
+            _make_frame(frame_number, fps=10.0),
+            window_seconds=10.0,
+            stride_seconds=10.0,
+            sample_fps=1.0,
+        )
+
+    assert closed_result["timeline"][0].end_frame_idx == 90
+    assert _active_class_names(closed_result) == []
+
+
+def test_end_beyond_window_slack_is_closed():
+    block, _ = _make_block(
+        responses=[
+            [],
+            [_model_segment("walk", start_frame_idx=0, end_frame_idx=7)],
+        ]
+    )
+
+    for frame_number in range(101):
+        result = _run(
+            block,
+            _make_frame(frame_number, fps=10.0),
+            window_seconds=10.0,
+            stride_seconds=10.0,
+            sample_fps=1.0,
+        )
+
+    assert result["timeline"][0].end_frame_idx == 80
+    assert _active_class_names(result) == []
+
+
+def test_open_end_slack_floor_is_one_sampling_interval_for_small_windows():
+    block, _ = _make_block(
+        responses=[
+            [],
+            [
+                _model_segment("walk", start_frame_idx=0, end_frame_idx=2),
+                _model_segment("run", start_frame_idx=0, end_frame_idx=1),
+            ],
+        ]
+    )
+
+    for frame_number in range(25):
+        result = _run(
+            block,
+            _make_frame(frame_number, fps=24.0),
+            window_seconds=1.0,
+            stride_seconds=1.0,
+            sample_fps=4.0,
+        )
+
+    assert [
+        (entry.class_name, entry.end_frame_idx) for entry in result["timeline"]
+    ] == [("walk", 24), ("run", 12)]
+    assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 18
+    assert _active_class_names(result) == ["walk"]
+
+
 def test_wire_contract_and_alias_round_trip():
     entity = VideoSegmentClassificationPrediction(
         start_frame_idx=3,
@@ -771,7 +980,7 @@ def test_source_fps_jitter_does_not_reset_state():
         )
 
     assert [entry.class_name for entry in result["timeline"]] == ["walk"]
-    assert block._video_bookkeeping["stream-0"].source_fps == 30.0
+    assert block._video_bookkeeping["stream-0"].source_fps == 24.7
     assert len(model.calls) == 1
 
 
