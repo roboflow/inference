@@ -581,7 +581,7 @@ def test_constant_timestamps_pin_30_fps_and_warn(monkeypatch):
 
 @pytest.mark.parametrize(
     ("fps", "measured_fps", "expected_fps"),
-    [(25.0, None, 25.0), (None, 24.5, 24.5)],
+    [(25.0, None, 25.0), (25.0, 24.5, 25.0)],
 )
 def test_valid_metadata_fps_pins_immediately_without_estimation(
     monkeypatch, fps, measured_fps, expected_fps
@@ -967,8 +967,8 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
 
 
 def test_source_fps_jitter_does_not_reset_state():
-    # Live streams re-estimate measured_fps continuously; the first resolved
-    # value is pinned per video, so estimator jitter must not clear state.
+    # measured_fps jitters per frame on live streams and is never consumed;
+    # its arrival mid-stream must neither pin the fps nor clear state.
     block, model = _make_block(responses=[[_model_segment("walk")]])
     result = _run(block, _make_frame(0, fps=None, measured_fps=None))
     assert result["timeline"]
@@ -979,9 +979,30 @@ def test_source_fps_jitter_does_not_reset_state():
             _make_frame(frame_number, fps=None, measured_fps=measured),
         )
 
+    bookkeeping = block._video_bookkeeping["stream-0"]
     assert [entry.class_name for entry in result["timeline"]] == ["walk"]
-    assert block._video_bookkeeping["stream-0"].source_fps == 24.7
+    assert bookkeeping.source_fps is None
+    assert len(bookkeeping.recent_frame_timestamps) == 4
     assert len(model.calls) == 1
+
+
+def test_processing_paced_measured_fps_does_not_poison_estimation():
+    # WebRTC ACK pacing makes measured_fps track model latency (~0.05 fps
+    # observed live); the timestamp estimate must win over it.
+    block, _ = _make_block()
+    timestamp = datetime(2024, 1, 1)
+    for frame_number in range(9):
+        _run(
+            block,
+            _make_frame(
+                frame_number,
+                fps=None,
+                measured_fps=0.05,
+                frame_timestamp=timestamp + timedelta(milliseconds=40 * frame_number),
+            ),
+        )
+
+    assert block._video_bookkeeping["stream-0"].source_fps == pytest.approx(25.0)
 
 
 def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):

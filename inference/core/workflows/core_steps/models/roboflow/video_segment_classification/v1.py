@@ -374,8 +374,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             bookkeeping = _VideoSegmentClassificationBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
 
-        # Live streams re-estimate measured_fps continuously; pinning once per
-        # video keeps estimator jitter from resetting the frame math.
+        # The fps pin holds for the video's life; per-frame re-resolution
+        # would let estimator jitter reshuffle the frame math mid-stream.
         if bookkeeping.source_fps is None:
             source_fps = self._resolve_source_fps(
                 metadata=metadata,
@@ -446,13 +446,17 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         metadata: VideoMetadata,
         bookkeeping: _VideoSegmentClassificationBookkeeping,
     ) -> float:
-        for candidate in (metadata.fps, metadata.measured_fps):
-            if candidate is None:
-                continue
-            candidate = float(candidate)
-            if candidate > 0 and math.isfinite(candidate):
-                bookkeeping.source_fps = candidate
-                return candidate
+        # measured_fps is never consumed here: it reports the pipeline's
+        # arrival rate, and when delivery is paced to processing (WebRTC ACK
+        # windows) that rate tracks model latency, not the source clock.
+        # Pinning it once collapsed stride_frames to 1 and fired the model
+        # on every frame.
+        declared_fps = metadata.fps
+        if declared_fps is not None:
+            declared_fps = float(declared_fps)
+            if declared_fps > 0 and math.isfinite(declared_fps):
+                bookkeeping.source_fps = declared_fps
+                return declared_fps
 
         bookkeeping.recent_frame_timestamps.append(metadata.frame_timestamp)
         if len(bookkeeping.recent_frame_timestamps) < 9:
