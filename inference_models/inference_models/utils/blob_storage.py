@@ -1,12 +1,7 @@
-import math
-import os
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 _STREAM_CHUNK_SIZE = 1024 * 1024
-_MULTIPART_UPLOAD_THRESHOLD = 8 * 1024 * 1024
-_MULTIPART_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
-_MAX_MULTIPART_PARTS = 10_000
 
 
 class BlobTooLarge(Exception):
@@ -101,88 +96,14 @@ class S3BlobStorage(BlobStorage):
                     pass
 
     def upload(self, blob_key: str, source_path: str) -> None:
-        if self._object_exists(blob_key):
-            return
-        source_size = os.path.getsize(source_path)
-        try:
-            if source_size < _MULTIPART_UPLOAD_THRESHOLD:
-                self._put_object_if_absent(blob_key, source_path)
-            else:
-                self._multipart_upload_if_absent(
-                    blob_key=blob_key,
-                    source_path=source_path,
-                    source_size=source_size,
-                )
-        except Exception as error:
-            if _is_precondition_failed_error(error):
-                # Concurrent processes running inference can observe the same
-                # cache miss and write the same content-addressed object at the
-                # same time. This is acceptable: the first conditional write
-                # wins and the others are no-ops.
-                return
-            raise
+        from boto3.s3.transfer import TransferConfig
 
-    def _object_exists(self, blob_key: str) -> bool:
-        try:
-            self._client.head_object(Bucket=self._bucket, Key=blob_key)
-        except Exception as error:
-            if _is_missing_object_error(error):
-                return False
-            raise
-        return True
-
-    def _put_object_if_absent(self, blob_key: str, source_path: str) -> None:
-        with open(source_path, "rb") as source_file:
-            self._client.put_object(
-                Bucket=self._bucket,
-                Key=blob_key,
-                Body=source_file,
-                IfNoneMatch="*",
-            )
-
-    def _multipart_upload_if_absent(
-        self, blob_key: str, source_path: str, source_size: int
-    ) -> None:
-        multipart_upload = self._client.create_multipart_upload(
-            Bucket=self._bucket,
-            Key=blob_key,
+        self._client.upload_file(
+            source_path,
+            self._bucket,
+            blob_key,
+            Config=TransferConfig(use_threads=False),
         )
-        upload_id = multipart_upload["UploadId"]
-        chunk_size = max(
-            _MULTIPART_UPLOAD_CHUNK_SIZE,
-            math.ceil(source_size / _MAX_MULTIPART_PARTS),
-        )
-        parts = []
-        try:
-            with open(source_path, "rb") as source_file:
-                part_number = 1
-                while chunk := source_file.read(chunk_size):
-                    response = self._client.upload_part(
-                        Bucket=self._bucket,
-                        Key=blob_key,
-                        UploadId=upload_id,
-                        PartNumber=part_number,
-                        Body=chunk,
-                    )
-                    parts.append({"ETag": response["ETag"], "PartNumber": part_number})
-                    part_number += 1
-            self._client.complete_multipart_upload(
-                Bucket=self._bucket,
-                Key=blob_key,
-                UploadId=upload_id,
-                MultipartUpload={"Parts": parts},
-                IfNoneMatch="*",
-            )
-        except Exception:
-            try:
-                self._client.abort_multipart_upload(
-                    Bucket=self._bucket,
-                    Key=blob_key,
-                    UploadId=upload_id,
-                )
-            except Exception:
-                pass
-            raise
 
 
 def _is_missing_object_error(error: Exception) -> bool:
@@ -191,14 +112,3 @@ def _is_missing_object_error(error: Exception) -> bool:
         return False
     error_details = response.get("Error", {})
     return str(error_details.get("Code")) in {"404", "NoSuchKey", "NotFound"}
-
-
-def _is_precondition_failed_error(error: Exception) -> bool:
-    response = getattr(error, "response", None)
-    if not isinstance(response, dict):
-        return False
-    error_details = response.get("Error", {})
-    response_metadata = response.get("ResponseMetadata", {})
-    return str(error_details.get("Code")) in {"412", "PreconditionFailed"} or (
-        response_metadata.get("HTTPStatusCode") == 412
-    )
