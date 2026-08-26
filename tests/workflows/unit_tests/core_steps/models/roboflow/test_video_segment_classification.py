@@ -185,14 +185,14 @@ def _make_cosmos3_reasoner() -> Cosmos3EdgeReasoner:
 def _run(
     block,
     frame: WorkflowImageData,
-    class_names=("walk", "run"),
+    class_filter=("walk", "run"),
     window_seconds=1.0,
     stride_seconds=None,
     sample_fps=2.0,
 ):
     return block.run(
         images=[frame],
-        class_names=list(class_names) if class_names is not None else None,
+        class_filter=list(class_filter) if class_filter is not None else None,
         model_id="cosmos-3-edge",
         window_seconds=window_seconds,
         stride_seconds=stride_seconds,
@@ -248,18 +248,18 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
-def test_manifest_parses_classes_and_declares_outputs(manifest_type):
+def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     manifest = manifest_type.model_validate(
         {
             "type": "roboflow_core/video_segment_classification_model@v1",
             "name": "video_classifier",
             "images": "$inputs.image",
-            "class_names": "walk, run",
+            "class_filter": ["walk", "run"],
             "model_id": "cosmos-3-edge",
         }
     )
 
-    assert manifest.class_names == "walk, run"
+    assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
     assert manifest.window_seconds == 2.0
     assert manifest.stride_seconds is None
@@ -276,7 +276,7 @@ def test_manifest_parses_classes_and_declares_outputs(manifest_type):
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
-def test_manifest_allows_omitted_class_names(manifest_type):
+def test_manifest_allows_omitted_class_filter(manifest_type):
     manifest = manifest_type.model_validate(
         {
             "type": "roboflow_core/video_segment_classification_model@v1",
@@ -286,7 +286,7 @@ def test_manifest_allows_omitted_class_names(manifest_type):
         }
     )
 
-    assert manifest.class_names is None
+    assert manifest.class_filter is None
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -297,7 +297,7 @@ def test_manifest_requires_model_id(manifest_type):
                 "type": "roboflow_core/video_segment_classification_model@v1",
                 "name": "video_classifier",
                 "images": "$inputs.image",
-                "class_names": ["walk"],
+                "class_filter": ["walk"],
             }
         )
 
@@ -328,7 +328,7 @@ def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
         "name": "video_classifier",
         "images": "$inputs.image",
         "model_id": "cosmos-3-edge",
-        "class_names": ["walk"],
+        "class_filter": ["walk"],
         field: value,
     }
 
@@ -365,7 +365,7 @@ def test_open_vocabulary_keeps_arbitrary_labels_with_negative_class_ids():
         model_class_names=None,
     )
 
-    result = _run(block, _make_frame(0), class_names=None)
+    result = _run(block, _make_frame(0), class_filter=None)
 
     assert model.calls[0]["class_names"] is None
     assert [entry.class_name for entry in result["timeline"]] == [
@@ -376,13 +376,13 @@ def test_open_vocabulary_keeps_arbitrary_labels_with_negative_class_ids():
     assert _active_class_names(result) == ["opening a door", "sitting down"]
 
 
-def test_model_vocabulary_sets_class_ids_when_block_classes_are_omitted():
+def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
     block, model = _make_block(
         responses=[[_model_segment("run")]],
         model_class_names=["walk", "run"],
     )
 
-    result = _run(block, _make_frame(0), class_names=None)
+    result = _run(block, _make_frame(0), class_filter=None)
 
     assert model.calls[0]["class_names"] is None
     assert _timeline_as_dicts(result) == [
@@ -394,6 +394,48 @@ def test_model_vocabulary_sets_class_ids_when_block_classes_are_omitted():
         }
     ]
     assert _active_class_names(result) == ["run"]
+
+
+def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
+    block, model = _make_block(
+        responses=[[_model_segment("run")]],
+        model_class_names=None,
+    )
+
+    result = _run(block, _make_frame(0), class_filter=("run", "walk"))
+
+    assert model.calls[0]["class_names"] == ["run", "walk"]
+    assert _timeline_as_dicts(result) == [
+        {
+            "start_frame_idx": 0,
+            "end_frame_idx": 0,
+            "class_name": "run",
+            "class_id": 0,
+        }
+    ]
+    assert result["active_classes"]["predictions"]["run"]["class_id"] == 0
+
+
+def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
+    block, model = _make_block(
+        responses=[[_model_segment("a"), _model_segment("b")]],
+        model_class_names=["a", "b", "c"],
+    )
+
+    result = _run(block, _make_frame(0), class_filter=("b",))
+
+    assert model.calls[0]["class_names"] == ["b"]
+    assert _timeline_as_dicts(result) == [
+        {
+            "start_frame_idx": 0,
+            "end_frame_idx": 0,
+            "class_name": "b",
+            "class_id": 1,
+        }
+    ]
+    assert result["active_classes"]["predictions"] == {
+        "b": {"confidence": 1.0, "class_id": 1}
+    }
 
 
 def test_active_classes_uses_multi_label_classification_shape():
@@ -648,7 +690,7 @@ def test_deserializer_rejects_malformed_values(value):
 @pytest.mark.parametrize(
     "reset_kwargs",
     [
-        {"class_names": ("run",)},
+        {"class_filter": ("run",)},
         {"window_seconds": 2.0},
         {"stride_seconds": 0.5},
         {"sample_fps": 1.0},
@@ -661,7 +703,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     assert result["timeline"]
     assert _active_class_names(result) == ["walk"]
 
-    class_names = reset_kwargs.get("class_names", ("walk", "run"))
+    class_filter = reset_kwargs.get("class_filter", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
     stride_seconds = reset_kwargs.get("stride_seconds")
     sample_fps = reset_kwargs.get("sample_fps", 2.0)
@@ -669,7 +711,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     result = _run(
         block,
         _make_frame(1, fps=source_fps),
-        class_names=class_names,
+        class_filter=class_filter,
         window_seconds=window_seconds,
         stride_seconds=stride_seconds,
         sample_fps=sample_fps,
