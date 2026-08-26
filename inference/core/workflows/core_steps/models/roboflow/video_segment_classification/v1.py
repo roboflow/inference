@@ -67,6 +67,9 @@ provides no source FPS, the block assumes 30 FPS and logs a warning.
 Frames per call equal window_seconds x sample_fps. The model spreads a fixed
 pixel budget across those frames. Use fewer frames to keep each frame sharper
 when small objects matter. Use more frames for denser temporal coverage.
+Very short windows can fall below a model's temporal-localization floor:
+cosmos-3-edge stops emitting events for windows under roughly 5 seconds, so
+keep window_seconds at 6 or more for that model.
 
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a new result. Tail

@@ -30,6 +30,15 @@ VOCABULARY_MAPPING_PROMPT_TEMPLATE = (
     "Return STRICT JSON, one entry per caption number: "
     '{{"1": "<class or other>", "2": "<class or other>", ...}}'
 )
+OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
+    "Here are numbered captions of events from a video:\n{captions}\n\n"
+    "Condense each caption into a short lowercase action label of 2-5 "
+    "words. Name the action, not the scene. Use the same label for "
+    "captions that describe the same action. Do not overthink: one quick "
+    "decision per caption.\n"
+    "Return STRICT JSON, one entry per caption number: "
+    '{{"1": "<label>", "2": "<label>", ...}}'
+)
 # Temporal localization answers carry a think block plus a JSON entry per
 # event; the package default of 512 new tokens forces the model to compress
 # the clip into one summary segment. 4096 matches the cookbook demo budget.
@@ -39,6 +48,9 @@ TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS = 4096
 # prompt. Variants that reworded it ("notable events", a "class" key, extra
 # format constraints) collapsed the model's output to one whole-clip segment
 # on the cookbook's own demo asset; only the trained phrasing densifies.
+# Clips under ~5 s fall out of localization mode entirely (observed at
+# 16 frames / 4 s: a grounding-token artifact and an empty JSON array);
+# 6 s windows and longer caption reliably.
 OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT = """List all action segments in the video.
 
 Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
@@ -66,6 +78,46 @@ def _parse_seconds(value: Any) -> Optional[float]:
         return None
     value = float(value)
     return value if math.isfinite(value) else None
+
+
+def _number_captions(segments: List[VideoSegmentClassificationPrediction]) -> str:
+    return json.dumps(
+        {
+            str(index + 1): segment.class_name
+            for index, segment in enumerate(segments)
+        },
+        indent=1,
+    )
+
+
+def _normalize_condensed_label(label: str) -> str:
+    # Labels merge across calls only on exact match; the model drifts
+    # between styles ("scoop popcorn" vs "pick_up_green_cup").
+    return " ".join(label.replace("_", " ").lower().split())
+
+
+def _relabel_segments(
+    segments: List[VideoSegmentClassificationPrediction],
+    mapping: dict,
+    accept,
+    normalize=lambda label: label,
+) -> List[VideoSegmentClassificationPrediction]:
+    result = []
+    for index, segment in enumerate(segments):
+        label = mapping.get(str(index + 1))
+        if not isinstance(label, str):
+            continue
+        label = normalize(label.strip())
+        if not accept(label):
+            continue
+        result.append(
+            VideoSegmentClassificationPrediction(
+                start_frame_idx=segment.start_frame_idx,
+                end_frame_idx=segment.end_frame_idx,
+                class_name=label,
+            )
+        )
+    return result
 
 
 def _parse_first_json_object(text: str) -> Optional[dict]:
@@ -220,11 +272,13 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             num_frames=len(normalized_frames),
             fps=fps,
         )
-        if vocabulary is None or not segments:
+        if not segments:
             return segments
-        return self._map_segments_to_vocabulary(
-            segments=segments, vocabulary=vocabulary
-        )
+        if vocabulary is not None:
+            return self._map_segments_to_vocabulary(
+                segments=segments, vocabulary=vocabulary
+            )
+        return self._condense_segments_to_labels(segments=segments)
 
     def _map_segments_to_vocabulary(
         self,
@@ -232,37 +286,44 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         vocabulary: List[str],
     ) -> List[VideoSegmentClassificationPrediction]:
         cleaned_vocabulary = [str(class_name).strip() for class_name in vocabulary]
-        numbered_captions = {
-            str(index + 1): segment.class_name
-            for index, segment in enumerate(segments)
-        }
         prompt = VOCABULARY_MAPPING_PROMPT_TEMPLATE.format(
-            captions=json.dumps(numbered_captions, indent=1),
+            captions=_number_captions(segments),
             vocab=json.dumps(cleaned_vocabulary),
         )
+        mapping = self._request_label_mapping(prompt=prompt)
+        if mapping is None:
+            return []
+        allowed_classes = set(cleaned_vocabulary)
+        return _relabel_segments(
+            segments=segments,
+            mapping=mapping,
+            accept=lambda label: label in allowed_classes,
+        )
+
+    def _condense_segments_to_labels(
+        self,
+        segments: List[VideoSegmentClassificationPrediction],
+    ) -> List[VideoSegmentClassificationPrediction]:
+        prompt = OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE.format(
+            captions=_number_captions(segments),
+        )
+        mapping = self._request_label_mapping(prompt=prompt)
+        if mapping is None:
+            # Condensing refines presentation only; a failed label call must
+            # not discard valid localization, so the captions stand as labels.
+            return segments
+        return _relabel_segments(
+            segments=segments,
+            mapping=mapping,
+            accept=bool,
+            normalize=_normalize_condensed_label,
+        )
+
+    def _request_label_mapping(self, prompt: str) -> Optional[dict]:
         answer = self._reasoner.prompt_text(
             prompt=prompt,
             max_new_tokens=TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS,
         )
         if isinstance(answer, dict):
             answer = answer.get("answer", "")
-        mapping = _parse_first_json_object(answer)
-        if mapping is None:
-            return []
-        allowed_classes = set(cleaned_vocabulary)
-        result = []
-        for index, segment in enumerate(segments):
-            label = mapping.get(str(index + 1))
-            if not isinstance(label, str):
-                continue
-            label = label.strip()
-            if label not in allowed_classes:
-                continue
-            result.append(
-                VideoSegmentClassificationPrediction(
-                    start_frame_idx=segment.start_frame_idx,
-                    end_frame_idx=segment.end_frame_idx,
-                    class_name=label,
-                )
-            )
-        return result
+        return _parse_first_json_object(answer)

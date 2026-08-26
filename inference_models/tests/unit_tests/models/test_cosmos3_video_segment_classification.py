@@ -208,9 +208,10 @@ def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
     assert 'action classes: ["walking"]' in reasoner.text_calls[0]["prompt"]
 
 
-def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> None:
+def test_infer_uses_open_vocabulary_prompt_and_condenses_captions() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 0.2, "caption": "opening a door"}]'
+        response='[{"start": 0, "end": 0.2, "caption": "a person opening a door"}]',
+        text_response='{"1": "open door"}',
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
@@ -221,7 +222,7 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
         VideoSegmentClassificationPrediction(
             start_frame_idx=0,
             end_frame_idx=1,
-            class_name="opening a door",
+            class_name="open door",
         )
     ]
     prompt = reasoner.calls[0]["prompt"]
@@ -230,6 +231,35 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
     assert "Please list multiple events if applicable." in prompt
     assert '"caption": EVENT2' in prompt
     assert "Class vocabulary:" not in prompt
+    label_prompt = reasoner.text_calls[0]["prompt"]
+    assert "a person opening a door" in label_prompt
+    assert "Condense each caption" in label_prompt
+
+
+def test_open_vocabulary_labels_are_normalized_for_cross_call_merging() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 0.2, "caption": "the robot picks up a cup"}]',
+        text_response='{"1": "Pick_Up  Green_Cup"}',
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
+
+    result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
+
+    assert [segment.class_name for segment in result] == ["pick up green cup"]
+
+
+def test_open_vocabulary_condensing_falls_back_to_captions_when_unparseable() -> None:
+    reasoner = _FakeReasoner(
+        response='[{"start": 0, "end": 0.2, "caption": "a person opening a door"}]',
+        text_response="no json here",
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
+
+    result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
+
+    assert [segment.class_name for segment in result] == ["a person opening a door"]
 
 
 @pytest.mark.parametrize(
@@ -416,19 +446,24 @@ def test_parse_temporal_segments(
 def test_infer_sends_the_cookbook_prompt_through_the_reasoner() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
-    reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 0.4, "caption": "walking"}]'
+    reasoner._processor.batch_decode.side_effect = [
+        ['[{"start": 0, "end": 0.4, "caption": "a person walking by"}]'],
+        ['{"1": "walking"}'],
     ]
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
 
     result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
 
-    conversation = reasoner._processor.apply_chat_template.call_args.args[0]
+    conversation = reasoner._processor.apply_chat_template.call_args_list[0].args[0]
     prompt = conversation[1]["content"][1]["text"]
     assert prompt.startswith("List all action segments in the video.")
     assert "'caption'" in prompt
     assert "Please list multiple events if applicable." in prompt
+    label_conversation = reasoner._processor.apply_chat_template.call_args_list[
+        1
+    ].args[0]
+    assert "Condense each caption" in label_conversation[1]["content"][0]["text"]
     assert result == [
         VideoSegmentClassificationPrediction(
             start_frame_idx=0,
@@ -441,8 +476,9 @@ def test_infer_sends_the_cookbook_prompt_through_the_reasoner() -> None:
 def test_infer_accepts_chw_tensor_frames() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
-    reasoner._processor.batch_decode.return_value = [
-        '[{"start": 0, "end": 0.5, "caption": "moving"}]'
+    reasoner._processor.batch_decode.side_effect = [
+        ['[{"start": 0, "end": 0.5, "caption": "something moving"}]'],
+        ['{"1": "moving"}'],
     ]
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
@@ -453,7 +489,7 @@ def test_infer_accepts_chw_tensor_frames() -> None:
         fps=4.0,
     )
 
-    processed_frames = reasoner._processor.call_args.kwargs["videos"][0]
+    processed_frames = reasoner._processor.call_args_list[0].kwargs["videos"][0]
     assert all(isinstance(frame, np.ndarray) for frame in processed_frames)
     assert all(frame.shape == (8, 9, 3) for frame in processed_frames)
     assert result == [
