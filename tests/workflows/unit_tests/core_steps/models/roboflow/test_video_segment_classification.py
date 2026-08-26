@@ -225,7 +225,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
 
     with pytest.raises(
         ValueError,
-        match="unrelated-model does not support video classification",
+        match="unrelated-model does not support video segment classification",
     ):
         block._get_model(model_id="unrelated-model")
 

@@ -1,4 +1,4 @@
-"""Tensor-input sibling of the video classification workflow block."""
+"""Tensor-input sibling of the video segment classification workflow block."""
 
 import numpy as np
 

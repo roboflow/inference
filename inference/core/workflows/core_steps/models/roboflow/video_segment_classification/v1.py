@@ -126,7 +126,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default=DEFAULT_MODEL_ID,
         title="Model Id",
-        description="Model used for temporal localization.",
+        description="Video segment classification model.",
         examples=[DEFAULT_MODEL_ID],
     )
     window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
@@ -187,7 +187,7 @@ class BlockManifest(WorkflowBlockManifest):
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             RuntimeRestriction(
                 severity=Severity.HARD,
-                note="Requires a GPU; video classification needs CUDA.",
+                note="Requires a GPU; video segment classification needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
@@ -205,7 +205,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
     _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
         "Video Segment Classification Model only supports LOCAL workflow step "
         "execution. Remote execution sends frames to separate processes and "
-        "breaks the per-video classification state. Set "
+        "breaks the per-video state. Set "
         "WORKFLOWS_STEP_EXECUTION_MODE=local to use this block."
     )
 
@@ -257,7 +257,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                     )
                 else:
                     raise ValueError(
-                        f"Model {model_id} does not support video classification."
+                        f"Model {model_id} does not support video segment classification."
                     )
             self._model = loaded_model
             self._current_model_id = model_id
