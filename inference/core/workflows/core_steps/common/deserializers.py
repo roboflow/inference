@@ -215,7 +215,7 @@ def deserialize_video_metadata_kind(
         )
 
 
-def deserialize_video_segment_classification_kind(
+def deserialize_video_segment_classification_prediction_kind(
     parameter: str,
     value: Any,
 ) -> List[VideoSegmentClassificationPrediction]:

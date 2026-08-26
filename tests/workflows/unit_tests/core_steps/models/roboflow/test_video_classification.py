@@ -20,11 +20,11 @@ from inference_models.models.cosmos3.cosmos3_video_classification import (
     Cosmos3VideoSegmentClassification,
 )
 from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_video_segment_classification_kind,
+    deserialize_video_segment_classification_prediction_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
-    serialize_video_segment_classification_kind,
+    serialize_video_segment_classification_prediction_kind,
 )
 from inference.core.workflows.core_steps.models.roboflow.video_classification import (
     v1 as video_classification_module,
@@ -527,7 +527,7 @@ def test_wire_contract_and_alias_round_trip():
         class_id=2,
     )
 
-    serialized = serialize_video_segment_classification_kind([entity])
+    serialized = serialize_video_segment_classification_prediction_kind([entity])
 
     assert set(serialized[0]) == {
         "start_frame_idx",
@@ -536,7 +536,7 @@ def test_wire_contract_and_alias_round_trip():
         "class_id",
     }
     assert serialized[0]["class"] == "walk"
-    assert deserialize_video_segment_classification_kind(
+    assert deserialize_video_segment_classification_prediction_kind(
         parameter="timeline", value=serialized
     ) == [entity]
 
@@ -544,7 +544,7 @@ def test_wire_contract_and_alias_round_trip():
 @pytest.mark.parametrize("value", [None, {}, ["bad"], [{"class": "walk"}]])
 def test_deserializer_rejects_malformed_values(value):
     with pytest.raises(RuntimeInputError):
-        deserialize_video_segment_classification_kind(
+        deserialize_video_segment_classification_prediction_kind(
             parameter="timeline", value=value
         )
 
@@ -759,11 +759,11 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
         kind_name = VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND.name
         assert (
             reloaded_loader.KINDS_SERIALIZERS[kind_name]
-            is serialize_video_segment_classification_kind
+            is serialize_video_segment_classification_prediction_kind
         )
         assert (
             reloaded_loader.KINDS_DESERIALIZERS[kind_name]
-            is deserialize_video_segment_classification_kind
+            is deserialize_video_segment_classification_prediction_kind
         )
     finally:
         monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", original)

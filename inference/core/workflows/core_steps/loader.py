@@ -258,7 +258,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_string_kind,
     deserialize_timestamp,
     deserialize_video_metadata_kind,
-    deserialize_video_segment_classification_kind,
+    deserialize_video_segment_classification_prediction_kind,
     deserialize_zone_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -267,7 +267,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
-    serialize_video_segment_classification_kind,
+    serialize_video_segment_classification_prediction_kind,
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_KIND,
@@ -1596,7 +1596,7 @@ REGISTERED_INITIALIZERS = {
 KINDS_SERIALIZERS = {
     IMAGE_KIND.name: serialise_image,
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
-    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND.name: serialize_video_segment_classification_kind,
+    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND.name: serialize_video_segment_classification_prediction_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
@@ -1644,7 +1644,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
-    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND.name: deserialize_video_segment_classification_kind,
+    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND.name: deserialize_video_segment_classification_prediction_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
