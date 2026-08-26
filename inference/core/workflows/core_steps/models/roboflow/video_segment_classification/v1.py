@@ -2,7 +2,6 @@
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
@@ -63,7 +62,7 @@ timeline. Classification starts on the first frame with a growing buffer and
 repeats at a configurable stride. By default, the stride is half the window
 length for 50 percent overlap. Ranges can overlap. An active range advances
 with the stream until a later classification closes it. When a stream provides
-no source FPS, the block estimates it from frame timestamps.
+no source FPS, the block assumes 30 FPS and logs a warning.
 
 Frames per call equal window_seconds x sample_fps. The model spreads a fixed
 pixel budget across those frames. Use fewer frames to keep each frame sharper
@@ -96,7 +95,6 @@ class _VideoSegmentClassificationBookkeeping:
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
     source_fps: Optional[float] = None
-    recent_frame_timestamps: List[datetime] = field(default_factory=list)
     signature: Tuple[Tuple[str, ...], float, Optional[float], float] = field(
         default_factory=lambda: ((), 0.0, None, 0.0)
     )
@@ -450,37 +448,15 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         # arrival rate, and when delivery is paced to processing (WebRTC ACK
         # windows) that rate tracks model latency, not the source clock.
         # Pinning it once collapsed stride_frames to 1 and fired the model
-        # on every frame.
+        # on every frame. Frame-timestamp estimation fails the same way on
+        # those paths (timestamps are arrival times), so no fps means the
+        # 30 FPS fallback — every supported source declares its FPS.
         declared_fps = metadata.fps
         if declared_fps is not None:
             declared_fps = float(declared_fps)
             if declared_fps > 0 and math.isfinite(declared_fps):
                 bookkeeping.source_fps = declared_fps
                 return declared_fps
-
-        bookkeeping.recent_frame_timestamps.append(metadata.frame_timestamp)
-        if len(bookkeeping.recent_frame_timestamps) < 9:
-            return DEFAULT_SOURCE_FPS
-
-        # Model-call delivery stalls make isolated deltas huge; the median over
-        # early frames shrugs off those outliers.
-        delta_seconds = [
-            (current - previous).total_seconds()
-            for previous, current in zip(
-                bookkeeping.recent_frame_timestamps,
-                bookkeeping.recent_frame_timestamps[1:],
-            )
-        ]
-        median_delta_seconds = float(np.median(delta_seconds))
-        if median_delta_seconds > 0 and math.isfinite(median_delta_seconds):
-            estimated_fps = min(120.0, max(1.0, 1.0 / median_delta_seconds))
-            bookkeeping.source_fps = estimated_fps
-            logger.info(
-                "Video Segment Classification Model estimated source FPS at %.2f "
-                "from frame timestamps.",
-                estimated_fps,
-            )
-            return estimated_fps
 
         if metadata.video_identifier not in self._warned_fps_video_ids:
             logger.warning(

@@ -2,7 +2,7 @@
 
 import importlib
 import math
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
 from uuid import UUID
@@ -500,79 +500,13 @@ def test_default_stride_retains_overlapping_sampled_frames():
     )
 
 
-def test_estimates_25_fps_from_timestamps_and_uses_it_for_window_math(
-    monkeypatch,
-):
-    block, model = _make_block()
-    info = MagicMock()
-    warning = MagicMock()
-    monkeypatch.setattr(video_classification_module.logger, "info", info)
-    monkeypatch.setattr(video_classification_module.logger, "warning", warning)
-    timestamp = datetime(2024, 1, 1)
-
-    for frame_number in range(26):
-        _run(
-            block,
-            _make_frame(
-                frame_number,
-                fps=None,
-                measured_fps=None,
-                frame_timestamp=timestamp + timedelta(milliseconds=40 * frame_number),
-            ),
-            window_seconds=1.0,
-            stride_seconds=1.0,
-            sample_fps=120.0,
-        )
-
-    bookkeeping = block._video_bookkeeping["stream-0"]
-    assert bookkeeping.source_fps == pytest.approx(25.0)
-    assert len(bookkeeping.recent_frame_timestamps) == 9
-    assert [call["fps"] for call in model.calls] == [30.0, pytest.approx(25.0)]
-    assert len(model.calls[1]["frames"]) == 25
-    info.assert_called_once()
-    assert info.call_args.args[1] == pytest.approx(25.0)
-    warning.assert_not_called()
-
-
-def test_timestamp_fps_estimate_ignores_one_large_delivery_stall():
-    block, _ = _make_block()
-    timestamp = datetime(2024, 1, 1)
-    timestamps = [timestamp]
-    for delta_seconds in [0.04, 0.04, 0.04, 7.0, 0.04, 0.04, 0.04, 0.04]:
-        timestamps.append(timestamps[-1] + timedelta(seconds=delta_seconds))
-
-    for frame_number, frame_timestamp in enumerate(timestamps):
-        _run(
-            block,
-            _make_frame(
-                frame_number,
-                fps=None,
-                measured_fps=None,
-                frame_timestamp=frame_timestamp,
-            ),
-        )
-
-    assert block._video_bookkeeping["stream-0"].source_fps == pytest.approx(25.0)
-
-
-def test_constant_timestamps_pin_30_fps_and_warn(monkeypatch):
+def test_missing_fps_pins_30_fallback_and_warns_once(monkeypatch):
     block, _ = _make_block()
     warning = MagicMock()
     monkeypatch.setattr(video_classification_module.logger, "warning", warning)
 
-    for frame_number in range(8):
-        _run(
-            block,
-            _make_frame(frame_number, fps=None, measured_fps=None),
-        )
-
-    assert block._video_bookkeeping["stream-0"].source_fps is None
-    warning.assert_not_called()
-
-    _run(
-        block,
-        _make_frame(8, fps=None, measured_fps=None),
-    )
+    for frame_number in range(3):
+        _run(block, _make_frame(frame_number, fps=None, measured_fps=None))
 
     assert block._video_bookkeeping["stream-0"].source_fps == 30.0
     warning.assert_called_once()
@@ -599,7 +533,6 @@ def test_valid_metadata_fps_pins_immediately_without_estimation(
 
     bookkeeping = block._video_bookkeeping["stream-0"]
     assert bookkeeping.source_fps == expected_fps
-    assert bookkeeping.recent_frame_timestamps == []
     info.assert_not_called()
     warning.assert_not_called()
 
@@ -608,41 +541,22 @@ def test_valid_metadata_fps_pins_immediately_without_estimation(
     ("reset_frame_number", "reset_window_seconds"),
     [(0, 1.0), (9, 2.0)],
 )
-def test_reset_clears_timestamp_fps_estimate_and_history(
-    reset_frame_number, reset_window_seconds
-):
+def test_reset_re_resolves_source_fps(reset_frame_number, reset_window_seconds):
     block, _ = _make_block()
-    timestamp = datetime(2024, 1, 1)
     for frame_number in range(9):
-        _run(
-            block,
-            _make_frame(
-                frame_number,
-                fps=None,
-                measured_fps=None,
-                frame_timestamp=timestamp + timedelta(milliseconds=40 * frame_number),
-            ),
-        )
+        _run(block, _make_frame(frame_number, fps=25.0))
     previous_bookkeeping = block._video_bookkeeping["stream-0"]
-    assert previous_bookkeeping.source_fps == pytest.approx(25.0)
-    assert len(previous_bookkeeping.recent_frame_timestamps) == 9
+    assert previous_bookkeeping.source_fps == 25.0
 
-    reset_timestamp = timestamp + timedelta(seconds=30)
     _run(
         block,
-        _make_frame(
-            reset_frame_number,
-            fps=None,
-            measured_fps=None,
-            frame_timestamp=reset_timestamp,
-        ),
+        _make_frame(reset_frame_number, fps=None, measured_fps=None),
         window_seconds=reset_window_seconds,
     )
 
     reset_bookkeeping = block._video_bookkeeping["stream-0"]
     assert reset_bookkeeping is not previous_bookkeeping
-    assert reset_bookkeeping.source_fps is None
-    assert reset_bookkeeping.recent_frame_timestamps == [reset_timestamp]
+    assert reset_bookkeeping.source_fps == 30.0
 
 
 def test_sample_fps_is_capped_at_source_fps():
@@ -968,7 +882,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
 
 def test_source_fps_jitter_does_not_reset_state():
     # measured_fps jitters per frame on live streams and is never consumed;
-    # its arrival mid-stream must neither pin the fps nor clear state.
+    # its arrival mid-stream must neither re-pin the fps nor clear state.
     block, model = _make_block(responses=[[_model_segment("walk")]])
     result = _run(block, _make_frame(0, fps=None, measured_fps=None))
     assert result["timeline"]
@@ -981,28 +895,18 @@ def test_source_fps_jitter_does_not_reset_state():
 
     bookkeeping = block._video_bookkeeping["stream-0"]
     assert [entry.class_name for entry in result["timeline"]] == ["walk"]
-    assert bookkeeping.source_fps is None
-    assert len(bookkeeping.recent_frame_timestamps) == 4
+    assert bookkeeping.source_fps == 30.0
     assert len(model.calls) == 1
 
 
-def test_processing_paced_measured_fps_does_not_poison_estimation():
+def test_processing_paced_measured_fps_is_never_consumed():
     # WebRTC ACK pacing makes measured_fps track model latency (~0.05 fps
-    # observed live); the timestamp estimate must win over it.
+    # observed live); consuming it collapses the stride to one frame.
     block, _ = _make_block()
-    timestamp = datetime(2024, 1, 1)
-    for frame_number in range(9):
-        _run(
-            block,
-            _make_frame(
-                frame_number,
-                fps=None,
-                measured_fps=0.05,
-                frame_timestamp=timestamp + timedelta(milliseconds=40 * frame_number),
-            ),
-        )
+    for frame_number in range(3):
+        _run(block, _make_frame(frame_number, fps=None, measured_fps=0.05))
 
-    assert block._video_bookkeeping["stream-0"].source_fps == pytest.approx(25.0)
+    assert block._video_bookkeeping["stream-0"].source_fps == 30.0
 
 
 def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
