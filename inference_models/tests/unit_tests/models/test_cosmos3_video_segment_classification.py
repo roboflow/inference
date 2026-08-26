@@ -157,7 +157,7 @@ def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
 
 def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> None:
     reasoner = _FakeReasoner(
-        response='[{"start": 0, "end": 0.2, "class": "opening a door"}]'
+        response='[{"start": 0, "end": 0.2, "caption": "opening a door"}]'
     )
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(2)]
@@ -172,11 +172,11 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
         )
     ]
     prompt = reasoner.calls[0]["prompt"]
-    assert "notable temporal events" in prompt
-    assert "short lowercase" in prompt
+    assert prompt.startswith("List all action segments in the video.")
+    assert "'caption'" in prompt
+    assert "Please list multiple events if applicable." in prompt
+    assert '"caption": EVENT2' in prompt
     assert "Class vocabulary:" not in prompt
-    assert "0.4 seconds" in prompt
-    assert '"start": <seconds>' in prompt
 
 
 @pytest.mark.parametrize(
@@ -210,15 +210,37 @@ def test_infer_uses_open_vocabulary_prompt_and_parser_without_vocabulary() -> No
             ],
         ),
         (
-            # Numeric strings, booleans, and the "caption" key are rejected.
+            # Numeric strings, booleans, missing labels, and non-string
+            # labels are rejected.
             '[{"start": "0.1", "end": 0.3, "class": "jumping"}, '
             '{"start": true, "end": 0.3, "class": "jumping"}, '
-            '{"start": 0.1, "end": 0.3, "caption": "jumping"}, '
+            '{"start": 0.1, "end": 0.3}, '
             '{"start": 0.1, "end": 0.3, "class": 3}]',
             ["jumping"],
             8,
             4.0,
             [],
+        ),
+        (
+            # The cookbook's open-vocabulary output labels events under a
+            # "caption" key.
+            '[{"start": 0.0, "end": 2.0, "caption": "robot reaches out"}, '
+            '{"start": 2.0, "end": 4.0, "caption": "robot scoops popcorn"}]',
+            None,
+            32,
+            4.0,
+            [
+                VideoSegmentClassificationPrediction(
+                    start_frame_idx=0,
+                    end_frame_idx=8,
+                    class_name="robot reaches out",
+                ),
+                VideoSegmentClassificationPrediction(
+                    start_frame_idx=8,
+                    end_frame_idx=16,
+                    class_name="robot scoops popcorn",
+                ),
+            ],
         ),
         (
             '[{"start": 0, "end": 1, "class": "unknown"}]',

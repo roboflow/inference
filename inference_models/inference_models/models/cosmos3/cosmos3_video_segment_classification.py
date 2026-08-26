@@ -26,17 +26,29 @@ TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
     "Events may overlap.\n"
     "Return [] when no event matches the class vocabulary."
 )
-OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = (
-    "Identify notable temporal events in this video and label each with a short "
-    "lowercase class phrase.\n"
-    "The clip duration is {duration:.1f} seconds at {fps} fps.\n"
-    "Return STRICT JSON array output using this schema:\n"
-    '[{{"start": <seconds>, "end": <seconds>, '
-    '"class": "<short lowercase class phrase>"}}]\n'
-    "Report start and end as decimal seconds at 0.1 second granularity. "
-    "Events may overlap.\n"
-    "Return [] when no notable temporal event occurs."
-)
+# The open-vocabulary prompt is the cookbook's verbatim temporal-localization
+# prompt. Variants that reworded it ("notable events", a "class" key, extra
+# format constraints) collapsed the model's output to one whole-clip segment
+# on the cookbook's own demo asset; only the trained phrasing densifies.
+OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT_TEMPLATE = """List all action segments in the video.
+
+Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
+
+```json
+[
+{{
+  "start": t_start,
+  "end": t_end,
+  "caption": EVENT1
+}},
+{{
+  "start": t_start,
+  "end": t_end,
+  "caption": EVENT2
+}},
+...
+]
+```"""
 
 
 def _parse_seconds(value: Any) -> Optional[float]:
@@ -85,7 +97,11 @@ def _parse_temporal_segments(
     for entry in entries:
         if not isinstance(entry, dict):
             continue
+        # The open-vocabulary prompt keeps the cookbook's "caption" key;
+        # the vocabulary prompt asks for "class".
         label_value = entry.get("class")
+        if not isinstance(label_value, str):
+            label_value = entry.get("caption")
         if not isinstance(label_value, str):
             continue
         label = label_value.strip()
