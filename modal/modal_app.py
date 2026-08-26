@@ -504,15 +504,15 @@ from datetime import datetime
                                 arr = np.array(obj["value"], dtype=obj["dtype"])
                                 return arr.reshape(obj["shape"])
                             elif obj["_type"] == "batch":
-                                # Must precede the "object" case: without it a
-                                # Batch arrives stringified and blocks declaring
-                                # batch_oriented_parameters get a repr, not data.
+                                # Without this arm a Batch arrives stringified
+                                # and blocks declaring batch_oriented_parameters
+                                # get a repr instead of their data.
                                 indices = obj.get("indices")
                                 return Batch(
                                     content=[decode_inputs(v) for v in obj["value"]],
                                     indices=(
                                         [tuple(i) for i in indices]
-                                        if indices
+                                        if indices is not None
                                         else None
                                     ),
                                 )
@@ -823,7 +823,11 @@ from datetime import datetime
                     indices = obj.get("indices")
                     return Batch(
                         content=[_decode(v) for v in obj["value"]],
-                        indices=[tuple(i) for i in indices] if indices else None,
+                        indices=(
+                            [tuple(i) for i in indices]
+                            if indices is not None
+                            else None
+                        ),
                     )
                 if _type == "bytes":
                     return (

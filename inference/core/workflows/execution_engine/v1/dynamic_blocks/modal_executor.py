@@ -298,7 +298,9 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
                 "_type": "batch",
                 "value": [patch_for_modal_serialization(item) for item in value],
                 "indices": (
-                    [list(index) for index in value.indices] if value.indices else None
+                    [list(index) for index in value.indices]
+                    if value.indices is not None
+                    else None
                 ),
             }
         elif isinstance(value, WorkflowImageData):
@@ -777,7 +779,9 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
                 "_type": "batch",
                 "value": [_pack(item) for item in value],
                 "indices": (
-                    [list(index) for index in value.indices] if value.indices else None
+                    [list(index) for index in value.indices]
+                    if value.indices is not None
+                    else None
                 ),
             }
         if isinstance(value, WorkflowImageData):
