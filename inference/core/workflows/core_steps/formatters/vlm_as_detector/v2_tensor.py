@@ -129,7 +129,7 @@ This block converts VLM/LLM text outputs containing object detection predictions
 6. Creates class name to class ID mapping:
    - For OpenAI/Gemini/Claude: uses provided classes list to create index mapping (class_name → class_id)
    - Classes are mapped in order (first class = ID 0, second = ID 1, etc.)
-   - Classes not in the provided list get class_id = -1
+   - Classes not in the provided list get class_id = -1. The model's original label is kept as class_name, and visualization blocks paint those detections in a neutral gray.
    - For Florence-2: uses different mapping strategies based on task type
 7. Constructs object detection predictions:
    - Creates supervision Detections objects with bounding boxes (xyxy format)
@@ -179,7 +179,7 @@ This version (v2) includes the following enhancements over v1:
 
 ## Requirements
 
-This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports eight model types: "openai", "google-gemini", "anthropic-claude", "spacexai", "qwen", "muse", "zai", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, Claude, SpaceXAI, Qwen, Muse, and Z.ai models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
+This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports eight model types: "openai", "google-gemini", "anthropic-claude", "spacexai", "qwen", "muse", "zai", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, Claude, SpaceXAI, Qwen, Muse, and Z.ai models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1; the model's original label is kept as class_name and visualization blocks paint those detections in a neutral gray. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
 """
 
 SHORT_DESCRIPTION = "Parses raw string into object-detection prediction."
@@ -235,7 +235,7 @@ class BlockManifest(WorkflowBlockManifest):
             List[str],
         ]
     ] = Field(
-        description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for detection format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1. Required for OpenAI, Gemini, and Claude models. Optional for Florence-2 (some tasks don't require it). Should match the classes the VLM was asked to detect.",
+        description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for detection format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1; the model's original label is kept as class_name and visualization blocks paint those detections in a neutral gray. Required for OpenAI, Gemini, and Claude models. Optional for Florence-2 (some tasks don't require it). Should match the classes the VLM was asked to detect.",
         examples=[
             [
                 "$steps.lmm.classes",
