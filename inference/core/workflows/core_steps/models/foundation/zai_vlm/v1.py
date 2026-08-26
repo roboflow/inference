@@ -76,30 +76,39 @@ ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE = (
     "Only use these labels: {class_list}"
 )
 
-# Ported verbatim from vlm-exam's `_BBOX_2D_PIXEL_PROMPT_TEMPLATE`, the
-# format pinned for GLM 5.3 Flash (`xyxy_absolute_original_image_bbox_2d`).
-# The model scores ~0 mAP with normalized 0-1000 prompts.
-ZAI_BBOX_2D_PIXEL_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image and return their locations in the "
-    "form of coordinates. The format of output should be like "
-    '{{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}}. '
-    "Only use these labels: {class_list}. Return a JSON array only."
+# Ported verbatim from vlm-exam's `_PROMPT_TEMPLATE`, the format pinned for
+# GLM 5.3 Flash (`yxyx_normalized_0_to_1000`). The full 250-image benchmark
+# scores it 0.331 dataset mAP@50 vs 0.219 for absolute-pixel bbox_2d
+# prompting, the next best format.
+ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
+    "between 0 and 1000, normalized to the image height and width. "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
 )
 
 # One row per model; add future Z.ai models here. A row may override
 # `reasoning_levels` if a model diverges from the shared set;
 # `reasoning_required` marks models that reject `reasoning: {enabled:
 # false}` and fall back to low effort when the user disables reasoning.
+# `detection_model_type` is the `vlm_as_detector@v2` model_type that parses
+# the model's detection output; the two GLM models emit the same "box_2d"
+# key with different axis orders, so each needs its own parser entry.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "GLM 5V Turbo": {
         "model_id": "z-ai/glm-5v-turbo",
         "detection_prompt_template": ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE,
+        "detection_model_type": "zai",
     },
     # GLM 5.3 Flash ran as the OpenRouter stealth model "Ox Alpha"; the
     # retirement notice confirms they are the same model.
     "GLM 5.3 Flash": {
         "model_id": "z-ai/glm-5.3-flash",
-        "detection_prompt_template": ZAI_BBOX_2D_PIXEL_DETECTION_PROMPT_TEMPLATE,
+        "detection_prompt_template": ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE,
+        "detection_model_type": "zai-flash",
         "reasoning_required": True,
     },
 }
@@ -431,10 +440,12 @@ You can specify arbitrary text prompts or predefined ones. The block supports:
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
 Object detection uses the per-model format validated in the vlm-exam
-benchmarks: GLM 5V Turbo emits `box_2d`/`label` entries with coordinates
-normalized to 0-1000, while GLM 5.3 Flash emits `bbox_2d`/`label` entries
-in absolute pixels. Parse either output with `VLM as Detector`
-(`vlm_as_detector@v2`) using `model_type="zai"`; it detects the format.
+benchmarks. Both models emit `box_2d`/`label` entries normalized to
+0-1000, but with different axis orders: GLM 5V Turbo uses
+`[x_min, y_min, x_max, y_max]` and GLM 5.3 Flash uses
+`[y_min, x_min, y_max, x_max]`. Parse with `VLM as Detector`
+(`vlm_as_detector@v2`) using `model_type="zai"` for GLM 5V Turbo and
+`model_type="zai-flash"` for GLM 5.3 Flash.
 
 Every request sends the image before the instruction text in a single user
 message. GLM models default to extended reasoning on OpenRouter; the block

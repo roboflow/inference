@@ -441,7 +441,8 @@ def test_run_method_for_anthropic_claude_legacy_detections_output() -> None:
     assert np.allclose(result["predictions"].confidence, np.array([0.9]))
 
 
-def test_manifest_parsing_for_zai_model_type() -> None:
+@pytest.mark.parametrize("model_type", ["zai", "zai-flash"])
+def test_manifest_parsing_for_zai_model_types(model_type: str) -> None:
     # given
     raw_manifest = {
         "type": "roboflow_core/vlm_as_detector@v2",
@@ -449,7 +450,7 @@ def test_manifest_parsing_for_zai_model_type() -> None:
         "image": "$inputs.image",
         "vlm_output": "$steps.vlm.output",
         "classes": ["cat", "dog"],
-        "model_type": "zai",
+        "model_type": model_type,
         "task_type": "object-detection",
     }
 
@@ -457,7 +458,7 @@ def test_manifest_parsing_for_zai_model_type() -> None:
     result = BlockManifest.model_validate(raw_manifest)
 
     # then
-    assert result.model_type == "zai"
+    assert result.model_type == model_type
 
 
 def test_run_method_for_zai_box_2d_output() -> None:
@@ -502,9 +503,10 @@ def test_run_method_for_zai_box_2d_output() -> None:
     assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
 
 
-def test_run_method_for_zai_bbox_2d_absolute_pixel_output() -> None:
-    # given - the GLM 5.3 Flash prompt pins bbox_2d entries in absolute
-    # pixels of the original image; out-of-range values are clamped
+def test_run_method_for_zai_flash_yxyx_box_2d_output() -> None:
+    # given - the GLM 5.3 Flash prompt pins box_2d entries as
+    # [y_min, x_min, y_max, x_max] integers normalized to 0-1000
+    # (the Gemini contract)
     block = VLMAsDetectorBlockV2()
     image = WorkflowImageData(
         numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
@@ -512,8 +514,8 @@ def test_run_method_for_zai_bbox_2d_absolute_pixel_output() -> None:
     )
     vlm_output = """
 [
-  {"bbox_2d": [64, 96, 320, 480], "label": "cat"},
-  {"bbox_2d": [-10, 0, 700, 240], "label": "dog"}
+  {"box_2d": [100, 200, 500, 1000], "label": "cat"},
+  {"box_2d": [0, 0, 500, 500], "label": "unicorn"}
 ]
     """
 
@@ -522,22 +524,54 @@ def test_run_method_for_zai_bbox_2d_absolute_pixel_output() -> None:
         image=image,
         vlm_output=vlm_output,
         classes=["cat", "dog"],
-        model_type="zai",
+        model_type="zai-flash",
         task_type="object-detection",
     )
 
     # then
     assert result["error_status"] is False
-    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "unicorn"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, -1]))
     assert np.allclose(
         result["predictions"].xyxy,
         np.array(
             [
-                [64, 96, 320, 480],
-                [0, 0, 640, 240],
+                [128, 48, 640, 240],
+                [0, 0, 320, 240],
             ]
         ),
         atol=1.0,
+    )
+
+
+def test_run_method_for_zai_flash_recovers_array_from_prose_wrapped_output() -> None:
+    # given - GLM sometimes wraps the JSON array in extra text that breaks
+    # whole-string parsing; the zai paths recover the outermost [...] block
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        "Here are the detected objects: "
+        '[{"box_2d": [100, 200, 500, 1000], "label": "cat"}] '
+        "Let me know if you need anything else."
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["cat"]
+    assert np.allclose(
+        result["predictions"].xyxy, np.array([[128, 48, 640, 240]]), atol=1.0
     )
 
 
