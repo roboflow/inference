@@ -1,4 +1,4 @@
-"""Tests for the stateful Video Classification Model workflow block."""
+"""Tests for the stateful Video Segment Classification Model workflow block."""
 
 import importlib
 import math
@@ -26,18 +26,18 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_video_segment_classification_prediction_kind,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_classification import (
+from inference.core.workflows.core_steps.models.roboflow.video_segment_classification import (
     v1 as video_classification_module,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_classification.v1 import (
+from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1 import (
     BlockManifest,
-    VideoClassificationModelBlockV1,
+    VideoSegmentClassificationModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_classification.v1_tensor import (
+from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1_tensor import (
     BlockManifest as TensorBlockManifest,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_classification.v1_tensor import (
-    VideoClassificationModelBlockV1 as TensorVideoClassificationModelBlockV1,
+from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1_tensor import (
+    VideoSegmentClassificationModelBlockV1 as TensorVideoSegmentClassificationModelBlockV1,
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
@@ -145,9 +145,9 @@ def _make_block(
     tensor: bool = False,
 ):
     block_type = (
-        TensorVideoClassificationModelBlockV1
+        TensorVideoSegmentClassificationModelBlockV1
         if tensor
-        else VideoClassificationModelBlockV1
+        else VideoSegmentClassificationModelBlockV1
     )
     block = block_type(
         model_manager=MagicMock(),
@@ -197,7 +197,7 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
     reasoner = _make_cosmos3_reasoner()
     load_model = MagicMock(return_value=reasoner)
     monkeypatch.setattr(AutoModel, "from_pretrained", load_model)
-    block = VideoClassificationModelBlockV1(
+    block = VideoSegmentClassificationModelBlockV1(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
@@ -217,7 +217,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
         "from_pretrained",
         MagicMock(return_value=object()),
     )
-    block = VideoClassificationModelBlockV1(
+    block = VideoSegmentClassificationModelBlockV1(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
@@ -234,7 +234,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
 def test_manifest_parses_classes_and_declares_outputs(manifest_type):
     manifest = manifest_type.model_validate(
         {
-            "type": "roboflow_core/video_classification_model@v1",
+            "type": "roboflow_core/video_segment_classification_model@v1",
             "name": "video_classifier",
             "images": "$inputs.image",
             "class_names": "walk, run",
@@ -260,7 +260,7 @@ def test_manifest_requires_class_names(manifest_type):
     with pytest.raises(Exception):
         manifest_type.model_validate(
             {
-                "type": "roboflow_core/video_classification_model@v1",
+                "type": "roboflow_core/video_segment_classification_model@v1",
                 "name": "video_classifier",
                 "images": "$inputs.image",
             }
@@ -289,7 +289,7 @@ def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
     manifest_type, field, value
 ):
     data = {
-        "type": "roboflow_core/video_classification_model@v1",
+        "type": "roboflow_core/video_segment_classification_model@v1",
         "name": "video_classifier",
         "images": "$inputs.image",
         "class_names": ["walk"],
@@ -678,7 +678,7 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
 
 
 def test_remote_mode_raises():
-    block = VideoClassificationModelBlockV1(
+    block = VideoSegmentClassificationModelBlockV1(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.REMOTE,
@@ -744,11 +744,11 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
         )
         reloaded_loader = importlib.reload(loader)
 
-        assert reloaded_loader.VideoClassificationModelBlockV1 in (
+        assert reloaded_loader.VideoSegmentClassificationModelBlockV1 in (
             reloaded_loader.load_blocks()
         )
         assert (
-            reloaded_loader.VideoClassificationModelBlockV1.__module__.endswith(
+            reloaded_loader.VideoSegmentClassificationModelBlockV1.__module__.endswith(
                 "v1_tensor"
             )
             is tensor_enabled

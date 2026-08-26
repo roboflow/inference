@@ -75,7 +75,7 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 
 
 @dataclass
-class _VideoClassificationBookkeeping:
+class _VideoSegmentClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[VideoSegmentClassificationPrediction] = field(default_factory=list)
     open_classes: Set[str] = field(default_factory=set)
@@ -89,7 +89,7 @@ class _VideoClassificationBookkeeping:
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Video Classification Model",
+            "name": "Video Segment Classification Model",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -110,7 +110,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
 
-    type: Literal["roboflow_core/video_classification_model@v1"]
+    type: Literal["roboflow_core/video_segment_classification_model@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     class_names: Union[
         List[str],
@@ -199,11 +199,11 @@ class BlockManifest(WorkflowBlockManifest):
         return [DEFAULT_MODEL_ID]
 
 
-class VideoClassificationModelBlockV1(WorkflowBlock):
+class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
     """Classify temporal segments in independent video streams."""
 
     _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
-        "Video Classification Model only supports LOCAL workflow step "
+        "Video Segment Classification Model only supports LOCAL workflow step "
         "execution. Remote execution sends frames to separate processes and "
         "breaks the per-video classification state. Set "
         "WORKFLOWS_STEP_EXECUTION_MODE=local to use this block."
@@ -220,7 +220,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
         self._step_execution_mode = step_execution_mode
         self._model = None
         self._current_model_id: Optional[str] = None
-        self._video_bookkeeping: Dict[str, _VideoClassificationBookkeeping] = {}
+        self._video_bookkeeping: Dict[str, _VideoSegmentClassificationBookkeeping] = {}
         self._warned_fps_video_ids: Set[str] = set()
 
     @classmethod
@@ -354,7 +354,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
-            bookkeeping = _VideoClassificationBookkeeping(signature=signature)
+            bookkeeping = _VideoSegmentClassificationBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
 
         if (
@@ -403,7 +403,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
                 return candidate
         if metadata.video_identifier not in self._warned_fps_video_ids:
             logger.warning(
-                "Video Classification Model did not receive a valid source FPS. "
+                "Video Segment Classification Model did not receive a valid source FPS. "
                 "It uses 30 FPS for windowing and sampling."
             )
             self._warned_fps_video_ids.add(metadata.video_identifier)
@@ -412,7 +412,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
     def _classify_buffer(
         self,
         model,
-        bookkeeping: _VideoClassificationBookkeeping,
+        bookkeeping: _VideoSegmentClassificationBookkeeping,
         class_names: List[str],
         effective_sample_fps: float,
         sampling_stride: float,
@@ -430,7 +430,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
             )
         except Exception as error:
             logger.warning(
-                "Video Classification Model call failed: %s",
+                "Video Segment Classification Model call failed: %s",
                 error,
                 exc_info=True,
             )
@@ -460,7 +460,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
 
     def _merge_segments(
         self,
-        bookkeeping: _VideoClassificationBookkeeping,
+        bookkeeping: _VideoSegmentClassificationBookkeeping,
         segments: List[ModelVideoSegmentClassificationPrediction],
         class_names: List[str],
         stride: float,
@@ -532,7 +532,7 @@ class VideoClassificationModelBlockV1(WorkflowBlock):
 
     @staticmethod
     def _build_output(
-        bookkeeping: _VideoClassificationBookkeeping,
+        bookkeeping: _VideoSegmentClassificationBookkeeping,
         class_names: List[str],
         frame_number: int,
         error_status: str,

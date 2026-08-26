@@ -936,12 +936,12 @@ else:
         RoboflowMultiLabelClassificationModelBlockV3,
     )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.models.roboflow.video_classification.v1 import (
-        VideoClassificationModelBlockV1,
+    from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1 import (
+        VideoSegmentClassificationModelBlockV1,
     )
 else:
-    from inference.core.workflows.core_steps.models.roboflow.video_classification.v1_tensor import (
-        VideoClassificationModelBlockV1,
+    from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1_tensor import (
+        VideoSegmentClassificationModelBlockV1,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
@@ -1925,7 +1925,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlockV3,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
-        VideoClassificationModelBlockV1,
+        VideoSegmentClassificationModelBlockV1,
         RoboflowObjectDetectionModelBlockV2,
         RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
