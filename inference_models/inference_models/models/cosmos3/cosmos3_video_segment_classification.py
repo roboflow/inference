@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Union
 import numpy as np
 import torch
 
+from inference_models.logger import LOGGER
 from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationModel,
     VideoSegmentClassificationPrediction,
@@ -271,6 +272,18 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             class_names=None,
             num_frames=len(normalized_frames),
             fps=fps,
+        )
+        # Raw stage-1 output, before condensing or vocabulary mapping
+        # relabels anything — this is what the model itself localized.
+        LOGGER.debug(
+            "Cosmos3 temporal localization over %d frames parsed %d "
+            "segment(s): %s",
+            len(normalized_frames),
+            len(segments),
+            [
+                (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
+                for segment in segments
+            ],
         )
         if not segments:
             return segments
