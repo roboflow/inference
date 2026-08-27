@@ -34,6 +34,14 @@ WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
+# NOTE: this cap and the protocol v2 session guarantee interact. Sessions are
+# container-local and reconnects are not routed with any affinity, so every
+# capped close of a STATEFUL run is likely to land on another container and
+# surface as a (correct, but scheduled) session-lost failure roughly hourly.
+# Making long stateful runs survive needs session-affine reconnect routing,
+# externalized session state, or a drain/handoff before the cap — none of
+# which exist yet. Until then, keep stateful custom Python runs shorter than
+# this cap, or expect a checkpoint replay per hour.
 WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
     os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
 )
@@ -48,6 +56,55 @@ WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
 WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
 
 
+class _TtlKeySet:
+    """TTL'd, size-capped set of ids with refreshable timestamps.
+
+    Backs the two container-local registries protocol v2 needs — which
+    sessions this container holds runtime state for, and which request ids
+    it has already started executing. Entries are kept in age order so
+    pruning is an early-exit scan from the front.
+
+    All access happens on the event loop thread, so no locking is needed.
+    """
+
+    def __init__(self, ttl_seconds: float, max_entries: int):
+        from collections import OrderedDict
+
+        self._ttl_seconds = ttl_seconds
+        self._max_entries = max_entries
+        self._seen: "OrderedDict[str, float]" = OrderedDict()
+
+    def _prune(self) -> None:
+        while len(self._seen) > self._max_entries:
+            self._seen.popitem(last=False)
+        deadline = time.monotonic() - self._ttl_seconds
+        while self._seen:
+            key, last_seen = next(iter(self._seen.items()))
+            if last_seen >= deadline:
+                break
+            del self._seen[key]
+
+    def add(self, key: str) -> None:
+        if not key:
+            return
+        self._seen.pop(key, None)
+        self._seen[key] = time.monotonic()
+        self._prune()
+
+    def refresh(self, key: str) -> bool:
+        """Re-stamp an existing entry. Never adds. Returns whether present."""
+        if not key or key not in self._seen:
+            return False
+        self.add(key)
+        return True
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str) or not key:
+            return False
+        self._prune()
+        return key in self._seen
+
+
 class _WsResponseCache:
     """Bounded cache of request_id -> packed response (protocol v2 dedup).
 
@@ -59,6 +116,13 @@ class _WsResponseCache:
     embed serialized images, so eviction is byte-capped as well as
     entry-capped (LRU order). All access happens on the event loop thread,
     so no locking is needed.
+
+    Retention is best effort — a single oversized response or a burst of
+    concurrent large ones can evict an entry the client still wants. The
+    at-most-once guarantee therefore does NOT rest on this cache: it rests
+    on the executed-request registry (``_ws_executed``), which a cache miss
+    falls back to so the resend gets a loud error instead of a second
+    execution.
     """
 
     def __init__(
@@ -296,7 +360,18 @@ class Executor:
         # Protocol v2 websocket state (see wsapp): all touched only on the
         # event loop thread.
         self._container_id = uuid.uuid4().hex
-        self._ws_sessions: Dict[str, float] = {}
+        self._ws_sessions = _TtlKeySet(
+            ttl_seconds=self._WS_SESSION_TTL_SECONDS,
+            max_entries=self._WS_SESSION_MAX_ENTRIES,
+        )
+        # Request ids whose user code this container has STARTED running.
+        # Entries are tiny, so this outlives the response cache by a wide
+        # margin: it is what makes execution at-most-once even when the
+        # response payload is gone.
+        self._ws_executed = _TtlKeySet(
+            ttl_seconds=self._WS_EXECUTED_TTL_SECONDS,
+            max_entries=self._WS_EXECUTED_MAX_ENTRIES,
+        )
         self._ws_response_cache = _WsResponseCache()
         self._ws_inflight: Dict[str, "asyncio.Task"] = {}
 
@@ -318,9 +393,15 @@ class Executor:
     # ``_had_success`` latch. Registering earlier (e.g. at hello time)
     # would make a failed "session lost" handshake mark the session as
     # known, so the very next reconnect would silently pass the check
-    # this mechanism exists to fail.
+    # this mechanism exists to fail. An ALREADY known session is refreshed
+    # on every hello, so a long-lived but currently failing stream cannot
+    # age out of the registry while its namespaces are still here.
     _WS_SESSION_TTL_SECONDS = 7200.0
     _WS_SESSION_MAX_ENTRIES = 4096
+    # Request ids live only as long as a client could still resend one:
+    # 3 attempts with reconnects, bounded by the client's read timeout.
+    _WS_EXECUTED_TTL_SECONDS = 3600.0
+    _WS_EXECUTED_MAX_ENTRIES = 32768
 
     def _ws_session_seen(self, session_id: str) -> bool:
         """Whether user code for this session already ran on this container.
@@ -329,25 +410,15 @@ class Executor:
         tells the client its Python runtime state (mutated globals in the
         cached namespaces) lives in some other, gone container — the client
         fails loudly instead of silently continuing with reset state.
+
+        A hit also re-stamps the entry: the namespaces this answer is about
+        are never evicted, so the registry must not expire under a session
+        that is still actively connecting.
         """
-        self._prune_ws_sessions()
-        return bool(session_id) and session_id in self._ws_sessions
+        return self._ws_sessions.refresh(session_id)
 
     def _ws_register_session(self, session_id: str) -> None:
-        if not session_id:
-            return
-        self._ws_sessions[session_id] = time.monotonic()
-
-    def _prune_ws_sessions(self) -> None:
-        deadline = time.monotonic() - self._WS_SESSION_TTL_SECONDS
-        if len(self._ws_sessions) > self._WS_SESSION_MAX_ENTRIES:
-            for stale in sorted(self._ws_sessions, key=self._ws_sessions.get)[
-                : len(self._ws_sessions) - self._WS_SESSION_MAX_ENTRIES
-            ]:
-                del self._ws_sessions[stale]
-        for session_id, last_seen in list(self._ws_sessions.items()):
-            if last_seen < deadline:
-                del self._ws_sessions[session_id]
+        self._ws_sessions.add(session_id)
 
     def _get_cached_namespace(self, code_hash: str) -> Optional[dict]:
         namespace = self._code_namespaces.get(code_hash)
@@ -1006,6 +1077,22 @@ from datetime import datetime
             else:
                 await websocket.send_bytes(payload)
 
+        def _pack_ws_error(
+            msgpack_module: Any,
+            error_type: str,
+            error: str,
+            request_id: Optional[str],
+        ) -> bytes:
+            """Pack a minimal error response that can never fail to encode."""
+            resp: Dict[str, Any] = {
+                "success": False,
+                "error": str(error),
+                "error_type": str(error_type),
+            }
+            if request_id:
+                resp["request_id"] = request_id
+            return msgpack_module.packb(resp, use_bin_type=True)
+
         async def execute_request(
             request: dict, request_id: Optional[str], session_id: str
         ) -> bytes:
@@ -1016,7 +1103,15 @@ from datetime import datetime
             original execution instead of running the user code a second
             time; the completed payload then moves to the response cache for
             resends that arrive after completion.
+
+            Never raises: user code is at-most-once, so once execution has
+            started every outcome — including a result this server cannot
+            serialize — has to come back as a packed response that is also
+            cached. An escaping exception would kill the connection without
+            a cache entry and invite the client to resend a request whose
+            side effects already happened.
             """
+            payload: Optional[bytes] = None
             try:
                 code_str = request.get("code_str", "")
                 imports = request.get("imports", [])
@@ -1026,6 +1121,10 @@ from datetime import datetime
                 workflow_context = request.get("workflow_context") or {}
 
                 inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                # Mark BEFORE running: from here on a resend must never
+                # re-execute, however this call ends.
+                if request_id:
+                    executor_self._ws_executed.add(request_id)
                 resp = await asyncio.to_thread(
                     Executor._run_user_code_ws,
                     executor_self,
@@ -1047,12 +1146,27 @@ from datetime import datetime
                     resp["request_id"] = request_id
 
                 payload = msgpack.packb(resp, use_bin_type=True)
-                if request_id:
-                    executor_self._ws_response_cache.put(request_id, payload)
-                return payload
+            except Exception as error:
+                traceback.print_exc()
+                payload = _pack_ws_error(
+                    msgpack,
+                    error_type=type(error).__name__,
+                    error=(
+                        "The custom Python block ran, but the server could not "
+                        f"return its response: {error}"
+                    ),
+                    request_id=request_id,
+                )
             finally:
+                # Cache before clearing in-flight so a resend arriving in
+                # between finds one or the other, never a gap. On
+                # cancellation payload stays None: nothing to cache, but the
+                # executed marker already bars a re-run.
                 if request_id:
+                    if payload is not None:
+                        executor_self._ws_response_cache.put(request_id, payload)
                     executor_self._ws_inflight.pop(request_id, None)
+            return payload
 
         @ws_app.websocket("/ws")
         async def ws_execute(websocket: WebSocket):
@@ -1138,6 +1252,28 @@ from datetime import datetime
                         # the same request.
                         task = executor_self._ws_inflight.get(request_id)
                         if task is None:
+                            if request_id in executor_self._ws_executed:
+                                # Already ran here, but its response is no
+                                # longer available (evicted, or the call was
+                                # cancelled). Re-running would duplicate the
+                                # block's side effects, so fail loudly
+                                # instead — execution stays at-most-once.
+                                await send_payload(
+                                    websocket,
+                                    _pack_ws_error(
+                                        msgpack,
+                                        error_type="ResponseNoLongerAvailable",
+                                        error=(
+                                            "This request already executed on "
+                                            "this container and its response is "
+                                            "no longer available. It was not "
+                                            "run again, to avoid duplicating "
+                                            "the block's side effects."
+                                        ),
+                                        request_id=request_id,
+                                    ),
+                                )
+                                continue
                             task = asyncio.create_task(
                                 execute_request(request, request_id, conn_session_id)
                             )

@@ -5,12 +5,18 @@ dead connections, safe resend with request ids, and loud failure on lost
 custom-Python sessions.
 """
 
+import threading
+import time as _time
+from types import SimpleNamespace
 from typing import Any, List, Optional
 
 import msgpack
 import pytest
 
-from inference.core.env import WEBEXEC_WS_READ_TIMEOUT_SECONDS
+from inference.core.env import (
+    WEBEXEC_WS_IDLE_RELEASE_SECONDS,
+    WEBEXEC_WS_READ_TIMEOUT_SECONDS,
+)
 from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     WebexecSessionLostError,
@@ -103,6 +109,20 @@ class TestHandshake:
         assert executor._server_proto == 1
         assert executor._server_idle_timeout is None
 
+    def test_v1_fallback_after_prior_success_is_session_lost(self) -> None:
+        # A v1 server cannot say whether it still holds this session's
+        # runtime state, so continuing would risk silent wrong results.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._had_success = True
+        old_session = executor._session_id
+        executor._ws = _FakeWS([_pack({"success": False, "error": "no code"})])
+
+        with pytest.raises(WebexecSessionLostError, match="protocol v1"):
+            executor._handshake()
+
+        assert executor._session_id != old_session
+        assert executor._had_success is False
+
     def test_v2_server_container_id_is_recorded(self) -> None:
         executor = WebSocketModalExecutor(workspace_id="test-ws")
         executor._ws = _FakeWS([_hello_reply(container_id="container-7")])
@@ -174,10 +194,14 @@ class TestRecvTyping:
 
 
 class TestSendRecvRetry:
-    def test_v2_resends_after_recv_failure(self) -> None:
+    def test_v2_does_not_resend_when_container_is_unidentified(self) -> None:
+        # A server that does not identify its container (pre-container_id
+        # build) cannot promise the reconnect reaches the same dedup
+        # registry, so the guard must fail closed rather than assume it did.
         first_ws = _FakeWS([ConnectionError("idle close")])
-        second_ws = _FakeWS([_pack({"success": True, "request_id": "req-1"})])
+        second_ws = _FakeWS()
         executor = _executor_with_ws(first_ws)
+        executor._server_container_id = None
         sockets = [second_ws]
 
         def fake_ensure(_workspace: str) -> None:
@@ -186,14 +210,13 @@ class TestSendRecvRetry:
 
         executor._ensure_connection = fake_ensure
 
-        resp = executor._send_recv_with_retry(
-            _pack({"inputs": {}}), "test-ws", request_id="req-1"
-        )
+        with pytest.raises(DynamicBlockError, match="same container"):
+            executor._send_recv_with_retry(
+                _pack({"inputs": {}}), "test-ws", request_id="req-1"
+            )
 
-        assert msgpack.unpackb(resp, raw=False)["success"] is True
         assert first_ws.closed
-        # The frame was resent on the fresh socket.
-        assert len(second_ws.sent) == 1
+        assert second_ws.sent == []
 
     def test_v2_resends_after_recv_failure_on_same_container(self) -> None:
         first_ws = _FakeWS([ConnectionError("idle close")])
@@ -235,13 +258,23 @@ class TestSendRecvRetry:
 
         executor._ensure_connection = fake_ensure
 
-        with pytest.raises(DynamicBlockError, match="different container"):
+        with pytest.raises(DynamicBlockError, match="same container"):
             executor._send_recv_with_retry(
                 _pack({"inputs": {}}), "test-ws", request_id="req-1"
             )
 
         # Nothing was sent on the new connection.
         assert second_ws.sent == []
+
+    def test_container_id_is_cleared_when_connection_is_dropped(self) -> None:
+        # A stale id left behind would let the resend guard match a
+        # container this executor is no longer talking to.
+        executor = _executor_with_ws(_FakeWS())
+        executor._server_container_id = "container-1"
+
+        executor._drop_ws_connection()
+
+        assert executor._server_container_id is None
 
     def test_v1_does_not_resend_after_recv_failure(self) -> None:
         ws = _FakeWS([ConnectionError("idle close")])
@@ -264,6 +297,82 @@ class TestSendRecvRetry:
             executor._send_recv_with_retry(
                 _pack({"inputs": {}}), "test-ws", request_id="req-1"
             )
+
+
+def _single_pass_stop_event() -> Any:
+    """Stop event letting the keepalive body run exactly once."""
+    passes = {"n": 0}
+
+    def wait(_timeout: float) -> bool:
+        passes["n"] += 1
+        return passes["n"] > 1
+
+    return SimpleNamespace(wait=wait, is_set=lambda: passes["n"] > 1)
+
+
+class _LockAcquiredHook:
+    """Lock that runs a callback once acquired — models a thread winning the
+    lock only after another has already done its work."""
+
+    def __init__(self, on_acquire) -> None:
+        self._lock = threading.Lock()
+        self._on_acquire = on_acquire
+
+    def acquire(self, blocking: bool = True) -> bool:
+        acquired = self._lock.acquire(blocking)
+        if acquired:
+            self._on_acquire()
+        return acquired
+
+    def release(self) -> None:
+        self._lock.release()
+
+    def __enter__(self) -> "_LockAcquiredHook":
+        self.acquire()
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.release()
+
+
+class TestKeepaliveIdleRelease:
+    def test_releases_connection_and_rotates_session_when_idle(self) -> None:
+        ws = _FakeWS()
+        executor = _executor_with_ws(ws)
+        executor._had_success = True
+        old_session = executor._session_id
+        executor._last_activity = _time.monotonic() - (
+            WEBEXEC_WS_IDLE_RELEASE_SECONDS + 5
+        )
+
+        executor._keepalive_loop(_single_pass_stop_event())
+
+        assert executor._ws is None
+        assert ws.closed
+        assert executor._session_id != old_session
+        assert executor._had_success is False
+
+    def test_activity_just_before_the_lock_cancels_the_release(self) -> None:
+        # The idle value read before acquiring the lock can be stale: a frame
+        # may complete in between. Releasing on it would discard a live
+        # session silently, since rotation clears the fail-loudly latch.
+        ws = _FakeWS()
+        executor = _executor_with_ws(ws)
+        executor._had_success = True
+        old_session = executor._session_id
+        executor._last_activity = _time.monotonic() - (
+            WEBEXEC_WS_IDLE_RELEASE_SECONDS + 5
+        )
+        executor._io_lock = _LockAcquiredHook(
+            lambda: setattr(executor, "_last_activity", _time.monotonic())
+        )
+
+        executor._keepalive_loop(_single_pass_stop_event())
+
+        assert executor._ws is ws
+        assert not ws.closed
+        assert executor._session_id == old_session
+        assert executor._had_success is True
 
 
 class TestResponseIdGuard:

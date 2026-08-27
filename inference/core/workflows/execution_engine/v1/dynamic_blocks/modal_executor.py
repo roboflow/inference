@@ -842,6 +842,14 @@ class WebexecSessionLostError(Exception):
     """
 
 
+class _ResendUnsafeError(Exception):
+    """Internal: a resend cannot be proven duplicate-free, so it is refused.
+
+    Never escapes ``_send_recv_with_retry`` — it is translated there into a
+    ``DynamicBlockError`` explaining that the block may already have run.
+    """
+
+
 class WebSocketModalExecutor:
     """Executes Custom Python Blocks via a persistent WebSocket + msgpack.
 
@@ -855,6 +863,10 @@ class WebSocketModalExecutor:
     # v1 fallback only; with a v2 server the interval derives from the
     # idle timeout the server advertises in the hello reply.
     _KEEPALIVE_IDLE_SECONDS = 25.0
+
+    # Generous enough for a cold container to answer, far below the
+    # execution-sized read timeout the handshake would otherwise inherit.
+    _HANDSHAKE_REPLY_TIMEOUT_SECONDS = 60.0
 
     def __init__(self, workspace_id: Optional[str] = None):
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
@@ -881,6 +893,15 @@ class WebSocketModalExecutor:
         session id registered on some container and silently continue with
         reset runtime state — the exact bug the session check exists to
         prevent.
+
+        KNOWN LIMIT: the session belongs to the executor, and executors are
+        pooled per workspace, so "loud exactly once" is once per EXECUTOR,
+        not once per workflow run. If two stateful runs share an executor
+        when its container dies, only the run that reconnects first sees
+        ``WebexecSessionLostError``; the other continues on the rotated
+        session without an error, even though its state was equally lost.
+        Fixing that needs a per-run identity the executor does not have
+        today — until then, treat the guarantee as per-executor.
         """
         logger.info(
             "[webexec-ws] rotating session %s -> new session (%s)",
@@ -924,11 +945,17 @@ class WebSocketModalExecutor:
             header=[f"{k}: {v}" for k, v in headers.items()],
             timeout=WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
         )
-        self._ws.settimeout(WEBEXEC_WS_READ_TIMEOUT_SECONDS)
         # New container -> no compiled namespaces cached yet.
         self._hashes_sent_on_ws = set()
         try:
+            # The handshake runs while _io_lock is held, so its recv must not
+            # wait the execution-sized read timeout: a server that accepts
+            # the upgrade and then stalls (cold boot, starved event loop,
+            # proxy buffering) would otherwise starve every request thread
+            # for this workspace, once per connect attempt.
+            self._ws.settimeout(self._HANDSHAKE_REPLY_TIMEOUT_SECONDS)
             self._handshake()
+            self._ws.settimeout(WEBEXEC_WS_READ_TIMEOUT_SECONDS)
         except Exception:
             # Never leave a half-negotiated socket cached.
             try:
@@ -954,6 +981,11 @@ class WebSocketModalExecutor:
         session. A v1 server treats the hello as an execution request and
         replies without ``_kind``; that reply is discarded and the
         connection behaves as legacy.
+
+        Session continuity is enforced on BOTH paths. A v1 server cannot say
+        whether it still holds this session's runtime state, so a reconnect
+        after a prior success is treated as lost state rather than assumed
+        intact — the silent-wrong-results case this protocol exists to end.
         """
         import msgpack
 
@@ -973,7 +1005,28 @@ class WebSocketModalExecutor:
             raise ConnectionError(
                 f"undecodable websocket handshake reply: {error}"
             ) from error
-        if not (isinstance(reply, dict) and reply.get("_kind") == "hello"):
+        speaks_v2 = isinstance(reply, dict) and reply.get("_kind") == "hello"
+        session_known = bool(speaks_v2 and reply.get("session_known", False))
+        if self._had_success and not session_known:
+            # Rotate before raising so the failure is loud exactly once:
+            # the next request starts an honest fresh session instead of
+            # silently passing the check with reset runtime state.
+            self._rotate_session(
+                "session lost on reconnect"
+                if speaks_v2
+                else "reconnected to a v1 server, which cannot confirm the session"
+            )
+            raise WebexecSessionLostError(
+                "The Modal container holding this custom Python session is "
+                "gone; runtime state mutated by previous frames cannot be "
+                "restored. Failing instead of silently continuing."
+                if speaks_v2
+                else "The reconnect reached a legacy (protocol v1) Modal "
+                "server, which cannot confirm whether this custom Python "
+                "session's runtime state survived. Failing instead of "
+                "silently continuing on possibly-reset state."
+            )
+        if not speaks_v2:
             # Legacy server: it executed the hello as an (empty) request and
             # returned its error response. Discard it and stay on v1.
             logger.info("[webexec-ws] server speaks protocol v1")
@@ -981,16 +1034,6 @@ class WebSocketModalExecutor:
             self._server_idle_timeout = None
             self._server_container_id = None
             return
-        if self._had_success and not reply.get("session_known", False):
-            # Rotate before raising so the failure is loud exactly once:
-            # the next request starts an honest fresh session instead of
-            # silently passing the check with reset runtime state.
-            self._rotate_session("session lost on reconnect")
-            raise WebexecSessionLostError(
-                "The Modal container holding this custom Python session is "
-                "gone; runtime state mutated by previous frames cannot be "
-                "restored. Failing instead of silently continuing."
-            )
         self._server_proto = 2
         self._server_idle_timeout = float(reply.get("idle_timeout_s") or 10.0)
         self._server_container_id = reply.get("container_id") or None
@@ -1050,6 +1093,14 @@ class WebSocketModalExecutor:
                 ws = self._ws
                 if ws is None:
                     return
+                # Recompute under the lock: the value above was read before
+                # acquiring, so a frame may have completed in between.
+                # Dropping the session on stale idleness would discard state
+                # a just-finished frame extended — silently, since rotation
+                # clears the very latch that would have failed loudly.
+                idle = _time.monotonic() - self._last_activity
+                if idle < self._heartbeat_interval():
+                    continue
                 if idle >= WEBEXEC_WS_IDLE_RELEASE_SECONDS:
                     logger.info(
                         "[webexec-ws] connection idle for %.0fs; releasing it "
@@ -1139,6 +1190,10 @@ class WebSocketModalExecutor:
             pass
         self._ws = None
         self._hashes_sent_on_ws = set()
+        # The id belongs to the connection, not the executor: leaving it set
+        # would let the resend guard compare against a container this
+        # executor is no longer talking to.
+        self._server_container_id = None
 
     def execute_remote(
         self,
@@ -1217,10 +1272,12 @@ class WebSocketModalExecutor:
         Against a v2 server every execution frame carries a ``request_id``
         the server dedups, so resending after a ``recv`` failure is safe —
         but only while the reconnect lands on the SAME container: the dedup
-        cache is per-container, so a resend that reaches a different
-        container would run the user code a second time. When the reconnect
-        lands elsewhere the outcome is ambiguous and the request fails
-        loudly instead.
+        registry is per-container, so a resend that reaches a different
+        container would run the user code a second time. The container is
+        identified from the handshake and compared under ``_io_lock``,
+        immediately before the frame goes out; anything else — a different
+        container, or one that did not identify itself — fails loudly rather
+        than risking a duplicate execution.
 
         Against a v1 server (no dedup) the legacy rule holds: once
         ``send_binary`` succeeds the outcome is ambiguous and the frame is
@@ -1233,38 +1290,46 @@ class WebSocketModalExecutor:
 
         frames = _split_ws_frames(frame_bytes, msgpack)
         last_exc: Optional[Exception] = None
-        # Container the frame was accepted by on a previous attempt; set only
-        # when a resend must be answered from that container's dedup cache.
+        # Set once a frame has been accepted by a container: from then on
+        # only that same container may answer a resend, from its dedup
+        # registry. None means "not yet sent", never "any container".
+        resend_pending = False
         sent_to_container: Optional[str] = None
         attempts = 3
         for attempt in range(attempts):
             sent_ok = False
             try:
                 self._ensure_connection(workspace)
-                if (
-                    sent_to_container is not None
-                    and self._server_container_id != sent_to_container
-                ):
-                    raise DynamicBlockError(
-                        public_message=(
-                            "WebSocket connection to Modal endpoint lost after "
-                            "the request was sent, and the reconnect reached a "
-                            "different container. The custom Python block may "
-                            "have already executed, so the frame was not "
-                            "retried."
-                        ),
-                        context="modal_executor | websocket_response",
-                    )
                 # Hold the lock across send+recv so concurrent callers sharing
                 # this executor's socket can't interleave a request/response.
                 with self._io_lock:
+                    # Compare inside the lock: _connect publishes the socket
+                    # before the handshake commits the new container id, so a
+                    # read taken outside can be stale by the time we send.
                     container_at_send = self._server_container_id
+                    if resend_pending and (
+                        container_at_send is None
+                        or sent_to_container is None
+                        or container_at_send != sent_to_container
+                    ):
+                        raise _ResendUnsafeError()
                     for frame in frames:
                         self._ws.send_binary(frame)
                     sent_ok = True
                     resp_bytes = self._recv_reassembled(msgpack)
-                self._last_activity = _time.monotonic()
+                    self._last_activity = _time.monotonic()
                 return resp_bytes
+            except _ResendUnsafeError:
+                self._drop_ws_connection()
+                raise DynamicBlockError(
+                    public_message=(
+                        "WebSocket connection to Modal endpoint lost after the "
+                        "request was sent, and the reconnect did not reach the "
+                        "same container. The custom Python block may have "
+                        "already executed, so the frame was not retried."
+                    ),
+                    context="modal_executor | websocket_response",
+                )
             except (WebexecSessionLostError, DynamicBlockError):
                 raise
             except Exception as e:
@@ -1288,6 +1353,7 @@ class WebSocketModalExecutor:
                         context="modal_executor | websocket_response",
                     )
                 if sent_ok:
+                    resend_pending = True
                     sent_to_container = container_at_send
                 last_exc = e
                 logger.warning(
