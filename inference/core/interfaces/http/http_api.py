@@ -358,6 +358,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    non_billable_intent_is_authenticated,
+)
 
 if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
@@ -423,34 +426,19 @@ def _get_request_param(
     return json_params.get(key, req_params.get(key))
 
 
-def _coerce_optional_bool(value: Optional[Any]) -> Optional[bool]:
-    if isinstance(value, bool):
-        return value
-    if not isinstance(value, str):
-        return None
-    normalized_value = value.strip().lower()
-    if normalized_value in {"true", "1", "yes", "on"}:
-        return True
-    if normalized_value in {"false", "0", "no", "off"}:
-        return False
-    return None
-
-
 def _is_non_billable_internal_request(
     req_params,
     json_params: Dict[str, Any],
 ) -> bool:
-    countinference = _coerce_optional_bool(
-        _get_request_param(
-            req_params=req_params,
-            json_params=json_params,
-            key="countinference",
-        )
+    countinference = _get_request_param(
+        req_params=req_params,
+        json_params=json_params,
+        key="countinference",
     )
     service_secret = _get_request_param(
         req_params=req_params, json_params=json_params, key="service_secret"
     )
-    return countinference is False and service_secret_is_valid(service_secret)
+    return non_billable_intent_is_authenticated(countinference, service_secret)
 
 
 def _set_request_header(request: Request, header_name: str, header_value: str) -> None:
@@ -2247,6 +2235,11 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
+                # Declared so FastAPI binds them and the usage decorator can read
+                # the caller's billing intent - the workflow run itself needs
+                # neither.
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 workflow_request.api_key = api_key_override(workflow_request.api_key)
@@ -2301,6 +2294,11 @@ class HttpInterface(BaseInterface):
             def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                # Declared so FastAPI binds them and the usage decorator can read
+                # the caller's billing intent - the workflow run itself needs
+                # neither.
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
