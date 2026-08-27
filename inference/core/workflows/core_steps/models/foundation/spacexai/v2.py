@@ -2,12 +2,8 @@
 
 Calls Grok vision models via xAI's OpenAI-compatible Responses API, either
 directly with a user-provided xAI key or through Roboflow's ``apiproxy/xai``
-managed-key proxy. The managed-key (``rf_key``) option is gated behind the
-``WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED`` env flag (off by default) until the
-platform-side proxy is deployed; with the flag off users must provide their
-own xAI API key and the block never contacts the proxy. Object-detection
-prompting uses the percent-of-image ``box_2d`` contract validated in the
-vlm-exam benchmark for Grok 4.5/4.6.
+managed-key proxy. Object-detection prompting uses the percent-of-image
+``box_2d`` contract validated in the vlm-exam benchmark for Grok 4.5/4.6.
 """
 
 import base64
@@ -21,13 +17,14 @@ import requests
 from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import (
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-    WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED,
-)
+from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    validate_reasoning_level,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_responses_api_usage,
@@ -61,20 +58,32 @@ from inference.core.workflows.prototypes.block import (
 
 XAI_BASE_URL = "https://api.x.ai/v1"
 
+# grok-4.5 `xhigh` excluded: xAI silently downgrades it to `high`.
 GROK_MODELS = [
     {
         "id": "grok-4.6",
         "name": "Grok 4.6",
+        "reasoning_levels": ["low", "medium", "high", "xhigh"],
     },
     {
         "id": "grok-4.5",
         "name": "Grok 4.5",
+        "reasoning_levels": ["low", "medium", "high"],
     },
 ]
 
 MODEL_VERSION_IDS = [model["id"] for model in GROK_MODELS]
 
-MODEL_VERSION_METADATA = {model["id"]: {"name": model["name"]} for model in GROK_MODELS}
+MODEL_REASONING_LEVELS = {
+    model["id"]: model["reasoning_levels"] for model in GROK_MODELS
+}
+
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {model["id"]: {"name": model["name"]} for model in GROK_MODELS},
+    MODEL_REASONING_LEVELS,
+)
+
+REASONING_EFFORT_VALUES = ["low", "medium", "high", "xhigh"]
 
 OBJECT_DETECTION_PROMPT_TEMPLATE = (
     "Detect all objects in this image. "
@@ -107,18 +116,11 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 
-if WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED:
-    API_KEY_OPTIONS_DOCS = """### API Key Options
+API_KEY_OPTIONS_DOCS = """### API Key Options
 
 1. **Roboflow Managed API Key (Default)** - Use `rf_key:account` to proxy
    requests through Roboflow's API. Usage is billed against Roboflow credits.
 2. **Custom xAI API Key** - Provide your own xAI API key and pay xAI directly.
-"""
-else:
-    API_KEY_OPTIONS_DOCS = """### API Key
-
-Provide your own xAI API key (created at https://console.x.ai). Requests are
-sent directly to xAI and billed to your xAI account.
 """
 
 LONG_DESCRIPTION = f"""
@@ -158,25 +160,15 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
 
-if WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED:
-    ApiKeyType = Union[
-        Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
-    ]
-    API_KEY_FIELD = Field(
-        default="rf_key:account",
-        description=(
-            "Your xAI API key or 'rf_key:account' to use Roboflow's managed API key"
-        ),
-        examples=["rf_key:account", "xxx-xxx", "$inputs.xai_api_key"],
-        private=True,
-    )
-else:
-    ApiKeyType = Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str]
-    API_KEY_FIELD = Field(
-        description="Your xAI API key",
-        examples=["xxx-xxx", "$inputs.xai_api_key"],
-        private=True,
-    )
+ApiKeyType = Union[Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str]
+API_KEY_FIELD = Field(
+    default="rf_key:account",
+    description=(
+        "Your xAI API key or 'rf_key:account' to use Roboflow's managed API key"
+    ),
+    examples=["rf_key:account", "xxx-xxx", "$inputs.xai_api_key"],
+    private=True,
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -270,15 +262,16 @@ class BlockManifest(WorkflowBlockManifest):
     reasoning_effort: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
-            Literal["low", "high"],
+            Literal[tuple(REASONING_EFFORT_VALUES)],
         ]
     ] = Field(
         default=None,
         description=(
             "Optional reasoning effort passed to xAI as "
-            '`reasoning: {"effort": ...}`. For requests with a direct xAI key, '
-            "the request is retried without reasoning when the model rejects "
-            "the parameter."
+            '`reasoning: {"effort": ...}`. Grok models default to "high" and '
+            'cannot disable reasoning. "xhigh" is only supported by grok-4.6. '
+            "For requests with a direct xAI key, the request is retried "
+            "without reasoning when the model rejects the parameter."
         ),
         examples=["low", "high"],
     )
@@ -326,6 +319,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        validate_reasoning_level(
+            model=self.model_version,
+            level=self.reasoning_effort,
+            levels_by_model=MODEL_REASONING_LEVELS,
+        )
         return self
 
     @classmethod
@@ -591,12 +589,6 @@ def execute_spacexai_request(
         Raw text output of the model.
     """
     if xai_api_key.startswith(("rf_key:account", "rf_key:user:")):
-        if not WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED:
-            raise ValueError(
-                "Roboflow-managed xAI API keys are not enabled on this "
-                "installation. Provide your own xAI API key in the SpaceXAI "
-                "block's `api_key` field."
-            )
         if not roboflow_api_key:
             raise ValueError(
                 "Roboflow API key is required when using a Roboflow-managed xAI API key."
@@ -651,6 +643,11 @@ def _execute_proxied_spacexai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_LEVELS,
+    )
     if reasoning_effort is not None:
         payload["reasoning"] = {"effort": reasoning_effort}
 
@@ -712,6 +709,11 @@ def _execute_direct_spacexai_request(
     if temperature is not None:
         request_params["temperature"] = temperature
 
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_LEVELS,
+    )
     if reasoning_effort is not None:
         request_params["reasoning"] = {"effort": reasoning_effort}
 

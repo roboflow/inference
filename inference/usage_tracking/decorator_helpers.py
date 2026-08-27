@@ -1,7 +1,9 @@
-from typing import Any, Dict, List, Optional, Tuple
+from contextvars import ContextVar, Token
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
+from inference.core.roboflow_api import service_secret_is_valid
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
@@ -19,6 +21,220 @@ from inference.usage_tracking.megapixel_buckets import (
     resolve_model_input_hw,
 )
 from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.utils import (
+    coerce_optional_bool,
+    collect_func_params,
+    get_signature,
+)
+
+# Whether usage rows recorded in the current execution context must be marked
+# non-billable. Bound by the `usage_collector` wrappers from the arguments the
+# decorated call was made with, and inherited by everything that runs inside
+# them: nested decorators, and Execution Engine steps, whose thread pool
+# re-enters the caller's context in every worker.
+usage_billing_suppressed: ContextVar[bool] = ContextVar(
+    "usage_billing_suppressed", default=False
+)
+
+EXTERNAL_SOURCE_SENTINEL = "external"
+
+# Source tags (`source` / `source_info`) the current request-level call
+# carried, resolved once by the `usage_collector` wrappers and inherited the
+# same way as billing suppression - so a nested model decorator, which is
+# handed only the typed request, can attribute its row to the caller. The
+# default is never mutated, only replaced by `set()`.
+usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
+    "usage_source_tags", default={}
+)
+
+
+def _meaningful_source(value: Any) -> Optional[str]:
+    """A source tag worth recording, or None.
+
+    ``"external"`` is the placeholder the HTTP layer fills in when the caller
+    said nothing, so it identifies no one and is dropped rather than recorded as
+    a bucket of its own.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    if value == EXTERNAL_SOURCE_SENTINEL:
+        return None
+
+    return value
+
+
+def _lookup_in_func_kwargs(func_kwargs: Dict[str, Any], key: str) -> Any:
+    """Read a named parameter that may have landed in a catch-all ``**kwargs``."""
+    if func_kwargs.get(key) is not None:
+        return func_kwargs[key]
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict):
+        return nested_kwargs.get(key)
+
+    return None
+
+
+def _source_tag_bound_to_handler(
+    func_kwargs: Dict[str, Any],
+    key: str,
+) -> Optional[str]:
+    """Resolve a source tag from a handler's arguments, however it was declared.
+
+    Handlers spell these three ways. The legacy route declares them plainly. Two
+    SAM3 routes declare them under ``request_``-prefixed names, deliberately, so
+    that the raw names stay out of ``func_kwargs`` where ``source_info`` would
+    displace ``roboflow_service_name``. Every other route declares nothing at
+    all, leaving the value reachable only through the request's query string.
+    """
+    for candidate in (func_kwargs.get(f"request_{key}"), func_kwargs.get(key)):
+        tag = _meaningful_source(candidate)
+        if tag is not None:
+            return tag
+    query_params = getattr(func_kwargs.get("request"), "query_params", None)
+    if query_params is None:
+        return None
+
+    return _meaningful_source(query_params.get(key))
+
+
+def _source_tag_on_bound_requests(
+    func_kwargs: Dict[str, Any],
+    key: str,
+) -> Optional[str]:
+    """Read a source tag persisted on a bound request payload."""
+    for request_key in ("inference_request", "request", "workflow_request"):
+        tag = _meaningful_source(getattr(func_kwargs.get(request_key), key, None))
+        if tag is not None:
+            return tag
+
+    return None
+
+
+def read_source_tags_bound_to_call(
+    func: Callable[..., Any],
+    args: Any,
+    kwargs: Dict[str, Any],
+) -> Dict[str, str]:
+    """Source tags the decorated call carries, however the handler declares them.
+
+    Gated the same way as the billing intent: only request-level handlers
+    declare ``countinference``, so the model hot path never binds its call.
+    A handler's explicit declaration wins over what the request payload already
+    carries, matching how the tags used to be stamped onto the payload.
+
+    Usage tracking must never break inference, so binding failures are swallowed
+    the same way the surrounding recording calls swallow theirs.
+    """
+    try:
+        if "countinference" not in get_signature(func).parameters:
+            return {}
+        func_kwargs = collect_func_params(func, args, kwargs)
+        tags = {}
+        for key in ("source", "source_info"):
+            tag = _source_tag_bound_to_handler(
+                func_kwargs, key
+            ) or _source_tag_on_bound_requests(func_kwargs, key)
+            if tag is not None:
+                tags[key] = tag
+        return tags
+    except Exception as exc:
+        logger.debug("Failed to read source tags from call - %s", exc)
+        return {}
+
+
+def non_billable_intent_is_authenticated(
+    countinference: Any,
+    service_secret: Any,
+) -> bool:
+    """Whether a caller both asked to skip billing and proved it may.
+
+    ``countinference=false`` is an internal-services affordance, not a public
+    one. It is honoured only alongside a valid service secret, matching the gate
+    applied in ``roboflow_api`` before contacting the platform and in the
+    serverless authorization middleware. An unauthenticated request to skip
+    billing is ignored rather than rejected, so this stays a telemetry decision
+    and never turns an otherwise valid inference into an error.
+
+    Args:
+        countinference: Raw per-request flag, as a bool or a string.
+        service_secret: Shared secret supplied alongside the flag.
+
+    Returns:
+        True when billing should be suppressed for this call.
+    """
+    if coerce_optional_bool(countinference) is not False:
+        return False
+    if not service_secret_is_valid(service_secret):
+        logger.debug("Ignoring countinference=false - service secret is not valid")
+        return False
+
+    return True
+
+
+def call_carries_authenticated_non_billable_intent(
+    func: Callable[..., Any],
+    args: Any,
+    kwargs: Dict[str, Any],
+) -> bool:
+    """Whether the call bound to a usage decorator opted out of billing, provably.
+
+    The HTTP handler owns the query string; everything nested beneath it - the
+    workflow, the models it runs - is handed nothing about billing at all. So
+    the intent is read once, here, from the arguments the decorated call was
+    actually made with, and published as context for the rest of the call.
+
+    Handlers that cannot carry the intent are answered from the cached signature
+    rather than by binding the call: the model hot path goes through the same
+    decorator.
+
+    Usage tracking must never break inference, so binding failures are swallowed
+    the same way the surrounding recording calls swallow theirs.
+
+    Args:
+        func: The decorated function.
+        args: Positional arguments it was called with.
+        kwargs: Keyword arguments it was called with.
+
+    Returns:
+        True when the call carries an authenticated ``countinference=false``.
+    """
+    try:
+        if "countinference" not in get_signature(func).parameters:
+            return False
+        func_kwargs = collect_func_params(func, args, kwargs)
+        return non_billable_intent_is_authenticated(
+            func_kwargs.get("countinference"),
+            func_kwargs.get("service_secret"),
+        )
+    except Exception as exc:
+        logger.debug("Failed to read billing intent from call - %s", exc)
+        return False
+
+
+def bind_billing_suppression(
+    authenticated_opt_out: bool,
+    usage_billable: bool,
+) -> Optional[Token[bool]]:
+    """Suppress billing for the current call, unless it already is suppressed.
+
+    Suppression is downgrade-only: an inherited one is left alone, so nothing
+    nested can restore billing for a caller who opted out - and nothing has to
+    be reset that this call did not set.
+
+    Args:
+        authenticated_opt_out: Whether the call proved an intent to skip billing.
+        usage_billable: The decorator argument the call was made with.
+
+    Returns:
+        The token to reset once the call is recorded, or None when this call
+        bound nothing.
+    """
+    if usage_billing_suppressed.get():
+        return None
+    if usage_billable and not authenticated_opt_out:
+        return None
+
+    return usage_billing_suppressed.set(True)
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:
@@ -100,10 +316,15 @@ def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     resource_details = {}
-    if "source" in func_kwargs:
-        resource_details["source"] = func_kwargs["source"]
-    elif "kwargs" in func_kwargs and "source" in func_kwargs["kwargs"]:
-        resource_details["source"] = func_kwargs["kwargs"]["source"]
+    # A model decorator nested under an HTTP handler never sees the query
+    # string, so a tag that arrived there reaches it only as request context.
+    source = (
+        _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
+        or _source_tag_on_bound_requests(func_kwargs, "source")
+        or usage_source_tags.get().get("source")
+    )
+    if source is not None:
+        resource_details["source"] = source
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
@@ -205,9 +426,7 @@ def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
                 source_info = request.source_info
                 if source_info:
                     break
-    if source_info and source_info != "external":
-        return source_info
-    return None
+    return _meaningful_source(source_info) or usage_source_tags.get().get("source_info")
 
 
 def get_resource_details_from_workflow_json(
@@ -437,8 +656,11 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
-    if func_kwargs.get("countinference") is not None:
-        resource_details["billable"] = func_kwargs["countinference"]
+    source = _source_tag_bound_to_handler(
+        func_kwargs, "source"
+    ) or _source_tag_on_bound_requests(func_kwargs, "source")
+    if source is not None:
+        resource_details["source"] = source
     model_id = getattr(func_kwargs.get("inference_request"), "model_id", None)
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         resource_details["execution_mode"] = SAM3_EXEC_MODE

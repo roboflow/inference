@@ -36,19 +36,27 @@ from inference.core.env import (
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    ROBOFLOW_SERVICE_SECRET,
 )
 from inference.core.logger import logger
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
 
 try:
-    from inference_sdk.config import apply_duration_minimum, execution_id
+    from inference_sdk.config import (
+        apply_duration_minimum,
+        execution_id,
+        outbound_service_secret,
+    )
 except ImportError:
     apply_duration_minimum = None
     execution_id = None
+    outbound_service_secret = None
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
+    bind_billing_suppression,
+    call_carries_authenticated_non_billable_intent,
     get_model_api_key_from_kwargs,
     get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
@@ -64,7 +72,10 @@ from .decorator_helpers import (
     get_workflow_block_resource_details_from_kwargs,
     get_workflow_block_resource_id_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    read_source_tags_bound_to_call,
     resolve_workflow_block_execution,
+    usage_billing_suppressed,
+    usage_source_tags,
 )
 from .payload_helpers import (
     APIKey,
@@ -788,8 +799,12 @@ class UsageCollector:
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
         func_kwargs = collect_func_params(func, args, kwargs)
+        # Downgrade-only: the request scope suppresses billing for rows recorded
+        # on behalf of a caller who authenticated the intent, but never restores
+        # it for a caller that opted out some other way.
+        billable = usage_billable and not usage_billing_suppressed.get()
         resource_details = {
-            "billable": usage_billable,
+            "billable": billable,
         }
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
@@ -995,10 +1010,60 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
-                t1 = time.time()
+                # Bound once, then held for the call and its usage recording, so
+                # nested decorators inherit the caller's billing intent.
+                authenticated_opt_out = call_carries_authenticated_non_billable_intent(
+                    func, args, kwargs
+                )
+                suppression_token = bind_billing_suppression(
+                    authenticated_opt_out=authenticated_opt_out,
+                    usage_billable=usage_billable,
+                )
+                # Same inheritance rule as suppression: only a call that
+                # carries tags of its own binds, so a nested decorator can
+                # never strip what the request-level call published.
+                source_tags = read_source_tags_bound_to_call(func, args, kwargs)
+                source_token = (
+                    usage_source_tags.set(source_tags) if source_tags else None
+                )
+                # Forwarding authority is published only for a call that proved
+                # it, and only for that call's own duration: a call with no
+                # billing arguments of its own must never touch this variable,
+                # so a nested decorator that inherited it does not strip it
+                # before a remote SDK call made inside that nested scope.
+                outbound_token = None
+                if authenticated_opt_out and outbound_service_secret is not None:
+                    outbound_token = outbound_service_secret.set(
+                        ROBOFLOW_SERVICE_SECRET
+                    )
                 try:
-                    res = func(*args, **kwargs)
-                except Exception as exc:
+                    t1 = time.time()
+                    try:
+                        res = func(*args, **kwargs)
+                    except Exception as exc:
+                        t2 = time.time()
+                        try:
+                            self.record_usage(
+                                **self._extract_usage_params_from_func_kwargs(
+                                    usage_fps=usage_fps,
+                                    usage_api_key=usage_api_key,
+                                    usage_workflow_id=usage_workflow_id,
+                                    usage_workflow_preview=usage_workflow_preview,
+                                    usage_inference_test_run=usage_inference_test_run,
+                                    usage_billable=usage_billable,
+                                    execution_duration=self._compute_execution_duration(
+                                        t1, t2
+                                    ),
+                                    func=func,
+                                    category=category,
+                                    error_details=self._exception_error_details(exc),
+                                    args=args,
+                                    kwargs=kwargs,
+                                )
+                            )
+                        except Exception as usage_exc:
+                            logger.debug("Failed to record usage - %s", usage_exc)
+                        raise
                     t2 = time.time()
                     try:
                         self.record_usage(
@@ -1014,35 +1079,21 @@ class UsageCollector:
                                 ),
                                 func=func,
                                 category=category,
-                                error_details=self._exception_error_details(exc),
+                                error_details=self._response_error(res),
                                 args=args,
                                 kwargs=kwargs,
                             )
                         )
                     except Exception as usage_exc:
                         logger.debug("Failed to record usage - %s", usage_exc)
-                    raise
-                t2 = time.time()
-                try:
-                    self.record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=self._compute_execution_duration(t1, t2),
-                            func=func,
-                            category=category,
-                            error_details=self._response_error(res),
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                    )
-                except Exception as usage_exc:
-                    logger.debug("Failed to record usage - %s", usage_exc)
-                return res
+                    return res
+                finally:
+                    if suppression_token is not None:
+                        usage_billing_suppressed.reset(suppression_token)
+                    if outbound_token is not None:
+                        outbound_service_secret.reset(outbound_token)
+                    if source_token is not None:
+                        usage_source_tags.reset(source_token)
 
             @wraps(func)
             async def async_wrapper(
@@ -1055,10 +1106,60 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
-                t1 = time.time()
+                # Bound once, then held for the call and its usage recording, so
+                # nested decorators inherit the caller's billing intent.
+                authenticated_opt_out = call_carries_authenticated_non_billable_intent(
+                    func, args, kwargs
+                )
+                suppression_token = bind_billing_suppression(
+                    authenticated_opt_out=authenticated_opt_out,
+                    usage_billable=usage_billable,
+                )
+                # Same inheritance rule as suppression: only a call that
+                # carries tags of its own binds, so a nested decorator can
+                # never strip what the request-level call published.
+                source_tags = read_source_tags_bound_to_call(func, args, kwargs)
+                source_token = (
+                    usage_source_tags.set(source_tags) if source_tags else None
+                )
+                # Forwarding authority is published only for a call that proved
+                # it, and only for that call's own duration: a call with no
+                # billing arguments of its own must never touch this variable,
+                # so a nested decorator that inherited it does not strip it
+                # before a remote SDK call made inside that nested scope.
+                outbound_token = None
+                if authenticated_opt_out and outbound_service_secret is not None:
+                    outbound_token = outbound_service_secret.set(
+                        ROBOFLOW_SERVICE_SECRET
+                    )
                 try:
-                    res = await func(*args, **kwargs)
-                except Exception as exc:
+                    t1 = time.time()
+                    try:
+                        res = await func(*args, **kwargs)
+                    except Exception as exc:
+                        t2 = time.time()
+                        try:
+                            await self.async_record_usage(
+                                **self._extract_usage_params_from_func_kwargs(
+                                    usage_fps=usage_fps,
+                                    usage_api_key=usage_api_key,
+                                    usage_workflow_id=usage_workflow_id,
+                                    usage_workflow_preview=usage_workflow_preview,
+                                    usage_inference_test_run=usage_inference_test_run,
+                                    usage_billable=usage_billable,
+                                    execution_duration=self._compute_execution_duration(
+                                        t1, t2
+                                    ),
+                                    func=func,
+                                    category=category,
+                                    error_details=self._exception_error_details(exc),
+                                    args=args,
+                                    kwargs=kwargs,
+                                )
+                            )
+                        except Exception as usage_exc:
+                            logger.debug("Failed to record usage - %s", usage_exc)
+                        raise
                     t2 = time.time()
                     try:
                         await self.async_record_usage(
@@ -1074,35 +1175,21 @@ class UsageCollector:
                                 ),
                                 func=func,
                                 category=category,
-                                error_details=self._exception_error_details(exc),
+                                error_details=self._response_error(res),
                                 args=args,
                                 kwargs=kwargs,
                             )
                         )
                     except Exception as usage_exc:
                         logger.debug("Failed to record usage - %s", usage_exc)
-                    raise
-                t2 = time.time()
-                try:
-                    await self.async_record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=self._compute_execution_duration(t1, t2),
-                            func=func,
-                            category=category,
-                            error_details=self._response_error(res),
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                    )
-                except Exception as usage_exc:
-                    logger.debug("Failed to record usage - %s", usage_exc)
-                return res
+                    return res
+                finally:
+                    if suppression_token is not None:
+                        usage_billing_suppressed.reset(suppression_token)
+                    if outbound_token is not None:
+                        outbound_service_secret.reset(outbound_token)
+                    if source_token is not None:
+                        usage_source_tags.reset(source_token)
 
             if asyncio.iscoroutinefunction(func):
                 return async_wrapper

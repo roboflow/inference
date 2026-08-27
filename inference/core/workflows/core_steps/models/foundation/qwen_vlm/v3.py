@@ -55,6 +55,10 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     validate_task_type_required_fields,
 )
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    validate_reasoning_level,
+)
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
 )
@@ -289,6 +293,22 @@ REASONING_EFFORT_METADATA = {
         ),
     },
 }
+
+# OpenRouter variants use the shared set (OpenRouter normalizes). Native
+# variants have no effort knob. Override a row with `reasoning_levels` if
+# a future model diverges.
+MODEL_REASONING_LEVELS = {
+    label: variant.get(
+        "reasoning_levels",
+        REASONING_EFFORT_OPTIONS if variant["backend"] == "openrouter" else [],
+    )
+    for label, variant in MODEL_VARIANTS.items()
+}
+
+OPENROUTER_MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {label: {"name": label} for label in OPENROUTER_VARIANT_LABELS},
+    MODEL_REASONING_LEVELS,
+)
 
 # Fallback effort applied when reasoning is disabled by the user but the
 # selected model rejects `reasoning: {"enabled": false}`.
@@ -870,6 +890,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ),
         examples=[DEFAULT_OPENROUTER_MODEL_VERSION, "Qwen 3.8 Max"],
         json_schema_extra={
+            "values_metadata": OPENROUTER_MODEL_VERSION_METADATA,
             "relevant_for": {
                 "backend": {"values": ["openrouter"], "required": True},
             },
@@ -1055,6 +1076,12 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 "`fine_tuned_model_id` is required when `model_version="
                 f"'{FINE_TUNED_NATIVE_LABEL}'`. Pick a fine-tuned Qwen3 model "
                 "from your workspace."
+            )
+        if self.backend == "openrouter":
+            validate_reasoning_level(
+                model=self.openrouter_model_version,
+                level=self.reasoning_effort,
+                levels_by_model=MODEL_REASONING_LEVELS,
             )
         return self
 
@@ -1248,6 +1275,11 @@ class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
                 prompt=prompt,
                 output_structure=output_structure,
                 classes=classes,
+            )
+            validate_reasoning_level(
+                model=openrouter_model_version,
+                level=reasoning_effort,
+                levels_by_model=MODEL_REASONING_LEVELS,
             )
             reasoning = build_reasoning_config(
                 reasoning_effort,
