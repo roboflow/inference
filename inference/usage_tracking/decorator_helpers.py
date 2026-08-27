@@ -47,6 +47,15 @@ usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
     "usage_source_tags", default={}
 )
 
+# Whether the current workflow run is a builder/editor preview. Bound by the
+# `usage_collector` wrapper from `usage_workflow_preview` on `run_workflow`,
+# and inherited by nested `workflow_block` rows the same way billing
+# suppression is. Preview is independent of `billable`: a preview run is
+# still counted unless the caller also opted out.
+usage_workflow_is_preview: ContextVar[bool] = ContextVar(
+    "usage_workflow_is_preview", default=False
+)
+
 
 def _meaningful_source(value: Any) -> Optional[str]:
     """A source tag worth recording, or None.
@@ -235,6 +244,27 @@ def bind_billing_suppression(
         return None
 
     return usage_billing_suppressed.set(True)
+
+
+def bind_workflow_preview(usage_workflow_preview: bool) -> Optional[Token[bool]]:
+    """Publish preview for nested usage rows, unless it already is published.
+
+    Once a parent marked the run as preview, a nested decorator cannot clear
+    it. A call that is not itself a preview leaves an inherited flag alone.
+
+    Args:
+        usage_workflow_preview: The decorator argument the call was made with.
+
+    Returns:
+        The token to reset once the call is recorded, or None when this call
+        bound nothing.
+    """
+    if usage_workflow_is_preview.get():
+        return None
+    if not usage_workflow_preview:
+        return None
+
+    return usage_workflow_is_preview.set(True)
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:

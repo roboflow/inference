@@ -7,12 +7,13 @@ user function, and taken from the sandbox's own measurement when the block ran
 remotely.
 """
 
+from contextlib import contextmanager
 from unittest import mock
 
 import pytest
 
 from inference.core.workflows.core_steps.formatters.expression.v1 import BlockManifest
-from inference.core.workflows.errors import DynamicBlockCodeError
+from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
     block_scaffolding,
     modal_executor,
@@ -31,6 +32,7 @@ from inference.usage_tracking.block_execution import (
     BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
     BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    BLOCK_DURATION_SOURCE_UNAVAILABLE,
     BLOCK_EXECUTION_MODE_LOCAL,
     BLOCK_EXECUTION_MODE_REMOTE,
     clear_measured_block_execution,
@@ -243,4 +245,100 @@ def test_modal_runtime_is_not_reused_by_a_later_local_block(
     assert (
         usage_params["resource_details"]["duration_source"]
         == BLOCK_DURATION_SOURCE_LOCAL_RUNTIME
+    )
+
+
+def _run_modal_block_expecting_error(execute_remote, unique_identifier, expected_error):
+    block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, unique_identifier)
+    executor_instance = mock.MagicMock()
+    executor_instance.execute_remote.side_effect = execute_remote
+    block = block_class(api_key="workflow-api-key")
+
+    with mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ), mock.patch.object(
+        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
+    ), mock.patch.object(
+        modal_executor, "ModalExecutor", return_value=executor_instance
+    ), mock.patch.object(
+        usage_collector, "record_usage"
+    ) as record_usage:
+        with pytest.raises(expected_error):
+            block.run(a=3, b=5)
+
+    return record_usage.call_args.kwargs
+
+
+def test_modal_transport_failure_is_not_billed_as_client_wall_clock(
+    isolated_modal_executor_cache,
+):
+    def execute_remote(**kwargs):
+        raise DynamicBlockError(
+            public_message="Failed to connect to Modal endpoint",
+            context="modal_executor | http_connection",
+        )
+
+    usage_params = _run_modal_block_expecting_error(
+        execute_remote,
+        "metered-modal-transport",
+        DynamicBlockError,
+    )
+
+    assert usage_params["execution_duration"] == 0
+    assert (
+        usage_params["resource_details"]["duration_source"]
+        == BLOCK_DURATION_SOURCE_UNAVAILABLE
+    )
+    assert (
+        usage_params["resource_details"]["execution_mode"]
+        == BLOCK_EXECUTION_MODE_REMOTE
+    )
+
+
+def test_modal_client_wall_clock_excludes_executor_acquisition(
+    isolated_modal_executor_cache,
+):
+    class Clock:
+        def __init__(self):
+            self.t = 0.0
+
+        def monotonic(self):
+            return self.t
+
+        def advance(self, dt):
+            self.t += dt
+
+    clock = Clock()
+
+    def execute_remote(**kwargs):
+        clock.advance(0.25)
+        return {"result": 8}
+
+    @contextmanager
+    def slow_acquire(workspace_id):
+        clock.advance(30.0)
+        yield mock.MagicMock(execute_remote=execute_remote)
+
+    block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-modal-acquire")
+    block = block_class(api_key="workflow-api-key")
+
+    with mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ), mock.patch.object(
+        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
+    ), mock.patch.object(
+        block_scaffolding, "_acquire_modal_executor", slow_acquire
+    ), mock.patch.object(
+        block_scaffolding.time, "monotonic", clock.monotonic
+    ), mock.patch.object(
+        usage_collector, "record_usage"
+    ) as record_usage:
+        result = block.run(a=3, b=5)
+
+    usage_params = record_usage.call_args.kwargs
+    assert result == {"result": 8}
+    assert usage_params["execution_duration"] == pytest.approx(0.25)
+    assert (
+        usage_params["resource_details"]["duration_source"]
+        == BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK
     )

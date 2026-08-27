@@ -52,6 +52,7 @@ from inference.usage_tracking.block_execution import (
     BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
     BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    BLOCK_DURATION_SOURCE_UNAVAILABLE,
     BLOCK_EXECUTION_MODE_LOCAL,
     BLOCK_EXECUTION_MODE_REMOTE,
     clear_measured_block_execution,
@@ -229,23 +230,38 @@ def _usage_tracked_run(self, *args, **kwargs) -> BlockResult:
     return self._run_dynamic_block(*args, **kwargs)
 
 
-def _record_remote_block_execution(wall_clock_duration: float) -> None:
+def _record_remote_block_execution(
+    wall_clock_duration: float,
+    *,
+    error: Optional[BaseException] = None,
+) -> None:
     """Attribute a remote invocation to the sandbox runtime when it reported one.
 
     Falling back to the client's wall clock over-reports by the serialization
     and round-trip cost, so the source is recorded alongside the duration.
+    A transport-level ``DynamicBlockError`` with no sandbox duration is
+    recorded as zero: the sandbox never ran, and leaving the measurement
+    empty would let the decorator bill its own wall clock, which includes
+    the connect timeout.
     """
     remote_duration = consume_remote_execution_duration()
-    if remote_duration is None:
+    if remote_duration is not None:
         record_measured_block_execution(
-            duration=wall_clock_duration,
-            source=BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
+            duration=remote_duration,
+            source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+            execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
+        )
+        return
+    if isinstance(error, DynamicBlockError):
+        record_measured_block_execution(
+            duration=0,
+            source=BLOCK_DURATION_SOURCE_UNAVAILABLE,
             execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
         )
         return
     record_measured_block_execution(
-        duration=remote_duration,
-        source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+        duration=wall_clock_duration,
+        source=BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
         execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
     )
 
@@ -333,9 +349,10 @@ def assembly_custom_python_block(
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
             clear_remote_execution_duration()
-            started_at = time.monotonic()
-            try:
-                with _acquire_modal_executor(workspace_id) as executor:
+            with _acquire_modal_executor(workspace_id) as executor:
+                started_at = time.monotonic()
+                remote_error: Optional[BaseException] = None
+                try:
                     remote_result = executor.execute_remote(
                         block_type_name=block_type_name,
                         python_code=python_code,
@@ -343,8 +360,14 @@ def assembly_custom_python_block(
                         workspace_id=workspace_id,
                         workflow_context=self.get_workflow_context(),
                     )
-            finally:
-                _record_remote_block_execution(time.monotonic() - started_at)
+                except BaseException as error:
+                    remote_error = error
+                    raise
+                finally:
+                    _record_remote_block_execution(
+                        time.monotonic() - started_at,
+                        error=remote_error,
+                    )
             return convert_block_result_to_native(
                 result=remote_result,
                 manifest_description=self._manifest_description,

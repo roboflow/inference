@@ -1,5 +1,7 @@
 """Usage rows emitted for the ``workflow_block`` category."""
 
+import json
+
 import pytest
 
 from inference.core.workflows.execution_engine.entities.base import Batch
@@ -15,6 +17,9 @@ from inference.usage_tracking.decorator_helpers import (
     get_workflow_block_frames_from_kwargs,
     get_workflow_block_resource_details_from_kwargs,
     get_workflow_block_resource_id_from_kwargs,
+    usage_billing_suppressed,
+    usage_source_tags,
+    usage_workflow_is_preview,
 )
 
 
@@ -125,6 +130,7 @@ def test_extract_usage_params_builds_a_workflow_block_row(
     assert usage_params["resource_details"]["block_type"] == "MyCustomBlock"
     assert usage_params["resource_details"]["step_name"] == "my_step"
     assert usage_params["resource_details"]["billable"] is True
+    assert usage_params["resource_details"]["is_preview"] is False
 
 
 def test_extract_usage_params_prefers_the_duration_the_block_measured(
@@ -221,3 +227,111 @@ def test_workflow_block_rows_aggregate_per_block_identity(
     )
     assert list(api_key_usage.keys()) == [usage_key]
     assert api_key_usage[usage_key]["execution_duration"] == pytest.approx(1.0)
+
+
+def test_extract_usage_params_inherits_preview_from_request_context(
+    usage_collector_with_mocked_threads,
+):
+    token = usage_workflow_is_preview.set(True)
+    try:
+        usage_params = _extract_workflow_block_params(
+            usage_collector_with_mocked_threads
+        )
+    finally:
+        usage_workflow_is_preview.reset(token)
+
+    assert usage_params["resource_details"]["is_preview"] is True
+    assert usage_params["resource_details"]["billable"] is True
+
+
+def test_extract_usage_params_inherits_billing_suppression(
+    usage_collector_with_mocked_threads,
+):
+    token = usage_billing_suppressed.set(True)
+    try:
+        usage_params = _extract_workflow_block_params(
+            usage_collector_with_mocked_threads
+        )
+    finally:
+        usage_billing_suppressed.reset(token)
+
+    assert usage_params["resource_details"]["billable"] is False
+    assert usage_params["resource_details"]["is_preview"] is False
+
+
+def test_extract_usage_params_inherits_source_tag(
+    usage_collector_with_mocked_threads,
+):
+    token = usage_source_tags.set({"source": "workflow-editor"})
+    try:
+        usage_params = _extract_workflow_block_params(
+            usage_collector_with_mocked_threads
+        )
+    finally:
+        usage_source_tags.reset(token)
+
+    assert usage_params["resource_details"]["source"] == "workflow-editor"
+
+
+def test_preview_decorator_kwarg_reaches_nested_workflow_block_row(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class Block(_FakeDynamicBlock):
+        @usage_collector(category="workflow_block")
+        def run(self, *args, **kwargs):
+            return "ok"
+
+    @usage_collector(category="workflows")
+    def run_workflow(workflow, api_key="block-api-key"):
+        return Block().run()
+
+    run_workflow(None, usage_workflow_id="workflow-1", usage_workflow_preview=True)
+
+    api_key_usage = usage_collector._usage["block-api-key"]
+    block_rows = [
+        row for key, row in api_key_usage.items() if key.startswith("workflow_block:")
+    ]
+    workflow_rows = [
+        row for key, row in api_key_usage.items() if key.startswith("workflows:")
+    ]
+
+    assert len(block_rows) == 1
+    assert json.loads(block_rows[0]["resource_details"])["is_preview"] is True
+    assert json.loads(workflow_rows[0]["resource_details"])["is_preview"] is True
+
+
+def test_authenticated_opt_out_reaches_nested_workflow_block_row(
+    usage_collector_with_mocked_threads,
+    configured_service_secret,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    class Block(_FakeDynamicBlock):
+        @usage_collector(category="workflow_block")
+        def run(self, *args, **kwargs):
+            return "ok"
+
+    @usage_collector(category="request")
+    def handler(
+        workflow_request,
+        countinference=None,
+        service_secret=None,
+        api_key="block-api-key",
+    ):
+        return Block().run()
+
+    handler(
+        object(),
+        countinference=False,
+        service_secret=configured_service_secret,
+    )
+
+    api_key_usage = usage_collector._usage["block-api-key"]
+    block_rows = [
+        row for key, row in api_key_usage.items() if key.startswith("workflow_block:")
+    ]
+
+    assert len(block_rows) == 1
+    assert json.loads(block_rows[0]["resource_details"])["billable"] is False

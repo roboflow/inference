@@ -56,6 +56,7 @@ except ImportError:
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
     bind_billing_suppression,
+    bind_workflow_preview,
     call_carries_authenticated_non_billable_intent,
     get_model_api_key_from_kwargs,
     get_model_frames_and_input_hw,
@@ -76,6 +77,7 @@ from .decorator_helpers import (
     resolve_workflow_block_execution,
     usage_billing_suppressed,
     usage_source_tags,
+    usage_workflow_is_preview,
 )
 from .payload_helpers import (
     APIKey,
@@ -868,6 +870,15 @@ class UsageCollector:
                 **block_resource_details,
                 **execution_details,
             }
+            # Request-level flags the engine never passes into `step.run()`.
+            # Preview is published by the parent `run_workflow` decorator;
+            # `billable` is already inherited via `usage_billing_suppressed`.
+            resource_details["is_preview"] = (
+                usage_workflow_preview or usage_workflow_is_preview.get()
+            )
+            source = usage_source_tags.get().get("source")
+            if source:
+                resource_details["source"] = source
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
@@ -1019,6 +1030,7 @@ class UsageCollector:
                     authenticated_opt_out=authenticated_opt_out,
                     usage_billable=usage_billable,
                 )
+                preview_token = bind_workflow_preview(usage_workflow_preview)
                 # Same inheritance rule as suppression: only a call that
                 # carries tags of its own binds, so a nested decorator can
                 # never strip what the request-level call published.
@@ -1090,6 +1102,8 @@ class UsageCollector:
                 finally:
                     if suppression_token is not None:
                         usage_billing_suppressed.reset(suppression_token)
+                    if preview_token is not None:
+                        usage_workflow_is_preview.reset(preview_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
                     if source_token is not None:
@@ -1115,6 +1129,7 @@ class UsageCollector:
                     authenticated_opt_out=authenticated_opt_out,
                     usage_billable=usage_billable,
                 )
+                preview_token = bind_workflow_preview(usage_workflow_preview)
                 # Same inheritance rule as suppression: only a call that
                 # carries tags of its own binds, so a nested decorator can
                 # never strip what the request-level call published.
@@ -1186,6 +1201,8 @@ class UsageCollector:
                 finally:
                     if suppression_token is not None:
                         usage_billing_suppressed.reset(suppression_token)
+                    if preview_token is not None:
+                        usage_workflow_is_preview.reset(preview_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
                     if source_token is not None:

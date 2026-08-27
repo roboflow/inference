@@ -7,6 +7,7 @@ from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    bind_workflow_preview,
     call_carries_authenticated_non_billable_intent,
     get_model_id_from_kwargs,
     get_model_resource_details_from_kwargs,
@@ -15,6 +16,7 @@ from inference.usage_tracking.decorator_helpers import (
     get_source_info_from_kwargs,
     non_billable_intent_is_authenticated,
     read_source_tags_bound_to_call,
+    usage_workflow_is_preview,
 )
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
@@ -112,6 +114,22 @@ def test_bound_call_swallows_binding_failures():
         result = call_carries_authenticated_non_billable_intent(handler, (), {})
 
     assert result is False
+
+
+def test_bind_workflow_preview_publishes_true_and_leaves_false_alone():
+    assert usage_workflow_is_preview.get() is False
+    assert bind_workflow_preview(False) is None
+    assert usage_workflow_is_preview.get() is False
+
+    token = bind_workflow_preview(True)
+    try:
+        assert usage_workflow_is_preview.get() is True
+        assert bind_workflow_preview(False) is None
+        assert usage_workflow_is_preview.get() is True
+    finally:
+        usage_workflow_is_preview.reset(token)
+
+    assert usage_workflow_is_preview.get() is False
 
 
 def test_get_request_resource_details_tags_sam3_execution_mode(monkeypatch):
