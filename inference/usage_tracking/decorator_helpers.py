@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
 from inference.core.roboflow_api import service_secret_is_valid
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
@@ -287,6 +288,11 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
         api_key = getattr(request, "api_key", None)
         if api_key:
             return api_key
+    if "self" in func_kwargs:
+        _self = func_kwargs["self"]
+        api_key = getattr(_self, "api_key", None) or getattr(_self, "_api_key", None)
+        if api_key:
+            return api_key
     return None
 
 
@@ -330,17 +336,58 @@ def get_model_resource_details_from_kwargs(
     return resource_details
 
 
+def _as_image_sequence(value: Any) -> Any:
+    """Normalize a workflow Batch of images to a list for frame counting.
+
+    ``Batch`` is sized and iterable but is not a list/tuple, so
+    ``count_inference_images`` would otherwise treat a multi-image batch as
+    a single frame.
+    """
+    if isinstance(value, Batch):
+        return list(value)
+    return value
+
+
+def _compare_request_images(request: Any) -> Optional[List[Any]]:
+    """Imagery carried by a CLIP/PE compare request, which has no ``image``.
+
+    Compare requests hold their images under ``subject`` / ``prompt``; each
+    side participates only when its ``*_type`` says it is an image.
+    """
+    images = []
+    if getattr(request, "subject_type", None) == "image":
+        subject = getattr(request, "subject", None)
+        if subject is not None:
+            images.append(subject)
+    if getattr(request, "prompt_type", None) == "image":
+        prompt = getattr(request, "prompt", None)
+        if isinstance(prompt, dict):
+            images.extend(prompt.values())
+        elif isinstance(prompt, (list, tuple)):
+            images.extend(prompt)
+        elif prompt is not None:
+            images.append(prompt)
+    return images or None
+
+
 def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
     if "image" in func_kwargs:
-        return func_kwargs["image"]
+        return _as_image_sequence(func_kwargs["image"])
+    if "images" in func_kwargs:
+        return _as_image_sequence(func_kwargs["images"])
     nested_kwargs = func_kwargs.get("kwargs")
     if isinstance(nested_kwargs, dict) and "image" in nested_kwargs:
-        return nested_kwargs["image"]
+        return _as_image_sequence(nested_kwargs["image"])
+    if isinstance(nested_kwargs, dict) and "images" in nested_kwargs:
+        return _as_image_sequence(nested_kwargs["images"])
     for request_key in ("inference_request", "request"):
         request = func_kwargs.get(request_key)
         image = getattr(request, "image", None)
         if image is not None:
             return image
+        compare_images = _compare_request_images(request)
+        if compare_images is not None:
+            return compare_images
     return None
 
 
@@ -363,7 +410,15 @@ def get_model_frames_and_input_hw(
     if frames <= 0 and measured_frames:
         frames = measured_frames
     if frames <= 0:
-        frames = 1
+        # No imagery anywhere in the call (text-only embeds). One frame is
+        # still billed, but crediting the model's visual canvas to it would
+        # fabricate image-resolution telemetry — leave the bucket unknown
+        # unless the call explicitly published a size (SAM2/SAM3 cache-hit
+        # embed_image with image=None).
+        if measured_hw is None:
+            return 1, None
+
+        return 1, resolve_model_input_hw(model, measured_hw=measured_hw)
 
     return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
 
