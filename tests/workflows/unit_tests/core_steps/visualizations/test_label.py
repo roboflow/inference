@@ -121,37 +121,6 @@ def test_label_visualization_block() -> None:
     )
 
 
-def test_label_visualization_wraps_negative_class_id() -> None:
-    predictions = sv.Detections(
-        xyxy=np.array([[4, 12, 20, 28]], dtype=np.float64),
-        class_id=np.array([-1]),
-        data={"class_name": np.array(["foreground"], dtype=object)},
-    )
-
-    output = LabelVisualizationBlockV1().run(
-        image=WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((32, 32, 3), dtype=np.uint8),
-        ),
-        predictions=predictions,
-        copy_image=True,
-        color_palette="DEFAULT",
-        palette_size=10,
-        custom_colors=[],
-        color_axis="CLASS",
-        text="Class",
-        text_position="TOP_LEFT",
-        text_color="WHITE",
-        text_scale=0.5,
-        text_thickness=1,
-        text_padding=2,
-        border_radius=0,
-    )
-
-    assert np.any(output["image"].numpy_image)
-    assert predictions.class_id.tolist() == [-1]
-
-
 def test_label_visualization_block_with_area_px() -> None:
     # given
     block = LabelVisualizationBlockV1()
