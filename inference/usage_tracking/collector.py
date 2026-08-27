@@ -68,7 +68,9 @@ from .decorator_helpers import (
     get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    read_source_tags_bound_to_call,
     usage_billing_suppressed,
+    usage_source_tags,
 )
 from .payload_helpers import (
     APIKey,
@@ -993,6 +995,13 @@ class UsageCollector:
                     authenticated_opt_out=authenticated_opt_out,
                     usage_billable=usage_billable,
                 )
+                # Same inheritance rule as suppression: only a call that
+                # carries tags of its own binds, so a nested decorator can
+                # never strip what the request-level call published.
+                source_tags = read_source_tags_bound_to_call(func, args, kwargs)
+                source_token = (
+                    usage_source_tags.set(source_tags) if source_tags else None
+                )
                 # Forwarding authority is published only for a call that proved
                 # it, and only for that call's own duration: a call with no
                 # billing arguments of its own must never touch this variable,
@@ -1059,6 +1068,8 @@ class UsageCollector:
                         usage_billing_suppressed.reset(suppression_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
+                    if source_token is not None:
+                        usage_source_tags.reset(source_token)
 
             @wraps(func)
             async def async_wrapper(
@@ -1079,6 +1090,13 @@ class UsageCollector:
                 suppression_token = bind_billing_suppression(
                     authenticated_opt_out=authenticated_opt_out,
                     usage_billable=usage_billable,
+                )
+                # Same inheritance rule as suppression: only a call that
+                # carries tags of its own binds, so a nested decorator can
+                # never strip what the request-level call published.
+                source_tags = read_source_tags_bound_to_call(func, args, kwargs)
+                source_token = (
+                    usage_source_tags.set(source_tags) if source_tags else None
                 )
                 # Forwarding authority is published only for a call that proved
                 # it, and only for that call's own duration: a call with no
@@ -1146,6 +1164,8 @@ class UsageCollector:
                         usage_billing_suppressed.reset(suppression_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
+                    if source_token is not None:
+                        usage_source_tags.reset(source_token)
 
             if asyncio.iscoroutinefunction(func):
                 return async_wrapper

@@ -2702,3 +2702,36 @@ def test_model_decorator_isolates_measured_input_across_threads(
     assert row["processed_frames"] == 5
     assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 1
     assert row["megapixel_buckets"]["2-4"]["processed_frames"] == 4
+
+
+def test_source_tags_reach_nested_model_rows(usage_collector_with_mocked_threads):
+    """A tag arriving on the handler call is inherited by the nested model row."""
+    from inference.usage_tracking.decorator_helpers import usage_source_tags
+
+    usage_collector = usage_collector_with_mocked_threads
+    fake_model = _decorated_fake_model(usage_collector)
+
+    @usage_collector(category="request")
+    def handler(
+        inference_request,
+        countinference=None,
+        source=None,
+        source_info=None,
+        api_key="test_key",
+    ):
+        fake_model().infer("img")
+        return "ok"
+
+    handler(_FakeRequest(), source="app", source_info="smart-polygon")
+
+    rows = usage_collector._usage["test_key"]
+    request_details = json.loads(
+        rows[usage_key("request", "yolov11n-640")]["resource_details"]
+    )
+    model_details = json.loads(
+        rows[usage_key("model", "yolov11n-640")]["resource_details"]
+    )
+    assert request_details["source"] == "app"
+    assert request_details["source_info"] == "smart-polygon"
+    assert model_details["source"] == "app"
+    assert usage_source_tags.get() == {}

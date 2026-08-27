@@ -31,6 +31,111 @@ usage_billing_suppressed: ContextVar[bool] = ContextVar(
     "usage_billing_suppressed", default=False
 )
 
+EXTERNAL_SOURCE_SENTINEL = "external"
+
+# Source tags (`source` / `source_info`) the current request-level call
+# carried, resolved once by the `usage_collector` wrappers and inherited the
+# same way as billing suppression - so a nested model decorator, which is
+# handed only the typed request, can attribute its row to the caller. The
+# default is never mutated, only replaced by `set()`.
+usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
+    "usage_source_tags", default={}
+)
+
+
+def _meaningful_source(value: Any) -> Optional[str]:
+    """A source tag worth recording, or None.
+
+    ``"external"`` is the placeholder the HTTP layer fills in when the caller
+    said nothing, so it identifies no one and is dropped rather than recorded as
+    a bucket of its own.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    if value == EXTERNAL_SOURCE_SENTINEL:
+        return None
+
+    return value
+
+
+def _lookup_in_func_kwargs(func_kwargs: Dict[str, Any], key: str) -> Any:
+    """Read a named parameter that may have landed in a catch-all ``**kwargs``."""
+    if func_kwargs.get(key) is not None:
+        return func_kwargs[key]
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict):
+        return nested_kwargs.get(key)
+
+    return None
+
+
+def _source_tag_bound_to_handler(
+    func_kwargs: Dict[str, Any],
+    key: str,
+) -> Optional[str]:
+    """Resolve a source tag from a handler's arguments, however it was declared.
+
+    Handlers spell these three ways. The legacy route declares them plainly. Two
+    SAM3 routes declare them under ``request_``-prefixed names, deliberately, so
+    that the raw names stay out of ``func_kwargs`` where ``source_info`` would
+    displace ``roboflow_service_name``. Every other route declares nothing at
+    all, leaving the value reachable only through the request's query string.
+    """
+    for candidate in (func_kwargs.get(f"request_{key}"), func_kwargs.get(key)):
+        tag = _meaningful_source(candidate)
+        if tag is not None:
+            return tag
+    query_params = getattr(func_kwargs.get("request"), "query_params", None)
+    if query_params is None:
+        return None
+
+    return _meaningful_source(query_params.get(key))
+
+
+def _source_tag_on_bound_requests(
+    func_kwargs: Dict[str, Any],
+    key: str,
+) -> Optional[str]:
+    """Read a source tag persisted on a bound request payload."""
+    for request_key in ("inference_request", "request", "workflow_request"):
+        tag = _meaningful_source(getattr(func_kwargs.get(request_key), key, None))
+        if tag is not None:
+            return tag
+
+    return None
+
+
+def read_source_tags_bound_to_call(
+    func: Callable[..., Any],
+    args: Any,
+    kwargs: Dict[str, Any],
+) -> Dict[str, str]:
+    """Source tags the decorated call carries, however the handler declares them.
+
+    Gated the same way as the billing intent: only request-level handlers
+    declare ``countinference``, so the model hot path never binds its call.
+    A handler's explicit declaration wins over what the request payload already
+    carries, matching how the tags used to be stamped onto the payload.
+
+    Usage tracking must never break inference, so binding failures are swallowed
+    the same way the surrounding recording calls swallow theirs.
+    """
+    try:
+        if "countinference" not in get_signature(func).parameters:
+            return {}
+        func_kwargs = collect_func_params(func, args, kwargs)
+        tags = {}
+        for key in ("source", "source_info"):
+            tag = _source_tag_bound_to_handler(
+                func_kwargs, key
+            ) or _source_tag_on_bound_requests(func_kwargs, key)
+            if tag is not None:
+                tags[key] = tag
+        return tags
+    except Exception as exc:
+        logger.debug("Failed to read source tags from call - %s", exc)
+        return {}
+
 
 def non_billable_intent_is_authenticated(
     countinference: Any,
@@ -206,10 +311,15 @@ def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     resource_details = {}
-    if "source" in func_kwargs:
-        resource_details["source"] = func_kwargs["source"]
-    elif "kwargs" in func_kwargs and "source" in func_kwargs["kwargs"]:
-        resource_details["source"] = func_kwargs["kwargs"]["source"]
+    # A model decorator nested under an HTTP handler never sees the query
+    # string, so a tag that arrived there reaches it only as request context.
+    source = (
+        _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
+        or _source_tag_on_bound_requests(func_kwargs, "source")
+        or usage_source_tags.get().get("source")
+    )
+    if source is not None:
+        resource_details["source"] = source
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
@@ -311,9 +421,7 @@ def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
                 source_info = request.source_info
                 if source_info:
                     break
-    if source_info and source_info != "external":
-        return source_info
-    return None
+    return _meaningful_source(source_info) or usage_source_tags.get().get("source_info")
 
 
 def get_resource_details_from_workflow_json(
@@ -432,6 +540,11 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
+    source = _source_tag_bound_to_handler(
+        func_kwargs, "source"
+    ) or _source_tag_on_bound_requests(func_kwargs, "source")
+    if source is not None:
+        resource_details["source"] = source
     model_id = getattr(func_kwargs.get("inference_request"), "model_id", None)
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         resource_details["execution_mode"] = SAM3_EXEC_MODE
