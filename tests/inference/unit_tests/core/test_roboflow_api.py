@@ -2777,9 +2777,7 @@ def test_get_roboflow_active_learning_configuration_when_wrong_api_key_used(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_active_learning_configuration_when_not_found_returned(
@@ -2800,9 +2798,7 @@ def test_get_roboflow_active_learning_configuration_when_not_found_returned(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_active_learning_configuration_when_internal_error_returned(
@@ -2823,9 +2819,7 @@ def test_get_roboflow_active_learning_configuration_when_internal_error_returned
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_active_learning_configuration_when_malformed_response_returned(
@@ -2846,9 +2840,7 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -4539,9 +4531,7 @@ def test_get_workflow_specification_when_wrong_api_key_used_and_no_cache_allowed
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_wrong_api_key_used_and_ephemeral_cache_miss_detected(
@@ -4563,9 +4553,7 @@ def test_get_workflow_specification_when_wrong_api_key_used_and_ephemeral_cache_
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_not_found_returned_and_cache_disabled(
@@ -4587,9 +4575,7 @@ def test_get_workflow_specification_when_not_found_returned_and_cache_disabled(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_miss_detected(
@@ -4611,9 +4597,7 @@ def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_internal_error_returned_and_cache_disabled(
@@ -4635,9 +4619,7 @@ def test_get_workflow_specification_when_internal_error_returned_and_cache_disab
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_cache_miss_detected(
@@ -4660,9 +4642,7 @@ def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_c
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
 
 
@@ -4685,9 +4665,7 @@ def test_get_workflow_specification_when_malformed_response_returned_and_cache_d
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_malformed_response_returned_and_ephemeral_cache_miss_detected(
@@ -4710,9 +4688,7 @@ def test_get_workflow_specification_when_malformed_response_returned_and_ephemer
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
 
 
@@ -4735,9 +4711,7 @@ def test_get_workflow_specification_when_config_not_provided_and_cache_disabled(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_config_not_provided_and_ephemeral_cache_miss_detected(
@@ -4792,9 +4766,7 @@ def test_get_workflow_specification_when_config_not_parsable_and_cache_disabled(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_valid_response_given_and_cache_disabled(
@@ -4824,9 +4796,7 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
     )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert result == {
         "version": "1.0",
         "inputs": [{"type": "InferenceImage", "name": "image"}],
@@ -4958,11 +4928,13 @@ def test_get_workflow_specification_with_workflow_version_id(
     )
 
     # then
+    workflow_requests = _requests_for_workflow(requests_mock, "some_workflow")
+    assert workflow_requests, "Expected a workflow specification request"
     assert (
-        "workflow_version=1771122946631" in requests_mock.last_request.query
+        "workflow_version=1771122946631" in workflow_requests[-1].query
     ), "Workflow version must be given in query"
     assert (
-        "api_key=my_api_key" in requests_mock.last_request.query
+        "api_key=my_api_key" in workflow_requests[-1].query
     ), "API key must be given in query"
     assert result == {
         "version": "1.0",
