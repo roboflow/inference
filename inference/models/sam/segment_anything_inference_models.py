@@ -87,8 +87,10 @@ class InferenceModelsSAMAdapter(Model):
             **kwargs,
         )
         # Usage telemetry reads the fixed canvas from `image_size`; SAMTorch
-        # only keeps it on the wrapped encoder.
-        self.image_size = self._model._model.image_encoder.img_size
+        # only keeps it on the wrapped encoder. Never let a telemetry lookup
+        # fail model construction.
+        encoder = getattr(getattr(self._model, "_model", None), "image_encoder", None)
+        self.image_size = getattr(encoder, "img_size", None)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         return kwargs

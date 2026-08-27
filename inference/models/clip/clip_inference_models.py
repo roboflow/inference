@@ -83,10 +83,14 @@ class InferenceModelsClipAdapter(Model):
         )
         # Usage telemetry reads the fixed canvas from `image_size`. ClipOnnx
         # keeps it as `_image_size`; ClipTorch only on the inner visual tower.
+        # Never let a telemetry lookup fail model construction.
         if isinstance(self._model, ClipTorch):
-            self.image_size = self._model._model.visual.input_resolution
+            inner = getattr(self._model, "_model", None)
+            self.image_size = getattr(
+                getattr(inner, "visual", None), "input_resolution", None
+            )
         else:
-            self.image_size = self._model._image_size
+            self.image_size = getattr(self._model, "_image_size", None)
 
     def run_tensor_native_inference(
         self, action: Literal["compare", "embed-image", "embed-text"], **kwargs

@@ -18,6 +18,7 @@ from inference.usage_tracking.decorator_helpers import (
     get_source_info_from_kwargs,
     non_billable_intent_is_authenticated,
     read_source_tags_bound_to_call,
+    record_fixed_model_input_for_request,
 )
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
@@ -559,6 +560,19 @@ def test_text_only_embedding_bills_one_frame_without_visual_canvas():
 
     assert frames == 1
     assert input_hw is None
+
+
+def test_published_canvas_without_imagery_keeps_bucket():
+    model = SimpleNamespace(image_size=1024)
+    request = SimpleNamespace(image=None, image_id="cached-embed")
+
+    record_fixed_model_input_for_request(model, request)
+    frames, input_hw = get_model_frames_and_input_hw(
+        {"self": model, "request": request}
+    )
+
+    assert frames == 1
+    assert input_hw == (1024, 1024)
 
 
 def test_model_api_key_from_workflow_block_private_attr():

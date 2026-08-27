@@ -412,8 +412,13 @@ def get_model_frames_and_input_hw(
     if frames <= 0:
         # No imagery anywhere in the call (text-only embeds). One frame is
         # still billed, but crediting the model's visual canvas to it would
-        # fabricate image-resolution telemetry - leave the bucket unknown.
-        return 1, None
+        # fabricate image-resolution telemetry — leave the bucket unknown
+        # unless the call explicitly published a size (SAM2/SAM3 cache-hit
+        # embed_image with image=None).
+        if measured_hw is None:
+            return 1, None
+
+        return 1, resolve_model_input_hw(model, measured_hw=measured_hw)
 
     return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
 

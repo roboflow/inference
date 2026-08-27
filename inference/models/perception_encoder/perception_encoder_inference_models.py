@@ -78,7 +78,9 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
             **kwargs,
         )
         # Usage telemetry reads the fixed canvas from `image_size`.
-        self.image_size = self._model.model.image_size
+        # Never let a telemetry lookup fail model construction.
+        inner = getattr(self._model, "model", None)
+        self.image_size = getattr(inner, "image_size", None)
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         """Preprocesses an inference request image."""
