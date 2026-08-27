@@ -198,6 +198,59 @@ def test_extract_usage_params_for_model_includes_megapixel_buckets(
     }
 
 
+def test_model_resource_details_include_task_type_when_present():
+    resource_details = get_model_resource_details_from_kwargs(
+        {"self": SimpleNamespace(task_type="object-detection")}
+    )
+
+    assert resource_details["task_type"] == "object-detection"
+
+
+def test_model_resource_details_omit_task_type_when_absent():
+    resource_details = get_model_resource_details_from_kwargs(
+        {"self": SimpleNamespace()}
+    )
+
+    assert "task_type" not in resource_details
+
+
+def test_model_resource_details_use_recorded_task_type_when_instance_has_none():
+    record_model_descriptor(
+        "coco/25",
+        architecture="yolov11",
+        variant="yolov11-n",
+        task_type="object-detection",
+    )
+    try:
+        resource_details = get_model_resource_details_from_kwargs(
+            {"model_id": "coco/25"}
+        )
+
+        assert resource_details["task_type"] == "object-detection"
+        assert resource_details["model_architecture"] == "yolov11"
+        assert resource_details["model_variant"] == "yolov11-n"
+    finally:
+        clear_recorded_model_descriptors()
+
+
+def test_bind_does_not_overwrite_instance_task_type():
+    model = SimpleNamespace(task_type="unsupervised-segmentation")
+    record_model_descriptor(
+        "sam3/sam3_interactive",
+        architecture="sam3",
+        variant="sam3_interactive",
+        task_type="interactive-segmentation",
+    )
+    try:
+        bind_usage_model_descriptor(model, "sam3/sam3_interactive")
+
+        assert model.task_type == "unsupervised-segmentation"
+        assert model.model_architecture == "sam3"
+        assert model.model_variant == "sam3_interactive"
+    finally:
+        clear_recorded_model_descriptors()
+
+
 def test_model_resource_details_report_non_square_configured_input():
     class LetterboxedModel:
         task_type = "object-detection"
@@ -299,6 +352,7 @@ def test_bind_usage_model_descriptor_copies_recorded_variant():
         "paligemma-3b-mix-224",
         architecture="paligemma",
         variant="paligemma-3b-mix-224",
+        task_type="lmm",
     )
     try:
         bind_usage_model_descriptor(model, "paligemma-3b-mix-224")
@@ -306,6 +360,7 @@ def test_bind_usage_model_descriptor_copies_recorded_variant():
         assert getattr(model, "model_id", None) is None
         assert model.model_architecture == "paligemma"
         assert model.model_variant == "paligemma-3b-mix-224"
+        assert model.task_type == "lmm"
     finally:
         clear_recorded_model_descriptors()
 
@@ -417,7 +472,7 @@ def test_get_model_binds_recorded_variant_on_instance():
 
         assert getattr(model, "model_id", None) is None
         assert get_model_descriptor_from_kwargs({"self": model}) == ModelDescriptor(
-            "paligemma", "paligemma-3b-mix-224"
+            "paligemma", "paligemma-3b-mix-224", task_type="lmm"
         )
     finally:
         if previous is None:
@@ -466,13 +521,14 @@ def test_registry_records_model_descriptor_for_usage_tracking():
 
         assert model_type == "sam2"
         assert get_recorded_model_descriptor("sam2/hiera_tiny") == ModelDescriptor(
-            "sam2", "hiera_tiny"
+            "sam2", "hiera_tiny", task_type="embed"
         )
 
         model = SimpleNamespace()
         bind_usage_model_descriptor(model, "sam2/hiera_tiny")
         assert model.model_architecture == "sam2"
         assert model.model_variant == "hiera_tiny"
+        assert model.task_type == "embed"
     finally:
         clear_recorded_model_descriptors()
 
@@ -509,7 +565,7 @@ def test_registry_records_model_variant_for_usage_tracking_not_architecture():
         assert task_type == "lmm"
         assert model_type == "paligemma"
         assert get_recorded_model_descriptor("paligemma-3b-mix-224") == ModelDescriptor(
-            "paligemma", "paligemma-3b-mix-224"
+            "paligemma", "paligemma-3b-mix-224", task_type="lmm"
         )
     finally:
         clear_recorded_model_descriptors()
@@ -521,21 +577,39 @@ def test_recorded_model_identities_evict_oldest_when_full(monkeypatch):
     monkeypatch.setattr(model_types, "_MAX_TRACKED_MODELS", 2)
     clear_recorded_model_descriptors()
     try:
-        record_model_descriptor(model_id="a/1", architecture="yolov8", variant="yolov8-n")
-        record_model_descriptor(model_id="b/1", architecture="yolov8", variant="yolov8-s")
-        record_model_descriptor(model_id="c/1", architecture="yolov8", variant="yolov8-m")
+        record_model_descriptor(
+            model_id="a/1", architecture="yolov8", variant="yolov8-n"
+        )
+        record_model_descriptor(
+            model_id="b/1", architecture="yolov8", variant="yolov8-s"
+        )
+        record_model_descriptor(
+            model_id="c/1", architecture="yolov8", variant="yolov8-m"
+        )
 
         assert get_recorded_model_descriptor("a/1") is None
-        assert get_recorded_model_descriptor("b/1") == ModelDescriptor("yolov8", "yolov8-s")
-        assert get_recorded_model_descriptor("c/1") == ModelDescriptor("yolov8", "yolov8-m")
+        assert get_recorded_model_descriptor("b/1") == ModelDescriptor(
+            "yolov8", "yolov8-s"
+        )
+        assert get_recorded_model_descriptor("c/1") == ModelDescriptor(
+            "yolov8", "yolov8-m"
+        )
 
         # Refreshing an existing key keeps it from being the next eviction victim.
-        record_model_descriptor(model_id="b/1", architecture="yolov8", variant="yolov8-s")
-        record_model_descriptor(model_id="d/1", architecture="yolov8", variant="yolov8-l")
+        record_model_descriptor(
+            model_id="b/1", architecture="yolov8", variant="yolov8-s"
+        )
+        record_model_descriptor(
+            model_id="d/1", architecture="yolov8", variant="yolov8-l"
+        )
 
         assert get_recorded_model_descriptor("c/1") is None
-        assert get_recorded_model_descriptor("b/1") == ModelDescriptor("yolov8", "yolov8-s")
-        assert get_recorded_model_descriptor("d/1") == ModelDescriptor("yolov8", "yolov8-l")
+        assert get_recorded_model_descriptor("b/1") == ModelDescriptor(
+            "yolov8", "yolov8-s"
+        )
+        assert get_recorded_model_descriptor("d/1") == ModelDescriptor(
+            "yolov8", "yolov8-l"
+        )
     finally:
         clear_recorded_model_descriptors()
 

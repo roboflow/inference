@@ -1093,16 +1093,42 @@ def test_get_model_type_when_generic_model_is_utilised(
 @pytest.mark.parametrize(
     "model_id, expected_descriptor",
     [
-        ("sam2/hiera_large", ModelDescriptor("sam2", "hiera_large")),
-        ("sam2/hiera_small", ModelDescriptor("sam2", "hiera_small")),
-        ("sam2/hiera_tiny", ModelDescriptor("sam2", "hiera_tiny")),
-        ("sam2/hiera_b_plus", ModelDescriptor("sam2", "hiera_b_plus")),
-        ("sam3/sam3_final", ModelDescriptor("sam3", "sam3_final")),
-        ("sam3/sam3_interactive", ModelDescriptor("sam3", "sam3_interactive")),
-        ("yolo_world/l", ModelDescriptor("yolo-world", "l")),
+        (
+            "sam2/hiera_large",
+            ModelDescriptor("sam2", "hiera_large", task_type="embed"),
+        ),
+        (
+            "sam2/hiera_small",
+            ModelDescriptor("sam2", "hiera_small", task_type="embed"),
+        ),
+        (
+            "sam2/hiera_tiny",
+            ModelDescriptor("sam2", "hiera_tiny", task_type="embed"),
+        ),
+        (
+            "sam2/hiera_b_plus",
+            ModelDescriptor("sam2", "hiera_b_plus", task_type="embed"),
+        ),
+        (
+            "sam3/sam3_final",
+            ModelDescriptor("sam3", "sam3_final", task_type="embed"),
+        ),
+        (
+            "sam3/sam3_interactive",
+            ModelDescriptor(
+                "sam3", "sam3_interactive", task_type="interactive-segmentation"
+            ),
+        ),
+        (
+            "yolo_world/l",
+            ModelDescriptor("yolo-world", "l", task_type="object-detection"),
+        ),
         # A bare architecture id is served in a single flavour - no variant.
-        ("clip", ModelDescriptor("clip", None)),
-        ("qwen3_5-0.8b", ModelDescriptor("qwen3_5-0.8b", None)),
+        ("clip", ModelDescriptor("clip", None, task_type="embed")),
+        (
+            "qwen3_5-0.8b",
+            ModelDescriptor("qwen3_5-0.8b", None, task_type="lmm"),
+        ),
     ],
 )
 def test_get_model_type_records_coded_model_suffix_as_usage_variant(
@@ -1326,7 +1352,7 @@ def test_get_model_type_for_pipeline_when_inference_models_enabled(
         assert result == ("ocr", "pp_ocr")
         _, _, expected_variant = model_id.partition("/")
         assert get_recorded_model_descriptor(model_id) == ModelDescriptor(
-            "pp_ocr", expected_variant or None
+            "pp_ocr", expected_variant or None, task_type="ocr"
         )
         get_model_metadata_from_inference_models_registry_mock.assert_not_called()
         get_roboflow_model_data_mock.assert_not_called()
@@ -1589,7 +1615,7 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
 
         assert result == ("instance-segmentation", "yolov8")
         assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
-            "yolov8", "yolov8-n"
+            "yolov8", "yolov8-n", task_type="instance-segmentation"
         )
         with open(metadata_path) as f:
             persisted_metadata = json.load(f)
@@ -1604,7 +1630,7 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
         )
         assert cached_result == ("instance-segmentation", "yolov8")
         assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
-            "yolov8", "yolov8-n"
+            "yolov8", "yolov8-n", task_type="instance-segmentation"
         )
         get_model_metadata_from_inference_models_registry_mock.assert_called_once()
     finally:
@@ -1635,7 +1661,7 @@ def test_get_model_type_records_architecture_when_registry_omits_variant(
         # then - the architecture is still labelled, the variant stays absent
         assert result == ("object-detection", "yolov8")
         assert get_recorded_model_descriptor("some-project/3") == ModelDescriptor(
-            "yolov8", None
+            "yolov8", None, task_type="object-detection"
         )
     finally:
         clear_recorded_model_descriptors()
@@ -2195,7 +2221,7 @@ def test_get_model_type_records_offline_registry_variant_when_model_type_json_mi
 
         assert result == ("object-detection", "rfdetr")
         assert get_recorded_model_descriptor("coco/38") == ModelDescriptor(
-            "rfdetr", "rfdetr-nano"
+            "rfdetr", "rfdetr-nano", task_type="object-detection"
         )
         get_model_metadata_from_inference_models_registry_mock.assert_not_called()
     finally:

@@ -1,7 +1,7 @@
-"""Process-local map of model id to Roboflow model architecture and variant.
+"""Process-local map of model id to Roboflow model architecture, variant, and task.
 
 Populated while a model type is being resolved for model loading, so that usage
-tracking can label a row with the same architecture / variant pair the Roboflow
+tracking can label a row with the same architecture / variant / task the Roboflow
 model registry stores, without ever calling the model registry itself. Registry
 lookups may issue an authenticated HTTP request, and the usage decorator runs on
 the inference hot path.
@@ -28,10 +28,13 @@ class ModelDescriptor:
         variant: Distinguishing size / task label within the architecture, e.g.
             ``yolov8-n`` or ``hiera_large``. None when the architecture is
             served in a single flavour.
+        task_type: Registry task, e.g. ``object-detection`` or ``embed``. None
+            when the resolve path did not report one.
     """
 
     architecture: str
     variant: Optional[str] = None
+    task_type: Optional[str] = None
 
 
 # Servers load a bounded number of models, but the map is keyed by caller-supplied
@@ -46,13 +49,15 @@ def record_model_descriptor(
     *,
     architecture: Optional[str],
     variant: Optional[str] = None,
+    task_type: Optional[str] = None,
 ) -> None:
-    """Remember the architecture / variant pair resolved for a model id.
+    """Remember the architecture / variant / task resolved for a model id.
 
     Args:
         model_id: Id the caller asked for, or its de-aliased spelling.
         architecture: Model architecture reported by the registry.
         variant: Platform ``modelVariant``, or the coded-model variant suffix.
+        task_type: Registry task type, e.g. ``object-detection``.
     """
     if not model_id or not architecture:
         return
@@ -61,6 +66,7 @@ def record_model_descriptor(
     descriptor = ModelDescriptor(
         architecture=str(architecture),
         variant=str(variant) if variant else None,
+        task_type=str(task_type) if task_type else None,
     )
     if model_id in _MODEL_DESCRIPTORS:
         _MODEL_DESCRIPTORS.move_to_end(model_id)
@@ -110,6 +116,8 @@ def bind_usage_model_descriptor(model: Any, *model_ids: Optional[str]) -> None:
     if recorded:
         model.model_architecture = recorded.architecture
         model.model_variant = recorded.variant
+        if recorded.task_type and not getattr(model, "task_type", None):
+            model.task_type = recorded.task_type
 
 
 def clear_recorded_model_descriptors() -> None:

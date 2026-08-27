@@ -464,11 +464,13 @@ def get_model_type(
         model_id=model_id,
         architecture=model_type,
         variant=model_variant,
+        task_type=task_type,
     )
     record_model_descriptor(
         model_id=resolve_roboflow_model_alias(model_id=model_id),
         architecture=model_type,
         variant=model_variant,
+        task_type=task_type,
     )
     return task_type, model_type
 

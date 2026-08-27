@@ -81,7 +81,7 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
 def get_model_descriptor_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Optional[ModelDescriptor]:
-    """Resolve the Roboflow architecture / variant pair behind a model call.
+    """Resolve the Roboflow architecture / variant / task behind a model call.
 
     Prefer the labels bound onto the instance at load time. Fall back to the
     process-local map keyed by model id. Asking the model registry would be a
@@ -93,9 +93,11 @@ def get_model_descriptor_from_kwargs(
         architecture = getattr(model, "model_architecture", None)
         if architecture:
             variant = getattr(model, "model_variant", None)
+            task_type = getattr(model, "task_type", None)
             return ModelDescriptor(
                 architecture=str(architecture),
                 variant=str(variant) if variant else None,
+                task_type=str(task_type) if task_type else None,
             )
 
     return get_recorded_model_descriptor(get_model_id_from_kwargs(func_kwargs))
@@ -109,15 +111,18 @@ def get_model_resource_details_from_kwargs(
         resource_details["source"] = func_kwargs["source"]
     elif "kwargs" in func_kwargs and "source" in func_kwargs["kwargs"]:
         resource_details["source"] = func_kwargs["kwargs"]["source"]
-    if "self" in func_kwargs:
-        _self = func_kwargs["self"]
-        if hasattr(_self, "task_type"):
-            resource_details["task_type"] = _self.task_type
+    model = func_kwargs.get("self")
+    task_type = getattr(model, "task_type", None) if model is not None else None
     model_descriptor = get_model_descriptor_from_kwargs(func_kwargs)
     if model_descriptor:
         resource_details["model_architecture"] = model_descriptor.architecture
         if model_descriptor.variant:
             resource_details["model_variant"] = model_descriptor.variant
+        if not task_type:
+            task_type = model_descriptor.task_type
+
+    if task_type:
+        resource_details["task_type"] = str(task_type)
     # Only the configured canvas, never the observed one. Rows aggregate over
     # calls that may each see a different upload, and resource details merge
     # last-write-wins, so a size that varies per call would be attributed to
