@@ -344,4 +344,15 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         )
         if isinstance(answer, dict):
             answer = answer.get("answer", "")
-        return _parse_first_json_object(answer)
+        mapping = _parse_first_json_object(answer)
+        # Distinguishes "mapping call failed -> caller falls back" from
+        # "the model returned these labels" when a caption survives
+        # condensing unchanged.
+        if mapping is None:
+            LOGGER.debug(
+                "Cosmos3 label mapping unparseable; answer tail: %r",
+                answer[-300:] if isinstance(answer, str) else answer,
+            )
+        else:
+            LOGGER.debug("Cosmos3 label mapping: %s", mapping)
+        return mapping
