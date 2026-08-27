@@ -134,7 +134,7 @@ if modal is not None:
         )
 
     video_processing_image = (
-        video_processing_image.apt_install("ffmpeg")
+        video_processing_image.apt_install("ffmpeg", "python3-pip")
         .pip_install("modal", "msgpack", "websocket-client")
         .entrypoint([])
     )
