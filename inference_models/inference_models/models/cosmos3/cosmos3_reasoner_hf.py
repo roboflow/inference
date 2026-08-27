@@ -150,6 +150,7 @@ class Cosmos3EdgeReasoner:
         skip_special_tokens: bool = True,
         return_thinking: bool = False,
         video_fps: Optional[float] = None,
+        enable_thinking: bool = True,
         **kwargs,
     ) -> Union[str, Dict[str, str]]:
         inputs = self.pre_process_generation(
@@ -158,6 +159,7 @@ class Cosmos3EdgeReasoner:
             input_color_format=input_color_format,
             as_video=True,
             video_fps=video_fps,
+            enable_thinking=enable_thinking,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -227,6 +229,7 @@ class Cosmos3EdgeReasoner:
         input_color_format: ColorFormat = None,
         as_video: bool = False,
         video_fps: Optional[float] = None,
+        enable_thinking: bool = True,
         **kwargs,
     ) -> dict:
         if isinstance(images, np.ndarray):
@@ -257,8 +260,12 @@ class Cosmos3EdgeReasoner:
                 ],
             },
         ]
+        template_kwargs = {} if enable_thinking else {"enable_thinking": False}
         text_input = self._processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
+            conversation,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
         if as_video and video_fps is not None:
