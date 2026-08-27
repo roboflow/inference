@@ -178,7 +178,10 @@ def get_inference_image():
             "ffmpeg",
             "wget",
         )
-        .pip_install("fastapi[standard]")  # Add FastAPI for web endpoints
+        # FastAPI serves the web endpoints; msgpack is a hard requirement of
+        # the websocket transport (wsapp crash-loops on boot without it on
+        # base images that predate msgpack in inference's requirements).
+        .pip_install("fastapi[standard]", "msgpack")
         .entrypoint([])
     )
     return image
