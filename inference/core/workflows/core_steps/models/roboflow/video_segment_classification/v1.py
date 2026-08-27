@@ -83,7 +83,9 @@ temporal content, so these paths return an empty timeline.
 The class vocabulary is optional. Provide classes for zero-shot models, leave
 them empty for fine-tuned models that carry their own class list, or leave them
 empty on open-vocabulary models to let the model label events. The
-active_classes output works with Classification Label Visualization.
+window_classes output lists every class the most recent window classification
+detected. It updates on each classification and holds between classifications.
+It works with Classification Label Visualization.
 """
 
 
@@ -96,6 +98,7 @@ class _VideoSegmentClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[VideoSegmentClassificationPrediction] = field(default_factory=list)
     open_classes: Set[str] = field(default_factory=set)
+    window_class_names: List[str] = field(default_factory=list)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
@@ -201,7 +204,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND],
             ),
             OutputDefinition(
-                name="active_classes", kind=[CLASSIFICATION_PREDICTION_KIND]
+                name="window_classes", kind=[CLASSIFICATION_PREDICTION_KIND]
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
         ]
@@ -508,6 +511,9 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 exc_info=True,
             )
             return str(error)
+        bookkeeping.window_class_names = list(
+            dict.fromkeys(segment.class_name for segment in segments)
+        )
         # Sample-index space, before mapping to absolute frames and merging —
         # this line separates "the model output one range" from "the block
         # merged several".
@@ -645,28 +651,10 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 if entry.class_name == class_name:
                     entry.end_frame_idx = frame_number
                     break
-        if id_vocabulary is not None:
-            active_class_names = [
-                class_name
-                for class_name in id_vocabulary
-                if class_name in bookkeeping.open_classes
-            ]
-            active_class_names.extend(
-                class_name
-                for class_name in bookkeeping.open_classes
-                if class_name not in id_vocabulary
-            )
-        else:
-            active_class_names = []
-            for entry in timeline:
-                if (
-                    entry.class_name in bookkeeping.open_classes
-                    and entry.class_name not in active_class_names
-                ):
-                    active_class_names.append(entry.class_name)
+        window_class_names = list(bookkeeping.window_class_names)
         height, width = image._read_shape_without_materialization()
         parent_id = image.parent_metadata.parent_id
-        active_classes = {
+        window_classes = {
             "image": {"width": width, "height": height},
             "predictions": {
                 class_name: {
@@ -678,9 +666,9 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                         else -1
                     ),
                 }
-                for class_name in active_class_names
+                for class_name in window_class_names
             },
-            "predicted_classes": active_class_names,
+            "predicted_classes": window_class_names,
             "prediction_type": "classification",
             "parent_id": parent_id,
             "root_parent_id": parent_id,
@@ -688,6 +676,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         }
         return {
             "timeline": timeline,
-            "active_classes": active_classes,
+            "window_classes": window_classes,
             "error_status": error_status,
         }

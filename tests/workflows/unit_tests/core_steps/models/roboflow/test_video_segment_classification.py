@@ -207,8 +207,8 @@ def _timeline_as_dicts(result):
     return [entry.model_dump() for entry in result["timeline"]]
 
 
-def _active_class_names(result):
-    return result["active_classes"]["predicted_classes"]
+def _window_class_names(result):
+    return result["window_classes"]["predicted_classes"]
 
 
 def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
@@ -274,6 +274,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest_type.describe_outputs()[1].kind == [
         CLASSIFICATION_PREDICTION_KIND
     ]
+    assert manifest_type.describe_outputs()[1].name == "window_classes"
     assert manifest_type.describe_outputs()[2].name == "error_status"
     assert manifest_type.describe_outputs()[2].kind == [STRING_KIND]
 
@@ -345,8 +346,8 @@ def test_first_frame_anchors_cadence_and_first_fire_waits_for_stride():
     first_result = _run(block, _make_frame(10))
 
     assert first_result["timeline"] == []
-    assert _active_class_names(first_result) == []
-    assert first_result["active_classes"]["predictions"] == {}
+    assert _window_class_names(first_result) == []
+    assert first_result["window_classes"]["predictions"] == {}
     assert model.calls == []
 
     _run(block, _make_frame(11))
@@ -369,7 +370,7 @@ def test_first_scheduled_classification_sends_rgb_stride_buffer():
     result = _run(block, _make_frame(2))
 
     assert [entry.class_name for entry in result["timeline"]] == ["walk"]
-    assert _active_class_names(result) == ["walk"]
+    assert _window_class_names(result) == ["walk"]
     assert result["error_status"] == ""
     assert len(model.calls) == 1
     call = model.calls[0]
@@ -399,7 +400,11 @@ def test_open_vocabulary_keeps_arbitrary_labels_with_negative_class_ids():
         "sitting down",
     ]
     assert [entry.class_id for entry in result["timeline"]] == [-1, -1]
-    assert _active_class_names(result) == ["opening a door", "sitting down"]
+    assert _window_class_names(result) == ["opening a door", "sitting down"]
+    assert result["window_classes"]["predictions"] == {
+        "opening a door": {"confidence": 1.0, "class_id": -1},
+        "sitting down": {"confidence": 1.0, "class_id": -1},
+    }
 
 
 def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
@@ -420,7 +425,7 @@ def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
             "class_id": 1,
         }
     ]
-    assert _active_class_names(result) == ["run"]
+    assert _window_class_names(result) == ["run"]
 
 
 def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
@@ -441,7 +446,7 @@ def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
             "class_id": 0,
         }
     ]
-    assert result["active_classes"]["predictions"]["run"]["class_id"] == 0
+    assert result["window_classes"]["predictions"]["run"]["class_id"] == 0
 
 
 def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
@@ -462,28 +467,60 @@ def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
             "class_id": 1,
         }
     ]
-    assert result["active_classes"]["predictions"] == {
-        "b": {"confidence": 1.0, "class_id": 1}
+    assert result["window_classes"]["predictions"] == {
+        "a": {"confidence": 1.0, "class_id": 0},
+        "b": {"confidence": 1.0, "class_id": 1},
     }
 
 
-def test_active_classes_uses_multi_label_classification_shape():
+def test_window_classes_uses_multi_label_classification_shape():
     block, _ = _make_block(responses=[[_model_segment("walk")]])
     _run(block, _make_frame(0))
     frame = _make_frame(2)
 
     result = _run(block, frame)
 
-    active_classes = result["active_classes"]
-    assert active_classes["image"] == {"width": 2, "height": 2}
-    assert active_classes["predictions"] == {
+    window_classes = result["window_classes"]
+    assert window_classes["image"] == {"width": 2, "height": 2}
+    assert window_classes["predictions"] == {
         "walk": {"confidence": 1.0, "class_id": 0}
     }
-    assert active_classes["predicted_classes"] == ["walk"]
-    assert active_classes["prediction_type"] == "classification"
-    assert active_classes["parent_id"] == "stream-0:2"
-    assert active_classes["root_parent_id"] == "stream-0:2"
-    assert UUID(active_classes["inference_id"]).version == 4
+    assert window_classes["predicted_classes"] == ["walk"]
+    assert window_classes["prediction_type"] == "classification"
+    assert window_classes["parent_id"] == "stream-0:2"
+    assert window_classes["root_parent_id"] == "stream-0:2"
+    assert UUID(window_classes["inference_id"]).version == 4
+
+
+def test_window_classes_hold_between_fires_clear_on_empty_and_survive_errors(
+    monkeypatch,
+):
+    block, model = _make_block(
+        responses=[
+            [_model_segment("walk"), _model_segment("walk", 1, 1)],
+            RuntimeError("temporary model failure"),
+            [],
+        ]
+    )
+    monkeypatch.setattr(video_classification_module.logger, "warning", MagicMock())
+
+    assert _window_class_names(_run(block, _make_frame(0))) == []
+    assert _window_class_names(_run(block, _make_frame(1))) == []
+
+    fired = _run(block, _make_frame(2))
+    assert _window_class_names(fired) == ["walk"]
+
+    held = _run(block, _make_frame(3))
+    assert _window_class_names(held) == ["walk"]
+
+    errored = _run(block, _make_frame(4))
+    assert errored["error_status"]
+    assert _window_class_names(errored) == ["walk"]
+
+    cleared = _run(block, _make_frame(6))
+    assert cleared["error_status"] == ""
+    assert _window_class_names(cleared) == []
+    assert len(model.calls) == 3
 
 
 def test_default_stride_fires_every_half_window():
@@ -686,7 +723,7 @@ def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
             "class_id": 0,
         }
     ]
-    assert _active_class_names(result) == ["walk"]
+    assert _window_class_names(result) == ["walk"]
 
 
 def test_merges_reports_separated_by_a_fractional_stride_boundary():
@@ -721,7 +758,7 @@ def test_merges_reports_separated_by_a_fractional_stride_boundary():
             "class_id": 0,
         }
     ]
-    assert _active_class_names(result) == ["walk"]
+    assert _window_class_names(result) == ["walk"]
 
 
 def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
@@ -744,7 +781,7 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
         ("walk", 0),
         ("run", 0),
     ]
-    assert _active_class_names(result) == ["walk", "run"]
+    assert _window_class_names(result) == ["walk", "run"]
 
 
 def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
@@ -779,16 +816,19 @@ def test_open_range_advances_then_closes_at_recorded_endpoint():
     _run(block, _make_frame(1))
     first_window_result = _run(block, _make_frame(2))
     assert first_window_result["timeline"][0].end_frame_idx == 2
-    assert _active_class_names(first_window_result) == ["walk"]
+    assert _window_class_names(first_window_result) == ["walk"]
 
     advancing_result = _run(block, _make_frame(3))
     assert advancing_result["timeline"][0].end_frame_idx == 3
     assert first_window_result["timeline"][0].end_frame_idx == 2
+    assert _window_class_names(advancing_result) == ["walk"]
 
     closed_result = _run(block, _make_frame(4))
     assert closed_result["timeline"][0].end_frame_idx == 0
-    assert _active_class_names(closed_result) == []
-    assert _run(block, _make_frame(5))["timeline"][0].end_frame_idx == 0
+    assert _window_class_names(closed_result) == []
+    held_result = _run(block, _make_frame(5))
+    assert held_result["timeline"][0].end_frame_idx == 0
+    assert _window_class_names(held_result) == []
 
 
 def test_end_within_window_slack_stays_open_then_closes_at_reported_endpoint():
@@ -811,7 +851,7 @@ def test_end_within_window_slack_stays_open_then_closes_at_reported_endpoint():
 
     assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 190
     assert result["timeline"][0].end_frame_idx == 200
-    assert _active_class_names(result) == ["walk"]
+    assert _window_class_names(result) == ["walk"]
 
     advancing_result = _run(
         block,
@@ -832,7 +872,7 @@ def test_end_within_window_slack_stays_open_then_closes_at_reported_endpoint():
         )
 
     assert closed_result["timeline"][0].end_frame_idx == 190
-    assert _active_class_names(closed_result) == []
+    assert _window_class_names(closed_result) == []
 
 
 def test_end_beyond_window_slack_is_closed():
@@ -853,7 +893,7 @@ def test_end_beyond_window_slack_is_closed():
         )
 
     assert result["timeline"][0].end_frame_idx == 180
-    assert _active_class_names(result) == []
+    assert _window_class_names(result) == ["walk"]
 
 
 def test_open_end_slack_floor_is_one_sampling_interval_for_small_windows():
@@ -880,7 +920,7 @@ def test_open_end_slack_floor_is_one_sampling_interval_for_small_windows():
         (entry.class_name, entry.end_frame_idx) for entry in result["timeline"]
     ] == [("walk", 48), ("run", 36)]
     assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 42
-    assert _active_class_names(result) == ["walk"]
+    assert _window_class_names(result) == ["walk", "run"]
 
 
 def test_wire_contract_and_alias_round_trip():
@@ -928,7 +968,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     _run(block, _make_frame(1))
     result = _run(block, _make_frame(2))
     assert result["timeline"]
-    assert _active_class_names(result) == ["walk"]
+    assert _window_class_names(result) == ["walk"]
 
     class_filter = reset_kwargs.get("class_filter", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
@@ -944,8 +984,8 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     )
 
     assert reset_result["timeline"] == []
-    assert _active_class_names(reset_result) == []
-    assert reset_result["active_classes"]["predictions"] == {}
+    assert _window_class_names(reset_result) == []
+    assert reset_result["window_classes"]["predictions"] == {}
     assert reset_result["error_status"] == ""
     assert len(model.calls) == 1
 
@@ -1013,24 +1053,24 @@ def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
     _run(block, _make_frame(3))
     failed = _run(block, _make_frame(4))
 
-    assert _active_class_names(initial) == ["walk"]
+    assert _window_class_names(initial) == ["walk"]
     assert failed["error_status"] == "temporary model failure"
     assert [entry.class_name for entry in failed["timeline"]] == ["walk"]
-    assert _active_class_names(failed) == ["walk"]
+    assert _window_class_names(failed) == ["walk"]
     assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 0
     warning.assert_called_once()
     assert warning.call_args.kwargs["exc_info"] is True
 
     after_failure = _run(block, _make_frame(5))
     assert after_failure["error_status"] == ""
-    assert _active_class_names(after_failure) == ["walk"]
+    assert _window_class_names(after_failure) == ["walk"]
     assert len(model.calls) == 2
 
     resumed = _run(block, _make_frame(6))
 
     assert resumed["error_status"] == ""
     assert [entry.class_name for entry in resumed["timeline"]] == ["walk", "run"]
-    assert _active_class_names(resumed) == ["run"]
+    assert _window_class_names(resumed) == ["run"]
     assert len(model.calls) == 3
 
 
