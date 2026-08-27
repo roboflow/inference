@@ -627,8 +627,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         timeline[:] = [entry for entry in timeline if entry not in matching]
         timeline.append(segment)
 
-    @staticmethod
     def _build_output(
+        self,
         bookkeeping: _VideoSegmentClassificationBookkeeping,
         image: WorkflowImageData,
         id_vocabulary: Optional[List[str]],
@@ -641,10 +641,27 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 if entry.class_name == class_name:
                     entry.end_frame_idx = frame_number
                     break
+        window_classes = self._build_window_classes(
+            bookkeeping=bookkeeping,
+            image=image,
+            id_vocabulary=id_vocabulary,
+        )
+        return {
+            "timeline": timeline,
+            "window_classes": window_classes,
+            "error_status": error_status,
+        }
+
+    def _build_window_classes(
+        self,
+        bookkeeping: _VideoSegmentClassificationBookkeeping,
+        image: WorkflowImageData,
+        id_vocabulary: Optional[List[str]],
+    ) -> Any:
         window_class_names = list(bookkeeping.window_class_names)
         height, width = image._read_shape_without_materialization()
         parent_id = image.parent_metadata.parent_id
-        window_classes = {
+        return {
             "image": {"width": width, "height": height},
             "predictions": {
                 class_name: {
@@ -663,9 +680,4 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             "parent_id": parent_id,
             "root_parent_id": parent_id,
             "inference_id": str(uuid4()),
-        }
-        return {
-            "timeline": timeline,
-            "window_classes": window_classes,
-            "error_status": error_status,
         }

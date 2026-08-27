@@ -381,10 +381,6 @@ def to_legacy_classification_prediction(
       names / dimensions come from ``image_metadata``, and ``predicted_classes``
       is the above-threshold ``class_ids``.
     """
-    if isinstance(prediction, dict):
-        # Blocks such as Video Segment Classification emit the legacy
-        # shape directly.
-        return prediction
     if isinstance(prediction, ClassificationPrediction):
         image_metadata = (prediction.images_metadata or [{}])[0] or {}
         height, width = _resolve_image_dimensions(image_metadata)

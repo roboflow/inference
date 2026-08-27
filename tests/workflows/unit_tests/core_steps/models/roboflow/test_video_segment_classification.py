@@ -41,6 +41,16 @@ from inference.core.workflows.core_steps.models.roboflow.video_segment_classific
     VideoSegmentClassificationModelBlockV1 as TensorVideoSegmentClassificationModelBlockV1,
 )
 from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAMES_KEY,
+    CLASSIFICATION_STYLE_KEY,
+    CLASSIFICATION_STYLE_MODEL,
+    IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoSegmentClassificationPrediction,
@@ -51,6 +61,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
     VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND,
+)
+from inference_models.models.base.classification import (
+    MultiLabelClassificationPrediction,
 )
 
 
@@ -473,8 +486,11 @@ def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
     }
 
 
-def test_window_classes_uses_multi_label_classification_shape():
-    block, _ = _make_block(responses=[[_model_segment("walk")]])
+def test_numpy_window_classes_uses_legacy_multi_label_classification_shape():
+    block, _ = _make_block(
+        responses=[[_model_segment("walk")]],
+        tensor=False,
+    )
     _run(block, _make_frame(0))
     frame = _make_frame(2)
 
@@ -490,6 +506,154 @@ def test_window_classes_uses_multi_label_classification_shape():
     assert window_classes["parent_id"] == "stream-0:2"
     assert window_classes["root_parent_id"] == "stream-0:2"
     assert UUID(window_classes["inference_id"]).version == 4
+
+
+def test_tensor_window_classes_uses_dense_vocabulary():
+    block, _ = _make_block(
+        responses=[[_model_segment("run"), _model_segment("walk")]],
+        tensor=True,
+        model_class_names=["walk", "run", "idle"],
+    )
+    _run(
+        block,
+        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
+        class_filter=None,
+    )
+    frame = _make_frame(2, tensor_rgb_color=[4, 5, 6])
+
+    result = _run(block, frame, class_filter=None)
+
+    window_classes = result["window_classes"]
+    assert isinstance(window_classes, MultiLabelClassificationPrediction)
+    assert window_classes.class_ids.dtype is torch.long
+    assert window_classes.confidence.dtype is torch.float32
+    torch.testing.assert_close(
+        window_classes.class_ids.cpu(),
+        torch.tensor([1, 0], dtype=torch.long),
+    )
+    torch.testing.assert_close(
+        window_classes.confidence.cpu(),
+        torch.tensor([1.0, 1.0, 0.0], dtype=torch.float32),
+    )
+    metadata = window_classes.image_metadata
+    assert metadata[CLASS_NAMES_KEY] == {0: "walk", 1: "run", 2: "idle"}
+    assert metadata[CLASSIFICATION_STYLE_KEY] == CLASSIFICATION_STYLE_MODEL
+    assert metadata[PREDICTION_TYPE_KEY] == "classification"
+    assert metadata[IMAGE_DIMENSIONS_KEY] == [2, 2]
+    assert metadata[PARENT_ID_KEY] == "stream-0:2"
+    assert metadata[ROOT_PARENT_ID_KEY] == "stream-0:2"
+    assert UUID(metadata[INFERENCE_ID_KEY]).version == 4
+
+
+def test_tensor_window_classes_uses_open_vocabulary_label_order():
+    block, _ = _make_block(
+        responses=[
+            [
+                _model_segment("opening a door"),
+                _model_segment("sitting down"),
+            ]
+        ],
+        tensor=True,
+    )
+    _run(
+        block,
+        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
+        class_filter=None,
+    )
+
+    result = _run(
+        block,
+        _make_frame(2, tensor_rgb_color=[4, 5, 6]),
+        class_filter=None,
+    )
+
+    window_classes = result["window_classes"]
+    assert window_classes.image_metadata[CLASS_NAMES_KEY] == {
+        0: "opening a door",
+        1: "sitting down",
+    }
+    torch.testing.assert_close(
+        window_classes.class_ids.cpu(),
+        torch.tensor([0, 1], dtype=torch.long),
+    )
+    torch.testing.assert_close(
+        window_classes.confidence.cpu(),
+        torch.ones(2, dtype=torch.float32),
+    )
+
+
+def test_tensor_window_classes_empty_fire_uses_empty_tensors():
+    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
+        to_legacy_classification_prediction,
+    )
+
+    block, model = _make_block(
+        responses=[[]],
+        tensor=True,
+        model_class_names=["walk", "run"],
+    )
+    _run(
+        block,
+        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
+        class_filter=None,
+    )
+
+    result = _run(
+        block,
+        _make_frame(2, tensor_rgb_color=[4, 5, 6]),
+        class_filter=None,
+    )
+
+    assert len(model.calls) == 1
+    window_classes = result["window_classes"]
+    assert window_classes.class_ids.dtype is torch.long
+    assert window_classes.class_ids.numel() == 0
+    assert window_classes.confidence.dtype is torch.float32
+    assert window_classes.confidence.numel() == 0
+    assert window_classes.image_metadata[CLASS_NAMES_KEY] == {
+        0: "walk",
+        1: "run",
+    }
+    assert window_classes.image_metadata[IMAGE_DIMENSIONS_KEY] == [2, 2]
+    assert to_legacy_classification_prediction(window_classes) == {
+        "image": {"width": 2, "height": 2},
+        "predictions": {},
+        "predicted_classes": [],
+    }
+
+
+def test_tensor_window_classes_round_trips_to_legacy_multi_label_shape():
+    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
+        to_legacy_classification_prediction,
+    )
+
+    block, _ = _make_block(
+        responses=[[_model_segment("run"), _model_segment("walk")]],
+        tensor=True,
+        model_class_names=["walk", "run", "idle"],
+    )
+    _run(
+        block,
+        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
+        class_filter=None,
+    )
+    result = _run(
+        block,
+        _make_frame(2, tensor_rgb_color=[4, 5, 6]),
+        class_filter=None,
+    )
+
+    legacy = to_legacy_classification_prediction(result["window_classes"])
+
+    assert legacy == {
+        "image": {"width": 2, "height": 2},
+        "predictions": {
+            "walk": {"confidence": 1.0, "class_id": 0},
+            "run": {"confidence": 1.0, "class_id": 1},
+            "idle": {"confidence": 0.0, "class_id": 2},
+        },
+        "predicted_classes": ["run", "walk"],
+    }
 
 
 def test_window_classes_hold_between_fires_clear_on_empty_and_survive_errors(

@@ -337,17 +337,3 @@ def test_classification_label_visualization_position_combinations(
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
-
-
-def test_tensor_to_legacy_conversion_passes_legacy_dicts_through() -> None:
-    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
-        to_legacy_classification_prediction,
-    )
-
-    legacy = {
-        "image": {"width": 640, "height": 480},
-        "predictions": {"walk": {"confidence": 1.0, "class_id": 0}},
-        "predicted_classes": ["walk"],
-    }
-
-    assert to_legacy_classification_prediction(legacy) is legacy
