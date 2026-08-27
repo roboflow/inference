@@ -188,7 +188,9 @@ def _run(
     frame: WorkflowImageData,
     class_filter=("walk", "run"),
     window_seconds=1.0,
-    stride_seconds=None,
+    # The block's own default stride is window_seconds (one new window per
+    # call); these tests pin the half-window cadence they were written for.
+    stride_seconds=0.5,
     sample_fps=2.0,
 ):
     return block.run(
@@ -586,6 +588,23 @@ def test_reset_re_resolves_source_fps(reset_frame_number, reset_window_seconds):
     assert reset_bookkeeping.source_fps == 30.0
 
 
+def test_unset_stride_fires_once_per_window():
+    # stride_seconds=None defaults to window_seconds: each call sees one
+    # new window instead of 50 percent overlap.
+    block, model = _make_block()
+    for frame_number in range(9):
+        _run(
+            block,
+            _make_frame(frame_number, fps=4.0),
+            window_seconds=1.0,
+            stride_seconds=None,
+        )
+
+    assert len(model.calls) == 2
+    bookkeeping = block._video_bookkeeping["stream-0"]
+    assert bookkeeping.last_fire_frame_number == 8
+
+
 def test_fractional_sampling_stride_keeps_the_true_sample_rate():
     # 30 fps at sample_fps 4 gives a 7.5-frame stride. The float grid
     # alternates 7- and 8-frame spacing; anchoring at sampled integers
@@ -899,7 +918,7 @@ def test_deserializer_rejects_malformed_values(value):
     [
         {"class_filter": ("run",)},
         {"window_seconds": 2.0},
-        {"stride_seconds": 0.5},
+        {"stride_seconds": 1.0},
         {"sample_fps": 1.0},
     ],
 )
@@ -913,7 +932,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
 
     class_filter = reset_kwargs.get("class_filter", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
-    stride_seconds = reset_kwargs.get("stride_seconds")
+    stride_seconds = reset_kwargs.get("stride_seconds", 0.5)
     sample_fps = reset_kwargs.get("sample_fps", 2.0)
     reset_result = _run(
         block,
@@ -930,10 +949,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     assert reset_result["error_status"] == ""
     assert len(model.calls) == 1
 
-    effective_stride_seconds = (
-        window_seconds / 2 if stride_seconds is None else stride_seconds
-    )
-    reset_fire_frame = 3 + max(1, round(effective_stride_seconds * 4.0))
+    reset_fire_frame = 3 + max(1, round(stride_seconds * 4.0))
     for frame_number in range(4, reset_fire_frame + 1):
         result = _run(
             block,

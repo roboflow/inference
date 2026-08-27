@@ -59,8 +59,9 @@ LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
 timeline. The first classification runs one stride after the stream starts.
-Later classifications run at each stride. By default, the stride is half the
-window length for 50 percent overlap. Ranges can overlap. An active range
+Later classifications run at each stride. By default, the stride equals the
+window length, so each classification sees one new window. Set a smaller
+stride for overlapping windows. Ranges can overlap. An active range
 advances with the stream until a later classification closes it. When a stream
 provides no source FPS, the block assumes 30 FPS and logs a warning.
 
@@ -158,8 +159,9 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description=(
             "Time between classification calls. When unset, it defaults to "
-            "window_seconds / 2 for 50 percent overlap. Set it equal to "
-            "window_seconds for non-overlapping windows."
+            "window_seconds, so each call sees one new window. Set it below "
+            "window_seconds for overlapping windows, at the cost of more "
+            "model calls."
         ),
         examples=[None, 1.0, 2.0],
     )
@@ -390,7 +392,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         sampling_stride = max(1.0, source_fps / effective_sample_fps)
         window_frames = max(1, round(requested_window_seconds * source_fps))
         effective_stride_seconds = (
-            requested_window_seconds / 2
+            requested_window_seconds
             if requested_stride_seconds is None
             else requested_stride_seconds
         )
