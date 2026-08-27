@@ -264,7 +264,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
 
     assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
-    assert manifest.window_seconds == 2.0
+    assert manifest.window_seconds == 10.0
     assert manifest.stride_seconds is None
     assert manifest.sample_fps == 4.0
     assert manifest_type.get_parameters_accepting_batches() == ["images"]

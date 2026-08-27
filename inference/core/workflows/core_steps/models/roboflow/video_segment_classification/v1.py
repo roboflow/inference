@@ -65,12 +65,11 @@ stride for overlapping windows. Ranges can overlap. An active range
 advances with the stream until a later classification closes it. When a stream
 provides no source FPS, the block assumes 30 FPS and logs a warning.
 
-Frames per call equal window_seconds x sample_fps. The model spreads a fixed
-pixel budget across those frames. Use fewer frames to keep each frame sharper
-when small objects matter. Use more frames for denser temporal coverage.
-Very short windows can fall below a model's temporal-localization floor:
-cosmos-3-edge stops emitting events for windows under roughly 5 seconds, so
-keep window_seconds at 6 or more for that model.
+Frames per call equal window_seconds x sample_fps. Models with a fixed pixel
+budget spread it across those frames. Use fewer frames to keep each frame
+sharper when small objects matter. Use more frames for denser temporal
+coverage. Very short windows can fall below a model's temporal floor: when a
+model returns no events, increase window_seconds.
 
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a new result. On a finite clip,
@@ -144,23 +143,24 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "List of accepted classes. For fine-tuned models, classes must exist "
             "in the model's training set and the output is restricted to this "
-            "subset. For zero-shot models such as cosmos-3-edge, detected "
-            "events are classified into this list. Leave empty to accept all "
-            "classes (open vocabulary on zero-shot models)."
+            "subset. For zero-shot models, detected events are classified "
+            "into this list. Leave empty to accept all classes (open "
+            "vocabulary on zero-shot models)."
         ),
         examples=[["a", "b", "c"], "$inputs.class_filter"],
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=2.0,
+        default=10.0,
         description=(
             "Duration of the sliding classification window in seconds. Frames "
-            "per call equal window_seconds x sample_fps. The model spreads a "
-            "fixed pixel budget across those frames. A shorter window uses fewer, "
-            "sharper frames. A longer window increases temporal coverage. "
-            "cosmos-3-edge needs 6 seconds or more."
+            "per call equal window_seconds x sample_fps. Models with a fixed "
+            "pixel budget spread it across those frames: a shorter window uses "
+            "fewer, sharper frames, and a longer window increases temporal "
+            "coverage. Very short windows fall below some models' temporal "
+            "floor."
         ),
-        examples=[2.0],
+        examples=[10.0],
     )
     stride_seconds: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
@@ -176,9 +176,9 @@ class BlockManifest(WorkflowBlockManifest):
         default=4.0,
         description=(
             "Frames sampled per second for model input. Frames per call equal "
-            "window_seconds x sample_fps. The model spreads a fixed pixel budget "
-            "across those frames. A lower value keeps frames sharper for small "
-            "objects. A higher value gives denser temporal coverage."
+            "window_seconds x sample_fps. A lower value keeps frames sharper "
+            "for small objects on pixel-budget models. A higher value gives "
+            "denser temporal coverage."
         ),
         examples=[4.0],
     )
@@ -308,7 +308,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         class_filter: Optional[List[str]] = None,
-        window_seconds: float = 2.0,
+        window_seconds: float = 10.0,
         stride_seconds: Optional[float] = None,
         sample_fps: float = 4.0,
     ) -> BlockResult:
