@@ -208,6 +208,29 @@ class TestRunValidation:
         assert result["error_status"] is False
         mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
 
+    @pytest.mark.parametrize("qos", [-1, 3, "abc", 1.5, True, None])
+    def test_invalid_qos_rejected_before_client_construction(
+        self, mock_client_cls, block, qos
+    ):
+        result = block.run(**run_kwargs(qos=qos))
+
+        assert result["error_status"] is True
+        assert "qos" in result["message"].lower()
+        mock_client_cls.assert_not_called()
+
+    @pytest.mark.parametrize("qos, expected", [("1", 1), (2.0, 2), (0, 0)])
+    def test_selector_supplied_qos_coerced_like_other_parameters(
+        self, mock_client_cls, block, qos, expected
+    ):
+        block._connected.set()
+
+        result = block.run(**run_kwargs(qos=qos))
+
+        assert result["error_status"] is False
+        mock_client_cls.return_value.publish.assert_called_once_with(
+            "test/topic", "Hello, MQTT!", qos=expected, retain=False
+        )
+
     def test_password_without_username_rejected(self, mock_client_cls, block):
         result = block.run(**run_kwargs(password="secret"))
 
@@ -270,13 +293,18 @@ class TestClientSetup:
         ):
             assert getattr(callback, "__self__", None) is not block
 
-    def test_reconnect_delay_derived_from_timeout(self, mock_client_cls, block):
+    def test_reconnect_delay_lets_first_retry_finish_within_one_run(
+        self, mock_client_cls, block
+    ):
+        # min_delay must be below the readiness wait (= timeout), otherwise
+        # the first reconnect attempt after a connection drop starts exactly
+        # as the waiting run's timeout expires and that run always fails
         block._connected.set()
 
         block.run(**run_kwargs(timeout=0.5))
 
         mock_client_cls.return_value.reconnect_delay_set.assert_called_once_with(
-            min_delay=0.5, max_delay=1.0
+            min_delay=0.25, max_delay=1.0
         )
 
     def test_paho_connect_timeout_bound_to_block_timeout(self, mock_client_cls, block):
@@ -435,7 +463,24 @@ class TestPublishing:
             "test/topic", "Hello, MQTT!", qos=1, retain=True
         )
 
-    def test_publish_ack_timeout_reported_as_delivery_unknown(
+    def test_qos0_publish_confirmation_timeout_reported_as_lost(
+        self, mock_client_cls, block
+    ):
+        # paho never retransmits QoS 0: reconnect() clears _out_packet and
+        # QoS 0 messages are not queued, so an unconfirmed send is a real loss
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        mock_client.publish.return_value.is_published.return_value = False
+
+        with patch.object(v1, "logger") as mock_logger:
+            result = block.run(**run_kwargs(qos=0))
+
+        assert result["error_status"] is True
+        assert "lost" in result["message"].lower()
+        assert "delivery status unknown" not in result["message"].lower()
+        assert mock_logger.error.called
+
+    def test_qos1_publish_ack_timeout_reported_as_delivery_unknown(
         self, mock_client_cls, block
     ):
         block._connected.set()
@@ -443,7 +488,7 @@ class TestPublishing:
         mock_client.publish.return_value.is_published.return_value = False
 
         with patch.object(v1, "logger") as mock_logger:
-            result = block.run(**run_kwargs())
+            result = block.run(**run_kwargs(qos=1))
 
         assert result["error_status"] is True
         assert "delivery status unknown" in result["message"].lower()
@@ -530,7 +575,7 @@ class TestFailFast:
         )
 
         with patch.object(v1, "logger") as mock_logger:
-            with pytest.raises(RuntimeError, match="^Publish acknowledgement"):
+            with pytest.raises(RuntimeError, match="^Publish confirmation"):
                 block.run(**run_kwargs(fail_fast=True))
 
         assert mock_logger.error.call_count == 1

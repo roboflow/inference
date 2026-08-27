@@ -26,9 +26,10 @@ LONG_DESCRIPTION = """
 MQTT Writer block for publishing messages to an MQTT broker.
 
 The first run connects synchronously: the TCP connect and the broker's
-session acknowledgement are each bounded by `timeout`, so a cold start may
-take up to twice `timeout` - raise it for remote brokers. Afterwards a
-background network loop maintains the connection and owns reconnects.
+session acknowledgement are each bounded by `timeout` (DNS resolution is
+bounded by the OS resolver instead), so a cold start may take up to twice
+`timeout` - raise it for remote brokers. Afterwards a background network
+loop maintains the connection and owns reconnects.
 
 A run that cannot connect reports the failure and leaves nothing behind; the
 next run on the same block instance (video pipelines) retries from scratch,
@@ -45,8 +46,9 @@ Outputs:
     - message (str): Status message describing the result of the operation.
                     Contains error details if error_status is True,
                     or success confirmation if error_status is False.
-                    A publish acknowledgement timeout is reported as
-                    delivery-unknown: the message may still be delivered.
+                    A publish acknowledgement timeout on QoS 1/2 is reported
+                    as delivery-unknown (the message may still be delivered);
+                    an unconfirmed QoS 0 send is reported as lost.
 
 By default failures are returned in the outputs and logged, and the workflow
 keeps running. Set fail_fast to True to raise the failure instead, stopping
@@ -253,6 +255,20 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 fail_fast=fail_fast,
             )
         port = port_number
+        try:
+            if isinstance(qos, bool) or (
+                isinstance(qos, float) and not qos.is_integer()
+            ):
+                raise ValueError
+            qos_number = int(qos)
+        except (TypeError, ValueError):
+            qos_number = -1
+        if qos_number not in (0, 1, 2):
+            return self._handle_failure(
+                f"Invalid qos: {qos!r}. QoS must be 0, 1 or 2.",
+                fail_fast=fail_fast,
+            )
+        qos = qos_number
         if password is not None and username is None:
             return self._handle_failure(
                 "Password provided without username. Set username to enable MQTT authentication.",
@@ -295,14 +311,17 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 client.on_connect = mqtt_on_connect
                 client.on_connect_fail = mqtt_on_connect_fail
                 client.on_disconnect = mqtt_on_disconnect
-                client.reconnect_delay_set(min_delay=timeout, max_delay=2 * timeout)
+                # min_delay stays below the readiness wait (= timeout) so the
+                # first reconnect attempt after a connection drop can finish
+                # within a single run's wait instead of starting as it expires
+                client.reconnect_delay_set(min_delay=timeout / 2, max_delay=2 * timeout)
                 # paho 1.6.1 has no public setter for its synchronous connect
-                # timeout; without this the DNS + TCP phase runs under paho's
-                # 5s default instead of the block's timeout
+                # timeout; without this the TCP phase runs under paho's 5s
+                # default instead of the block's timeout
                 client._connect_timeout = timeout
-                # DNS + TCP happen here, bounded by _connect_timeout, so the
-                # first run gets a real connect budget; the CONNACK wait below
-                # covers the rest of the handshake
+                # the TCP connect happens here, bounded by _connect_timeout
+                # (DNS resolution is not - it runs under the OS resolver
+                # timeout); the CONNACK wait below covers the handshake rest
                 client.connect(host, port)
                 client.loop_start()
             except OSError as e:
@@ -367,6 +386,15 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 "error_status": False,
                 "message": "Message published successfully",
             }
+        if qos == 0:
+            # an unconfirmed QoS 0 send is a real loss: paho never queues
+            # QoS 0 messages and reconnect() clears the pending out packet
+            return self._handle_failure(
+                "Publish confirmation timed out; the connection dropped before "
+                "the message was fully sent and QoS 0 messages are not "
+                "retransmitted, so the message is lost.",
+                fail_fast=fail_fast,
+            )
         return self._handle_failure(
             "Publish acknowledgement timed out; delivery status unknown "
             "and the message may still be delivered.",

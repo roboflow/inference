@@ -277,6 +277,9 @@ MQTT_SINK_WORKFLOW = {
 @pytest.fixture
 def enterprise_blocks_enabled():
     from inference.core.workflows.execution_engine.introspection import blocks_loader
+    from inference.core.workflows.execution_engine.v1.compiler.core import (
+        COMPILATION_CACHE,
+    )
 
     previous_value = blocks_loader.LOAD_ENTERPRISE_BLOCKS
     blocks_loader.LOAD_ENTERPRISE_BLOCKS = True
@@ -284,6 +287,10 @@ def enterprise_blocks_enabled():
     yield
     blocks_loader.LOAD_ENTERPRISE_BLOCKS = previous_value
     blocks_loader.load_core_workflow_blocks.cache_clear()
+    # drop graphs compiled with enterprise blocks from the process-wide cache
+    with COMPILATION_CACHE._cache_lock:
+        COMPILATION_CACHE._cache.clear()
+        COMPILATION_CACHE._keys_buffer.clear()
 
 
 @pytest.mark.timeout(15)
