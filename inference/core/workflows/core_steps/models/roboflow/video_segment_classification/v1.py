@@ -508,6 +508,20 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 exc_info=True,
             )
             return str(error)
+        # Sample-index space, before mapping to absolute frames and merging —
+        # this line separates "the model output one range" from "the block
+        # merged several".
+        logger.debug(
+            "Video Segment Classification model call over sampled frames "
+            "[%s, %s] returned %d pre-merge segment(s): %s",
+            bookkeeping.sampled[0][0],
+            bookkeeping.sampled[-1][0],
+            len(segments),
+            [
+                (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
+                for segment in segments
+            ],
+        )
         # A fractional stride places samples alternately floor/ceil frames
         # apart, so adjacent windows' reports can sit ceil(stride) apart;
         # a float tolerance misses that merge by under one frame.
