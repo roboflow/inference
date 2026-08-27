@@ -1,4 +1,3 @@
-import math
 import threading
 from typing import get_args
 from unittest.mock import MagicMock, patch
@@ -225,7 +224,7 @@ class TestRunValidation:
 
 
 class TestClientSetup:
-    def test_client_uses_connect_async_and_background_loop(
+    def test_client_connects_synchronously_before_background_loop(
         self, mock_client_cls, block
     ):
         block._connected.set()
@@ -235,12 +234,10 @@ class TestClientSetup:
 
         assert result["error_status"] is False
         mock_client_cls.assert_called_once_with(userdata=block._connected)
-        mock_client.connect_async.assert_called_once_with("localhost", 1883)
-        mock_client.connect.assert_not_called()
+        mock_client.connect.assert_called_once_with("localhost", 1883)
+        mock_client.connect_async.assert_not_called()
         called_methods = [call[0] for call in mock_client.method_calls]
-        assert called_methods.index("connect_async") < called_methods.index(
-            "loop_start"
-        )
+        assert called_methods.index("connect") < called_methods.index("loop_start")
 
     def test_client_registers_static_callbacks(self, mock_client_cls, block):
         block._connected.set()
@@ -266,6 +263,50 @@ class TestClientSetup:
         mock_client_cls.return_value.reconnect_delay_set.assert_called_once_with(
             min_delay=0.5, max_delay=1.0
         )
+
+    def test_paho_connect_timeout_bound_to_block_timeout(self, mock_client_cls, block):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        connect_timeout_at_connect_call = []
+        mock_client.connect.side_effect = lambda *args, **kwargs: (
+            connect_timeout_at_connect_call.append(mock_client._connect_timeout)
+        )
+
+        block.run(**run_kwargs(timeout=0.25))
+
+        assert connect_timeout_at_connect_call == [0.25]
+
+    def test_unreachable_broker_on_first_run_reports_failure_and_keeps_retrying(
+        self, mock_client_cls, block
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.connect.side_effect = ConnectionRefusedError("refused")
+
+        first_result = block.run(**run_kwargs())
+
+        mock_client.connect.assert_called_once()
+        assert first_result["error_status"] is True
+        assert "not connected" in first_result["message"].lower()
+        assert block.mqtt_client is not None
+        mock_client.loop_start.assert_called_once()
+        mock_client.publish.assert_not_called()
+
+        # background loop establishes the connection later
+        block._connected.set()
+
+        second_result = block.run(**run_kwargs())
+
+        assert second_result["error_status"] is False
+        mock_client_cls.assert_called_once()
+
+    def test_unreachable_broker_with_fail_fast_raises(self, mock_client_cls, block):
+        mock_client = mock_client_cls.return_value
+        mock_client.connect.side_effect = OSError("no route to host")
+
+        with pytest.raises(RuntimeError, match="not connected"):
+            block.run(**run_kwargs(fail_fast=True))
+
+        mock_client.connect.assert_called_once()
 
     def test_setup_failure_resets_client_so_next_run_can_retry(
         self, mock_client_cls, block
@@ -305,7 +346,7 @@ class TestClientSetup:
 
         assert second_result["error_status"] is False
         mock_client_cls.assert_called_once()
-        mock_client.connect_async.assert_called_once()
+        mock_client.connect.assert_called_once()
         mock_client.publish.assert_called_once()
 
 
@@ -334,7 +375,7 @@ class TestConnectionOwnership:
 
         assert result["error_status"] is True
         assert "parameters" in result["message"].lower()
-        mock_client.connect_async.assert_called_once_with("broker-a", 1883)
+        mock_client.connect.assert_called_once_with("broker-a", 1883)
         mock_client.publish.assert_called_once()
 
     def test_changed_credentials_rejected(self, mock_client_cls, block):

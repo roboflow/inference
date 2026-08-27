@@ -25,12 +25,19 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 MQTT Writer block for publishing messages to an MQTT broker.
 
-The connection is established and maintained by a background network loop.
-The first run configures the connection and may return a connection-timeout
-error while the client keeps connecting in the background; a later run can
-then publish without re-creating the block. One block instance publishes to
-a single broker connection: changing host, port, credentials or timeout
-between runs is rejected as a configuration error.
+The first run connects synchronously: the TCP connect and the broker's
+session acknowledgement are each bounded by `timeout`, so a cold start may
+take up to twice `timeout` - raise it for remote brokers. Afterwards a
+background network loop maintains the connection and owns reconnects.
+
+Recovery across runs applies only where the same block instance serves many
+runs (video pipelines): a run that finds the broker unavailable reports the
+failure while the background loop keeps retrying, and a later run can publish
+without reconnecting. Over the HTTP API every request builds a fresh block
+instance, so each request pays the bounded connect and a failed request is
+final for that request. One block instance publishes to a single broker
+connection: changing host, port, credentials or timeout between runs is
+rejected as a configuration error.
 
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
@@ -270,6 +277,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         connection_identity = (host, port, username, password, timeout)
         if self.mqtt_client is None:
             client = None
+            connect_error: Optional[OSError] = None
             try:
                 client = mqtt.Client(userdata=self._connected)
                 if username is not None:
@@ -278,7 +286,20 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 client.on_connect_fail = mqtt_on_connect_fail
                 client.on_disconnect = mqtt_on_disconnect
                 client.reconnect_delay_set(min_delay=timeout, max_delay=2 * timeout)
-                client.connect_async(host, port)
+                # paho 1.6.1 has no public setter for its synchronous connect
+                # timeout; without this the DNS + TCP phase runs under paho's
+                # 5s default instead of the block's timeout
+                client._connect_timeout = timeout
+                try:
+                    # DNS + TCP happen here, bounded by _connect_timeout, so
+                    # the first run gets a real connect budget; the CONNACK
+                    # wait below covers the rest of the handshake
+                    client.connect(host, port)
+                except OSError as e:
+                    # broker unreachable right now; keep the client so the
+                    # background loop retries and a later run on this
+                    # instance can publish
+                    connect_error = e
                 client.loop_start()
             except Exception as e:
                 if client is not None:
@@ -291,6 +312,13 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 )
             self.mqtt_client = client
             self._connection_identity = connection_identity
+            if connect_error is not None:
+                return self._handle_failure(
+                    f"MQTT broker not connected ({connect_error}); the client keeps "
+                    "retrying in the background. Raise 'timeout' if the broker "
+                    "needs longer to connect.",
+                    fail_fast=fail_fast,
+                )
         elif connection_identity != self._connection_identity:
             return self._handle_failure(
                 "MQTT connection parameters (host, port, credentials or timeout) changed "
@@ -302,7 +330,8 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         if not self._connected.wait(timeout=timeout):
             return self._handle_failure(
                 "MQTT broker not connected (connection was not established within timeout); "
-                "the client keeps retrying in the background.",
+                "the client keeps retrying in the background. Raise 'timeout' if the "
+                "broker needs longer to connect.",
                 fail_fast=fail_fast,
             )
         try:
