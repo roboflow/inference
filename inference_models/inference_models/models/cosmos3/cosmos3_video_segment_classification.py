@@ -23,20 +23,19 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReaso
 # onto the vocabulary or "other".
 VOCABULARY_MAPPING_PROMPT_TEMPLATE = (
     "Here are numbered captions of events from a video:\n{captions}\n\n"
-    "Here is a list of action classes: {vocab}\n\n"
-    "Match each caption to one action class. Use the class text verbatim. "
+    "Here is a list of event classes: {vocab}\n\n"
+    "Match each caption to ONE event class. Use the class text verbatim. "
     'If a caption matches no class, use "other". If a caption describes '
-    "several actions or summarizes the video, pick the single best class "
-    'or "other". Do not overthink: one quick decision per caption.\n'
+    "several events or summarizes the video, pick the single best class "
+    'or "other".\n'
     "Return STRICT JSON, one entry per caption number: "
     '{{"1": "<class or other>", "2": "<class or other>", ...}}'
 )
 OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
     "Here are numbered captions of events from a video:\n{captions}\n\n"
-    "Condense each caption into a short lowercase action label of 2-5 "
-    "words. Name the action, not the scene. Use the same label for "
-    "captions that describe the same action. Do not overthink: one quick "
-    "decision per caption.\n"
+    "Condense each caption into ONE lowercase event label of 1-5 "
+    "words. Name the event, not the scene. Use the same label for "
+    "captions that describe the same event.\n"
     "Return STRICT JSON, one entry per caption number: "
     '{{"1": "<label>", "2": "<label>", ...}}'
 )
@@ -349,10 +348,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         # "the model returned these labels" when a caption survives
         # condensing unchanged.
         if mapping is None:
-            LOGGER.debug(
-                "Cosmos3 label mapping unparseable; answer tail: %r",
-                answer[-300:] if isinstance(answer, str) else answer,
-            )
+            LOGGER.debug("Cosmos3 label mapping unparseable; answer: %r", answer)
         else:
             LOGGER.debug("Cosmos3 label mapping: %s", mapping)
         return mapping

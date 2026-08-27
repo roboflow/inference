@@ -209,7 +209,7 @@ def test_infer_uses_model_vocabulary_when_parameter_is_none() -> None:
     result = wrapper.infer(frames=frames, class_names=None, fps=5.0)
 
     assert [segment.class_name for segment in result] == ["walking"]
-    assert 'action classes: ["walking"]' in reasoner.text_calls[0]["prompt"]
+    assert 'event classes: ["walking"]' in reasoner.text_calls[0]["prompt"]
 
 
 def test_infer_uses_open_vocabulary_prompt_and_condenses_captions() -> None:

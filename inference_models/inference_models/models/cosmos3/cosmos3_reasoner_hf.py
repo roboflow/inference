@@ -20,6 +20,7 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
+from inference_models.logger import LOGGER
 
 DEFAULT_PROMPT = "Describe what's in this image."
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
@@ -283,6 +284,7 @@ class Cosmos3EdgeReasoner:
                 # an explicit None displaces it.
                 fps=None,
             )
+        LOGGER.debug("Cosmos3 text input:\n%r", text_input)
         model_inputs = self._processor(
             text=text_input,
             return_tensors="pt",
