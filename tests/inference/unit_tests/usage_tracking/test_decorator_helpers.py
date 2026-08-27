@@ -1,13 +1,24 @@
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    call_carries_authenticated_non_billable_intent,
+    get_model_api_key_from_kwargs,
+    get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
+    get_model_resource_details_from_kwargs,
     get_model_type_from_kwargs,
     get_request_resource_details_from_kwargs,
+    get_source_info_from_kwargs,
+    non_billable_intent_is_authenticated,
+    read_source_tags_bound_to_call,
+    record_fixed_model_input_for_request,
 )
 from inference.usage_tracking.model_types import (
     bind_usage_model_identity,
@@ -17,16 +28,94 @@ from inference.usage_tracking.model_types import (
 )
 
 
-def test_get_request_resource_details_ignores_default_countinference():
-    result = get_request_resource_details_from_kwargs({"countinference": None})
+@pytest.mark.parametrize(
+    "countinference, expected",
+    [
+        (False, True),
+        ("false", True),
+        ("FALSE", True),
+        ("0", True),
+        (True, False),
+        ("true", False),
+        (None, False),
+        ("nonsense", False),
+    ],
+)
+def test_non_billable_intent_coerces_string_flags(
+    configured_service_secret,
+    countinference,
+    expected,
+):
+    result = non_billable_intent_is_authenticated(
+        countinference, configured_service_secret
+    )
 
-    assert "billable" not in result
+    assert result is expected
 
 
-def test_get_request_resource_details_respects_explicit_countinference():
-    result = get_request_resource_details_from_kwargs({"countinference": False})
+def test_non_billable_intent_requires_a_valid_service_secret():
+    assert non_billable_intent_is_authenticated(False, None) is False
 
-    assert result["billable"] is False
+
+def test_bound_call_reads_the_billing_arguments_it_was_given(
+    configured_service_secret,
+):
+    def handler(inference_request, countinference=None, service_secret=None): ...
+
+    assert (
+        call_carries_authenticated_non_billable_intent(
+            handler,
+            (SimpleNamespace(),),
+            {
+                "countinference": False,
+                "service_secret": configured_service_secret,
+            },
+        )
+        is True
+    )
+
+
+def test_bound_call_ignores_an_unauthenticated_opt_out(configured_service_secret):
+    def handler(inference_request, countinference=None, service_secret=None): ...
+
+    assert (
+        call_carries_authenticated_non_billable_intent(
+            handler,
+            (SimpleNamespace(),),
+            {"countinference": False, "service_secret": "not-the-secret"},
+        )
+        is False
+    )
+
+
+def test_bound_call_skips_binding_a_signature_without_billing_arguments():
+    # Every usage-collected call pays for this check, including the model hot
+    # path, so binding a signature that cannot carry the intent is pure
+    # overhead.
+    def infer(self, image, **kwargs): ...
+
+    with mock.patch.object(
+        decorator_helpers, "collect_func_params"
+    ) as collect_func_params_mock:
+        result = call_carries_authenticated_non_billable_intent(
+            infer, (None, "img"), {"countinference": False}
+        )
+
+    assert result is False
+    collect_func_params_mock.assert_not_called()
+
+
+def test_bound_call_swallows_binding_failures():
+    def handler(inference_request, countinference=None, service_secret=None): ...
+
+    with mock.patch.object(
+        decorator_helpers,
+        "collect_func_params",
+        side_effect=ValueError("boom"),
+    ):
+        result = call_carries_authenticated_non_billable_intent(handler, (), {})
+
+    assert result is False
 
 
 def test_get_request_resource_details_tags_sam3_execution_mode(monkeypatch):
@@ -433,6 +522,67 @@ def test_recorded_model_types_evict_oldest_when_full(monkeypatch):
         clear_recorded_model_types()
 
 
+def test_model_frames_count_images_kwarg_used_by_video_blocks():
+    frames, _ = get_model_frames_and_input_hw(
+        {"images": [object(), object(), object()]}
+    )
+
+    assert frames == 3
+
+
+def test_model_frames_count_workflow_batch_used_by_video_blocks():
+    batch = Batch(content=[object(), object(), object()], indices=None)
+
+    frames, _ = get_model_frames_and_input_hw({"images": batch})
+
+    assert frames == 3
+
+
+def test_model_frames_count_compare_request_subject_and_prompt_images():
+    request = SimpleNamespace(
+        subject=object(),
+        subject_type="image",
+        prompt=[object(), object()],
+        prompt_type="image",
+    )
+
+    frames, _ = get_model_frames_and_input_hw({"request": request})
+
+    assert frames == 3
+
+
+def test_text_only_embedding_bills_one_frame_without_visual_canvas():
+    model = SimpleNamespace(image_size=224)
+
+    frames, input_hw = get_model_frames_and_input_hw(
+        {"self": model, "request": SimpleNamespace()}
+    )
+
+    assert frames == 1
+    assert input_hw is None
+
+
+def test_published_canvas_without_imagery_keeps_bucket():
+    model = SimpleNamespace(image_size=1024)
+    request = SimpleNamespace(image=None, image_id="cached-embed")
+
+    record_fixed_model_input_for_request(model, request)
+    frames, input_hw = get_model_frames_and_input_hw(
+        {"self": model, "request": request}
+    )
+
+    assert frames == 1
+    assert input_hw == (1024, 1024)
+
+
+def test_model_api_key_from_workflow_block_private_attr():
+    api_key = get_model_api_key_from_kwargs(
+        {"self": SimpleNamespace(_api_key="workflow-block-key")}
+    )
+
+    assert api_key == "workflow-block-key"
+
+
 def test_explicit_model_usage_api_key_takes_precedence_over_request(
     usage_collector_with_mocked_threads,
 ):
@@ -465,3 +615,162 @@ def test_explicit_model_usage_api_key_takes_precedence_over_request(
     )
 
     assert usage_params["api_key"] == "explicit-usage-api-key"
+
+
+@pytest.mark.parametrize(
+    "handler_kwargs",
+    [
+        {"request_source": "app", "request_source_info": "smart-polygon"},
+        {"source": "app", "source_info": "smart-polygon"},
+        {
+            "request": SimpleNamespace(
+                query_params={"source": "app", "source_info": "smart-polygon"}
+            )
+        },
+    ],
+    ids=["aliased", "plain", "query_string_only"],
+)
+def test_source_tags_are_read_however_the_handler_declares_them(handler_kwargs):
+    def handler(
+        inference_request,
+        request=None,
+        countinference=None,
+        source=None,
+        source_info=None,
+        request_source=None,
+        request_source_info=None,
+    ): ...
+
+    tags = read_source_tags_bound_to_call(
+        handler, (), {"inference_request": SimpleNamespace(), **handler_kwargs}
+    )
+
+    assert tags == {"source": "app", "source_info": "smart-polygon"}
+
+
+def test_source_tags_ignore_the_external_placeholder():
+    # The legacy route defaults both parameters to "external", which describes
+    # no caller and must not land in a synthetic bucket.
+    def handler(
+        inference_request, countinference=None, source=None, source_info=None
+    ): ...
+
+    tags = read_source_tags_bound_to_call(
+        handler,
+        (),
+        {
+            "inference_request": SimpleNamespace(source=None, source_info=None),
+            "source": "external",
+            "source_info": "external",
+        },
+    )
+
+    assert tags == {}
+
+
+def test_source_tags_come_from_the_bound_request_payload():
+    # /infer/* routes declare no source parameters; a caller can still set the
+    # field in the request body.
+    def handler(inference_request, countinference=None): ...
+
+    tags = read_source_tags_bound_to_call(
+        handler,
+        (),
+        {"inference_request": SimpleNamespace(source="app", source_info=None)},
+    )
+
+    assert tags == {"source": "app"}
+
+
+def test_source_tags_skip_binding_a_signature_without_billing_arguments():
+    def infer(self, image, **kwargs): ...
+
+    with mock.patch.object(
+        decorator_helpers, "collect_func_params"
+    ) as collect_func_params_mock:
+        tags = read_source_tags_bound_to_call(infer, (None, "img"), {"source": "app"})
+
+    assert tags == {}
+    collect_func_params_mock.assert_not_called()
+
+
+def test_source_tags_swallow_binding_failures():
+    def handler(inference_request, countinference=None, source=None): ...
+
+    with mock.patch.object(
+        decorator_helpers,
+        "collect_func_params",
+        side_effect=ValueError("boom"),
+    ):
+        assert read_source_tags_bound_to_call(handler, (), {"source": "app"}) == {}
+
+
+def test_model_row_records_a_source_the_caller_actually_supplied():
+    result = get_model_resource_details_from_kwargs({"source": "app"})
+
+    assert result["source"] == "app"
+
+
+@pytest.mark.parametrize("placeholder", ["external", None])
+def test_model_row_omits_the_placeholder_the_legacy_route_supplies(placeholder):
+    """The legacy route defaults ``source`` to "external", and ``/infer/*`` to None.
+
+    ``infer_from_request`` unpacks ``request.dict()`` into ``infer(**kwargs)``, so
+    the field always reaches this function whether or not the caller set it, and
+    the row used to carry it either way. Neither value names a caller, so the key
+    is omitted instead - a deliberate narrowing of what the dimension holds.
+    """
+    result = get_model_resource_details_from_kwargs({"source": placeholder})
+
+    assert "source" not in result
+
+
+def test_model_row_takes_source_from_the_request_it_was_handed():
+    result = get_model_resource_details_from_kwargs(
+        {"inference_request": SimpleNamespace(source="app")}
+    )
+
+    assert result["source"] == "app"
+
+
+def test_model_row_takes_source_from_the_request_scope():
+    # A nested model decorator is handed the typed request and nothing else; a
+    # tag that arrived on the handler's query string reaches it only as context.
+    token = decorator_helpers.usage_source_tags.set({"source": "app"})
+    try:
+        result = get_model_resource_details_from_kwargs({})
+    finally:
+        decorator_helpers.usage_source_tags.reset(token)
+
+    assert result["source"] == "app"
+
+
+def test_request_row_records_source():
+    result = get_request_resource_details_from_kwargs(
+        {"inference_request": SimpleNamespace(source="app")}
+    )
+
+    assert result["source"] == "app"
+
+
+def test_request_row_omits_source_for_the_external_placeholder():
+    # Every legacy-route call would otherwise land in a synthetic bucket.
+    result = get_request_resource_details_from_kwargs(
+        {"source": "external", "countinference": True}
+    )
+
+    assert "source" not in result
+
+
+def test_source_info_falls_back_to_the_request_scope():
+    token = decorator_helpers.usage_source_tags.set({"source_info": "smart-polygon"})
+    try:
+        result = get_source_info_from_kwargs({})
+    finally:
+        decorator_helpers.usage_source_tags.reset(token)
+
+    assert result == "smart-polygon"
+
+
+def test_source_info_still_ignores_the_external_placeholder():
+    assert get_source_info_from_kwargs({"source_info": "external"}) is None

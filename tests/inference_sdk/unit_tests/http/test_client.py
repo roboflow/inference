@@ -21,6 +21,7 @@ from inference_sdk.config import (
     InferenceSDKDeprecationWarning,
     InferenceSDKGuidanceWarning,
     RemoteProcessingTimeCollector,
+    outbound_service_secret,
     remote_processing_times,
 )
 from inference_sdk.http import client
@@ -223,6 +224,38 @@ async def test_wrap_errors_async_when_http_error_occurs() -> None:
 
     assert error.value.status_code == 404
     assert error.value.api_message == "Not Found"
+
+
+@pytest.mark.asyncio
+async def test_wrap_errors_async_redacts_api_key_and_service_secret() -> None:
+    # given - the URL carries both the caller's api key and the server's own
+    # service secret; neither may leak into the raised error
+    @wrap_errors_async
+    async def example() -> None:
+        raise ClientResponseError(
+            request_info=RequestInfo(
+                url=URL(
+                    "https://some.com/endpoint?api_key=fake12345678"
+                    "&service_secret=super-secret&countinference=False"
+                ),
+                method="GET",
+                headers={},  # type: ignore
+            ),
+            history=(),
+            status=500,
+            message="Internal Server Error",
+        )
+
+    # when
+    with pytest.raises(HTTPCallErrorError) as error:
+        await example()
+
+    # then
+    assert "super-secret" not in str(error.value)
+    assert "fake12345678" not in str(error.value)
+    assert "service_secret=***" in str(error.value)
+    assert "api_key=fa***78" in str(error.value)
+    assert "countinference=False" in str(error.value)
 
 
 def test_wrap_errors_when_connection_error_occurs() -> None:
@@ -1928,6 +1961,84 @@ def test_infer_from_api_v1_threads_service_secret_and_countinference_as_query_pa
     assert "count_inference" not in body
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_sends_outbound_forwarding_authority_when_context_is_set(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - a bare client, with no billing configuration of its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg",
+            model_id="coco/3",
+        )
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("service_secret") == ["ctx-secret"]
+    assert qs.get("countinference") == ["false"]
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_context_overrides_explicit_count_inference_true(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - explicit configuration asks to be billed, but an outbound
+    # authenticated opt-out is active for this call
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    http_client.configure(
+        inference_configuration=InferenceConfiguration(count_inference=True)
+    )
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg",
+            model_id="coco/3",
+        )
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then - explicit `count_inference=True` never upgrades a suppressed context
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("countinference") == ["false"]
+    assert qs.get("service_secret") == ["ctx-secret"]
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 @pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
@@ -2804,6 +2915,34 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v1_mode(
     }, "Request must contain API key and image encoded in standard format"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_image_embeddings_sends_outbound_forwarding_authority_when_context_is_set(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - get_clip_image_embeddings routes through the shared _post_images
+    # path, so this pins the seam every other _post_images caller relies on
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/clip/embed_image",
+        json={"frame_id": None, "time": 0.1, "embeddings": [[0.1]]},
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=ctx-secret" in sent_url
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_get_clip_image_embeddings_async_when_single_image_given_in_v1_mode(
@@ -3098,6 +3237,7 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
             "clip_version_id": "ViT-B-32",
         },
         headers={"Content-Type": "application/json"},
+        params=None,
     )
     assert collector.drain() == [("ViT-B-32", 1.5)]
     assert collector.snapshot_model_ids() == {"clip/ViT-B-32"}
@@ -3281,6 +3421,7 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
             "subject_type": "text",
             "clip_version_id": "ViT-B-32",
         },
+        params=None,
         headers={"Content-Type": "application/json"},
     )
     assert collector.drain() == [("ViT-B-32", 1.5)]
@@ -3329,6 +3470,75 @@ def test_clip_compare_when_mixed_input_is_given(
     }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_the_billing_parameters_when_configured(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - clip_compare builds its request by hand rather than through
+    # _post_images, so it has to serialize the configuration on its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.configure(
+        InferenceConfiguration(count_inference=False, service_secret="my-secret")
+    )
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+
+    # when
+    http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=my-secret" in sent_url
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_outbound_forwarding_authority_when_context_is_set(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - a bare client, with no billing configuration of its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=ctx-secret" in sent_url
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_no_billing_parameters_without_context_or_configuration(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - neither an outbound context nor explicit configuration is set
+    assert outbound_service_secret.get() is None
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+
+    # when
+    http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+
+    # then
+    sent_url = requests_mock.request_history[0].url.lower()
+    assert "countinference" not in sent_url
+    assert "service_secret" not in sent_url
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_clip_compare_when_mixed_input_is_given(
@@ -3371,6 +3581,7 @@ async def test_clip_compare_when_mixed_input_is_given(
                 "prompt_type": "text",
                 "subject_type": "image",
             },
+            params=None,
             headers={"Content-Type": "application/json"},
         )
 
@@ -3472,6 +3683,7 @@ async def test_clip_compare_when_both_prompt_and_subject_are_images(
                 "prompt_type": "image",
                 "subject_type": "image",
             },
+            params=None,
             headers={"Content-Type": "application/json"},
         )
 

@@ -18,6 +18,9 @@ from inference.core.workflows.core_steps.visualizations.common.base_tensor impor
     empty_predictions_passthrough,
     to_supervision_for_annotation,
 )
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    UNKNOWN_CLASS_COLOR_RGB,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -70,13 +73,6 @@ The annotated image from this block can be connected to:
 - **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with mask overlays as visual evidence in alerts or reports
 - **Video output blocks** to create annotated video streams or recordings with mask fills for live monitoring, segmentation visualization, or post-processing analysis
 """
-
-#: supervision's pending-track sentinel and its color (``PENDING_TRACK_ID`` /
-#: ``PENDING_TRACK_COLOR = Color.GREY``, supervision 0.29.0
-#: ``annotators/utils.py``). Values are copied so the runtime path never
-#: touches supervision.
-_PENDING_TRACK_ID = -1
-_PENDING_TRACK_COLOR_RGB = (128, 128, 128)
 
 _SUPPORTED_COLOR_AXES = ("CLASS", "INDEX", "TRACK")
 
@@ -554,18 +550,14 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
         device = scene.device
         ids = _resolve_color_ids(predictions, color_axis, device)
         lut = self._get_palette_lut(color_palette, palette_size, custom_colors, device)
-        # Same color sv's `by_idx` picks: idx % palette size, on device. (For
-        # negative ids torch's remainder wraps instead of raising like sv's
-        # by_idx — checking would require a device→host read.)
+        # Non-negative ids wrap like ColorPalette.by_idx. Negative ids
+        # (unmatched VLM class_id, pending tracker) paint the same gray
+        # NegativeSafeColorPalette uses — on device, no host sync.
         colors_rgb = lut[ids.remainder(int(lut.shape[0]))]
-        if color_axis == "TRACK":
-            # sv resolve_color: the pending-track id (-1) gets Color.GREY.
-            pending = torch.tensor(
-                _PENDING_TRACK_COLOR_RGB, dtype=torch.uint8, device=device
-            )
-            colors_rgb = torch.where(
-                (ids == _PENDING_TRACK_ID).unsqueeze(1), pending, colors_rgb
-            )
+        unknown = torch.tensor(
+            UNKNOWN_CLASS_COLOR_RGB, dtype=torch.uint8, device=device
+        )
+        colors_rgb = torch.where((ids < 0).unsqueeze(1), unknown, colors_rgb)
         return gpu_mask_composite(scene, predictions.mask, colors_rgb, float(opacity))
 
     def run(

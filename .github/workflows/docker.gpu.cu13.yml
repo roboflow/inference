@@ -1,0 +1,92 @@
+name: Build and Push GPU CUDA 13 Container
+permissions:
+  contents: read
+on:
+  release:
+    types: [created]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_push:
+        type: boolean
+        description: "Do you want to push image after build?"
+        default: false
+      custom_tag:
+        type: string
+        description: "Custom tag to use for the image (overrides VERSION)"
+        default: ""
+
+env:
+  VERSION: "0.0.0" # Default version, will be overwritten
+  BASE_IMAGE: "roboflow/roboflow-inference-server-gpu-cu13"
+  DOCKERFILE: "./docker/dockerfiles/Dockerfile.onnx.cu13.gpu"
+
+jobs:
+  docker:
+    runs-on:
+      labels: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Read version from file
+        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Determine Image Tags
+        id: tags
+        uses: ./.github/actions/determine-tags
+        with:
+          custom_tag: ${{ github.event.inputs.custom_tag }}
+          version: ${{ env.VERSION }}
+          base_image: ${{ env.BASE_IMAGE }}
+          force_push: ${{ github.event.inputs.force_push }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Authenticate gcloud
+        uses: google-github-actions/auth@v2
+        id: auth
+        with:
+          workload_identity_provider: "projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github"
+          service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
+          token_format: access_token
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v4
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Combine Docker Hub and Artifact Registry tags
+        id: all_tags
+        run: |
+          DH_TAGS="${{ steps.tags.outputs.image_tags }}"
+          GCP_PREFIX="us-docker.pkg.dev/roboflow-artifacts/"
+          GCP_TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "$DH_TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            [ -z "$tag" ] && continue
+            if [ -n "$GCP_TAGS" ]; then
+              GCP_TAGS="${GCP_TAGS},${GCP_PREFIX}${tag}"
+            else
+              GCP_TAGS="${GCP_PREFIX}${tag}"
+            fi
+          done
+          echo "all_tags=${DH_TAGS},${GCP_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Single build will push to Docker Hub and Artifact Registry:"
+          echo "${DH_TAGS},${GCP_TAGS}"
+      - name: Build and push (Docker Hub and GCP from one build)
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+          project: grl7ffzxd7
+          tags: ${{ steps.all_tags.outputs.all_tags }}
+          platforms: linux/amd64
+          file: ${{ env.DOCKERFILE }}
