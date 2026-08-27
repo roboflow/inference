@@ -179,11 +179,8 @@ class Cosmos3EdgeReasoner:
         return_thinking: bool = False,
         enable_thinking: bool = True,
     ) -> Union[str, Dict[str, str]]:
-        """Text-only chat turn (no image or video content).
-
-        With ``enable_thinking=False`` the chat template pre-closes the
-        think block, so the model answers directly.
-        """
+        """Text-only chat turn. ``enable_thinking=False`` pre-closes the
+        think block, so the model answers directly."""
         parsed_prompt, system_prompt = self._parse_prompt(prompt=prompt)
         conversation = [
             {
@@ -265,11 +262,9 @@ class Cosmos3EdgeReasoner:
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
         if as_video and video_fps is not None:
-            # Frames arrive pre-sampled. num_frames == len(images) makes the
-            # processor's sampler an identity pass (linspace over all frames),
-            # which keeps the frame indices it needs for its per-frame
-            # "<X.X seconds>" timestamps; do_sample_frames=False leaves those
-            # indices unset and the timestamp step crashes.
+            # num_frames == len(images) makes the processor's sampler an
+            # identity pass that keeps the indices its per-frame timestamps
+            # need; do_sample_frames=False crashes the timestamp step.
             processor_kwargs.update(
                 video_metadata=[
                     VideoMetadata(
@@ -279,9 +274,8 @@ class Cosmos3EdgeReasoner:
                     )
                 ],
                 num_frames=len(images),
-                # The checkpoint's processor config carries a default fps=2
-                # that merges into every call and collides with num_frames;
-                # an explicit None displaces it.
+                # An explicit None displaces the checkpoint's default
+                # fps=2, which collides with num_frames.
                 fps=None,
             )
         LOGGER.debug("Cosmos3 text input:\n%r", text_input)

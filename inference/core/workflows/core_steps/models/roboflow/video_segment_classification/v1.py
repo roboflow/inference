@@ -405,10 +405,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             bookkeeping.next_sample_frame_number = float(frame_number)
         if frame_number >= bookkeeping.next_sample_frame_number:
             bookkeeping.sampled.append((frame_number, self._extract_frame(image=image)))
-            # Advance the threshold on a float grid. Anchoring at the sampled
-            # frame's integer number rounds every step up and drags the real
-            # sample rate below sample_fps (observed: 8-frame spacing on a
-            # 7.5-frame stride), which skews the model's clock.
+            # Advance on the float grid; integer anchoring rounds every
+            # step up and drags the real sample rate below sample_fps.
             while bookkeeping.next_sample_frame_number <= frame_number:
                 bookkeeping.next_sample_frame_number += sampling_stride
 
@@ -429,9 +427,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         )
         if should_classify:
             bookkeeping.last_fire_frame_number = frame_number
-            # The model rounds boundaries by roughly 10-20% of its window
-            # (observed: ~2 s on 18.8 s and ~1 s on 10 s). Exact-touch closes
-            # ongoing events; the floor keeps short windows at one sample interval.
+            # The model rounds boundaries by ~10-20% of its window;
+            # exact-touch closes ongoing events too early.
             open_end_slack_frames = max(
                 0.15 * requested_window_seconds * source_fps,
                 sampling_stride,
@@ -460,13 +457,9 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         metadata: VideoMetadata,
         bookkeeping: _VideoSegmentClassificationBookkeeping,
     ) -> float:
-        # measured_fps is never consumed here: it reports the pipeline's
-        # arrival rate, and when delivery is paced to processing (WebRTC ACK
-        # windows) that rate tracks model latency, not the source clock.
-        # Pinning it once collapsed stride_frames to 1 and fired the model
-        # on every frame. Frame-timestamp estimation fails the same way on
-        # those paths (timestamps are arrival times), so no fps means the
-        # 30 FPS fallback — every supported source declares its FPS.
+        # measured_fps is never consumed: under processing-paced delivery
+        # (WebRTC ACK windows) it tracks model latency, not the source
+        # clock, and pinning it once fired the model on every frame.
         declared_fps = metadata.fps
         if declared_fps is not None:
             declared_fps = float(declared_fps)
@@ -514,9 +507,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         bookkeeping.window_class_names = list(
             dict.fromkeys(segment.class_name for segment in segments)
         )
-        # Sample-index space, before mapping to absolute frames and merging —
-        # this line separates "the model output one range" from "the block
-        # merged several".
+        # Separates "the model output one range" from "the block merged
+        # several".
         logger.debug(
             "Video Segment Classification model call over sampled frames "
             "[%s, %s] returned %d pre-merge segment(s): %s",
@@ -528,12 +520,9 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 for segment in segments
             ],
         )
-        # Merge rule: same-class ranges unify only when the gap between them
-        # is below sample resolution — no sampled frame lies inside it. On
-        # the sampling grid, consecutive samples sit floor/ceil(stride)
-        # frames apart, so ceil(stride) is that rule exactly: consecutive-
-        # sample gaps merge, and the next possible sampled gap (a sample
-        # where the class was absent) is ~2x the stride and splits.
+        # Same-class ranges merge only when no sampled frame lies in the
+        # gap. ceil(stride) is that rule exactly: consecutive samples sit
+        # floor/ceil(stride) apart; the next sampled gap is ~2x the stride.
         self._merge_segments(
             bookkeeping=bookkeeping,
             segments=segments,

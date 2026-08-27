@@ -14,47 +14,10 @@ from inference_models.models.base.video_segment_classification import (
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
-# Prompt format follows NVIDIA's Cosmos3 reasoner temporal-localization cookbook:
+# The verbatim prompt from NVIDIA's Cosmos3 temporal-localization cookbook:
 # https://github.com/NVIDIA/cosmos/blob/main/cookbooks/cosmos3/reasoner/reasoner_prompt_guide.md#temporal-localization
-# The checkpoint ignores vocabulary constraints layered onto its trained
-# localization prompt (seven prompt variants tested — every one captioned
-# freely or collapsed to a whole-clip summary). Vocabulary classification
-# therefore runs as a second text-only call that maps each dense caption
-# onto the vocabulary or "other".
-VOCABULARY_MAPPING_PROMPT_TEMPLATE = (
-    "Here are numbered captions of events from a video:\n{captions}\n\n"
-    "Here is a list of event classes: {vocab}\n\n"
-    "Match each caption to ONE event class. Use the class text verbatim. "
-    'If a caption matches no class, use "other". If a caption describes '
-    "several events or summarizes the video, pick the single best class "
-    'or "other".\n'
-    "Return STRICT JSON, one entry per caption number: "
-    '{{"1": "<class or other>", "2": "<class or other>", ...}}'
-)
-OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
-    "Here are numbered captions of events from a video:\n{captions}\n\n"
-    "Condense each caption into ONE lowercase event label of 1-5 "
-    "words. Name the event, not the scene. Use the same label for "
-    "captions that describe the same event.\n"
-    "Return STRICT JSON, one entry per caption number: "
-    '{{"1": "<label>", "2": "<label>", ...}}'
-)
-# Temporal localization answers carry a think block plus a JSON entry per
-# event; the package default of 512 new tokens forces the model to compress
-# the clip into one summary segment. 4096 matches the cookbook demo budget.
-TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS = 4096
-# The mapping stage runs without thinking: A/B on the cookbook demo showed
-# identical mappings 10-16x faster (46 s -> 3-5 s), with the whole budget
-# left for the compact JSON answer, so the package default suffices.
-LABEL_MAPPING_MAX_NEW_TOKENS = 512
-
-# The open-vocabulary prompt is the cookbook's verbatim temporal-localization
-# prompt. Variants that reworded it ("notable events", a "class" key, extra
-# format constraints) collapsed the model's output to one whole-clip segment
-# on the cookbook's own demo asset; only the trained phrasing densifies.
-# Clips under ~5 s fall out of localization mode entirely (observed at
-# 16 frames / 4 s: a grounding-token artifact and an empty JSON array);
-# 6 s windows and longer caption reliably.
+# Only this trained phrasing gives dense output — reworded variants collapse
+# to one whole-clip segment, and clips under ~5 s give no events at all.
 OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT = """List all action segments in the video.
 
 Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
@@ -74,6 +37,35 @@ Provide the result in json format with 'seconds' for time depiction for each eve
 ...
 ]
 ```"""
+
+# The checkpoint ignores vocabulary constraints inside the localization
+# prompt, so classification runs as a second text-only call over the
+# numbered captions.
+VOCABULARY_MAPPING_PROMPT_TEMPLATE = (
+    "Here are numbered captions of events from a video:\n{captions}\n\n"
+    "Here is a list of event classes: {vocab}\n\n"
+    "Match each caption to ONE event class. Use the class text verbatim. "
+    'If a caption matches no class, use "other". If a caption describes '
+    "several events or summarizes the video, pick the single best class "
+    'or "other".\n'
+    "Return STRICT JSON, one entry per caption number: "
+    '{{"1": "<class or other>", "2": "<class or other>", ...}}'
+)
+OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
+    "Here are numbered captions of events from a video:\n{captions}\n\n"
+    "Condense each caption into ONE lowercase event label of 1-5 "
+    "words. Name the event, not the scene. Use the same label for "
+    "captions that describe the same event.\n"
+    "Return STRICT JSON, one entry per caption number: "
+    '{{"1": "<label>", "2": "<label>", ...}}'
+)
+
+# Localization needs a think block plus one JSON entry per event; the
+# package default of 512 tokens truncates that into one summary segment.
+TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS = 4096
+# The mapping stage runs without thinking, so its short JSON answer fits
+# the package default.
+LABEL_MAPPING_MAX_NEW_TOKENS = 512
 
 
 def _parse_seconds(value: Any) -> Optional[float]:
@@ -95,8 +87,8 @@ def _number_captions(segments: List[VideoSegmentClassificationPrediction]) -> st
 
 
 def _normalize_condensed_label(label: str) -> str:
-    # Labels merge across calls only on exact match; the model drifts
-    # between styles ("scoop popcorn" vs "pick_up_green_cup").
+    # Cross-call merging needs exact matches; the model drifts between
+    # label styles.
     return " ".join(label.replace("_", " ").lower().split())
 
 
@@ -176,8 +168,7 @@ def _parse_temporal_segments(
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        # The open-vocabulary prompt keeps the cookbook's "caption" key;
-        # the vocabulary prompt asks for "class".
+        # The cookbook prompt labels events under "caption".
         label_value = entry.get("class")
         if not isinstance(label_value, str):
             label_value = entry.get("caption")
@@ -276,8 +267,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             num_frames=len(normalized_frames),
             fps=fps,
         )
-        # Raw stage-1 output, before condensing or vocabulary mapping
-        # relabels anything — this is what the model itself localized.
+        # What the model itself localized, before any relabeling.
         LOGGER.debug(
             "Cosmos3 temporal localization over %d frames parsed %d "
             "segment(s): %s",
@@ -325,8 +315,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         )
         mapping = self._request_label_mapping(prompt=prompt)
         if mapping is None:
-            # Condensing refines presentation only; a failed label call must
-            # not discard valid localization, so the captions stand as labels.
+            # A failed label call must not discard valid localization.
             return segments
         return _relabel_segments(
             segments=segments,
@@ -344,9 +333,8 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         if isinstance(answer, dict):
             answer = answer.get("answer", "")
         mapping = _parse_first_json_object(answer)
-        # Distinguishes "mapping call failed -> caller falls back" from
-        # "the model returned these labels" when a caption survives
-        # condensing unchanged.
+        # Shows whether a surviving caption came from the model or the
+        # fallback.
         if mapping is None:
             LOGGER.debug("Cosmos3 label mapping unparseable; answer: %r", answer)
         else:
