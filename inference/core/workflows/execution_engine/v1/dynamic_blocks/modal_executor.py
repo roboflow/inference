@@ -830,12 +830,33 @@ def _deserialize_msgpack_result(result: Any) -> Any:
     return result
 
 
-class WebSocketModalExecutor:
-    """Executes Custom Python Blocks via a persistent WebSocket + msgpack."""
+class WebexecSessionLostError(Exception):
+    """The server no longer holds this session's Python runtime state.
 
+    Raised instead of silently reconnecting: a reconnect that lands on a
+    fresh container would reset any state the block's code mutated across
+    frames, producing wrong results with no error. Callers must fail the
+    job (and replay from a checkpoint) rather than continue.
+    """
+
+
+class WebSocketModalExecutor:
+    """Executes Custom Python Blocks via a persistent WebSocket + msgpack.
+
+    Protocol v2 (negotiated in ``_connect``): every server message is a
+    msgpack dict; ``_kind`` marks control frames (``hello``,
+    ``heartbeat_ack``); execution requests carry a ``request_id`` the
+    server echoes and dedups, making resend-after-failure safe. Against a
+    v1 server the executor falls back to the legacy behavior.
+    """
+
+    # v1 fallback only; with a v2 server the interval derives from the
+    # idle timeout the server advertises in the hello reply.
     _KEEPALIVE_IDLE_SECONDS = 25.0
 
     def __init__(self, workspace_id: Optional[str] = None):
+        import uuid
+
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._ws: Any = None
         self._ws_url: Optional[str] = None
@@ -844,6 +865,10 @@ class WebSocketModalExecutor:
         self._last_activity: float = 0.0
         self._keepalive_stop: Optional[threading.Event] = None
         self._keepalive_thread: Optional[threading.Thread] = None
+        self._session_id: str = uuid.uuid4().hex
+        self._server_proto: int = 1
+        self._server_idle_timeout: Optional[float] = None
+        self._had_success: bool = False
 
     def _get_ws_url(self, workspace_id: str) -> str:
         if self._ws_url is not None:
@@ -881,9 +906,68 @@ class WebSocketModalExecutor:
         self._ws.settimeout(WEBEXEC_WS_READ_TIMEOUT_SECONDS)
         # New container -> no compiled namespaces cached yet.
         self._hashes_sent_on_ws = set()
+        try:
+            self._handshake()
+        except Exception:
+            # Never leave a half-negotiated socket cached.
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+            raise
         self._last_activity = _time.monotonic()
         self._ensure_keepalive_thread()
-        logger.info("[webexec-ws] Connected")
+        logger.info(
+            "[webexec-ws] Connected (proto=%d idle_timeout=%s)",
+            self._server_proto,
+            self._server_idle_timeout,
+        )
+
+    def _handshake(self) -> None:
+        """Negotiate protocol v2; fall back to v1 on a legacy server.
+
+        Sends a hello frame carrying this executor's session id. A v2
+        server replies with its idle timeout (so the heartbeat interval is
+        derived, not guessed) and whether this container still knows the
+        session. A v1 server treats the hello as an execution request and
+        replies without ``_kind``; that reply is discarded and the
+        connection behaves as legacy.
+        """
+        import msgpack
+
+        self._server_proto = 1
+        self._server_idle_timeout = None
+        hello = msgpack.packb(
+            {"_kind": "hello", "proto": 2, "session_id": self._session_id},
+            use_bin_type=True,
+        )
+        self._ws.send_binary(hello)
+        reply_raw = self._ws.recv()
+        if not isinstance(reply_raw, bytes):
+            raise ConnectionError(
+                "non-binary websocket frame during handshake: "
+                f"{type(reply_raw).__name__}"
+            )
+        try:
+            reply = msgpack.unpackb(reply_raw, raw=False)
+        except Exception as error:
+            raise ConnectionError(
+                f"undecodable websocket handshake reply: {error}"
+            ) from error
+        if not (isinstance(reply, dict) and reply.get("_kind") == "hello"):
+            # Legacy server: it executed the hello as an (empty) request and
+            # returned its error response. Discard it and stay on v1.
+            logger.info("[webexec-ws] server speaks protocol v1")
+            return
+        self._server_proto = 2
+        self._server_idle_timeout = float(reply.get("idle_timeout_s") or 10.0)
+        if self._had_success and not reply.get("session_known", False):
+            raise WebexecSessionLostError(
+                "The Modal container holding this custom Python session is "
+                "gone; runtime state mutated by previous frames cannot be "
+                "restored. Failing instead of silently continuing."
+            )
 
     def _ensure_connection(self, workspace_id: str) -> None:
         # Hot path: trust the cached socket. A dead connection will surface
@@ -916,13 +1000,12 @@ class WebSocketModalExecutor:
         updated on every successful RTT). Uses ``acquire(blocking=False)`` so
         the keepalive never delays a real frame already in flight.
         """
-        interval = self._KEEPALIVE_IDLE_SECONDS
-        while not stop_event.wait(interval):
+        while not stop_event.wait(self._heartbeat_interval()):
             ws = self._ws
             if ws is None:
                 return
             idle = _time.monotonic() - self._last_activity
-            if idle < interval:
+            if idle < self._heartbeat_interval():
                 continue
             if not self._io_lock.acquire(blocking=False):
                 # Frame in flight -> that's keepalive enough.
@@ -932,12 +1015,12 @@ class WebSocketModalExecutor:
                 if ws is None:
                     return
                 try:
-                    ws.ping()
+                    self._send_heartbeat(ws)
                     self._last_activity = _time.monotonic()
-                    logger.debug("[webexec-ws] keepalive ping ok")
+                    logger.debug("[webexec-ws] keepalive ok")
                 except Exception as e:
                     logger.debug(
-                        "[webexec-ws] keepalive ping failed (%s); dropping conn",
+                        "[webexec-ws] keepalive failed (%s); dropping conn",
                         e,
                     )
                     try:
@@ -949,6 +1032,37 @@ class WebSocketModalExecutor:
                     return
             finally:
                 self._io_lock.release()
+
+    def _heartbeat_interval(self) -> float:
+        """Heartbeat period, derived from the server's advertised idle timeout.
+
+        Must be an application-level frame interval well under the server's
+        ``receive_bytes`` timeout: protocol-level ws pings are answered by
+        the ASGI layer and never reset that timer.
+        """
+        if self._server_proto == 2 and self._server_idle_timeout:
+            return max(1.0, self._server_idle_timeout / 3.0)
+        return self._KEEPALIVE_IDLE_SECONDS
+
+    def _send_heartbeat(self, ws: Any) -> None:
+        """One heartbeat round-trip. Caller must hold ``_io_lock``."""
+        import msgpack
+
+        if self._server_proto != 2:
+            # Legacy server: protocol ping is all v1 offers. It cannot reset
+            # the server's app-level idle timer, but it does detect a dead
+            # socket so the next request reconnects instead of crashing.
+            ws.ping()
+            return
+        ws.send_binary(msgpack.packb({"_kind": "heartbeat"}, use_bin_type=True))
+        reply_raw = ws.recv()
+        if not isinstance(reply_raw, bytes):
+            raise ConnectionError(
+                f"non-binary heartbeat reply: {type(reply_raw).__name__}"
+            )
+        reply = msgpack.unpackb(reply_raw, raw=False)
+        if not (isinstance(reply, dict) and reply.get("_kind") == "heartbeat_ack"):
+            raise ConnectionError(f"unexpected heartbeat reply: {reply!r}")
 
     def close(self) -> None:
         """Best-effort teardown, mainly for tests."""
@@ -1017,33 +1131,53 @@ class WebSocketModalExecutor:
                 context="modal_executor | missing_dependency",
             )
 
-        return self._execute_ws(
-            block_type_name,
-            python_code,
-            inputs,
-            workspace,
-            msgpack,
-            workflow_context or {},
-        )
+        try:
+            return self._execute_ws(
+                block_type_name,
+                python_code,
+                inputs,
+                workspace,
+                msgpack,
+                workflow_context or {},
+            )
+        except WebexecSessionLostError as error:
+            raise DynamicBlockError(
+                public_message=(
+                    f"Custom Python session lost for block "
+                    f"`{block_type_name}`: {error} The job must be retried "
+                    "from its last checkpoint (e.g. re-run the chunk) so the "
+                    "block's runtime state is rebuilt from the start."
+                ),
+                context="modal_executor | websocket_session_lost",
+            ) from error
 
     def _send_recv_with_retry(
         self,
         frame_bytes: bytes,
         workspace: str,
+        request_id: Optional[str] = None,
     ) -> bytes:
-        """Send frame and receive response, reconnecting once before execution.
+        """Send frame and receive response, reconnecting on failure.
 
-        We retry connection/send failures because the frame has not been
-        accepted by the websocket client. Once ``send_binary`` succeeds, the
-        remote may already be executing user code; a later ``recv`` failure has
-        an ambiguous outcome, so we do not resend the frame and risk duplicate
-        side effects.
+        Against a v2 server every execution frame carries a ``request_id``
+        the server dedups, so resending after ANY failure — including a
+        ``recv`` failure after the frame was accepted — is safe: a request
+        the server already executed returns its cached response instead of
+        running the user code twice.
+
+        Against a v1 server (no dedup) the legacy rule holds: once
+        ``send_binary`` succeeds the outcome is ambiguous and the frame is
+        not resent.
+
+        ``WebexecSessionLostError`` from the reconnect handshake propagates:
+        state continuity is gone and the job must fail, not continue.
         """
         import msgpack
 
         frames = _split_ws_frames(frame_bytes, msgpack)
         last_exc: Optional[Exception] = None
-        for attempt in range(2):
+        attempts = 3
+        for attempt in range(attempts):
             sent_ok = False
             try:
                 self._ensure_connection(workspace)
@@ -1056,12 +1190,15 @@ class WebSocketModalExecutor:
                     resp_bytes = self._recv_reassembled(msgpack)
                 self._last_activity = _time.monotonic()
                 return resp_bytes
+            except WebexecSessionLostError:
+                raise
             except Exception as e:
                 self._drop_ws_connection()
-                if sent_ok:
-                    # recv failed after the frame was sent; the remote may have
-                    # already executed user code, so we don't resend and risk
-                    # duplicate side effects.
+                resend_is_safe = self._server_proto == 2 and request_id
+                if sent_ok and not resend_is_safe:
+                    # v1: recv failed after the frame was sent; the remote may
+                    # have already executed user code, so we don't resend and
+                    # risk duplicate side effects.
                     logger.warning(
                         "[webexec-ws] response receive failed after frame was "
                         "sent; not retrying to avoid duplicate execution: %s",
@@ -1077,8 +1214,9 @@ class WebSocketModalExecutor:
                     )
                 last_exc = e
                 logger.warning(
-                    "[webexec-ws] connect/send failed (attempt %d/2): %s",
+                    "[webexec-ws] send/recv failed (attempt %d/%d): %s",
                     attempt + 1,
+                    attempts,
                     e,
                 )
                 continue
@@ -1088,13 +1226,30 @@ class WebSocketModalExecutor:
             context="modal_executor | websocket_connection",
         )
 
+    def _recv_bytes_frame(self) -> bytes:
+        """Receive one frame, requiring it to be binary.
+
+        A text frame here is a protocol violation (typically the payload of
+        a server-side close on an already-dead connection); it must be
+        treated as connection death, never fed to msgpack.
+        """
+        resp = self._ws.recv()
+        if not isinstance(resp, bytes):
+            raise ConnectionError(
+                f"non-binary websocket frame ({type(resp).__name__}); "
+                "treating connection as dead"
+            )
+        return resp
+
     def _recv_reassembled(self, msgpack: Any) -> bytes:
         """Receive one logical frame, joining chunked frames if signalled."""
-        resp_bytes = self._ws.recv()
-        if isinstance(resp_bytes, bytes) and len(resp_bytes) < 64:
+        resp_bytes = self._recv_bytes_frame()
+        if len(resp_bytes) < 64:
             head = msgpack.unpackb(resp_bytes, raw=False)
             if isinstance(head, dict) and "_chunked" in head:
-                return b"".join(self._ws.recv() for _ in range(head["_chunked"]))
+                return b"".join(
+                    self._recv_bytes_frame() for _ in range(head["_chunked"])
+                )
         return resp_bytes
 
     def _execute_ws(
@@ -1122,6 +1277,9 @@ class WebSocketModalExecutor:
         # compiled namespace by hash.
         send_full_code = code_hash not in self._hashes_sent_on_ws
 
+        import uuid
+
+        request_id = uuid.uuid4().hex
         frame_bytes = self._build_ws_frame(
             python_code=python_code,
             packed_inputs=packed_inputs,
@@ -1129,14 +1287,18 @@ class WebSocketModalExecutor:
             send_full_code=send_full_code,
             msgpack=msgpack,
             workflow_context=workflow_context,
+            request_id=request_id,
         )
         t_pack = _time.monotonic()
 
-        resp_bytes = self._send_recv_with_retry(frame_bytes, workspace)
+        resp_bytes = self._send_recv_with_retry(
+            frame_bytes, workspace, request_id=request_id
+        )
 
         t_rtt = _time.monotonic()
 
         result = msgpack.unpackb(resp_bytes, raw=False)
+        self._check_response_id(result, request_id)
 
         # Fresh replica doesn't have this hash cached (can happen after a
         # reconnect or container restart). Retry once with full code.
@@ -1150,6 +1312,9 @@ class WebSocketModalExecutor:
                 "[webexec-ws] server missed cached hash %s, resending full code",
                 code_hash,
             )
+            # A distinct logical request -> a fresh request_id, so the
+            # server's dedup cache can't answer it with the failed response.
+            retry_request_id = uuid.uuid4().hex
             retry_frame = self._build_ws_frame(
                 python_code=python_code,
                 packed_inputs=packed_inputs,
@@ -1157,12 +1322,17 @@ class WebSocketModalExecutor:
                 send_full_code=True,
                 msgpack=msgpack,
                 workflow_context=workflow_context,
+                request_id=retry_request_id,
             )
-            resp_bytes = self._send_recv_with_retry(retry_frame, workspace)
+            resp_bytes = self._send_recv_with_retry(
+                retry_frame, workspace, request_id=retry_request_id
+            )
             result = msgpack.unpackb(resp_bytes, raw=False)
+            self._check_response_id(result, retry_request_id)
 
         if result.get("success", False):
             self._hashes_sent_on_ws.add(code_hash)
+            self._had_success = True
 
         t_done = _time.monotonic()
 
@@ -1191,6 +1361,25 @@ class WebSocketModalExecutor:
 
         return _deserialize_msgpack_result(result.get("result", {}))
 
+    def _check_response_id(self, result: Any, request_id: str) -> None:
+        """Reject a response stamped with a different request's id.
+
+        Only enforced when the server echoes an id (v2); a mismatch means
+        the stream carried a stale response, so the connection is dropped.
+        """
+        if not isinstance(result, dict):
+            return
+        echoed = result.get("request_id")
+        if echoed is not None and echoed != request_id:
+            self._drop_ws_connection()
+            raise DynamicBlockError(
+                public_message=(
+                    "WebSocket response did not match the request in flight "
+                    "(stale frame on the connection); dropping the connection."
+                ),
+                context="modal_executor | websocket_response_mismatch",
+            )
+
     @staticmethod
     def _build_ws_frame(
         python_code: PythonCode,
@@ -1199,6 +1388,7 @@ class WebSocketModalExecutor:
         send_full_code: bool,
         msgpack: Any,
         workflow_context: Dict[str, Any],
+        request_id: Optional[str] = None,
     ) -> bytes:
         """Pack a msgpack frame, optionally omitting ``code_str``/``imports``.
 
@@ -1211,6 +1401,8 @@ class WebSocketModalExecutor:
             "inputs": packed_inputs,
             "workflow_context": workflow_context,
         }
+        if request_id is not None:
+            payload["request_id"] = request_id
         if send_full_code:
             payload["code_str"] = python_code.run_function_code
             payload["imports"] = python_code.imports or []

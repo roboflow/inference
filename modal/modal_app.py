@@ -25,7 +25,6 @@ from starlette.requests import Request
 
 import modal
 
-
 _thread_local = threading.local()
 _install_lock = threading.Lock()
 
@@ -238,6 +237,38 @@ class Executor:
             namespace_lock = threading.RLock()
             self._namespace_lock = namespace_lock
         return namespace_lock
+
+    def _get_ws_sessions(self) -> set:
+        """Session ids this container has served (protocol v2).
+
+        Membership answers the client's hello: ``session_known=False`` on a
+        reconnect tells the client its Python runtime state (mutated
+        globals in the cached namespaces) lives in some other, gone
+        container — the client fails loudly instead of silently
+        continuing with reset state.
+        """
+        sessions = getattr(self, "_ws_sessions", None)
+        if sessions is None:
+            sessions = set()
+            self._ws_sessions = sessions
+        return sessions
+
+    def _get_ws_request_cache(self) -> "OrderedDict":
+        """LRU of request_id -> packed response (protocol v2).
+
+        Lets a client safely resend a request whose response was lost to a
+        dropped connection: an already-executed request returns its cached
+        response instead of running the user code a second time.
+        """
+        from collections import OrderedDict
+
+        cache = getattr(self, "_ws_request_cache", None)
+        if cache is None:
+            cache = OrderedDict()
+            self._ws_request_cache = cache
+        return cache
+
+    _WS_REQUEST_CACHE_MAX_ENTRIES = 32
 
     def _get_cached_namespace(self, code_hash: str) -> Optional[dict]:
         namespace = self._code_namespaces.get(code_hash)
@@ -881,6 +912,21 @@ from datetime import datetime
 
         executor_self = self
 
+        async def send_payload(websocket: WebSocket, payload: bytes) -> None:
+            """Send one logical response, chunking oversized payloads."""
+            if len(payload) > WEBEXEC_WS_MAX_FRAME_BYTES:
+                chunks = [
+                    payload[i : i + WEBEXEC_WS_MAX_FRAME_BYTES]
+                    for i in range(0, len(payload), WEBEXEC_WS_MAX_FRAME_BYTES)
+                ]
+                await websocket.send_bytes(
+                    msgpack.packb({"_chunked": len(chunks)}, use_bin_type=True)
+                )
+                for chunk in chunks:
+                    await websocket.send_bytes(chunk)
+            else:
+                await websocket.send_bytes(payload)
+
         @ws_app.websocket("/ws")
         async def ws_execute(websocket: WebSocket):
             await websocket.accept()
@@ -913,6 +959,50 @@ from datetime import datetime
                             )
                         request = msgpack.unpackb(b"".join(parts), raw=False)
 
+                    # ---- protocol v2 control frames ----
+                    kind = request.get("_kind") if isinstance(request, dict) else None
+                    if kind == "hello":
+                        session_id = request.get("session_id") or ""
+                        sessions = executor_self._get_ws_sessions()
+                        session_known = session_id in sessions
+                        if session_id:
+                            sessions.add(session_id)
+                        await websocket.send_bytes(
+                            msgpack.packb(
+                                {
+                                    "_kind": "hello",
+                                    "proto": 2,
+                                    "idle_timeout_s": WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
+                                    "session_known": session_known,
+                                },
+                                use_bin_type=True,
+                            )
+                        )
+                        continue
+                    if kind == "heartbeat":
+                        # An application-level frame is the only thing that
+                        # resets this loop's receive_bytes idle timer;
+                        # protocol ws pings are consumed by the ASGI layer
+                        # and never reach here.
+                        await websocket.send_bytes(
+                            msgpack.packb({"_kind": "heartbeat_ack"}, use_bin_type=True)
+                        )
+                        continue
+
+                    request_id = (
+                        request.get("request_id") if isinstance(request, dict) else None
+                    )
+                    if request_id:
+                        request_cache = executor_self._get_ws_request_cache()
+                        cached_payload = request_cache.get(request_id)
+                        if cached_payload is not None:
+                            # Resend of a request already executed (the
+                            # client lost the response): answer from cache,
+                            # never run user code twice.
+                            request_cache.move_to_end(request_id)
+                            await send_payload(websocket, cached_payload)
+                            continue
+
                     code_str = request.get("code_str", "")
                     imports = request.get("imports", [])
                     run_function_name = request.get("run_function_name", "")
@@ -937,23 +1027,18 @@ from datetime import datetime
                             resp["result"]
                         )
 
+                    if request_id:
+                        resp["request_id"] = request_id
+
                     payload = msgpack.packb(resp, use_bin_type=True)
-                    if len(payload) > WEBEXEC_WS_MAX_FRAME_BYTES:
-                        chunks = [
-                            payload[i : i + WEBEXEC_WS_MAX_FRAME_BYTES]
-                            for i in range(
-                                0, len(payload), WEBEXEC_WS_MAX_FRAME_BYTES
-                            )
-                        ]
-                        await websocket.send_bytes(
-                            msgpack.packb(
-                                {"_chunked": len(chunks)}, use_bin_type=True
-                            )
-                        )
-                        for chunk in chunks:
-                            await websocket.send_bytes(chunk)
-                    else:
-                        await websocket.send_bytes(payload)
+                    if request_id:
+                        request_cache = executor_self._get_ws_request_cache()
+                        request_cache[request_id] = payload
+                        while (
+                            len(request_cache) > Executor._WS_REQUEST_CACHE_MAX_ENTRIES
+                        ):
+                            request_cache.popitem(last=False)
+                    await send_payload(websocket, payload)
             except WebSocketDisconnect:
                 pass
 
