@@ -245,3 +245,50 @@ def test_concurrent_retain_release_does_not_corrupt_refcount() -> None:
     # then - every retain was paired with a release; count is 0 and dict is gone
     assert WorkflowMemoryCache._retain_counts.get("shared_vid") is None
     assert "shared_vid" not in WorkflowMemoryCache.cache
+
+
+def test_concurrent_run_on_same_block_does_not_race_on_first_retain() -> None:
+    # Regression: without a per-instance lock, Thread A could add a namespace
+    # to _namespaces but pause before get_dict created the dict. Thread B
+    # would then see the namespace in the set, skip get_dict, and read
+    # WorkflowMemoryCache.cache[namespace] directly — KeyError.
+    #
+    # The lock makes check→add→get_dict atomic within a single block instance.
+    _reset_memory_cache()
+    n_threads = 8
+    n_runs_per_thread = 100
+    barrier = threading.Barrier(n_threads)
+    errors: list = []
+
+    def worker_set() -> None:
+        barrier.wait()
+        for i in range(n_runs_per_thread):
+            try:
+                block.run(image=_image_for("race_vid"), key=f"k_{i}", value=i)
+            except Exception as exc:
+                errors.append(exc)
+
+    def worker_get() -> None:
+        barrier.wait()
+        for i in range(n_runs_per_thread):
+            try:
+                result = block.run(image=_image_for("race_vid"), key=f"k_{i}")
+                assert result["output"] is False or result["output"] is not None
+            except Exception as exc:
+                errors.append(exc)
+
+    # Test both blocks — same race exists in cache_set and cache_get
+    for block_cls, worker in (
+        (CacheSetBlockV1, worker_set),
+        (CacheGetBlockV1, worker_get),
+    ):
+        _reset_memory_cache()
+        errors.clear()
+        block = block_cls(step_execution_mode=StepExecutionMode.LOCAL)
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors, f"{block_cls.__name__} raised: {errors[:3]}"
+        block.close()

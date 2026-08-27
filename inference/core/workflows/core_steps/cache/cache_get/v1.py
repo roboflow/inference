@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
@@ -146,18 +147,23 @@ class CacheGetBlockV1(WorkflowBlock):
         # Namespaces this instance has retained. close() releases each once;
         # __del__ calls close() as a GC fallback, not as "workflow complete".
         self._namespaces: set = set()
+        # Per-instance lock: workflows run steps in a ThreadPoolExecutor, so
+        # the same block instance can be called concurrently. The lock makes
+        # the check→retain→get_dict sequence atomic and protects cleanup.
+        self._lock = Lock()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["step_execution_mode"]
 
     def close(self) -> None:
-        namespaces = getattr(self, "_namespaces", None)
-        if not namespaces:
-            return
-        for namespace in list(namespaces):
-            WorkflowMemoryCache.release_namespace(namespace)
-        namespaces.clear()
+        with self._lock:
+            namespaces = getattr(self, "_namespaces", None)
+            if not namespaces:
+                return
+            for namespace in list(namespaces):
+                WorkflowMemoryCache.release_namespace(namespace)
+            namespaces.clear()
 
     def __del__(self):
         try:
@@ -173,14 +179,13 @@ class CacheGetBlockV1(WorkflowBlock):
 
         metadata = image.video_metadata
         namespace = metadata.video_identifier or "default"
-        # Retain once per instance so close() can release once. Calling
-        # get_dict on every frame would over-count and leak the namespace.
-        # Record-first ordering makes retain→record effectively atomic: if
-        # get_dict raises, the namespace is in _namespaces but not retained,
-        # and release_namespace is a no-op (count=0).
-        if namespace not in self._namespaces:
-            self._namespaces.add(namespace)
-            cache = WorkflowMemoryCache.get_dict(namespace)
-        else:
-            cache = WorkflowMemoryCache.cache[namespace]
+        # Per-instance lock prevents a race where Thread A adds the namespace
+        # to _namespaces but hasn't called get_dict yet, and Thread B sees it
+        # in the set and reads WorkflowMemoryCache.cache directly — KeyError.
+        with self._lock:
+            if namespace not in self._namespaces:
+                self._namespaces.add(namespace)
+                cache = WorkflowMemoryCache.get_dict(namespace)
+            else:
+                cache = WorkflowMemoryCache.cache[namespace]
         return {"output": cache.get(key, False)}
