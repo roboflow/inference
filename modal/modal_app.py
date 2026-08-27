@@ -36,12 +36,19 @@ WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
 # NOTE: this cap and the protocol v2 session guarantee interact. Sessions are
 # container-local and reconnects are not routed with any affinity, so every
-# capped close of a STATEFUL run is likely to land on another container and
-# surface as a (correct, but scheduled) session-lost failure roughly hourly.
+# forced close of a STATEFUL run is likely to land on another container and
+# surface as a (correct, but scheduled) session-lost failure.
+#
+# How often that happens is NOT settled by this constant alone: the executor's
+# Modal ``timeout`` (700s, see _executor_decorator_kwargs) bounds a single
+# input, and an ASGI websocket connection is one input, so connections may in
+# practice be torn down at ~700s rather than at this cap — which would make
+# this value effectively dead config. Confirm against Modal's websocket
+# timeout semantics before relying on either number.
+#
 # Making long stateful runs survive needs session-affine reconnect routing,
 # externalized session state, or a drain/handoff before the cap — none of
-# which exist yet. Until then, keep stateful custom Python runs shorter than
-# this cap, or expect a checkpoint replay per hour.
+# which exist yet.
 WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
     os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
 )
@@ -1112,15 +1119,35 @@ from datetime import datetime
             side effects already happened.
             """
             payload: Optional[bytes] = None
-            try:
-                code_str = request.get("code_str", "")
-                imports = request.get("imports", [])
-                run_function_name = request.get("run_function_name", "")
-                inputs_raw = request.get("inputs", {})
-                client_code_hash = request.get("code_hash", "")
-                workflow_context = request.get("workflow_context") or {}
+            code_str = request.get("code_str", "")
+            imports = request.get("imports", [])
+            run_function_name = request.get("run_function_name", "")
+            inputs_raw = request.get("inputs", {})
+            client_code_hash = request.get("code_hash", "")
+            workflow_context = request.get("workflow_context") or {}
 
+            # Decoding the request happens BEFORE the executed marker and
+            # outside the "it already ran" error path: nothing has executed
+            # yet, so a malformed payload must be reported as what it is and
+            # must stay safely retryable.
+            try:
                 inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+            except Exception as error:
+                traceback.print_exc()
+                payload = _pack_ws_error(
+                    msgpack,
+                    error_type=type(error).__name__,
+                    error=(
+                        "The server could not decode this request's inputs; "
+                        f"the custom Python block was not run: {error}"
+                    ),
+                    request_id=request_id,
+                )
+                if request_id:
+                    executor_self._ws_inflight.pop(request_id, None)
+                return payload
+
+            try:
                 # Mark BEFORE running: from here on a resend must never
                 # re-execute, however this call ends.
                 if request_id:

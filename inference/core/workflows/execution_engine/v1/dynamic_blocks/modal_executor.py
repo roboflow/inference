@@ -22,7 +22,7 @@ import threading
 import time as _time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NamedTuple, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import numpy as np
@@ -842,6 +842,22 @@ class WebexecSessionLostError(Exception):
     """
 
 
+class _ServerInfo(NamedTuple):
+    """What the handshake learned about the server on the current socket.
+
+    Held as ONE immutable value so readers can never observe a half-updated
+    combination: the keepalive thread reads this without the io lock, and a
+    proto=2 seen alongside a stale (None) idle timeout would silently fall
+    back to the 25s v1 heartbeat interval — long enough for a v2 server to
+    close the connection under it. Rebinding the whole tuple is atomic;
+    field-by-field assignment was not.
+    """
+
+    proto: int = 1
+    idle_timeout: Optional[float] = None
+    container_id: Optional[str] = None
+
+
 class _ResendUnsafeError(Exception):
     """Internal: a resend cannot be proven duplicate-free, so it is refused.
 
@@ -878,9 +894,7 @@ class WebSocketModalExecutor:
         self._keepalive_stop: Optional[threading.Event] = None
         self._keepalive_thread: Optional[threading.Thread] = None
         self._session_id: str = uuid.uuid4().hex
-        self._server_proto: int = 1
-        self._server_idle_timeout: Optional[float] = None
-        self._server_container_id: Optional[str] = None
+        self._server = _ServerInfo()
         self._had_success: bool = False
 
     def _rotate_session(self, reason: str) -> None:
@@ -968,8 +982,8 @@ class WebSocketModalExecutor:
         self._ensure_keepalive_thread()
         logger.info(
             "[webexec-ws] Connected (proto=%d idle_timeout=%s)",
-            self._server_proto,
-            self._server_idle_timeout,
+            self._server.proto,
+            self._server.idle_timeout,
         )
 
     def _handshake(self) -> None:
@@ -982,17 +996,14 @@ class WebSocketModalExecutor:
         replies without ``_kind``; that reply is discarded and the
         connection behaves as legacy.
 
-        Session continuity is enforced on BOTH paths. A v1 server cannot say
-        whether it still holds this session's runtime state, so a reconnect
-        after a prior success is treated as lost state rather than assumed
-        intact — the silent-wrong-results case this protocol exists to end.
+        The session-loss check applies to the v2 path only; see the v1
+        branch for why enforcing it there costs far more than it buys.
         """
         import msgpack
 
-        # Negotiate into locals and commit only at the end: the surviving
-        # keepalive thread reads _server_proto/_server_idle_timeout
-        # unlocked, and must not observe reset values mid-handshake (a v1
-        # fallback interval of 25s outlasts a v2 server's 10s idle close).
+        # Negotiate into locals and publish one _ServerInfo at the end: the
+        # surviving keepalive thread reads it unlocked and must never see a
+        # half-updated view.
         hello = msgpack.packb(
             {"_kind": "hello", "proto": 2, "session_id": self._session_id},
             use_bin_type=True,
@@ -1005,38 +1016,44 @@ class WebSocketModalExecutor:
             raise ConnectionError(
                 f"undecodable websocket handshake reply: {error}"
             ) from error
-        speaks_v2 = isinstance(reply, dict) and reply.get("_kind") == "hello"
-        session_known = bool(speaks_v2 and reply.get("session_known", False))
-        if self._had_success and not session_known:
-            # Rotate before raising so the failure is loud exactly once:
-            # the next request starts an honest fresh session instead of
-            # silently passing the check with reset runtime state.
-            self._rotate_session(
-                "session lost on reconnect"
-                if speaks_v2
-                else "reconnected to a v1 server, which cannot confirm the session"
-            )
-            raise WebexecSessionLostError(
-                "The Modal container holding this custom Python session is "
-                "gone; runtime state mutated by previous frames cannot be "
-                "restored. Failing instead of silently continuing."
-                if speaks_v2
-                else "The reconnect reached a legacy (protocol v1) Modal "
-                "server, which cannot confirm whether this custom Python "
-                "session's runtime state survived. Failing instead of "
-                "silently continuing on possibly-reset state."
-            )
-        if not speaks_v2:
+        if not (isinstance(reply, dict) and reply.get("_kind") == "hello"):
             # Legacy server: it executed the hello as an (empty) request and
             # returned its error response. Discard it and stay on v1.
+            #
+            # The session check is deliberately NOT applied here. A v1 server
+            # cannot confirm the session, but it also cannot keep a
+            # connection alive: its idle timeout closes the socket every
+            # WEBEXEC_WS_IDLE_TIMEOUT_SECONDS (10s by default) and v1's only
+            # keepalive is a protocol ping, which the ASGI layer answers
+            # without ever resetting that app-level timer. Reconnects are
+            # therefore the normal state of a v1 connection, so failing each
+            # one after a prior success would fail roughly every other
+            # request — a far worse outcome than the rare silent state reset
+            # it would prevent, especially as most blocks are stateless.
+            # Protocol v2 is what makes the guarantee affordable.
             logger.info("[webexec-ws] server speaks protocol v1")
-            self._server_proto = 1
-            self._server_idle_timeout = None
-            self._server_container_id = None
-            return
-        self._server_proto = 2
-        self._server_idle_timeout = float(reply.get("idle_timeout_s") or 10.0)
-        self._server_container_id = reply.get("container_id") or None
+            proto, idle_timeout, container_id = 1, None, None
+        else:
+            if self._had_success and not reply.get("session_known", False):
+                # Rotate before raising so the failure is loud exactly once:
+                # the next request starts an honest fresh session instead of
+                # silently passing the check with reset runtime state.
+                self._rotate_session("session lost on reconnect")
+                raise WebexecSessionLostError(
+                    "The Modal container holding this custom Python session "
+                    "is gone; runtime state mutated by previous frames cannot "
+                    "be restored. Failing instead of silently continuing."
+                )
+            proto = 2
+            idle_timeout = float(reply.get("idle_timeout_s") or 10.0)
+            container_id = reply.get("container_id") or None
+        # Commit together, idle timeout before proto: the keepalive thread
+        # reads both unlocked, and a proto=2 seen with a stale (None) idle
+        # timeout falls back to the 25s v1 interval — long enough for a v2
+        # server to close the connection under it.
+        self._server = _ServerInfo(
+            proto=proto, idle_timeout=idle_timeout, container_id=container_id
+        )
 
     def _ensure_connection(self, workspace_id: str) -> None:
         # Hot path: trust the cached socket. A dead connection will surface
@@ -1136,8 +1153,9 @@ class WebSocketModalExecutor:
         ``receive_bytes`` timeout: protocol-level ws pings are answered by
         the ASGI layer and never reset that timer.
         """
-        if self._server_proto == 2 and self._server_idle_timeout:
-            return max(1.0, self._server_idle_timeout / 3.0)
+        server = self._server
+        if server.proto == 2 and server.idle_timeout:
+            return max(1.0, server.idle_timeout / 3.0)
         return self._KEEPALIVE_IDLE_SECONDS
 
     # A heartbeat ack is tiny and immediate; waiting the full read timeout
@@ -1149,7 +1167,7 @@ class WebSocketModalExecutor:
         """One heartbeat round-trip. Caller must hold ``_io_lock``."""
         import msgpack
 
-        if self._server_proto != 2:
+        if self._server.proto != 2:
             # Legacy server: protocol ping is all v1 offers. It cannot reset
             # the server's app-level idle timer, but it does detect a dead
             # socket so the next request reconnects instead of crashing.
@@ -1193,7 +1211,7 @@ class WebSocketModalExecutor:
         # The id belongs to the connection, not the executor: leaving it set
         # would let the resend guard compare against a container this
         # executor is no longer talking to.
-        self._server_container_id = None
+        self._server = self._server._replace(container_id=None)
 
     def execute_remote(
         self,
@@ -1299,14 +1317,26 @@ class WebSocketModalExecutor:
         for attempt in range(attempts):
             sent_ok = False
             try:
-                self._ensure_connection(workspace)
+                try:
+                    self._ensure_connection(workspace)
+                except WebexecSessionLostError:
+                    if resend_pending:
+                        # This frame was already accepted by a container, and
+                        # the reconnect landed somewhere that lost the
+                        # session — so it cannot answer from that container's
+                        # dedup registry. The honest report is the ambiguous
+                        # outcome, not "replay from your last checkpoint",
+                        # which would re-run side effects that may already
+                        # have happened.
+                        raise _ResendUnsafeError()
+                    raise
                 # Hold the lock across send+recv so concurrent callers sharing
                 # this executor's socket can't interleave a request/response.
                 with self._io_lock:
                     # Compare inside the lock: _connect publishes the socket
                     # before the handshake commits the new container id, so a
                     # read taken outside can be stale by the time we send.
-                    container_at_send = self._server_container_id
+                    container_at_send = self._server.container_id
                     if resend_pending and (
                         container_at_send is None
                         or sent_to_container is None
@@ -1334,7 +1364,7 @@ class WebSocketModalExecutor:
                 raise
             except Exception as e:
                 self._drop_ws_connection()
-                resend_is_safe = self._server_proto == 2 and request_id
+                resend_is_safe = self._server.proto == 2 and request_id
                 if sent_ok and not resend_is_safe:
                     # v1: recv failed after the frame was sent; the remote may
                     # have already executed user code, so we don't resend and

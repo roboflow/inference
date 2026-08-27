@@ -5,6 +5,7 @@ dead connections, safe resend with request ids, and loud failure on lost
 custom-Python sessions.
 """
 
+import sys
 import threading
 import time as _time
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     WebexecSessionLostError,
     WebSocketModalExecutor,
+    _ServerInfo,
 )
 
 
@@ -64,8 +66,9 @@ class _FakeWS:
 def _executor_with_ws(ws: _FakeWS, proto: int = 2) -> WebSocketModalExecutor:
     executor = WebSocketModalExecutor(workspace_id="test-ws")
     executor._ws = ws
-    executor._server_proto = proto
-    executor._server_idle_timeout = 10.0 if proto == 2 else None
+    executor._server = _ServerInfo(
+        proto=proto, idle_timeout=10.0 if proto == 2 else None
+    )
     return executor
 
 
@@ -92,8 +95,8 @@ class TestHandshake:
 
         executor._handshake()
 
-        assert executor._server_proto == 2
-        assert executor._server_idle_timeout == 12.0
+        assert executor._server.proto == 2
+        assert executor._server.idle_timeout == 12.0
         sent = msgpack.unpackb(executor._ws.sent[0], raw=False)
         assert sent["_kind"] == "hello"
         assert sent["session_id"] == executor._session_id
@@ -106,22 +109,57 @@ class TestHandshake:
 
         executor._handshake()
 
-        assert executor._server_proto == 1
-        assert executor._server_idle_timeout is None
+        assert executor._server.proto == 1
+        assert executor._server.idle_timeout is None
 
-    def test_v1_fallback_after_prior_success_is_session_lost(self) -> None:
-        # A v1 server cannot say whether it still holds this session's
-        # runtime state, so continuing would risk silent wrong results.
+    def test_v1_fallback_after_prior_success_does_not_fail_the_request(self) -> None:
+        # A v1 server cannot confirm the session, but it also idle-closes
+        # every 10s with no way for v1 keepalives to reset that timer, so
+        # reconnects are its normal state. Failing each one after a prior
+        # success would fail roughly every other request — worse than the
+        # rare silent reset it would prevent. The guarantee needs v2.
         executor = WebSocketModalExecutor(workspace_id="test-ws")
         executor._had_success = True
-        old_session = executor._session_id
+        session = executor._session_id
         executor._ws = _FakeWS([_pack({"success": False, "error": "no code"})])
 
-        with pytest.raises(WebexecSessionLostError, match="protocol v1"):
-            executor._handshake()
+        executor._handshake()
 
-        assert executor._session_id != old_session
-        assert executor._had_success is False
+        assert executor._server.proto == 1
+        assert executor._had_success is True
+        assert executor._session_id == session
+
+    def test_handshake_never_exposes_v2_proto_without_its_idle_timeout(self) -> None:
+        # The keepalive reads server info unlocked, so it must never observe
+        # proto 2 alongside a stale idle timeout: _heartbeat_interval would
+        # fall back to 25s, which a v2 server closes under. Publishing one
+        # immutable value makes the torn read unrepresentable — this test
+        # samples the state after EVERY bytecode line of the handshake.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._server = _ServerInfo(proto=1, idle_timeout=None)
+        executor._ws = _FakeWS([_hello_reply(idle_timeout_s=9)])
+        seen = []
+
+        handshake_code = WebSocketModalExecutor._handshake.__code__
+
+        def trace(frame, event, _arg):
+            if frame.f_code is not handshake_code:
+                return None
+            if event == "line":
+                server = executor._server
+                seen.append((server.proto, server.idle_timeout))
+            return trace
+
+        sys.settrace(trace)
+        try:
+            executor._handshake()
+        finally:
+            sys.settrace(None)
+
+        assert seen, "tracing did not observe the handshake"
+        inconsistent = [pair for pair in seen if pair[0] == 2 and pair[1] is None]
+        assert not inconsistent, f"torn server state observable: {inconsistent}"
+        assert executor._heartbeat_interval() == 3.0
 
     def test_v2_server_container_id_is_recorded(self) -> None:
         executor = WebSocketModalExecutor(workspace_id="test-ws")
@@ -129,7 +167,7 @@ class TestHandshake:
 
         executor._handshake()
 
-        assert executor._server_container_id == "container-7"
+        assert executor._server.container_id == "container-7"
 
     def test_session_lost_after_prior_success_raises(self) -> None:
         executor = WebSocketModalExecutor(workspace_id="test-ws")
@@ -158,7 +196,7 @@ class TestHandshake:
 
         executor._ws = _FakeWS([_hello_reply(session_known=False)])
         executor._handshake()
-        assert executor._server_proto == 2
+        assert executor._server.proto == 2
 
     def test_unknown_session_without_prior_state_is_fine(self) -> None:
         executor = WebSocketModalExecutor(workspace_id="test-ws")
@@ -167,7 +205,7 @@ class TestHandshake:
 
         executor._handshake()
 
-        assert executor._server_proto == 2
+        assert executor._server.proto == 2
 
     def test_text_frame_during_handshake_is_connection_error(self) -> None:
         executor = WebSocketModalExecutor(workspace_id="test-ws")
@@ -201,7 +239,7 @@ class TestSendRecvRetry:
         first_ws = _FakeWS([ConnectionError("idle close")])
         second_ws = _FakeWS()
         executor = _executor_with_ws(first_ws)
-        executor._server_container_id = None
+        executor._server = executor._server._replace(container_id=None)
         sockets = [second_ws]
 
         def fake_ensure(_workspace: str) -> None:
@@ -222,13 +260,13 @@ class TestSendRecvRetry:
         first_ws = _FakeWS([ConnectionError("idle close")])
         second_ws = _FakeWS([_pack({"success": True, "request_id": "req-1"})])
         executor = _executor_with_ws(first_ws)
-        executor._server_container_id = "container-1"
+        executor._server = executor._server._replace(container_id="container-1")
         sockets = [second_ws]
 
         def fake_ensure(_workspace: str) -> None:
             if executor._ws is None:
                 executor._ws = sockets.pop(0)
-                executor._server_container_id = "container-1"
+                executor._server = executor._server._replace(container_id="container-1")
 
         executor._ensure_connection = fake_ensure
 
@@ -248,13 +286,13 @@ class TestSendRecvRetry:
         first_ws = _FakeWS([ConnectionError("idle close")])
         second_ws = _FakeWS()
         executor = _executor_with_ws(first_ws)
-        executor._server_container_id = "container-1"
+        executor._server = executor._server._replace(container_id="container-1")
         sockets = [second_ws]
 
         def fake_ensure(_workspace: str) -> None:
             if executor._ws is None:
                 executor._ws = sockets.pop(0)
-                executor._server_container_id = "container-2"
+                executor._server = executor._server._replace(container_id="container-2")
 
         executor._ensure_connection = fake_ensure
 
@@ -270,11 +308,11 @@ class TestSendRecvRetry:
         # A stale id left behind would let the resend guard match a
         # container this executor is no longer talking to.
         executor = _executor_with_ws(_FakeWS())
-        executor._server_container_id = "container-1"
+        executor._server = executor._server._replace(container_id="container-1")
 
         executor._drop_ws_connection()
 
-        assert executor._server_container_id is None
+        assert executor._server.container_id is None
 
     def test_v1_does_not_resend_after_recv_failure(self) -> None:
         ws = _FakeWS([ConnectionError("idle close")])
@@ -284,12 +322,33 @@ class TestSendRecvRetry:
         with pytest.raises(DynamicBlockError, match="not retried"):
             executor._send_recv_with_retry(_pack({"inputs": {}}), "test-ws")
 
-    def test_session_lost_from_reconnect_propagates(self) -> None:
+    def test_session_lost_on_resend_reports_ambiguous_outcome(self) -> None:
+        # The frame was already accepted somewhere. Telling the user to
+        # replay from a checkpoint would re-run side effects that may
+        # already have happened, so the ambiguous-outcome error wins over
+        # the session-lost one.
         executor = _executor_with_ws(_FakeWS([ConnectionError("idle close")]))
+        executor._server = executor._server._replace(container_id="container-1")
 
         def fake_ensure(_workspace: str) -> None:
             if executor._ws is None:
                 raise WebexecSessionLostError("state gone")
+
+        executor._ensure_connection = fake_ensure
+
+        with pytest.raises(DynamicBlockError, match="may have already executed"):
+            executor._send_recv_with_retry(
+                _pack({"inputs": {}}), "test-ws", request_id="req-1"
+            )
+
+    def test_session_lost_before_send_still_propagates(self) -> None:
+        # Nothing was sent yet, so there is no ambiguity to report: the job
+        # genuinely has to be replayed from its checkpoint.
+        executor = _executor_with_ws(_FakeWS())
+        executor._ws = None
+
+        def fake_ensure(_workspace: str) -> None:
+            raise WebexecSessionLostError("state gone")
 
         executor._ensure_connection = fake_ensure
 
@@ -394,7 +453,7 @@ class TestResponseIdGuard:
 class TestHeartbeat:
     def test_interval_derives_from_server_idle_timeout(self) -> None:
         executor = _executor_with_ws(_FakeWS())
-        executor._server_idle_timeout = 9.0
+        executor._server = executor._server._replace(idle_timeout=9.0)
 
         assert executor._heartbeat_interval() == 3.0
 

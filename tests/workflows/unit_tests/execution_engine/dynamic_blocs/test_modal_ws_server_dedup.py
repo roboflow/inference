@@ -265,6 +265,44 @@ class TestExecutionIsAtMostOnce:
         # The resend is answered from the cached error, identically.
         assert second == first
 
+    def test_undecodable_inputs_are_reported_as_not_run_and_stay_retryable(
+        self, modal_app, monkeypatch
+    ) -> None:
+        # Nothing executed, so the error must say so — and the request must
+        # not be marked executed, or a legitimate retry would be refused.
+        from fastapi.testclient import TestClient
+
+        calls = []
+
+        def run_user_code(self, *args, **kwargs):
+            calls.append(1)
+            return {"success": True, "result": {}}
+
+        executor, app = _ws_app(modal_app, run_user_code)
+
+        def boom(_inputs):
+            raise ValueError("bad input payload")
+
+        monkeypatch.setattr(
+            (
+                modal_app.Executor._get_user_cls()
+                if hasattr(modal_app.Executor, "_get_user_cls")
+                else modal_app.Executor
+            ),
+            "_deserialize_msgpack_inputs",
+            staticmethod(boom),
+        )
+        frame = msgpack.packb({"request_id": "req-1", "inputs": {}}, use_bin_type=True)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(frame)
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert calls == []
+        assert resp["success"] is False
+        assert "was not run" in resp["error"]
+        assert "req-1" not in executor._ws_executed
+
     def test_session_is_registered_only_after_a_successful_execution(
         self, modal_app
     ) -> None:
