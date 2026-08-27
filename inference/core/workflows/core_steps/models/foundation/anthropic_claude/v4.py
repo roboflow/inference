@@ -1,9 +1,23 @@
+"""Anthropic Claude workflow block (v4).
+
+Extends v3 with token-usage outputs and an object-detection path aligned with
+the vlm-exam benchmark contract for Claude models: images for that task are
+pre-resized to the exact dimensions Claude's internal resize would produce
+(high-resolution tier) and sent as lossless PNG, and the prompt asks for a
+JSON list of ``box_2d``/``label`` entries with ``[x_min, y_min, x_max, y_max]``
+in absolute pixel coordinates of the uploaded image, with the image placed
+before the text and no system prompt. Use ``roboflow_core/vlm_as_detector@v2``
+with ``model_type="anthropic-claude"`` to parse the output.
+"""
+
 import base64
 import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import anthropic
+import cv2
+import numpy as np
 import requests
 from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
@@ -17,7 +31,10 @@ from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_responses_api_usage,
 )
-from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.utils import (
+    compute_anthropic_upload_dimensions,
+    run_in_parallel,
+)
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -51,6 +68,24 @@ CLAUDE_MODELS = [
         "id": "claude-fable-5",
         "name": "Claude Fable 5",
         "exact_version": "claude-fable-5",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-opus-5",
+        "name": "Claude Opus 5",
+        "exact_version": "claude-opus-5",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "exact_version": "claude-sonnet-5",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-opus-4-8",
+        "name": "Claude Opus 4.8",
+        "exact_version": "claude-opus-4-8",
         "max_output_tokens": 128000,
     },
     {
@@ -119,6 +154,28 @@ MODEL_VERSION_METADATA = {
 MAX_OUTPUT_TOKENS = {model["id"]: model["max_output_tokens"] for model in CLAUDE_MODELS}
 DEFAULT_MAX_OUTPUT_TOKENS = 64000
 
+DETECTION_MAX_PNG_PAYLOAD_BYTES = 2_500_000
+"""Largest PNG payload sent for object detection, before base64 growth.
+
+Lossless PNG of a large photographic upload can exceed the request body
+limits of the Roboflow proxy and Anthropic's per-image maximum. Above this
+size the block re-encodes the image as JPEG (quality 95) at the same
+resolution, which keeps the coordinate contract intact.
+"""
+
+DETECTION_JPEG_FALLBACK_QUALITY = 95
+
+OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners in absolute pixel coordinates "
+    "of the {width}x{height} pixel image. "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
+)
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -144,6 +201,16 @@ Ask a question to Anthropic Claude model with vision capabilities.
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
+
+The `object-detection` task asks Claude for a JSON list of
+`{{"box_2d": [x_min, y_min, x_max, y_max], "label": ...}}` entries where
+coordinates are absolute pixels of the uploaded image. The image is
+pre-resized to the exact dimensions Claude's internal resize would produce
+and sent as lossless PNG, matching the vlm-exam benchmark setup for Claude
+models; the `max_image_size` parameter is not applied to this task. Use
+`roboflow_core/vlm_as_detector@v2` with `model_type="anthropic-claude"` to
+convert the output into predictions. Confidence scores are not requested;
+the parser assigns `1.0`.
 
 ### API Key Options
 
@@ -301,7 +368,8 @@ class BlockManifest(WorkflowBlockManifest):
         le=1.0,
     )
     max_image_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
-        description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio",
+        description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio. "
+        "Not applied to the `object-detection` task, which pre-resizes images to Claude's native resolution instead.",
         default=1024,
     )
     max_concurrent_requests: Optional[int] = Field(
@@ -473,17 +541,17 @@ def run_claude_prompting(
     prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
-        loaded_image = downscale_image_keeping_aspect_ratio(
-            image=loaded_image, desired_size=(max_image_size, max_image_size)
+        base64_image, media_type, image_width, image_height = encode_image_for_task(
+            loaded_image, task_type=task_type, max_image_size=max_image_size
         )
-        base64_image = base64.b64encode(
-            encode_image_to_jpeg_bytes(loaded_image)
-        ).decode("ascii")
         generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            image_width=image_width,
+            image_height=image_height,
+            media_type=media_type,
         )
         prompts.append(generated_prompt)
     return execute_claude_requests(
@@ -497,6 +565,73 @@ def run_claude_prompting(
         thinking_budget_tokens=thinking_budget_tokens,
         max_concurrent_requests=max_concurrent_requests,
     )
+
+
+def encode_image_for_task(
+    image: np.ndarray, *, task_type: TaskType, max_image_size: int
+) -> Tuple[str, int, int]:
+    """Encode an image as base64 using task-appropriate preprocessing.
+
+    The ``object-detection`` task pre-resizes the image to the exact
+    dimensions Claude's internal resize would produce (high-resolution tier)
+    and encodes it as lossless PNG, so pixel coordinates returned by the
+    model map one-to-one onto the uploaded image - matching the vlm-exam
+    benchmark setup the absolute-pixel contract was validated with. All other
+    tasks downscale to ``max_image_size`` and send JPEG, as previous block
+    versions did.
+
+    Args:
+        image: BGR image to be encoded.
+        task_type: Task type determining the preprocessing applied.
+        max_image_size: Maximum longest edge applied to non-detection tasks.
+
+    Returns:
+        Tuple of the base64-encoded image payload (without a data URL prefix),
+        its media type, and the ``(width, height)`` of the encoded image.
+    """
+    if task_type == "object-detection":
+        encoded_image = _resize_image_to_anthropic_upload_dimensions(image)
+        image_bytes = _encode_image_to_png_bytes(encoded_image)
+        media_type = "image/png"
+        if len(image_bytes) > DETECTION_MAX_PNG_PAYLOAD_BYTES:
+            image_bytes = _encode_image_to_jpeg_bytes_with_quality(
+                encoded_image, quality=DETECTION_JPEG_FALLBACK_QUALITY
+            )
+            media_type = "image/jpeg"
+    else:
+        encoded_image = downscale_image_keeping_aspect_ratio(
+            image=image, desired_size=(max_image_size, max_image_size)
+        )
+        image_bytes = encode_image_to_jpeg_bytes(encoded_image)
+        media_type = "image/jpeg"
+
+    base64_image = base64.b64encode(image_bytes).decode("ascii")
+    encoded_height, encoded_width = encoded_image.shape[:2]
+
+    return base64_image, media_type, encoded_width, encoded_height
+
+
+def _resize_image_to_anthropic_upload_dimensions(image: np.ndarray) -> np.ndarray:
+    height, width = image.shape[:2]
+    target_width, target_height = compute_anthropic_upload_dimensions(width, height)
+    if (target_width, target_height) == (width, height):
+        return image
+
+    return cv2.resize(
+        image, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4
+    )
+
+
+def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
+    _, encoded_image = cv2.imencode(".png", image)
+    return encoded_image.tobytes()
+
+
+def _encode_image_to_jpeg_bytes_with_quality(
+    image: np.ndarray, *, quality: int
+) -> bytes:
+    _, encoded_image = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return encoded_image.tobytes()
 
 
 def execute_claude_requests(
@@ -960,16 +1095,35 @@ def prepare_structured_answering_prompt(
 def prepare_object_detection_prompt(
     base64_image: str,
     classes: List[str],
+    image_width: int,
+    image_height: int,
+    media_type: str = "image/png",
     **kwargs,
 ) -> Tuple[Optional[str], List[dict]]:
-    serialised_classes = ", ".join(classes)
-    system_prompt = (
-        "You act as object-detection model. You must provide reasonable predictions. "
-        "You are only allowed to produce JSON document. "
-        'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]} '
-        "- remember to close top-level dictionary at the end. "
-        "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-        "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user."
+    """Build the absolute-pixel detection request used by Claude models.
+
+    Matches the vlm-exam benchmark setup: the image placed before the text
+    prompt, no system prompt, and coordinates requested as absolute pixels of
+    the uploaded ``image_width`` x ``image_height`` image. The image is
+    lossless PNG unless its payload exceeded the size limit, in which case
+    it is JPEG at the same resolution.
+
+    Args:
+        base64_image: Base64-encoded image.
+        classes: Class names the model may predict.
+        image_width: Width of the uploaded image in pixels.
+        image_height: Height of the uploaded image in pixels.
+        media_type: Media type of the encoded image.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Tuple of the system prompt (``None``) and the request messages.
+    """
+    class_list = ", ".join(classes)
+    prompt_text = OBJECT_DETECTION_PROMPT_TEMPLATE.format(
+        width=image_width,
+        height=image_height,
+        class_list=class_list,
     )
     messages = [
         {
@@ -979,18 +1133,18 @@ def prepare_object_detection_prompt(
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/jpeg",
+                        "media_type": media_type,
                         "data": base64_image,
                     },
                 },
                 {
                     "type": "text",
-                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                    "text": prompt_text,
                 },
             ],
         }
     ]
-    return system_prompt, messages
+    return None, messages
 
 
 PROMPT_BUILDERS = {

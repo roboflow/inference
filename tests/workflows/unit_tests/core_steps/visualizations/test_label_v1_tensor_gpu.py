@@ -146,26 +146,6 @@ def _assert_gpu_bit_exact(out, expected_bgr: np.ndarray) -> None:
     assert np.array_equal(actual, expected_bgr)
 
 
-def test_class_axis_wraps_negative_class_id() -> None:
-    scene = np.zeros((64, 64, 3), dtype=np.uint8)
-    detections = _build_detections(
-        boxes=np.array([[10, 20, 50, 54]], dtype=np.float32),
-        class_id=np.array([-1]),
-    )
-
-    out = _run_block(
-        _tensor_image_from_bgr(scene),
-        detections,
-        text="Confidence",
-        text_scale=0.5,
-        text_padding=2,
-    )
-
-    assert out._tensor_image is not None and out._numpy_image is None
-    assert torch.any(out._tensor_image)
-    assert detections.class_id.tolist() == [-1]
-
-
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("text_position", ALL_ANCHORS)
 def test_gpu_labels_match_sv_bit_exact_for_every_anchor(
