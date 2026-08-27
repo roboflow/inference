@@ -73,8 +73,10 @@ cosmos-3-edge stops emitting events for windows under roughly 5 seconds, so
 keep window_seconds at 6 or more for that model.
 
 The block does not run an extra classification when a stream ends, so frames
-after the final scheduled call do not receive a new result. Tail
-classification requires an end-of-stream signal and is planned separately.
+after the final scheduled call do not receive a new result. On a finite clip,
+keep the window shorter than the clip: the first classification waits one
+full stride, so a longer window never runs. Tail classification requires an
+end-of-stream signal and is planned separately.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -85,7 +87,8 @@ them empty for fine-tuned models that carry their own class list, or leave them
 empty on open-vocabulary models to let the model label events. The
 window_classes output lists every class the most recent window classification
 detected. It updates on each classification and holds between classifications.
-It works with Classification Label Visualization.
+It works with Classification Label Visualization. When a model call fails,
+error_status carries the error text for that frame and the stream continues.
 """
 
 
@@ -141,9 +144,9 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "List of accepted classes. For fine-tuned models, classes must exist "
             "in the model's training set and the output is restricted to this "
-            "subset. For zero-shot models such as cosmos-3-edge, this list forms "
-            "the prompt vocabulary. Leave empty to accept all classes (open "
-            "vocabulary on zero-shot models)."
+            "subset. For zero-shot models such as cosmos-3-edge, detected "
+            "events are classified into this list. Leave empty to accept all "
+            "classes (open vocabulary on zero-shot models)."
         ),
         examples=[["a", "b", "c"], "$inputs.class_filter"],
     )
@@ -154,7 +157,8 @@ class BlockManifest(WorkflowBlockManifest):
             "Duration of the sliding classification window in seconds. Frames "
             "per call equal window_seconds x sample_fps. The model spreads a "
             "fixed pixel budget across those frames. A shorter window uses fewer, "
-            "sharper frames. A longer window increases temporal coverage."
+            "sharper frames. A longer window increases temporal coverage. "
+            "cosmos-3-edge needs 6 seconds or more."
         ),
         examples=[2.0],
     )
