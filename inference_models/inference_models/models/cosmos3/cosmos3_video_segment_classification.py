@@ -60,12 +60,11 @@ OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
     '{{"1": "<label>", "2": "<label>", ...}}'
 )
 
-# Localization needs a think block plus one JSON entry per event; the
-# package default of 512 tokens truncates that into one summary segment.
+# Both stages think: localization needs the reasoning pass to stay dense,
+# and no-think mapping misattributes subjects in multi-object captions.
+# Think plus one JSON entry per item outgrows the package default of 512
+# tokens, so both stages share this budget.
 TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS = 4096
-# The mapping stage runs without thinking, so its short JSON answer fits
-# the package default.
-LABEL_MAPPING_MAX_NEW_TOKENS = 512
 
 
 def _parse_seconds(value: Any) -> Optional[float]:
@@ -327,8 +326,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     def _request_label_mapping(self, prompt: str) -> Optional[dict]:
         answer = self._reasoner.prompt_text(
             prompt=prompt,
-            max_new_tokens=LABEL_MAPPING_MAX_NEW_TOKENS,
-            enable_thinking=False,
+            max_new_tokens=TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS,
         )
         if isinstance(answer, dict):
             answer = answer.get("answer", "")
