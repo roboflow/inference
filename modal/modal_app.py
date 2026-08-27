@@ -48,6 +48,70 @@ WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
 WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
 
 
+class _WsResponseCache:
+    """Bounded cache of request_id -> packed response (protocol v2 dedup).
+
+    Lets a client safely resend a request whose response was lost to a
+    dropped connection: an already-executed request returns its cached
+    response instead of running the user code a second time.
+
+    The retry window is seconds, so entries carry a short TTL; responses can
+    embed serialized images, so eviction is byte-capped as well as
+    entry-capped (LRU order). All access happens on the event loop thread,
+    so no locking is needed.
+    """
+
+    def __init__(
+        self,
+        max_entries: int = 128,
+        max_bytes: int = 64 * 1024 * 1024,
+        ttl_seconds: float = 120.0,
+    ):
+        from collections import OrderedDict
+
+        self._max_entries = max_entries
+        self._max_bytes = max_bytes
+        self._ttl_seconds = ttl_seconds
+        self._entries: "OrderedDict[str, Tuple[float, bytes]]" = OrderedDict()
+        self._total_bytes = 0
+
+    def _prune_expired(self) -> None:
+        deadline = time.monotonic() - self._ttl_seconds
+        while self._entries:
+            key, (stored_at, payload) = next(iter(self._entries.items()))
+            if stored_at >= deadline:
+                break
+            del self._entries[key]
+            self._total_bytes -= len(payload)
+
+    def get(self, key: Optional[str]) -> Optional[bytes]:
+        if not key:
+            return None
+        self._prune_expired()
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        # Re-stamp on hit so LRU order stays age-sorted for the
+        # early-exit expiry scan above.
+        self._entries[key] = (time.monotonic(), entry[1])
+        self._entries.move_to_end(key)
+        return entry[1]
+
+    def put(self, key: str, payload: bytes) -> None:
+        old = self._entries.pop(key, None)
+        if old is not None:
+            self._total_bytes -= len(old[1])
+        self._entries[key] = (time.monotonic(), payload)
+        self._total_bytes += len(payload)
+        self._prune_expired()
+        while self._entries and (
+            len(self._entries) > self._max_entries
+            or self._total_bytes > self._max_bytes
+        ):
+            _, (_, evicted) = self._entries.popitem(last=False)
+            self._total_bytes -= len(evicted)
+
+
 # mirrors inference/core/workflows/execution_engine/v1/dynamic_blocks (avoiding `from inference import ...`)
 class _ThreadDispatchStream:
     """Stream wrapper that tees writes into a per-thread StringIO buffer
@@ -222,11 +286,19 @@ class Executor:
 
     @modal.enter()
     def identify(self):
+        import uuid
+
         print(f"Initializing sandbox for {self.workspace_id}")
         # Initialize the namespaces dict and shared globals
         self._code_namespaces = {}
         self._shared_globals = {}
         self._namespace_lock = threading.RLock()
+        # Protocol v2 websocket state (see wsapp): all touched only on the
+        # event loop thread.
+        self._container_id = uuid.uuid4().hex
+        self._ws_sessions: Dict[str, float] = {}
+        self._ws_response_cache = _WsResponseCache()
+        self._ws_inflight: Dict[str, "asyncio.Task"] = {}
 
     def _get_code_hash(self, code_str: str, imports: list) -> str:
         """Compute a stable hash for the code to identify unique blocks."""
@@ -241,37 +313,41 @@ class Executor:
             self._namespace_lock = namespace_lock
         return namespace_lock
 
-    def _get_ws_sessions(self) -> set:
-        """Session ids this container has served (protocol v2).
+    # A session id is registered only once user code has SUCCESSFULLY
+    # executed for it on this container — mirroring the client's
+    # ``_had_success`` latch. Registering earlier (e.g. at hello time)
+    # would make a failed "session lost" handshake mark the session as
+    # known, so the very next reconnect would silently pass the check
+    # this mechanism exists to fail.
+    _WS_SESSION_TTL_SECONDS = 7200.0
+    _WS_SESSION_MAX_ENTRIES = 4096
 
-        Membership answers the client's hello: ``session_known=False`` on a
-        reconnect tells the client its Python runtime state (mutated
-        globals in the cached namespaces) lives in some other, gone
-        container — the client fails loudly instead of silently
-        continuing with reset state.
+    def _ws_session_seen(self, session_id: str) -> bool:
+        """Whether user code for this session already ran on this container.
+
+        Answers the client's hello: ``session_known=False`` on a reconnect
+        tells the client its Python runtime state (mutated globals in the
+        cached namespaces) lives in some other, gone container — the client
+        fails loudly instead of silently continuing with reset state.
         """
-        sessions = getattr(self, "_ws_sessions", None)
-        if sessions is None:
-            sessions = set()
-            self._ws_sessions = sessions
-        return sessions
+        self._prune_ws_sessions()
+        return bool(session_id) and session_id in self._ws_sessions
 
-    def _get_ws_request_cache(self) -> "OrderedDict":
-        """LRU of request_id -> packed response (protocol v2).
+    def _ws_register_session(self, session_id: str) -> None:
+        if not session_id:
+            return
+        self._ws_sessions[session_id] = time.monotonic()
 
-        Lets a client safely resend a request whose response was lost to a
-        dropped connection: an already-executed request returns its cached
-        response instead of running the user code a second time.
-        """
-        from collections import OrderedDict
-
-        cache = getattr(self, "_ws_request_cache", None)
-        if cache is None:
-            cache = OrderedDict()
-            self._ws_request_cache = cache
-        return cache
-
-    _WS_REQUEST_CACHE_MAX_ENTRIES = 32
+    def _prune_ws_sessions(self) -> None:
+        deadline = time.monotonic() - self._WS_SESSION_TTL_SECONDS
+        if len(self._ws_sessions) > self._WS_SESSION_MAX_ENTRIES:
+            for stale in sorted(self._ws_sessions, key=self._ws_sessions.get)[
+                : len(self._ws_sessions) - self._WS_SESSION_MAX_ENTRIES
+            ]:
+                del self._ws_sessions[stale]
+        for session_id, last_seen in list(self._ws_sessions.items()):
+            if last_seen < deadline:
+                del self._ws_sessions[session_id]
 
     def _get_cached_namespace(self, code_hash: str) -> Optional[dict]:
         namespace = self._code_namespaces.get(code_hash)
@@ -930,10 +1006,59 @@ from datetime import datetime
             else:
                 await websocket.send_bytes(payload)
 
+        async def execute_request(
+            request: dict, request_id: Optional[str], session_id: str
+        ) -> bytes:
+            """Run one execution request and return the packed response.
+
+            Registered in ``_ws_inflight`` while running so a resend of the
+            same ``request_id`` (from this or another connection) awaits the
+            original execution instead of running the user code a second
+            time; the completed payload then moves to the response cache for
+            resends that arrive after completion.
+            """
+            try:
+                code_str = request.get("code_str", "")
+                imports = request.get("imports", [])
+                run_function_name = request.get("run_function_name", "")
+                inputs_raw = request.get("inputs", {})
+                client_code_hash = request.get("code_hash", "")
+                workflow_context = request.get("workflow_context") or {}
+
+                inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                resp = await asyncio.to_thread(
+                    Executor._run_user_code_ws,
+                    executor_self,
+                    code_str,
+                    imports,
+                    run_function_name,
+                    inputs,
+                    client_code_hash,
+                    workflow_context,
+                )
+
+                if resp.get("success"):
+                    resp["result"] = Executor._serialize_msgpack_result(resp["result"])
+                    # Only now has runtime state actually been built here;
+                    # see the note on _ws_register_session.
+                    executor_self._ws_register_session(session_id)
+
+                if request_id:
+                    resp["request_id"] = request_id
+
+                payload = msgpack.packb(resp, use_bin_type=True)
+                if request_id:
+                    executor_self._ws_response_cache.put(request_id, payload)
+                return payload
+            finally:
+                if request_id:
+                    executor_self._ws_inflight.pop(request_id, None)
+
         @ws_app.websocket("/ws")
         async def ws_execute(websocket: WebSocket):
             await websocket.accept()
             connected_at = time.monotonic()
+            conn_session_id = ""
             try:
                 while True:
                     remaining = WEBEXEC_WS_MAX_CONNECTION_SECONDS - (
@@ -965,18 +1090,21 @@ from datetime import datetime
                     # ---- protocol v2 control frames ----
                     kind = request.get("_kind") if isinstance(request, dict) else None
                     if kind == "hello":
-                        session_id = request.get("session_id") or ""
-                        sessions = executor_self._get_ws_sessions()
-                        session_known = session_id in sessions
-                        if session_id:
-                            sessions.add(session_id)
+                        conn_session_id = request.get("session_id") or ""
                         await websocket.send_bytes(
                             msgpack.packb(
                                 {
                                     "_kind": "hello",
                                     "proto": 2,
                                     "idle_timeout_s": WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
-                                    "session_known": session_known,
+                                    "session_known": executor_self._ws_session_seen(
+                                        conn_session_id
+                                    ),
+                                    # Lets the client tell whether a
+                                    # reconnect landed on the same container
+                                    # (whose dedup cache it may rely on) or
+                                    # a different one.
+                                    "container_id": executor_self._container_id,
                                 },
                                 use_bin_type=True,
                             )
@@ -996,51 +1124,30 @@ from datetime import datetime
                         request.get("request_id") if isinstance(request, dict) else None
                     )
                     if request_id:
-                        request_cache = executor_self._get_ws_request_cache()
-                        cached_payload = request_cache.get(request_id)
+                        cached_payload = executor_self._ws_response_cache.get(
+                            request_id
+                        )
                         if cached_payload is not None:
                             # Resend of a request already executed (the
                             # client lost the response): answer from cache,
                             # never run user code twice.
-                            request_cache.move_to_end(request_id)
                             await send_payload(websocket, cached_payload)
                             continue
-
-                    code_str = request.get("code_str", "")
-                    imports = request.get("imports", [])
-                    run_function_name = request.get("run_function_name", "")
-                    inputs_raw = request.get("inputs", {})
-                    client_code_hash = request.get("code_hash", "")
-                    workflow_context = request.get("workflow_context") or {}
-
-                    inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
-                    resp = await asyncio.to_thread(
-                        Executor._run_user_code_ws,
-                        executor_self,
-                        code_str,
-                        imports,
-                        run_function_name,
-                        inputs,
-                        client_code_hash,
-                        workflow_context,
-                    )
-
-                    if resp.get("success"):
-                        resp["result"] = Executor._serialize_msgpack_result(
-                            resp["result"]
-                        )
-
-                    if request_id:
-                        resp["request_id"] = request_id
-
-                    payload = msgpack.packb(resp, use_bin_type=True)
-                    if request_id:
-                        request_cache = executor_self._get_ws_request_cache()
-                        request_cache[request_id] = payload
-                        while (
-                            len(request_cache) > Executor._WS_REQUEST_CACHE_MAX_ENTRIES
-                        ):
-                            request_cache.popitem(last=False)
+                        # No await between the in-flight lookup and the
+                        # insert below, so two connections can't both start
+                        # the same request.
+                        task = executor_self._ws_inflight.get(request_id)
+                        if task is None:
+                            task = asyncio.create_task(
+                                execute_request(request, request_id, conn_session_id)
+                            )
+                            executor_self._ws_inflight[request_id] = task
+                        # shield: this connection dying must not cancel an
+                        # execution another connection may be waiting on
+                        # (or will resend for).
+                        payload = await asyncio.shield(task)
+                    else:
+                        payload = await execute_request(request, None, conn_session_id)
                     await send_payload(websocket, payload)
             except WebSocketDisconnect:
                 pass

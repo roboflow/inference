@@ -960,6 +960,14 @@ WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
 )
 
 WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))
+# How long an idle websocket connection keeps heartbeating before the client
+# deliberately releases it (closing the socket lets the Modal container scale
+# down instead of staying warm — and billed — for the whole connection cap).
+# Releasing also discards the custom-Python session: runtime state mutated by
+# earlier frames is gone after this much inactivity.
+WEBEXEC_WS_IDLE_RELEASE_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_RELEASE_SECONDS", "600")
+)
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )
