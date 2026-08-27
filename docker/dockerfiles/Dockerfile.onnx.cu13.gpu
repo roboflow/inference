@@ -256,9 +256,15 @@ RUN python3 -m pip install -U pip uv
 
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
-RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu130
+# The lock resolves pycuda to 2025.1.1, which does not compile against
+# CUDA 13 (its cuda.hpp still calls the 3-argument cuCtxCreate; CUDA 13 maps
+# that name to the 4-argument cuCtxCreate_v4). Skip it during the locked sync
+# and install a post-fix release in the step below - upstream fixed the break
+# on 2025-09-09 ("Add #if for cuCtxCreate compat break in CUDA 13").
+RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu130 --no-install-package pycuda
 
-RUN uv pip install --system "onnxruntime-gpu==1.29.0" && \
+RUN uv pip install --system "pycuda==2026.1" && \
+    uv pip install --system "onnxruntime-gpu==1.29.0" && \
     uv pip install --system \
         "tensorrt-cu13>=10.13,<11.0.0" \
         "tensorrt-lean-cu13>=10.13,<11.0.0" && \
