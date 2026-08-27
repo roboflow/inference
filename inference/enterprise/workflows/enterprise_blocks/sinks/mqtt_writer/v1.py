@@ -30,10 +30,10 @@ session acknowledgement are each bounded by `timeout`, so a cold start may
 take up to twice `timeout` - raise it for remote brokers. Afterwards a
 background network loop maintains the connection and owns reconnects.
 
-Recovery across runs applies only where the same block instance serves many
-runs (video pipelines): a run that finds the broker unavailable reports the
-failure while the background loop keeps retrying, and a later run can publish
-without reconnecting. Over the HTTP API every request builds a fresh block
+A run that cannot connect reports the failure and leaves nothing behind; the
+next run on the same block instance (video pipelines) retries from scratch,
+while an established connection that later drops is re-established by the
+background loop. Over the HTTP API every request builds a fresh block
 instance, so each request pays the bounded connect and a failed request is
 final for that request. One block instance publishes to a single broker
 connection: changing host, port, credentials or timeout between runs is
@@ -288,7 +288,6 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         connection_identity = (host, port, username, password, timeout)
         if self.mqtt_client is None:
             client = None
-            connect_error: Optional[OSError] = None
             try:
                 client = mqtt.Client(userdata=self._connected)
                 if username is not None:
@@ -301,17 +300,20 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 # timeout; without this the DNS + TCP phase runs under paho's
                 # 5s default instead of the block's timeout
                 client._connect_timeout = timeout
-                try:
-                    # DNS + TCP happen here, bounded by _connect_timeout, so
-                    # the first run gets a real connect budget; the CONNACK
-                    # wait below covers the rest of the handshake
-                    client.connect(host, port)
-                except OSError as e:
-                    # broker unreachable right now; keep the client so the
-                    # background loop retries and a later run on this
-                    # instance can publish
-                    connect_error = e
+                # DNS + TCP happen here, bounded by _connect_timeout, so the
+                # first run gets a real connect budget; the CONNACK wait below
+                # covers the rest of the handshake
+                client.connect(host, port)
                 client.loop_start()
+            except OSError as e:
+                # broker unreachable: nothing is kept and no loop was started,
+                # so a failed one-shot run leaves no background thread behind;
+                # the next run on this instance retries with a fresh client
+                return self._handle_failure(
+                    f"MQTT broker not connected ({e}). Raise 'timeout' if the "
+                    "broker needs longer to connect.",
+                    fail_fast=fail_fast,
+                )
             except Exception as e:
                 if client is not None:
                     try:
@@ -323,13 +325,6 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 )
             self.mqtt_client = client
             self._connection_identity = connection_identity
-            if connect_error is not None:
-                return self._handle_failure(
-                    f"MQTT broker not connected ({connect_error}); the client keeps "
-                    "retrying in the background. Raise 'timeout' if the broker "
-                    "needs longer to connect.",
-                    fail_fast=fail_fast,
-                )
         elif connection_identity != self._connection_identity:
             return self._handle_failure(
                 "MQTT connection parameters (host, port, credentials or timeout) changed "

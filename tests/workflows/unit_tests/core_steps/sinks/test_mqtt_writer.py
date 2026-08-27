@@ -291,7 +291,7 @@ class TestClientSetup:
 
         assert connect_timeout_at_connect_call == [0.25]
 
-    def test_unreachable_broker_on_first_run_reports_failure_and_keeps_retrying(
+    def test_unreachable_broker_on_first_run_leaves_no_background_thread(
         self, mock_client_cls, block
     ):
         mock_client = mock_client_cls.return_value
@@ -302,17 +302,21 @@ class TestClientSetup:
         mock_client.connect.assert_called_once()
         assert first_result["error_status"] is True
         assert "not connected" in first_result["message"].lower()
-        assert block.mqtt_client is not None
-        mock_client.loop_start.assert_called_once()
+        # no client kept and no loop started: a failed one-shot run must not
+        # leave a reconnecting background thread behind
+        assert block.mqtt_client is None
+        mock_client.loop_start.assert_not_called()
         mock_client.publish.assert_not_called()
 
-        # background loop establishes the connection later
+        # broker becomes reachable, the next run retries with a fresh client
+        mock_client.connect.side_effect = None
         block._connected.set()
 
         second_result = block.run(**run_kwargs())
 
         assert second_result["error_status"] is False
-        mock_client_cls.assert_called_once()
+        assert mock_client_cls.call_count == 2
+        mock_client.loop_start.assert_called_once()
 
     def test_unreachable_broker_with_fail_fast_raises(self, mock_client_cls, block):
         mock_client = mock_client_cls.return_value
@@ -322,6 +326,8 @@ class TestClientSetup:
             block.run(**run_kwargs(fail_fast=True))
 
         mock_client.connect.assert_called_once()
+        mock_client.loop_start.assert_not_called()
+        assert block.mqtt_client is None
 
     def test_setup_failure_resets_client_so_next_run_can_retry(
         self, mock_client_cls, block

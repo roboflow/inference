@@ -96,7 +96,7 @@ def test_rejected_connack_is_not_treated_as_connected():
 @pytest.mark.timeout(15)
 def test_block_recovers_when_broker_becomes_available_after_first_run():
     # given - the port is bound but refuses connections, so the first TCP
-    # attempt fails and the background loop has to recover on its own
+    # attempt fails; the failed run must leave no client or thread behind
     broker = FakeMQTTBroker(listening=False)
     broker.messages_count_to_wait_for = 1
     block = MQTTWriterSinkBlockV1()
@@ -111,18 +111,19 @@ def test_block_recovers_when_broker_becomes_available_after_first_run():
             timeout=0.3,
         )
 
-        # broker becomes available, background loop finishes connecting
+        assert block.mqtt_client is None
+
+        # broker becomes available, the next run connects from scratch
         broker.listen()
         broker_thread = threading.Thread(target=broker.start)
         broker_thread.start()
-        assert wait_until(block._connected.is_set)
 
         second_result = block.run(
             host=broker.host,
             port=broker.port,
             topic="RoboflowTopic",
             message="second message",
-            timeout=0.3,
+            timeout=2.0,
         )
         broker_thread.join(timeout=2)
 
