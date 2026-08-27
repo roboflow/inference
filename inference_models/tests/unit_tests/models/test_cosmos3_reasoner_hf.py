@@ -23,6 +23,28 @@ def _model_with_processor() -> Cosmos3EdgeReasoner:
     )
 
 
+def test_prompt_text_thinking_switch_controls_the_chat_template() -> None:
+    reasoner = _model_with_processor()
+    reasoner._model.generate.return_value = torch.tensor([[1, 2, 3, 9]])
+    reasoner._processor.batch_decode.return_value = ["answer"]
+
+    reasoner.prompt_text(prompt="map these")
+    default_kwargs = reasoner._processor.apply_chat_template.call_args_list[0].kwargs
+    assert "enable_thinking" not in default_kwargs
+
+    reasoner.prompt_text(prompt="map these", enable_thinking=False)
+    no_think_kwargs = reasoner._processor.apply_chat_template.call_args_list[1].kwargs
+    assert no_think_kwargs["enable_thinking"] is False
+
+    conversation = reasoner._processor.apply_chat_template.call_args_list[1].args[0]
+    assert [entry["role"] for entry in conversation] == ["system", "user"]
+    assert all(
+        content["type"] == "text"
+        for entry in conversation
+        for content in entry["content"]
+    )
+
+
 def test_generate_returns_only_new_tokens() -> None:
     reasoner = _model_with_processor()
     reasoner._model.generate.return_value = torch.tensor([[1, 2, 21, 22]])

@@ -89,9 +89,13 @@ def test_infer_parses_segments_and_forwards_video_inputs() -> None:
     assert call["video_fps"] == 5.0
     assert call["max_new_tokens"] == 128
     assert len(reasoner.text_calls) == 1
-    mapping_prompt = reasoner.text_calls[0]["prompt"]
-    assert "person walking by" in mapping_prompt
-    assert '"walking"' in mapping_prompt
+    mapping_call = reasoner.text_calls[0]
+    assert "person walking by" in mapping_call["prompt"]
+    assert '"walking"' in mapping_call["prompt"]
+    # The mapping stage answers compact JSON without thinking; A/B showed
+    # identical mappings 10-16x faster.
+    assert mapping_call["enable_thinking"] is False
+    assert mapping_call["max_new_tokens"] == 512
 
 
 def test_infer_drops_segments_the_mapping_marks_as_other() -> None:

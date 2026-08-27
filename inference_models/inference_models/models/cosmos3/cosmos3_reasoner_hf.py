@@ -176,8 +176,13 @@ class Cosmos3EdgeReasoner:
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         return_thinking: bool = False,
+        enable_thinking: bool = True,
     ) -> Union[str, Dict[str, str]]:
-        """Text-only chat turn (no image or video content)."""
+        """Text-only chat turn (no image or video content).
+
+        With ``enable_thinking=False`` the chat template pre-closes the
+        think block, so the model answers directly.
+        """
         parsed_prompt, system_prompt = self._parse_prompt(prompt=prompt)
         conversation = [
             {
@@ -189,8 +194,12 @@ class Cosmos3EdgeReasoner:
                 "content": [{"type": "text", "text": parsed_prompt}],
             },
         ]
+        template_kwargs = {} if enable_thinking else {"enable_thinking": False}
         text_input = self._processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
+            conversation,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         model_inputs = self._processor(
             text=text_input,

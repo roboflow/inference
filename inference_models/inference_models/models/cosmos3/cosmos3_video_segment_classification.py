@@ -44,6 +44,10 @@ OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
 # event; the package default of 512 new tokens forces the model to compress
 # the clip into one summary segment. 4096 matches the cookbook demo budget.
 TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS = 4096
+# The mapping stage runs without thinking: A/B on the cookbook demo showed
+# identical mappings 10-16x faster (46 s -> 3-5 s), with the whole budget
+# left for the compact JSON answer, so the package default suffices.
+LABEL_MAPPING_MAX_NEW_TOKENS = 512
 
 # The open-vocabulary prompt is the cookbook's verbatim temporal-localization
 # prompt. Variants that reworded it ("notable events", a "class" key, extra
@@ -335,7 +339,8 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     def _request_label_mapping(self, prompt: str) -> Optional[dict]:
         answer = self._reasoner.prompt_text(
             prompt=prompt,
-            max_new_tokens=TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS,
+            max_new_tokens=LABEL_MAPPING_MAX_NEW_TOKENS,
+            enable_thinking=False,
         )
         if isinstance(answer, dict):
             answer = answer.get("answer", "")
