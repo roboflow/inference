@@ -13,6 +13,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.openrouter import OpenRouterResult
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     DEFAULT_OPENROUTER_MODEL_VERSION,
+    BlockManifest,
     QwenVlmBlockV3,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -74,6 +75,49 @@ def test_run_openrouter_surfaces_token_usage(mock_or):
             "output_tokens": 7,
         }
     ]
+
+
+def test_manifest_accepts_qwen_3_8_flash_variant():
+    manifest = BlockManifest(
+        type="roboflow_core/qwen_vlm@v3",
+        name="qwen",
+        images="$inputs.image",
+        backend="openrouter",
+        openrouter_model_version="Qwen 3.8 Flash",
+        task_type="unconstrained",
+        prompt="What is in this image?",
+    )
+
+    assert manifest.openrouter_model_version == "Qwen 3.8 Flash"
+
+
+@patch.object(QwenVlmBlockV3, "execute_openrouter_batch_with_usage")
+def test_run_openrouter_qwen_3_8_flash_maps_slug_and_disables_reasoning(mock_or):
+    # OpenRouter reports reasoning as non-mandatory for qwen/qwen3.8-flash,
+    # so the default effort ("none") must translate to `enabled: false`
+    # instead of the low-effort fallback used by reasoning-required models.
+    mock_or.return_value = [
+        OpenRouterResult(
+            content="resp", reasoning_trace="", input_tokens=5, output_tokens=3
+        )
+    ]
+    block = QwenVlmBlockV3(
+        model_manager=MagicMock(),
+        api_key="ws-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    result = block.run(
+        **_base_run_kwargs(
+            backend="openrouter",
+            openrouter_model_version="Qwen 3.8 Flash",
+        )
+    )
+
+    call_kwargs = mock_or.call_args.kwargs
+    assert call_kwargs["model"] == "qwen/qwen3.8-flash"
+    assert call_kwargs["reasoning"] == {"enabled": False}
+    assert result[0]["output"] == "resp"
 
 
 def test_run_native_reports_none_token_usage():
