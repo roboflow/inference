@@ -26,9 +26,6 @@ from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.decorator_helpers import (
-    record_fixed_model_input_for_request,
-)
 
 
 class SegmentAnything(RoboflowCoreModel):
@@ -58,6 +55,8 @@ class SegmentAnything(RoboflowCoreModel):
         )
         self.sam.to(device="cuda" if torch.cuda.is_available() else "cpu")
         self.predictor = SamPredictor(self.sam)
+        # Usage telemetry reads the fixed canvas from `image_size`.
+        self.image_size = self.sam.image_encoder.img_size
         self.ort_session = onnxruntime.InferenceSession(
             self.cache_file("decoder.onnx"),
             providers=[
@@ -136,7 +135,6 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        record_fixed_model_input_for_request(self, request)
         with self._state_lock:
             t1 = perf_counter()
             if isinstance(request, SamEmbeddingRequest):

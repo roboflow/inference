@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
 from inference.core.roboflow_api import service_secret_is_valid
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
@@ -342,9 +343,31 @@ def _as_image_sequence(value: Any) -> Any:
     ``count_inference_images`` would otherwise treat a multi-image batch as
     a single frame.
     """
-    if value is not None and hasattr(value, "iter_with_indices"):
+    if isinstance(value, Batch):
         return list(value)
     return value
+
+
+def _compare_request_images(request: Any) -> Optional[List[Any]]:
+    """Imagery carried by a CLIP/PE compare request, which has no ``image``.
+
+    Compare requests hold their images under ``subject`` / ``prompt``; each
+    side participates only when its ``*_type`` says it is an image.
+    """
+    images = []
+    if getattr(request, "subject_type", None) == "image":
+        subject = getattr(request, "subject", None)
+        if subject is not None:
+            images.append(subject)
+    if getattr(request, "prompt_type", None) == "image":
+        prompt = getattr(request, "prompt", None)
+        if isinstance(prompt, dict):
+            images.extend(prompt.values())
+        elif isinstance(prompt, (list, tuple)):
+            images.extend(prompt)
+        elif prompt is not None:
+            images.append(prompt)
+    return images or None
 
 
 def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
@@ -362,6 +385,9 @@ def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
         image = getattr(request, "image", None)
         if image is not None:
             return image
+        compare_images = _compare_request_images(request)
+        if compare_images is not None:
+            return compare_images
     return None
 
 
@@ -384,7 +410,10 @@ def get_model_frames_and_input_hw(
     if frames <= 0 and measured_frames:
         frames = measured_frames
     if frames <= 0:
-        frames = 1
+        # No imagery anywhere in the call (text-only embeds). One frame is
+        # still billed, but crediting the model's visual canvas to it would
+        # fabricate image-resolution telemetry - leave the bucket unknown.
+        return 1, None
 
     return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
 

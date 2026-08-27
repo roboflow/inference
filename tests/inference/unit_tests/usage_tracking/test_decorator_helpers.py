@@ -5,6 +5,7 @@ import pytest
 
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
     call_carries_authenticated_non_billable_intent,
@@ -529,24 +530,35 @@ def test_model_frames_count_images_kwarg_used_by_video_blocks():
 
 
 def test_model_frames_count_workflow_batch_used_by_video_blocks():
-    class FakeWorkflowBatch:
-        def __init__(self, items):
-            self._content = items
+    batch = Batch(content=[object(), object(), object()], indices=None)
 
-        def __len__(self):
-            return len(self._content)
-
-        def __iter__(self):
-            return iter(self._content)
-
-        def iter_with_indices(self):
-            return enumerate(self._content)
-
-    frames, _ = get_model_frames_and_input_hw(
-        {"images": FakeWorkflowBatch([object(), object(), object()])}
-    )
+    frames, _ = get_model_frames_and_input_hw({"images": batch})
 
     assert frames == 3
+
+
+def test_model_frames_count_compare_request_subject_and_prompt_images():
+    request = SimpleNamespace(
+        subject=object(),
+        subject_type="image",
+        prompt=[object(), object()],
+        prompt_type="image",
+    )
+
+    frames, _ = get_model_frames_and_input_hw({"request": request})
+
+    assert frames == 3
+
+
+def test_text_only_embedding_bills_one_frame_without_visual_canvas():
+    model = SimpleNamespace(image_size=224)
+
+    frames, input_hw = get_model_frames_and_input_hw(
+        {"self": model, "request": SimpleNamespace()}
+    )
+
+    assert frames == 1
+    assert input_hw is None
 
 
 def test_model_api_key_from_workflow_block_private_attr():

@@ -17,10 +17,7 @@ from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
-from inference.usage_tracking.decorator_helpers import (
-    record_fixed_model_input_for_request,
-    usage_billing_suppressed,
-)
+from inference.usage_tracking.decorator_helpers import usage_billing_suppressed
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
@@ -2596,7 +2593,6 @@ def test_clip_shaped_infer_from_request_records_model_row(
 
         @usage_collector(category="model")
         def infer_from_request(self, request):
-            record_fixed_model_input_for_request(self, request)
             return {"ok": True}
 
     request = SimpleNamespace(

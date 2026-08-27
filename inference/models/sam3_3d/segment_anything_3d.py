@@ -33,9 +33,6 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.decorator_helpers import (
-    record_fixed_model_input_for_request,
-)
 
 try:
     import pycocotools.mask as mask_utils
@@ -366,7 +363,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
     def infer_from_request(
         self, request: Sam3_3D_Objects_InferenceRequest
     ) -> Sam3_3D_Objects_Response:
-        record_fixed_model_input_for_request(self, request)
         with self._state_lock:
             t1 = perf_counter()
             raw_result = self.create_3d(**request.model_dump())
