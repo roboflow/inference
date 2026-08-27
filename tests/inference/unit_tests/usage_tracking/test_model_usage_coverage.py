@@ -85,15 +85,19 @@ MODELS_DECORATING_INFER_FROM_REQUEST = [
 ]
 
 # Video trackers load ``AutoModel`` in the block and never go through
-# ModelManager, so ``run()`` itself must emit the model-category row.
+# ModelManager, so the block's tracked entrypoint must emit the model-category
+# row. SAM3 tracks ``_tracked_run`` so that ``run()`` can first swap in the
+# visual model id the decorator should attribute usage to.
 BLOCKS_DECORATING_RUN = [
     (
         "inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1",
         "SegmentAnything2VideoBlockV1",
+        "run",
     ),
     (
         "inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1",
         "SegmentAnything3VideoBlockV1",
+        "_tracked_run",
     ),
 ]
 
@@ -128,14 +132,15 @@ def test_model_infer_from_request_is_usage_collected(module_path, class_name):
     )
 
 
-@pytest.mark.parametrize("module_path, class_name", BLOCKS_DECORATING_RUN)
-def test_video_block_run_is_usage_collected(module_path, class_name):
+@pytest.mark.parametrize("module_path, class_name, method_name", BLOCKS_DECORATING_RUN)
+def test_video_block_run_is_usage_collected(module_path, class_name, method_name):
     module = pytest.importorskip(module_path)
     block_class = getattr(module, class_name)
 
-    assert _is_usage_collected(
-        block_class.run
-    ), f"{class_name}.run() must be decorated with @usage_collector('model')"
+    assert _is_usage_collected(getattr(block_class, method_name)), (
+        f"{class_name}.{method_name}() must be decorated with "
+        "@usage_collector('model')"
+    )
 
 
 def test_detection_helper_rejects_undecorated_function():
