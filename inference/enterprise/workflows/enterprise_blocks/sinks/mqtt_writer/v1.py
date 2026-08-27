@@ -235,13 +235,24 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 fail_fast=fail_fast,
             )
         timeout = timeout_seconds
-        # paho validates only port <= 0; above 65535 the socket call raises
+        # selector-supplied ports arrive uncoerced (numeric strings, floats
+        # from JSON), so coerce like the manifest would before range-checking;
+        # paho validates only port <= 0 and above 65535 the socket call raises
         # OverflowError inside the network loop, silently killing it
-        if not isinstance(port, int) or not 1 <= port <= 65535:
+        try:
+            if isinstance(port, bool) or (
+                isinstance(port, float) and not port.is_integer()
+            ):
+                raise ValueError
+            port_number = int(port)
+        except (TypeError, ValueError):
+            port_number = 0
+        if not 1 <= port_number <= 65535:
             return self._handle_failure(
                 f"Invalid port: {port!r}. Port must be an integer between 1 and 65535.",
                 fail_fast=fail_fast,
             )
+        port = port_number
         if password is not None and username is None:
             return self._handle_failure(
                 "Password provided without username. Set username to enable MQTT authentication.",

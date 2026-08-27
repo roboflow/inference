@@ -183,7 +183,9 @@ class TestRunValidation:
         assert "timeout" in result["message"].lower()
         mock_client_cls.assert_not_called()
 
-    @pytest.mark.parametrize("port", [0, -1, 65536, "1883"])
+    @pytest.mark.parametrize(
+        "port", [0, -1, 65536, "abc", "1883.5", 1883.7, True, None]
+    )
     def test_invalid_port_rejected_before_client_construction(
         self, mock_client_cls, block, port
     ):
@@ -192,6 +194,19 @@ class TestRunValidation:
         assert result["error_status"] is True
         assert "port" in result["message"].lower()
         mock_client_cls.assert_not_called()
+
+    @pytest.mark.parametrize("port", ["1883", 1883.0])
+    def test_selector_supplied_port_coerced_like_manifest(
+        self, mock_client_cls, block, port
+    ):
+        # runtime validation coerces on a discarded manifest copy, so run()
+        # receives the raw selector value and must coerce it itself
+        block._connected.set()
+
+        result = block.run(**run_kwargs(port=port))
+
+        assert result["error_status"] is False
+        mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
 
     def test_password_without_username_rejected(self, mock_client_cls, block):
         result = block.run(**run_kwargs(password="secret"))
