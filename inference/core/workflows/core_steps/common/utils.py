@@ -1,4 +1,5 @@
 import logging
+import math
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -647,3 +648,84 @@ def scale_dimensions_to_max_edge(
         scaled_width = max(round(width * max_edge / height), 1)
 
     return (scaled_width, scaled_height)
+
+
+ANTHROPIC_DETECTION_MAX_EDGE_PIXELS = 2576
+"""Maximum padded edge length of images uploaded to Anthropic Claude models.
+
+High-resolution tier limit from Anthropic's vision documentation; edges are
+padded up to a multiple of ``ANTHROPIC_IMAGE_TILE_PIXELS`` before the check.
+"""
+
+ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS = 4784
+"""Maximum visual-token budget of images uploaded to Anthropic Claude models."""
+
+ANTHROPIC_IMAGE_TILE_PIXELS = 28
+"""Edge length of the square tiles Claude tokenizes images with."""
+
+
+def count_anthropic_image_tokens(width: int, height: int) -> int:
+    """Count the visual tokens Claude spends on an image of given dimensions.
+
+    Args:
+        width: Image width in pixels.
+        height: Image height in pixels.
+
+    Returns:
+        Number of visual tokens.
+    """
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+    return math.ceil(width / tile) * math.ceil(height / tile)
+
+
+def compute_anthropic_upload_dimensions(
+    width: int,
+    height: int,
+    max_edge: int = ANTHROPIC_DETECTION_MAX_EDGE_PIXELS,
+    max_tokens: int = ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS,
+) -> Tuple[int, int]:
+    """Compute the dimensions Claude resizes an image to before processing.
+
+    Mirrors the reference implementation from Anthropic's vision coordinates
+    documentation, so pixel coordinates returned by Claude map one-to-one onto
+    an image pre-resized to these dimensions. Never upscales. The Claude block
+    that pre-resizes detection uploads and the parser that maps returned pixel
+    coordinates back onto the original image must use this exact arithmetic.
+
+    Args:
+        width: Original image width in pixels.
+        height: Original image height in pixels.
+        max_edge: Maximum padded edge length in pixels.
+        max_tokens: Maximum visual-token budget.
+
+    Returns:
+        Target ``(width, height)`` after Claude's internal resize.
+    """
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+
+    def fits(candidate_width: int, candidate_height: int) -> bool:
+        return (
+            math.ceil(candidate_width / tile) * tile <= max_edge
+            and math.ceil(candidate_height / tile) * tile <= max_edge
+            and count_anthropic_image_tokens(candidate_width, candidate_height)
+            <= max_tokens
+        )
+
+    if fits(width, height):
+        return (width, height)
+
+    if height > width:
+        resized_height, resized_width = compute_anthropic_upload_dimensions(
+            height, width, max_edge, max_tokens
+        )
+        return (resized_width, resized_height)
+
+    aspect_ratio = width / height
+    low, high = 1, width
+    while low + 1 < high:
+        mid = (low + high) // 2
+        if fits(mid, max(round(mid / aspect_ratio), 1)):
+            low = mid
+        else:
+            high = mid
+    return (low, max(round(low / aspect_ratio), 1))
