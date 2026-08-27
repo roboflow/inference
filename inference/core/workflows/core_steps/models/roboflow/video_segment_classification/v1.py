@@ -65,11 +65,9 @@ stride for overlapping windows. Ranges can overlap. An active range
 advances with the stream until a later classification closes it. When a stream
 provides no source FPS, the block assumes 30 FPS and logs a warning.
 
-Frames per call equal window_seconds x sample_fps. Models with a fixed pixel
-budget spread it across those frames. Use fewer frames to keep each frame
-sharper when small objects matter. Use more frames for denser temporal
-coverage. Very short windows can fall below a model's temporal floor: when a
-model returns no events, increase window_seconds.
+Frames per call equal window_seconds x sample_fps. A longer window gives
+each classification more temporal context. A shorter window and stride give
+more frequent results.
 
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a new result. On a finite clip,
@@ -154,11 +152,8 @@ class BlockManifest(WorkflowBlockManifest):
         default=10.0,
         description=(
             "Duration of the sliding classification window in seconds. Frames "
-            "per call equal window_seconds x sample_fps. Models with a fixed "
-            "pixel budget spread it across those frames: a shorter window uses "
-            "fewer, sharper frames, and a longer window increases temporal "
-            "coverage. Very short windows fall below some models' temporal "
-            "floor."
+            "per call equal window_seconds x sample_fps. A longer window gives "
+            "the model more temporal context per classification."
         ),
         examples=[10.0],
     )
@@ -176,9 +171,8 @@ class BlockManifest(WorkflowBlockManifest):
         default=4.0,
         description=(
             "Frames sampled per second for model input. Frames per call equal "
-            "window_seconds x sample_fps. A lower value keeps frames sharper "
-            "for small objects on pixel-budget models. A higher value gives "
-            "denser temporal coverage."
+            "window_seconds x sample_fps. A higher value gives denser temporal "
+            "coverage."
         ),
         examples=[4.0],
     )
