@@ -85,5 +85,6 @@ jobs:
           WEBEXEC_MODAL_CLOUD: ${{ matrix.cloud }}
           WEBEXEC_MODAL_REGION: ${{ matrix.region }}
           WEBEXEC_MODAL_ROUTING_REGION: ${{ matrix.routing_region }}
+          WEBEXEC_TRANSPORT: "websocket"
         working-directory: modal
         run: python3 deploy_modal_app.py
