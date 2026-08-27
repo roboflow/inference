@@ -528,9 +528,12 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 for segment in segments
             ],
         )
-        # A fractional stride places samples alternately floor/ceil frames
-        # apart, so adjacent windows' reports can sit ceil(stride) apart;
-        # a float tolerance misses that merge by under one frame.
+        # Merge rule: same-class ranges unify only when the gap between them
+        # is below sample resolution — no sampled frame lies inside it. On
+        # the sampling grid, consecutive samples sit floor/ceil(stride)
+        # frames apart, so ceil(stride) is that rule exactly: consecutive-
+        # sample gaps merge, and the next possible sampled gap (a sample
+        # where the class was absent) is ~2x the stride and splits.
         self._merge_segments(
             bookkeeping=bookkeeping,
             segments=segments,
