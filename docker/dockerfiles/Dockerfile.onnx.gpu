@@ -256,7 +256,7 @@ RUN python3 -m pip install -U pip uv
 
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
-RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra trt10
+RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra trt10 --extra model-blob-cache
 
 WORKDIR /app
 
@@ -296,7 +296,6 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
         dist/inference_gpu*.whl \
         dist/inference_sdk*.whl \
         "setuptools~=83.0.0"
-
 
 RUN find /usr/local/lib/python3.10 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \

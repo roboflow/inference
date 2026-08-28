@@ -1,7 +1,7 @@
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -51,11 +51,23 @@ from inference.core.telemetry import (
 )
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
+if TYPE_CHECKING:
+    from inference_models.utils.content_addressed_artifact_cache import (
+        ContentAddressedArtifactCache,
+    )
+
 
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
-    def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
+    def __init__(
+        self,
+        model_registry: ModelRegistry,
+        models: Optional[dict] = None,
+        content_addressed_artifact_cache: Optional[
+            "ContentAddressedArtifactCache"
+        ] = None,
+    ):
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
         self._model_request_aliases: Dict[str, set] = {}
@@ -66,6 +78,13 @@ class ModelManager:
         # torch.jit.load/script mutate a process-global, non-thread-safe TorchScript
         # registry; loaders acquire this so concurrent loads cannot corrupt it.
         self.torchscript_state_global_lock = Lock()
+        if USE_INFERENCE_MODELS and content_addressed_artifact_cache is None:
+            from inference_models.utils.model_blob_cache import (
+                get_shared_model_blob_cache,
+            )
+
+            content_addressed_artifact_cache = get_shared_model_blob_cache()
+        self.content_addressed_artifact_cache = content_addressed_artifact_cache
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -143,6 +162,9 @@ class ModelManager:
                     if USE_INFERENCE_MODELS:
                         extra_init_kwargs["torchscript_state_global_lock"] = (
                             self.torchscript_state_global_lock
+                        )
+                        extra_init_kwargs["content_addressed_artifact_cache"] = (
+                            self.content_addressed_artifact_cache
                         )
                     model = model_class(
                         model_id=model_id,

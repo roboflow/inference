@@ -40,6 +40,38 @@ def test_add_model_when_model_not_loaded() -> None:
     assert "some/1" in model_manager.models()
 
 
+def test_add_model_passes_manager_owned_artifact_cache() -> None:
+    model_class = MagicMock()
+    model_registry = MagicMock()
+    model_registry.get_model.return_value = model_class
+    artifact_cache = MagicMock()
+
+    with patch.object(base_module, "USE_INFERENCE_MODELS", True):
+        model_manager = ModelManager(
+            model_registry=model_registry,
+            content_addressed_artifact_cache=artifact_cache,
+        )
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+        model_manager.add_model(model_id="other/1", api_key="some_api_key")
+
+    assert model_class.call_count == 2
+    for call in model_class.call_args_list:
+        assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
+
+
+def test_model_manager_uses_shared_artifact_cache() -> None:
+    artifact_cache = MagicMock()
+
+    with patch.object(base_module, "USE_INFERENCE_MODELS", True), patch(
+        "inference_models.utils.model_blob_cache.get_shared_model_blob_cache",
+        return_value=artifact_cache,
+    ) as shared_cache_getter:
+        model_manager = ModelManager(model_registry=MagicMock())
+
+    assert model_manager.content_addressed_artifact_cache is artifact_cache
+    shared_cache_getter.assert_called_once_with()
+
+
 def test_add_model_skips_online_cache_authorization_in_offline_mode() -> None:
     model_manager = ModelManager(model_registry=MagicMock())
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.36.0`
+
 ### Fixed
 
 - TensorRT CUDA graphs are now captured in thread-local capture mode and serialized behind a
@@ -12,14 +16,22 @@
   On torch builds whose `torch.cuda.graph` does not accept `capture_error_mode` (pre-`2.1`), the
   capture transparently falls back to the legacy global mode.
 
+### Added
+
+- Optional S3-compatible shared caching for content-hashed model files. Cache
+  misses, errors, corrupt objects, and timeouts fail open to the original model
+  source.
+- `get_shared_model_blob_cache()` returns the process-wide blob cache instance
+  (one S3 client, one upload queue, one circuit-breaker view). The model
+  manager and model preloading consume it automatically;
+  `create_model_blob_cache()` still builds a private instance per call.
+
 ---
 
 ## `0.36.0`
 
-### Added
 
-
-### Changed 
+### Changed
 
 - The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
 - Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
