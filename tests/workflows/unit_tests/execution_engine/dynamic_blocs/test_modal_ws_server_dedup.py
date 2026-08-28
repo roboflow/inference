@@ -517,8 +517,13 @@ class TestInflightDedup:
 
         def second_connection():
             with client.websocket_connect("/ws") as ws2:
-                # Wait until the first execution is actually running.
+                # Wait until the first execution is actually running. Bounded:
+                # an unbounded spin in a non-daemon thread turns a genuine
+                # regression into a CI hang instead of a fast failure.
+                deadline = time.monotonic() + 10.0
                 while not calls:
+                    if time.monotonic() > deadline:
+                        raise AssertionError("first execution never started within 10s")
                     time.sleep(0.01)
                 ws2.send_bytes(frame)
                 release.set()
@@ -526,7 +531,7 @@ class TestInflightDedup:
 
         with client.websocket_connect("/ws") as ws1:
             ws1.send_bytes(frame)
-            worker = threading.Thread(target=second_connection)
+            worker = threading.Thread(target=second_connection, daemon=True)
             worker.start()
             results["first"] = msgpack.unpackb(ws1.receive_bytes(), raw=False)
             worker.join(timeout=10)

@@ -389,16 +389,22 @@ class TestErrorTypeContract:
         assert resp["error_type"] == "UnknownCodeHash"
         assert resp["server_error"] is True
 
-    def test_chunk_count_at_the_limit_round_trips(self, modal_app) -> None:
-        # Only invalid counts were covered, so an off-by-one in either
-        # side's ``1 <= n <= MAX`` guard passed every test. Pin the valid
-        # upper boundary from both directions.
-        payload = b"z" * (client._WS_MAX_FRAME_BYTES * client._WS_MAX_CHUNKS)
+    def test_chunk_count_at_the_limit_round_trips(self, monkeypatch) -> None:
+        # Only invalid counts were covered, so an off-by-one in either side's
+        # ``1 <= n <= MAX`` guard passed every test. Pin the valid upper
+        # boundary from both directions.
+        #
+        # The limits are monkeypatched down rather than allocating
+        # MAX_FRAME_BYTES * MAX_CHUNKS (1 GiB) of real payload: the guard
+        # under test is the COUNT comparison, and a unit test should not
+        # allocate a gigabyte to exercise it.
+        monkeypatch.setattr(client, "_WS_MAX_FRAME_BYTES", 8)
+        monkeypatch.setattr(client, "_WS_MAX_CHUNKS", 4)
+        payload = b"z" * (8 * 4)
+
         frames = client._split_ws_frames(payload, msgpack)
 
-        assert msgpack.unpackb(frames[0], raw=False) == {
-            "_chunked": client._WS_MAX_CHUNKS
-        }
+        assert msgpack.unpackb(frames[0], raw=False) == {"_chunked": 4}
         assert b"".join(frames[1:]) == payload
 
         executor = client.WebSocketModalExecutor(workspace_id="test-ws")
@@ -409,13 +415,37 @@ class TestErrorTypeContract:
         )
         assert executor._recv_reassembled(msgpack) == payload
 
-    def test_one_chunk_over_the_limit_is_refused_before_the_wire(self) -> None:
-        payload = b"z" * (client._WS_MAX_FRAME_BYTES * client._WS_MAX_CHUNKS + 1)
+    def test_one_chunk_over_the_limit_is_refused_before_the_wire(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(client, "_WS_MAX_FRAME_BYTES", 8)
+        monkeypatch.setattr(client, "_WS_MAX_CHUNKS", 4)
+        payload = b"z" * (8 * 4 + 1)
 
         from inference.core.workflows.errors import DynamicBlockError
 
         with pytest.raises(DynamicBlockError, match="too large"):
             client._split_ws_frames(payload, msgpack)
+
+    def test_oversized_reassembled_response_is_refused(self, monkeypatch) -> None:
+        # The chunk COUNT ceiling alone still admits 1 GiB, reassembled inside
+        # the shared inference server process once per concurrent executor.
+        # An oversized result must fail its own request, not the process.
+        monkeypatch.setattr(client, "_WS_MAX_RESPONSE_BYTES", 16)
+        frames = [msgpack.packb({"_chunked": 3}, use_bin_type=True)] + [
+            b"z" * 8,
+            b"z" * 8,
+            b"z" * 8,
+        ]
+        executor = client.WebSocketModalExecutor(workspace_id="test-ws")
+        executor._ws = SimpleNamespace(
+            recv=iter(frames).__next__,
+            gettimeout=lambda: None,
+            settimeout=lambda _v: None,
+        )
+
+        with pytest.raises(ConnectionError, match="exceeds"):
+            executor._recv_reassembled(msgpack)
 
 
 class _BridgeWS:

@@ -87,6 +87,12 @@ _WS_MAX_FRAME_BYTES = 1024 * 1024
 # Upper bound on the chunk count the server may announce in a ``_chunked``
 # control frame. Must match WEBEXEC_WS_MAX_CHUNKS in modal/modal_app.py.
 _WS_MAX_CHUNKS = 1024
+# Ceiling on ONE reassembled response, far below the 1 GiB the chunk count
+# alone would allow. Reassembly happens inside the shared inference server
+# process, once per concurrent executor, so an oversized result must fail its
+# own request rather than exhaust memory for everything else in the process.
+# Mirrors WEBEXEC_WS_MAX_REQUEST_BYTES in modal/modal_app.py.
+_WS_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
 
 def _split_ws_frames(frame_bytes: bytes, msgpack: Any) -> list:
@@ -129,6 +135,40 @@ _DEFAULT_ADVERTISED_IDLE_TIMEOUT_SECONDS = 10.0
 # "worst-case gap is 2 x interval" invariant still holds for any advertised
 # timeout at or above 1.5s; below that a deployment is simply misconfigured.
 _MIN_HEARTBEAT_INTERVAL_SECONDS = 0.5
+
+
+# Failures the server reports that are NOT failures of the user's code.
+# Only a fallback for servers predating the ``server_error`` flag: user code
+# can raise an exception class of any name, so a name alone must never select
+# a control path. See ``_is_server_originated_response``.
+_SERVER_INFRASTRUCTURE_ERROR_TYPES = frozenset(
+    {
+        "ResponseNoLongerAvailable",
+        "InvalidRequest",
+        "UnknownCodeHash",
+        "ResponseTooLarge",
+    }
+)
+
+
+def _is_server_originated_response(result: dict) -> bool:
+    """Whether the server, not the user's block, produced this failure.
+
+    ``error_type`` carries an exception CLASS NAME chosen by untrusted user
+    code, so it must not by itself select a control path — a block raising
+    ``class UnknownCodeHash(Exception)`` would otherwise trigger the client's
+    resend-with-full-code and execute twice.
+
+    A server that stamps ``server_error`` sets it on its OWN responses and
+    never on a user-code failure, so whenever the key is present it is
+    authoritative. Only a response from a server predating the flag (no key
+    at all) falls back to matching names, which keeps the HTTP transport
+    working against an un-upgraded deployment.
+    """
+    if "server_error" in result:
+        return result.get("server_error") is True
+    error_type = result.get("error_type") or "RuntimeError"
+    return error_type in _SERVER_INFRASTRUCTURE_ERROR_TYPES
 
 
 def _get_socket_timeout(ws: Any) -> Optional[float]:
@@ -588,6 +628,7 @@ class ModalExecutor:
                 not send_full_code
                 and not result.get("success", False)
                 and result.get("error_type") == "UnknownCodeHash"
+                and _is_server_originated_response(result)
             ):
                 # Server replica doesn't have this hash cached; retry once.
                 self._known_code_hashes.discard(code_hash)
@@ -1637,17 +1678,24 @@ class WebSocketModalExecutor:
                     self._last_activity = _time.monotonic()
                 return resp_bytes
             except _ServerClosingError as e:
-                # Proof of non-delivery: the server decided to close at the
-                # top of its receive loop and never read again, so whatever
-                # we just wrote was not processed. Clear the delivery state
-                # so the frame is retried on ANY container, instead of being
+                # Proof of non-delivery for THIS attempt's write: the server
+                # decided to close at the top of its receive loop and never
+                # read again. So when nothing had been delivered before, the
+                # frame is retriable on ANY container, instead of being
                 # reported as "may have already executed" — the routine
                 # connection-cap close would otherwise fail real work that
                 # never ran.
+                #
+                # It proves nothing about an EARLIER attempt. If a previous
+                # attempt already handed the frame to a container, that
+                # container may have executed it and lost only the response;
+                # clearing ``resend_pending`` here would disarm the
+                # same-container guard below and let the next attempt re-send
+                # to a container with no dedup record of it — running the
+                # user's code a second time. So the ambiguity, once incurred,
+                # must survive a graceful close.
                 self._drop_ws_connection()
                 sent_ok = False
-                resend_pending = False
-                sent_to_container = None
                 last_exc = e
                 logger.debug(
                     "[webexec-ws] server closed gracefully (attempt %d/%d); "
@@ -1776,9 +1824,24 @@ class WebSocketModalExecutor:
                 previous_timeout = _get_socket_timeout(ws)
                 _set_socket_timeout(ws, self._CHUNK_CONTINUATION_TIMEOUT_SECONDS)
                 try:
-                    return b"".join(
-                        self._recv_bytes_frame() for _ in range(chunk_count)
-                    )
+                    # Bound the BYTES as well as the chunk count, mirroring the
+                    # server. The count ceiling alone admits 1 GiB, and this
+                    # runs inside the shared inference server process, once per
+                    # concurrent executor — an oversized result must fail the
+                    # request, not the whole process.
+                    parts = []
+                    reassembled_bytes = 0
+                    for _ in range(chunk_count):
+                        part = self._recv_bytes_frame()
+                        reassembled_bytes += len(part)
+                        if reassembled_bytes > _WS_MAX_RESPONSE_BYTES:
+                            raise ConnectionError(
+                                "chunked websocket response exceeds "
+                                f"{_WS_MAX_RESPONSE_BYTES} bytes; treating "
+                                "connection as dead"
+                            )
+                        parts.append(part)
+                    return b"".join(parts)
                 finally:
                     _set_socket_timeout(
                         ws,
@@ -1935,17 +1998,8 @@ class WebSocketModalExecutor:
             )
         return result
 
-    # Failures the server reports that are NOT failures of the user's code.
-    # These names are only a fallback for v1 servers, which predate the
-    # ``server_error`` flag: user code can raise an exception class of any
-    # name, so on v2 the flag is what decides. See ``_is_server_originated``.
-    _SERVER_INFRASTRUCTURE_ERROR_TYPES = frozenset(
-        {
-            "ResponseNoLongerAvailable",
-            "InvalidRequest",
-            "UnknownCodeHash",
-        }
-    )
+    # Shared with the HTTP transport so the two cannot drift apart.
+    _SERVER_INFRASTRUCTURE_ERROR_TYPES = _SERVER_INFRASTRUCTURE_ERROR_TYPES
 
     def _is_server_originated(self, result: dict) -> bool:
         """Whether the server, not the user's code, produced this failure.

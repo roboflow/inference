@@ -151,11 +151,15 @@ class TestHandshake:
                 seen.append((server.proto, server.idle_timeout))
             return trace
 
+        # Restore whatever tracer was active (coverage.py installs one), not
+        # None: clearing it would silently disable coverage for every test
+        # that runs after this one in the same worker process.
+        previous_tracer = sys.gettrace()
         sys.settrace(trace)
         try:
             executor._handshake()
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
 
         assert seen, "tracing did not observe the handshake"
         inconsistent = [pair for pair in seen if pair[0] == 2 and pair[1] is None]
@@ -513,6 +517,48 @@ class TestGracefulServerClose:
         )
 
         assert msgpack.unpackb(resp, raw=False)["success"] is True
+
+    def test_graceful_close_does_not_disarm_an_earlier_delivery(
+        self, monkeypatch: Any
+    ) -> None:
+        # A closing frame proves only that THIS attempt's write went unread.
+        # Attempt 1 hands the frame to container-1, which may have executed it
+        # and lost only the response. Attempt 2 reaches container-1 again and
+        # is closed before being read. If that close cleared the delivery
+        # state, attempt 3 would re-send to container-2 -- which has no dedup
+        # record of the request -- and run the user's block a SECOND time.
+        # The ambiguity, once incurred, has to survive.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        containers = iter(["container-1", "container-1", "container-2"])
+        sockets = [
+            # Attempt 1: frame delivered, response lost.
+            _FakeWS([ConnectionError("response lost after send")]),
+            # Attempt 2: same container, server closes before reading.
+            _FakeWS([_pack({"_kind": "closing"})]),
+            # Attempt 3 must never get here on a different container.
+            _FakeWS([_pack({"success": True, "request_id": "req-1", "result": {}})]),
+        ]
+
+        def fake_ensure_connection(_workspace: str) -> None:
+            if executor._ws is None:
+                executor._ws = sockets.pop(0)
+                executor._server = _ServerInfo(
+                    proto=2, idle_timeout=10.0, container_id=next(containers)
+                )
+
+        monkeypatch.setattr(executor, "_ensure_connection", fake_ensure_connection)
+
+        third_socket = sockets[2]
+
+        with pytest.raises(DynamicBlockError, match="may have already executed"):
+            executor._send_recv_with_retry(
+                _pack({"request_id": "req-1"}), "test-ws", request_id="req-1"
+            )
+
+        # The third connection gets established (the guard is checked after
+        # reconnecting), but NOTHING is written to it: the frame is never
+        # handed to a container that could not answer it from a dedup record.
+        assert third_socket.sent == []
 
 
 class TestResponseIdGuard:

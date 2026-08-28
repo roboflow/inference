@@ -69,6 +69,35 @@ WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
 # frame. A negative/huge/non-int value would otherwise stall the receive loop
 # or allocate without bound. Must match _WS_MAX_CHUNKS in modal_executor.py.
 WEBEXEC_WS_MAX_CHUNKS = 1024
+# Ceiling on ONE reassembled request. Deliberately far below
+# MAX_CHUNKS * MAX_FRAME_BYTES (1 GiB): the decode happens on a container
+# serving up to ``max_inputs`` connections from one event loop, and a gigabyte
+# of packed integers expands to tens of GB and minutes of GIL-held work, which
+# would push every sibling connection past its idle deadline (or OOM the
+# container and destroy every tenant's namespaces on it).
+WEBEXEC_WS_MAX_REQUEST_BYTES = int(
+    os.getenv("WEBEXEC_WS_MAX_REQUEST_BYTES", str(64 * 1024 * 1024))
+)
+
+
+def _safe_unpackb(raw: bytes) -> Any:
+    """Unpack one frame with explicit collection limits.
+
+    ``msgpack`` derives its default limits from the buffer size, so a large
+    buffer authorises a proportionally huge object graph. Pinning them keeps a
+    hostile or malformed frame from expanding into tens of GB of Python
+    objects inside a container shared by other tenants.
+    """
+    import msgpack
+
+    return msgpack.unpackb(
+        raw,
+        raw=False,
+        max_str_len=WEBEXEC_WS_MAX_REQUEST_BYTES,
+        max_bin_len=WEBEXEC_WS_MAX_REQUEST_BYTES,
+        max_array_len=1_000_000,
+        max_map_len=1_000_000,
+    )
 
 
 class _InputsDecodeError(Exception):
@@ -109,13 +138,20 @@ class _TtlKeySet:
                 break
             del self._seen[key]
 
-    @staticmethod
-    def _valid(key: object) -> bool:
+    # Ids the client generates are uuid4 hex (32 chars); this leaves room for
+    # a prefix without admitting a key large enough to matter. Without it the
+    # registries bound entry COUNT but not bytes, so a peer sending megabyte
+    # request ids fills 32768 entries with gigabytes of container-shared
+    # state — the same argument the chunk byte bound makes below.
+    _MAX_KEY_LENGTH = 128
+
+    @classmethod
+    def _valid(cls, key: object) -> bool:
         # Keys arrive from a msgpack frame, so anything can show up here. The
         # three accessors below must agree on what counts as a key: an add()
         # that stored a non-str while __contains__ rejected it would silently
         # void the at-most-once backstop.
-        return isinstance(key, str) and bool(key)
+        return isinstance(key, str) and 0 < len(key) <= cls._MAX_KEY_LENGTH
 
     def add(self, key: str) -> None:
         if not self._valid(key):
@@ -1267,11 +1303,17 @@ from datetime import datetime
             client_code_hash = request.get("code_hash", "")
             workflow_context = request.get("workflow_context") or {}
 
-            # Set by the worker thread itself, so it distinguishes "the user
-            # code started" from "the request was cancelled while still queued
-            # in the thread pool" or "its inputs never decoded". Only the
-            # former must stay barred from a resend.
+            # ``decode_failed`` is the ONLY positive proof that the user's
+            # code did not run: the worker sets it before touching anything
+            # else. ``started_running`` cannot serve that role on its own,
+            # because ``asyncio.to_thread`` cancellation cancels the awaiting
+            # future while the pool thread keeps going — so observing it False
+            # after a CancelledError does not mean the block will not run a
+            # moment later. Treating that as "never ran" would clear the
+            # executed marker and invite the client to re-run a block that
+            # then executes anyway.
             started_running = False
+            decode_failed = False
 
             def _run_user_code():
                 """Decode, run and pack — all off the event loop.
@@ -1290,10 +1332,11 @@ from datetime import datetime
                 payload is still reported as never-executed and stays safely
                 resendable, exactly as when it ran on the loop.
                 """
-                nonlocal started_running
+                nonlocal started_running, decode_failed
                 try:
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
                 except Exception as error:
+                    decode_failed = True
                     raise _InputsDecodeError(str(error)) from error
                 started_running = True
                 resp = Executor._run_user_code_ws(
@@ -1333,30 +1376,37 @@ from datetime import datetime
                 # connection down with no cached payload and leaving the
                 # request id poisoned for the whole executed-marker TTL.
                 traceback.print_exc()
-                if not started_running:
-                    # The worker thread never entered the user code (inputs
-                    # that would not decode, cancelled while queued, or the
-                    # dispatch itself failed), so leave the id resendable
-                    # instead of poisoning it for the whole executed-marker
-                    # TTL.
+                if decode_failed:
+                    # The ONLY case we can prove the block did not run: the
+                    # worker positively reported that decoding failed, so it
+                    # never reached the user's code and never will. Safe to
+                    # clear the marker and leave the id resendable.
                     if request_id:
                         executor_self._ws_executed.discard(request_id)
-                    if isinstance(error, _InputsDecodeError):
-                        message = (
-                            "The server could not decode this request's "
-                            f"inputs; the custom Python block was not run: "
-                            f"{error}"
-                        )
-                        error_type = type(error.__cause__ or error).__name__
-                    else:
-                        message = (
-                            "The server failed before the custom Python block "
-                            f"was run: {error}"
-                        )
-                        error_type = type(error).__name__
                     payload = _pack_ws_error(
-                        error_type=error_type,
-                        error=message,
+                        error_type=type(
+                            getattr(error, "__cause__", None) or error
+                        ).__name__,
+                        error=(
+                            "The server could not decode this request's inputs; "
+                            f"the custom Python block was not run: {error}"
+                        ),
+                        request_id=request_id,
+                    )
+                elif not started_running:
+                    # The worker had not entered the user code when this was
+                    # observed — but a cancelled ``to_thread`` leaves the pool
+                    # thread running, so the block may still execute. KEEP the
+                    # executed marker: a resend must get a loud
+                    # ResponseNoLongerAvailable rather than a second run, and
+                    # the wording must not invite a checkpoint replay.
+                    payload = _pack_ws_error(
+                        error_type=type(error).__name__,
+                        error=(
+                            "The server failed while dispatching the custom "
+                            "Python block; whether it ran is unknown, so it was "
+                            f"not retried: {error}"
+                        ),
                         request_id=request_id,
                     )
                 else:
@@ -1425,6 +1475,11 @@ from datetime import datetime
 
             try:
                 while True:
+                    # Cleared per iteration so a failure before this frame's id
+                    # is parsed can never echo the PREVIOUS request's id, which
+                    # the client would reject as a stale frame and whose real
+                    # diagnostic would be lost.
+                    conn_last_request_id = None
                     remaining = WEBEXEC_WS_MAX_CONNECTION_SECONDS - (
                         time.monotonic() - connected_at
                     )
@@ -1439,7 +1494,7 @@ from datetime import datetime
                     except asyncio.TimeoutError:
                         await _close_gracefully()
                         return
-                    request = msgpack.unpackb(raw, raw=False)
+                    request = _safe_unpackb(raw)
                     if isinstance(request, dict) and "_chunked" in request:
                         chunk_count = request["_chunked"]
                         if (
@@ -1451,29 +1506,31 @@ from datetime import datetime
                                 f"invalid websocket chunk count: {chunk_count!r}"
                             )
                         parts = []
-                        # Bound the BYTES, not just the chunk count. The count
-                        # ceiling alone still admits 1024 max-size frames, and
-                        # ``b"".join`` then doubles the peak — enough for a
-                        # handful of concurrent connections to OOM the
-                        # container, which drops the namespaces, sessions and
-                        # dedup caches of every tenant sharing it.
+                        # Bound the BYTES, not just the chunk count: the count
+                        # ceiling alone admits 1024 max-size frames, and the
+                        # join then doubles the peak. The limit is what this
+                        # container can decode INSIDE one idle deadline while
+                        # nine sibling connections wait on the same loop —
+                        # not what the chunk ceiling happens to allow.
                         reassembled_bytes = 0
-                        max_reassembled_bytes = (
-                            WEBEXEC_WS_MAX_CHUNKS * WEBEXEC_WS_MAX_FRAME_BYTES
-                        )
                         for _ in range(chunk_count):
                             part = await asyncio.wait_for(
                                 websocket.receive_bytes(),
                                 timeout=WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
                             )
                             reassembled_bytes += len(part)
-                            if reassembled_bytes > max_reassembled_bytes:
+                            if reassembled_bytes > WEBEXEC_WS_MAX_REQUEST_BYTES:
                                 raise ValueError(
                                     "chunked websocket request exceeds "
-                                    f"{max_reassembled_bytes} bytes"
+                                    f"{WEBEXEC_WS_MAX_REQUEST_BYTES} bytes"
                                 )
                             parts.append(part)
-                        request = msgpack.unpackb(b"".join(parts), raw=False)
+                        # Off the event loop: unpacking tens of MB is GIL-held
+                        # CPU that would otherwise stall every other
+                        # connection past its idle deadline.
+                        request = await asyncio.to_thread(
+                            _safe_unpackb, b"".join(parts)
+                        )
 
                     # ---- protocol v2 control frames ----
                     kind = request.get("_kind") if isinstance(request, dict) else None
@@ -1521,6 +1578,27 @@ from datetime import datetime
                     raw_request_id = (
                         request.get("request_id") if isinstance(request, dict) else None
                     )
+                    if (
+                        isinstance(raw_request_id, str)
+                        and len(raw_request_id) > _TtlKeySet._MAX_KEY_LENGTH
+                    ):
+                        # Reject rather than coerce to None: the registries
+                        # would silently refuse to store an oversized key, so
+                        # the request would execute with NO dedup record and a
+                        # resend would run the user's code again. Legitimate
+                        # clients send a uuid4 hex.
+                        await websocket.send_bytes(
+                            _pack_ws_error(
+                                error_type="InvalidRequest",
+                                error=(
+                                    "request_id exceeds "
+                                    f"{_TtlKeySet._MAX_KEY_LENGTH} characters; "
+                                    "the block was not run."
+                                ),
+                                request_id=None,
+                            )
+                        )
+                        continue
                     request_id = (
                         raw_request_id
                         if isinstance(raw_request_id, str) and raw_request_id
