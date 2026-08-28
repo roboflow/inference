@@ -21,6 +21,10 @@
 - Optional S3-compatible shared caching for content-hashed model files. Cache
   misses, errors, corrupt objects, and timeouts fail open to the original model
   source.
+- `get_shared_model_blob_cache()` returns the process-wide blob cache instance
+  (one S3 client, one upload queue, one circuit-breaker view). The model
+  manager and model preloading consume it automatically;
+  `create_model_blob_cache()` still builds a private instance per call.
 
 ---
 

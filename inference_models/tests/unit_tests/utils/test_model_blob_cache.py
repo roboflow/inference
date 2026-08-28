@@ -202,3 +202,24 @@ def test_s3_client_disables_retries_and_applies_provider_options() -> None:
     assert kwargs["config"].read_timeout == 10
     assert kwargs["config"].retries["total_max_attempts"] == 1
     assert kwargs["config"].s3["addressing_style"] == "path"
+
+
+def test_shared_cache_is_created_once_and_reused(monkeypatch) -> None:
+    monkeypatch.setattr(model_blob_cache, "_shared_cache", None)
+    _configure(monkeypatch, MODEL_BLOB_CACHE_ENABLED=False)
+
+    first = model_blob_cache.get_shared_model_blob_cache()
+    second = model_blob_cache.get_shared_model_blob_cache()
+
+    assert first is second
+    assert isinstance(first, NullContentAddressedArtifactCache)
+
+
+def test_shared_cache_does_not_affect_factory_freshness(monkeypatch) -> None:
+    monkeypatch.setattr(model_blob_cache, "_shared_cache", None)
+    _configure(monkeypatch, MODEL_BLOB_CACHE_ENABLED=False)
+
+    shared = model_blob_cache.get_shared_model_blob_cache()
+    fresh = model_blob_cache.create_model_blob_cache()
+
+    assert fresh is not shared

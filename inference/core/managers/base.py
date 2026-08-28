@@ -79,9 +79,11 @@ class ModelManager:
         # registry; loaders acquire this so concurrent loads cannot corrupt it.
         self.torchscript_state_global_lock = Lock()
         if USE_INFERENCE_MODELS and content_addressed_artifact_cache is None:
-            from inference_models.utils.model_blob_cache import create_model_blob_cache
+            from inference_models.utils.model_blob_cache import (
+                get_shared_model_blob_cache,
+            )
 
-            content_addressed_artifact_cache = create_model_blob_cache()
+            content_addressed_artifact_cache = get_shared_model_blob_cache()
         self.content_addressed_artifact_cache = content_addressed_artifact_cache
 
     def init_pingback(self):

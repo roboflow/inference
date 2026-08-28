@@ -59,17 +59,17 @@ def test_add_model_passes_manager_owned_artifact_cache() -> None:
         assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
 
 
-def test_model_manager_creates_artifact_cache_once() -> None:
+def test_model_manager_uses_shared_artifact_cache() -> None:
     artifact_cache = MagicMock()
 
     with patch.object(base_module, "USE_INFERENCE_MODELS", True), patch(
-        "inference_models.utils.model_blob_cache.create_model_blob_cache",
+        "inference_models.utils.model_blob_cache.get_shared_model_blob_cache",
         return_value=artifact_cache,
-    ) as cache_factory:
+    ) as shared_cache_getter:
         model_manager = ModelManager(model_registry=MagicMock())
 
     assert model_manager.content_addressed_artifact_cache is artifact_cache
-    cache_factory.assert_called_once_with()
+    shared_cache_getter.assert_called_once_with()
 
 
 def test_add_model_skips_online_cache_authorization_in_offline_mode() -> None:

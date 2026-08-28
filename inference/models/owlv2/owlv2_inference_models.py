@@ -51,6 +51,7 @@ from inference_models.models.owlv2.owlv2_hf import (
 from inference_models.utils.content_addressed_artifact_cache import (
     ContentAddressedArtifactCache,
 )
+from inference_models.utils.model_blob_cache import get_shared_model_blob_cache
 
 PRELOADED_HF_MODELS = {}
 
@@ -71,6 +72,13 @@ class Owlv2AdapterSingleton:
             logger.info("Using preloaded OWLv2 instance for %s", huggingface_id)
             return PRELOADED_HF_MODELS[huggingface_id]
         if huggingface_id not in cls._instances:
+            # Default to the process-wide blob cache so the module-level
+            # preload (which runs before any ModelManager exists) and every
+            # other cache-less construction path still restore weights from
+            # and seed the S3 cache. Only evaluated on this construction
+            # branch - the per-request short-circuits above never touch it.
+            if content_addressed_artifact_cache is None:
+                content_addressed_artifact_cache = get_shared_model_blob_cache()
             owlv2_class_embeddings_cache = InMemoryOwlV2ClassEmbeddingsCache.init(
                 size_limit=OWLV2_MODEL_CACHE_SIZE,
                 send_to_cpu=OWLV2_CACHE_SEND_TO_CPU,

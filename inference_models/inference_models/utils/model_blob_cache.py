@@ -1,3 +1,4 @@
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -136,6 +137,28 @@ def _build_s3_client(config: ModelBlobCacheConfig) -> Any:
         client_kwargs["aws_access_key_id"] = config.access_key_id
         client_kwargs["aws_secret_access_key"] = config.secret_access_key
     return boto3.client("s3", **client_kwargs)
+
+
+_shared_cache: Optional[ContentAddressedArtifactCache] = None
+_shared_cache_lock = threading.Lock()
+
+
+def get_shared_model_blob_cache() -> ContentAddressedArtifactCache:
+    """Process-wide cache instance for callers with no injection seam.
+
+    `create_model_blob_cache()` deliberately builds a fresh instance per call
+    (it re-reads configuration, which tests rely on), but every real instance
+    owns a boto3 client, an upload-thread pair, and its own circuit-breaker /
+    unhealthy-hash state. Long-lived callers that cannot receive an instance
+    through dependency injection (the ModelManager auto-create, the OWLv2
+    adapter singleton) must share this one so the process holds a single
+    client, a single thread pair, and one consistent health view.
+    """
+    global _shared_cache
+    with _shared_cache_lock:
+        if _shared_cache is None:
+            _shared_cache = create_model_blob_cache()
+        return _shared_cache
 
 
 def create_model_blob_cache() -> ContentAddressedArtifactCache:

@@ -67,3 +67,34 @@ def test_rf_instant_dependency_forwards_artifact_cache() -> None:
         singleton_factory.call_args.kwargs["content_addressed_artifact_cache"]
         is artifact_cache
     )
+
+
+def test_adapter_singleton_defaults_to_shared_blob_cache() -> None:
+    owlv2_inference_models.Owlv2AdapterSingleton._instances.clear()
+    owlv2_inference_models.PRELOADED_HF_MODELS.clear()
+    shared_cache = MagicMock()
+
+    with patch.object(
+        owlv2_inference_models.InMemoryOwlV2ClassEmbeddingsCache, "init"
+    ), patch.object(
+        owlv2_inference_models.InMemoryOwlV2ImageEmbeddingsCache, "init"
+    ), patch.object(
+        owlv2_inference_models.AutoModel,
+        "from_pretrained",
+        return_value=MagicMock(),
+    ) as auto_model, patch.object(
+        owlv2_inference_models, "get_extra_weights_provider_headers", return_value=None
+    ), patch.object(
+        owlv2_inference_models, "get_shared_model_blob_cache", return_value=shared_cache
+    ) as shared_getter, patch.object(
+        owlv2_inference_models, "OWLV2_COMPILE_MODEL", False
+    ):
+        owlv2_inference_models.Owlv2AdapterSingleton(
+            "owlv2/test-default-shared-cache", api_key="test-key"
+        )
+
+    shared_getter.assert_called_once_with()
+    assert (
+        auto_model.call_args.kwargs["content_addressed_artifact_cache"]
+        is shared_cache
+    )

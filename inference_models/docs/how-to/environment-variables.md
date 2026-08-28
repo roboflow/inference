@@ -125,9 +125,12 @@ need one warm-up run.
 #### Shared S3-Compatible Blob Cache
 
 Roboflow Inference can use an S3-compatible service as an optional read-through
-cache for content-hashed model files. Its model manager creates one cache and
-shares it across model loads. Cache reads and writes are best-effort. A miss,
-error, corrupt object, or timeout falls back to the original model source.
+cache for content-hashed model files. The process holds a single shared cache
+instance (`get_shared_model_blob_cache()`), used by the model manager for every
+model load and by model preloading (for example OWLv2 under `PRELOAD_HF_IDS`),
+so one S3 client, one upload queue, and one health view serve the whole
+process. Cache reads and writes are best-effort. A miss, error, corrupt
+object, or timeout falls back to the original model source.
 
 Standalone library installations must include the cache-specific dependencies:
 
@@ -148,17 +151,23 @@ export INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE="path"           # aut
 
 Environment variables configure cache instances; they do not globally change
 the library's download functions. Standalone `inference-models` callers must
-create and inject the cache explicitly:
+inject the cache explicitly. Use the process-wide shared instance - every
+real cache instance owns an S3 client and a pair of background upload
+threads, so long-lived callers should not mint their own:
 
 ```python
 from inference_models import AutoModel
-from inference_models.utils.model_blob_cache import create_model_blob_cache
+from inference_models.utils.model_blob_cache import get_shared_model_blob_cache
 
 model = AutoModel.from_pretrained(
     "model-id",
-    content_addressed_artifact_cache=create_model_blob_cache(),
+    content_addressed_artifact_cache=get_shared_model_blob_cache(),
 )
 ```
+
+`create_model_blob_cache()` remains available when a caller genuinely needs a
+private instance built from the current environment (for example, tests that
+reconfigure the cache between calls).
 
 By default, the client uses the standard AWS credential chain. To provide
 cache-specific static credentials, set both
