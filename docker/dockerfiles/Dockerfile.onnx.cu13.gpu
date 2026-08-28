@@ -317,10 +317,11 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN /bin/make create_wheels_for_gpu_notebook && \
+    python3 -m pip install --break-system-packages --no-cache-dir --no-deps \
+        dist/inference_gpu*.whl && \
     python3 -m pip install --break-system-packages --no-cache-dir \
         dist/inference_cli*.whl \
         dist/inference_core*.whl \
-        dist/inference_gpu*.whl \
         dist/inference_sdk*.whl \
         "setuptools~=83.0.0"
 
