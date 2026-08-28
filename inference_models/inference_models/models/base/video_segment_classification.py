@@ -34,6 +34,7 @@ class VideoSampling:
     sample_fps: float = 4.0
     min_frames: int = 4
     mode: str = "sliding_window"
+    frame_budget: Optional[int] = None
 
     @property
     def classifies_whole_video(self) -> bool:
@@ -41,6 +42,13 @@ class VideoSampling:
 
     @property
     def window_frames(self) -> int:
+        """Frames per classification.
+
+        Whole-video models give no meaning to the window length, so the
+        budget the model declares wins over the length-derived count.
+        """
+        if self.frame_budget is not None and self.frame_budget > 0:
+            return self.frame_budget
         return max(1, round(self.window_seconds * self.sample_fps))
 
 

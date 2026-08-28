@@ -528,6 +528,50 @@ def test_from_pretrained_reads_video_pre_processing(monkeypatch, tmp_path) -> No
     assert all(frame.shape == (56, 100, 3) for frame in sent_frames)
 
 
+def test_video_sampling_prefers_the_declared_frame_budget(
+    monkeypatch, tmp_path
+) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    # whole_video gives the window length no meaning, so window_frames is
+    # the authoritative budget even when it disagrees with fps x seconds.
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps(
+            {
+                "video_pre_processing": {
+                    "mode": "whole_video",
+                    "sample_fps": 4.0,
+                    "window_frames": 48,
+                    "window_seconds": 12.0,
+                    "min_frames": 4,
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    sampling = Cosmos3EdgeVideoSegmentClassification.from_pretrained(
+        str(tmp_path)
+    ).video_sampling
+
+    assert sampling.classifies_whole_video is True
+    assert sampling.window_frames == 48
+
+
+def test_video_sampling_derives_frames_when_the_package_omits_them() -> None:
+    reasoner = _FakeReasoner(response="B")
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+
+    sampling = wrapper.video_sampling
+
+    assert sampling.classifies_whole_video is False
+    assert sampling.window_frames == 64
+
+
 def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(

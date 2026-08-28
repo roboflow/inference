@@ -383,6 +383,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 sample_fps=float(video_sampling.sample_fps),
                 min_frames=max(1, int(video_sampling.min_frames)),
                 mode=video_sampling.mode,
+                frame_budget=video_sampling.frame_budget,
             ),
             stride_frames=stride_frames,
             effective_sample_fps=effective_sample_fps,
