@@ -2,11 +2,23 @@
 
 ## Unreleased
 
+<<<<<<< HEAD
 ### Added
 
 - Optional S3-compatible shared caching for content-hashed model files. Cache
   misses, errors, corrupt objects, and timeouts fail open to the original model
   source.
+=======
+### Fixed
+
+- TensorRT CUDA graphs are now captured in thread-local capture mode and serialized behind a
+  process-wide lock. Capturing in the default global mode made every other thread in the process
+  fail with `CUDA error 906` (`cudaErrorStreamCaptureImplicit`, "operation would make the legacy
+  stream depend on a capturing blocking stream") whenever a graph was captured for a newly seen
+  input shape, which broke concurrent inference on devices running several pipelines in one process.
+  On torch builds whose `torch.cuda.graph` does not accept `capture_error_mode` (pre-`2.1`), the
+  capture transparently falls back to the legacy global mode.
+>>>>>>> main
 
 ---
 
