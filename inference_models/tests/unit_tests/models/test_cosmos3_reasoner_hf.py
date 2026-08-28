@@ -198,3 +198,39 @@ def test_prompt_video_returns_single_string() -> None:
     assert metadata.total_num_frames == 2
     assert metadata.duration == 0.4
     assert reasoner._processor.call_args.kwargs["num_frames"] == 2
+
+
+def test_prompt_video_forwards_prefix_allowed_tokens_fn() -> None:
+    reasoner = _model_with_processor()
+    reasoner.generate = MagicMock(return_value=torch.tensor([[9]]))
+    reasoner._processor.batch_decode.return_value = ["answer"]
+    prefix_allowed_tokens_fn = MagicMock()
+    prefix_allowed_tokens_fn.set_input_length = MagicMock()
+
+    reasoner.prompt_video(
+        frames=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        prompt="Classify this.",
+        prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+    )
+
+    prefix_allowed_tokens_fn.set_input_length.assert_called_once_with(3)
+    assert (
+        reasoner.generate.call_args.kwargs["prefix_allowed_tokens_fn"]
+        is prefix_allowed_tokens_fn
+    )
+
+
+def test_generate_forwards_prefix_allowed_tokens_fn_to_model() -> None:
+    reasoner = _model_with_processor()
+    reasoner._model.generate.return_value = torch.tensor([[1, 2, 9]])
+    prefix_allowed_tokens_fn = MagicMock()
+
+    reasoner.generate(
+        inputs={"input_ids": torch.tensor([[1, 2]])},
+        prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+    )
+
+    assert (
+        reasoner._model.generate.call_args.kwargs["prefix_allowed_tokens_fn"]
+        is prefix_allowed_tokens_fn
+    )

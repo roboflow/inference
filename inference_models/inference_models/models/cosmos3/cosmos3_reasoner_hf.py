@@ -5,7 +5,7 @@ originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 
 import re
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -151,6 +151,9 @@ class Cosmos3EdgeReasoner:
         return_thinking: bool = False,
         video_fps: Optional[float] = None,
         enable_thinking: bool = True,
+        prefix_allowed_tokens_fn: Optional[
+            Callable[[int, torch.Tensor], List[int]]
+        ] = None,
         **kwargs,
     ) -> Union[str, Dict[str, str]]:
         inputs = self.pre_process_generation(
@@ -161,10 +164,19 @@ class Cosmos3EdgeReasoner:
             video_fps=video_fps,
             enable_thinking=enable_thinking,
         )
+        set_input_length = getattr(
+            prefix_allowed_tokens_fn, "set_input_length", None
+        )
+        if callable(set_input_length):
+            # Generated-answer grammars do not need to parse the video/chat
+            # prompt. Generic Transformers callbacks continue to receive the
+            # full sequence because they do not expose this opt-in hook.
+            set_input_length(inputs["input_ids"].shape[-1])
         generated_ids = self.generate(
             inputs=inputs,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
+            prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
         )
         return self.post_process_generation(
             generated_ids=generated_ids,
@@ -307,6 +319,9 @@ class Cosmos3EdgeReasoner:
         inputs: dict,
         max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
+        prefix_allowed_tokens_fn: Optional[
+            Callable[[int, torch.Tensor], List[int]]
+        ] = None,
         **kwargs,
     ) -> torch.Tensor:
         if max_new_tokens is None:
@@ -323,6 +338,7 @@ class Cosmos3EdgeReasoner:
                 do_sample=do_sample,
                 pad_token_id=pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
+                prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
             )
         return generation[:, input_len:]
 

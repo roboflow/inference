@@ -2,202 +2,410 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference_models.logger import LOGGER
 from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationModel,
     VideoSegmentClassificationPrediction,
 )
-from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
-
-# The verbatim prompt from NVIDIA's Cosmos3 temporal-localization cookbook:
-# https://github.com/NVIDIA/cosmos/blob/main/cookbooks/cosmos3/reasoner/reasoner_prompt_guide.md#temporal-localization
-# Only this trained phrasing gives dense output — reworded variants collapse
-# to one whole-clip segment, and clips under ~5 s give no events at all.
-OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT = """List all action segments in the video.
-
-Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
-
-```json
-[
-{
-  "start": t_start,
-  "end": t_end,
-  "caption": EVENT1
-},
-{
-  "start": t_start,
-  "end": t_end,
-  "caption": EVENT2
-},
-...
-]
-```"""
-
-# The checkpoint ignores vocabulary constraints inside the localization
-# prompt, so classification runs as a second text-only call over the
-# numbered captions.
-VOCABULARY_MAPPING_PROMPT_TEMPLATE = (
-    "Here are numbered captions of events from a video:\n{captions}\n\n"
-    "Here is a list of event classes: {vocab}\n\n"
-    "Match each caption to ONE event class. Use the class text verbatim. "
-    'If a caption matches no class, use "other". If a caption describes '
-    "several events or summarizes the video, pick the single best class "
-    'or "other".\n'
-    "Return STRICT JSON, one entry per caption number: "
-    '{{"1": "<class or other>", "2": "<class or other>", ...}}'
-)
-OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE = (
-    "Here are numbered captions of events from a video:\n{captions}\n\n"
-    "Condense each caption into ONE lowercase event label of 1-5 "
-    "words. Name the event, not the scene. Use the same label for "
-    "captions that describe the same event.\n"
-    "Return STRICT JSON, one entry per caption number: "
-    '{{"1": "<label>", "2": "<label>", ...}}'
+from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+    SYSTEM_PROMPT_SENTINEL,
+    Cosmos3EdgeReasoner,
 )
 
-# Both stages think: localization needs the reasoning pass to stay dense,
-# and no-think mapping misattributes subjects in multi-object captions.
-# Think plus one JSON entry per item outgrows the package default of 512
-# tokens, so both stages share this budget.
-TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS = 4096
+SINGLE_CALL_MAX_NEW_TOKENS = 512
+FINE_TUNE_MAX_NEW_TOKENS = 256
+
+SINGLE_CALL_OPEN_VOCABULARY_PROMPT = (
+    "Describe the main action in this video clip in one short lowercase "
+    "phrase of at most 6 words."
+)
+FINE_TUNE_SYSTEM_PROMPT = (
+    "You are Cosmos 3 Edge, a physical AI reasoning model. Watch the video "
+    "carefully and answer with only what is asked."
+)
+FINE_TUNE_LINE_PATTERN = re.compile(
+    r"^\s*(?P<token><\|cls:(?P<label>[^|]+?)\|>)\s*"
+    r"<(?P<start>-?\d+(?:\.\d+)?)>\s*"
+    r"<(?P<end>-?\d+(?:\.\d+)?)>\s*$"
+)
+
+_AFTER_CLASS = "after_class"
+_BEFORE_FIRST_TIME = "before_first_time"
+_FIRST_INTEGER = "first_integer"
+_FIRST_FRACTION_START = "first_fraction_start"
+_FIRST_FRACTION = "first_fraction"
+_BETWEEN_TIMES = "between_times"
+_BEFORE_SECOND_TIME = "before_second_time"
+_BEFORE_SECOND_TIME_AFTER_SPACE = "before_second_time_after_space"
+_SECOND_INTEGER = "second_integer"
+_SECOND_FRACTION_START = "second_fraction_start"
+_SECOND_FRACTION = "second_fraction"
+_LINE_COMPLETE = "line_complete"
+_LINE_COMPLETE_CLOSED = "line_complete_closed"
+_EXPECT_CLASS = "expect_class"
+_LINE_STATES = (
+    _AFTER_CLASS,
+    _BEFORE_FIRST_TIME,
+    _FIRST_INTEGER,
+    _FIRST_FRACTION_START,
+    _FIRST_FRACTION,
+    _BETWEEN_TIMES,
+    _BEFORE_SECOND_TIME,
+    _BEFORE_SECOND_TIME_AFTER_SPACE,
+    _SECOND_INTEGER,
+    _SECOND_FRACTION_START,
+    _SECOND_FRACTION,
+    _LINE_COMPLETE,
+    _LINE_COMPLETE_CLOSED,
+)
 
 
-def _parse_seconds(value: Any) -> Optional[float]:
-    """Return a finite JSON number as seconds, else ``None``."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+def _is_token_id(value: Any) -> bool:
+    return isinstance(value, (int, np.integer)) and not isinstance(value, bool)
+
+
+def _resolve_class_token_ids(
+    tokenizer: Any, class_names: Optional[List[str]]
+) -> Optional[Dict[str, int]]:
+    """Resolve #880 class tokens, returning ``None`` unless all are present."""
+    if tokenizer is None or not class_names:
         return None
-    value = float(value)
-    return value if math.isfinite(value) else None
+
+    added_vocabulary = {}
+    get_added_vocab = getattr(tokenizer, "get_added_vocab", None)
+    if callable(get_added_vocab):
+        try:
+            candidate = get_added_vocab()
+        except Exception:  # pragma: no cover - third-party tokenizer behavior
+            candidate = None
+        if isinstance(candidate, dict):
+            added_vocabulary = candidate
+
+    convert_tokens_to_ids = getattr(tokenizer, "convert_tokens_to_ids", None)
+    unknown_token_id = getattr(tokenizer, "unk_token_id", None)
+    result = {}
+    for class_name in class_names:
+        class_token = f"<|cls:{class_name}|>"
+        token_id = added_vocabulary.get(class_token)
+        if _is_token_id(token_id):
+            result[class_name] = int(token_id)
+            continue
+        if callable(convert_tokens_to_ids):
+            try:
+                token_id = convert_tokens_to_ids(class_token)
+            except Exception:  # pragma: no cover - third-party tokenizer behavior
+                token_id = None
+        if not _is_token_id(token_id) or (
+            _is_token_id(unknown_token_id) and token_id == unknown_token_id
+        ):
+            return None
+        result[class_name] = int(token_id)
+    return result
 
 
-def _number_captions(segments: List[VideoSegmentClassificationPrediction]) -> str:
-    return json.dumps(
-        {
-            str(index + 1): segment.class_name
-            for index, segment in enumerate(segments)
-        },
-        indent=1,
-    )
+def _decode_token(tokenizer: Any, token_id: int) -> str:
+    try:
+        return tokenizer.decode(
+            [token_id],
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+    except TypeError:
+        return tokenizer.decode([token_id])
+
+
+def _advance_line_state(state: str, text: str) -> Optional[str]:
+    """Consume decoded text through the parseable fine-tune line grammar.
+
+    The character-class grammar allows repeated spaces and any positive
+    number of integer and fractional digits. This guarantees parseability by
+    ``FINE_TUNE_LINE_PATTERN``; it intentionally does not enforce exact
+    spacing or exactly two fractional digits.
+    """
+    for character in text:
+        if state == _AFTER_CLASS:
+            if character != " ":
+                return None
+            state = _BEFORE_FIRST_TIME
+        elif state == _BEFORE_FIRST_TIME:
+            if character == " ":
+                continue
+            if character != "<":
+                return None
+            state = _FIRST_INTEGER
+        elif state == _FIRST_INTEGER:
+            if not character.isascii() or not character.isdigit():
+                return None
+            state = _FIRST_FRACTION_START
+        elif state == _FIRST_FRACTION_START:
+            if character.isascii() and character.isdigit():
+                continue
+            if character != ".":
+                return None
+            state = _FIRST_FRACTION
+        elif state == _FIRST_FRACTION:
+            if not character.isascii() or not character.isdigit():
+                return None
+            state = _BETWEEN_TIMES
+        elif state == _BETWEEN_TIMES:
+            if character.isascii() and character.isdigit():
+                continue
+            elif character == ">":
+                state = _BEFORE_SECOND_TIME
+            else:
+                return None
+        elif state == _BEFORE_SECOND_TIME:
+            if character != " ":
+                return None
+            state = _BEFORE_SECOND_TIME_AFTER_SPACE
+        elif state == _BEFORE_SECOND_TIME_AFTER_SPACE:
+            if character == " ":
+                continue
+            if character != "<":
+                return None
+            state = _SECOND_INTEGER
+        elif state == _SECOND_INTEGER:
+            if not character.isascii() or not character.isdigit():
+                return None
+            state = _SECOND_FRACTION_START
+        elif state == _SECOND_FRACTION_START:
+            if character.isascii() and character.isdigit():
+                continue
+            if character != ".":
+                return None
+            state = _SECOND_FRACTION
+        elif state == _SECOND_FRACTION:
+            if not character.isascii() or not character.isdigit():
+                return None
+            state = _LINE_COMPLETE
+        elif state == _LINE_COMPLETE:
+            if character.isascii() and character.isdigit():
+                continue
+            elif character == ">":
+                state = _LINE_COMPLETE_CLOSED
+            else:
+                return None
+        elif state == _LINE_COMPLETE_CLOSED:
+            if character != "\n":
+                return None
+            state = _EXPECT_CLASS
+        else:
+            return None
+    return state
+
+
+class _FineTunePrefixAllowedTokensFn:
+    """Token-level prefix constraint for the #880 answer grammar."""
+
+    def __init__(self, tokenizer: Any, class_token_ids: Dict[str, int]):
+        self._class_token_ids = class_token_ids
+        self._allowed_class_token_ids = set(class_token_ids.values())
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        self._eos_token_id = int(eos_token_id) if _is_token_id(eos_token_id) else None
+
+        vocabulary_ids: Set[int] = set(self._allowed_class_token_ids)
+        get_vocab = getattr(tokenizer, "get_vocab", None)
+        if callable(get_vocab):
+            try:
+                vocabulary = get_vocab()
+            except Exception:  # pragma: no cover - third-party tokenizer behavior
+                vocabulary = None
+            if isinstance(vocabulary, dict):
+                vocabulary_ids.update(
+                    int(token_id)
+                    for token_id in vocabulary.values()
+                    if _is_token_id(token_id)
+                )
+        if self._eos_token_id is not None:
+            vocabulary_ids.add(self._eos_token_id)
+
+        normal_token_ids = vocabulary_ids - self._allowed_class_token_ids
+        if self._eos_token_id is not None:
+            normal_token_ids.discard(self._eos_token_id)
+        token_text = {}
+        for token_id in normal_token_ids:
+            try:
+                decoded = _decode_token(tokenizer=tokenizer, token_id=token_id)
+            except Exception:  # pragma: no cover - third-party tokenizer behavior
+                continue
+            if decoded:
+                token_text[token_id] = decoded
+
+        # Tokens can combine characters (for example, " <" or ".00>"). A
+        # transition is cached only if every decoded character is valid from
+        # the current state.
+        self._line_transitions = {
+            state: {
+                token_id: next_state
+                for token_id, decoded in token_text.items()
+                if (
+                    next_state := _advance_line_state(state=state, text=decoded)
+                )
+                is not None
+            }
+            for state in _LINE_STATES
+        }
+        self._none_transitions = {
+            prefix: {
+                token_id: prefix + decoded
+                for token_id, decoded in token_text.items()
+                if "none".startswith(prefix + decoded)
+            }
+            for prefix in ("", "n", "no", "non")
+        }
+        self._input_length = 0
+
+    def for_classes(self, class_names: List[str]) -> "_FineTunePrefixAllowedTokensFn":
+        bound = _FineTunePrefixAllowedTokensFn.__new__(
+            _FineTunePrefixAllowedTokensFn
+        )
+        bound.__dict__ = self.__dict__.copy()
+        bound._allowed_class_token_ids = {
+            self._class_token_ids[class_name] for class_name in class_names
+        }
+        bound._input_length = 0
+        return bound
+
+    def set_input_length(self, input_length: int) -> None:
+        self._input_length = input_length
+
+    def __call__(self, batch_id: int, input_ids: torch.Tensor) -> List[int]:
+        del batch_id
+        token_ids = input_ids.tolist()
+        if token_ids and isinstance(token_ids[0], list):
+            token_ids = token_ids[0]
+        token_ids = token_ids[self._input_length :]
+
+        mode = "start"
+        state = ""
+        for token_id in token_ids:
+            if mode == "start":
+                if token_id in self._allowed_class_token_ids:
+                    mode, state = "line", _AFTER_CLASS
+                    continue
+                next_prefix = self._none_transitions[""].get(token_id)
+                if next_prefix is None:
+                    return []
+                mode, state = "none", next_prefix
+            elif mode == "none":
+                if state == "none":
+                    return []
+                next_prefix = self._none_transitions[state].get(token_id)
+                if next_prefix is None:
+                    return []
+                state = next_prefix
+            elif state == _EXPECT_CLASS:
+                if token_id not in self._allowed_class_token_ids:
+                    return []
+                state = _AFTER_CLASS
+            else:
+                next_state = self._line_transitions.get(state, {}).get(token_id)
+                if next_state is None:
+                    return []
+                state = next_state
+
+        if mode == "start":
+            return sorted(
+                self._allowed_class_token_ids
+                | set(self._none_transitions[""].keys())
+            )
+        if mode == "none":
+            if state == "none":
+                return [self._eos_token_id] if self._eos_token_id is not None else []
+            return sorted(self._none_transitions[state].keys())
+        if state == _EXPECT_CLASS:
+            return sorted(self._allowed_class_token_ids)
+
+        result = set(self._line_transitions.get(state, {}).keys())
+        if state == _LINE_COMPLETE_CLOSED and self._eos_token_id is not None:
+            result.add(self._eos_token_id)
+        return sorted(result)
 
 
 def _normalize_condensed_label(label: str) -> str:
-    # Cross-call merging needs exact matches; the model drifts between
-    # label styles.
     return " ".join(label.replace("_", " ").lower().split())
 
 
-def _relabel_segments(
-    segments: List[VideoSegmentClassificationPrediction],
-    mapping: dict,
-    accept,
-    normalize=lambda label: label,
-) -> List[VideoSegmentClassificationPrediction]:
-    result = []
-    for index, segment in enumerate(segments):
-        label = mapping.get(str(index + 1))
-        if not isinstance(label, str):
-            continue
-        label = normalize(label.strip())
-        if not accept(label):
-            continue
-        result.append(
-            VideoSegmentClassificationPrediction(
-                start_frame_idx=segment.start_frame_idx,
-                end_frame_idx=segment.end_frame_idx,
-                class_name=label,
-            )
-        )
-    return result
-
-
-def _parse_first_json_object(text: str) -> Optional[dict]:
-    if not isinstance(text, str):
+def _seconds_to_frame_indices(
+    start_seconds: float,
+    end_seconds: float,
+    num_frames: int,
+    fps: float,
+) -> Optional[Tuple[int, int]]:
+    if (
+        num_frames <= 0
+        or fps <= 0
+        or not math.isfinite(fps)
+        or not math.isfinite(start_seconds)
+        or not math.isfinite(end_seconds)
+    ):
         return None
-    decoder = json.JSONDecoder()
-    for match in re.finditer(r"\{", text):
-        try:
-            value, _ = decoder.raw_decode(text[match.start() :])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    return None
+
+    max_frame_idx = num_frames - 1
+    start_frame_idx = math.floor(start_seconds * fps)
+    end_frame_idx = math.ceil(end_seconds * fps)
+    start_frame_idx = min(max(start_frame_idx, 0), max_frame_idx)
+    end_frame_idx = min(max(end_frame_idx, 0), max_frame_idx)
+    if start_frame_idx > end_frame_idx:
+        start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
+    return start_frame_idx, end_frame_idx
 
 
-def _parse_temporal_segments(
+def _parse_fine_tune_segments(
     text: str,
-    class_names: Optional[List[str]],
+    class_names: List[str],
     num_frames: int,
     fps: float,
 ) -> List[VideoSegmentClassificationPrediction]:
-    """Parse second-based temporal output into frame-index ranges."""
-    if (
-        not isinstance(text, str)
-        or num_frames <= 0
-        or fps <= 0
-        or not math.isfinite(fps)
-    ):
-        return []
-    decoder = json.JSONDecoder()
-    entries = None
-    for match in re.finditer(r"\[", text):
-        try:
-            value, _ = decoder.raw_decode(text[match.start() :])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, list):
-            entries = value
-            break
-    if entries is None:
+    if not isinstance(text, str) or text.strip().lower() == "none":
         return []
 
-    allowed_classes = (
-        {str(class_name).strip() for class_name in class_names}
-        if class_names is not None
-        else None
-    )
-    max_frame_idx = num_frames - 1
-    duration = num_frames / fps
+    allowed_classes = set(class_names)
     result = []
-    for entry in entries:
-        if not isinstance(entry, dict):
+    for line in text.splitlines():
+        match = FINE_TUNE_LINE_PATTERN.match(line)
+        if match is None or match.group("label") not in allowed_classes:
             continue
-        # The cookbook prompt labels events under "caption".
-        label_value = entry.get("class")
-        if not isinstance(label_value, str):
-            label_value = entry.get("caption")
-        if not isinstance(label_value, str):
+        frame_indices = _seconds_to_frame_indices(
+            start_seconds=float(match.group("start")),
+            end_seconds=float(match.group("end")),
+            num_frames=num_frames,
+            fps=fps,
+        )
+        if frame_indices is None:
             continue
-        label = label_value.strip()
-        if not label or (
-            allowed_classes is not None and label not in allowed_classes
-        ):
-            continue
-        start_seconds = _parse_seconds(entry.get("start"))
-        end_seconds = _parse_seconds(entry.get("end"))
-        if start_seconds is None or end_seconds is None:
-            continue
-        if end_seconds < 0 or start_seconds > duration:
-            continue
-        start_frame_idx = math.floor(start_seconds * fps)
-        end_frame_idx = math.ceil(end_seconds * fps)
-        start_frame_idx = min(max(start_frame_idx, 0), max_frame_idx)
-        end_frame_idx = min(max(end_frame_idx, 0), max_frame_idx)
-        if start_frame_idx > end_frame_idx:
-            start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
         result.append(
             VideoSegmentClassificationPrediction(
-                start_frame_idx=start_frame_idx,
-                end_frame_idx=end_frame_idx,
-                class_name=label,
+                start_frame_idx=frame_indices[0],
+                end_frame_idx=frame_indices[1],
+                class_name=match.group("label"),
             )
         )
     return result
+
+
+def _normalize_frames(
+    frames: List[Union[np.ndarray, torch.Tensor]],
+) -> List[np.ndarray]:
+    normalized_frames = []
+    for frame in frames:
+        if isinstance(frame, torch.Tensor):
+            frame = frame.detach().cpu().permute(1, 2, 0)
+            if frame.dtype == torch.bfloat16:
+                frame = frame.float()
+            frame = frame.numpy()
+        normalized_frames.append(frame)
+    return normalized_frames
+
+
+def _answer_text(response: Any) -> str:
+    if isinstance(response, dict):
+        response = response.get("answer", "")
+    return response if isinstance(response, str) else ""
 
 
 class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
@@ -208,6 +416,21 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     ):
         self._reasoner = reasoner
         self._class_names = class_names
+
+        processor = getattr(reasoner, "_processor", None)
+        tokenizer = getattr(processor, "tokenizer", None)
+        self._fine_tune_class_token_ids = _resolve_class_token_ids(
+            tokenizer=tokenizer,
+            class_names=self.class_names,
+        )
+        self._fine_tune_prefix_allowed_tokens_fn = (
+            _FineTunePrefixAllowedTokensFn(
+                tokenizer=tokenizer,
+                class_token_ids=self._fine_tune_class_token_ids,
+            )
+            if self._fine_tune_class_token_ids is not None
+            else None
+        )
 
     @property
     def class_names(self) -> Optional[List[str]]:
@@ -240,101 +463,134 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         **kwargs,
     ) -> List[VideoSegmentClassificationPrediction]:
         if fps is None:
-            raise ValueError("fps is required for temporal localization")
-        normalized_frames = []
-        for frame in frames:
-            if isinstance(frame, torch.Tensor):
-                frame = frame.detach().cpu().permute(1, 2, 0)
-                if frame.dtype == torch.bfloat16:
-                    frame = frame.float()
-                frame = frame.numpy()
-            normalized_frames.append(frame)
-        vocabulary = class_names or self.class_names or None
-        kwargs.setdefault("max_new_tokens", TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS)
-        response = self._reasoner.prompt_video(
+            raise ValueError("fps is required for video segment classification")
+
+        normalized_frames = _normalize_frames(frames)
+        if not normalized_frames:
+            return []
+        if self._fine_tune_prefix_allowed_tokens_fn is not None:
+            return self._infer_fine_tuned(
+                frames=normalized_frames,
+                class_filter=class_names,
+                fps=fps,
+                **kwargs,
+            )
+        return self._infer_single_call(
             frames=normalized_frames,
-            prompt=OPEN_VOCABULARY_TEMPORAL_LOCALIZATION_PROMPT,
-            input_color_format="rgb",
-            video_fps=fps,
+            class_names=class_names,
+            fps=fps,
             **kwargs,
         )
-        if isinstance(response, dict):
-            response = response.get("answer", "")
-        segments = _parse_temporal_segments(
-            text=response,
-            class_names=None,
-            num_frames=len(normalized_frames),
+
+    def _infer_fine_tuned(
+        self,
+        frames: List[np.ndarray],
+        class_filter: Optional[List[str]],
+        fps: float,
+        **kwargs,
+    ) -> List[VideoSegmentClassificationPrediction]:
+        assert self.class_names is not None
+        if class_filter is None:
+            classes = list(self.class_names)
+        else:
+            model_classes = set(self.class_names)
+            classes = []
+            for class_name in class_filter:
+                if class_name in model_classes and class_name not in classes:
+                    classes.append(class_name)
+        if not classes:
+            return []
+        legend = ", ".join(
+            f"<|cls:{class_name}|> ({class_name})" for class_name in classes
+        )
+        user_prompt = (
+            f"Find every occurrence of these classes in the video: {legend}. "
+            "For each occurrence output one line as `class token <start> <end>`, "
+            "with start and end in seconds from the frame timestamps, in order "
+            "of start time. Output `none` if none occurs."
+        )
+        prompt = (
+            f"{user_prompt}{SYSTEM_PROMPT_SENTINEL}{FINE_TUNE_SYSTEM_PROMPT}"
+        )
+        generation_kwargs = dict(kwargs)
+        generation_kwargs.update(
+            enable_thinking=False,
+            max_new_tokens=FINE_TUNE_MAX_NEW_TOKENS,
+            prefix_allowed_tokens_fn=(
+                self._fine_tune_prefix_allowed_tokens_fn.for_classes(classes)
+            ),
+            skip_special_tokens=False,
+        )
+        response = self._reasoner.prompt_video(
+            frames=frames,
+            prompt=prompt,
+            input_color_format="rgb",
+            video_fps=fps,
+            **generation_kwargs,
+        )
+        return _parse_fine_tune_segments(
+            text=_answer_text(response),
+            class_names=classes,
+            num_frames=len(frames),
             fps=fps,
         )
-        # What the model itself localized, before any relabeling.
-        LOGGER.debug(
-            "Cosmos3 temporal localization over %d frames parsed %d "
-            "segment(s): %s",
-            len(normalized_frames),
-            len(segments),
-            [
-                (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
-                for segment in segments
-            ],
-        )
-        if not segments:
-            return segments
-        if vocabulary is not None:
-            return self._map_segments_to_vocabulary(
-                segments=segments, vocabulary=vocabulary
-            )
-        return self._condense_segments_to_labels(segments=segments)
 
-    def _map_segments_to_vocabulary(
+    def _infer_single_call(
         self,
-        segments: List[VideoSegmentClassificationPrediction],
-        vocabulary: List[str],
+        frames: List[np.ndarray],
+        class_names: Optional[List[str]],
+        fps: float,
+        **kwargs,
     ) -> List[VideoSegmentClassificationPrediction]:
-        cleaned_vocabulary = [str(class_name).strip() for class_name in vocabulary]
-        prompt = VOCABULARY_MAPPING_PROMPT_TEMPLATE.format(
-            captions=_number_captions(segments),
-            vocab=json.dumps(cleaned_vocabulary),
-        )
-        mapping = self._request_label_mapping(prompt=prompt)
-        if mapping is None:
-            return []
-        allowed_classes = set(cleaned_vocabulary)
-        return _relabel_segments(
-            segments=segments,
-            mapping=mapping,
-            accept=lambda label: label in allowed_classes,
-        )
+        vocabulary = class_names or self.class_names or None
+        if vocabulary is not None and len(vocabulary) > 25:
+            raise ValueError("Cosmos3 single-call mode supports at most 25 classes")
 
-    def _condense_segments_to_labels(
-        self,
-        segments: List[VideoSegmentClassificationPrediction],
-    ) -> List[VideoSegmentClassificationPrediction]:
-        prompt = OPEN_VOCABULARY_LABEL_PROMPT_TEMPLATE.format(
-            captions=_number_captions(segments),
-        )
-        mapping = self._request_label_mapping(prompt=prompt)
-        if mapping is None:
-            # A failed label call must not discard valid localization.
-            return segments
-        return _relabel_segments(
-            segments=segments,
-            mapping=mapping,
-            accept=bool,
-            normalize=_normalize_condensed_label,
-        )
-
-    def _request_label_mapping(self, prompt: str) -> Optional[dict]:
-        answer = self._reasoner.prompt_text(
-            prompt=prompt,
-            max_new_tokens=TEMPORAL_LOCALIZATION_MAX_NEW_TOKENS,
-        )
-        if isinstance(answer, dict):
-            answer = answer.get("answer", "")
-        mapping = _parse_first_json_object(answer)
-        # Shows whether a surviving caption came from the model or the
-        # fallback.
-        if mapping is None:
-            LOGGER.debug("Cosmos3 label mapping unparseable; answer: %r", answer)
+        if vocabulary is None:
+            prompt = SINGLE_CALL_OPEN_VOCABULARY_PROMPT
         else:
-            LOGGER.debug("Cosmos3 label mapping: %s", mapping)
-        return mapping
+            choices = " ".join(
+                f"({chr(ord('A') + index)}) {class_name}"
+                for index, class_name in enumerate(vocabulary)
+            )
+            none_letter = chr(ord("A") + len(vocabulary))
+            prompt = (
+                f"What happens in this video clip? {choices} "
+                f"({none_letter}) none of the above. Answer with the letter only."
+            )
+
+        generation_kwargs = dict(kwargs)
+        generation_kwargs.setdefault("max_new_tokens", SINGLE_CALL_MAX_NEW_TOKENS)
+        generation_kwargs.update(
+            enable_thinking=False,
+            prefix_allowed_tokens_fn=None,
+        )
+        response = self._reasoner.prompt_video(
+            frames=frames,
+            prompt=prompt,
+            input_color_format="rgb",
+            video_fps=fps,
+            **generation_kwargs,
+        )
+        answer = _answer_text(response)
+        if vocabulary is not None:
+            match = re.search(r"[A-Za-z]", answer)
+            if match is None:
+                return []
+            class_index = ord(match.group(0).upper()) - ord("A")
+            if class_index < 0 or class_index >= len(vocabulary):
+                return []
+            label = vocabulary[class_index]
+        else:
+            first_line = answer.splitlines()[0] if answer.splitlines() else ""
+            label = _normalize_condensed_label(first_line)
+            if not label or len(label.split()) > 8:
+                return []
+
+        return [
+            VideoSegmentClassificationPrediction(
+                start_frame_idx=0,
+                end_frame_idx=len(frames) - 1,
+                class_name=label,
+            )
+        ]
