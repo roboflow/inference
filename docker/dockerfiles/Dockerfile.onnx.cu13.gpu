@@ -295,15 +295,7 @@ RUN uv pip install --system \
 RUN python3 -m pip install --break-system-packages packaging==24.1 && rm -rf ~/.cache/pip
 
 
-# flash-attn's setup.py runs ninja at full core count by default and every
-# parallel nvcc compiling its kernels peaks at several GB - on the depot
-# builder that OOM-kills the whole build. MAX_JOBS caps the parallel nvcc
-# invocations and NVCC_THREADS the per-invocation compile threads; together
-# they bound peak memory at roughly MAX_JOBS x NVCC_THREADS compiler
-# processes. The arch list is trimmed to the GPUs this image targets
-# (Ada / Hopper / Blackwell workstation) - the cu12 image keeps serving
-# Ampere - which also cuts the kernel count per wheel by ~40%.
-RUN TORCH_CUDA_ARCH_LIST="8.9;9.0;12.0" \
+RUN FLASH_ATTN_CUDA_ARCHS="8.9;9.0;12.0" \
     MAX_JOBS=4 \
     NVCC_THREADS=2 \
     python3 -m pip install --break-system-packages -r requirements.pali.flash_attn.cu13.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
