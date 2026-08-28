@@ -201,8 +201,6 @@ def _run(
     frame: WorkflowImageData,
     class_filter=("walk", "run"),
     window_seconds=1.0,
-    # The block's own default stride is window_seconds (one new window per
-    # call); these tests pin the half-window cadence they were written for.
     stride_seconds=0.5,
     sample_fps=2.0,
 ):
@@ -277,8 +275,8 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
 
     assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
-    assert manifest.window_seconds == 10.0
-    assert manifest.stride_seconds is None
+    assert manifest.window_seconds == 2.0
+    assert manifest.stride_seconds == 0.5
     assert manifest.sample_fps == 4.0
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     assert manifest_type.describe_outputs()[0].kind == [
@@ -433,7 +431,7 @@ def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 0,
-            "end_frame_idx": 2,
+            "end_frame_idx": 0,
             "class_name": "run",
             "class_id": 1,
         }
@@ -454,7 +452,7 @@ def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 0,
-            "end_frame_idx": 2,
+            "end_frame_idx": 0,
             "class_name": "run",
             "class_id": 0,
         }
@@ -475,14 +473,13 @@ def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 0,
-            "end_frame_idx": 2,
+            "end_frame_idx": 0,
             "class_name": "b",
             "class_id": 1,
         }
     ]
     assert result["window_classes"]["predictions"] == {
-        "a": {"confidence": 1.0, "class_id": 0},
-        "b": {"confidence": 1.0, "class_id": 1},
+        "b": {"confidence": 1.0, "class_id": 1}
     }
 
 
@@ -529,7 +526,7 @@ def test_tensor_window_classes_uses_dense_vocabulary():
     assert window_classes.confidence.dtype is torch.float32
     torch.testing.assert_close(
         window_classes.class_ids.cpu(),
-        torch.tensor([1, 0], dtype=torch.long),
+        torch.tensor([0, 1], dtype=torch.long),
     )
     torch.testing.assert_close(
         window_classes.confidence.cpu(),
@@ -652,11 +649,11 @@ def test_tensor_window_classes_round_trips_to_legacy_multi_label_shape():
             "run": {"confidence": 1.0, "class_id": 1},
             "idle": {"confidence": 0.0, "class_id": 2},
         },
-        "predicted_classes": ["run", "walk"],
+        "predicted_classes": ["walk", "run"],
     }
 
 
-def test_window_classes_hold_between_fires_clear_on_empty_and_survive_errors(
+def test_window_classes_keep_alive_through_negative_fire_and_errors_then_clear(
     monkeypatch,
 ):
     block, model = _make_block(
@@ -673,6 +670,7 @@ def test_window_classes_hold_between_fires_clear_on_empty_and_survive_errors(
 
     fired = _run(block, _make_frame(2))
     assert _window_class_names(fired) == ["walk"]
+    assert fired["timeline"][0].end_frame_idx == 2
 
     held = _run(block, _make_frame(3))
     assert _window_class_names(held) == ["walk"]
@@ -681,10 +679,20 @@ def test_window_classes_hold_between_fires_clear_on_empty_and_survive_errors(
     assert errored["error_status"]
     assert _window_class_names(errored) == ["walk"]
 
-    cleared = _run(block, _make_frame(6))
-    assert cleared["error_status"] == ""
+    _run(block, _make_frame(5))
+    negative_fire = _run(block, _make_frame(6))
+    assert negative_fire["error_status"] == ""
+    assert _window_class_names(negative_fire) == ["walk"]
+
+    _run(block, _make_frame(7))
+    # window_frames=4 and ceil(sampling_stride)=2, so frame 8 is the final
+    # mergeable frame for the range that ends at frame 2.
+    last_mergeable_fire = _run(block, _make_frame(8))
+    assert _window_class_names(last_mergeable_fire) == ["walk"]
+
+    cleared = _run(block, _make_frame(9))
     assert _window_class_names(cleared) == []
-    assert len(model.calls) == 3
+    assert len(model.calls) == 4
 
 
 def test_default_stride_fires_every_half_window():
@@ -789,19 +797,18 @@ def test_reset_re_resolves_source_fps(reset_frame_number, reset_window_seconds):
     assert reset_bookkeeping.source_fps == 30.0
 
 
-def test_unset_stride_fires_once_per_window():
-    # stride_seconds=None defaults to window_seconds: each call sees one
-    # new window instead of 50 percent overlap.
+def test_run_default_stride_fires_every_half_second():
     block, model = _make_block()
     for frame_number in range(9):
-        _run(
-            block,
-            _make_frame(frame_number, fps=4.0),
+        block.run(
+            images=[_make_frame(frame_number, fps=4.0)],
+            class_filter=["walk", "run"],
+            model_id="cosmos-3-edge",
             window_seconds=1.0,
-            stride_seconds=None,
+            sample_fps=2.0,
         )
 
-    assert len(model.calls) == 2
+    assert len(model.calls) == 4
     bookkeeping = block._video_bookkeeping["stream-0"]
     assert bookkeeping.last_fire_frame_number == 8
 
@@ -913,11 +920,12 @@ def test_merges_reports_separated_by_a_fractional_stride_boundary():
     assert [call["fps"] for call in model.calls] == [4.0, 4.0]
     # The first fire covers absolute frame 0; the second report starts at
     # frame 8 — a gap of exactly ceil(7.5) that must merge into ONE entry.
-    # The merged range is open, so its end extends to the current frame.
+    # The second report ends at absolute frame 53. The output does not extend
+    # that model-confirmed endpoint to the current frame.
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 0,
-            "end_frame_idx": 60,
+            "end_frame_idx": 53,
             "class_name": "walk",
             "class_id": 0,
         }
@@ -968,123 +976,27 @@ def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
     ]
 
 
-def test_open_range_advances_then_closes_at_recorded_endpoint():
+def test_timeline_advances_only_as_model_confirmed_monotone_staircase():
     block, _ = _make_block(
         responses=[
             [_model_segment("walk")],
-            [],
+            [_model_segment("walk")],
+            [_model_segment("walk")],
         ]
     )
 
-    _run(block, _make_frame(0))
-    _run(block, _make_frame(1))
-    first_window_result = _run(block, _make_frame(2))
-    assert first_window_result["timeline"][0].end_frame_idx == 2
-    assert _window_class_names(first_window_result) == ["walk"]
+    output_endpoints = []
+    stored_endpoints = []
+    for frame_number in range(8):
+        result = _run(block, _make_frame(frame_number))
+        if result["timeline"]:
+            output_endpoints.append(result["timeline"][0].end_frame_idx)
+            stored_endpoints.append(
+                block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx
+            )
 
-    advancing_result = _run(block, _make_frame(3))
-    assert advancing_result["timeline"][0].end_frame_idx == 3
-    assert first_window_result["timeline"][0].end_frame_idx == 2
-    assert _window_class_names(advancing_result) == ["walk"]
-
-    closed_result = _run(block, _make_frame(4))
-    assert closed_result["timeline"][0].end_frame_idx == 0
-    assert _window_class_names(closed_result) == []
-    held_result = _run(block, _make_frame(5))
-    assert held_result["timeline"][0].end_frame_idx == 0
-    assert _window_class_names(held_result) == []
-
-
-def test_end_within_window_slack_stays_open_then_closes_at_reported_endpoint():
-    block, _ = _make_block(
-        responses=[
-            [],
-            [_model_segment("walk", start_frame_idx=0, end_frame_idx=8)],
-            [],
-        ]
-    )
-
-    for frame_number in range(201):
-        result = _run(
-            block,
-            _make_frame(frame_number, fps=10.0),
-            window_seconds=10.0,
-            stride_seconds=10.0,
-            sample_fps=1.0,
-        )
-
-    assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 190
-    assert result["timeline"][0].end_frame_idx == 200
-    assert _window_class_names(result) == ["walk"]
-
-    advancing_result = _run(
-        block,
-        _make_frame(201, fps=10.0),
-        window_seconds=10.0,
-        stride_seconds=10.0,
-        sample_fps=1.0,
-    )
-    assert advancing_result["timeline"][0].end_frame_idx == 201
-
-    for frame_number in range(202, 301):
-        closed_result = _run(
-            block,
-            _make_frame(frame_number, fps=10.0),
-            window_seconds=10.0,
-            stride_seconds=10.0,
-            sample_fps=1.0,
-        )
-
-    assert closed_result["timeline"][0].end_frame_idx == 190
-    assert _window_class_names(closed_result) == []
-
-
-def test_end_beyond_window_slack_is_closed():
-    block, _ = _make_block(
-        responses=[
-            [],
-            [_model_segment("walk", start_frame_idx=0, end_frame_idx=7)],
-        ]
-    )
-
-    for frame_number in range(201):
-        result = _run(
-            block,
-            _make_frame(frame_number, fps=10.0),
-            window_seconds=10.0,
-            stride_seconds=10.0,
-            sample_fps=1.0,
-        )
-
-    assert result["timeline"][0].end_frame_idx == 180
-    assert _window_class_names(result) == ["walk"]
-
-
-def test_open_end_slack_floor_is_one_sampling_interval_for_small_windows():
-    block, _ = _make_block(
-        responses=[
-            [],
-            [
-                _model_segment("walk", start_frame_idx=0, end_frame_idx=2),
-                _model_segment("run", start_frame_idx=0, end_frame_idx=1),
-            ],
-        ]
-    )
-
-    for frame_number in range(49):
-        result = _run(
-            block,
-            _make_frame(frame_number, fps=24.0),
-            window_seconds=1.0,
-            stride_seconds=1.0,
-            sample_fps=4.0,
-        )
-
-    assert [
-        (entry.class_name, entry.end_frame_idx) for entry in result["timeline"]
-    ] == [("walk", 48), ("run", 36)]
-    assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 42
-    assert _window_class_names(result) == ["walk", "run"]
+    assert output_endpoints == [0, 0, 2, 2, 4, 4]
+    assert stored_endpoints == output_endpoints
 
 
 def test_wire_contract_and_alias_round_trip():
@@ -1234,7 +1146,7 @@ def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
 
     assert resumed["error_status"] == ""
     assert [entry.class_name for entry in resumed["timeline"]] == ["walk", "run"]
-    assert _window_class_names(resumed) == ["run"]
+    assert _window_class_names(resumed) == ["walk", "run"]
     assert len(model.calls) == 3
 
 

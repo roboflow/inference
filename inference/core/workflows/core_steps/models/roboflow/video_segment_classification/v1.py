@@ -59,11 +59,11 @@ LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
 timeline. The first classification runs one stride after the stream starts.
-Later classifications run at each stride. By default, the stride equals the
-window length, so each classification sees one new window. Set a smaller
-stride for overlapping windows. Ranges can overlap. An active range
-advances with the stream until a later classification closes it. When a stream
-provides no source FPS, the block assumes 30 FPS and logs a warning.
+Later classifications run at each stride. By default, the 2 s window and 0.5 s
+stride slide with 75 percent overlap. Ranges can overlap. Timeline ranges only
+grow when the block merges model evidence. The block does not extend ranges
+provisionally. When a stream provides no source FPS, the block assumes 30 FPS
+and logs a warning.
 
 Frames per call equal window_seconds x sample_fps. A longer window gives
 each classification more temporal context. A shorter window and stride give
@@ -82,10 +82,11 @@ temporal content, so these paths return an empty timeline.
 The class vocabulary is optional. Provide classes for zero-shot models, leave
 them empty for fine-tuned models that carry their own class list, or leave them
 empty on open-vocabulary models to let the model label events. The
-window_classes output lists every class the most recent window classification
-detected. It updates on each classification and holds between classifications.
-It works with Classification Label Visualization. When a model call fails,
-error_status carries the error text for that frame and the stream continues.
+window_classes output lists classes whose range can still merge with a future
+classification. A class stays listed for one window plus the sample tolerance
+after its range ends. It clears when the range closes. This output works with
+Classification Label Visualization. When a model call fails, error_status
+carries the error text for that frame and the stream continues.
 """
 
 
@@ -97,14 +98,13 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 class _VideoSegmentClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[VideoSegmentClassificationPrediction] = field(default_factory=list)
-    open_classes: Set[str] = field(default_factory=set)
     window_class_names: List[str] = field(default_factory=list)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, Optional[float], float] = field(
-        default_factory=lambda: ((), 0.0, None, 0.0)
+    signature: Tuple[Tuple[str, ...], float, float, float] = field(
+        default_factory=lambda: ((), 0.0, 0.0, 0.0)
     )
 
 
@@ -149,23 +149,21 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=10.0,
+        default=2.0,
         description=(
             "Duration of the sliding classification window in seconds. Frames "
             "per call equal window_seconds x sample_fps. A longer window gives "
             "the model more temporal context per classification."
         ),
-        examples=[10.0],
+        examples=[2.0],
     )
-    stride_seconds: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
-        default=None,
+    stride_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.5,
         description=(
-            "Time between classification calls. When unset, it defaults to "
-            "window_seconds, so each call sees one new window. Set it below "
-            "window_seconds for overlapping windows, at the cost of more "
-            "model calls."
+            "Time between classification calls. Boundary precision equals the "
+            "stride; a smaller stride costs more model calls."
         ),
-        examples=[None, 1.0, 2.0],
+        examples=[0.5, 1.0],
     )
     sample_fps: float = Field(
         default=4.0,
@@ -302,8 +300,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         class_filter: Optional[List[str]] = None,
-        window_seconds: float = 10.0,
-        stride_seconds: Optional[float] = None,
+        window_seconds: float = 2.0,
+        stride_seconds: float = 0.5,
         sample_fps: float = 4.0,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
@@ -333,27 +331,20 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         window_seconds: float,
-        stride_seconds: Optional[float],
+        stride_seconds: float,
         sample_fps: float,
     ) -> dict:
         metadata = image.video_metadata
         requested_sample_fps = float(sample_fps)
         requested_window_seconds = float(window_seconds)
-        requested_stride_seconds = (
-            None if stride_seconds is None else float(stride_seconds)
-        )
+        requested_stride_seconds = float(stride_seconds)
         if (
             requested_sample_fps <= 0
             or not math.isfinite(requested_sample_fps)
             or requested_window_seconds <= 0
             or not math.isfinite(requested_window_seconds)
-            or (
-                requested_stride_seconds is not None
-                and (
-                    requested_stride_seconds <= 0
-                    or not math.isfinite(requested_stride_seconds)
-                )
-            )
+            or requested_stride_seconds <= 0
+            or not math.isfinite(requested_stride_seconds)
         ):
             raise ValueError(
                 "Window, stride, and sample FPS must be positive and finite."
@@ -392,12 +383,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         effective_sample_fps = min(requested_sample_fps, source_fps)
         sampling_stride = max(1.0, source_fps / effective_sample_fps)
         window_frames = max(1, round(requested_window_seconds * source_fps))
-        effective_stride_seconds = (
-            requested_window_seconds
-            if requested_stride_seconds is None
-            else requested_stride_seconds
-        )
-        stride_frames = max(1, round(effective_stride_seconds * source_fps))
+        stride_frames = max(1, round(requested_stride_seconds * source_fps))
+        keep_alive_frames = window_frames + math.ceil(sampling_stride)
 
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
@@ -425,12 +412,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         )
         if should_classify:
             bookkeeping.last_fire_frame_number = frame_number
-            # The model rounds boundaries by ~10-20% of its window;
-            # exact-touch closes ongoing events too early.
-            open_end_slack_frames = max(
-                0.15 * requested_window_seconds * source_fps,
-                sampling_stride,
-            )
             error_status = self._classify_buffer(
                 model=model,
                 bookkeeping=bookkeeping,
@@ -438,7 +419,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 id_vocabulary=id_vocabulary,
                 effective_sample_fps=effective_sample_fps,
                 sampling_stride=sampling_stride,
-                open_end_slack_frames=open_end_slack_frames,
             )
 
         bookkeeping.last_frame_number = frame_number
@@ -447,6 +427,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             image=image,
             id_vocabulary=id_vocabulary,
             frame_number=frame_number,
+            keep_alive_frames=keep_alive_frames,
             error_status=error_status,
         )
 
@@ -482,7 +463,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
         sampling_stride: float,
-        open_end_slack_frames: float,
     ) -> str:
         if not bookkeeping.sampled:
             return ""
@@ -502,9 +482,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 exc_info=True,
             )
             return str(error)
-        bookkeeping.window_class_names = list(
-            dict.fromkeys(segment.class_name for segment in segments)
-        )
         # Separates "the model output one range" from "the block merged
         # several".
         logger.debug(
@@ -527,7 +504,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=math.ceil(sampling_stride),
-            open_end_slack_frames=open_end_slack_frames,
         )
         return ""
 
@@ -553,10 +529,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         stride: float,
-        open_end_slack_frames: float,
     ) -> None:
         sampled_count = len(bookkeeping.sampled)
-        new_open_classes = set()
         for segment in segments:
             class_name = segment.class_name
             if block_filter is not None and class_name not in block_filter:
@@ -586,11 +560,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 segment=segment,
                 stride=stride,
             )
-            if (
-                bookkeeping.sampled[-1][0] - segment.end_frame_idx
-                <= open_end_slack_frames
-            ):
-                new_open_classes.add(class_name)
         bookkeeping.timeline.sort(
             key=lambda entry: (
                 entry.start_frame_idx,
@@ -598,7 +567,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 entry.end_frame_idx,
             )
         )
-        bookkeeping.open_classes = new_open_classes
 
     @staticmethod
     def _merge_segment(
@@ -633,14 +601,19 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         image: WorkflowImageData,
         id_vocabulary: Optional[List[str]],
         frame_number: int,
+        keep_alive_frames: int,
         error_status: str,
     ) -> dict:
         timeline = [entry.model_copy(deep=True) for entry in bookkeeping.timeline]
-        for class_name in bookkeeping.open_classes:
-            for entry in reversed(timeline):
-                if entry.class_name == class_name:
-                    entry.end_frame_idx = frame_number
-                    break
+        # A class stays visible while a future positive fire could still merge
+        # with its range, then clears exactly when that range is closed.
+        bookkeeping.window_class_names = list(
+            dict.fromkeys(
+                entry.class_name
+                for entry in bookkeeping.timeline
+                if frame_number - entry.end_frame_idx <= keep_alive_frames
+            )
+        )
         window_classes = self._build_window_classes(
             bookkeeping=bookkeeping,
             image=image,
